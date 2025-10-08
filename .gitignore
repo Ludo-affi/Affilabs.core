@@ -1,0 +1,62 @@
+# IDE and editors
+.idea/
+.vscode/
+
+# Virtual environments
+venv_new/
+.venv/
+venv/
+env/
+
+# Project specific
+local_settings.py
+note.txt
+data_export/
+generated-files/
+backup_original_code/
+firmware/
+*.exe
+affinite-server.exe
+affinite_ezspr.uf2
+
+# Documentation
+docs/**/*.html
+docs/**/*.js
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Build
+build/
+dist/
+.pdm-build
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Python environments
+pyvenv.cfg
+share/
+
+# Development tools
+.pdm-python
+.mypy_cache
+.dmypy.json
+pdm.lock
+
+# Logs and output
+*.log
+logfile.txt
+stdout.txt
+stderr.txt
+
+# Configuration (keep templates)
+config.json
+settings.json
+
+# Public/generated content
+public/

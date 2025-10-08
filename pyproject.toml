@@ -1,0 +1,121 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project]
+# PEP 621 project metadata
+# See https://www.python.org/dev/peps/pep-0621/
+dynamic = ["version"]
+name = "ezControl"
+dependencies = [
+    "pyqtgraph>=0.13.3",
+    "pyserial>=3.5",
+    "PySide6>=6.5.1.1,!=6.6.2",
+    "scipy>=1.11.0",
+    "pump-controller>=0.1.2",
+    "oceandirect>=0.1.0",
+]
+requires-python = ">=3.11,<3.13"
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=4.5.1",
+    "pillow>=10.2.0",
+]
+docs = ["pdoc>=14.0.0", "pyinstaller>=4.5.1"]
+
+[project.scripts]
+ezcontrol = "main:main"
+make = "main.build:main"
+docs = "main.docs:main"
+
+[tool.pdm.version]
+source = "call"
+getter = "settings:get_version"
+
+[tool.pdm.build]
+includes = [
+    "settings/",
+    "main/main.py",
+    "main/__init__.py",
+    "main/__main__.py",
+    "ui/",
+    "widgets/",
+    "utils/",
+    "main.spec",
+]
+source-includes = ["main/build.py", "main/docs.py"]
+
+[tool.pdm.dev-dependencies]
+check = [
+    "ruff>=0.0.275",
+    "types-pyserial>=3.5.0.8",
+    "mypy>=1.4.1",
+    "types-pyinstaller>=5.13.0.1",
+]
+interactive = [
+    "ipython>=8.14.0",
+    "matplotlib>=3.8.4",
+]
+lsp = [
+    "python-lsp-ruff>=1.5.1",
+    "pylsp-mypy>=0.6.7",
+]
+
+[tool.pdm.scripts]
+app = "python -m main"
+build = "pyinstaller main.spec"
+py = "ipython --gui=qt6 -c=\"from main import AffiniteApp\" -i"
+lint = "ruff check"
+mypy = "dmypy run --"
+_mypy_long = "mypy"
+_open_report = "open .mypy_cache/lineprecision.txt"
+check.composite = ["ruff", "mypy"]
+report.composite = ["_mypy_long", "_open_report"]
+pack.call = "main.build:pack"
+make.call = "main.build:main"
+docs.call = "main.docs:main"
+web-docs.call = "main.docs:make(preview=True)"
+flash = "python utils/flash_pico.py"
+fw-build = "cmake --build firmware\\pi_pico_fw\\build_mgw --config Release --target affinite_p4spr -j 4"
+fw-flash.composite = ["fw-build", "flash"]
+
+[tool.pdm.resolution]
+respect-source-order = true
+
+[[tool.pdm.source]]
+name = "gitlab"
+url = "https://gitlab.com/api/v4/groups/affinite-software/-/packages/pypi/simple"
+username = "gitlab+deploy-token-2403834"
+password = "CqMCStJe9N9WxYkixeYY"
+
+[tool.ruff]
+select = ["ALL"]
+
+[tool.mypy]
+strict = false
+disallow_any_unimported = true
+disallow_any_expr = false
+disallow_any_decorated = false
+disallow_any_explicit = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = false
+disallow_untyped_defs = true
+disallow_untyped_decorators = true
+disallow_incomplete_defs = true
+check_untyped_defs = false
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_return_any = true
+warn_unreachable = true
+lineprecision_report = ".mypy_cache"
+plugins = ["numpy.typing.mypy_plugin"]
+
+[tool.pylsp-mypy]
+enabled = false
+live_mode = false
+dmypy = true
+report_progress = true

@@ -1,0 +1,93 @@
+from numpy import array
+
+from oceandirect.OceanDirectAPI import OceanDirectAPI
+from utils.common import get_config
+from utils.logger import logger
+
+
+class USB4000:
+    """
+    USB4000 device driver
+    """
+
+    def __init__(self, app):
+        super(USB4000, self).__init__()
+        self.oceandirect = OceanDirectAPI()
+        self.app = app
+        self.spec = None
+        self.opened = False
+        self.oceandirect.find_usb_devices()
+        self.devs = self.oceandirect.get_device_ids()
+        self.min_integration = 0
+        self.max_integration = 5_000_000
+
+    @property
+    def serial_number(self):
+        try:
+            return self.spec.serial_number if self.spec is not None else ""
+        except Exception:
+            return ""
+
+    def get_device_list(self):
+        try:
+            logger.debug('trying to open spec list')
+            self.oceandirect.find_usb_devices()
+            self.devs = self.oceandirect.get_device_ids()
+            logger.debug(f"spectrometers available: {self.devs}")
+        except Exception as e:
+            logger.debug(f"Error getting device list {e}")
+
+    def open(self):
+        try:
+            # get_dev = threading.Thread(target=self.get_device_list)
+            # get_dev.start()
+            # time.sleep(1)
+            # get_dev.join(0.1)
+            # if get_dev.is_alive():
+            #     raise ConnectionError
+            self.oceandirect.find_usb_devices()
+            self.devs = self.oceandirect.get_device_ids()
+            logger.debug(f"spectrometers available: {self.devs}")
+            if len(self.devs) == 0:
+                return False
+            self.spec = self.oceandirect.open_device(self.devs[0])
+            self.min_integration = self.spec.get_minimum_integration_time() / 1000
+            self.max_integration = self.spec.get_maximum_integration_time() / 1000
+            self.set_integration(max(get_config()["integration_time"], self.min_integration))
+            self.opened = True
+            return True
+        except Exception as e:
+            logger.exception(f"Failed to connect to USB4000 - {e}")
+            self.app.raise_error.emit('spec')
+
+    # Added method to set integration time
+    def set_integration(self, integration):
+        if integration < self.min_integration or integration > self.max_integration:
+            return False
+        try:
+            self.spec.set_integration_time(int(integration * 1000))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set integration time - {e}")
+            self.app.raise_error.emit('spec')
+
+    def read_wavelength(self):
+        if self.spec is not None or self.open():
+            try:
+                return array(self.spec.get_wavelengths())
+            except Exception as e:
+                logger.error(f"Failed to read wavelength data from USB4000 - {e}")
+                self.app.raise_error.emit('spec')
+
+    def read_intensity(self):
+        if self.spec is not None or self.open():
+            try:
+                return array(self.spec.get_formatted_spectrum())
+            except Exception as e:
+                logger.error(f"Failed to read intensity data from USB4000 - {e}")
+                self.app.raise_error.emit('spec')
+
+    def close(self):
+        if self.spec is not None:
+            self.spec.close_device()
+            self.spec = None
