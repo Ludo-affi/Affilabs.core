@@ -798,9 +798,14 @@ class SPRCalibrator:
             logger.info(f"📊 Step 3.3: Checking strongest channel ({strongest_ch}) for saturation...")
             
             # Switch to strongest channel
+            # CRITICAL: Use LOWER LED intensity (50 instead of 168) to check saturation
+            # This allows higher integration time for weak channels
+            S_LED_CHECK = 50  # Reduced from 168 to allow more room for weak channels
+            logger.info(f"   Checking saturation at LED={S_LED_CHECK} (reduced to allow higher integration time)")
+            
             self.ctrl.set_intensity(ch=weakest_ch, raw_val=0)
             time.sleep(LED_DELAY)
-            self.ctrl.set_intensity(ch=strongest_ch, raw_val=S_LED_INT)
+            self.ctrl.set_intensity(ch=strongest_ch, raw_val=S_LED_CHECK)
             time.sleep(LED_DELAY)
             
             # Check if strongest channel saturates
