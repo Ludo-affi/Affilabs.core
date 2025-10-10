@@ -10,7 +10,7 @@ class Sidebar(QWidget):
     kinetic_widget = None
 
     def __init__(self):
-        super(Sidebar, self).__init__()
+        super().__init__()
         self.ui = Ui_Sidebar()
         self.ui.setupUi(self)
 

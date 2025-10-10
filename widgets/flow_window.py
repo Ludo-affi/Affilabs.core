@@ -1,7 +1,12 @@
 """Widgets related to fluidic controls."""
 
 from math import inf
-from typing import Literal, Self
+
+# Python version compatibility
+try:
+    from typing import Literal, Self  # Python 3.11+
+except ImportError:
+    from typing import Literal, Self  # Python < 3.11
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator
@@ -49,7 +54,7 @@ class PumpControl(QGroupBox):
         self.main_layout.addWidget(self.channel_2)
         self.main_layout.addWidget(self.reference)
 
-        self.channel_1.setChecked(True)  # noqa: FBT003
+        self.channel_1.setChecked(True)
 
 
 class FlowWindow(QDialog):
@@ -95,7 +100,7 @@ class FlowWindow(QDialog):
         self.flow_layout.addWidget(self.flow_rate)
         self.flow_layout.addWidget(QLabel("uL/min"))
 
-        self.pump_2.reference.setChecked(True)  # noqa: FBT003
+        self.pump_2.reference.setChecked(True)
 
         self.flow_rate.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.flow_rate.setValidator(QDoubleValidator(0, inf, 5))
@@ -104,13 +109,13 @@ class FlowWindow(QDialog):
         self.reference_buttons.addButton(self.pump_1.reference)
         self.reference_buttons.addButton(self.pump_2.reference)
 
-
     def update_time(self: Self) -> None:
         """Update the sample on-time based on the current flow rate."""
         if self.flow_rate.hasAcceptableInput():
             flow_rate = float(self.flow_rate.text())
             time = 80 / flow_rate * 60
             self.sample_time.setText(f"Sample on-time: {time} seconds")
+
 
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication

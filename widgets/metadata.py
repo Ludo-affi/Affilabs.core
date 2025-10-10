@@ -6,9 +6,23 @@ in a format compatible with TraceDrawer.
 
 import csv
 import re
-from collections.abc import Collection, Hashable, Sequence
-from datetime import UTC, datetime
-from typing import Generic, NamedTuple, Self, TypeVar
+from collections.abc import Collection, Sequence
+from datetime import datetime
+
+# Python version compatibility
+try:
+    from datetime import UTC  # Python 3.11+
+except ImportError:
+    UTC = UTC  # Python < 3.11
+
+try:
+    from typing import NamedTuple, Self  # Python 3.11+
+except ImportError:
+    from typing import (
+        NamedTuple,
+        Self,  # Python < 3.11
+    )
+
 
 from PySide6.QtCore import QSize, Qt, Slot
 from PySide6.QtGui import QDoubleValidator, QIcon
@@ -207,20 +221,19 @@ class Concentrations(QWidget):
                 self.data[-1].from_string(concentration)
 
 
-# Type variable for a type that can be used as a key to a dictionary
-KeyType = TypeVar("KeyType", bound=Hashable, contravariant=True)
+# Simplified type annotations for Python < 3.11 compatibility
 
 
-class CurveOutput(NamedTuple, Generic[KeyType]):
+class CurveOutput(NamedTuple):
     """Class to hold output of CurveMetadata."""
 
-    ligand: dict[KeyType, str]
+    ligand: dict
     """Dictionary with the ligand field name and value in it."""
 
-    target: dict[KeyType, str]
+    target: dict
     """Dictionary with the target field name and value in it."""
 
-    concentrations: dict[KeyType, str]
+    concentrations: dict
     """Dictionary with the concentration name and value in it."""
 
 
@@ -239,7 +252,7 @@ class CurveMetadata(NamedTuple):
     name: str
     """Name of the curve."""
 
-    def output(self: Self, field: KeyType, value: KeyType) -> CurveOutput[KeyType]:
+    def output(self: Self, field, value) -> CurveOutput:
         """Output metadata for a curve as a tuple of dictionaries.
 
         The field and value args are the keys of the dictionary that
@@ -283,31 +296,31 @@ class CurveMetadata(NamedTuple):
         self.concentrations.from_string(concentrations)
 
 
-class CurveTableOutput(NamedTuple, Generic[KeyType]):
+class CurveTableOutput(NamedTuple):
     """Iterable object holding dictionaries wwith the metadata for curves."""
 
-    number: dict[KeyType, str]
+    number: dict
     """The number of the curves."""
 
-    name: dict[KeyType, str]
+    name: dict
     """The name of the curves."""
 
-    kind: dict[KeyType, str]
+    kind: dict
     """The type of the curves, TraceDrawer says to always put "Cuvre" here."""
 
-    ligand: dict[KeyType, str]
+    ligand: dict
     """The lignads of the curves."""
 
-    concentrations: dict[KeyType, str]
+    concentrations: dict
     """The concentrations of the curves."""
 
-    target: dict[KeyType, str]
+    target: dict
     """The target of the curves."""
 
-    description: dict[KeyType, str]
+    description: dict
     """The description of the curves."""
 
-    header: dict[KeyType, str]
+    header: dict
     """Header for each curve, is always "X\tY"."""
 
 
@@ -365,9 +378,9 @@ class CurveTable(QWidget):
 
     def output(
         self: Self,
-        columns: Sequence[KeyType],
+        columns: Sequence,
         name: str,
-    ) -> CurveTableOutput[KeyType]:
+    ) -> CurveTableOutput:
         """Output metadata for all curves as an iterator of dictionaries.
 
         The columns argument is the keys of the columns for the dictionary
@@ -377,7 +390,7 @@ class CurveTable(QWidget):
             msg = f"Expected {2 * len(self.data)} columns, found {len(columns)}"
             raise ValueError(msg)
 
-        out: CurveTableOutput[KeyType] = CurveTableOutput(
+        out: CurveTableOutput = CurveTableOutput(
             {},
             {},
             {},
@@ -420,7 +433,7 @@ class CurveTable(QWidget):
     def from_file(
         self: Self,
         reader: csv.DictReader,  # type: ignore[type-arg]
-        columns: Sequence[KeyType],
+        columns: Sequence,
     ) -> None:
         """Read in curve metadata from file."""
         if len(columns) != 2 * len(self.data):
@@ -589,7 +602,7 @@ class Metadata(QWidget):
     def read_header(
         self: Self,
         reader: csv.DictReader,  # type: ignore[type-arg]
-        columns: Sequence[KeyType],
+        columns: Sequence,
     ) -> list[float]:
         """Read the header from a data file.
 
@@ -689,7 +702,7 @@ class MetadataPrompt(QDialog):
             "metadata in the save file. All fields are optional, just leave any field "
             "blank to exclude it.",
         )
-        self.prompt.setWordWrap(True)  # noqa: FBT003
+        self.prompt.setWordWrap(True)
         self.metadata = metadata
         self.dont_show = QCheckBox(
             "Do not show this window again (Also available in SPR Setting)",

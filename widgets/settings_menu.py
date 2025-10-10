@@ -1,7 +1,11 @@
 """Contains the widget and code for the settings menu of the ezControl app."""
 
+# Python version compatibility
+try:
+    from typing import Self  # Python 3.11+
+except ImportError:
+    from typing_extensions import Self  # Python < 3.11
 
-from typing import Self
 
 from PySide6.QtWidgets import QDialog, QTabWidget, QVBoxLayout, QWidget
 

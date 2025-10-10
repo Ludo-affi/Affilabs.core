@@ -11,7 +11,13 @@ import json
 from copy import deepcopy
 from functools import partial
 from pathlib import Path
-from typing import Self
+
+# Python version compatibility
+try:
+    from typing import Optional, Self  # Python 3.11+
+except ImportError:
+    from typing_extensions import Self  # Python < 3.11
+    from typing import Optional
 
 import numpy as np
 from pyqtgraph import InfiniteLine, PlotDataItem, mkPen
@@ -28,7 +34,13 @@ from widgets.ka_kd_wizard import KAKDWizardDialog
 from widgets.kd_wizard import KDWizardDialog
 from widgets.message import show_message
 
-TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
+# Python version compatibility for UTC
+try:
+    TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
+except AttributeError:
+    import datetime as dt
+
+    TIMEZONE = dt.datetime.now(dt.UTC).astimezone().tzinfo
 SEGMENT_COLORS = [
     "#c93c8a",
     "#ff8e1c",
@@ -429,27 +441,27 @@ class AnalysisWindow(QWidget):
                         table_data[i]["Note"] = f"{seg.note}"
                         for ch in CH_LIST:
                             table_data[i][f"Conc_{ch.upper()}"] = f"{seg.conc[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_Shift_{ch.upper()}"
-                            ] = f"{seg.assoc_shift[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_Start_{ch.upper()}"
-                            ] = f"{seg.assoc_start[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_End_{ch.upper()}"
-                            ] = f"{seg.assoc_end[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Shift_{ch.upper()}"
-                            ] = f"{seg.dissoc_shift[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Start_{ch.upper()}"
-                            ] = f"{seg.dissoc_start[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_End_{ch.upper()}"
-                            ] = f"{seg.dissoc_end[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Shift_{ch.upper()}"
-                            ] = f"{seg.dissoc_shift[ch]:.3f}"
+                            table_data[i][f"Assoc_Shift_{ch.upper()}"] = (
+                                f"{seg.assoc_shift[ch]:.3f}"
+                            )
+                            table_data[i][f"Assoc_Start_{ch.upper()}"] = (
+                                f"{seg.assoc_start[ch]:.3f}"
+                            )
+                            table_data[i][f"Assoc_End_{ch.upper()}"] = (
+                                f"{seg.assoc_end[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Shift_{ch.upper()}"] = (
+                                f"{seg.dissoc_shift[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Start_{ch.upper()}"] = (
+                                f"{seg.dissoc_start[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_End_{ch.upper()}"] = (
+                                f"{seg.dissoc_end[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Shift_{ch.upper()}"] = (
+                                f"{seg.dissoc_shift[ch]:.3f}"
+                            )
                     writer = csv.DictWriter(
                         txtfile,
                         dialect="excel-tab",
@@ -682,9 +694,9 @@ class AnalysisWindow(QWidget):
                                 curve_target[fieldnames[ind]] = "Curve target"
                                 curve_target[fieldnames[ind + 1]] = "N/A"
                                 curve_desc[fieldnames[ind]] = "Curve description"
-                                curve_desc[
-                                    fieldnames[ind + 1]
-                                ] = f" Seg {seg.name} Ch {ch}"
+                                curve_desc[fieldnames[ind + 1]] = (
+                                    f" Seg {seg.name} Ch {ch}"
+                                )
                                 curve_xy[fieldnames[ind]] = "X"
                                 curve_xy[fieldnames[ind + 1]] = "Y"
                             writer.writerow(curve_num)
@@ -701,8 +713,7 @@ class AnalysisWindow(QWidget):
                             ):
                                 end_time = 1000000
                                 for seg in self.auto_segments:
-                                    if seg.seg_x[ch][-1] < end_time:
-                                        end_time = seg.seg_x[ch][-1]
+                                    end_time = min(end_time, seg.seg_x[ch][-1])
                                 temp_data = []
                                 for seg in self.auto_segments:
                                     x = []
@@ -716,8 +727,7 @@ class AnalysisWindow(QWidget):
                                     temp_data.append({"x": x, "y": y})
                                 max_length = 0
                                 for i in range(len(temp_data)):
-                                    if len(temp_data[i]["x"]) > max_length:
-                                        max_length = len(temp_data[i]["x"])
+                                    max_length = max(max_length, len(temp_data[i]["x"]))
                                 for i in range(len(temp_data)):
                                     for j in range(max_length):
                                         if (j + 1) > len(temp_data[i]["x"]):
@@ -869,9 +879,9 @@ class AnalysisWindow(QWidget):
         """Handle edit of data anlysis table."""
         if not self.updating_table:
             try:
-                start_times = {ch: 0.0 for ch in CH_LIST}
-                end_times = {ch: 0.0 for ch in CH_LIST}
-                assoc_start_times = {ch: 0.0 for ch in CH_LIST}
+                start_times = dict.fromkeys(CH_LIST, 0.0)
+                end_times = dict.fromkeys(CH_LIST, 0.0)
+                assoc_start_times = dict.fromkeys(CH_LIST, 0.0)
                 seg = self.auto_segments[self.ui.seg_select.currentIndex()]
                 for i, ch in enumerate(CH_LIST):
                     if np.all(seg.data_y[ch] == np.nan):
@@ -1054,8 +1064,8 @@ class AnalysisSegment:
                 self.name = base_segment.name
                 self.note = base_segment.note
                 self.assoc_shift = base_segment.shift
-                self.base_start = {ch: base_segment.start for ch in CH_LIST}
-                self.base_end = {ch: base_segment.end for ch in CH_LIST}
+                self.base_start = dict.fromkeys(CH_LIST, base_segment.start)
+                self.base_end = dict.fromkeys(CH_LIST, base_segment.end)
                 self.start = {ch: deepcopy(base_segment.start) for ch in CH_LIST}
                 self.end = {ch: deepcopy(base_segment.end) for ch in CH_LIST}
                 self.dissoc_start = {
@@ -1066,12 +1076,12 @@ class AnalysisSegment:
                 }
                 self.d_seg_x = {ch: np.ndarray([]) for ch in CH_LIST}
                 self.d_seg_y = {ch: np.ndarray([]) for ch in CH_LIST}
-                self.dissoc_shift = {ch: 0 for ch in CH_LIST}
-                self.start_index = {ch: 0 for ch in CH_LIST}
+                self.dissoc_shift = dict.fromkeys(CH_LIST, 0)
+                self.start_index = dict.fromkeys(CH_LIST, 0)
                 self.end_index = {ch: len(self.seg_x[ch]) - 1 for ch in CH_LIST}
-                self.conc = {ch: 0 for ch in CH_LIST}
-                self.assoc_start = {ch: 0 for ch in CH_LIST}
-                self.assoc_end = {ch: 1 for ch in CH_LIST}
+                self.conc = dict.fromkeys(CH_LIST, 0)
+                self.assoc_start = dict.fromkeys(CH_LIST, 0)
+                self.assoc_end = dict.fromkeys(CH_LIST, 1)
 
         except Exception as e:
             logger.exception(f"Error while loading base segment: {e}")
@@ -1168,10 +1178,14 @@ class AnalysisSegment:
                                     self.assoc_start[ch] = self.data_x[ch][i]
                                     if self.assoc_end[ch] < self.assoc_start[ch]:
                                         self.assoc_end[ch] = self.data_x[ch][i + 1]
-                                    if self.dissoc_start[ch] < self.assoc_end[ch]:
-                                        self.dissoc_start[ch] = self.assoc_end[ch]
-                                    if self.dissoc_end[ch] < self.dissoc_start[ch]:
-                                        self.dissoc_end[ch] = self.dissoc_start[ch]
+                                    self.dissoc_start[ch] = max(
+                                        self.dissoc_start[ch],
+                                        self.assoc_end[ch],
+                                    )
+                                    self.dissoc_end[ch] = max(
+                                        self.dissoc_end[ch],
+                                        self.dissoc_start[ch],
+                                    )
                             j = i + 1
                             while j < len(self.data_x[ch]):
                                 if (

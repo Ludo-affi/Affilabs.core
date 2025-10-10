@@ -1,22 +1,37 @@
 """Widgets and function dealing with priming the system."""
 
 from asyncio import Task, create_task, sleep
-from typing import Self
+
+# Python version compatibility
+try:
+    from typing import Self  # Python 3.11+
+except ImportError:
+    from typing_extensions import Self  # Python < 3.11
 
 # Pump controller import (temporary stub for missing HAL implementation)
 try:
     from utils.affi_pump_controller_adapter import PumpController
     from utils.hal.affi_pump_hal import AffiPumpError as PumpException
+
+    PUMP_CONTROLLER_AVAILABLE = True
 except ImportError:
-    # Stub implementation for missing pump controller
+    # Pump controller not available - disable pump functionality
     class PumpException(Exception):
         """Pump error stub."""
-    
+
+    PUMP_CONTROLLER_AVAILABLE = False
+
     class PumpController:
         """Stub pump controller."""
+
         @classmethod
-        def from_first_available(cls): return None
-        def __init__(self): pass
+        def from_first_available(cls):
+            return None
+
+        def __init__(self):
+            pass
+
+
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (

@@ -2,37 +2,42 @@ from functools import partial
 
 import numpy as np
 from pyqtgraph import GraphicsLayoutWidget, mkPen, setConfigOptions
-from PySide6.QtWidgets import QWidget, QDialog, QVBoxLayout, QSizePolicy
 from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QDialog, QSizePolicy, QVBoxLayout, QWidget
 
-from ui.ui_spectroscopy import Ui_Spectroscopy
+from settings import CH_LIST, DEV, GRAPH_COLORS
 from ui.ui_pop_out_dialog import Ui_SingleDialog
+from ui.ui_spectroscopy import Ui_Spectroscopy
 from utils.logger import logger
-from settings import CH_LIST, GRAPH_COLORS, DEV
 
 
 class Spectroscopy(QWidget):
-
     full_cal_sig = Signal()
     new_ref_sig = Signal()
     polarizer_sig = Signal(str)
     single_led_sig = Signal(str)
 
     def __init__(self):
-        super(Spectroscopy, self).__init__()
+        super().__init__()
         self.advanced_mode = False
         self.ui = Ui_Spectroscopy()
         self.ui.setupUi(self)
-        self.led_mode = 'auto'
+        self.led_mode = "auto"
 
         # setup plots
-        self.intensity_plot_view = SpecPlot("Intensity Plot", "Wavelength (nm)", "Intensity (counts)")
+        self.intensity_plot_view = SpecPlot(
+            "Intensity Plot", "Wavelength (nm)", "Intensity (counts)"
+        )
         # Place SpecPlot widget into its container, removing any spacer-only items from the .ui that squeeze content
         layout_int = self._ensure_clean_container(self.ui.intensity_plot)
-        self.intensity_plot_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.intensity_plot_view.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
         layout_int.addWidget(self.intensity_plot_view, 1)
 
-        self.trans_plot_view = SpecPlot("Transmittance Plot", "Wavelength (nm)", "Transmittance (%)")
+        self.trans_plot_view = SpecPlot(
+            "Transmittance Plot", "Wavelength (nm)", "Transmittance (%)"
+        )
         layout_tr = self._ensure_clean_container(self.ui.transmission_plot)
         self.trans_plot_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout_tr.addWidget(self.trans_plot_view, 1)
@@ -45,7 +50,8 @@ class Spectroscopy(QWidget):
         # connect display channel check buttons
         for ch in CH_LIST:
             getattr(self.ui, f"segment_{ch.upper()}").stateChanged.connect(
-                partial(self.display_channel_changed, ch))
+                partial(self.display_channel_changed, ch)
+            )
 
         # set up controls
         self.ui.new_ref_btn.clicked.connect(self.new_reference)
@@ -67,14 +73,22 @@ class Spectroscopy(QWidget):
             self.ui.full_calibrate_btn.setEnabled(False)
 
     def resizeEvent(self, event):
-        self.intensity_plot_view.resize(self.ui.intensity_plot.width(), self.ui.intensity_plot.height())
-        self.trans_plot_view.resize(self.ui.transmission_plot.width(), self.ui.transmission_plot.height())
+        self.intensity_plot_view.resize(
+            self.ui.intensity_plot.width(), self.ui.intensity_plot.height()
+        )
+        self.trans_plot_view.resize(
+            self.ui.transmission_plot.width(), self.ui.transmission_plot.height()
+        )
 
     def update_data(self, spec_data):
         try:
             if spec_data is not None:
-                self.intensity_plot_view.update_plots(spec_data['wave_data'], spec_data['int_data'], self.led_mode)
-                self.trans_plot_view.update_plots(spec_data['wave_data'], spec_data['trans_data'], self.led_mode)
+                self.intensity_plot_view.update_plots(
+                    spec_data["wave_data"], spec_data["int_data"], self.led_mode
+                )
+                self.trans_plot_view.update_plots(
+                    spec_data["wave_data"], spec_data["trans_data"], self.led_mode
+                )
         except Exception as e:
             logger.debug(f"Error during spectroscopy update: {e}")
 
@@ -89,27 +103,29 @@ class Spectroscopy(QWidget):
         self.new_ref_sig.emit()
 
     def set_polarizer(self):
-        logger.debug(f"spectroscopy dropdown current text: {self.ui.polarization.currentText()}")
+        logger.debug(
+            f"spectroscopy dropdown current text: {self.ui.polarization.currentText()}"
+        )
         self.polarizer_sig.emit(self.ui.polarization.currentText().lower())
 
     def set_led_mode(self):
         self.trans_plot_view.clear_plots()
         self.intensity_plot_view.clear_plots()
-        if self.ui.led_mode.currentText() == 'Auto':
-            self.led_mode = 'auto'
+        if self.ui.led_mode.currentText() == "Auto":
+            self.led_mode = "auto"
             self.ui.single_LED.setEnabled(False)
         else:
             self.ui.single_LED.setEnabled(True)
             if self.ui.single_A.isChecked():
-                self.led_mode = 'a'
+                self.led_mode = "a"
             elif self.ui.single_B.isChecked():
-                self.led_mode = 'b'
+                self.led_mode = "b"
             elif self.ui.single_C.isChecked():
-                self.led_mode = 'c'
+                self.led_mode = "c"
             elif self.ui.single_D.isChecked():
-                self.led_mode = 'd'
+                self.led_mode = "d"
             elif self.ui.led_off.isChecked():
-                self.led_mode = 'x'
+                self.led_mode = "x"
         self.single_led_sig.emit(self.led_mode)
 
     def _ensure_clean_container(self, container_widget):
@@ -133,16 +149,15 @@ class Spectroscopy(QWidget):
 
 
 class SpecPlot(GraphicsLayoutWidget):
-
     def __init__(self, title_string, x_axis_string, y_axis_string):
-        super(SpecPlot, self).__init__()
+        super().__init__()
 
         # Enable antialiasing for prettier plots
         setConfigOptions(antialias=True)
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, color=(250, 250, 250), size='10pt')
+        self.plot.titleLabel.setText(title_string, color=(250, 250, 250), size="10pt")
         self.plot.showGrid(x=True, y=True)
         if DEV:
             self.plot.setMenuEnabled(True)
@@ -150,7 +165,7 @@ class SpecPlot(GraphicsLayoutWidget):
         else:
             self.plot.setMenuEnabled(False)
             self.plot.setMouseEnabled(False)
-        self.plot.setDownsampling(ds=50, mode='subsample')
+        self.plot.setDownsampling(ds=50, mode="subsample")
         self.plot.setLabel("left", y_axis_string)
         self.plot.setLabel("bottom", x_axis_string)
 
@@ -168,9 +183,8 @@ class SpecPlot(GraphicsLayoutWidget):
             for ch in CH_LIST:
                 if y_data[ch] is None:
                     self.plots[ch].setData(y=[np.nan], x=[np.nan])
-                else:
-                    if (led_mode == 'auto') or (ch == led_mode):
-                        self.plots[ch].setData(y=y_data[ch], x=x_data)
+                elif (led_mode == "auto") or (ch == led_mode):
+                    self.plots[ch].setData(y=y_data[ch], x=x_data)
         except Exception as e:
             logger.debug(f"Error while plotting: {e}")
 
@@ -180,7 +194,6 @@ class SpecPlot(GraphicsLayoutWidget):
 
 class SpecDebugWindow(QDialog):
     def __init__(self, parent=None):
-        super(SpecDebugWindow, self).__init__(parent)
+        super().__init__(parent)
         self.ui = Ui_SingleDialog()
         self.ui.setupUi(self)
-

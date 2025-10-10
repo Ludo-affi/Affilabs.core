@@ -88,13 +88,14 @@ POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
 # Device types and timezone
 DEVICES = ["PicoP4SPR", "PicoEZSPR"]  # Supported device types
 import datetime
+
 try:
     # Python 3.11+ has datetime.UTC
     TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 except AttributeError:
     # Python 3.10 and earlier - use timezone.utc
-    import datetime
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    from datetime import timezone
+    TIME_ZONE = datetime.datetime.now(timezone.utc).astimezone().tzinfo
 
 DEFAULT_CONFIG = {
     "unit": UNIT,

@@ -6,7 +6,7 @@ import os
 import sys
 from typing import Any
 
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Slot, QTimer
 from PySide6.QtWidgets import QApplication
 
 from settings import SW_VERSION
@@ -20,7 +20,7 @@ USE_STATE_MACHINE = os.getenv('USE_STATE_MACHINE', 'true').lower() == 'true'
 if USE_STATE_MACHINE:
     logger.info("Using State Machine Architecture")
     from utils.spr_state_machine import SPRStateMachine
-    
+
 class AffiniteApp(QApplication):
     """Simplified main application using state machine architecture."""
 
@@ -63,7 +63,7 @@ class AffiniteApp(QApplication):
         """Connect state machine signals to UI updates."""
         if not hasattr(self, 'state_machine'):
             return
-            
+
         self.state_machine.state_changed.connect(self._on_state_changed)
         self.state_machine.hardware_status.connect(self._on_hardware_status)
         self.state_machine.calibration_progress.connect(self._on_calibration_progress)
@@ -102,11 +102,17 @@ class AffiniteApp(QApplication):
         logger.info(f"Calibration progress: Step {step} - {description}")
 
         # Update progress bar if it exists
-        if hasattr(self.main_window, 'progress_bar') and self.main_window.progress_bar:
+        if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'calibration_progress'):
+            progress_bar = self.main_window.ui.calibration_progress
+            # Make progress bar visible during calibration
+            progress_bar.setVisible(True)
             # Calculate percentage (assuming 9 steps)
             percentage = int((step / 9) * 100)
-            self.main_window.progress_bar.setValue(percentage)
-            self.main_window.progress_bar.setFormat(f"{percentage}% - {description}")
+            progress_bar.setValue(percentage)
+            progress_bar.setFormat(f"Step {step}/9: {description}")
+            logger.debug(f"Updated progress bar: {percentage}% - {description}")
+        else:
+            logger.debug("Progress bar not found in UI")
 
     @Slot(bool, str)
     def _on_calibration_completed(self, success: bool, error_message: str) -> None:
@@ -116,12 +122,19 @@ class AffiniteApp(QApplication):
             show_message("Calibration completed successfully!", msg_type="Information")
 
             # Update UI to show calibrated state
-            if hasattr(self.main_window, 'progress_bar') and self.main_window.progress_bar:
-                self.main_window.progress_bar.setValue(100)
-                self.main_window.progress_bar.setFormat("100% - Calibration Complete")
+            if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'calibration_progress'):
+                progress_bar = self.main_window.ui.calibration_progress
+                progress_bar.setValue(100)
+                progress_bar.setFormat("Calibration Complete!")
+                # Hide progress bar after a delay
+                QTimer.singleShot(3000, lambda: progress_bar.setVisible(False))
         else:
             logger.error(f"❌ Calibration failed: {error_message}")
             show_message(f"Calibration failed: {error_message}", msg_type="Critical")
+
+            # Hide progress bar on failure
+            if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'calibration_progress'):
+                self.main_window.ui.calibration_progress.setVisible(False)
 
     @Slot()
     def _on_data_acquisition_started(self) -> None:
@@ -129,9 +142,9 @@ class AffiniteApp(QApplication):
         logger.info("🔄 Real-time data acquisition started")
         show_message("Real-time measurements started!", msg_type="Information")
 
-        # Update UI to show measuring state
-        if hasattr(self.main_window, 'status_bar') and self.main_window.status_bar:
-            self.main_window.status_bar.showMessage("System State: MEASURING - Real-time data acquisition active")
+        # Update UI to show measuring state via status label
+        if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'status'):
+            self.main_window.ui.status.setText("MEASURING - Real-time data acquisition active")
 
     @Slot(str)
     def _on_error_occurred(self, error_message: str) -> None:
@@ -181,20 +194,107 @@ class AffiniteApp(QApplication):
     def closeEvent(self, event) -> None:
         """Handle application close."""
         logger.info("Application closing...")
-
-        # Stop state machine
-        if hasattr(self, 'state_machine'):
-            self.state_machine.stop()
-
-        # Close main window
-        if hasattr(self, 'main_window'):
-            self.main_window.close()
-
+        self._emergency_cleanup()
         event.accept()
+
+    def _emergency_cleanup(self) -> None:
+        """Emergency cleanup to ensure hardware safety."""
+        try:
+            logger.info("🚨 Emergency cleanup started...")
+
+            # 1. Emergency LED shutdown via state machine
+            if hasattr(self, 'state_machine'):
+                try:
+                    self.state_machine.emergency_stop()
+                except Exception as e:
+                    logger.error(f"State machine emergency stop failed: {e}")
+
+            # 2. Direct hardware emergency shutdown
+            try:
+                self._direct_hardware_emergency_shutdown()
+            except Exception as e:
+                logger.error(f"Direct hardware emergency shutdown failed: {e}")
+
+            # 3. Stop state machine
+            if hasattr(self, 'state_machine'):
+                try:
+                    self.state_machine.stop()
+                except Exception as e:
+                    logger.error(f"State machine stop failed: {e}")
+
+            # 4. Close main window
+            if hasattr(self, 'main_window'):
+                try:
+                    self.main_window.close()
+                except Exception as e:
+                    logger.error(f"Main window close failed: {e}")
+
+            logger.info("✅ Emergency cleanup completed")
+
+        except Exception as e:
+            logger.error(f"❌ Emergency cleanup failed: {e}")
+
+    def _direct_hardware_emergency_shutdown(self) -> None:
+        """Direct hardware emergency shutdown bypassing all abstractions."""
+        import serial
+        import time
+
+        try:
+            logger.info("🔥 Direct hardware emergency shutdown...")
+
+            # Try to send LED off command directly to COM4
+            try:
+                with serial.Serial("COM4", 115200, timeout=1) as ser:
+                    time.sleep(0.1)
+                    ser.write(b'l0\n')  # LED off command
+                    time.sleep(0.1)
+                    response = ser.read(10)
+                    logger.info(f"Direct LED shutdown: {response}")
+            except Exception as e:
+                logger.warning(f"Direct COM4 shutdown failed: {e}")
+
+        except Exception as e:
+            logger.error(f"Direct hardware shutdown failed: {e}")
+
+    def close(self) -> None:
+        """Close the application (backward compatibility)."""
+        self._emergency_cleanup()
+        self.quit()
 
 
 def main() -> None:
     """Main application entry point."""
+    import signal
+
+    # Global emergency shutdown function for signal handlers
+    def signal_emergency_shutdown(signum, frame):
+        """Handle termination signals with emergency shutdown."""
+        print(f"\n🚨 Signal {signum} received - Emergency shutdown!")
+
+        # Direct LED shutdown for immediate safety
+        try:
+            import serial
+            import time
+            with serial.Serial("COM4", 115200, timeout=1) as ser:
+                time.sleep(0.1)
+                ser.write(b'l0\n')
+                time.sleep(0.1)
+                print("✅ Emergency LED shutdown completed")
+        except Exception as e:
+            print(f"❌ Emergency LED shutdown failed: {e}")
+
+        sys.exit(1)
+
+    # Install signal handlers for various termination scenarios
+    try:
+        signal.signal(signal.SIGINT, signal_emergency_shutdown)   # Ctrl+C
+        signal.signal(signal.SIGTERM, signal_emergency_shutdown)  # Termination request
+        if hasattr(signal, 'SIGBREAK'):  # Windows specific
+            signal.signal(signal.SIGBREAK, signal_emergency_shutdown)  # Ctrl+Break
+        logger.info("✅ Emergency shutdown signal handlers installed")
+    except Exception as e:
+        logger.warning(f"Could not install signal handlers: {e}")
+
     try:
         # Create and run application
         app = AffiniteApp()
@@ -212,6 +312,17 @@ def main() -> None:
 
     except Exception as e:
         logger.exception(f"Fatal application error: {e}")
+        # Emergency LED shutdown on crash
+        try:
+            import serial
+            import time
+            with serial.Serial("COM4", 115200, timeout=1) as ser:
+                time.sleep(0.1)
+                ser.write(b'l0\n')
+                time.sleep(0.1)
+                logger.info("Emergency LED shutdown on crash completed")
+        except Exception as led_error:
+            logger.error(f"Emergency LED shutdown on crash failed: {led_error}")
         sys.exit(1)
 
 

@@ -1,8 +1,10 @@
-"""Adfrom PySide6.QtWidgets import QDialog
+"""Advanced settings set during calibration."""
 
-from ui.ui_p4spr_adv_settings import Ui_P4SPR_Advanceded settings set during calibration."""
-
-from typing import Self
+# Python version compatibility
+try:
+    from typing import Self  # Python 3.11+
+except ImportError:
+    from typing_extensions import Self  # Python < 3.11
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QWidget

@@ -5,7 +5,6 @@ import string
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import serial
 from serial.tools import list_ports
@@ -17,7 +16,7 @@ DEFAULT_UF2 = Path("firmware/pi_pico_fw/build_mgw/affinite_p4spr/affinite_p4spr.
 FALLBACK_UF2 = Path("firmware/pi_pico_fw/build/affinite_p4spr/affinite_p4spr.uf2")
 
 
-def find_pico_port() -> Optional[str]:
+def find_pico_port() -> str | None:
     ports = list_ports.comports()
     # Prefer MI_00 interface when possible
     for p in ports:
@@ -69,7 +68,7 @@ def send_ub(port: str) -> bool:
             pass
 
 
-def find_rpi_rp2_drive(timeout: float = 30.0) -> Optional[Path]:
+def find_rpi_rp2_drive(timeout: float = 30.0) -> Path | None:
     """Poll Windows drive letters to find the UF2 bootloader drive by marker files."""
     deadline = time.monotonic() + timeout
     candidates = [f"{d}:\\" for d in string.ascii_uppercase]
@@ -105,7 +104,7 @@ def wait_for_drive_disconnect(drive_root: Path, timeout: float = 30.0) -> bool:
     return False
 
 
-def resolve_uf2_path(cli_path: Optional[str]) -> Path:
+def resolve_uf2_path(cli_path: str | None) -> Path:
     if cli_path:
         p = Path(cli_path)
         if not p.exists():
@@ -117,16 +116,34 @@ def resolve_uf2_path(cli_path: Optional[str]) -> Path:
         return FALLBACK_UF2
     raise FileNotFoundError(
         f"UF2 not found. Looked for {DEFAULT_UF2} and {FALLBACK_UF2}. "
-        "Pass --uf2 <path> to specify a file."
+        "Pass --uf2 <path> to specify a file.",
     )
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Flash RP2040 Pico by sending 'ub' and copying UF2")
-    parser.add_argument("--uf2", type=str, default=None, help="Path to UF2 file (defaults to latest build)")
-    parser.add_argument("--timeout", type=float, default=30.0, help="Timeout in seconds for drive detection")
-    parser.add_argument("--no-ub", action="store_true", help="Don't send 'ub'; assume Pico is already in BOOTSEL mode")
-    parser.add_argument("--dry-run", action="store_true", help="Print actions without sending/copying")
+    parser = argparse.ArgumentParser(
+        description="Flash RP2040 Pico by sending 'ub' and copying UF2"
+    )
+    parser.add_argument(
+        "--uf2",
+        type=str,
+        default=None,
+        help="Path to UF2 file (defaults to latest build)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="Timeout in seconds for drive detection",
+    )
+    parser.add_argument(
+        "--no-ub",
+        action="store_true",
+        help="Don't send 'ub'; assume Pico is already in BOOTSEL mode",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print actions without sending/copying"
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -140,7 +157,9 @@ def main(argv: list[str]) -> int:
     if not args.no_ub:
         port = find_pico_port()
         if not port:
-            print("ERROR: Pico serial device not found (VID=2E8A, PID=000A). Use --no-ub if already in BOOTSEL.")
+            print(
+                "ERROR: Pico serial device not found (VID=2E8A, PID=000A). Use --no-ub if already in BOOTSEL."
+            )
             return 2
         print(f"Sending 'ub' to {port} ...")
         if args.dry_run:
@@ -148,7 +167,9 @@ def main(argv: list[str]) -> int:
         else:
             ok = send_ub(port)
             if not ok:
-                print("ERROR: Failed to send 'ub'. Close any app using the COM port and try again.")
+                print(
+                    "ERROR: Failed to send 'ub'. Close any app using the COM port and try again."
+                )
                 return 2
 
     print("Waiting for RPI-RP2 drive ...")
@@ -158,7 +179,9 @@ def main(argv: list[str]) -> int:
 
     drive = find_rpi_rp2_drive(timeout=args.timeout)
     if not drive:
-        print("ERROR: RPI-RP2 drive not detected. You can press BOOTSEL manually or increase --timeout.")
+        print(
+            "ERROR: RPI-RP2 drive not detected. You can press BOOTSEL manually or increase --timeout."
+        )
         return 3
 
     print(f"Found drive: {drive}")

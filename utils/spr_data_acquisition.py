@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import time
 import threading
+import time
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Any, Callable, cast, Protocol
+from typing import Any, Protocol, cast
+
 import numpy as np
 
+from settings import CH_LIST, DEVICES, EZ_CH_LIST
 from utils.logger import logger
-from widgets.message import show_message
-from settings import DEVICES, CH_LIST, EZ_CH_LIST
 from widgets.datawindow import DataDict
+from widgets.message import show_message
 
 # Constants
 DERIVATIVE_WINDOW = 165  # Window size for derivative calculation
@@ -17,17 +19,17 @@ DERIVATIVE_WINDOW = 165  # Window size for derivative calculation
 
 class SignalEmitter(Protocol):
     """Protocol for Qt signal emitters."""
+
     def emit(self, *args: Any) -> None: ...
 
 
 class SPRDataAcquisition:
-    """
-    Manages SPR data acquisition, sensor reading, and real-time data processing.
-    
+    """Manages SPR data acquisition, sensor reading, and real-time data processing.
+
     Handles the main data acquisition loop, spectrum reading, transmission calculation,
     wavelength fitting, and filtering operations with minimal UI coupling via callbacks.
     """
-    
+
     def __init__(
         self,
         *,
@@ -68,7 +70,7 @@ class SPRDataAcquisition:
         self.ctrl = ctrl
         self.usb = usb
         self.data_processor = data_processor
-        
+
         # Data storage (references to main app data)
         self.lambda_values = lambda_values
         self.lambda_times = lambda_times
@@ -79,7 +81,7 @@ class SPRDataAcquisition:
         self.trans_data = trans_data
         self.ref_sig = ref_sig
         self.wave_data = wave_data
-        
+
         # Configuration
         self.device_config = device_config
         self.wave_min_index = wave_min_index
@@ -88,19 +90,19 @@ class SPRDataAcquisition:
         self.led_delay = led_delay
         self.med_filt_win = med_filt_win
         self.dark_noise = dark_noise
-        
+
         # State management
         self._b_kill = _b_kill
         self._b_stop = _b_stop
         self._b_no_read = _b_no_read
-        
+
         # UI callbacks
         self.update_live_signal = update_live_signal
         self.update_spec_signal = update_spec_signal
         self.temp_sig = temp_sig
         self.raise_error = raise_error
         self.set_status_text = set_status_text
-        
+
         # Internal state
         self.exp_start: float = 0.0
         self.filt_buffer_index: int = 0
@@ -130,12 +132,12 @@ class SPRDataAcquisition:
                     self.pad_values()
 
                 ch_list = self._get_active_channels()
-                
+
                 for ch in CH_LIST:
                     fit_lambda = np.nan
                     if self._b_stop.is_set():
                         break
-                        
+
                     if self._should_read_channel(ch, ch_list):
                         fit_lambda = self._read_channel_data(ch)
                     else:
@@ -163,41 +165,49 @@ class SPRDataAcquisition:
         """Get list of active channels based on current mode."""
         if self.single_mode:
             return [self.single_ch]
-        elif self.device_config["ctrl"] in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
+        if self.device_config["ctrl"] in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
             return EZ_CH_LIST
-        else:
-            return CH_LIST
+        return CH_LIST
 
     def _should_read_channel(self, ch: str, ch_list: list[str]) -> bool:
         """Check if we should read data from this channel."""
-        return (
+        should_read = (
             ch in ch_list
             and not self._b_no_read.is_set()
             and self.calibrated
             and self.ctrl is not None
         )
+        if ch == "a":  # Only log for channel a to avoid spam
+            logger.debug(
+                f"📊 Channel {ch} read check: in_ch_list={ch in ch_list}, "
+                f"no_read_flag={self._b_no_read.is_set()}, "
+                f"calibrated={self.calibrated}, "
+                f"ctrl_available={self.ctrl is not None}, "
+                f"should_read={should_read}"
+            )
+        return should_read
 
     def _read_channel_data(self, ch: str) -> float:
         """Read and process data from a specific channel."""
         try:
             int_data_sum: np.ndarray | None = None
             self.ctrl.turn_on_channel(ch=ch)
-            
+
             if self.led_delay > 0:
                 time.sleep(self.led_delay)
-                
+
             # Multiple scans for averaging
             for _scan in range(self.num_scans):
                 if self._b_stop.is_set():
                     break
-                    
+
                 reading = self.usb.read_intensity()
                 if reading is None:
                     self.raise_error.emit("spec")
                     self._b_stop.set()
                     break
-                    
-                int_data_single = reading[self.wave_min_index:self.wave_max_index]
+
+                int_data_single = reading[self.wave_min_index : self.wave_max_index]
                 if int_data_sum is None:
                     int_data_sum = int_data_single
                 else:
@@ -206,19 +216,36 @@ class SPRDataAcquisition:
             if int_data_sum is not None:
                 # Average scans and subtract dark noise
                 averaged_intensity = int_data_sum / self.num_scans
-                self.int_data[ch] = averaged_intensity - self.dark_noise
-                
+
+                # Ensure dark_noise array matches spectral data size
+                if self.dark_noise.shape != averaged_intensity.shape:
+                    logger.warning(f"Dark noise shape mismatch: {self.dark_noise.shape} vs {averaged_intensity.shape}")
+                    # Resize dark_noise to match or use zeros
+                    if len(self.dark_noise) == 1:
+                        # Single value dark noise - broadcast to full array
+                        dark_correction = np.full_like(averaged_intensity, self.dark_noise[0])
+                    else:
+                        # Create properly sized dark noise array
+                        dark_correction = np.zeros_like(averaged_intensity)
+                        logger.info(f"Using zero dark correction due to shape mismatch")
+                else:
+                    dark_correction = self.dark_noise
+
+                self.int_data[ch] = averaged_intensity - dark_correction
+
                 # Calculate transmission
                 if self.ref_sig[ch] is not None and self.data_processor is not None:
                     try:
-                        self.trans_data[ch] = self.data_processor.calculate_transmission(
-                            p_pol_intensity=averaged_intensity,
-                            s_ref_intensity=self.ref_sig[ch],
-                            dark_noise=self.dark_noise,
+                        self.trans_data[ch] = (
+                            self.data_processor.calculate_transmission(
+                                p_pol_intensity=averaged_intensity,
+                                s_ref_intensity=self.ref_sig[ch],
+                                dark_noise=self.dark_noise,
+                            )
                         )
                     except Exception as e:
                         logger.exception(f"Failed to get trans data: {e}")
-                        
+
             # Turn off channels after reading
             if self.device_config["ctrl"] in DEVICES:
                 self.ctrl.turn_off_channels()
@@ -231,10 +258,10 @@ class SPRDataAcquisition:
                         spectrum=spectrum,
                         window=DERIVATIVE_WINDOW,  # 165
                     )
-                    
+
         except Exception as e:
             logger.exception(f"Error reading channel {ch}: {e}")
-            
+
         return np.nan
 
     def _update_lambda_data(self, ch: str, fit_lambda: float) -> None:
@@ -262,7 +289,9 @@ class SPRDataAcquisition:
             else:
                 filtered_value = fit_lambda
 
-            self.filtered_lambda[ch] = np.append(self.filtered_lambda[ch], filtered_value)
+            self.filtered_lambda[ch] = np.append(
+                self.filtered_lambda[ch], filtered_value
+            )
             self.buffered_lambda[ch] = np.append(
                 self.buffered_lambda[ch],
                 self.lambda_values[ch][self.filt_buffer_index],
@@ -283,9 +312,11 @@ class SPRDataAcquisition:
 
     def _emit_temperature_update(self) -> None:
         """Emit temperature update if applicable."""
-        if (self.device_config["ctrl"] == "PicoP4SPR" 
+        if (
+            self.device_config["ctrl"] == "PicoP4SPR"
             and self.ctrl is not None
-            and hasattr(self.ctrl, 'get_temp')):
+            and hasattr(self.ctrl, "get_temp")
+        ):
             try:
                 self.temp_sig.emit(self.ctrl.get_temp())
             except Exception as e:
@@ -293,11 +324,13 @@ class SPRDataAcquisition:
 
     def _handle_acquisition_error(self, error: Exception, ch: str) -> None:
         """Handle errors during data acquisition."""
-        logger.exception(f"Error while grabbing data:{type(error)}:{error}:channel {ch}")
+        logger.exception(
+            f"Error while grabbing data:{type(error)}:{error}:channel {ch}"
+        )
         self.pad_values()
         self._b_stop.set()
         self.set_status_text("Error while reading SPR data")
-        
+
         if error is IndexError:
             show_message(
                 msg_type="Warning",
@@ -313,11 +346,9 @@ class SPRDataAcquisition:
             max_raw_len = 0
             max_filt_len = 0
             for ch in CH_LIST:
-                if len(self.lambda_times[ch]) > max_raw_len:
-                    max_raw_len = len(self.lambda_times[ch])
-                if len(self.buffered_times[ch]) > max_filt_len:
-                    max_filt_len = len(self.buffered_times[ch])
-                    
+                max_raw_len = max(max_raw_len, len(self.lambda_times[ch]))
+                max_filt_len = max(max_filt_len, len(self.buffered_times[ch]))
+
             for ch in CH_LIST:
                 if len(self.lambda_times[ch]) < max_raw_len:
                     self.lambda_values[ch] = np.append(self.lambda_values[ch], np.nan)
@@ -326,10 +357,14 @@ class SPRDataAcquisition:
                         round(time.time() - self.exp_start, 3),
                     )
                 if len(self.buffered_times[ch]) < max_filt_len:
-                    self.filtered_lambda[ch] = np.append(self.filtered_lambda[ch], np.nan)
-                    self.buffered_lambda[ch] = np.append(self.buffered_lambda[ch], np.nan)
+                    self.filtered_lambda[ch] = np.append(
+                        self.filtered_lambda[ch], np.nan
+                    )
+                    self.buffered_lambda[ch] = np.append(
+                        self.buffered_lambda[ch], np.nan
+                    )
                     self.buffered_times[ch] = np.append(self.buffered_times[ch], np.nan)
-                    
+
             self.filt_buffer_index += 1
         except Exception as e:
             logger.exception(f"Error while padding missing values: {e}")
@@ -346,32 +381,40 @@ class SPRDataAcquisition:
                 ):
                     first_filt_index = self.med_filt_win
                     last_filt_index = len(self.lambda_values[ch]) - 1
-                    
+
                     # Filter beginning values
                     for i in range(first_filt_index):
                         filt_val = np.nanmean(self.lambda_values[ch][0:i])
-                        new_filtered_lambda[ch] = np.append(new_filtered_lambda[ch], filt_val)
-                        
+                        new_filtered_lambda[ch] = np.append(
+                            new_filtered_lambda[ch], filt_val
+                        )
+
                     # Filter middle values with full window
                     for i in range(first_filt_index, last_filt_index):
                         filt_val = np.nanmean(
-                            self.lambda_values[ch][(i - self.med_filt_win):i]
+                            self.lambda_values[ch][(i - self.med_filt_win) : i],
                         )
-                        new_filtered_lambda[ch] = np.append(new_filtered_lambda[ch], filt_val)
-                        
+                        new_filtered_lambda[ch] = np.append(
+                            new_filtered_lambda[ch], filt_val
+                        )
+
                     # Filter end values
                     for i in range(last_filt_index, len(self.lambda_values[ch])):
                         filt_val = np.nanmean(
-                            self.lambda_values[ch][(i - self.med_filt_win):i]
+                            self.lambda_values[ch][(i - self.med_filt_win) : i],
                         )
-                        new_filtered_lambda[ch] = np.append(new_filtered_lambda[ch], filt_val)
-                        
+                        new_filtered_lambda[ch] = np.append(
+                            new_filtered_lambda[ch], filt_val
+                        )
+
                     # Align with buffered times
                     offset = 0
                     while self.lambda_times[ch][offset] != self.buffered_times[ch][0]:
                         offset += 1
-                    self.filtered_lambda[ch] = deepcopy(new_filtered_lambda[ch][offset:])
-                    
+                    self.filtered_lambda[ch] = deepcopy(
+                        new_filtered_lambda[ch][offset:]
+                    )
+
         except Exception as e:
             logger.exception(f"error updating the filter win size: {e}")
             show_message("Filter window could not be updated", msg_type="Warning")
@@ -388,7 +431,7 @@ class SPRDataAcquisition:
             "start": self.exp_start,
             "rec": self.recording,
         }
-        return cast(DataDict, deepcopy(sens_data))
+        return cast("DataDict", deepcopy(sens_data))
 
     def spectroscopy_data(self) -> dict[str, object]:
         """Return spectroscopy data for UI updates."""

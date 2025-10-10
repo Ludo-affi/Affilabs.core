@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Any
+from collections.abc import Callable
+from typing import Any
 
-from utils.logger import logger
-from utils.cavro_pump_manager import PumpAddress
 from settings import FLUSH_RATE
+from utils.cavro_pump_manager import PumpAddress
+from utils.logger import logger
 
 
 class KineticOperations:
-    """
-    High-level kinetic operations (regenerate, flush, inject) that orchestrate
+    """High-level kinetic operations (regenerate, flush, inject) that orchestrate
     PumpManager + Kinetic/Valve controller with minimal UI coupling via callbacks.
-    
+
     Also handles individual pump control operations for UI handlers.
 
     This class intentionally avoids any flow SENSOR usage (temperature only system).
@@ -43,7 +43,9 @@ class KineticOperations:
         self.update_pump_display = update_pump_display
         self.update_valve_display = update_valve_display
 
-    async def regenerate(self, *, contact_time_s: float, flow_rate_ml_min: float) -> None:
+    async def regenerate(
+        self, *, contact_time_s: float, flow_rate_ml_min: float
+    ) -> None:
         """Run regeneration sequence using pump manager."""
         if not self.pump_manager:
             logger.warning("Regenerate called but pump manager not available")
@@ -149,32 +151,32 @@ class KineticOperations:
                         log2 = True
                         self.knx.knx_stop(3)
                         pump_states["CH2"] = "Off"
-                        if hasattr(self.knx, 'version') and self.knx.version == "1.1":
+                        if hasattr(self.knx, "version") and self.knx.version == "1.1":
                             self.knx.knx_led("x", 3)
                     else:
                         self.knx.knx_stop(1)
-                        if hasattr(self.knx, 'version') and self.knx.version == "1.1":
+                        if hasattr(self.knx, "version") and self.knx.version == "1.1":
                             self.knx.knx_led("x", 1)
                 elif ch == "CH2":
                     log2 = True
                     self.knx.knx_stop(2)
-                    if hasattr(self.knx, 'version') and self.knx.version == "1.1":
+                    if hasattr(self.knx, "version") and self.knx.version == "1.1":
                         self.knx.knx_led("x", 2)
-                        
+
                 pump_states[ch] = "Off"
                 logger.debug(f"Pump {ch} stopped")
-                
+
                 # Log pump stop events using kinetic manager
                 if self.kinetic_manager:
                     if log1:
                         self.kinetic_manager.log_event("CH1", "pump_stop")
                     if log2:
                         self.kinetic_manager.log_event("CH2", "pump_stop")
-                
+
                 self.update_pump_display(pump_states, synced)
             except Exception as e:
                 logger.exception(f"Error stopping pump {ch}: {e}")
-        
+
         return pump_states
 
     def initialize_pumps(self) -> bool:
@@ -185,10 +187,9 @@ class KineticOperations:
                     logger.info("Pumps reinitialized successfully")
                     self.show_message("Pumps initialized")
                     return True
-                else:
-                    logger.warning("Pump reinitialization failed")
-                    self.show_message("Pump initialization failed")
-                    return False
+                logger.warning("Pump reinitialization failed")
+                self.show_message("Pump initialization failed")
+                return False
             except Exception as e:
                 logger.exception(f"Error reinitializing pumps: {e}")
                 self.show_message(f"Pump error: {e}")
@@ -198,28 +199,33 @@ class KineticOperations:
             self.show_message("Pump system not available")
             return False
 
-    def handle_speed_change(self, ch: str, new_rate: int, pump_states: dict, synced: bool) -> dict:
+    def handle_speed_change(
+        self, ch: str, new_rate: int, pump_states: dict, synced: bool
+    ) -> dict:
         """Handle pump speed changes from UI spinbox."""
         try:
             if pump_states.get(ch) == "Running":
                 # Pump is running, so change its speed
                 return self.run_pump(ch, new_rate, pump_states, synced)
-            else:
-                # Pump is not running, just update the display value
-                self.set_flow_rate_now(str(new_rate))
-                return pump_states
+            # Pump is not running, just update the display value
+            self.set_flow_rate_now(str(new_rate))
+            return pump_states
         except Exception as e:
             logger.exception(f"Error handling speed change for {ch}: {e}")
             return pump_states
 
-    def handle_valve_control(self, valve_id: int, state: int, valve_states: dict) -> dict:
+    def handle_valve_control(
+        self, valve_id: int, state: int, valve_states: dict
+    ) -> dict:
         """Handle valve control operations."""
         try:
             if self.knx:
                 self.knx.knx_six(state=state, ch=valve_id)
                 valve_states[f"valve_{valve_id}"] = "Open" if state else "Closed"
                 logger.debug(f"Valve {valve_id} set to {'open' if state else 'closed'}")
-                self.update_valve_display(valve_states, False)  # Valves not typically synced
+                self.update_valve_display(
+                    valve_states, False
+                )  # Valves not typically synced
             return valve_states
         except Exception as e:
             logger.exception(f"Error controlling valve {valve_id}: {e}")
