@@ -50,13 +50,28 @@ pdm.lock
 
 # Logs and output
 *.log
+*.log.*
 logfile.txt
 stdout.txt
 stderr.txt
+logs/*.jsonl
+logs/debug_session_*.log
+logs/calibration_*.log
 
 # Configuration (keep templates)
 config.json
 settings.json
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+*.cover
+htmlcov/
+.ruff_cache/
+
+# Calibration data (runtime generated)
+generated-files/calibration_history/*.json
+generated-files/calibration_profiles/*.json
 
 # Public/generated content
 public/

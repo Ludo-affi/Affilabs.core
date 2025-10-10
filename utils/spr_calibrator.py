@@ -78,10 +78,10 @@ ADAPTIVE_STABILIZATION_DELAY = 0.3  # LED stabilization delay (faster)
 
 def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT) -> int:
     """Calculate target intensity from percentage.
-    
+
     Args:
         target_percent: Target as percentage of detector max (0-100)
-        
+
     Returns:
         Target intensity in counts
     """
@@ -90,10 +90,10 @@ def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT)
 
 def calculate_intensity_tolerance(target_percent: float = TARGET_INTENSITY_PERCENT) -> int:
     """Calculate acceptable tolerance around target (±5% of detector max).
-    
+
     Args:
         target_percent: Target as percentage
-        
+
     Returns:
         Tolerance in counts
     """
@@ -108,10 +108,10 @@ class CalibrationState:
     def __init__(self):
         """Initialize calibration state with default values."""
         import threading
-        
+
         # Thread safety
         self._lock = threading.RLock()
-        
+
         # Wavelength calibration
         self.wave_min_index = 0
         self.wave_max_index = 0
@@ -141,10 +141,10 @@ class CalibrationState:
         self.ch_error_list: list[str] = []
         self.is_calibrated = False
         self.calibration_timestamp: Optional[float] = None
-    
+
     def is_valid(self) -> bool:
         """Check if calibration is complete and valid.
-        
+
         Returns:
             True if all required calibration data is present, False otherwise.
         """
@@ -237,7 +237,7 @@ class SPRCalibrator:
         self.usb = usb
         self.device_type = device_type
         self.stop_flag = stop_flag
-        
+
         # Use provided shared state or create new one
         if calib_state is not None:
             self.state = calib_state
@@ -637,16 +637,16 @@ class SPRCalibrator:
             self.state.full_spectrum_wavelengths = wave_data.copy()
             self.state.wave_data = wave_data.copy()
             self.state.wavelengths = wave_data.copy()
-            
+
             logger.info(
                 f"✅ Using FULL SPECTRUM - no truncation: "
                 f"{wave_data[0]:.1f} to {wave_data[-1]:.1f} nm ({len(wave_data)} points)"
             )
-            
+
             # Find target wavelength range indices for calibration measurement
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-            
+
             logger.info(
                 f"📊 Target calibration range: "
                 f"{wave_data[target_min_idx]:.1f} to {wave_data[target_max_idx]:.1f} nm "
@@ -837,12 +837,12 @@ class SPRCalibrator:
             tolerance = calculate_intensity_tolerance()
             max_iterations = ADAPTIVE_MAX_ITERATIONS
             convergence_factor = ADAPTIVE_CONVERGENCE_FACTOR
-            
+
             # Get target wavelength range indices
             wave_data = self.state.wavelengths
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-            
+
             logger.info(
                 f"📊 S-mode target: {TARGET_INTENSITY_PERCENT}% = {target_intensity:.0f} counts "
                 f"in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range"
@@ -1205,27 +1205,27 @@ class SPRCalibrator:
             # This replaces the legacy cropping approach with adaptive resampling
             try:
                 from scipy.interpolate import interp1d
-                
+
                 # Get target wavelength range from calibration
                 target_wavelengths = self.state.wavelengths
                 full_wavelengths = self.state.full_spectrum_wavelengths
-                
+
                 if len(target_wavelengths) > 0 and len(full_wavelengths) > 0:
                     # Create interpolation function for universal resampling
                     source_indices = np.arange(len(full_spectrum_dark_noise))
                     interpolator = interp1d(source_indices, full_spectrum_dark_noise,
-                                          kind='linear', bounds_error=False, 
+                                          kind='linear', bounds_error=False,
                                           fill_value='extrapolate')
-                    
+
                     # Calculate target indices for resampling
-                    target_indices = np.linspace(self.state.wave_min_index, 
+                    target_indices = np.linspace(self.state.wave_min_index,
                                                 self.state.wave_max_index - 1,
                                                 len(target_wavelengths))
-                    
+
                     # Perform universal resampling
                     resampled_dark_noise = interpolator(target_indices)
                     self.state.dark_noise = resampled_dark_noise
-                    
+
                     logger.info(
                         f"✅ UNIVERSAL DARK NOISE RESAMPLING complete:"
                         f"\n  • Full spectrum size: {len(full_spectrum_dark_noise)} pixels"
@@ -1239,7 +1239,7 @@ class SPRCalibrator:
                     logger.warning("⚠️ Wavelength data unavailable, falling back to cropping")
                     cropped_dark_noise = full_spectrum_dark_noise[self.state.wave_min_index : self.state.wave_max_index]
                     self.state.dark_noise = cropped_dark_noise
-                    
+
             except ImportError:
                 logger.warning("⚠️ scipy.interpolate unavailable, using legacy cropping")
                 # Fallback to legacy cropping method
@@ -1359,12 +1359,12 @@ class SPRCalibrator:
                 target_intensity = calculate_target_intensity(TARGET_INTENSITY_PERCENT)
                 tolerance = calculate_intensity_tolerance()
                 max_iterations = ADAPTIVE_MAX_ITERATIONS // 2  # Fewer iterations if starting from good point
-                
+
                 # Get target wavelength range indices
                 wave_data = self.state.wavelengths
                 target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
                 target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-                
+
                 logger.info(
                     f"📊 P-mode target: {TARGET_INTENSITY_PERCENT}% = {target_intensity:.0f} counts "
                     f"in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range "
@@ -1579,7 +1579,7 @@ class SPRCalibrator:
 
     def validate_calibration(self) -> tuple[bool, str]:
         """Validate that all channels meet calibration requirements.
-        
+
         In DEVELOPMENT_MODE: Always passes, just logs measurements for debugging.
         In Production Mode: Checks percentage-based thresholds in target wavelength range.
 
@@ -1594,46 +1594,46 @@ class SPRCalibrator:
             if DEVELOPMENT_MODE:
                 logger.info("🔧 DEVELOPMENT MODE - Skipping validation thresholds")
                 logger.info("   Logging measurements for debugging...")
-                
+
                 # Just log measurements, don't validate
                 for ch in CH_LIST:
                     if self._is_stopped():
                         break
-                    
+
                     intensity = self.state.leds_calibrated[ch]
                     self.ctrl.set_intensity(ch=ch, raw_val=intensity)
                     time.sleep(LED_DELAY)
-                    
+
                     spectrum = self.usb.read_intensity()
                     max_intensity = spectrum.max()
                     max_percent = (max_intensity / DETECTOR_MAX_COUNTS) * 100
-                    
+
                     # Find target range
                     wave_data = self.state.wavelengths
                     target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
                     target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
                     target_max = spectrum[target_min_idx:target_max_idx].max()
                     target_percent = (target_max / DETECTOR_MAX_COUNTS) * 100
-                    
+
                     logger.info(
                         f"   Channel {ch}: LED={intensity}, "
                         f"max={max_intensity:.0f} ({max_percent:.1f}%), "
                         f"target_range={target_max:.0f} ({target_percent:.1f}%)"
                     )
-                
+
                 # Always pass in development mode
                 self.state.ch_error_list = []
                 self.state.is_calibrated = True
                 self.state.calibration_timestamp = time.time()
                 logger.info("✅ DEVELOPMENT MODE - Calibration accepted without validation")
                 return True, ""
-            
+
             # Production mode - validate with percentage thresholds
             self.state.ch_error_list = []
             wave_data = self.state.wavelengths
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-            
+
             min_threshold = DETECTOR_MAX_COUNTS * MIN_INTENSITY_PERCENT / 100.0
             max_threshold = DETECTOR_MAX_COUNTS * MAX_INTENSITY_PERCENT / 100.0
 

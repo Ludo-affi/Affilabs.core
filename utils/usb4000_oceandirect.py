@@ -258,16 +258,16 @@ class USB4000OceanDirect:
             # Get integration time limits - use constants if API methods not available
             try:
                 self._min_integration_time = (
-                    self._device.integration_time_micros_limits[0] / 1000000.0
+                    self._device.minimum_integration_time_micros / 1000000.0
                 )  # Convert to seconds
             except AttributeError:
                 logger.debug("Using fallback minimum integration time")
                 self._min_integration_time = self.MIN_INTEGRATION_TIME
-            
+
             try:
                 self._max_integration_time = (
-                    self._device.integration_time_micros_limits[1] / 1000000.0
-                )  # Convert to seconds  
+                    self._device.maximum_integration_time_micros / 1000000.0
+                )  # Convert to seconds
             except AttributeError:
                 logger.debug("Using fallback maximum integration time")
                 self._max_integration_time = self.MAX_INTEGRATION_TIME
@@ -367,7 +367,7 @@ class USB4000OceanDirect:
         """Get current integration time in seconds."""
         return self._current_integration_time
 
-    def acquire_spectrum(self) -> Optional[np.ndarray]:
+    def acquire_spectrum(self) -> np.ndarray | None:
         """Acquire spectrum from USB4000.
 
         Returns:
@@ -379,8 +379,8 @@ class USB4000OceanDirect:
             return None
 
         try:
-            # Acquire spectrum using SeaBreeze API
-            intensity_data = np.array(self._device.intensities())
+            # Acquire spectrum
+            intensity_data = np.array(self._device.get_formatted_spectrum())
 
             logger.debug(
                 f"Acquired spectrum: {len(intensity_data)} points, "
@@ -393,7 +393,7 @@ class USB4000OceanDirect:
             logger.error(f"Spectrum acquisition failed: {e}")
             return None
 
-    def get_wavelengths(self) -> Optional[np.ndarray]:
+    def get_wavelengths(self) -> np.ndarray | None:
         """Get wavelength calibration data.
 
         Returns:

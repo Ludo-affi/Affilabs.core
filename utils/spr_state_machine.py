@@ -102,7 +102,7 @@ class DataAcquisitionWrapper:
         self.app = app_ref
         self.thread: Optional[DataAcquisitionThread] = None
         self.data_acquisition: Optional[SPRDataAcquisition] = None
-        
+
         # 🎯 Store shared calibration state reference
         self.calib_state = calib_state
         if calib_state is not None:
@@ -217,7 +217,7 @@ class DataAcquisitionWrapper:
 
             logger.info(f"Creating SPRDataAcquisition with device_config: {device_config}")
             logger.debug(f"Controller adapter: {adapted_ctrl}, USB adapter: {adapted_usb}")
-            
+
             # 🎯 Sync from shared calibration state before creating acquisition
             if self.calib_state is not None:
                 self.sync_from_shared_state()
@@ -323,14 +323,14 @@ class DataAcquisitionWrapper:
 
     def sync_from_shared_state(self) -> None:
         """Sync wrapper's local copies from shared calibration state.
-        
+
         ✅ SIMPLIFIED: Direct reference to shared state - no complex copying logic.
         The shared state is already populated by the calibrator.
         """
         if self.calib_state is None:
             logger.warning("No shared calibration state available")
             return
-            
+
         try:
             with self.calib_state._lock:
                 # Simple direct references - data is already in shared state!
@@ -339,17 +339,17 @@ class DataAcquisitionWrapper:
                     self.wave_min_index = self.calib_state.wave_min_index
                     self.wave_max_index = self.calib_state.wave_max_index
                     logger.info(f"✅ Synced wavelengths: {len(self.wave_data)} points")
-                
+
                 if len(self.calib_state.dark_noise) > 0:
                     self.dark_noise = self.calib_state.dark_noise
                     logger.info(f"✅ Synced dark noise: {len(self.dark_noise)} points")
-                
+
                 # Sync reference signals
                 for ch in CH_LIST:
                     if self.calib_state.ref_sig.get(ch) is not None:
                         self.ref_sig[ch] = self.calib_state.ref_sig[ch]
                         logger.info(f"✅ Synced ref_sig[{ch}]: {len(self.ref_sig[ch])} points")
-            
+
             logger.info("✅ DataAcquisitionWrapper synced from shared state")
         except Exception as e:
             logger.exception(f"Failed to sync from shared state: {e}")
