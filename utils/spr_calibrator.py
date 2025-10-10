@@ -718,9 +718,9 @@ class SPRCalibrator:
             max_int = MAX_INTEGRATION / 1000.0  # Convert ms to seconds
             
             # ========================================================================
-            # STEP 1: Identify weakest and strongest channels
+            # STEP 1: Identify weakest channel (test all at standard LED intensity)
             # ========================================================================
-            logger.info("📊 Step 3.1: Identifying weakest and strongest channels...")
+            logger.info("📊 Step 3.1: Identifying weakest channel...")
             
             channel_intensities = {}
             for ch in ch_list:
@@ -742,42 +742,44 @@ class SPRCalibrator:
                 channel_intensities[ch] = current_count
                 logger.debug(f"Channel {ch} initial intensity: {current_count:.0f} counts")
             
-            # Find weakest and strongest channels
+            # Find weakest channel
             weakest_ch = min(channel_intensities, key=channel_intensities.get)
-            strongest_ch = max(channel_intensities, key=channel_intensities.get)
             
-            logger.info(f"✅ Weakest channel: {weakest_ch} ({channel_intensities[weakest_ch]:.0f} counts)")
-            logger.info(f"✅ Strongest channel: {strongest_ch} ({channel_intensities[strongest_ch]:.0f} counts)")
+            logger.info(f"✅ Weakest channel identified: {weakest_ch} ({channel_intensities[weakest_ch]:.0f} counts at LED={S_LED_INT})")
             
             # Turn off all channels
             self.ctrl.turn_off_channels()
             time.sleep(LED_DELAY)
             
             # ========================================================================
-            # STEP 2: Optimize integration time for WEAKEST channel
+            # STEP 2: Maximize integration time for WEAKEST channel at MAXIMUM LED
             # ========================================================================
-            logger.info(f"📊 Step 3.2: Optimizing integration time for weakest channel ({weakest_ch})...")
+            logger.info(f"📊 Step 3.2: Maximizing integration time for weakest channel ({weakest_ch})...")
+            logger.info(f"   Strategy: Set weakest LED to MAXIMUM (255), increase integration time as high as possible")
             
-            # Activate weakest channel
-            self.ctrl.set_intensity(ch=weakest_ch, raw_val=S_LED_INT)
+            # CRITICAL: Set weakest channel to MAXIMUM LED intensity
+            # This ensures we give it every advantage before fixing integration time
+            MAX_LED = 255
+            self.ctrl.set_intensity(ch=weakest_ch, raw_val=MAX_LED)
             time.sleep(LED_DELAY)
             
-            # Increase integration time until weakest channel reaches good signal
+            # Increase integration time until weakest channel reaches target OR we hit max integration
             int_array = self.usb.read_intensity()
             if int_array is not None:
                 current_count = int_array[
                     self.state.wave_min_index : self.state.wave_max_index
                 ].max()
                 
-                # Target: Get weakest channel close to S_COUNT_MAX (good signal strength)
-                while current_count < S_COUNT_MAX and self.state.integration < max_int:
+                logger.info(f"   Starting: {self.state.integration * 1000:.1f}ms, weakest@LED=255: {current_count:.0f} counts")
+                
+                # Target: 80% of max (52,428 counts) - same as S_COUNT_TARGET
+                S_COUNT_TARGET = int(TARGET_INTENSITY_PERCENT / 100 * 65535)
+                
+                # Increase integration time until target reached or max integration hit
+                while current_count < S_COUNT_TARGET and self.state.integration < max_int:
                     self.state.integration += (
                         integration_step / 1000.0
                     )  # Convert ms to seconds
-                    logger.debug(
-                        f"Increasing integration time to {self.state.integration * 1000:.1f}ms "
-                        f"(weakest channel at {current_count:.0f} counts)",
-                    )
 
                     self.usb.set_integration(self.state.integration)
                     time.sleep(0.02)
@@ -789,72 +791,40 @@ class SPRCalibrator:
                     current_count = int_array[
                         self.state.wave_min_index : self.state.wave_max_index
                     ].max()
+                    
+                    if current_count >= S_COUNT_TARGET:
+                        logger.info(
+                            f"   ✅ Target reached at {self.state.integration * 1000:.1f}ms: "
+                            f"weakest@LED=255: {current_count:.0f} counts ({current_count/655.35:.1f}%)"
+                        )
+                        break
+                    
+                    # Log progress every 10ms
+                    if int(self.state.integration * 1000) % 10 == 0:
+                        logger.debug(
+                            f"   {self.state.integration * 1000:.1f}ms: "
+                            f"weakest@LED=255: {current_count:.0f} counts ({current_count/655.35:.1f}%)"
+                        )
+                
+                if current_count < S_COUNT_TARGET:
+                    logger.warning(
+                        f"⚠️ Weakest channel could not reach target even at LED=255 and {self.state.integration * 1000:.1f}ms"
+                    )
+                    logger.warning(
+                        f"   Achieved: {current_count:.0f} counts ({current_count/655.35:.1f}% of max)"
+                    )
+                    logger.warning(
+                        f"   This integration time ({self.state.integration * 1000:.1f}ms) will be used for all channels"
+                    )
             
-            logger.info(f"✅ Integration time optimized for weakest channel: {self.state.integration * 1000:.1f}ms")
-            
-            # ========================================================================
-            # STEP 3: Verify strongest channel doesn't saturate at this integration time
-            # ========================================================================
-            logger.info(f"📊 Step 3.3: Checking strongest channel ({strongest_ch}) for saturation...")
-            
-            # Switch to strongest channel
-            # CRITICAL: Use VERY LOW LED intensity (20 instead of 168) to check saturation
-            # This allows much higher integration time for weak channels
-            # Channel C is ~10x brighter than channels A/B, so we need aggressive reduction
-            S_LED_CHECK = 20  # Reduced from 168 to allow more room for weak channels
-            logger.info(f"   Checking saturation at LED={S_LED_CHECK} (very low to allow higher integration time)")
-            
+            # Turn off weakest channel
             self.ctrl.set_intensity(ch=weakest_ch, raw_val=0)
-            time.sleep(LED_DELAY)
-            self.ctrl.set_intensity(ch=strongest_ch, raw_val=S_LED_CHECK)
-            time.sleep(LED_DELAY)
-            
-            # Check if strongest channel saturates
-            int_array = self.usb.read_intensity()
-            if int_array is not None:
-                current_count = int_array[
-                    self.state.wave_min_index : self.state.wave_max_index
-                ].max()
-                
-                logger.debug(f"Strongest channel intensity: {current_count:.0f} counts (limit: {S_COUNT_MAX})")
-                
-                # If strongest channel saturates, decrease integration time
-                while (
-                    current_count > S_COUNT_MAX
-                    and self.state.integration > MIN_INTEGRATION / 1000.0
-                ):
-                    self.state.integration -= (
-                        integration_step / 1000.0
-                    )  # Convert ms to seconds
-
-                    logger.debug(
-                        f"Decreasing integration time to {self.state.integration * 1000:.1f}ms "
-                        f"(strongest channel saturating at {current_count:.0f} counts)",
-                    )
-
-                    self.usb.set_integration(self.state.integration)
-                    time.sleep(0.02)
-
-                    int_array = self.usb.read_intensity()
-                    if int_array is None:
-                        break
-
-                    current_count = int_array[
-                        self.state.wave_min_index : self.state.wave_max_index
-                    ].max()
-                
-                if current_count > S_COUNT_MAX:
-                    logger.warning(f"⚠️ Strongest channel still near saturation ({current_count:.0f} counts)")
-                    logger.warning(f"   Will reduce LED intensity for strong channels in next step")
-                else:
-                    logger.info(f"✅ Strongest channel within range: {current_count:.0f} counts")
-            
-            # Turn off all channels
-            self.ctrl.turn_off_channels()
             time.sleep(LED_DELAY)
 
             integration_ms = self.state.integration * 1000
-            logger.info(f"✅ Final integration time: {integration_ms:.1f}ms (optimized for weakest channel)")
+            logger.info(f"✅ FINAL integration time FIXED at: {integration_ms:.1f}ms")
+            logger.info(f"   (This integration time will be used for ALL channels)")
+            logger.info(f"   (Next step: adjust LED intensities to balance channels within 10% of weakest)")
 
             # Calculate number of scans to average (MAX_READ_TIME from settings)
             MAX_READ_TIME = 50  # milliseconds (from settings import may fail)
