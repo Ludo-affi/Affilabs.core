@@ -562,6 +562,21 @@ class DataWindow(QWidget):
             if hasattr(app_data, 'emit'):
                 logger.error(f"❌ Received SignalEmitter object instead of data: {type(app_data)}")
                 return  # Skip processing SignalEmitter objects
+            
+            # Enhanced logging to debug data flow
+            if app_data is not None and isinstance(app_data, dict):
+                has_data = False
+                for ch in ['a', 'b', 'c', 'd']:
+                    if ch in app_data.get("lambda_values", {}) and len(app_data["lambda_values"][ch]) > 0:
+                        has_data = True
+                        break
+                if has_data:
+                    logger.debug(f"✅ Received valid data - lambda_values['a']: {len(app_data['lambda_values']['a'])} points")
+                else:
+                    logger.warning(f"⚠️ Received empty data structure")
+            else:
+                logger.error(f"❌ Received invalid data type: {type(app_data)}")
+                return
 
             if self.data_source == "dynamic":
                 self.busy = True

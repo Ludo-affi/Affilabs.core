@@ -110,6 +110,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
             static_x_data = None
             static_y_data = None
             static_data = False
+            
+            # Enhanced logging to debug plot updates
+            total_points = sum(len(lambda_values.get(ch, [])) for ch in CH_LIST)
+            if total_points > 0:
+                logger.debug(f"📊 Plotting data: {total_points} total points across channels")
+            
             for ch in CH_LIST:
                 y_data = deepcopy(lambda_values[ch])
                 x_data = deepcopy(lambda_times[ch])

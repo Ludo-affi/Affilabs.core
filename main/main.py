@@ -39,6 +39,55 @@ class AffiniteApp(QApplication):
 
         # Initialize main window
         self.main_window = MainWindow(self)
+        
+        # Set application-wide gray background
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #D3D3D3;
+            }
+            QGroupBox {
+                background-color: #C8C8C8;
+                border: 1px solid #A0A0A0;
+                border-radius: 4px;
+                margin-top: 0.5em;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px 0 3px;
+            }
+            QPushButton {
+                background-color: #E8E8E8;
+                border: 1px solid #A0A0A0;
+                border-radius: 3px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #F0F0F0;
+            }
+            QPushButton:pressed {
+                background-color: #C0C0C0;
+            }
+            QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+                background-color: #FFFFFF;
+                border: 1px solid #A0A0A0;
+                border-radius: 3px;
+                padding: 3px;
+            }
+            QTableWidget {
+                background-color: #FFFFFF;
+                gridline-color: #C0C0C0;
+            }
+            QHeaderView::section {
+                background-color: #E0E0E0;
+                padding: 4px;
+                border: 1px solid #A0A0A0;
+            }
+            QLabel {
+                color: #000000;
+            }
+        """)
 
         if USE_STATE_MACHINE:
             # Initialize state machine
