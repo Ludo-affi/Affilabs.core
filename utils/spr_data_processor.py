@@ -93,6 +93,19 @@ class SPRDataProcessor:
 
         """
         try:
+            # Ensure all arrays are the same size - resize if needed
+            # This handles cases where acquisition size varies slightly
+            target_size = len(p_pol_intensity)
+            
+            # Resize s_ref if needed
+            if len(s_ref_intensity) != target_size:
+                logger.warning(f"S-ref size mismatch: {len(s_ref_intensity)} vs {target_size}. Resizing...")
+                from scipy.interpolate import interp1d
+                x_old = np.linspace(0, 1, len(s_ref_intensity))
+                x_new = np.linspace(0, 1, target_size)
+                interpolator = interp1d(x_old, s_ref_intensity, kind='linear', fill_value='extrapolate')
+                s_ref_intensity = interpolator(x_new)
+            
             # Universal dark noise correction with resampling
             if dark_noise is not None:
                 # Ensure dark noise matches data size through universal resampling
@@ -101,6 +114,14 @@ class SPRDataProcessor:
             else:
                 p_pol_corrected = p_pol_intensity
                 s_ref_corrected = s_ref_intensity
+
+            # Final size check - all must match
+            if len(p_pol_corrected) != len(s_ref_corrected):
+                logger.error(f"Size mismatch after correction: P={len(p_pol_corrected)} vs S={len(s_ref_corrected)}")
+                # Force same size by trimming or padding
+                min_size = min(len(p_pol_corrected), len(s_ref_corrected))
+                p_pol_corrected = p_pol_corrected[:min_size]
+                s_ref_corrected = s_ref_corrected[:min_size]
 
             # Calculate transmission percentage
             # Avoid division by zero by using np.divide with where parameter
@@ -230,7 +251,18 @@ class SPRDataProcessor:
                 detrended = spectrum[1:-1] - linear_baseline[1:-1]
 
                 # Apply weighted DST (weights suppress high-frequency noise)
-                fourier_coeff[1:-1] = self.fourier_weights * dst(detrended, 1)
+                # Adjust fourier_weights if spectrum size changed
+                dst_result = dst(detrended, 1)
+                if len(self.fourier_weights) != len(dst_result):
+                    # Resize fourier_weights to match current spectrum size
+                    from scipy.interpolate import interp1d
+                    x_old = np.linspace(0, 1, len(self.fourier_weights))
+                    x_new = np.linspace(0, 1, len(dst_result))
+                    interpolator = interp1d(x_old, self.fourier_weights, kind='linear', fill_value='extrapolate')
+                    fourier_weights_adjusted = interpolator(x_new)
+                    fourier_coeff[1:-1] = fourier_weights_adjusted * dst_result
+                else:
+                    fourier_coeff[1:-1] = self.fourier_weights * dst_result
 
             # Inverse transform back to spatial domain
             smoothed = idct(fourier_coeff, 1)
@@ -269,7 +301,19 @@ class SPRDataProcessor:
                     len(spectrum),
                 )
                 detrended = spectrum[1:-1] - linear_baseline[1:-1]
-                fourier_coeff[1:-1] = self.fourier_weights * dst(detrended, 1)
+                
+                # Adjust fourier_weights if spectrum size changed
+                dst_result = dst(detrended, 1)
+                if len(self.fourier_weights) != len(dst_result):
+                    # Resize fourier_weights to match current spectrum size
+                    from scipy.interpolate import interp1d
+                    x_old = np.linspace(0, 1, len(self.fourier_weights))
+                    x_new = np.linspace(0, 1, len(dst_result))
+                    interpolator = interp1d(x_old, self.fourier_weights, kind='linear', fill_value='extrapolate')
+                    fourier_weights_adjusted = interpolator(x_new)
+                    fourier_coeff[1:-1] = fourier_weights_adjusted * dst_result
+                else:
+                    fourier_coeff[1:-1] = self.fourier_weights * dst_result
 
             # IDCT gives derivative directly
             derivative = idct(fourier_coeff, 1)
