@@ -96,7 +96,7 @@ class SPRDataProcessor:
             # Ensure all arrays are the same size - resize if needed
             # This handles cases where acquisition size varies slightly
             target_size = len(p_pol_intensity)
-            
+
             # Resize s_ref if needed
             if len(s_ref_intensity) != target_size:
                 logger.warning(f"S-ref size mismatch: {len(s_ref_intensity)} vs {target_size}. Resizing...")
@@ -105,7 +105,7 @@ class SPRDataProcessor:
                 x_new = np.linspace(0, 1, target_size)
                 interpolator = interp1d(x_old, s_ref_intensity, kind='linear', fill_value='extrapolate')
                 s_ref_intensity = interpolator(x_new)
-            
+
             # Universal dark noise correction with resampling
             if dark_noise is not None:
                 # Ensure dark noise matches data size through universal resampling
@@ -274,13 +274,14 @@ class SPRDataProcessor:
             return spectrum
 
     def calculate_derivative(self, spectrum: np.ndarray) -> np.ndarray:
-        """Calculate derivative of spectrum using Fourier coefficients.
+        """Calculate derivative of spectrum using numerical gradient.
 
-        The derivative is calculated directly from Fourier coefficients
-        rather than numerical differentiation, providing smoother results.
+        Simple numerical derivative using numpy's gradient function.
+        Since transmittance is already denoised with Savitzky-Golay filter,
+        no additional Fourier smoothing is needed (avoids double processing).
 
         Args:
-            spectrum: Transmission spectrum (smoothed recommended)
+            spectrum: Transmission spectrum (already denoised)
 
         Returns:
             Derivative array (dT/dλ) with same shape as input
@@ -290,33 +291,9 @@ class SPRDataProcessor:
             if len(spectrum) < 3:
                 return np.zeros_like(spectrum)
 
-            # Calculate Fourier coefficients (same as smoothing)
-            fourier_coeff = np.zeros_like(spectrum)
-            fourier_coeff[0] = 2 * (spectrum[-1] - spectrum[0])
-
-            if len(spectrum) > 2:
-                linear_baseline = np.linspace(
-                    spectrum[0],
-                    spectrum[-1],
-                    len(spectrum),
-                )
-                detrended = spectrum[1:-1] - linear_baseline[1:-1]
-                
-                # Adjust fourier_weights if spectrum size changed
-                dst_result = dst(detrended, 1)
-                if len(self.fourier_weights) != len(dst_result):
-                    # Resize fourier_weights to match current spectrum size
-                    from scipy.interpolate import interp1d
-                    x_old = np.linspace(0, 1, len(self.fourier_weights))
-                    x_new = np.linspace(0, 1, len(dst_result))
-                    interpolator = interp1d(x_old, self.fourier_weights, kind='linear', fill_value='extrapolate')
-                    fourier_weights_adjusted = interpolator(x_new)
-                    fourier_coeff[1:-1] = fourier_weights_adjusted * dst_result
-                else:
-                    fourier_coeff[1:-1] = self.fourier_weights * dst_result
-
-            # IDCT gives derivative directly
-            derivative = idct(fourier_coeff, 1)
+            # Simple numerical derivative using central differences
+            # numpy.gradient automatically handles edges with forward/backward differences
+            derivative = np.gradient(spectrum, self.wave_data)
 
             return derivative
 
