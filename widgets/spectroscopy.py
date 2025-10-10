@@ -83,6 +83,13 @@ class Spectroscopy(QWidget):
     def update_data(self, spec_data):
         try:
             if spec_data is not None:
+                # Log data status for debugging
+                int_status = {ch: "data" if spec_data["int_data"][ch] is not None else "None" 
+                             for ch in CH_LIST}
+                trans_status = {ch: "data" if spec_data["trans_data"][ch] is not None else "None" 
+                               for ch in CH_LIST}
+                logger.debug(f"Spectroscopy update - Intensity: {int_status}, Transmittance: {trans_status}")
+                
                 self.intensity_plot_view.update_plots(
                     spec_data["wave_data"], spec_data["int_data"], self.led_mode
                 )
@@ -90,7 +97,7 @@ class Spectroscopy(QWidget):
                     spec_data["wave_data"], spec_data["trans_data"], self.led_mode
                 )
         except Exception as e:
-            logger.debug(f"Error during spectroscopy update: {e}")
+            logger.exception(f"Error during spectroscopy update: {e}")
 
     def display_channel_changed(self, ch, flag):
         self.intensity_plot_view.display_channel_changed(ch, flag)
@@ -185,8 +192,9 @@ class SpecPlot(GraphicsLayoutWidget):
                     self.plots[ch].setData(y=[np.nan], x=[np.nan])
                 elif (led_mode == "auto") or (ch == led_mode):
                     self.plots[ch].setData(y=y_data[ch], x=x_data)
+                    logger.debug(f"Plot updated for channel {ch}: {len(y_data[ch])} points")
         except Exception as e:
-            logger.debug(f"Error while plotting: {e}")
+            logger.exception(f"Error while plotting: {e}")
 
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
