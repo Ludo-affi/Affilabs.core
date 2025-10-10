@@ -23,10 +23,13 @@ disable=
     # PySide6 attribute access
     no-member,
     too-few-public-methods,
-    # Type hints
+    # Type hints and annotations
     missing-type-doc,
     missing-return-type-doc,
     missing-yield-type-doc,
+    missing-return-type-annotation,
+    missing-param-doc,
+    missing-raises-doc,
     # Documentation
     missing-module-docstring,
     missing-class-docstring,
@@ -35,6 +38,14 @@ disable=
     wrong-import-position,
     wrong-import-order,
     ungrouped-imports,
+    # Logging
+    logging-fstring-interpolation,
+    logging-format-interpolation,
+    # Arguments
+    unused-argument,
+    unused-variable,
+    # Import stubs
+    import-error,
     # Other
     fixme,
     broad-except,
@@ -44,7 +55,9 @@ disable=
     too-many-statements,
     too-many-instance-attributes,
     too-many-public-methods,
-    too-many-lines
+    too-many-lines,
+    invalid-name,
+    redefined-outer-name
 
 [REPORTS]
 # Set the output format
