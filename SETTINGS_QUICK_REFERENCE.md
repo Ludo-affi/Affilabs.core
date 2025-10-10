@@ -1,6 +1,6 @@
 # Settings Quick Reference Card
 
-**Location:** `settings/settings.py`  
+**Location:** `settings/settings.py`
 **Purpose:** Global configuration constants for the SPR control system
 
 ---
@@ -57,7 +57,7 @@ TARGET_WAVELENGTH_MAX = 610  # nm - End of range
 S_COUNT_MAX = 64000           # Saturation limit (below 16-bit max)
 P_COUNT_THRESHOLD = 3000      # Min P-polarized count for success
 ```
-**Troubleshooting:** 
+**Troubleshooting:**
 - If false saturation warnings, raise S_COUNT_MAX (e.g., 65000)
 - If P-LED too sensitive, lower P_COUNT_THRESHOLD (e.g., 2000)
 
@@ -88,7 +88,7 @@ POL_WAVELENGTH = 620   # Index for auto polarization
 FILTERING_ON = True       # Enable/disable filtering
 MED_FILT_WIN = 5         # Median filter window size
 ```
-**Troubleshooting:** 
+**Troubleshooting:**
 - If data too noisy, increase MED_FILT_WIN (e.g., 7 or 9)
 - If data too smooth (losing features), decrease to 3
 
@@ -97,7 +97,7 @@ MED_FILT_WIN = 5         # Median filter window size
 UNIT = "RU"              # Measurement units (RU or nm)
 UNIT_LIST = {"nm": 1, "RU": 355}
 ```
-**Troubleshooting:** 
+**Troubleshooting:**
 - `"nm"` = Wavelength shift
 - `"RU"` = Refractive Units (1 RU = 1/355 nm)
 
@@ -321,9 +321,9 @@ CYCLE_TIME = 1.3                 ✅ Standard
 
 ---
 
-**Last Updated:** October 10, 2025  
-**Reference:** `settings/settings.py`  
-**Related Docs:** 
+**Last Updated:** October 10, 2025
+**Reference:** `settings/settings.py`
+**Related Docs:**
 - `SIMPLIFIED_ARCHITECTURE_README.md`
 - `POLARIZER_CALIBRATION_SYSTEM.md`
 - `WORKSPACE_TROUBLESHOOTING_GUIDE.md`

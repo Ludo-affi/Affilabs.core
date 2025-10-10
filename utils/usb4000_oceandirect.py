@@ -379,8 +379,13 @@ class USB4000OceanDirect:
             return None
 
         try:
-            # Acquire spectrum
-            intensity_data = np.array(self._device.get_formatted_spectrum())
+            # Acquire spectrum - different methods for different backends
+            if BACKEND_TYPE == "seabreeze":
+                # SeaBreeze uses intensities() method
+                intensity_data = np.array(self._device.intensities())
+            else:
+                # OceanDirect uses get_formatted_spectrum() method
+                intensity_data = np.array(self._device.get_formatted_spectrum())
 
             logger.debug(
                 f"Acquired spectrum: {len(intensity_data)} points, "

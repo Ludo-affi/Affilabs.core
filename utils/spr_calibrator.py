@@ -750,13 +750,16 @@ class SPRCalibrator:
                         self.state.wave_min_index : self.state.wave_max_index
                     ].max()
 
-            # Check for saturation at low intensity
+            # Check for saturation at MEDIUM intensity (not minimum)
+            # Use S_LED_INT (normal operating intensity) to check saturation, not S_LED_MIN
+            # This prevents unnecessarily lowering integration time for normal operation
             for ch in ch_list:
                 if self._is_stopped():
                     return False
 
                 logger.debug(f"Checking saturation for channel {ch}")
-                self.ctrl.set_intensity(ch=ch, raw_val=S_LED_MIN)
+                # Use S_LED_INT instead of S_LED_MIN for more realistic saturation check
+                self.ctrl.set_intensity(ch=ch, raw_val=S_LED_INT)
                 time.sleep(LED_DELAY)
 
                 int_array = self.usb.read_intensity()
@@ -766,7 +769,7 @@ class SPRCalibrator:
                 current_count = int_array[
                     self.state.wave_min_index : self.state.wave_max_index
                 ].max()
-                logger.debug(f"Saturation check: {current_count}, limit: {S_COUNT_MAX}")
+                logger.debug(f"Saturation check at LED={S_LED_INT}: {current_count}, limit: {S_COUNT_MAX}")
 
                 # Decrease integration time if saturated
                 while (
