@@ -83,6 +83,12 @@ TRANS_SEG_H_REQ = 0.5  # factor for calibrated channel fitting height on both en
 AUTO_POLARIZE_ENABLE = False  # enable/disable auto-polarization during calibration
 FILTERING_ON = True  # enabled/disable filtering
 MED_FILT_WIN = 5  # default median filter window size
+
+# Transmittance spectrum denoising (NEW - for improved peak tracking)
+DENOISE_TRANSMITTANCE = True  # Enable Savitzky-Golay denoising on transmittance spectrum
+DENOISE_WINDOW = 11  # Window size for Savitzky-Golay filter (must be odd, ~3nm smoothing)
+DENOISE_POLYORDER = 3  # Polynomial order for Savitzky-Golay filter (cubic)
+
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
 SHOW_AUTOSEGMENT = False  # enable/disable test plotting for auto-segmentation
