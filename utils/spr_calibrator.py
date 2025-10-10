@@ -1785,6 +1785,205 @@ class SPRCalibrator:
     # STEP 8: LED INTENSITY CALIBRATION (P-MODE)
     # ========================================================================
 
+    def calibrate_led_p_mode_s_based(self, ch_list: list[str]) -> bool:
+        """S-mode based P-mode calibration with integration time adjustment.
+        
+        NEW STRATEGY (recommended by user):
+        1. Use S-mode LED intensities (from ref_intensity) to maintain relative intensity profile
+        2. Measure P-mode spectra with those same LED ratios
+        3. Adjust integration time to bring P-mode max within 10% of S-mode max
+        
+        This ensures:
+        - Relative intensity profile is preserved between S and P modes
+        - P-mode signal strength matches S-mode for cleaner transmittance ratio
+        - No iterative LED adjustments needed - just integration time tuning
+        
+        Args:
+            ch_list: List of channels to calibrate
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if self.ctrl is None or self.usb is None:
+                return False
+                
+            logger.info("=" * 70)
+            logger.info("🔬 P-MODE CALIBRATION: S-mode Profile Preservation Strategy")
+            logger.info("=" * 70)
+            
+            # Step 1: Calculate S-mode reference max intensity
+            logger.info("📊 Step 1: Analyzing S-mode reference signals...")
+            s_mode_max_counts = {}
+            s_mode_led_values = {}
+            
+            for ch in ch_list:
+                if ch in self.state.ref_sig and self.state.ref_sig[ch] is not None:
+                    s_mode_max_counts[ch] = float(self.state.ref_sig[ch].max())
+                    s_mode_led_values[ch] = self.state.ref_intensity[ch]
+                    logger.info(
+                        f"  • Channel {ch}: LED={s_mode_led_values[ch]}, "
+                        f"max={s_mode_max_counts[ch]:.0f} counts"
+                    )
+            
+            if not s_mode_max_counts:
+                logger.error("❌ No S-mode reference signals available!")
+                return False
+            
+            # Find the overall max across all channels
+            overall_s_mode_max = max(s_mode_max_counts.values())
+            logger.info(f"✅ S-mode overall max: {overall_s_mode_max:.0f} counts")
+            
+            # Step 2: Set P-mode LEDs to SAME values as S-mode (preserve relative profile)
+            logger.info("📊 Step 2: Setting P-mode LEDs to match S-mode profile...")
+            self.ctrl.set_mode(mode="p")
+            time.sleep(0.4)
+            
+            for ch in ch_list:
+                led_value = s_mode_led_values[ch]
+                self.ctrl.set_intensity(ch=ch, raw_val=led_value)
+                logger.info(f"  • Channel {ch}: LED={led_value} (same as S-mode)")
+            
+            time.sleep(LED_DELAY)
+            
+            # Step 3: Measure P-mode intensities with current integration time
+            logger.info("📊 Step 3: Measuring P-mode with S-mode integration time...")
+            p_mode_max_counts = {}
+            
+            for ch in ch_list:
+                if self._is_stopped():
+                    return False
+                    
+                self.ctrl.set_intensity(ch=ch, raw_val=s_mode_led_values[ch])
+                time.sleep(LED_DELAY)
+                
+                spectrum = self.usb.read_intensity()
+                if spectrum is not None:
+                    p_mode_max_counts[ch] = float(spectrum.max())
+                    logger.info(
+                        f"  • Channel {ch}: max={p_mode_max_counts[ch]:.0f} counts "
+                        f"(S-mode was {s_mode_max_counts[ch]:.0f})"
+                    )
+            
+            overall_p_mode_max = max(p_mode_max_counts.values())
+            initial_ratio = (overall_p_mode_max / overall_s_mode_max) * 100
+            logger.info(
+                f"✅ P-mode overall max: {overall_p_mode_max:.0f} counts "
+                f"({initial_ratio:.1f}% of S-mode)"
+            )
+            
+            # Step 4: Adjust integration time to bring P-mode within 10% of S-mode
+            target_p_mode_max = overall_s_mode_max  # Target: same as S-mode
+            tolerance = overall_s_mode_max * 0.10  # 10% tolerance
+            
+            logger.info("📊 Step 4: Adjusting integration time to match S-mode intensity...")
+            logger.info(
+                f"  • Target: {target_p_mode_max:.0f} counts ±10% "
+                f"({target_p_mode_max - tolerance:.0f} to {target_p_mode_max + tolerance:.0f})"
+            )
+            
+            current_integration = self.state.integration  # in seconds
+            max_iterations = 10
+            
+            for iteration in range(max_iterations):
+                if self._is_stopped():
+                    return False
+                
+                # Check if we're within tolerance
+                if abs(overall_p_mode_max - target_p_mode_max) <= tolerance:
+                    logger.info(
+                        f"✅ P-mode intensity matched S-mode in {iteration} iterations! "
+                        f"({overall_p_mode_max:.0f} counts, {(overall_p_mode_max/overall_s_mode_max)*100:.1f}% of S-mode)"
+                    )
+                    break
+                
+                # Calculate required integration time adjustment
+                # P_counts / S_counts = P_integration / S_integration (assuming linear response)
+                ratio = overall_p_mode_max / target_p_mode_max
+                new_integration = current_integration / ratio
+                
+                # Clamp to reasonable limits
+                min_integration = MIN_INTEGRATION / 1000.0  # 1ms
+                max_integration = MAX_INTEGRATION / 1000.0  # 100ms
+                new_integration = max(min_integration, min(max_integration, new_integration))
+                
+                logger.info(
+                    f"  Iter {iteration + 1}: current={current_integration*1000:.1f}ms, "
+                    f"P-mode={overall_p_mode_max:.0f}, ratio={ratio:.3f}, "
+                    f"new={new_integration*1000:.1f}ms"
+                )
+                
+                # Apply new integration time
+                self.usb.set_integration(new_integration)
+                self.state.integration = new_integration
+                current_integration = new_integration
+                time.sleep(0.2)  # Allow hardware to stabilize
+                
+                # Re-measure all channels with new integration time
+                p_mode_max_counts = {}
+                for ch in ch_list:
+                    if self._is_stopped():
+                        return False
+                        
+                    self.ctrl.set_intensity(ch=ch, raw_val=s_mode_led_values[ch])
+                    time.sleep(LED_DELAY)
+                    
+                    spectrum = self.usb.read_intensity()
+                    if spectrum is not None:
+                        p_mode_max_counts[ch] = float(spectrum.max())
+                
+                overall_p_mode_max = max(p_mode_max_counts.values())
+                
+                # Check for saturation
+                if overall_p_mode_max > DETECTOR_MAX_COUNTS * 0.95:
+                    logger.warning(
+                        f"⚠️ Approaching saturation ({overall_p_mode_max:.0f} counts), "
+                        f"stopping adjustment"
+                    )
+                    break
+                
+                # Prevent oscillation - if change is too small, stop
+                if iteration > 2 and abs(overall_p_mode_max - target_p_mode_max) / target_p_mode_max < 0.02:
+                    logger.info(
+                        f"✅ P-mode intensity stable within 2% "
+                        f"({overall_p_mode_max:.0f} counts, {(overall_p_mode_max/overall_s_mode_max)*100:.1f}% of S-mode)"
+                    )
+                    break
+            
+            # Step 5: Store final P-mode LED values (same as S-mode)
+            logger.info("📊 Step 5: Storing P-mode calibration results...")
+            for ch in ch_list:
+                self.state.leds_calibrated[ch] = s_mode_led_values[ch]
+                logger.info(
+                    f"  • Channel {ch}: LED={self.state.leds_calibrated[ch]} "
+                    f"(P-mode max={p_mode_max_counts[ch]:.0f} counts)"
+                )
+            
+            # Final summary
+            final_ratio = (overall_p_mode_max / overall_s_mode_max) * 100
+            logger.info("=" * 70)
+            logger.info("✅ P-MODE CALIBRATION COMPLETE")
+            logger.info(f"  • Integration time: {self.state.integration*1000:.1f}ms")
+            logger.info(f"  • S-mode max: {overall_s_mode_max:.0f} counts")
+            logger.info(f"  • P-mode max: {overall_p_mode_max:.0f} counts ({final_ratio:.1f}% of S-mode)")
+            logger.info(f"  • Relative profile: PRESERVED (same LED ratios)")
+            logger.info("=" * 70)
+            
+            return True
+            
+        except Exception as e:
+            logger.exception(f"Error in S-based P-mode calibration: {e}")
+            return False
+        finally:
+            # Always turn off all LEDs after P-mode calibration
+            try:
+                if self.ctrl is not None:
+                    for ch in ch_list:
+                        self.ctrl.set_intensity(ch=ch, raw_val=0)
+                        logger.debug(f"Turned off P-mode LED for channel {ch}")
+            except Exception as e:
+                logger.warning(f"Failed to turn off P-mode LEDs: {e}")
+
     def calibrate_led_p_mode_adaptive(self, ch_list: list[str]) -> bool:
         """Adaptive LED intensity calibration for P-polarization mode.
 
@@ -2300,10 +2499,10 @@ class SPRCalibrator:
             self.ctrl.set_mode(mode="p")
             time.sleep(0.4)
 
-            # Step 8: LED intensity calibration (P-mode adaptive)
-            logger.debug("Step 8: LED intensity calibration (P-mode adaptive)")
-            self._emit_progress(8, "Fine-tuning LED intensities (adaptive P-mode)...")
-            success = self.calibrate_led_p_mode_adaptive(ch_list)
+            # Step 8: LED intensity calibration (P-mode S-based)
+            logger.debug("Step 8: LED intensity calibration (P-mode S-based)")
+            self._emit_progress(8, "Optimizing P-mode using S-mode profile...")
+            success = self.calibrate_led_p_mode_s_based(ch_list)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
                 return False, "P-mode LED calibration failed"
