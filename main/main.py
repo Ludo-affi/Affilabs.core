@@ -39,7 +39,7 @@ class AffiniteApp(QApplication):
 
         # Initialize main window
         self.main_window = MainWindow(self)
-        
+
         # Set application-wide gray background
         self.setStyleSheet("""
             QMainWindow, QWidget {

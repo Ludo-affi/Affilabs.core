@@ -1,6 +1,6 @@
 # P-Mode S-Based Calibration Strategy
 
-**Date:** October 10, 2025  
+**Date:** October 10, 2025
 **Status:** ✅ Implemented
 
 ## Problem with Previous Approach
@@ -158,15 +158,15 @@ MAX_INTEGRATION = 0.100  # 100ms
 for iteration in range(MAX_INTEGRATION_ITERATIONS):
     # Measure P-mode max
     p_max = max(measure_all_channels())
-    
+
     # Check convergence
     if abs(p_max - s_max) / s_max <= 0.10:
         break  # Within 10% tolerance
-    
+
     # Calculate adjustment
     ratio = p_max / s_max
     new_integration = current_integration / ratio
-    
+
     # Apply with safety limits
     new_integration = clamp(new_integration, MIN_INTEGRATION, MAX_INTEGRATION)
     usb.set_integration(new_integration)

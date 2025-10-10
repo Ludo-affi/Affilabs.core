@@ -1,6 +1,6 @@
 # Dark Noise Measurement and Application in SPR System
 
-**Date:** October 10, 2025  
+**Date:** October 10, 2025
 **Topic:** How dark noise is measured once and applied to both S and P spectra
 
 ---
@@ -32,8 +32,8 @@ Step 9: Validation
 ## 🌑 Dark Noise Measurement (Step 5)
 
 ### Location
-**File:** `utils/spr_calibrator.py`  
-**Method:** `measure_dark_noise()` (lines 1618-1718)  
+**File:** `utils/spr_calibrator.py`
+**Method:** `measure_dark_noise()` (lines 1618-1718)
 **Called:** Step 5 of `run_full_calibration()` (line 2481)
 
 ### Process
@@ -91,10 +91,10 @@ This allows universal resampling later if needed.
 # Option A: Universal resampling (preferred)
 from scipy.interpolate import interp1d
 
-target_indices = np.linspace(wave_min_index, wave_max_index - 1, 
+target_indices = np.linspace(wave_min_index, wave_max_index - 1,
                              len(target_wavelengths))
 interpolator = interp1d(source_indices, full_spectrum_dark_noise,
-                        kind='linear', bounds_error=False, 
+                        kind='linear', bounds_error=False,
                         fill_value='extrapolate')
 resampled_dark_noise = interpolator(target_indices)
 
@@ -168,7 +168,7 @@ FOR EACH TIME POINT:
 
 ### Application in Real-Time Acquisition
 
-**File:** `utils/spr_data_acquisition.py`  
+**File:** `utils/spr_data_acquisition.py`
 **Method:** `sensorgram_data()` (lines 150-300)
 
 ```python
@@ -195,13 +195,13 @@ transmission = (p_pol_corrected / s_ref_corrected) × 100%
 
 ### Application in Transmittance Calculation
 
-**File:** `utils/spr_data_processor.py`  
+**File:** `utils/spr_data_processor.py`
 **Method:** `calculate_transmission()` (lines 69-118)
 
 ```python
 def calculate_transmission(self, p_pol_intensity, s_ref_intensity, dark_noise=None):
     """Calculate transmission: (P-pol / S-ref) × 100%"""
-    
+
     if dark_noise is not None:
         # Apply SAME dark correction to BOTH P and S
         p_pol_corrected = self._apply_universal_dark_correction(p_pol_intensity, dark_noise)
@@ -209,10 +209,10 @@ def calculate_transmission(self, p_pol_intensity, s_ref_intensity, dark_noise=No
     else:
         p_pol_corrected = p_pol_intensity
         s_ref_corrected = s_ref_intensity
-    
+
     # Calculate transmittance
     transmission = (p_pol_corrected / s_ref_corrected) * 100.0
-    
+
     return transmission
 ```
 
@@ -225,7 +225,7 @@ def calculate_transmission(self, p_pol_intensity, s_ref_intensity, dark_noise=No
 Dark noise is **detector-based**, not **source-based**:
 
 ```
-Signal = (Light_from_sample + Dark_noise) 
+Signal = (Light_from_sample + Dark_noise)
 
 S-mode signal:
 S_raw = S_light + Dark_noise
@@ -313,16 +313,16 @@ The system uses "universal dark correction" which handles size mismatches:
 ```python
 def _apply_universal_dark_correction(signal, dark_noise):
     """Apply dark correction even if sizes don't match"""
-    
+
     if dark_noise.shape == signal.shape:
         # Perfect match
         return signal - dark_noise
-    
+
     # Size mismatch - resample dark noise
     if len(dark_noise) == 1:
         # Single value - broadcast
         return signal - dark_noise[0]
-    
+
     # Use linear interpolation
     interpolator = interp1d(source_indices, dark_noise, kind='linear')
     resampled_dark = interpolator(target_indices)
@@ -396,7 +396,7 @@ dark_noise_P = dark_noise_S × (integration_P / integration_S)
 ```
 T_uncorrected = (P_raw / S_raw) × 100%
               = (P_light + Dark) / (S_light + Dark) × 100%
-              
+
 If Dark = 120, P_light = 40,000, S_light = 48,000:
 T_uncorrected = (40,120 / 48,120) × 100% = 83.38%
 T_corrected   = (40,000 / 48,000) × 100% = 83.33%

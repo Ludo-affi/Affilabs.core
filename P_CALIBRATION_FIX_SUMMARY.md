@@ -1,6 +1,6 @@
 # P-Mode Calibration Fix - Quick Summary
 
-**Date:** October 10, 2025  
+**Date:** October 10, 2025
 **Status:** ✅ Complete
 
 ## What Changed
@@ -12,7 +12,7 @@ For each channel:
   2. Measure P-mode intensity
   3. Adjust LED up/down to reach target
   4. Repeat 15-20 iterations per channel
-  
+
 Problem: Lost relative channel balance from S-mode
 Result: Noisy P/S transmittance ratios
 ```
@@ -22,7 +22,7 @@ Result: Noisy P/S transmittance ratios
 1. Use SAME LED values as S-mode (all channels)
 2. Measure P-mode with S-mode integration time
 3. Adjust integration time to match S-mode signal level
-   
+
 Goal: P-mode max within 10% of S-mode max
 ```
 
@@ -32,7 +32,7 @@ Goal: P-mode max within 10% of S-mode max
 ```python
 # S-mode balanced channels:
 Channel A: LED=145 → 48523 counts
-Channel B: LED=152 → 49102 counts  
+Channel B: LED=152 → 49102 counts
 Channel C: LED=89  → 50234 counts
 Channel D: LED=95  → 51028 counts
 
@@ -58,7 +58,7 @@ Ratio: 0.15-0.31 (noisy, unstable)
 
 # After (matched intensities):
 P-mode: 48000-52000 counts (matched to S-mode)
-S-mode: 48000-52000 counts  
+S-mode: 48000-52000 counts
 Ratio: 0.92-0.98 (clean, stable)
 ```
 
@@ -131,7 +131,7 @@ After running calibration, you should see:
 1. **Run calibration** and observe the new P-mode strategy in action
 2. **Check logs** for:
    - S-mode max signal
-   - P-mode max signal  
+   - P-mode max signal
    - Integration time adjustment iterations
    - Final ratio (should be 90-110%)
 3. **Validate transmittance** calculations are cleaner/more stable

@@ -23,7 +23,7 @@ def update_data(self: Self, app_data: DataDict) -> None:
     if hasattr(app_data, 'emit'):
         logger.error(f"❌ Received SignalEmitter object instead of data")
         return
-    
+
     # 2. Validate data structure
     if app_data is not None and isinstance(app_data, dict):
         has_data = False

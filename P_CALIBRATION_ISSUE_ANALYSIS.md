@@ -1,6 +1,6 @@
 # P Calibration Issue Analysis
 
-**Date:** October 10, 2025  
+**Date:** October 10, 2025
 **Issue:** P-mode calibration using S-mode LED response model incorrectly
 
 ---
@@ -57,7 +57,7 @@ LED → Light Source → Polarizer (aligned) → Sample → Spectrometer
                       ^^^^^^^^
                       Most light passes through
 
-P-mode (perpendicular polarization):  
+P-mode (perpendicular polarization):
 LED → Light Source → Polarizer (perpendicular) → Sample → Spectrometer
                       ^^^^^^^^^^^^^^^^^^^^^^^^^
                       Much less light passes through
@@ -124,20 +124,20 @@ class LEDResponseModel:
     def __init__(self):
         self.s_mode_models = {}  # S-mode LED characterization
         self.p_mode_models = {}  # P-mode LED characterization
-        
+
     def characterize_s_mode(self, ch, test_points):
         """Build S-mode model from S-mode measurements"""
         # Current implementation (works correctly)
-        
+
     def characterize_p_mode(self, ch, test_points):
         """Build P-mode model from P-mode measurements"""
         # NEW: After switching to P-mode, test same LED points
         # Build separate model for P-mode response
-        
+
     def predict_s_mode_led(self, ch, target_counts):
         """Use S-mode model for S-mode predictions"""
         return self.s_mode_models[ch].predict(target_counts)
-        
+
     def predict_p_mode_led(self, ch, target_counts):
         """Use P-mode model for P-mode predictions"""
         return self.p_mode_models[ch].predict(target_counts)

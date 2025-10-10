@@ -562,7 +562,7 @@ class DataWindow(QWidget):
             if hasattr(app_data, 'emit'):
                 logger.error(f"❌ Received SignalEmitter object instead of data: {type(app_data)}")
                 return  # Skip processing SignalEmitter objects
-            
+
             # Enhanced logging to debug data flow
             if app_data is not None and isinstance(app_data, dict):
                 has_data = False

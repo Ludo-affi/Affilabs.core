@@ -1,6 +1,6 @@
 # Calibration Success Confirmation
 
-**Date:** October 10, 2025  
+**Date:** October 10, 2025
 **Analysis:** Reviewing calibration results from recent sessions
 
 ---
@@ -260,7 +260,7 @@ Reasonable for crossed polarizers with sample birefringence
 #### S-Mode (Reference) Calibration:
 ```
 Channel A: LED = 128
-Channel B: LED = 128  
+Channel B: LED = 128
 Channel C: LED = 128
 Channel D: LED = 128
 
