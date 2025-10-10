@@ -199,6 +199,217 @@ class CalibrationState:
             self.__init__()
 
 
+class LEDResponseModel:
+    """Models LED intensity vs detector counts relationship.
+    
+    Characterizes each LED's response curve using a few calibration points,
+    then predicts optimal LED intensity for any target count value.
+    This avoids iterative LED calibration and speeds up the process.
+    
+    The model assumes a linear relationship: counts = slope * led_intensity + offset
+    (with potential saturation handling at high LED values)
+    
+    **Hardware Specification:**
+    LEDs used in the system: Luminous Device MP-2016-1100-30-80
+    - Part Number: MP-2016-1100-30-80
+    - Manufacturer: Luminous Device
+    - Type: High-power LED for spectroscopy applications
+    - Wavelength: System uses 4 channels (A, B, C, D) at different wavelengths
+    - LED intensity range: 20-255 (8-bit PWM control)
+    - Minimum usable: 20 (below this, response may be non-linear)
+    - Maximum: 255 (full power)
+    
+    This characterization allows the system to:
+    1. Predict counts for any LED intensity without measuring
+    2. Predict required LED intensity to achieve target counts
+    3. Detect potential saturation before actually setting LEDs
+    4. Speed up calibration by avoiding iterative searches
+    """
+    
+    def __init__(self):
+        """Initialize empty LED response models for all channels."""
+        self.models: dict[str, dict] = {}  # {channel: {slope, offset, led_range, valid}}
+        
+    def characterize_led(
+        self,
+        channel: str,
+        led_intensities: list[int],
+        measured_counts: list[int],
+    ) -> bool:
+        """Characterize LED response using calibration measurements.
+        
+        Args:
+            channel: Channel name ('a', 'b', 'c', 'd')
+            led_intensities: List of LED values tested (e.g., [20, 128, 255])
+            measured_counts: Corresponding detector counts
+            
+        Returns:
+            True if characterization successful, False otherwise
+        """
+        if len(led_intensities) < 2 or len(led_intensities) != len(measured_counts):
+            logger.error(f"Channel {channel}: Need at least 2 LED/count pairs")
+            return False
+        
+        # Filter out saturated measurements (counts >= 65000)
+        valid_pairs = [
+            (led, count) 
+            for led, count in zip(led_intensities, measured_counts)
+            if count < 65000
+        ]
+        
+        if len(valid_pairs) < 2:
+            logger.warning(f"Channel {channel}: All measurements saturated")
+            # Use all data anyway for a rough estimate
+            valid_pairs = list(zip(led_intensities, measured_counts))
+        
+        leds = np.array([p[0] for p in valid_pairs])
+        counts = np.array([p[1] for p in valid_pairs])
+        
+        # Linear regression: counts = slope * led + offset
+        # Using numpy polyfit for robustness
+        coeffs = np.polyfit(leds, counts, deg=1)
+        slope = coeffs[0]
+        offset = coeffs[1]
+        
+        # Calculate R² to assess fit quality
+        predicted = slope * leds + offset
+        ss_res = np.sum((counts - predicted) ** 2)
+        ss_tot = np.sum((counts - np.mean(counts)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        
+        self.models[channel] = {
+            'slope': float(slope),
+            'offset': float(offset),
+            'led_range': (int(leds.min()), int(leds.max())),
+            'count_range': (int(counts.min()), int(counts.max())),
+            'r_squared': float(r_squared),
+            'valid': r_squared > 0.8,  # Only trust if good fit
+            'calibration_points': len(valid_pairs),
+        }
+        
+        logger.info(
+            f"📊 Channel {channel} LED model: "
+            f"counts = {slope:.1f}*LED + {offset:.1f} "
+            f"(R²={r_squared:.3f})"
+        )
+        
+        return self.models[channel]['valid']
+    
+    def predict_led_for_target(
+        self,
+        channel: str,
+        target_counts: int,
+        led_min: int = 20,
+        led_max: int = 255,
+    ) -> Optional[int]:
+        """Predict LED intensity needed to achieve target counts.
+        
+        Args:
+            channel: Channel name
+            target_counts: Desired detector counts
+            led_min: Minimum allowed LED intensity
+            led_max: Maximum allowed LED intensity
+            
+        Returns:
+            Predicted LED intensity, or None if model invalid
+        """
+        if channel not in self.models or not self.models[channel]['valid']:
+            logger.warning(f"Channel {channel}: No valid LED model available")
+            return None
+        
+        model = self.models[channel]
+        slope = model['slope']
+        offset = model['offset']
+        
+        # Solve: target_counts = slope * led + offset
+        # led = (target_counts - offset) / slope
+        if abs(slope) < 0.1:  # Nearly flat response - LED has minimal effect
+            logger.warning(f"Channel {channel}: LED has minimal effect (slope={slope:.1f})")
+            return None
+        
+        predicted_led = (target_counts - offset) / slope
+        
+        # Clamp to valid range
+        predicted_led = max(led_min, min(led_max, predicted_led))
+        
+        # Round to nearest integer
+        predicted_led = int(round(predicted_led))
+        
+        logger.debug(
+            f"Channel {channel}: Target {target_counts} counts "
+            f"→ LED={predicted_led} (model: {slope:.1f}*LED + {offset:.1f})"
+        )
+        
+        return predicted_led
+    
+    def predict_counts_for_led(
+        self,
+        channel: str,
+        led_intensity: int,
+    ) -> Optional[int]:
+        """Predict detector counts for a given LED intensity.
+        
+        Args:
+            channel: Channel name
+            led_intensity: LED intensity value
+            
+        Returns:
+            Predicted counts, or None if model invalid
+        """
+        if channel not in self.models or not self.models[channel]['valid']:
+            return None
+        
+        model = self.models[channel]
+        predicted_counts = model['slope'] * led_intensity + model['offset']
+        
+        return int(round(predicted_counts))
+    
+    def is_valid(self, channel: str) -> bool:
+        """Check if a valid LED model exists for a channel.
+        
+        Args:
+            channel: Channel name ('a', 'b', 'c', 'd')
+            
+        Returns:
+            True if channel has a valid LED model (R² > 0.8), False otherwise
+        """
+        return channel in self.models and self.models[channel].get('valid', False)
+    
+    def to_dict(self) -> dict:
+        """Export models to dictionary for serialization.
+        
+        Converts all numpy types to Python native types for JSON serialization.
+        """
+        # Deep copy and convert numpy types to Python native types
+        json_models = {}
+        for channel, model in self.models.items():
+            json_models[channel] = {
+                'slope': float(model['slope']),
+                'offset': float(model['offset']),
+                'led_range': [int(model['led_range'][0]), int(model['led_range'][1])],
+                'count_range': [int(model['count_range'][0]), int(model['count_range'][1])],
+                'r_squared': float(model['r_squared']),
+                'valid': bool(model['valid']),
+                'calibration_points': int(model['calibration_points']),
+            }
+        return {'led_response_models': json_models}
+    
+    def from_dict(self, data: dict) -> bool:
+        """Load models from dictionary.
+        
+        Args:
+            data: Dictionary containing 'led_response_models' key
+            
+        Returns:
+            True if loaded successfully
+        """
+        if 'led_response_models' in data:
+            self.models = data['led_response_models']
+            logger.info(f"✅ Loaded LED response models for {len(self.models)} channels")
+            return True
+        return False
+
+
 class SPRCalibrator:
     """Handles all SPR spectrometer calibration operations.
 
@@ -245,6 +456,10 @@ class SPRCalibrator:
         else:
             self.state = CalibrationState()
             logger.info("⚠️ SPRCalibrator created NEW CalibrationState")
+
+        # Initialize LED response model for predictive calibration
+        self.led_model = LEDResponseModel()
+        logger.debug("LED response model initialized")
 
         # Debug logging to check USB object type
         logger.debug(f"SPRCalibrator initialized with USB type: {type(self.usb)}")
@@ -711,7 +926,8 @@ class SPRCalibrator:
             self.ctrl.turn_off_channels()
 
             # Set minimum integration time (convert ms to seconds)
-            self.state.integration = MIN_INTEGRATION / 1000.0  # Convert ms to seconds
+            min_int = MIN_INTEGRATION / 1000.0  # Convert ms to seconds
+            self.state.integration = min_int
             self.usb.set_integration(self.state.integration)
             time.sleep(0.1)
 
@@ -750,6 +966,45 @@ class SPRCalibrator:
             # Turn off all channels
             self.ctrl.turn_off_channels()
             time.sleep(LED_DELAY)
+            
+            # ========================================================================
+            # STEP 1.5: Characterize LED response curves (for predictive calibration)
+            # ========================================================================
+            logger.info(f"📊 Step 3.1.5: Characterizing LED response curves...")
+            logger.info(f"   Sampling LED at [20, 128, 255] to build predictive models")
+            
+            # Sample each channel at 3 LED intensities to characterize response
+            test_leds = [20, 128, 255]
+            for ch in ch_list:
+                if self._is_stopped():
+                    return False
+                
+                led_samples = []
+                count_samples = []
+                
+                for led_val in test_leds:
+                    self.ctrl.set_intensity(ch=ch, raw_val=led_val)
+                    time.sleep(LED_DELAY)
+                    
+                    int_array = self.usb.read_intensity()
+                    if int_array is not None:
+                        counts = int_array[
+                            self.state.wave_min_index : self.state.wave_max_index
+                        ].max()
+                        
+                        led_samples.append(led_val)
+                        count_samples.append(int(counts))
+                        logger.debug(f"   Channel {ch}: LED={led_val} → {counts:.0f} counts")
+                
+                # Build LED response model for this channel
+                if len(led_samples) >= 2:
+                    self.led_model.characterize_led(ch, led_samples, count_samples)
+            
+            # Turn off all channels
+            self.ctrl.turn_off_channels()
+            time.sleep(LED_DELAY)
+            
+            logger.info("✅ LED response models created for all channels")
             
             # ========================================================================
             # STEP 2: Maximize integration time for WEAKEST channel at MAXIMUM LED
@@ -822,6 +1077,145 @@ class SPRCalibrator:
             time.sleep(LED_DELAY)
 
             integration_ms = self.state.integration * 1000
+            logger.info(f"✅ Integration time optimized at: {integration_ms:.1f}ms")
+            logger.info(f"   Now checking if other channels can handle this integration time...")
+
+            # ========================================================================
+            # STEP 3.3: Predict saturation using LED models (no measurement needed!)
+            # ========================================================================
+            logger.info(f"📊 Step 3.3: Predicting saturation using LED response models at {integration_ms:.1f}ms")
+            logger.info(f"   Using LED models to predict if channels will saturate (avoids iterative testing)")
+            
+            SATURATION_THRESHOLD = 60000  # 91% of max (65,535)
+            LOW_LED_TEST = 50  # LED intensity to test for saturation prediction
+            MIN_LED = 20  # Minimum usable LED intensity
+            needs_reduction = False
+            
+            # Check if LED models are valid for all channels
+            all_models_valid = all(
+                self.led_model.is_valid(ch) for ch in ch_list
+            )
+            
+            if all_models_valid:
+                logger.info(f"✅ LED models available for all channels - using predictions")
+                
+                # Predict saturation for each channel (except weakest, already optimized)
+                for ch in ch_list:
+                    if self._is_stopped():
+                        return False
+                    
+                    # Predict counts at low LED intensity
+                    predicted_counts = self.led_model.predict_counts_for_led(ch, LOW_LED_TEST)
+                    predicted_percent = (predicted_counts / 65535) * 100
+                    
+                    logger.debug(
+                        f"   Channel {ch} @ LED={LOW_LED_TEST}: "
+                        f"{predicted_counts:.0f} counts predicted ({predicted_percent:.1f}%)"
+                    )
+                    
+                    if predicted_counts > SATURATION_THRESHOLD:
+                        logger.warning(
+                            f"⚠️ Channel {ch} will saturate at {integration_ms:.1f}ms: "
+                            f"{predicted_counts:.0f} counts predicted ({predicted_percent:.1f}%) at LED={LOW_LED_TEST}"
+                        )
+                        
+                        # Check if even minimum LED will saturate
+                        predicted_at_min = self.led_model.predict_counts_for_led(ch, MIN_LED)
+                        if predicted_at_min > SATURATION_THRESHOLD:
+                            logger.warning(
+                                f"   Even at LED={MIN_LED}: {predicted_at_min:.0f} counts predicted - MUST reduce integration"
+                            )
+                            needs_reduction = True
+                        else:
+                            logger.info(
+                                f"   At LED={MIN_LED}: {predicted_at_min:.0f} counts predicted - can use low LED"
+                            )
+            else:
+                # Fallback: measure if models not available (old behavior)
+                logger.warning(f"⚠️ LED models not available for all channels - measuring directly")
+                
+                for ch in ch_list:
+                    if self._is_stopped():
+                        return False
+                    
+                    # Set channel to low LED intensity
+                    self.ctrl.set_intensity(ch=ch, raw_val=LOW_LED_TEST)
+                    time.sleep(LED_DELAY)
+                    
+                    # Measure intensity
+                    int_array = self.usb.read_intensity()
+                    if int_array is not None:
+                        counts = int_array[
+                            self.state.wave_min_index : self.state.wave_max_index
+                        ].max()
+                        counts_percent = (counts / 65535) * 100
+                        
+                        logger.debug(f"   Channel {ch} @ LED={LOW_LED_TEST}: {counts:.0f} counts ({counts_percent:.1f}%)")
+                        
+                        if counts > SATURATION_THRESHOLD:
+                            logger.warning(
+                                f"⚠️ Channel {ch} saturating at {integration_ms:.1f}ms: "
+                                f"{counts:.0f} counts ({counts_percent:.1f}%) at LED={LOW_LED_TEST}"
+                            )
+                            needs_reduction = True
+                
+                # Turn off all channels
+                self.ctrl.turn_off_channels()
+                time.sleep(LED_DELAY)
+            
+            # Reduce integration time if saturation detected
+            if needs_reduction:
+                logger.warning(f"⚠️ Some channels saturate at {integration_ms:.1f}ms - reducing integration time")
+                
+                # Reduce integration time iteratively until no saturation
+                reduction_step = 0.005  # 5ms steps
+                max_reductions = 10
+                reductions = 0
+                
+                while needs_reduction and reductions < max_reductions and self.state.integration > min_int:
+                    # Reduce integration time
+                    self.state.integration -= reduction_step
+                    self.usb.set_integration(self.state.integration)
+                    time.sleep(0.02)
+                    
+                    # Test all channels again
+                    needs_reduction = False
+                    for ch in ch_list:
+                        self.ctrl.set_intensity(ch=ch, raw_val=LOW_LED_TEST)
+                        time.sleep(LED_DELAY)
+                        
+                        int_array = self.usb.read_intensity()
+                        if int_array is not None:
+                            counts = int_array[
+                                self.state.wave_min_index : self.state.wave_max_index
+                            ].max()
+                            
+                            if counts > SATURATION_THRESHOLD:
+                                needs_reduction = True
+                                break
+                    
+                    # Turn off all channels
+                    self.ctrl.turn_off_channels()
+                    time.sleep(LED_DELAY)
+                    
+                    reductions += 1
+                    
+                    if not needs_reduction:
+                        integration_ms = self.state.integration * 1000
+                        logger.info(
+                            f"✅ Integration time reduced to {integration_ms:.1f}ms - no saturation detected"
+                        )
+                        break
+                
+                if needs_reduction:
+                    logger.error(
+                        f"❌ Could not eliminate saturation even after reducing to {integration_ms:.1f}ms"
+                    )
+                    logger.error(f"   Proceeding anyway - LED calibration will need to use very low intensities")
+            else:
+                logger.info(f"✅ No saturation detected at {integration_ms:.1f}ms - integration time is safe")
+
+            integration_ms = self.state.integration * 1000
             logger.info(f"✅ FINAL integration time FIXED at: {integration_ms:.1f}ms")
             logger.info(f"   (This integration time will be used for ALL channels)")
             logger.info(f"   (Next step: adjust LED intensities to balance channels within 10% of weakest)")
@@ -846,6 +1240,8 @@ class SPRCalibrator:
 
         This method combines coarse, medium, and fine adjustments into a single
         efficient algorithm that converges faster than the traditional 3-step method.
+        
+        Now uses LED response model prediction for single-shot calibration when model is available.
 
         Args:
             ch: Channel identifier ('a', 'b', 'c', or 'd')
@@ -876,18 +1272,61 @@ class SPRCalibrator:
                 f"in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range"
             )
 
-            # Smart starting point: use previous S-mode data if available
-            previous_s_intensity = self.state.ref_intensity.get(ch, 0)
-            if previous_s_intensity > 0:
-                # Estimate LED from previous intensity (rough approximation)
-                intensity_ratio = previous_s_intensity / target_intensity
-                estimated_led = max(1, min(255, int(128 * intensity_ratio)))
-                current_led = estimated_led
-                logger.info(f"🎯 Using estimated S-mode LED for {ch}: {current_led} (from intensity {previous_s_intensity:.0f})")
+            # ========================================================================
+            # TRY PREDICTIVE CALIBRATION FIRST (if LED model is available)
+            # ========================================================================
+            predicted_led = self.led_model.predict_led_for_target(ch, target_intensity, led_min=20, led_max=255)
+            
+            if predicted_led is not None:
+                logger.info(f"🎯 LED model prediction for {ch}: {predicted_led} (model-based)")
+                
+                # Test the prediction
+                self.ctrl.set_intensity(ch=ch, raw_val=predicted_led)
+                time.sleep(ADAPTIVE_STABILIZATION_DELAY)
+                
+                spectrum = self.usb.read_intensity()
+                signal_region = spectrum[target_min_idx:target_max_idx]
+                measured_intensity = signal_region.max()
+                measured_percent = (measured_intensity / DETECTOR_MAX_COUNTS) * 100
+                intensity_error = abs(measured_intensity - target_intensity)
+                
+                logger.info(
+                    f"🎯 Prediction result: LED={predicted_led}, "
+                    f"measured={measured_intensity:.0f} ({measured_percent:.1f}%), "
+                    f"error={intensity_error:.0f} (tolerance={tolerance:.0f})"
+                )
+                
+                # Check if prediction is within tolerance
+                if intensity_error <= tolerance:
+                    logger.info(f"✅ Single-shot prediction successful for {ch}!")
+                    self.state.ref_intensity[ch] = predicted_led
+                    return True
+                
+                # Check if prediction is "close enough" (within 2x tolerance)
+                if intensity_error <= tolerance * 2:
+                    logger.info(f"🎯 Prediction close, fine-tuning from LED={predicted_led}...")
+                    current_led = predicted_led
+                else:
+                    logger.warning(
+                        f"⚠️ Prediction error too large ({intensity_error:.0f}), "
+                        f"falling back to iterative method"
+                    )
+                    # Fall back to default starting point
+                    current_led = 128
             else:
-                # Start at mid-range intensity (fallback)
-                current_led = 128
-                logger.info(f"📊 Using default S-mode starting point for {ch}: {current_led}")
+                # No valid model, use smart starting point from previous data
+                logger.info(f"📊 No LED model available for {ch}, using iterative method")
+                previous_s_intensity = self.state.ref_intensity.get(ch, 0)
+                if previous_s_intensity > 0:
+                    # Estimate LED from previous intensity (rough approximation)
+                    intensity_ratio = previous_s_intensity / target_intensity
+                    estimated_led = max(1, min(255, int(128 * intensity_ratio)))
+                    current_led = estimated_led
+                    logger.info(f"🎯 Using estimated S-mode LED for {ch}: {current_led} (from intensity {previous_s_intensity:.0f})")
+                else:
+                    # Start at mid-range intensity (fallback)
+                    current_led = 128
+                    logger.info(f"📊 Using default S-mode starting point for {ch}: {current_led}")
 
             best_led = current_led
             best_error = float("inf")
@@ -1351,6 +1790,8 @@ class SPRCalibrator:
 
         Uses intelligent convergence algorithm to optimize P-mode LED intensities
         based on the S-mode calibration results.
+        
+        Now uses LED response model prediction for single-shot calibration when model is available.
 
         Args:
             ch_list: List of channels to calibrate
@@ -1369,19 +1810,6 @@ class SPRCalibrator:
 
                 logger.debug(f"Adaptive P-mode calibration for channel {ch}")
 
-                # Smart starting point: use previous P-mode data if available
-                s_mode_intensity = self.state.ref_intensity[ch]
-                previous_p_led = self.state.leds_calibrated.get(ch, 0)
-
-                if previous_p_led > 0:
-                    # Start from previous P-mode LED value (fast convergence)
-                    current_led = previous_p_led
-                    logger.info(f"🎯 Using previous P-mode LED for {ch}: {current_led}")
-                else:
-                    # Start at mid-high range for P-mode (typically needs more LED power)
-                    current_led = 180
-                    logger.info(f"📊 Using default P-mode starting point for {ch}: {current_led}")
-
                 # Use SAME percentage-based target as S-mode
                 # P-mode MAY naturally achieve lower signal (perpendicular polarization), but we still aim for same target
                 target_intensity = calculate_target_intensity(TARGET_INTENSITY_PERCENT)
@@ -1398,6 +1826,61 @@ class SPRCalibrator:
                     f"in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range "
                     f"(Note: P-mode naturally weaker, may not reach target)"
                 )
+
+                # ========================================================================
+                # TRY PREDICTIVE CALIBRATION FIRST (if LED model is available)
+                # ========================================================================
+                predicted_led = self.led_model.predict_led_for_target(ch, target_intensity, led_min=20, led_max=255)
+                
+                if predicted_led is not None:
+                    logger.info(f"🎯 LED model prediction for P-mode {ch}: {predicted_led} (model-based)")
+                    
+                    # Test the prediction
+                    self.ctrl.set_intensity(ch=ch, raw_val=predicted_led)
+                    time.sleep(ADAPTIVE_STABILIZATION_DELAY)
+                    
+                    spectrum = self.usb.read_intensity()
+                    signal_region = spectrum[target_min_idx:target_max_idx]
+                    measured_intensity = signal_region.max()
+                    measured_percent = (measured_intensity / DETECTOR_MAX_COUNTS) * 100
+                    intensity_error = abs(measured_intensity - target_intensity)
+                    
+                    logger.info(
+                        f"🎯 P-mode prediction result: LED={predicted_led}, "
+                        f"measured={measured_intensity:.0f} ({measured_percent:.1f}%), "
+                        f"error={intensity_error:.0f} (tolerance={tolerance:.0f})"
+                    )
+                    
+                    # Check if prediction is within tolerance
+                    if intensity_error <= tolerance:
+                        logger.info(f"✅ Single-shot P-mode prediction successful for {ch}!")
+                        self.state.leds_calibrated[ch] = predicted_led
+                        continue  # Move to next channel
+                    
+                    # Check if prediction is "close enough" (within 2x tolerance)
+                    if intensity_error <= tolerance * 2:
+                        logger.info(f"🎯 P-mode prediction close, fine-tuning from LED={predicted_led}...")
+                        current_led = predicted_led
+                    else:
+                        logger.warning(
+                            f"⚠️ P-mode prediction error too large ({intensity_error:.0f}), "
+                            f"falling back to iterative method"
+                        )
+                        # Fall back to default starting point
+                        current_led = 180
+                else:
+                    # No valid model, use smart starting point
+                    logger.info(f"📊 No LED model available for P-mode {ch}, using iterative method")
+                    previous_p_led = self.state.leds_calibrated.get(ch, 0)
+                    
+                    if previous_p_led > 0:
+                        # Start from previous P-mode LED value (fast convergence)
+                        current_led = previous_p_led
+                        logger.info(f"🎯 Using previous P-mode LED for {ch}: {current_led}")
+                    else:
+                        # Start at mid-high range for P-mode (typically needs more LED power)
+                        current_led = 180
+                        logger.info(f"📊 Using default P-mode starting point for {ch}: {current_led}")
                 best_led = current_led
                 best_error = float("inf")
 
@@ -2006,6 +2489,8 @@ class SPRCalibrator:
                 "wave_max_index": self.state.wave_max_index,
                 "led_delay": self.state.led_delay,
                 "med_filt_win": self.state.med_filt_win,
+                # Add LED response models (for faster recalibration)
+                "led_response_models": self.led_model.to_dict(),
             }
 
             # Save to JSON
@@ -2075,6 +2560,11 @@ class SPRCalibrator:
             self.state.wave_max_index = calibration_data.get("wave_max_index", 0)
             self.state.led_delay = calibration_data.get("led_delay", LED_DELAY)
             self.state.med_filt_win = calibration_data.get("med_filt_win", 11)
+            
+            # Load LED response models if available
+            if "led_response_models" in calibration_data:
+                self.led_model.from_dict(calibration_data)
+                logger.info("✅ Loaded LED response models from profile")
 
             logger.info(f"Calibration profile loaded: {profile_path}")
             return True, "Profile loaded successfully"
