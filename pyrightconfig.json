@@ -1,0 +1,51 @@
+{
+  "include": [
+    "main",
+    "settings",
+    "ui",
+    "utils",
+    "widgets"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "**/.mypy_cache",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+    "**/generated-files",
+    "**/logs",
+    "**/build",
+    "**/dist",
+    "**/firmware"
+  ],
+  "ignore": [
+    "ui/ui_*.py",
+    "ui/ai_rc.py"
+  ],
+  "defineConstant": {
+    "DEBUG": true
+  },
+  "stubPath": "",
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false,
+  "reportGeneralTypeIssues": false,
+  "reportOptionalMemberAccess": false,
+  "reportAttributeAccessIssue": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownLambdaType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownMemberType": false,
+  "reportMissingTypeArgument": false,
+  "reportUndefinedVariable": "error",
+  "reportUnboundVariable": "error",
+  "reportCallInDefaultInitializer": false,
+  "reportUnnecessaryIsInstance": "information",
+  "reportUnnecessaryCast": "information"
+}

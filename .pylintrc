@@ -1,0 +1,122 @@
+[MASTER]
+# Use multiple processes to speed up Pylint
+jobs=4
+
+# Pickle collected data for later comparisons
+persistent=yes
+
+# List of plugins (as comma separated values of python modules names) to load
+load-plugins=
+
+# Discover python modules and packages in the file system subtree
+recursive=yes
+
+# Ignore auto-generated UI files
+ignore=ui_*.py,ai_rc.py
+
+# Ignore patterns
+ignore-patterns=^\.#,ui_.*\.py$
+
+[MESSAGES CONTROL]
+# Disable specific warnings that are false positives with PySide6
+disable=
+    # PySide6 attribute access
+    no-member,
+    too-few-public-methods,
+    # Type hints
+    missing-type-doc,
+    missing-return-type-doc,
+    missing-yield-type-doc,
+    # Documentation
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    # Import organization
+    wrong-import-position,
+    wrong-import-order,
+    ungrouped-imports,
+    # Other
+    fixme,
+    broad-except,
+    too-many-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-instance-attributes,
+    too-many-public-methods,
+    too-many-lines
+
+[REPORTS]
+# Set the output format
+output-format=colorized
+
+# Activate the evaluation score
+score=no
+
+[REFACTORING]
+# Maximum number of nested blocks for function / method body
+max-nested-blocks=5
+
+[BASIC]
+# Naming style matching correct argument names
+argument-naming-style=snake_case
+
+# Naming style matching correct attribute names
+attr-naming-style=snake_case
+
+# Naming style matching correct class names
+class-naming-style=PascalCase
+
+# Naming style matching correct constant names
+const-naming-style=UPPER_CASE
+
+# Naming style matching correct function names
+function-naming-style=snake_case
+
+# Naming style matching correct method names
+method-naming-style=snake_case
+
+# Naming style matching correct module names
+module-naming-style=snake_case
+
+# Naming style matching correct variable names
+variable-naming-style=snake_case
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=120
+
+# Maximum number of lines in a module
+max-module-lines=1000
+
+[DESIGN]
+# Maximum number of arguments for function / method
+max-args=10
+
+# Maximum number of attributes for a class
+max-attributes=15
+
+# Maximum number of boolean expressions in a if statement
+max-bool-expr=5
+
+# Maximum number of branch for function / method body
+max-branches=20
+
+# Maximum number of locals for function / method body
+max-locals=25
+
+# Maximum number of parents for a class
+max-parents=7
+
+# Maximum number of public methods for a class
+max-public-methods=25
+
+# Maximum number of return / yield for function / method body
+max-returns=6
+
+# Maximum number of statements in function / method body
+max-statements=75
+
+[EXCEPTIONS]
+# Exceptions that will emit a warning when being caught
+overgeneral-exceptions=builtins.Exception
