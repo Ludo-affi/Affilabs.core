@@ -243,7 +243,13 @@ class PicoP4SPRHAL(SPRControllerHAL):
         try:
             # Force turn off all LEDs by sending 'l0' command
             if self.is_connected():
-                self._send_command("l0\n")  # Turn off all LEDs
+                # Correct command for all-LEDs-off on PicoP4SPR is 'lx\n'
+                self._send_command("lx\n")  # Turn off all LEDs
+                # Backup: ensure intensity is zero as a safety net
+                try:
+                    self._send_command("i0\n")
+                except Exception:
+                    pass
                 self.status.active_channel = None
                 logger.info("✅ LEDs safely turned off")
                 return True

@@ -44,7 +44,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from scipy.signal import medfilt
+try:
+    from scipy.signal import medfilt
+except ImportError:
+    # Fallback implementation using numpy
+    def medfilt(data, kernel_size=None):
+        """Simple median filter fallback using numpy."""
+        import numpy as np
+        if kernel_size is None:
+            kernel_size = 5
+        # Simple rolling median approximation
+        return np.convolve(data, np.ones(kernel_size)/kernel_size, mode='same')
 
 from settings import CH_LIST, CYCLE_TIME, MED_FILT_WIN, SW_VERSION, UNIT_LIST
 from ui.ui_processing import Ui_Processing
@@ -90,14 +100,14 @@ class DataDict(TypedDict, total=False):
 class Segment:
     """A segment of the raw data."""
 
-    error: str | None
+    error: Optional[str]
 
     def __init__(self: Self, seg_id: int, seg_start: float, seg_end: float) -> None:
         """Create a segment."""
         self.seg_id = seg_id
         self.start = seg_start
         self.end = seg_end
-        self.ref_ch: str | None = None
+        self.ref_ch: Optional[str] = None
         self.unit = "RU"
         self.start_index = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.end_index = {"a": 0, "b": 0, "c": 0, "d": 0}
@@ -130,7 +140,7 @@ class Segment:
         self: Self,
         sens_data: DataDict,
         unit: str,
-        seg_ref_ch: str | None,
+    seg_ref_ch: Optional[str],
     ) -> None:
         """Pull segment data from the full sensorgram."""
         self.unit = unit
@@ -236,8 +246,8 @@ class DataWindow(QWidget):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, on=True)
         self.data_source = data_source
-        self.reference_channel_id: str | None = None
-        self.return_ref: str | None = None
+        self.reference_channel_id: Optional[str] = None
+        self.return_ref: Optional[str] = None
         self.full_segment_view: SensorgramGraph
         self.SOI_view: SegmentGraph
         self.exp_clock_raw = 0.0
@@ -275,7 +285,7 @@ class DataWindow(QWidget):
         self.live_segment_start: list[float] | None = None
         self.saved_segments: list[Segment] = []
         self.deleted_segment: Segment | None = None
-        self.segment_edit: int | None = None
+        self.segment_edit: Optional[int] = None
         self.viewing = False
         self.seg_count = 0
         self.saving = False
@@ -1028,7 +1038,7 @@ class DataWindow(QWidget):
                 self.SOI_view.update_display(self.current_segment)
                 self.update_displayed_values()
 
-    def set_reference(self: Self, ch: str | None) -> None:
+    def set_reference(self: Self, ch: Optional[str]) -> None:
         """Set the reference channel."""
         if ch == "a":
             self.reference_channel_dlg.ui.channelA.setChecked(True)
@@ -1143,7 +1153,7 @@ class DataWindow(QWidget):
             self.current_segment.note = self.ui.current_note.text()
             self.ui.current_note.clearFocus()
 
-    def reload_segments(self: Self, time_shift: float | None = None) -> None:
+    def reload_segments(self: Self, time_shift: Optional[float] = None) -> None:
         """Reload segments."""
         logger.debug("reloading segments")
         self.reloading = True
@@ -1263,7 +1273,7 @@ class DataWindow(QWidget):
                     self.current_segment.end,
                 )
 
-    def set_row_properties(self: Self, edit_row: int | None = None) -> None:
+    def set_row_properties(self: Self, edit_row: Optional[int] = None) -> None:
         """Set row properties."""
         if isinstance(edit_row, int):
             for row in range(self.ui.data_table.rowCount()):
@@ -1759,7 +1769,7 @@ class DataWindow(QWidget):
         self: Self,
         *,
         preset: bool = False,
-        preset_dir: str | None = None,
+    preset_dir: Optional[str] = None,
     ) -> None:
         """Export table data."""
         try:

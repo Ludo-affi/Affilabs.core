@@ -98,10 +98,17 @@ class DataAcquisitionThread(threading.Thread):
 class DataAcquisitionWrapper:
     """Wrapper to make SPRDataAcquisition behave like the simple threaded version."""
 
-    def __init__(self, app_ref: Any):
+    def __init__(self, app_ref: Any, calib_state: Any = None):
         self.app = app_ref
         self.thread: Optional[DataAcquisitionThread] = None
         self.data_acquisition: Optional[SPRDataAcquisition] = None
+        
+        # 🎯 Store shared calibration state reference
+        self.calib_state = calib_state
+        if calib_state is not None:
+            logger.info("✅ DataAcquisitionWrapper using SHARED CalibrationState")
+        else:
+            logger.warning("⚠️ DataAcquisitionWrapper has NO shared state!")
 
         # Initialize data storage and configuration
         self._init_data_storage()
@@ -210,6 +217,10 @@ class DataAcquisitionWrapper:
 
             logger.info(f"Creating SPRDataAcquisition with device_config: {device_config}")
             logger.debug(f"Controller adapter: {adapted_ctrl}, USB adapter: {adapted_usb}")
+            
+            # 🎯 Sync from shared calibration state before creating acquisition
+            if self.calib_state is not None:
+                self.sync_from_shared_state()
 
             self.data_acquisition = SPRDataAcquisition(
                 # Hardware references
@@ -258,18 +269,25 @@ class DataAcquisitionWrapper:
     def _get_app_signal(self, signal_name: str) -> Any:
         """Get a signal from the app, or create a dummy emitter."""
         if hasattr(self.app, signal_name):
-            return getattr(self.app, signal_name)
+            app_signal = getattr(self.app, signal_name)
+            logger.debug(f"🔗 Found app signal {signal_name}: {type(app_signal)}")
+            return app_signal
         else:
             # Create a dummy signal emitter that connects to main window
+            logger.debug(f"🔧 Creating dummy emitter for {signal_name}")
             return self._create_ui_signal_emitter(signal_name)
 
     def _create_ui_signal_emitter(self, signal_name: str) -> Any:
         """Create a signal emitter that updates UI directly."""
-        def emit_to_ui(*args: Any) -> None:
+        def emit_to_ui(emitter_self, *args: Any) -> None:
+            """Emit function that receives 'self' as first arg (bound method behavior)."""
             try:
+                logger.debug(f"🔔 emit_to_ui called for {signal_name} with {len(args)} args (after self): {[type(arg).__name__ for arg in args]}")
+
                 # Handle different signal types
                 if len(args) > 0:
                     data = args[0]
+                    logger.debug(f"✅ Data for {signal_name}: type={type(data).__name__}")
                 else:
                     data = None
 
@@ -303,34 +321,38 @@ class DataAcquisitionWrapper:
         except Exception as e:
             logger.debug(f"Could not update status bar: {e}")
 
-    def update_calibration_data(self, calibrator: SPRCalibrator) -> None:
-        """Update data from calibration results."""
+    def sync_from_shared_state(self) -> None:
+        """Sync wrapper's local copies from shared calibration state.
+        
+        ✅ SIMPLIFIED: Direct reference to shared state - no complex copying logic.
+        The shared state is already populated by the calibrator.
+        """
+        if self.calib_state is None:
+            logger.warning("No shared calibration state available")
+            return
+            
         try:
-            if hasattr(calibrator, 'calibration_data'):
-                calib_data = calibrator.calibration_data
-
-                # Copy reference spectra from calibrator
-                if hasattr(calib_data, 'reference_spectra'):
-                    for ch, ref_spectrum in calib_data.reference_spectra.items():
-                        if ch in self.ref_sig:
-                            self.ref_sig[ch] = ref_spectrum
-                            logger.info(f"Updated reference spectrum for channel {ch}: {len(ref_spectrum) if ref_spectrum is not None else 0} points")
-
-                # Update wave data
-                if hasattr(calib_data, 'wave_data') and calib_data.wave_data is not None:
-                    self.wave_data = calib_data.wave_data
-                    self.wave_max_index = len(self.wave_data) - 1
-                    logger.info(f"Updated wave data: {len(self.wave_data)} wavelengths")
-
-                # Update dark noise
-                if hasattr(calib_data, 'dark_noise') and calib_data.dark_noise is not None:
-                    self.dark_noise = calib_data.dark_noise
-                    logger.info(f"Updated dark noise: {len(self.dark_noise)} points")
-
-            logger.info("Calibration data updated successfully")
-
+            with self.calib_state._lock:
+                # Simple direct references - data is already in shared state!
+                if len(self.calib_state.wavelengths) > 0:
+                    self.wave_data = self.calib_state.wavelengths
+                    self.wave_min_index = self.calib_state.wave_min_index
+                    self.wave_max_index = self.calib_state.wave_max_index
+                    logger.info(f"✅ Synced wavelengths: {len(self.wave_data)} points")
+                
+                if len(self.calib_state.dark_noise) > 0:
+                    self.dark_noise = self.calib_state.dark_noise
+                    logger.info(f"✅ Synced dark noise: {len(self.dark_noise)} points")
+                
+                # Sync reference signals
+                for ch in CH_LIST:
+                    if self.calib_state.ref_sig.get(ch) is not None:
+                        self.ref_sig[ch] = self.calib_state.ref_sig[ch]
+                        logger.info(f"✅ Synced ref_sig[{ch}]: {len(self.ref_sig[ch])} points")
+            
+            logger.info("✅ DataAcquisitionWrapper synced from shared state")
         except Exception as e:
-            logger.exception(f"Failed to update calibration data: {e}")
+            logger.exception(f"Failed to sync from shared state: {e}")
 
     def start(self) -> None:
         """Start data acquisition thread."""
@@ -519,6 +541,12 @@ class SPRStateMachine(QObject):
         self.app = app
         self.state = SPRSystemState.DISCONNECTED
 
+        # 🎯 SHARED CALIBRATION STATE - Single source of truth
+        # This object is passed by reference to both calibrator and data acquisition
+        from utils.spr_calibrator import CalibrationState
+        self.calib_state = CalibrationState()
+        logger.info("✨ Created SHARED CalibrationState - single source of truth")
+
         # Hardware and operation managers (use Any to support both real and mock)
         self.hardware_manager: Any = None
         self.calibrator: Any = None
@@ -647,7 +675,8 @@ class SPRStateMachine(QObject):
                     self.calibrator = SPRCalibrator(
                         ctrl=ctrl_device,
                         usb=usb_device,
-                        device_type="PicoP4SPR"
+                        device_type="PicoP4SPR",
+                        calib_state=self.calib_state  # 🎯 Pass shared state!
                     )
                     # Connect calibrator progress signals for real calibrator
                     self.calibrator.set_progress_callback(self._on_calibration_progress)
@@ -715,7 +744,8 @@ class SPRStateMachine(QObject):
             logger.debug("Creating data acquisition wrapper...")
             try:
                 # Create the wrapper that handles all the complex data setup
-                self.data_acquisition = DataAcquisitionWrapper(self.app)
+                # 🎯 Pass shared calibration state - no data copying needed!
+                self.data_acquisition = DataAcquisitionWrapper(self.app, calib_state=self.calib_state)
 
                 # Get devices and data processor
                 if isinstance(self.hardware_manager, SimpleHardwareManager):
@@ -737,9 +767,9 @@ class SPRStateMachine(QObject):
                     data_processor = SPRDataProcessor(wave_data=wave_data, fourier_weights=fourier_weights)
                     logger.info("Created new SPRDataProcessor instance with default configuration")
 
-                # Transfer calibration data if available
-                if self.calibrator:
-                    self.data_acquisition.update_calibration_data(self.calibrator)
+                # ✅ NO DATA TRANSFER NEEDED - shared state already contains calibration data!
+                # Both calibrator and data acquisition reference the same CalibrationState object
+                logger.info(f"📊 Shared calibration state valid: {self.calib_state.is_valid()}")
 
                 # Create the real SPRDataAcquisition inside the wrapper
                 self.data_acquisition.create_acquisition(ctrl_device, usb_device, data_processor)
@@ -894,7 +924,11 @@ class SPRStateMachine(QObject):
                 import time
                 with serial.Serial("COM4", 115200, timeout=1) as ser:
                     time.sleep(0.1)
-                    ser.write(b'l0\n')
+                    # Primary: all LEDs off
+                    ser.write(b'lx\n')
+                    time.sleep(0.1)
+                    # Backup: set intensity to zero
+                    ser.write(b'i0\n')
                     time.sleep(0.1)
                     logger.info("✅ Direct emergency LED shutdown completed")
             except Exception as e:

@@ -17,7 +17,8 @@ from .pico_ezspr_hal import PicoEZSPRHAL
 from .pico_p4spr_hal import PicoP4SPRHAL
 from .spectrometer_hal import SpectrometerCapabilities, SpectrometerHAL
 from .spr_controller_hal import ChannelID, ControllerCapabilities, SPRControllerHAL
-from .usb4000_oceandirect_hal import USB4000OceanDirectHAL
+
+# USB4000OceanDirectHAL removed - using direct USB4000OceanDirect class instead
 
 # Legacy HAL implementations removed for cleaner architecture
 
@@ -43,5 +44,4 @@ __all__ = [
     "KineticHAL",
     "PicoEZSPRHAL",
     "PicoP4SPRHAL",
-    "USB4000OceanDirectHAL",
 ]

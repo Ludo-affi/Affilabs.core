@@ -90,22 +90,23 @@ class SPRDataProcessor:
 
         """
         try:
-            # Subtract dark noise if provided
+            # Universal dark noise correction with resampling
             if dark_noise is not None:
-                p_pol = p_pol_intensity - dark_noise
-                s_ref = s_ref_intensity - dark_noise
+                # Ensure dark noise matches data size through universal resampling
+                p_pol_corrected = self._apply_universal_dark_correction(p_pol_intensity, dark_noise)
+                s_ref_corrected = self._apply_universal_dark_correction(s_ref_intensity, dark_noise)
             else:
-                p_pol = p_pol_intensity
-                s_ref = s_ref_intensity
+                p_pol_corrected = p_pol_intensity
+                s_ref_corrected = s_ref_intensity
 
             # Calculate transmission percentage
             # Avoid division by zero by using np.divide with where parameter
             transmission = (
                 np.divide(
-                    p_pol,
-                    s_ref,
-                    out=np.zeros_like(p_pol, dtype=np.float64),
-                    where=s_ref != 0,
+                    p_pol_corrected,
+                    s_ref_corrected,
+                    out=np.zeros_like(p_pol_corrected, dtype=np.float64),
+                    where=s_ref_corrected != 0,
                 )
                 * 100.0
             )
@@ -115,6 +116,59 @@ class SPRDataProcessor:
         except Exception as e:
             logger.exception(f"Error calculating transmission: {e}")
             return np.full_like(p_pol_intensity, np.nan, dtype=np.float64)
+
+    def _apply_universal_dark_correction(self, signal: np.ndarray, dark_noise: np.ndarray) -> np.ndarray:
+        """Apply dark noise correction with universal resampling - no cropping.
+
+        Args:
+            signal: Signal data to correct
+            dark_noise: Dark noise array (may be different size)
+
+        Returns:
+            Dark noise corrected signal
+        """
+        try:
+            if dark_noise.shape == signal.shape:
+                # Perfect match - subtract directly
+                return signal - dark_noise
+
+            # Universal resampling approach - preserve all information
+            target_size = len(signal)
+            source_size = len(dark_noise)
+
+            if source_size == 1:
+                # Single value - broadcast to full size
+                dark_correction = np.full_like(signal, dark_noise[0])
+            elif source_size == target_size:
+                # Same length but different shape - reshape
+                try:
+                    dark_correction = dark_noise.reshape(signal.shape)
+                except ValueError:
+                    # If reshape fails, use zeros
+                    dark_correction = np.zeros_like(signal)
+                    logger.warning("Using zero dark correction due to shape incompatibility")
+            else:
+                # Different sizes - use linear interpolation to resample
+                try:
+                    from scipy.interpolate import interp1d
+                    # Create interpolation function
+                    source_indices = np.linspace(0, 1, source_size)
+                    target_indices = np.linspace(0, 1, target_size)
+                    interpolator = interp1d(source_indices, dark_noise,
+                                          kind='linear', bounds_error=False, fill_value='extrapolate')
+                    dark_correction = interpolator(target_indices)
+                except ImportError:
+                    # Fallback to simple resampling if scipy not available
+                    step = source_size / target_size
+                    indices = np.arange(target_size) * step
+                    indices = np.clip(indices.astype(int), 0, source_size - 1)
+                    dark_correction = dark_noise[indices]
+
+            return signal - dark_correction
+
+        except Exception as e:
+            logger.warning(f"Error in universal dark correction: {e}. Using original signal.")
+            return signal
 
     # ========================================================================
     # FOURIER TRANSFORM SMOOTHING
@@ -289,7 +343,7 @@ class SPRDataProcessor:
         self,
         data: np.ndarray,
         buffer_index: int,
-        window: int | None = None,
+    window: Optional[int] = None,
     ) -> float:
         """Apply causal (backward-looking) median filter at specific index.
 
@@ -347,7 +401,7 @@ class SPRDataProcessor:
     def apply_centered_median_filter(
         self,
         data: np.ndarray,
-        window: int | None = None,
+    window: Optional[int] = None,
     ) -> np.ndarray:
         """Apply centered (symmetric) median filter to entire array.
 
@@ -456,7 +510,7 @@ class SPRDataProcessor:
     def apply_advanced_filter(
         self,
         data: np.ndarray,
-        window: int | None = None,
+    window: Optional[int] = None,
         outlier_detection: bool = True,
         lookback: int = 20,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -510,7 +564,7 @@ class SPRDataProcessor:
         self.med_filt_win = self._ensure_odd(new_window)
         logger.debug(f"Updated median filter window to {self.med_filt_win}")
 
-    def get_filter_delay(self, window: int | None = None) -> float:
+    def get_filter_delay(self, window: Optional[int] = None) -> float:
         """Calculate filter delay in number of samples.
 
         Args:

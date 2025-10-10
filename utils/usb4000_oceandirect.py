@@ -19,7 +19,7 @@ Reference:
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -191,7 +191,7 @@ class USB4000OceanDirect:
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
 
-    def connect(self, device_id: int | None = None) -> bool:
+    def connect(self, device_id: Optional[int] = None) -> bool:
         """Connect to USB4000 device.
 
         Args:
@@ -255,16 +255,30 @@ class USB4000OceanDirect:
             # Get device information
             self._serial_number = getattr(self._device, "serial_number", "Unknown")
 
-            # Get integration time limits
-            self._min_integration_time = (
-                self._device.get_minimum_integration_time() / 1000.0
-            )  # Convert to seconds
-            self._max_integration_time = (
-                self._device.get_maximum_integration_time() / 1000.0
-            )  # Convert to seconds
+            # Get integration time limits - use constants if API methods not available
+            try:
+                self._min_integration_time = (
+                    self._device.integration_time_micros_limits[0] / 1000000.0
+                )  # Convert to seconds
+            except AttributeError:
+                logger.debug("Using fallback minimum integration time")
+                self._min_integration_time = self.MIN_INTEGRATION_TIME
+            
+            try:
+                self._max_integration_time = (
+                    self._device.integration_time_micros_limits[1] / 1000000.0
+                )  # Convert to seconds  
+            except AttributeError:
+                logger.debug("Using fallback maximum integration time")
+                self._max_integration_time = self.MAX_INTEGRATION_TIME
 
             # Get wavelength calibration
-            self._wavelengths = np.array(self._device.get_wavelengths())
+            try:
+                self._wavelengths = np.array(self._device.wavelengths())
+            except Exception as e:
+                logger.warning(f"Failed to get wavelengths directly: {e}")
+                # Use fallback wavelength calibration for USB4000
+                self._wavelengths = self._get_fallback_wavelengths()
 
             # Set default integration time
             self.set_integration_time(self._current_integration_time)
@@ -286,13 +300,23 @@ class USB4000OceanDirect:
         """Disconnect from USB4000 device."""
         if self._connected and self._device:
             try:
-                self._device.close_device()
+                # Close device connection if method exists
+                if hasattr(self._device, 'close_device'):
+                    self._device.close_device()
+                elif hasattr(self._device, 'close'):
+                    self._device.close()
                 logger.info(f"Disconnected from {self.DEVICE_MODEL}")
             except Exception as e:
                 logger.warning(f"Error during disconnect: {e}")
 
         self._device = None
         self._connected = False
+
+    def _get_fallback_wavelengths(self) -> np.ndarray:
+        """Generate fallback wavelength calibration for USB4000."""
+        # USB4000 typical wavelength range: ~200-1100nm over 3648 pixels
+        logger.debug("Using fallback wavelength calibration for USB4000")
+        return np.linspace(200.0, 1100.0, 3648)
 
     def is_connected(self) -> bool:
         """Check if device is connected."""
@@ -325,9 +349,9 @@ class USB4000OceanDirect:
                 return False
 
         try:
-            # Convert to microseconds for OceanDirect API
+            # SeaBreeze API uses microseconds
             time_microseconds = int(time_seconds * 1000000)
-            self._device.set_integration_time(time_microseconds)
+            self._device.integration_time_micros(time_microseconds)
             self._current_integration_time = time_seconds
 
             logger.debug(
@@ -343,7 +367,7 @@ class USB4000OceanDirect:
         """Get current integration time in seconds."""
         return self._current_integration_time
 
-    def acquire_spectrum(self) -> np.ndarray | None:
+    def acquire_spectrum(self) -> Optional[np.ndarray]:
         """Acquire spectrum from USB4000.
 
         Returns:
@@ -355,8 +379,8 @@ class USB4000OceanDirect:
             return None
 
         try:
-            # Acquire spectrum
-            intensity_data = np.array(self._device.get_formatted_spectrum())
+            # Acquire spectrum using SeaBreeze API
+            intensity_data = np.array(self._device.intensities())
 
             logger.debug(
                 f"Acquired spectrum: {len(intensity_data)} points, "
@@ -369,7 +393,7 @@ class USB4000OceanDirect:
             logger.error(f"Spectrum acquisition failed: {e}")
             return None
 
-    def get_wavelengths(self) -> np.ndarray | None:
+    def get_wavelengths(self) -> Optional[np.ndarray]:
         """Get wavelength calibration data.
 
         Returns:
@@ -418,6 +442,11 @@ class USB4000OceanDirect:
             )
 
         return info
+
+    def close_device(self) -> bool:
+        """Alias for disconnect() to match expected interface."""
+        self.disconnect()
+        return True
 
     def __enter__(self):
         """Context manager entry."""

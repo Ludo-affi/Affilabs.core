@@ -7,6 +7,7 @@ from copy import deepcopy
 from typing import Any, Protocol, cast
 
 import numpy as np
+from typing import Optional
 
 from settings import CH_LIST, DEVICES, EZ_CH_LIST
 from utils.logger import logger
@@ -217,19 +218,58 @@ class SPRDataAcquisition:
                 # Average scans and subtract dark noise
                 averaged_intensity = int_data_sum / self.num_scans
 
-                # Ensure dark_noise array matches spectral data size
-                if self.dark_noise.shape != averaged_intensity.shape:
-                    logger.warning(f"Dark noise shape mismatch: {self.dark_noise.shape} vs {averaged_intensity.shape}")
-                    # Resize dark_noise to match or use zeros
-                    if len(self.dark_noise) == 1:
-                        # Single value dark noise - broadcast to full array
-                        dark_correction = np.full_like(averaged_intensity, self.dark_noise[0])
-                    else:
-                        # Create properly sized dark noise array
-                        dark_correction = np.zeros_like(averaged_intensity)
-                        logger.info(f"Using zero dark correction due to shape mismatch")
-                else:
+                # Handle dark noise correction with universal resizing - no cropping
+                if self.dark_noise.shape == averaged_intensity.shape:
+                    # Perfect match - use dark noise directly
                     dark_correction = self.dark_noise
+                    logger.debug(f"Dark noise shape matches data: {self.dark_noise.shape}")
+                else:
+                    # Universal resampling approach - preserve all information
+                    target_size = len(averaged_intensity)
+                    source_size = len(self.dark_noise)
+
+                    logger.info(
+                        f"Dark noise size differs from data: dark_noise=({source_size},) vs data=({target_size},). "
+                        f"Wavelength indices: {self.wave_min_index}:{self.wave_max_index}. "
+                        f"Applying universal resampling (no cropping)."
+                    )
+
+                    if source_size == 1:
+                        # Single value - broadcast to full size
+                        dark_correction = np.full_like(averaged_intensity, self.dark_noise[0])
+                        logger.debug("Broadcasted single dark noise value to match data size")
+                    elif source_size == target_size:
+                        # Same length but different shape - reshape
+                        try:
+                            dark_correction = self.dark_noise.reshape(averaged_intensity.shape)
+                            logger.debug("Reshaped dark noise to match data shape")
+                        except ValueError:
+                            # If reshape fails, use zeros
+                            dark_correction = np.zeros_like(averaged_intensity)
+                            logger.warning("Using zero dark correction due to shape incompatibility")
+                    else:
+                        # Different sizes - use linear interpolation to resample
+                        try:
+                            from scipy.interpolate import interp1d
+                            # Create interpolation function
+                            source_indices = np.linspace(0, 1, source_size)
+                            target_indices = np.linspace(0, 1, target_size)
+                            interpolator = interp1d(source_indices, self.dark_noise,
+                                                  kind='linear', bounds_error=False, fill_value='extrapolate')
+                            dark_correction = interpolator(target_indices)
+                            logger.debug(f"Interpolated dark noise from {source_size} to {target_size} pixels")
+                        except ImportError:
+                            # Fallback to simple resampling if scipy not available
+                            step = source_size / target_size
+                            indices = np.arange(target_size) * step
+                            indices = np.clip(indices.astype(int), 0, source_size - 1)
+                            dark_correction = self.dark_noise[indices]
+                            logger.debug(f"Simple resampled dark noise from {source_size} to {target_size} pixels")
+
+                # Ensure final correction matches data shape exactly
+                if dark_correction.shape != averaged_intensity.shape:
+                    logger.warning(f"Final shape mismatch: {dark_correction.shape} vs {averaged_intensity.shape}. Using zero correction.")
+                    dark_correction = np.zeros_like(averaged_intensity)
 
                 self.int_data[ch] = averaged_intensity - dark_correction
 
@@ -449,7 +489,7 @@ class SPRDataAcquisition:
         calibrated: bool = False,
         filt_on: bool = True,
         recording: bool = False,
-        med_filt_win: int | None = None,
+    med_filt_win: Optional[int] = None,
     ) -> None:
         """Update acquisition configuration."""
         self.single_mode = single_mode

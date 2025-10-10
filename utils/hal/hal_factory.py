@@ -16,9 +16,11 @@ from .pico_ezspr_hal import PicoEZSPRHAL
 from .pico_p4spr_hal import PicoP4SPRHAL
 from .spectrometer_hal import SpectrometerHAL
 from .spr_controller_hal import SPRControllerHAL
-from .usb4000_oceandirect_hal import USB4000OceanDirectHAL
 
-# Legacy HAL implementations removed - USB4000OceanDirectHAL is the only supported implementation
+# Import USB4000 implementation from utils module
+from ..usb4000_oceandirect import USB4000OceanDirect
+
+# USB4000OceanDirect is the only supported spectrometer implementation
 
 
 class HALFactory:
@@ -40,11 +42,11 @@ class HALFactory:
 
     # Registry of available spectrometer implementations
     _spectrometer_registry: dict[str, type[SpectrometerHAL]] = {
-        "USB4000": USB4000OceanDirectHAL,  # Use Ocean Direct API HAL
-        "usb4000": USB4000OceanDirectHAL,
-        "OceanOptics": USB4000OceanDirectHAL,  # Alias for USB4000
-        "USB4000-OceanDirect": USB4000OceanDirectHAL,
-        "usb4000-oceandirect": USB4000OceanDirectHAL,
+        "USB4000": USB4000OceanDirect,  # Use Ocean Direct API implementation
+        "usb4000": USB4000OceanDirect,
+        "OceanOptics": USB4000OceanDirect,  # Alias for USB4000
+        "USB4000-OceanDirect": USB4000OceanDirect,
+        "usb4000-oceandirect": USB4000OceanDirect,
         # Future spectrometer implementations:
         # "USB2000": USB2000HAL,
         # "QE65000": QE65000HAL,

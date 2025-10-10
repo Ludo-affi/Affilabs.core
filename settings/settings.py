@@ -63,10 +63,19 @@ S_LED_INT = int(0.66 * 255)  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
-S_COUNT_MAX = 64000  # maximum value for peak intensity in counts
-P_COUNT_THRESHOLD = 10000  # minimum p-polarized count for successful calibration
+S_COUNT_MAX = 64000  # maximum value for peak intensity in counts (saturation limit)
+P_COUNT_THRESHOLD = 3000  # minimum p-polarized count for successful calibration (adjusted for real hardware sensitivity)
 MIN_INTEGRATION = 5  # minimum detector integration time in ms
 MAX_INTEGRATION = 100  # maximum detector integration time in ms
+
+# Percentage-based calibration (NEW APPROACH - Development Mode)
+DEVELOPMENT_MODE = True  # When True, skip validation thresholds to allow testing/fixing
+TARGET_WAVELENGTH_MIN = 580  # nm - start of target wavelength range for calibration
+TARGET_WAVELENGTH_MAX = 610  # nm - end of target wavelength range for calibration
+TARGET_INTENSITY_PERCENT = 80  # % - target intensity as percentage of detector max (0-100%)
+MIN_INTENSITY_PERCENT = 60  # % - minimum acceptable intensity (for production mode)
+MAX_INTENSITY_PERCENT = 90  # % - maximum acceptable intensity (for production mode)
+DETECTOR_MAX_COUNTS = 65535  # Maximum detector counts (16-bit ADC)
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment

@@ -70,6 +70,8 @@ class AffiniteApp(QApplication):
         self.state_machine.calibration_completed.connect(self._on_calibration_completed)
         self.state_machine.data_acquisition_started.connect(self._on_data_acquisition_started)
         self.state_machine.error_occurred.connect(self._on_error_occurred)
+        # On any error, immediately trigger emergency stop to ensure LEDs are off
+        self.state_machine.error_occurred.connect(lambda _msg: self.state_machine.emergency_stop())
 
     @Slot(str)
     def _on_state_changed(self, state: str) -> None:
@@ -246,7 +248,11 @@ class AffiniteApp(QApplication):
             try:
                 with serial.Serial("COM4", 115200, timeout=1) as ser:
                     time.sleep(0.1)
-                    ser.write(b'l0\n')  # LED off command
+                    # Primary: all LEDs off
+                    ser.write(b'lx\n')  # LED off command
+                    time.sleep(0.1)
+                    # Backup: ensure intensity is zero
+                    ser.write(b'i0\n')
                     time.sleep(0.1)
                     response = ser.read(10)
                     logger.info(f"Direct LED shutdown: {response}")
@@ -277,7 +283,9 @@ def main() -> None:
             import time
             with serial.Serial("COM4", 115200, timeout=1) as ser:
                 time.sleep(0.1)
-                ser.write(b'l0\n')
+                ser.write(b'lx\n')
+                time.sleep(0.1)
+                ser.write(b'i0\n')
                 time.sleep(0.1)
                 print("✅ Emergency LED shutdown completed")
         except Exception as e:
@@ -318,7 +326,9 @@ def main() -> None:
             import time
             with serial.Serial("COM4", 115200, timeout=1) as ser:
                 time.sleep(0.1)
-                ser.write(b'l0\n')
+                ser.write(b'lx\n')
+                time.sleep(0.1)
+                ser.write(b'i0\n')
                 time.sleep(0.1)
                 logger.info("Emergency LED shutdown on crash completed")
         except Exception as led_error:
