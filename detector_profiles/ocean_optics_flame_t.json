@@ -1,0 +1,59 @@
+{
+  "detector_info": {
+    "manufacturer": "Ocean Optics",
+    "model": "Flame-T",
+    "serial_number": "FLMT00000",
+    "description": "Ocean Optics Flame-T Spectrometer with CCD array"
+  },
+  "hardware_specs": {
+    "pixel_count": 3648,
+    "wavelength_range": {
+      "min_nm": 441.0,
+      "max_nm": 773.0,
+      "calibration_coefficients": "Auto-detected from device"
+    },
+    "detector_type": "CCD",
+    "grating": "600 lines/mm",
+    "slit_width_um": 25
+  },
+  "acquisition_limits": {
+    "max_intensity_counts": 62000,
+    "saturation_counts": 65535,
+    "min_integration_time_ms": 1.0,
+    "max_integration_time_ms": 200.0,
+    "recommended_integration_time_ms": 10.0
+  },
+  "calibration_targets": {
+    "target_signal_counts": 50000,
+    "signal_tolerance_counts": 5000,
+    "dark_noise_scans": 30,
+    "led_characterization_points": [20, 128, 255],
+    "max_calibration_iterations": 20
+  },
+  "spr_settings": {
+    "wavelength_range_nm": {
+      "min": 580,
+      "max": 720
+    },
+    "expected_filtered_pixels": 1591,
+    "typical_spr_peak_range_nm": {
+      "min": 600,
+      "max": 680
+    }
+  },
+  "performance": {
+    "typical_snr": 300,
+    "dark_noise_mean_counts": 3500,
+    "dark_noise_std_counts": 50,
+    "read_time_ms": 100
+  },
+  "communication": {
+    "interface": "USB",
+    "driver": "SeaBreeze (USB4000)",
+    "auto_detect_string": "FLMT",
+    "auto_detect_method": "serial_number",
+    "vendor_id": "0x2457",
+    "product_id": "0x1002",
+    "notes": "Flame-T connects via USB4000 driver. Detect by serial number starting with FLMT"
+  }
+}

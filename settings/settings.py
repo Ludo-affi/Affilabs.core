@@ -1,3 +1,28 @@
+"""
+Settings Configuration
+
+DETECTOR-SPECIFIC PARAMETERS (NEW):
+====================================
+This file now supports detector-specific parameters loaded from detector profiles.
+See detector_profiles/*.json for detector-specific configurations.
+
+The detector manager auto-detects the connected detector and loads the appropriate profile with:
+- pixel_count (e.g., 3648 for Ocean Optics)
+- wavelength_range (min/max nm)
+- max_intensity_counts (62,000 for Flame-T, not 50,000!)
+- max_integration_time_ms (200 ms for Flame-T, not 20 ms!)
+- target_signal_counts
+- spr_wavelength_range (580-720 nm)
+
+To access detector-specific values:
+    from utils.detector_manager import get_current_detector_profile
+    profile = get_current_detector_profile()
+    max_counts = profile.max_intensity_counts  # 62,000 for Flame-T
+
+Legacy constants below are kept for backward compatibility but will be
+replaced with detector profile values during runtime.
+"""
+
 import json
 import os
 import sys
@@ -52,8 +77,14 @@ GRAPH_REGION_UPDATE_GAP = 0.1  # 100 ms
 
 # Fields
 UNIT = "RU"  # measurement units
-MIN_WAVELENGTH = 580  # minimum wavelength for data (SPR relevant range)
-MAX_WAVELENGTH = 720  # maximum wavelength for data (SPR relevant range)
+
+# ==========================================
+# DETECTOR-SPECIFIC PARAMETERS (Use profiles instead!)
+# ==========================================
+# DEPRECATED: These are now loaded from detector profiles
+# Use: profile = get_current_detector_profile()
+MIN_WAVELENGTH = 580  # DEPRECATED: Use profile.spr_wavelength_min_nm
+MAX_WAVELENGTH = 720  # DEPRECATED: Use profile.spr_wavelength_max_nm
 POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
@@ -63,10 +94,10 @@ S_LED_INT = int(0.66 * 255)  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
-S_COUNT_MAX = 64000  # maximum value for peak intensity in counts (saturation limit)
+S_COUNT_MAX = 64000  # DEPRECATED: Use profile.max_intensity_counts (62,000 for Flame-T)
 P_COUNT_THRESHOLD = 3000  # minimum p-polarized count for successful calibration (adjusted for real hardware sensitivity)
-MIN_INTEGRATION = 5  # minimum detector integration time in ms
-MAX_INTEGRATION = 100  # maximum detector integration time in ms
+MIN_INTEGRATION = 5  # DEPRECATED: Use profile.min_integration_time_ms
+MAX_INTEGRATION = 100  # DEPRECATED: Use profile.max_integration_time_ms (200 ms for Flame-T!)
 
 # Percentage-based calibration (NEW APPROACH - Development Mode)
 DEVELOPMENT_MODE = True  # When True, skip validation thresholds to allow testing/fixing

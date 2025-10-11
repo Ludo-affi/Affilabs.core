@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 
+from utils.detector_manager import get_detector_manager, get_current_detector_profile, DetectorProfile
 from settings import (
     CH_LIST,
     DARK_NOISE_SCANS,
@@ -460,6 +461,11 @@ class SPRCalibrator:
         # Initialize LED response model for predictive calibration
         self.led_model = LEDResponseModel()
         logger.debug("LED response model initialized")
+        
+        # Initialize detector profile (will be loaded during calibration)
+        self.detector_profile: Optional[DetectorProfile] = None
+        self.detector_manager = get_detector_manager()
+        logger.debug("Detector manager initialized")
 
         # Debug logging to check USB object type
         logger.debug(f"SPRCalibrator initialized with USB type: {type(self.usb)}")
@@ -916,18 +922,28 @@ class SPRCalibrator:
                 f"📊 Full detector range: {wave_data[0]:.1f} - {wave_data[-1]:.1f} nm ({len(wave_data)} pixels)"
             )
 
-            # Create wavelength mask for SPR-relevant range (580-720 nm)
-            wavelength_mask = (wave_data >= MIN_WAVELENGTH) & (wave_data <= MAX_WAVELENGTH)
+            # Get SPR wavelength range from detector profile (or fall back to settings)
+            if self.detector_profile:
+                min_wavelength = self.detector_profile.spr_wavelength_min_nm
+                max_wavelength = self.detector_profile.spr_wavelength_max_nm
+                logger.info(f"Using detector profile SPR range: {min_wavelength}-{max_wavelength} nm")
+            else:
+                min_wavelength = MIN_WAVELENGTH
+                max_wavelength = MAX_WAVELENGTH
+                logger.warning("Using legacy wavelength range from settings.py")
+
+            # Create wavelength mask for SPR-relevant range
+            wavelength_mask = (wave_data >= min_wavelength) & (wave_data <= max_wavelength)
             filtered_wave_data = wave_data[wavelength_mask]
 
             if len(filtered_wave_data) < 10:
-                logger.error(f"Insufficient pixels in SPR range ({MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm)")
+                logger.error(f"Insufficient pixels in SPR range ({min_wavelength}-{max_wavelength} nm)")
                 return False, integration_step
 
             # Store wavelength filtering configuration (cleaner architecture)
             # Instead of indices, store the actual wavelength boundaries
-            self.state.wavelength_min = MIN_WAVELENGTH  # 580 nm
-            self.state.wavelength_max = MAX_WAVELENGTH  # 720 nm
+            self.state.wavelength_min = min_wavelength
+            self.state.wavelength_max = max_wavelength
             
             # Store the filtered wavelength array (what we actually work with)
             self.state.wave_data = filtered_wave_data.copy()
@@ -1025,13 +1041,20 @@ class SPRCalibrator:
             time.sleep(0.5)
             self.ctrl.turn_off_channels()
 
-            # Set minimum integration time (convert ms to seconds)
-            min_int = MIN_INTEGRATION / 1000.0  # Convert ms to seconds
+            # Get integration time limits from detector profile (or fall back to settings)
+            if self.detector_profile:
+                min_int = self.detector_profile.min_integration_time_ms / 1000.0  # Convert ms to seconds
+                max_int = self.detector_profile.max_integration_time_ms / 1000.0  # Convert ms to seconds (200 ms for Flame-T!)
+                logger.info(f"Using detector profile integration limits: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms} ms")
+            else:
+                min_int = MIN_INTEGRATION / 1000.0  # Convert ms to seconds
+                max_int = MAX_INTEGRATION / 1000.0  # Convert ms to seconds
+                logger.warning("Using legacy integration limits from settings.py")
+            
+            # Set minimum integration time
             self.state.integration = min_int
             self.usb.set_integration(self.state.integration)
             time.sleep(0.1)
-
-            max_int = MAX_INTEGRATION / 1000.0  # Convert ms to seconds
 
             # ========================================================================
             # STEP 1: Identify weakest channel (test all at standard LED intensity)
@@ -2024,6 +2047,27 @@ class SPRCalibrator:
 
         """
         try:
+            logger.info("=" * 80)
+            logger.info("STEP 0: Loading Detector Profile")
+            logger.info("=" * 80)
+            
+            # Auto-detect and load detector profile
+            self.detector_profile = self.detector_manager.auto_detect(self.usb)
+            
+            if self.detector_profile is None:
+                logger.error("❌ Failed to load detector profile - using legacy defaults")
+                # Will fall back to hardcoded values from settings.py
+            else:
+                logger.info(f"✅ Detector Profile Loaded:")
+                logger.info(f"   Manufacturer: {self.detector_profile.manufacturer}")
+                logger.info(f"   Model: {self.detector_profile.model}")
+                logger.info(f"   Pixels: {self.detector_profile.pixel_count}")
+                logger.info(f"   Wavelength Range: {self.detector_profile.wavelength_min_nm:.1f}-{self.detector_profile.wavelength_max_nm:.1f} nm")
+                logger.info(f"   Max Intensity: {self.detector_profile.max_intensity_counts} counts")
+                logger.info(f"   Max Integration Time: {self.detector_profile.max_integration_time_ms} ms")
+                logger.info(f"   Target Signal: {self.detector_profile.target_signal_counts} ± {self.detector_profile.signal_tolerance_counts} counts")
+                logger.info(f"   SPR Range: {self.detector_profile.spr_wavelength_min_nm}-{self.detector_profile.spr_wavelength_max_nm} nm")
+            
             logger.debug("=== Starting FRESH calibration sequence (no legacy data) ===")
 
             # DISABLED: Legacy calibration loading causes stale data and array mismatches
