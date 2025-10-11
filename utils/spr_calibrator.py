@@ -77,28 +77,32 @@ ADAPTIVE_MAX_STEP = 50  # Maximum LED intensity step
 ADAPTIVE_STABILIZATION_DELAY = 0.3  # LED stabilization delay (faster)
 
 
-def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT) -> int:
-    """Calculate target intensity from percentage.
+def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT, 
+                                detector_max_counts: int = DETECTOR_MAX_COUNTS) -> int:
+    """Calculate target intensity from percentage using detector-specific max.
 
     Args:
         target_percent: Target as percentage of detector max (0-100)
+        detector_max_counts: Detector-specific maximum counts (from profile)
 
     Returns:
         Target intensity in counts
     """
-    return int(DETECTOR_MAX_COUNTS * target_percent / 100.0)
+    return int(detector_max_counts * target_percent / 100.0)
 
 
-def calculate_intensity_tolerance(target_percent: float = TARGET_INTENSITY_PERCENT) -> int:
+def calculate_intensity_tolerance(target_percent: float = TARGET_INTENSITY_PERCENT,
+                                   detector_max_counts: int = DETECTOR_MAX_COUNTS) -> int:
     """Calculate acceptable tolerance around target (±5% of detector max).
 
     Args:
         target_percent: Target as percentage
+        detector_max_counts: Detector-specific maximum counts (from profile)
 
     Returns:
         Tolerance in counts
     """
-    return int(DETECTOR_MAX_COUNTS * 0.05)  # ±5% of max
+    return int(detector_max_counts * 0.05)  # ±5% of max
 
 
 class CalibrationState:
@@ -1114,50 +1118,56 @@ class SPRCalibrator:
                 current_count = 0
                 logger.error("Failed to read intensity for integration time calibration")
 
-                # Target: 80% of max (52,428 counts) - same as S_COUNT_TARGET
-                S_COUNT_TARGET = int(TARGET_INTENSITY_PERCENT / 100 * 65535)
+            # Get detector-specific max counts for target calculation
+            if self.detector_profile:
+                detector_max = self.detector_profile.max_intensity_counts
+            else:
+                detector_max = DETECTOR_MAX_COUNTS
+            
+            # Target: 80% of detector-specific max
+            S_COUNT_TARGET = int(TARGET_INTENSITY_PERCENT / 100 * detector_max)
 
-                # Increase integration time until target reached or max integration hit
-                while current_count < S_COUNT_TARGET and self.state.integration < max_int:
-                    self.state.integration += (
-                        integration_step / 1000.0
-                    )  # Convert ms to seconds
+            # Increase integration time until target reached or max integration hit
+            while current_count < S_COUNT_TARGET and self.state.integration < max_int:
+                self.state.integration += (
+                    integration_step / 1000.0
+                )  # Convert ms to seconds
 
-                    self.usb.set_integration(self.state.integration)
-                    time.sleep(0.02)
+                self.usb.set_integration(self.state.integration)
+                time.sleep(0.02)
 
-                    raw_array = self.usb.read_intensity()
-                    if raw_array is None:
-                        break
+                raw_array = self.usb.read_intensity()
+                if raw_array is None:
+                    break
 
-                    # Apply spectral filter to intensity reads during integration optimization
-                    filtered_array = self._apply_spectral_filter(raw_array)
-                    current_count = filtered_array.max()
+                # Apply spectral filter to intensity reads during integration optimization
+                filtered_array = self._apply_spectral_filter(raw_array)
+                current_count = filtered_array.max()
 
-                    if current_count >= S_COUNT_TARGET:
-                        logger.info(
-                            f"   ✅ Target reached at {self.state.integration * 1000:.1f}ms: "
-                            f"weakest@LED=255: {current_count:.0f} counts ({current_count/655.35:.1f}%)"
-                        )
-                        break
-
-                    # Log progress every 10ms
-                    if int(self.state.integration * 1000) % 10 == 0:
-                        logger.debug(
-                            f"   {self.state.integration * 1000:.1f}ms: "
-                            f"weakest@LED=255: {current_count:.0f} counts ({current_count/655.35:.1f}%)"
-                        )
-
-                if current_count < S_COUNT_TARGET:
-                    logger.warning(
-                        f"⚠️ Weakest channel could not reach target even at LED=255 and {self.state.integration * 1000:.1f}ms"
+                if current_count >= S_COUNT_TARGET:
+                    logger.info(
+                        f"   ✅ Target reached at {self.state.integration * 1000:.1f}ms: "
+                        f"weakest@LED=255: {current_count:.0f} counts ({current_count/detector_max*100:.1f}%)"
                     )
-                    logger.warning(
-                        f"   Achieved: {current_count:.0f} counts ({current_count/655.35:.1f}% of max)"
+                    break
+
+                # Log progress every 10ms
+                if int(self.state.integration * 1000) % 10 == 0:
+                    logger.debug(
+                        f"   {self.state.integration * 1000:.1f}ms: "
+                        f"weakest@LED=255: {current_count:.0f} counts ({current_count/detector_max*100:.1f}%)"
                     )
-                    logger.warning(
-                        f"   This integration time ({self.state.integration * 1000:.1f}ms) will be used for all channels"
-                    )
+
+            if current_count < S_COUNT_TARGET:
+                logger.warning(
+                    f"⚠️ Weakest channel could not reach target even at LED=255 and {self.state.integration * 1000:.1f}ms"
+                )
+                logger.warning(
+                    f"   Achieved: {current_count:.0f} counts ({current_count/detector_max*100:.1f}% of max)"
+                )
+                logger.warning(
+                    f"   This integration time ({self.state.integration * 1000:.1f}ms) will be used for all channels"
+                )
 
             # Turn off weakest channel
             self.ctrl.set_intensity(ch=weakest_ch, raw_val=0)
@@ -1172,7 +1182,13 @@ class SPRCalibrator:
             # ========================================================================
             logger.info(f"📊 Step 3.3: Checking for saturation at {integration_ms:.1f}ms")
 
-            SATURATION_THRESHOLD = 60000  # 91% of max (65,535)
+            # Get detector-specific max for saturation threshold (91% of max)
+            if self.detector_profile:
+                detector_max = self.detector_profile.max_intensity_counts
+            else:
+                detector_max = DETECTOR_MAX_COUNTS
+            
+            SATURATION_THRESHOLD = int(detector_max * 0.91)  # 91% of detector-specific max
             LOW_LED_TEST = 50  # LED intensity to test for saturation check
             needs_reduction = False
 
@@ -1193,7 +1209,7 @@ class SPRCalibrator:
                     mask = (wavelengths >= MIN_WAVELENGTH) & (wavelengths <= MAX_WAVELENGTH)
                     filtered_array = int_array[mask]
                     counts = filtered_array.max()
-                    counts_percent = (counts / 65535) * 100
+                    counts_percent = (counts / detector_max) * 100
 
                     logger.debug(f"   Channel {ch} @ LED={LOW_LED_TEST}: {counts:.0f} counts ({counts_percent:.1f}%)")
 
@@ -1301,9 +1317,17 @@ class SPRCalibrator:
 
             logger.debug(f"Starting adaptive LED calibration for channel {ch}")
 
-            # Initialize percentage-based calibration parameters
-            target_intensity = calculate_target_intensity(TARGET_INTENSITY_PERCENT)
-            tolerance = calculate_intensity_tolerance()
+            # Get detector-specific max counts (or fallback to hardcoded value)
+            if self.detector_profile:
+                detector_max = self.detector_profile.max_intensity_counts
+                logger.debug(f"Using detector-specific max: {detector_max} counts")
+            else:
+                detector_max = DETECTOR_MAX_COUNTS
+                logger.warning(f"No detector profile, using default max: {detector_max} counts")
+
+            # Initialize percentage-based calibration parameters using detector-specific max
+            target_intensity = calculate_target_intensity(TARGET_INTENSITY_PERCENT, detector_max)
+            tolerance = calculate_intensity_tolerance(TARGET_INTENSITY_PERCENT, detector_max)
             max_iterations = ADAPTIVE_MAX_ITERATIONS
             convergence_factor = ADAPTIVE_CONVERGENCE_FACTOR
 
@@ -1313,7 +1337,7 @@ class SPRCalibrator:
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
 
             logger.info(
-                f"📊 S-mode target: {TARGET_INTENSITY_PERCENT}% = {target_intensity:.0f} counts "
+                f"📊 S-mode target: {TARGET_INTENSITY_PERCENT}% of {detector_max} = {target_intensity:.0f} counts "
                 f"in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range"
             )
 
@@ -1344,7 +1368,7 @@ class SPRCalibrator:
                 spectrum = self._apply_spectral_filter(raw_spectrum)
                 signal_region = spectrum[target_min_idx:target_max_idx]
                 measured_intensity = signal_region.max()
-                measured_percent = (measured_intensity / DETECTOR_MAX_COUNTS) * 100
+                measured_percent = (measured_intensity / detector_max) * 100
 
                 # Calculate error from target
                 intensity_error = abs(measured_intensity - target_intensity)
@@ -1727,8 +1751,13 @@ class SPRCalibrator:
 
                 overall_p_mode_max = max(p_mode_max_counts.values())
 
-                # Check for saturation
-                if overall_p_mode_max > DETECTOR_MAX_COUNTS * 0.95:
+                # Check for saturation using detector-specific max
+                if self.detector_profile:
+                    detector_max = self.detector_profile.max_intensity_counts
+                else:
+                    detector_max = DETECTOR_MAX_COUNTS
+                
+                if overall_p_mode_max > detector_max * 0.95:
                     logger.warning(
                         f"⚠️ Approaching saturation ({overall_p_mode_max:.0f} counts), "
                         f"stopping adjustment"
@@ -1799,6 +1828,12 @@ class SPRCalibrator:
                 logger.info("🔧 DEVELOPMENT MODE - Skipping validation thresholds")
                 logger.info("   Logging measurements for debugging...")
 
+                # Get detector-specific max for percentage calculations
+                if self.detector_profile:
+                    detector_max = self.detector_profile.max_intensity_counts
+                else:
+                    detector_max = DETECTOR_MAX_COUNTS
+
                 # Just log measurements, don't validate
                 for ch in CH_LIST:
                     if self._is_stopped():
@@ -1810,14 +1845,14 @@ class SPRCalibrator:
 
                     spectrum = self.usb.read_intensity()
                     max_intensity = spectrum.max()
-                    max_percent = (max_intensity / DETECTOR_MAX_COUNTS) * 100
+                    max_percent = (max_intensity / detector_max) * 100
 
                     # Find target range
                     wave_data = self.state.wavelengths
                     target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
                     target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
                     target_max = spectrum[target_min_idx:target_max_idx].max()
-                    target_percent = (target_max / DETECTOR_MAX_COUNTS) * 100
+                    target_percent = (target_max / detector_max) * 100
 
                     logger.info(
                         f"   Channel {ch}: LED={intensity}, "
@@ -1833,13 +1868,19 @@ class SPRCalibrator:
                 return True, ""
 
             # Production mode - validate with percentage thresholds
+            # Get detector-specific max for threshold calculations
+            if self.detector_profile:
+                detector_max = self.detector_profile.max_intensity_counts
+            else:
+                detector_max = DETECTOR_MAX_COUNTS
+            
             self.state.ch_error_list = []
             wave_data = self.state.wavelengths
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
 
-            min_threshold = DETECTOR_MAX_COUNTS * MIN_INTENSITY_PERCENT / 100.0
-            max_threshold = DETECTOR_MAX_COUNTS * MAX_INTENSITY_PERCENT / 100.0
+            min_threshold = detector_max * MIN_INTENSITY_PERCENT / 100.0
+            max_threshold = detector_max * MAX_INTENSITY_PERCENT / 100.0
 
             for ch in CH_LIST:
                 if self._is_stopped():
@@ -1851,7 +1892,7 @@ class SPRCalibrator:
 
                 spectrum = self.usb.read_intensity()
                 target_max = spectrum[target_min_idx:target_max_idx].max()
-                target_percent = (target_max / DETECTOR_MAX_COUNTS) * 100
+                target_percent = (target_max / detector_max) * 100
 
                 if target_max < min_threshold or target_max > max_threshold:
                     self.state.ch_error_list.append(ch)

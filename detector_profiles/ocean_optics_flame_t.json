@@ -17,7 +17,7 @@
     "slit_width_um": 25
   },
   "acquisition_limits": {
-    "max_intensity_counts": 62000,
+    "max_intensity_counts": 65535,
     "saturation_counts": 65535,
     "min_integration_time_ms": 1.0,
     "max_integration_time_ms": 200.0,
