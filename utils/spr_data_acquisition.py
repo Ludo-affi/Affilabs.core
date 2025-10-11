@@ -5,17 +5,20 @@ import time
 from collections.abc import Callable
 from copy import deepcopy
 from typing import Any, Protocol, cast
+from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 from typing import Optional
 
-from settings import CH_LIST, DEVICES, EZ_CH_LIST
+from settings import CH_LIST, DEVICES, EZ_CH_LIST, MIN_WAVELENGTH, MAX_WAVELENGTH
 from utils.logger import logger
 from widgets.datawindow import DataDict
 from widgets.message import show_message
 
 # Constants
 DERIVATIVE_WINDOW = 165  # Window size for derivative calculation
+SAVE_DEBUG_DATA = True  # Enable saving intermediate processing steps
 
 
 class SignalEmitter(Protocol):
@@ -50,8 +53,6 @@ class SPRDataAcquisition:
         wave_data: np.ndarray,
         # Configuration
         device_config: dict[str, Any],
-        wave_min_index: int,
-        wave_max_index: int,
         num_scans: int,
         led_delay: float,
         med_filt_win: int,
@@ -66,6 +67,8 @@ class SPRDataAcquisition:
         temp_sig: SignalEmitter,
         raise_error: SignalEmitter,
         set_status_text: Callable[[str], None],
+        # Diagnostic signals (optional)
+        processing_steps_signal: SignalEmitter | None = None,
     ) -> None:
         # Hardware references
         self.ctrl = ctrl
@@ -85,8 +88,6 @@ class SPRDataAcquisition:
 
         # Configuration
         self.device_config = device_config
-        self.wave_min_index = wave_min_index
-        self.wave_max_index = wave_max_index
         self.num_scans = num_scans
         self.led_delay = led_delay
         self.med_filt_win = med_filt_win
@@ -103,6 +104,7 @@ class SPRDataAcquisition:
         self.temp_sig = temp_sig
         self.raise_error = raise_error
         self.set_status_text = set_status_text
+        self.processing_steps_signal = processing_steps_signal
 
         # Internal state
         self.exp_start: float = 0.0
@@ -112,6 +114,54 @@ class SPRDataAcquisition:
         self.calibrated: bool = False
         self.filt_on: bool = True
         self.recording: bool = False
+
+        # Debug data saving
+        self.debug_data_counter = 0
+        self.debug_save_dir = Path("generated-files/debug_processing_steps")
+        if SAVE_DEBUG_DATA:
+            self.debug_save_dir.mkdir(parents=True, exist_ok=True)
+
+    def _save_debug_step(self, channel: str, step_name: str, data: np.ndarray, wavelengths: np.ndarray) -> None:
+        """Save intermediate processing step data for debugging.
+
+        Args:
+            channel: Channel name ('a', 'b', 'c', 'd')
+            step_name: Name of processing step (e.g., 'raw', 'after_dark', 'after_s', 'after_p', 'transmittance')
+            data: Spectrum data to save
+            wavelengths: Wavelength array
+        """
+        if not SAVE_DEBUG_DATA:
+            return
+
+        try:
+            # Check for size mismatch BEFORE saving
+            if len(wavelengths) != len(data):
+                logger.warning(
+                    f"⚠️ SIZE MISMATCH in {step_name} ch{channel}: "
+                    f"wavelengths={len(wavelengths)}, spectrum={len(data)}. "
+                    f"Trimming to match."
+                )
+                # Trim to shorter length
+                min_len = min(len(wavelengths), len(data))
+                wavelengths = wavelengths[:min_len]
+                data = data[:min_len]
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"ch{channel}_{step_name}_{timestamp}_{self.debug_data_counter:04d}.npz"
+            filepath = self.debug_save_dir / filename
+
+            np.savez(
+                filepath,
+                wavelengths=wavelengths,
+                spectrum=data,
+                channel=channel,
+                step=step_name,
+                timestamp=timestamp,
+                counter=self.debug_data_counter
+            )
+            logger.debug(f"Saved debug data: {filename} ({len(data)} pixels)")
+        except Exception as e:
+            logger.warning(f"Failed to save debug data: {e}")
 
     def grab_data(self) -> None:
         """Main data acquisition loop."""
@@ -208,7 +258,46 @@ class SPRDataAcquisition:
                     self._b_stop.set()
                     break
 
-                int_data_single = reading[self.wave_min_index : self.wave_max_index]
+                # Apply spectral filter if available (filter to SPR-relevant range: 580-720 nm)
+                # Calibration creates wavelength_mask and filters all data at acquisition
+                # ALWAYS recreate mask dynamically to ensure correct wavelength range
+                try:
+                    # Get current wavelengths matching the spectrum size
+                    current_wavelengths = None
+                    if hasattr(self.usb, "read_wavelength"):
+                        current_wavelengths = self.usb.read_wavelength()
+                    elif hasattr(self.usb, "get_wavelengths"):
+                        wl = self.usb.get_wavelengths()
+                        if wl is not None:
+                            current_wavelengths = np.array(wl)
+
+                    if current_wavelengths is not None:
+                        # Trim if needed
+                        if len(current_wavelengths) != len(reading):
+                            current_wavelengths = current_wavelengths[:len(reading)]
+
+                        # Create mask for SPR range using actual wavelength boundaries
+                        # This is cleaner than using indices - always works regardless of spectrum size
+                        wavelength_mask = (current_wavelengths >= MIN_WAVELENGTH) & (current_wavelengths <= MAX_WAVELENGTH)
+                        int_data_single = reading[wavelength_mask]
+                        filtered_wavelengths = current_wavelengths[wavelength_mask]
+
+                        if _scan == 0 and ch == "a":  # Log once per channel
+                            logger.debug(f"✅ Spectral filter applied: {len(reading)} → {len(int_data_single)} pixels")
+                            logger.debug(f"✅ Wavelength range: {filtered_wavelengths[0]:.2f} - {filtered_wavelengths[-1]:.2f} nm ({MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm target)")
+                            logger.debug(f"✅ First 3 wavelengths: {filtered_wavelengths[:3]}")
+                            logger.debug(f"✅ Last 3 wavelengths: {filtered_wavelengths[-3:]}")
+                    else:
+                        # This should never happen if hardware is working
+                        logger.error("❌ CRITICAL: Cannot get wavelengths from spectrometer!")
+                        logger.error("❌ Cannot apply spectral filtering - acquisition will fail")
+                        raise RuntimeError("Wavelength data not available from spectrometer")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Spectral filtering failed: {e}")
+                    logger.error("❌ This is a critical error - data will be incorrect")
+                    raise  # Don't fall back to wrong behavior - fail explicitly
+
                 if int_data_sum is None:
                     int_data_sum = int_data_single
                 else:
@@ -230,7 +319,7 @@ class SPRDataAcquisition:
 
                     logger.info(
                         f"Dark noise size differs from data: dark_noise=({source_size},) vs data=({target_size},). "
-                        f"Wavelength indices: {self.wave_min_index}:{self.wave_max_index}. "
+                        f"SPR range: {MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm. "
                         f"Applying universal resampling (no cropping)."
                     )
 
@@ -271,18 +360,86 @@ class SPRDataAcquisition:
                     logger.warning(f"Final shape mismatch: {dark_correction.shape} vs {averaged_intensity.shape}. Using zero correction.")
                     dark_correction = np.zeros_like(averaged_intensity)
 
+                # STEP 1: Save raw spectrum (before any processing)
+                if SAVE_DEBUG_DATA:
+                    self._save_debug_step(ch, "1_raw_spectrum", averaged_intensity, self.wave_data)
+
+                # Apply dark noise correction
                 self.int_data[ch] = averaged_intensity - dark_correction
+
+                # STEP 2: Save after dark noise subtraction (P-polarization, dark corrected)
+                if SAVE_DEBUG_DATA:
+                    self._save_debug_step(ch, "2_after_dark_correction", self.int_data[ch], self.wave_data)
 
                 # Calculate transmission
                 if self.ref_sig[ch] is not None and self.data_processor is not None:
                     try:
+                        # Handle size mismatch between ref_sig and current data
+                        # ref_sig is from calibration (may be 1591 pixels)
+                        # current data is from acquisition (may be 1590 pixels)
+                        ref_sig_adjusted = self.ref_sig[ch]
+                        if len(self.ref_sig[ch]) != len(dark_correction):
+                            logger.debug(
+                                f"Adjusting ref_sig from {len(self.ref_sig[ch])} to {len(dark_correction)} pixels"
+                            )
+                            ref_sig_adjusted = self.ref_sig[ch][:len(dark_correction)]
+
+                        # STEP 3: Save S-mode reference (for comparison)
+                        if SAVE_DEBUG_DATA:
+                            # Log sizes for debugging
+                            logger.info(
+                                f"🔍 Debug sizes ch{ch}: "
+                                f"ref_sig={len(self.ref_sig[ch])}, "
+                                f"dark_correction={len(dark_correction)}, "
+                                f"wave_data={len(self.wave_data)}, "
+                                f"averaged_intensity={len(averaged_intensity)}"
+                            )
+                            s_corrected = ref_sig_adjusted - dark_correction
+                            self._save_debug_step(ch, "3_s_reference_corrected", s_corrected, self.wave_data)
+
+                        # Calculate transmittance (P/S ratio with denoising)
+                        # Use adjusted ref_sig to match current data size
                         self.trans_data[ch] = (
                             self.data_processor.calculate_transmission(
                                 p_pol_intensity=averaged_intensity,
-                                s_ref_intensity=self.ref_sig[ch],
+                                s_ref_intensity=ref_sig_adjusted,
                                 dark_noise=self.dark_noise,
                             )
                         )
+
+                        # STEP 4: Save final transmittance spectrum (after P/S calibration + denoising)
+                        if SAVE_DEBUG_DATA and self.trans_data[ch] is not None:
+                            self._save_debug_step(ch, "4_final_transmittance", self.trans_data[ch], self.wave_data)
+                            self.debug_data_counter += 1  # Increment counter after complete cycle
+
+                        # Emit processing steps for real-time diagnostic viewer
+                        if self.processing_steps_signal is not None:
+                            # Prepare diagnostic data dict
+                            diagnostic_data = {
+                                'channel': ch,
+                                'wavelengths': self.wave_data[:len(averaged_intensity)].copy(),
+                                'raw': averaged_intensity.copy(),
+                                'dark_corrected': self.int_data[ch].copy() if self.int_data[ch] is not None else None,
+                                's_reference': ref_sig_adjusted.copy(),
+                                'transmittance': self.trans_data[ch].copy() if self.trans_data[ch] is not None else None
+                            }
+                            # Debug logging (first emission only per channel)
+                            if not hasattr(self, '_diagnostic_logged'):
+                                self._diagnostic_logged = set()
+                            if ch not in self._diagnostic_logged:
+                                logger.info(f"📊 Diagnostic data for channel {ch}:")
+                                logger.info(f"  Wavelengths: {len(diagnostic_data['wavelengths'])} points, {diagnostic_data['wavelengths'][0]:.2f}-{diagnostic_data['wavelengths'][-1]:.2f} nm")
+                                logger.info(f"  Raw: {len(diagnostic_data['raw'])} points")
+                                logger.info(f"  S-ref: {len(diagnostic_data['s_reference'])} points")
+                                if diagnostic_data['transmittance'] is not None:
+                                    logger.info(f"  Transmittance: {len(diagnostic_data['transmittance'])} points")
+                                self._diagnostic_logged.add(ch)
+                            # Emit signal in thread-safe manner
+                            try:
+                                self.processing_steps_signal.emit(diagnostic_data)
+                            except Exception as emit_error:
+                                logger.debug(f"Failed to emit diagnostic signal: {emit_error}")
+
                     except Exception as e:
                         logger.exception(f"Failed to get trans data: {e}")
 
@@ -475,8 +632,22 @@ class SPRDataAcquisition:
 
     def spectroscopy_data(self) -> dict[str, object]:
         """Return spectroscopy data for UI updates."""
+        # Ensure wave_data matches int_data size
+        # Sometimes acquisition gives 1 pixel less than expected
+        wave_data_adjusted = self.wave_data
+
+        # Check if any channel has data and use its size as reference
+        for ch in CH_LIST:
+            if self.int_data[ch] is not None and len(self.int_data[ch]) > 0:
+                target_size = len(self.int_data[ch])
+                if len(self.wave_data) != target_size:
+                    # Trim wave_data to match
+                    logger.debug(f"Adjusting wave_data from {len(self.wave_data)} to {target_size} pixels")
+                    wave_data_adjusted = self.wave_data[:target_size]
+                break
+
         return {
-            "wave_data": self.wave_data,
+            "wave_data": wave_data_adjusted,
             "int_data": self.int_data,
             "trans_data": self.trans_data,
         }

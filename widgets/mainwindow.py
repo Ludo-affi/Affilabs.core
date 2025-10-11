@@ -7,6 +7,7 @@ from ui.ui_main import Ui_mainWindow
 from widgets.advanced import P4SPRAdvMenu
 from widgets.analysis import AnalysisWindow
 from widgets.datawindow import DataWindow
+from widgets.diagnostic_viewer import DiagnosticViewer
 from widgets.message import show_message
 from widgets.settings_menu import Settings
 from widgets.sidebar import Sidebar
@@ -84,6 +85,9 @@ class MainWindow(QWidget):
         self.data_analysis = AnalysisWindow()
         self.data_analysis.setParent(self.ui.main_display)
 
+        # Diagnostic viewer (hidden by default, opened on demand)
+        self.diagnostic_viewer = None
+
         # recording errors
         self.sensorgram.export_error_signal.connect(self._on_record_error)
         self.sidebar.kinetic_widget.export_error_signal.connect(self._on_record_error)
@@ -107,6 +111,30 @@ class MainWindow(QWidget):
         self.ui.data_processing_btn.clicked.connect(self.display_data_processing_page)
         self.ui.data_analysis_btn.clicked.connect(self.display_data_analysis_page)
         self.ui.adv_btn.clicked.connect(self.show_adv_settings)
+
+        # Add diagnostic viewer button to toolbar
+        self.diagnostic_btn = QPushButton("🔬", self.ui.tool_bar)
+        self.diagnostic_btn.setToolTip("Open Processing Diagnostics\n(Real-time view of all processing steps)")
+        self.diagnostic_btn.setMinimumSize(QSize(35, 35))
+        self.diagnostic_btn.setMaximumSize(QSize(35, 35))
+        self.diagnostic_btn.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background: rgba(200, 200, 255, 100);
+                border-radius: 5px;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background: rgba(150, 150, 255, 150);
+            }
+            QPushButton:pressed {
+                background: rgba(100, 100, 200, 200);
+            }
+        """)
+        self.diagnostic_btn.clicked.connect(self.show_diagnostic_viewer)
+        # Insert before rec_btn in toolbar layout
+        self.ui.horizontalLayout.insertWidget(self.ui.horizontalLayout.count() - 3, self.diagnostic_btn)
+
         self.set_main_widget("sensorgram")
         self.show()
         self.redo_layout()
@@ -320,6 +348,17 @@ class MainWindow(QWidget):
             self.advanced_menu.refresh_values()
             self.settings.show()
             self.settings.activateWindow()
+
+    def show_diagnostic_viewer(self):
+        """Open the real-time processing diagnostics viewer."""
+        if self.diagnostic_viewer is None:
+            self.diagnostic_viewer = DiagnosticViewer(parent=self)
+            # Connect to app's processing_steps_signal
+            if hasattr(self.app, 'processing_steps_signal'):
+                self.app.processing_steps_signal.connect(self.diagnostic_viewer.update_data)
+        
+        self.diagnostic_viewer.show()
+        self.diagnostic_viewer.activateWindow()
 
     def closeEvent(self, event):
         if show_message(msg="Quit application?", msg_type="Warning", yes_no=True):

@@ -6,7 +6,7 @@ import os
 import sys
 from typing import Any
 
-from PySide6.QtCore import Slot, QTimer
+from PySide6.QtCore import Slot, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from settings import SW_VERSION
@@ -23,6 +23,9 @@ if USE_STATE_MACHINE:
 
 class AffiniteApp(QApplication):
     """Simplified main application using state machine architecture."""
+
+    # Processing diagnostics signal
+    processing_steps_signal = Signal(dict)
 
     def __init__(self) -> None:
         """Initialize the application with state machine architecture."""

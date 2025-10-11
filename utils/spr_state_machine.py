@@ -128,8 +128,6 @@ class DataAcquisitionWrapper:
 
         # Configuration defaults
         self.wave_data = np.array([])
-        self.wave_min_index = 0
-        self.wave_max_index = -1
         self.num_scans = 1
         self.led_delay = 0.1
         self.med_filt_win = 5
@@ -239,8 +237,6 @@ class DataAcquisitionWrapper:
                 wave_data=self.wave_data,
                 # Configuration
                 device_config=device_config,
-                wave_min_index=self.wave_min_index,
-                wave_max_index=self.wave_max_index,
                 num_scans=self.num_scans,
                 led_delay=self.led_delay,
                 med_filt_win=self.med_filt_win,
@@ -255,6 +251,8 @@ class DataAcquisitionWrapper:
                 temp_sig=self._get_app_signal('temp_sig'),
                 raise_error=self._get_app_signal('raise_error'),
                 set_status_text=self._set_status_text,
+                # Diagnostic signal (optional, connected later if diagnostic viewer is opened)
+                processing_steps_signal=self._get_app_signal('processing_steps_signal', required=False),
             )
 
             # Set calibration state
@@ -266,13 +264,21 @@ class DataAcquisitionWrapper:
             logger.exception(f"Failed to create SPRDataAcquisition: {e}")
             raise
 
-    def _get_app_signal(self, signal_name: str) -> Any:
-        """Get a signal from the app, or create a dummy emitter."""
+    def _get_app_signal(self, signal_name: str, required: bool = True) -> Any:
+        """Get a signal from the app, or create a dummy emitter.
+        
+        Args:
+            signal_name: Name of the signal to get
+            required: If False, returns None if signal not found instead of creating dummy
+        """
         if hasattr(self.app, signal_name):
             app_signal = getattr(self.app, signal_name)
             logger.debug(f"🔗 Found app signal {signal_name}: {type(app_signal)}")
             return app_signal
         else:
+            if not required:
+                logger.debug(f"⚠️ Optional signal {signal_name} not found - returning None")
+                return None
             # Create a dummy signal emitter that connects to main window
             logger.debug(f"🔧 Creating dummy emitter for {signal_name}")
             return self._create_ui_signal_emitter(signal_name)
@@ -336,9 +342,7 @@ class DataAcquisitionWrapper:
                 # Simple direct references - data is already in shared state!
                 if len(self.calib_state.wavelengths) > 0:
                     self.wave_data = self.calib_state.wavelengths
-                    self.wave_min_index = self.calib_state.wave_min_index
-                    self.wave_max_index = self.calib_state.wave_max_index
-                    logger.info(f"✅ Synced wavelengths: {len(self.wave_data)} points")
+                    logger.info(f"✅ Synced wavelengths: {len(self.wave_data)} points (using wavelength-based filtering)")
 
                 if len(self.calib_state.dark_noise) > 0:
                     self.dark_noise = self.calib_state.dark_noise

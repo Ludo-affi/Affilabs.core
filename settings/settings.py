@@ -52,8 +52,8 @@ GRAPH_REGION_UPDATE_GAP = 0.1  # 100 ms
 
 # Fields
 UNIT = "RU"  # measurement units
-MIN_WAVELENGTH = 560  # minimum wavelength for data
-MAX_WAVELENGTH = 720  # maximum wavelength for data
+MIN_WAVELENGTH = 580  # minimum wavelength for data (SPR relevant range)
+MAX_WAVELENGTH = 720  # maximum wavelength for data (SPR relevant range)
 POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
