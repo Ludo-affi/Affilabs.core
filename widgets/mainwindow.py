@@ -356,7 +356,7 @@ class MainWindow(QWidget):
             # Connect to app's processing_steps_signal
             if hasattr(self.app, 'processing_steps_signal'):
                 self.app.processing_steps_signal.connect(self.diagnostic_viewer.update_data)
-        
+
         self.diagnostic_viewer.show()
         self.diagnostic_viewer.activateWindow()
 

@@ -1,7 +1,7 @@
 # Detector-Specific Configuration System
 
-**Status:** ✅ **IMPLEMENTED - Ready for Testing**  
-**Date:** October 10, 2025  
+**Status:** ✅ **IMPLEMENTED - Ready for Testing**
+**Date:** October 10, 2025
 **Baseline Commit:** To be committed
 
 ---
@@ -157,7 +157,7 @@ STEP 0: Loading Detector Profile
 **Legacy constants marked as deprecated:**
 ```python
 # DEPRECATED: Use profile.max_intensity_counts (62,000 for Flame-T)
-S_COUNT_MAX = 64000  
+S_COUNT_MAX = 64000
 
 # DEPRECATED: Use profile.max_integration_time_ms (200 ms for Flame-T!)
 MAX_INTEGRATION = 100
@@ -346,16 +346,16 @@ assert profile.max_integration_time_ms == 200.0
 
 ## 📌 Summary
 
-✅ **Detector profile system fully implemented**  
-✅ **Flame-T profile with correct specs (62K counts, 200 ms)**  
-✅ **Auto-detection working**  
-✅ **Calibrator using profile parameters**  
-✅ **Backward compatible with settings.py**  
-✅ **Extensible for new detectors**  
+✅ **Detector profile system fully implemented**
+✅ **Flame-T profile with correct specs (62K counts, 200 ms)**
+✅ **Auto-detection working**
+✅ **Calibrator using profile parameters**
+✅ **Backward compatible with settings.py**
+✅ **Extensible for new detectors**
 
 **Next:** Test with real hardware and verify calibration uses correct limits!
 
 ---
 
-*Implementation complete: October 10, 2025*  
+*Implementation complete: October 10, 2025*
 *Ready for testing and optimization*

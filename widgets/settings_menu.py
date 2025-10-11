@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QDialog, QTabWidget, QVBoxLayout, QWidget
 
 from widgets.advanced import P4SPRAdvMenu
 from widgets.channelmenu import ChannelMenu
+from widgets.device_settings import DeviceSettingsWidget
 from widgets.metadata import Metadata
 
 
@@ -28,6 +29,11 @@ class Settings(QDialog):
     advanced: P4SPRAdvMenu
     """Contains advanced settings set during calibration like LED intensities and
     integration time.
+    """
+
+    device_settings: DeviceSettingsWidget
+    """Contains device configuration settings like optical fiber diameter and LED
+    PCB model.
     """
 
     tabs: QTabWidget
@@ -52,6 +58,7 @@ class Settings(QDialog):
         self.spr_settings = spr_settings.data_settings
         self.metadata = spr_settings.metadata
         self.advanced = advanced
+        self.device_settings = DeviceSettingsWidget()
         self.tabs = QTabWidget()
         self.main_layout = QVBoxLayout(self)
 
@@ -59,6 +66,7 @@ class Settings(QDialog):
         self.main_layout.addWidget(self.tabs)
 
         # Add sub-widgets to tabs
+        self.tabs.addTab(self.device_settings, "🔧 Device Configuration")
         self.tabs.addTab(self.spr_settings, "SPR Settings")
         self.tabs.addTab(self.metadata, "TraceDrawer Metadata")
         self.tabs.addTab(self.advanced, "Advanced Settings")

@@ -177,11 +177,11 @@ python run_app.py
 
 The diagnostic viewer gives you **complete visibility** into your SPR data processing pipeline:
 
-✅ **Real-time** - See data as it's acquired  
-✅ **4-step view** - Raw → Dark → S-ref → Transmittance  
-✅ **Interactive** - Pause, zoom, examine statistics  
-✅ **Integrated** - One click from main toolbar  
-✅ **Reliable** - Handles size mismatches automatically  
+✅ **Real-time** - See data as it's acquired
+✅ **4-step view** - Raw → Dark → S-ref → Transmittance
+✅ **Interactive** - Pause, zoom, examine statistics
+✅ **Integrated** - One click from main toolbar
+✅ **Reliable** - Handles size mismatches automatically
 
 Perfect for:
 - 🔍 Debugging processing issues

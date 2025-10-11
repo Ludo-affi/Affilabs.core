@@ -494,6 +494,62 @@ class PicoP4SPR(ControllerBase):
             logger.error(f"error while setting led intensity {e}")
         return False
 
+    def set_batch_intensities(self, a=0, b=0, c=0, d=0):
+        """Set all LED intensities in a single batch command.
+
+        This method uses the Pico's batch command format to set all 4 LED
+        intensities simultaneously, providing ~15x speedup over sequential
+        individual commands (discovered via pico_batch_command_diagnostic.py).
+
+        Args:
+            a: Intensity for LED A (0-255)
+            b: Intensity for LED B (0-255)
+            c: Intensity for LED C (0-255)
+            d: Intensity for LED D (0-255)
+
+        Returns:
+            bool: True if command succeeded, False otherwise
+
+        Example:
+            # Turn on LED A at full brightness, others off
+            controller.set_batch_intensities(a=255, b=0, c=0, d=0)
+
+            # Set custom pattern
+            controller.set_batch_intensities(a=128, b=64, c=192, d=255)
+
+        Performance:
+            Sequential commands: ~12ms for 4 LEDs
+            Batch command: ~0.8ms for 4 LEDs
+            Speedup: 15x faster
+        """
+        try:
+            # Clamp values to valid range (0-255)
+            a = max(0, min(255, int(a)))
+            b = max(0, min(255, int(b)))
+            c = max(0, min(255, int(c)))
+            d = max(0, min(255, int(d)))
+
+            # Format: batch:A,B,C,D\n
+            cmd = f"batch:{a},{b},{c},{d}\n"
+
+            if self.valid():
+                if not self.safe_write(cmd):
+                    logger.error(f"pico failed to write batch LED command")
+                    return False
+
+                # The Pico's batch command may not send explicit acknowledgment
+                # or may send just a carriage return. Based on diagnostic testing,
+                # the command executes successfully even with minimal/no response.
+                # We consider the write success as command success.
+                return True
+            else:
+                logger.error("pico serial port not valid for batch command")
+                return False
+
+        except Exception as e:
+            logger.error(f"error while setting batch LED intensities: {e}")
+            return False
+
     def set_mode(self, mode="s"):
         try:
             if self.valid():
@@ -988,3 +1044,26 @@ class PicoEZSPR(ControllerBase):
 
     def __str__(self):
         return "Pico Carrier Board"
+
+
+# ----------------------
+# Convenience factory API
+# ----------------------
+def get_controller():
+    """Return the first available controller instance.
+
+    Tries PicoP4SPR, PicoEZSPR, then KNX2. Returns a connected instance
+    or None if nothing is available.
+    """
+    try_order = (PicoP4SPR, PicoEZSPR, KineticController)
+    for cls in try_order:
+        try:
+            c = cls()
+            if c.open():
+                logger.info(f"Connected to controller: {c}")
+                return c
+        except Exception as e:
+            logger.debug(f"Controller {cls.__name__} not available: {e}")
+            continue
+    logger.error("No controller detected. Connect device and try again.")
+    return None

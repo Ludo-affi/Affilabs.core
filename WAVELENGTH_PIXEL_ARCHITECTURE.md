@@ -5,7 +5,7 @@
 ### Before (Confusing!)
 ```python
 # What does wave_min_index mean?
-wave_min_index = 0          # Index into... filtered array? Full array? 
+wave_min_index = 0          # Index into... filtered array? Full array?
 wave_max_index = 1590       # Same confusion!
 
 # Using indices - semantic confusion
@@ -84,11 +84,11 @@ except:
 try:
     # Get current wavelengths from detector
     wavelengths = self.usb.get_wavelengths()
-    
+
     # Create mask using actual wavelength boundaries
     mask = (wavelengths >= MIN_WAVELENGTH) & (wavelengths <= MAX_WAVELENGTH)
     data = reading[mask]
-    
+
 except:
     # Don't fall back to wrong behavior - fail explicitly!
     logger.error("Cannot get wavelengths - spectral filtering impossible")

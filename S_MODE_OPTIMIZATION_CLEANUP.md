@@ -97,7 +97,7 @@ for ch in ch_list:
 ### 5. LED Model Infrastructure Kept
 **What:** `LEDResponseModel` class and `self.led_model` initialization remain in code
 
-**Why:** 
+**Why:**
 - Backward compatibility with existing code
 - May be useful for future diagnostic features
 - Zero overhead if not used
@@ -158,10 +158,10 @@ Adaptive iter 2: LED=158, measured=49876, error=124
 
 ## Backward Compatibility
 
-✅ **Profile Loading:** Old profiles with `led_response_models` will load without errors (field ignored)  
-✅ **Profile Saving:** New profiles won't include `led_response_models` (smaller file size)  
-✅ **API:** All public methods unchanged  
-✅ **Behavior:** Calibration still reaches same target intensity  
+✅ **Profile Loading:** Old profiles with `led_response_models` will load without errors (field ignored)
+✅ **Profile Saving:** New profiles won't include `led_response_models` (smaller file size)
+✅ **API:** All public methods unchanged
+✅ **Behavior:** Calibration still reaches same target intensity
 
 ## Future Enhancements
 
@@ -179,6 +179,6 @@ If Phase 1 is needed later for diagnostics:
 
 ## Summary
 
-**Before:** Phase 1 (characterize) → Phase 2 (optimize with prediction) → ~8 measurements  
-**After:** Phase 2 (optimize directly) → ~5 measurements  
+**Before:** Phase 1 (characterize) → Phase 2 (optimize with prediction) → ~8 measurements
+**After:** Phase 2 (optimize directly) → ~5 measurements
 **Result:** 40% faster, simpler, more reliable S-mode calibration

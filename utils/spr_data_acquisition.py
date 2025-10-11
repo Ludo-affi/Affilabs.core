@@ -258,9 +258,9 @@ class SPRDataAcquisition:
                     self._b_stop.set()
                     break
 
-                # Apply spectral filter if available (filter to SPR-relevant range: 580-720 nm)
-                # Calibration creates wavelength_mask and filters all data at acquisition
-                # ALWAYS recreate mask dynamically to ensure correct wavelength range
+                # Apply spectral filter if available (filter to SPR-relevant range)
+                # Use the SAME wavelength boundaries that were established during calibration
+                # self.wave_data contains the FILTERED wavelengths from calibration
                 try:
                     # Get current wavelengths matching the spectrum size
                     current_wavelengths = None
@@ -276,15 +276,19 @@ class SPRDataAcquisition:
                         if len(current_wavelengths) != len(reading):
                             current_wavelengths = current_wavelengths[:len(reading)]
 
-                        # Create mask for SPR range using actual wavelength boundaries
-                        # This is cleaner than using indices - always works regardless of spectrum size
-                        wavelength_mask = (current_wavelengths >= MIN_WAVELENGTH) & (current_wavelengths <= MAX_WAVELENGTH)
+                        # Use the EXACT wavelength boundaries from calibration (stored in self.wave_data)
+                        # This ensures dark noise and data use THE SAME pixel range!
+                        min_wavelength = self.wave_data[0]   # First wavelength from calibration
+                        max_wavelength = self.wave_data[-1]  # Last wavelength from calibration
+
+                        # Create mask using calibration wavelength boundaries
+                        wavelength_mask = (current_wavelengths >= min_wavelength) & (current_wavelengths <= max_wavelength)
                         int_data_single = reading[wavelength_mask]
                         filtered_wavelengths = current_wavelengths[wavelength_mask]
 
                         if _scan == 0 and ch == "a":  # Log once per channel
                             logger.debug(f"✅ Spectral filter applied: {len(reading)} → {len(int_data_single)} pixels")
-                            logger.debug(f"✅ Wavelength range: {filtered_wavelengths[0]:.2f} - {filtered_wavelengths[-1]:.2f} nm ({MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm target)")
+                            logger.debug(f"✅ Wavelength range: {filtered_wavelengths[0]:.2f} - {filtered_wavelengths[-1]:.2f} nm ({min_wavelength:.2f}-{max_wavelength:.2f} nm target)")
                             logger.debug(f"✅ First 3 wavelengths: {filtered_wavelengths[:3]}")
                             logger.debug(f"✅ Last 3 wavelengths: {filtered_wavelengths[-3:]}")
                     else:
@@ -292,7 +296,7 @@ class SPRDataAcquisition:
                         logger.error("❌ CRITICAL: Cannot get wavelengths from spectrometer!")
                         logger.error("❌ Cannot apply spectral filtering - acquisition will fail")
                         raise RuntimeError("Wavelength data not available from spectrometer")
-                        
+
                 except Exception as e:
                     logger.error(f"❌ Spectral filtering failed: {e}")
                     logger.error("❌ This is a critical error - data will be incorrect")
@@ -394,16 +398,19 @@ class SPRDataAcquisition:
                                 f"wave_data={len(self.wave_data)}, "
                                 f"averaged_intensity={len(averaged_intensity)}"
                             )
-                            s_corrected = ref_sig_adjusted - dark_correction
-                            self._save_debug_step(ch, "3_s_reference_corrected", s_corrected, self.wave_data)
+                            # S-ref already has dark subtracted during calibration
+                            self._save_debug_step(ch, "3_s_reference_corrected", ref_sig_adjusted, self.wave_data)
 
                         # Calculate transmittance (P/S ratio with denoising)
-                        # Use adjusted ref_sig to match current data size
+                        # CRITICAL: ref_sig already has dark subtracted during calibration!
+                        # Only subtract dark from P-mode data here
+                        p_corrected = averaged_intensity - dark_correction
+
                         self.trans_data[ch] = (
                             self.data_processor.calculate_transmission(
-                                p_pol_intensity=averaged_intensity,
-                                s_ref_intensity=ref_sig_adjusted,
-                                dark_noise=self.dark_noise,
+                                p_pol_intensity=p_corrected,
+                                s_ref_intensity=ref_sig_adjusted,  # Already dark-corrected
+                                dark_noise=None,  # Don't subtract dark again!
                             )
                         )
 

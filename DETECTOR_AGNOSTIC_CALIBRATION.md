@@ -52,7 +52,7 @@ def calculate_intensity_tolerance(target_percent: float = TARGET_INTENSITY_PERCE
 
 **After:**
 ```python
-def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT, 
+def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT,
                                 detector_max_counts: int = DETECTOR_MAX_COUNTS) -> int:
     return int(detector_max_counts * target_percent / 100.0)  # Detector-specific!
 
@@ -255,10 +255,10 @@ Adaptive iter 2: LED=158, measured=52376 (79.9%), error=52
 
 ## Backward Compatibility
 
-✅ **Fallback mechanism**: If `detector_profile` is None, uses `DETECTOR_MAX_COUNTS` from settings.py  
-✅ **No breaking changes**: All existing code paths work  
-✅ **Graceful degradation**: System works even if profile loading fails  
-✅ **Settings.py preserved**: Legacy constants still available as fallback  
+✅ **Fallback mechanism**: If `detector_profile` is None, uses `DETECTOR_MAX_COUNTS` from settings.py
+✅ **No breaking changes**: All existing code paths work
+✅ **Graceful degradation**: System works even if profile loading fails
+✅ **Settings.py preserved**: Legacy constants still available as fallback
 
 ## Related Files
 
@@ -275,6 +275,6 @@ Adaptive iter 2: LED=158, measured=52376 (79.9%), error=52
 
 ## Summary
 
-**Before:** Hardcoded `DETECTOR_MAX_COUNTS = 65535` everywhere  
-**After:** `detector_max = self.detector_profile.max_intensity_counts` everywhere  
+**Before:** Hardcoded `DETECTOR_MAX_COUNTS = 65535` everywhere
+**After:** `detector_max = self.detector_profile.max_intensity_counts` everywhere
 **Result:** Fully detector-agnostic calibration that adapts to any detector's capabilities

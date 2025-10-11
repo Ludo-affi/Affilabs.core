@@ -70,7 +70,7 @@ from utils.wavelength_manager import SpectralFilter
 filter = SpectralFilter(min_wavelength=580, max_wavelength=720)
 
 # Calibrate with full detector
-spr_range = filter.calibrate(full_wavelengths)  
+spr_range = filter.calibrate(full_wavelengths)
 # Returns: WavelengthRange(580.0-720.0 nm, 1591 pixels, 0.088 nm/px)
 
 # Filter any spectrum

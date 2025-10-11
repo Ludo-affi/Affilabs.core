@@ -44,22 +44,22 @@ class DiagnosticViewer(QWidget):
 
         # Control bar
         control_layout = QHBoxLayout()
-        
+
         self.status_label = QLabel("Waiting for data...")
         self.status_label.setStyleSheet("font-weight: bold; color: #888;")
         control_layout.addWidget(self.status_label)
-        
+
         control_layout.addStretch()
-        
+
         self.pause_btn = QPushButton("⏸ Pause")
         self.pause_btn.clicked.connect(self._toggle_pause)
         control_layout.addWidget(self.pause_btn)
-        
+
         self.highlight_spr_check = QCheckBox("Highlight SPR Range (580-720 nm)")
         self.highlight_spr_check.setChecked(True)
         self.highlight_spr_check.stateChanged.connect(self._update_all_plots)
         control_layout.addWidget(self.highlight_spr_check)
-        
+
         layout.addLayout(control_layout)
 
         # Create 2x2 grid of plots
@@ -119,7 +119,7 @@ class DiagnosticViewer(QWidget):
     @Slot(dict)
     def update_data(self, data: dict):
         """Update all plots with new processing data.
-        
+
         Args:
             data: Dictionary containing:
                 - channel: str
@@ -135,7 +135,7 @@ class DiagnosticViewer(QWidget):
         try:
             channel = data.get('channel', 'unknown')
             wavelengths = data.get('wavelengths')
-            
+
             if wavelengths is None or len(wavelengths) == 0:
                 return
 

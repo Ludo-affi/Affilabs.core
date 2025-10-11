@@ -161,7 +161,7 @@ If you want to clean up the old debug file system:
 ⚠️ **CRITICAL BUG REMAINS**: The wavelength sampling issue is NOT yet fixed!
 - Acquisition still uses `reading[0:1590]` on full spectrum
 - Still sampling 441-580nm instead of 580-720nm
-- **Real-time viewer will clearly show this bug!** 
+- **Real-time viewer will clearly show this bug!**
 - When you open the viewer, you'll see the "raw" spectrum is at wrong wavelengths
 - This proves the diagnostic system is working correctly - it's showing the real bug!
 

@@ -27,7 +27,7 @@ Add `integration_step_ms` to detector profile and use it throughout S-polarizati
 @dataclass
 class DetectorProfile:
     # ... other fields ...
-    
+
     # Acquisition limits
     max_intensity_counts: int
     saturation_counts: int
@@ -213,10 +213,10 @@ Using legacy integration limits from settings.py
 
 ## Backward Compatibility
 
-✅ **Fallback mechanism**: If `detector_profile` is None, uses `integration_step = 1.0ms`  
-✅ **Optional field**: Profile loading uses `.get('integration_step_ms', 1.0)` - works with old profiles  
-✅ **No breaking changes**: All existing code paths work  
-✅ **Graceful degradation**: System works even if profile lacks integration_step_ms  
+✅ **Fallback mechanism**: If `detector_profile` is None, uses `integration_step = 1.0ms`
+✅ **Optional field**: Profile loading uses `.get('integration_step_ms', 1.0)` - works with old profiles
+✅ **No breaking changes**: All existing code paths work
+✅ **Graceful degradation**: System works even if profile lacks integration_step_ms
 
 ## Related Files
 

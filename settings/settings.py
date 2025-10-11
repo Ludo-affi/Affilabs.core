@@ -86,12 +86,28 @@ UNIT = "RU"  # measurement units
 MIN_WAVELENGTH = 580  # DEPRECATED: Use profile.spr_wavelength_min_nm
 MAX_WAVELENGTH = 720  # DEPRECATED: Use profile.spr_wavelength_max_nm
 POL_WAVELENGTH = 620  # index for auto polarization
+
+# ==========================================
+# TIMING PARAMETERS
+# ==========================================
+# LED Stabilization - time between LED turn-on and spectrum acquisition
+LED_DELAY = 0.1  # seconds (100ms) - hard-coded for now
+
+# Acquisition Frequency - time for complete 4-LED cycle (A→B→C→D)
+ACQUISITION_FREQUENCY = 1.0  # Hz - 1 cycle per second (hard-coded)
+ACQUISITION_CYCLE_TIME = 1.0 / ACQUISITION_FREQUENCY  # 1.0 second for full cycle
+TIME_PER_CHANNEL = ACQUISITION_CYCLE_TIME / 4  # 0.25 seconds per channel
+
+# Reference Signal Averaging
+# Number of scans is now DYNAMIC based on integration time to maintain ~1 second total
+# REF_SCANS = int(ACQUISITION_CYCLE_TIME / integration_time) - calculated at runtime
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
-REF_SCANS = 20  # number of scans to average in reference measurement
-CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.1  # led-stabilization delay
+
+# Legacy parameters
+CYCLE_TIME = 1.3  # DEPRECATED: Use ACQUISITION_CYCLE_TIME instead
+REF_SCANS = 20  # DEPRECATED: Now calculated dynamically based on integration time
 S_LED_INT = int(0.66 * 255)  # max s-polarized led intensity
-S_LED_MIN = 20  # minimum intensity for checking saturation
+S_LED_MIN = int(0.05 * 255)  # minimum LED intensity (5% of max = 13)
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 64000  # DEPRECATED: Use profile.max_intensity_counts (62,000 for Flame-T)

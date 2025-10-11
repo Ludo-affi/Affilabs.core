@@ -266,7 +266,7 @@ class DataAcquisitionWrapper:
 
     def _get_app_signal(self, signal_name: str, required: bool = True) -> Any:
         """Get a signal from the app, or create a dummy emitter.
-        
+
         Args:
             signal_name: Name of the signal to get
             required: If False, returns None if signal not found instead of creating dummy
@@ -353,6 +353,19 @@ class DataAcquisitionWrapper:
                     if self.calib_state.ref_sig.get(ch) is not None:
                         self.ref_sig[ch] = self.calib_state.ref_sig[ch]
                         logger.info(f"✅ Synced ref_sig[{ch}]: {len(self.ref_sig[ch])} points")
+
+                # Calculate dynamic scan count based on integration time
+                # Goal: Maintain ~1 second total acquisition time (1 Hz frequency)
+                if self.calib_state.integration > 0:
+                    from settings import ACQUISITION_CYCLE_TIME
+                    integration_seconds = self.calib_state.integration
+                    calculated_scans = int(ACQUISITION_CYCLE_TIME / integration_seconds)
+                    self.num_scans = max(5, min(50, calculated_scans))  # Clamp 5-50
+                    logger.info(
+                        f"✅ Dynamic scan count: {self.num_scans} scans "
+                        f"(integration={integration_seconds*1000:.1f}ms, "
+                        f"total time={self.num_scans * integration_seconds:.2f}s)"
+                    )
 
             logger.info("✅ DataAcquisitionWrapper synced from shared state")
         except Exception as e:

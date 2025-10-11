@@ -1,0 +1,10 @@
+# Ignore actual device configuration files
+device_config.json
+device_config_*.json
+
+# Ignore calibration data
+*.npz
+calibration/
+
+# Keep directory structure
+!.gitignore
