@@ -84,12 +84,12 @@ class Spectroscopy(QWidget):
         try:
             if spec_data is not None:
                 # Log data status for debugging
-                int_status = {ch: "data" if spec_data["int_data"][ch] is not None else "None" 
+                int_status = {ch: "data" if spec_data["int_data"][ch] is not None else "None"
                              for ch in CH_LIST}
-                trans_status = {ch: "data" if spec_data["trans_data"][ch] is not None else "None" 
+                trans_status = {ch: "data" if spec_data["trans_data"][ch] is not None else "None"
                                for ch in CH_LIST}
                 logger.debug(f"Spectroscopy update - Intensity: {int_status}, Transmittance: {trans_status}")
-                
+
                 self.intensity_plot_view.update_plots(
                     spec_data["wave_data"], spec_data["int_data"], self.led_mode
                 )

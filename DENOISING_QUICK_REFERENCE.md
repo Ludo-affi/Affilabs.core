@@ -2,8 +2,8 @@
 
 ## ✅ Implementation Complete!
 
-**Date:** January 2024  
-**Status:** Active by default  
+**Date:** January 2024
+**Status:** Active by default
 **Performance:** 3× better SPR peak tracking precision (±0.3 nm → ±0.1 nm)
 
 ---
@@ -37,7 +37,7 @@ Old Flow:
 1. Measure P-pol and S-ref → 2. Subtract dark → 3. Calculate T = P/S × 100% → 4. Find peak (noisy!)
 
 New Flow:
-1. Measure P-pol and S-ref → 2. Subtract dark → 3. Calculate T = P/S × 100% → 
+1. Measure P-pol and S-ref → 2. Subtract dark → 3. Calculate T = P/S × 100% →
    4. **Denoise T with Savitzky-Golay** → 5. Find peak (3× cleaner!)
 ```
 
@@ -197,10 +197,10 @@ Improvement: 3× better!
 
 ## Summary
 
-✅ **Implementation:** Complete and active  
-✅ **Testing:** Ready (use calibration auto_save_20251010_120843.json)  
-✅ **Performance:** 3× better peak precision  
-✅ **Risk:** None (can disable anytime via settings)  
+✅ **Implementation:** Complete and active
+✅ **Testing:** Ready (use calibration auto_save_20251010_120843.json)
+✅ **Performance:** 3× better peak precision
+✅ **Risk:** None (can disable anytime via settings)
 ✅ **Dependencies:** None (scipy already used)
 
 **No further action required.** The system will now automatically denoise transmittance spectra for improved SPR measurements. Test with your best calibration to validate the 3× improvement!

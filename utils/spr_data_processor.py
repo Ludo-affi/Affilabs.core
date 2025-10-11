@@ -291,9 +291,15 @@ class SPRDataProcessor:
             if len(spectrum) < 3:
                 return np.zeros_like(spectrum)
 
+            # Adjust wave_data to match spectrum size if needed
+            wave_data = self.wave_data
+            if len(wave_data) != len(spectrum):
+                # Trim wave_data to match spectrum size
+                wave_data = wave_data[:len(spectrum)]
+
             # Simple numerical derivative using central differences
             # numpy.gradient automatically handles edges with forward/backward differences
-            derivative = np.gradient(spectrum, self.wave_data)
+            derivative = np.gradient(spectrum, wave_data)
 
             return derivative
 

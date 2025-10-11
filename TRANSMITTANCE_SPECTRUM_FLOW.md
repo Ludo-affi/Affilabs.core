@@ -1,6 +1,6 @@
 # Transmittance Spectrum Processing Flow
 
-**Date:** October 10, 2025  
+**Date:** October 10, 2025
 **Status:** Complete documentation of transmittance data flow
 
 ---
@@ -8,7 +8,7 @@
 ## Complete Data Flow: From Detector to Display
 
 ```
-Detector → Raw Spectrum → Dark Correction → Transmittance Calculation → 
+Detector → Raw Spectrum → Dark Correction → Transmittance Calculation →
 → Denoising → Peak Finding → λ_SPR Time Series → Filtering → Sensorgram Display
                     ↓
                 Spectroscopy Display
@@ -41,7 +41,7 @@ averaged_intensity = int_data_sum / self.num_scans
 self.int_data[ch] = averaged_intensity - dark_correction
 ```
 
-**Purpose:** Remove detector dark current noise  
+**Purpose:** Remove detector dark current noise
 **Output:** Dark-corrected intensity spectrum (P-polarization)
 
 ---
@@ -65,10 +65,10 @@ def calculate_transmission(...):
     # 1. Apply dark correction to both P and S
     p_pol_corrected = p_pol_intensity - dark_noise
     s_ref_corrected = s_ref_intensity - dark_noise
-    
+
     # 2. Calculate ratio
     transmission = (p_pol_corrected / s_ref_corrected) * 100.0
-    
+
     # 3. Apply Savitzky-Golay denoising (NEW!)
     if DENOISE_TRANSMITTANCE:
         transmission = savgol_filter(
@@ -77,11 +77,11 @@ def calculate_transmission(...):
             polyorder=3,           # Cubic polynomial
             mode="nearest"         # Clean edges
         )
-    
+
     return transmission
 ```
 
-**Output:** Denoised transmittance spectrum (0-100%)  
+**Output:** Denoised transmittance spectrum (0-100%)
 **Benefit:** 3× noise reduction (0.8% → 0.24%)
 
 ---
@@ -104,10 +104,10 @@ if self.trans_data[ch] is not None:
 def find_resonance_wavelength(spectrum, window=165):
     # 1. Calculate derivative of transmittance
     derivative = self.calculate_derivative(spectrum)
-    
+
     # 2. Find zero-crossing (minimum transmission)
     zero_idx = derivative.searchsorted(0)
-    
+
     # 3. Linear regression around zero-crossing
     start = zero_idx - window
     end = zero_idx + window
@@ -115,10 +115,10 @@ def find_resonance_wavelength(spectrum, window=165):
         self.wave_data[start:end],
         derivative[start:end]
     )
-    
+
     # 4. Interpolate exact wavelength
     resonance_wavelength = -result.intercept / result.slope
-    
+
     return resonance_wavelength  # in nm
 ```
 
@@ -128,7 +128,7 @@ def find_resonance_wavelength(spectrum, window=165):
 3. **Linear fit:** Around zero-crossing for sub-pixel precision
 4. **Interpolation:** Exact wavelength between pixels
 
-**Output:** Single wavelength value (λ_SPR) in nm  
+**Output:** Single wavelength value (λ_SPR) in nm
 **Precision:** ±0.1 nm (with denoising) vs ±0.3 nm (without)
 
 ---
@@ -160,13 +160,13 @@ def _apply_filtering(ch, ch_list, fit_lambda):
             buffer_index=self.filt_buffer_index,
             window=self.med_filt_win,  # Median filter window
         )
-    
+
     # Store filtered value
     self.filtered_lambda[ch] = np.append(self.filtered_lambda[ch], filtered_value)
 ```
 
-**Purpose:** Smooth sensorgram time series  
-**Method:** Causal median filter (backward-looking, no future data)  
+**Purpose:** Smooth sensorgram time series
+**Method:** Causal median filter (backward-looking, no future data)
 **Output:** Filtered λ_SPR time series
 
 ---
@@ -295,7 +295,7 @@ def sensorgram_data():
 - **Intensity Plot:** Dark-corrected P-pol intensity vs wavelength
 - **Transmittance Plot:** Denoised transmittance vs wavelength
 
-**Purpose:** 
+**Purpose:**
 - Verify LED balance across channels
 - Check spectral quality
 - Diagnose calibration issues
@@ -338,8 +338,8 @@ def sensorgram_data():
 
 ### **Not Directly Used For:**
 
-❌ Stored in files (only λ_SPR time series saved)  
-❌ Long-term storage (regenerated each cycle)  
+❌ Stored in files (only λ_SPR time series saved)
+❌ Long-term storage (regenerated each cycle)
 ❌ Analysis algorithms (only λ_SPR used)
 
 **Think of transmittance spectrum as an intermediate:**
