@@ -21,7 +21,8 @@
     "saturation_counts": 65535,
     "min_integration_time_ms": 1.0,
     "max_integration_time_ms": 200.0,
-    "recommended_integration_time_ms": 10.0
+    "recommended_integration_time_ms": 10.0,
+    "integration_step_ms": 2.5
   },
   "calibration_targets": {
     "target_signal_counts": 50000,

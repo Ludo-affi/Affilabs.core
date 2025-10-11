@@ -914,7 +914,13 @@ class SPRCalibrator:
             if serial_number == "FLMT06715":
                 wave_data = wave_data + 20
 
-            integration_step = 2.5 if serial_number == "FLMT09793" else 1.0
+            # Get integration step from detector profile (or fall back to default)
+            if self.detector_profile:
+                integration_step = self.detector_profile.integration_step_ms
+                logger.debug(f"Using detector profile integration step: {integration_step}ms")
+            else:
+                integration_step = 1.0  # Default fallback
+                logger.warning("Using default integration step: 1.0ms")
 
             # Spectral range filtering - only keep SPR-relevant wavelengths (580-720 nm)
             if len(wave_data) < 2:
