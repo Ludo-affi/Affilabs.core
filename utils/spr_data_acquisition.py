@@ -117,6 +117,39 @@ class SPRDataAcquisition:
         self.filt_on: bool = True
         self.recording: bool = False
 
+        # ✨ NEW: Batch LED control and afterglow correction for live mode
+        self._last_active_channel: str | None = None  # Track previous channel for afterglow
+        self.afterglow_correction = None
+        self.afterglow_correction_enabled = False
+        self._batch_led_available = hasattr(ctrl, 'set_batch_intensities') if ctrl else False
+
+        # Load optical calibration for afterglow correction
+        if device_config:
+            optical_cal_file = device_config.get('optical_calibration_file')
+            afterglow_enabled = device_config.get('afterglow_correction_enabled', True)
+
+            if optical_cal_file and afterglow_enabled:
+                try:
+                    from afterglow_correction import AfterglowCorrection
+                    self.afterglow_correction = AfterglowCorrection(optical_cal_file)
+                    self.afterglow_correction_enabled = True
+                    logger.info("✅ Optical calibration loaded for live mode afterglow correction")
+                except FileNotFoundError:
+                    logger.warning("⚠️ Optical calibration file not found - afterglow correction disabled for live mode")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load optical calibration: {e}")
+            else:
+                if not afterglow_enabled:
+                    logger.info("ℹ️ Afterglow correction disabled for live mode (device_config)")
+                else:
+                    logger.debug("ℹ️ No optical calibration file - afterglow correction disabled for live mode")
+
+        # Log optimization status
+        if self._batch_led_available:
+            logger.info("⚡ Batch LED control ENABLED for live mode (15× faster LED switching)")
+        else:
+            logger.info("ℹ️ Sequential LED control (batch not available)")
+
         # Log integration time acceleration status
         if self.base_integration_time_factor < 1.0:
             logger.info(
@@ -253,7 +286,9 @@ class SPRDataAcquisition:
         """Read and process data from a specific channel."""
         try:
             int_data_sum: np.ndarray | None = None
-            self.ctrl.turn_on_channel(ch=ch)
+
+            # ✨ NEW: Use batch LED control for 15× speedup
+            self._activate_channel_batch(ch)
 
             if self.led_delay > 0:
                 time.sleep(self.led_delay)
@@ -297,11 +332,8 @@ class SPRDataAcquisition:
                         int_data_single = reading[wavelength_mask]
                         filtered_wavelengths = current_wavelengths[wavelength_mask]
 
-                        if _scan == 0 and ch == "a":  # Log once per channel
-                            logger.debug(f"✅ Spectral filter applied: {len(reading)} → {len(int_data_single)} pixels")
-                            logger.debug(f"✅ Wavelength range: {filtered_wavelengths[0]:.2f} - {filtered_wavelengths[-1]:.2f} nm ({min_wavelength:.2f}-{max_wavelength:.2f} nm target)")
-                            logger.debug(f"✅ First 3 wavelengths: {filtered_wavelengths[:3]}")
-                            logger.debug(f"✅ Last 3 wavelengths: {filtered_wavelengths[-3:]}")
+                        # Spectral filter applied silently (only log if debug mode enabled)
+                        pass
                     else:
                         # This should never happen if hardware is working
                         logger.error("❌ CRITICAL: Cannot get wavelengths from spectrometer!")
@@ -379,8 +411,42 @@ class SPRDataAcquisition:
                 if SAVE_DEBUG_DATA:
                     self._save_debug_step(ch, "1_raw_spectrum", averaged_intensity, self.wave_data)
 
+                # ✨ NEW: Apply afterglow correction to dark noise if available
+                if (self.afterglow_correction and
+                    self._last_active_channel and
+                    self.afterglow_correction_enabled):
+                    try:
+                        # Get ACTUAL current integration time from spectrometer
+                        integration_time_ms = 100.0  # Default fallback
+                        if hasattr(self.usb, 'integration_time'):
+                            # USB4000 HAL adapter stores integration time in seconds
+                            integration_time_ms = self.usb.integration_time * 1000.0
+                        elif hasattr(self.usb, '_integration_time'):
+                            integration_time_ms = self.usb._integration_time * 1000.0
+
+                        # Calculate afterglow correction (uniform across spectrum)
+                        # delay = led_delay (time since previous LED turned off)
+                        correction_value = self.afterglow_correction.calculate_correction(
+                            previous_channel=self._last_active_channel,
+                            integration_time_ms=integration_time_ms,
+                            delay_ms=self.led_delay * 1000  # Convert to ms
+                        )
+
+                        # Apply correction (subtract afterglow from dark noise)
+                        dark_correction = dark_correction - correction_value
+
+                        logger.debug(
+                            f"✨ Afterglow correction applied: prev_ch={self._last_active_channel}, "
+                            f"int_time={integration_time_ms:.1f}ms, correction={correction_value:.1f} counts"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Afterglow correction failed: {e}")
+
                 # Apply dark noise correction
                 self.int_data[ch] = averaged_intensity - dark_correction
+
+                # ✨ NEW: Track this channel for next afterglow correction
+                self._last_active_channel = ch
 
                 # STEP 2: Save after dark noise subtraction (P-polarization, dark corrected)
                 if SAVE_DEBUG_DATA:
@@ -688,3 +754,60 @@ class SPRDataAcquisition:
         self.recording = recording
         if med_filt_win is not None:
             self.med_filt_win = med_filt_win
+
+    # ========================================================================
+    # BATCH LED CONTROL HELPERS (Performance Optimization for Live Mode)
+    # ========================================================================
+
+    def _activate_channel_batch(self, channel: str, intensity: int | None = None) -> bool:
+        """Activate a single channel using batch LED command.
+
+        Args:
+            channel: Channel ID ('a', 'b', 'c', 'd')
+            intensity: Optional intensity value. If None, uses turn_on_channel default
+
+        Returns:
+            bool: Success status
+        """
+        if not self._batch_led_available or not self.ctrl:
+            # Fallback to sequential
+            if intensity is not None:
+                self.ctrl.set_intensity(ch=channel, raw_val=intensity)
+            else:
+                self.ctrl.turn_on_channel(ch=channel)
+            return True
+
+        try:
+            # Build intensity array [a, b, c, d]
+            channel_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+            intensity_array = [0, 0, 0, 0]
+
+            if channel in channel_map:
+                idx = channel_map[channel]
+                # Use provided intensity or max (default turn_on behavior)
+                intensity_array[idx] = intensity if intensity is not None else 255
+
+            # Send batch command
+            success = self.ctrl.set_batch_intensities(
+                a=intensity_array[0],
+                b=intensity_array[1],
+                c=intensity_array[2],
+                d=intensity_array[3]
+            )
+
+            if not success:
+                logger.debug(f"Batch LED failed for {channel}, using sequential fallback")
+                if intensity is not None:
+                    self.ctrl.set_intensity(ch=channel, raw_val=intensity)
+                else:
+                    self.ctrl.turn_on_channel(ch=channel)
+
+            return success
+
+        except Exception as e:
+            logger.debug(f"Batch LED exception for {channel}: {e}, using sequential")
+            if intensity is not None:
+                self.ctrl.set_intensity(ch=channel, raw_val=intensity)
+            else:
+                self.ctrl.turn_on_channel(ch=channel)
+            return True

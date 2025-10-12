@@ -238,12 +238,13 @@ class CalibrationState:
         # LED intensities
         self.ref_intensity: dict[str, int] = dict.fromkeys(CH_LIST, 0)
         self.leds_calibrated: dict[str, int] = dict.fromkeys(CH_LIST, 0)
+        self.weakest_channel: Optional[str] = None  # ✨ NEW: Track weakest channel for S-mode calibration
 
         # Reference data
         self.dark_noise: np.ndarray = np.array([])
         self.full_spectrum_dark_noise: np.ndarray = np.array([])  # Full spectrum for resampling
         self.ref_sig: dict[str, np.ndarray | None] = dict.fromkeys(CH_LIST)
-        
+
         # ✨ NEW: Dark noise comparison (Phase 2 validation)
         self.dark_noise_before_leds: Optional[np.ndarray] = None  # Step 1 (clean baseline)
         self.dark_noise_after_leds_uncorrected: Optional[np.ndarray] = None  # Step 5 before correction
@@ -688,15 +689,15 @@ class SPRCalibrator:
 
     def _activate_channel_batch(self, channels: list[str], intensities: dict[str, int] | None = None) -> bool:
         """Activate channels using batch LED command for 15× speedup.
-        
+
         Args:
             channels: List of channel IDs ('a', 'b', 'c', 'd')
             intensities: Optional dict of {channel: intensity} for custom intensities
                         If None, uses calibrated intensities or max
-        
+
         Returns:
             bool: Success status
-            
+
         Performance:
             Sequential: 4 commands × 3ms = 12ms
             Batch: 1 command × 0.8ms = 0.8ms
@@ -707,25 +708,25 @@ class SPRCalibrator:
             if not hasattr(self.ctrl, 'set_batch_intensities'):
                 logger.debug("Batch LED control not available, using sequential")
                 return self._activate_channel_sequential(channels, intensities)
-            
+
             # Build intensity array [a, b, c, d]
             intensity_array = [0, 0, 0, 0]
             channel_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
-            
+
             for ch in channels:
                 if ch not in channel_map:
                     logger.warning(f"Invalid channel: {ch}")
                     continue
-                
+
                 idx = channel_map[ch]
-                
+
                 if intensities and ch in intensities:
                     intensity_array[idx] = intensities[ch]
                 elif hasattr(self.state, f'leds_calibrated') and ch in self.state.leds_calibrated:
                     intensity_array[idx] = self.state.leds_calibrated[ch]
                 else:
                     intensity_array[idx] = self.max_led_intensity
-            
+
             # Send batch command
             success = self.ctrl.set_batch_intensities(
                 a=intensity_array[0],
@@ -733,15 +734,15 @@ class SPRCalibrator:
                 c=intensity_array[2],
                 d=intensity_array[3]
             )
-            
+
             if success:
                 logger.debug(f"✅ Batch LED: {channels} → {intensity_array}")
             else:
                 logger.warning("Batch LED command failed, falling back to sequential")
                 return self._activate_channel_sequential(channels, intensities)
-            
+
             return success
-            
+
         except Exception as e:
             logger.error(f"Batch LED activation failed: {e}, falling back to sequential")
             return self._activate_channel_sequential(channels, intensities)
@@ -845,9 +846,9 @@ class SPRCalibrator:
                 # Use HAL's existing connection for servo commands
                 try:
                     if mode == "s":
-                        cmd = b"ss\n"  # S-polarization mode
+                        cmd = b"sp\n"  # S-polarization mode
                     else:
-                        cmd = b"sp\n"  # P-polarization mode
+                        cmd = b"ss\n"  # P-polarization mode
 
                     # Use HAL's serial connection directly
                     if hasattr(self._hal, "_ser") and self._hal._ser:
@@ -1064,35 +1065,31 @@ class SPRCalibrator:
                 logger.warning(f"   Could not recreate mask: {e} - returning unfiltered spectrum")
                 return raw_spectrum
 
-        # Apply spectral filter
+        # Apply spectral filter (silent operation)
         filtered_spectrum = raw_spectrum[self.state.wavelength_mask]
-        logger.debug(
-            f"Spectral filter applied: {len(raw_spectrum)} → {len(filtered_spectrum)} pixels"
-        )
-
         return filtered_spectrum
 
     def _acquire_averaged_spectrum(
-        self, 
-        num_scans: int, 
+        self,
+        num_scans: int,
         apply_filter: bool = True,
         subtract_dark: bool = False,
         description: str = "spectrum"
     ) -> Optional[np.ndarray]:
         """Vectorized spectrum acquisition and averaging.
-        
+
         Optimized method that uses NumPy vectorization for 2-3× faster spectrum acquisition.
         Instead of accumulating in a loop, collects all spectra then averages vectorized.
-        
+
         Args:
             num_scans: Number of spectra to acquire and average
             apply_filter: Whether to apply spectral range filter (default: True)
             subtract_dark: Whether to subtract dark noise (default: False)
             description: Description for logging (default: "spectrum")
-            
+
         Returns:
             Averaged spectrum as numpy array, or None if error
-            
+
         Performance:
             Old method: for loop with accumulation (slow)
             New method: vectorized stack + mean (2-3× faster)
@@ -1100,7 +1097,7 @@ class SPRCalibrator:
         if num_scans <= 0:
             logger.error(f"Invalid num_scans: {num_scans}")
             return None
-            
+
         try:
             # Pre-allocate array for all spectra (vectorization optimization)
             # Shape: (num_scans, spectrum_length)
@@ -1108,39 +1105,39 @@ class SPRCalibrator:
             if first_spectrum is None:
                 logger.error(f"Failed to read first {description}")
                 return None
-                
+
             if apply_filter:
                 first_spectrum = self._apply_spectral_filter(first_spectrum)
-                
+
             spectrum_length = len(first_spectrum)
             spectra_stack = np.empty((num_scans, spectrum_length), dtype=first_spectrum.dtype)
             spectra_stack[0] = first_spectrum
-            
+
             # Acquire remaining spectra
             for i in range(1, num_scans):
                 if self._is_stopped():
                     return None
-                    
+
                 raw_spectrum = self.usb.read_intensity()
                 if raw_spectrum is None:
                     logger.warning(f"Failed to read {description} scan {i+1}/{num_scans}")
                     return None
-                    
+
                 if apply_filter:
                     raw_spectrum = self._apply_spectral_filter(raw_spectrum)
-                    
+
                 spectra_stack[i] = raw_spectrum
-            
+
             # ✨ VECTORIZED AVERAGING (2-3× faster than loop accumulation)
             averaged_spectrum = np.mean(spectra_stack, axis=0)
-            
+
             # Optionally subtract dark noise
             if subtract_dark and self.state.dark_noise is not None:
                 averaged_spectrum = averaged_spectrum - self.state.dark_noise
-                
-            logger.debug(f"Vectorized averaging: {num_scans} {description} scans → single spectrum")
+
+            # Vectorized averaging complete (silent operation)
             return averaged_spectrum
-            
+
         except Exception as e:
             logger.error(f"Error in vectorized spectrum acquisition: {e}")
             return None
@@ -1469,7 +1466,13 @@ class SPRCalibrator:
             # Find weakest channel
             weakest_ch = min(channel_intensities, key=channel_intensities.get)
 
+            # ✨ CRITICAL FIX: Store weakest channel for LED calibration
+            # The weakest channel will be set to 255, others calibrated relative to it
+            self.state.weakest_channel = weakest_ch
+
             logger.info(f"✅ Weakest channel identified: {weakest_ch} ({channel_intensities[weakest_ch]:.0f} counts at LED={S_LED_INT} in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm)")
+            logger.info(f"   ➜ Weakest channel will be FIXED at LED=255")
+            logger.info(f"   ➜ Other channels will be adjusted DOWN to match")
 
             # ⚡ Turn off all channels using batch command
             self._all_leds_off_batch()
@@ -1675,10 +1678,10 @@ class SPRCalibrator:
     # ========================================================================
 
     def calibrate_led_s_mode_adaptive(self, ch: str) -> bool:
-        """Adaptive LED intensity calibration using smart convergence algorithm.
+        """Binary search LED intensity calibration for S-mode reference.
 
-        This method starts directly at LED=128 and iteratively adjusts to reach
-        the target intensity using adaptive step sizes for fast convergence.
+        Uses reliable binary search algorithm to find the LED intensity that
+        produces the target signal (80% of detector max) in the target wavelength range.
 
         Args:
             ch: Channel identifier ('a', 'b', 'c', or 'd')
@@ -1691,7 +1694,7 @@ class SPRCalibrator:
             if self.ctrl is None or self.usb is None:
                 return False
 
-            logger.debug(f"Starting adaptive LED calibration for channel {ch}")
+            logger.debug(f"Starting binary search LED calibration for channel {ch}")
 
             # Get detector-specific max counts (or fallback to hardcoded value)
             if self.detector_profile:
@@ -1704,8 +1707,7 @@ class SPRCalibrator:
             # Initialize percentage-based calibration parameters using detector-specific max
             target_intensity = calculate_target_intensity(TARGET_INTENSITY_PERCENT, detector_max)
             tolerance = calculate_intensity_tolerance(TARGET_INTENSITY_PERCENT, detector_max)
-            max_iterations = ADAPTIVE_MAX_ITERATIONS
-            convergence_factor = ADAPTIVE_CONVERGENCE_FACTOR
+            max_iterations = 12  # Binary search converges in log2(255) ≈ 8 iterations, add margin
 
             # Get target wavelength range indices
             wave_data = self.state.wavelengths
@@ -1718,17 +1720,22 @@ class SPRCalibrator:
             )
 
             # ========================================================================
-            # DIRECT ADAPTIVE OPTIMIZATION - Start at LED mid-point
+            # BINARY SEARCH OPTIMIZATION - Reliable and predictable
             # ========================================================================
-            logger.info(f"📊 Starting adaptive optimization for {ch} from LED={LED_MID_POINT}")
+            logger.info(f"📊 Starting binary search for channel {ch} (LED range: {MIN_LED_INTENSITY}-{MAX_LED_INTENSITY})")
 
-            current_led = LED_MID_POINT
-            best_led = current_led
+            # Binary search bounds
+            led_min = MIN_LED_INTENSITY  # Lower bound (13)
+            led_max = MAX_LED_INTENSITY  # Upper bound (255)
+            best_led = LED_MID_POINT  # Start at midpoint
             best_error = float("inf")
 
             for iteration in range(max_iterations):
                 if self._is_stopped():
                     return False
+
+                # Calculate midpoint for binary search
+                current_led = (led_min + led_max) // 2
 
                 # ⚡ Set LED intensity using batch command and allow stabilization
                 intensities_dict = {ch: current_led}
@@ -1741,7 +1748,7 @@ class SPRCalibrator:
                     logger.error(f"Failed to read spectrum for channel {ch} iteration {iteration}")
                     break
 
-                # Apply spectral filter for adaptive calibration
+                # Apply spectral filter for binary search calibration
                 spectrum = self._apply_spectral_filter(raw_spectrum)
                 signal_region = spectrum[target_min_idx:target_max_idx]
                 measured_intensity = signal_region.max()
@@ -1751,7 +1758,7 @@ class SPRCalibrator:
                 intensity_error = abs(measured_intensity - target_intensity)
 
                 logger.debug(
-                    f"Adaptive iter {iteration}: LED={current_led}, "
+                    f"Binary iter {iteration}: LED={current_led} (range: {led_min}-{led_max}), "
                     f"measured={measured_intensity:.0f} ({measured_percent:.1f}%), error={intensity_error:.0f}",
                 )
 
@@ -1760,59 +1767,55 @@ class SPRCalibrator:
                     best_error = intensity_error
                     best_led = current_led
 
-                # Check convergence
+                # Check convergence (within tolerance)
                 if intensity_error <= tolerance:
-                    logger.debug(
-                        f"Channel {ch} converged in {iteration + 1} iterations: "
+                    logger.info(
+                        f"✅ Channel {ch} converged in {iteration + 1} iterations: "
                         f"LED={current_led}, intensity={measured_intensity:.0f} ({measured_percent:.1f}%)",
                     )
                     self.state.ref_intensity[ch] = current_led
                     return True
 
-                # Calculate adaptive step size
-                error_ratio = intensity_error / target_intensity
-                base_step = error_ratio * ADAPTIVE_MAX_STEP * convergence_factor
-
-                # Apply iteration damping (reduce step size as we iterate)
-                iteration_damping = max(0.3, 1.0 - (iteration * 0.1))
-                adaptive_step = base_step * iteration_damping
-
-                # Clamp step size
-                step_size = max(
-                    ADAPTIVE_MIN_STEP,
-                    min(ADAPTIVE_MAX_STEP, int(adaptive_step)),
-                )
-
-                # Determine direction and calculate next LED value
+                # Binary search: adjust search range based on measurement
                 if measured_intensity < target_intensity:
-                    # Need more LED intensity
-                    next_led = current_led + step_size
+                    # Need more LED intensity - search upper half
+                    led_min = current_led + 1
                 else:
-                    # Need less LED intensity
-                    next_led = current_led - step_size
+                    # Need less LED intensity - search lower half
+                    led_max = current_led - 1
 
-                # Ensure LED value is within valid bounds (minimum 5% of max LED)
-                next_led = max(MIN_LED_INTENSITY, min(MAX_LED_INTENSITY, next_led))
-
-                # Prevent oscillation by checking minimum progress
-                if iteration > 3 and abs(next_led - current_led) <= 1:
+                # Check if search range collapsed
+                if led_min > led_max:
                     logger.debug(
-                        f"Channel {ch} reached minimum step, using best result",
+                        f"Channel {ch} binary search range collapsed, using best result: LED={best_led}",
                     )
                     break
 
-                current_led = next_led
+            # Use best result after all iterations
+            # Measure one final time with best LED to confirm
+            intensities_dict = {ch: best_led}
+            self._activate_channel_batch([ch], intensities_dict)
+            time.sleep(ADAPTIVE_STABILIZATION_DELAY)
 
-            # Use best result if we didn't converge within iterations
-            logger.debug(
-                f"Channel {ch} adaptive calibration complete: LED={best_led}, "
-                f"final error={best_error:.0f}",
-            )
+            raw_spectrum = self.usb.read_intensity()
+            if raw_spectrum is not None:
+                spectrum = self._apply_spectral_filter(raw_spectrum)
+                signal_region = spectrum[target_min_idx:target_max_idx]
+                final_intensity = signal_region.max()
+                final_percent = (final_intensity / detector_max) * 100
+
+                logger.info(
+                    f"✅ Channel {ch} binary search complete: LED={best_led}, "
+                    f"intensity={final_intensity:.0f} ({final_percent:.1f}%), error={best_error:.0f}",
+                )
+            else:
+                logger.warning(f"Channel {ch} final measurement failed, using best LED={best_led}")
+
             self.state.ref_intensity[ch] = best_led
             return True
 
         except Exception as e:
-            logger.exception(f"Error in adaptive LED calibration for channel {ch}: {e}")
+            logger.exception(f"Error in binary search LED calibration for channel {ch}: {e}")
             return False
         finally:
             # ⚡ Always turn off all LEDs after calibration using batch command
@@ -1890,11 +1893,11 @@ class SPRCalibrator:
                 subtract_dark=False,
                 description="dark noise"
             )
-            
+
             if full_spectrum_dark_noise is None:
                 logger.error("Failed to acquire dark noise spectrum")
                 return False
-            
+
             # ✨ NEW (Phase 2): Store Step 1 as baseline for comparison
             if self._last_active_channel is None:
                 # Step 1: First dark measurement (before any LEDs activated)
@@ -1902,18 +1905,18 @@ class SPRCalibrator:
                 before_mean = np.mean(full_spectrum_dark_noise)
                 logger.info(f"📊 Dark BEFORE LEDs (Step 1): {before_mean:.1f} counts (baseline)")
                 logger.info("   (No LEDs have been activated yet - clean measurement)")
-            
+
             # ✨ NEW (Phase 2): Apply afterglow correction if available
-            if (self.afterglow_correction and 
-                self._last_active_channel and 
+            if (self.afterglow_correction and
+                self._last_active_channel and
                 self.afterglow_correction_enabled):
                 try:
                     # Store uncorrected dark for comparison
                     self.state.dark_noise_after_leds_uncorrected = full_spectrum_dark_noise.copy()
-                    
+
                     # Get current integration time
                     integration_time_ms = self.state.integration * 1000.0
-                    
+
                     # Calculate correction (uniform across spectrum)
                     # Delay = settle_delay (typically 500ms)
                     correction_value = self.afterglow_correction.calculate_correction(
@@ -1921,22 +1924,22 @@ class SPRCalibrator:
                         integration_time_ms=integration_time_ms,
                         delay_ms=settle_delay * 1000  # Convert to ms
                     )
-                    
+
                     # Apply correction (subtract afterglow from dark noise)
                     uncorrected_mean = np.mean(full_spectrum_dark_noise)
                     full_spectrum_dark_noise = full_spectrum_dark_noise - correction_value
                     corrected_mean = np.mean(full_spectrum_dark_noise)
-                    
+
                     # ✨ NEW: Compare with Step 1 baseline
                     if self.state.dark_noise_before_leds is not None:
                         before_mean = np.mean(self.state.dark_noise_before_leds)
                         contamination = uncorrected_mean - before_mean
-                        correction_effectiveness = ((uncorrected_mean - corrected_mean) / contamination * 100 
+                        correction_effectiveness = ((uncorrected_mean - corrected_mean) / contamination * 100
                                                    if contamination > 0 else 0)
                         residual = corrected_mean - before_mean
-                        
+
                         self.state.dark_noise_contamination = contamination
-                        
+
                         logger.info("=" * 80)
                         logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
                         logger.info("=" * 80)
@@ -1962,7 +1965,7 @@ class SPRCalibrator:
                         logger.info(
                             f"   Dark noise mean: {uncorrected_mean:.1f} → {corrected_mean:.1f} counts"
                         )
-                    
+
                 except Exception as e:
                     logger.warning(f"⚠️ Afterglow correction failed: {e}")
                     logger.warning("⚠️ Using uncorrected dark noise")
@@ -1974,13 +1977,13 @@ class SPRCalibrator:
                         logger.info("ℹ️ No optical calibration loaded - dark noise uncorrected")
                     elif not self.afterglow_correction_enabled:
                         logger.info("ℹ️ Afterglow correction disabled in config")
-                    
+
                     # Still do comparison even without correction
                     if self.state.dark_noise_before_leds is not None:
                         before_mean = np.mean(self.state.dark_noise_before_leds)
                         after_mean = np.mean(full_spectrum_dark_noise)
                         contamination = after_mean - before_mean
-                        
+
                         logger.info("=" * 80)
                         logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
                         logger.info("=" * 80)
@@ -2076,7 +2079,7 @@ class SPRCalibrator:
                     subtract_dark=True,  # Automatically subtract dark noise
                     description=f"reference signal (ch {ch})"
                 )
-                
+
                 if averaged_signal is None:
                     logger.error(f"Failed to acquire reference signal for channel {ch}")
                     return False
@@ -2096,7 +2099,7 @@ class SPRCalibrator:
             # Optimization: Measure dark ONCE after all channels instead of after each channel
             # Saves ~6-8 seconds (3 dark measurements × 2-3s each)
             logger.info(f"📊 Measuring single dark noise after all channels for afterglow correction...")
-            
+
             # Turn off all LEDs
             self._all_leds_off_batch()
             time.sleep(LED_DELAY)
@@ -2108,7 +2111,7 @@ class SPRCalibrator:
                 subtract_dark=False,
                 description="dark noise (afterglow correction)"
             )
-            
+
             if dark_after_all is None:
                 logger.warning("Failed to acquire dark noise for afterglow correction")
                 # Continue without afterglow correction
@@ -2143,7 +2146,7 @@ class SPRCalibrator:
                         # Apply correction delta to ALL reference signals
                         # (The dark contamination affects all measurements equally)
                         dark_correction_delta = corrected_dark - dark_after_all
-                        
+
                         for ch in ch_list:
                             if self.state.ref_sig[ch] is not None:
                                 # Correct the reference signal by adjusting for dark contamination
@@ -2151,7 +2154,7 @@ class SPRCalibrator:
                                 # corrected_ref_sig = (signal + LED) - dark_corrected
                                 # = ref_sig + (dark_corrected - dark_contaminated)
                                 self.state.ref_sig[ch] = self.state.ref_sig[ch] + dark_correction_delta
-                                
+
                                 logger.debug(
                                     f"   Applied afterglow correction to ref_sig[{ch}]: "
                                     f"delta_mean={float(np.mean(dark_correction_delta)):.2f} counts"
@@ -2674,9 +2677,24 @@ class SPRCalibrator:
             # Step 6: LED intensity calibration in S-mode (adaptive)
             logger.debug("Step 6: LED intensity calibration (S-mode adaptive)")
             self._emit_progress(6, "Calibrating LED intensities (adaptive S-mode)...")
+
+            # ✨ CRITICAL FIX: Set weakest channel to 255, calibrate others
+            weakest_ch = getattr(self.state, 'weakest_channel', None)
+            if weakest_ch:
+                # Weakest channel FIXED at maximum LED intensity
+                self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
+                logger.info(f"✅ Weakest channel {weakest_ch} FIXED at LED={MAX_LED_INTENSITY}")
+                logger.info(f"   Calibrating other channels to match...")
+
             for ch in ch_list:
                 if self._is_stopped():
                     break
+
+                # Skip weakest channel - already set to 255
+                if weakest_ch and ch == weakest_ch:
+                    logger.debug(f"   Skipping {ch} (weakest channel, already at 255)")
+                    continue
+
                 success = self.calibrate_led_s_mode_adaptive(ch)
                 if not success:
                     logger.warning(f"Failed to calibrate LED {ch} in S-mode (adaptive)")

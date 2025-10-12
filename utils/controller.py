@@ -554,9 +554,9 @@ class PicoP4SPR(ControllerBase):
         try:
             if self.valid():
                 if mode == "s":
-                    cmd = "ss\n"
-                else:
                     cmd = "sp\n"
+                else:
+                    cmd = "ss\n"
                 try:
                     if not self.safe_write(cmd):
                         return False
@@ -805,9 +805,9 @@ class PicoEZSPR(ControllerBase):
         try:
             if self.valid():
                 if mode == "s":
-                    cmd = "ss\n"
-                else:
                     cmd = "sp\n"
+                else:
+                    cmd = "ss\n"
                 try:
                     if not self.safe_write(cmd):
                         return False

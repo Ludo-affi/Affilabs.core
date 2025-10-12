@@ -217,6 +217,9 @@ class DataAcquisitionWrapper:
             logger.info(f"Creating SPRDataAcquisition with device_config: {device_config}")
             logger.debug(f"Controller adapter: {adapted_ctrl}, USB adapter: {adapted_usb}")
 
+            # ✨ Store USB adapter so sync_from_shared_state() can access it
+            self.usb_adapter = adapted_usb
+
             # 🎯 Sync from shared calibration state before creating acquisition
             if self.calib_state is not None:
                 self.sync_from_shared_state()
@@ -365,16 +368,42 @@ class DataAcquisitionWrapper:
 
                 # Calculate dynamic scan count based on integration time
                 # Goal: Maintain ~1 second total acquisition time (1 Hz frequency)
+                # Apply live mode integration time scaling to prevent saturation
                 if self.calib_state.integration > 0:
-                    from settings import ACQUISITION_CYCLE_TIME
+                    from settings import ACQUISITION_CYCLE_TIME, LIVE_MODE_INTEGRATION_FACTOR
                     integration_seconds = self.calib_state.integration
-                    calculated_scans = int(ACQUISITION_CYCLE_TIME / integration_seconds)
+
+                    # Scale integration time for live mode to prevent saturation
+                    live_integration_seconds = integration_seconds * LIVE_MODE_INTEGRATION_FACTOR
+
+                    calculated_scans = int(ACQUISITION_CYCLE_TIME / live_integration_seconds)
                     self.num_scans = max(5, min(50, calculated_scans))  # Clamp 5-50
                     logger.info(
-                        f"✅ Dynamic scan count: {self.num_scans} scans "
-                        f"(integration={integration_seconds*1000:.1f}ms, "
-                        f"total time={self.num_scans * integration_seconds:.2f}s)"
+                        f"✅ Live mode integration scaled: {integration_seconds*1000:.1f}ms → {live_integration_seconds*1000:.1f}ms (factor={LIVE_MODE_INTEGRATION_FACTOR})"
                     )
+                    logger.info(
+                        f"✅ Dynamic scan count: {self.num_scans} scans "
+                        f"(integration={live_integration_seconds*1000:.1f}ms, "
+                        f"total time={self.num_scans * live_integration_seconds:.2f}s)"
+                    )
+
+                    # ✨ CRITICAL FIX: Apply the scaled integration time to the spectrometer
+                    if hasattr(self, 'usb_adapter') and self.usb_adapter is not None:
+                        logger.info(f"🔍 DEBUG: USB adapter type: {type(self.usb_adapter)}")
+                        logger.info(f"🔍 DEBUG: USB has set_integration: {hasattr(self.usb_adapter, 'set_integration')}")
+                        logger.info(f"🔍 DEBUG: USB has set_integration_time: {hasattr(self.usb_adapter, 'set_integration_time')}")
+
+                        if hasattr(self.usb_adapter, 'set_integration'):
+                            self.usb_adapter.set_integration(live_integration_seconds)
+                            logger.info(f"✅ Applied scaled integration time to spectrometer: {live_integration_seconds*1000:.1f}ms")
+                        elif hasattr(self.usb_adapter, 'set_integration_time'):
+                            self.usb_adapter.set_integration_time(live_integration_seconds)
+                            logger.info(f"✅ Applied scaled integration time to spectrometer: {live_integration_seconds*1000:.1f}ms")
+                        else:
+                            logger.error(f"❌ Cannot set integration time - no suitable method found on USB object")
+                            logger.error(f"   Available methods: {[m for m in dir(self.usb_adapter) if not m.startswith('_')]}")
+                    else:
+                        logger.warning(f"⚠️ USB adapter not available for integration time scaling")
 
             logger.info("✅ DataAcquisitionWrapper synced from shared state")
         except Exception as e:

@@ -139,6 +139,9 @@ DENOISE_TRANSMITTANCE = True  # Enable Savitzky-Golay denoising on transmittance
 DENOISE_WINDOW = 11  # Window size for Savitzky-Golay filter (must be odd, ~3nm smoothing)
 DENOISE_POLYORDER = 3  # Polynomial order for Savitzky-Golay filter (cubic)
 
+# Live mode integration time adjustment (to prevent saturation)
+LIVE_MODE_INTEGRATION_FACTOR = 0.5  # Use 50% of calibrated integration time for live measurements
+
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
 SHOW_AUTOSEGMENT = False  # enable/disable test plotting for auto-segmentation
