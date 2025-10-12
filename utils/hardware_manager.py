@@ -241,11 +241,33 @@ class HardwareManager:
 
         try:
             device_type = self.device_config.get("ctrl", "") or ""
+
+            # Load device configuration for fiber diameter and LED model
+            # Note: hardware_manager's device_config is for tracking connected devices
+            # We need to load the actual DeviceConfiguration for optical fiber settings
+            try:
+                from utils.device_configuration import get_device_config
+                dev_cfg = get_device_config()
+                optical_fiber_diameter = dev_cfg.get_optical_fiber_diameter()
+                led_pcb_model = dev_cfg.get_led_pcb_model()
+                logger.info(f"🔧 Loaded device config for calibrator: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED")
+
+                # ✨ NEW (Phase 2): Pass device config for optical calibration
+                device_config_dict = dev_cfg.to_dict()
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load device config ({e}), using defaults")
+                optical_fiber_diameter = 100
+                led_pcb_model = "4LED"
+                device_config_dict = None
+
             self.calibrator = SPRCalibrator(
                 ctrl=self.ctrl,
                 usb=self.usb,
                 device_type=device_type,
                 stop_flag=self._c_stop,
+                optical_fiber_diameter=optical_fiber_diameter,
+                led_pcb_model=led_pcb_model,
+                device_config=device_config_dict,
             )
             self.calibrator.set_progress_callback(self.calibration_progress)
             logger.info("SPR calibrator initialized successfully")

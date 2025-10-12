@@ -33,6 +33,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
         self._ser: serial.Serial | None = None
         self._connection_timeout = 3.0
         self._operation_timeout = 2.0
+        self._current_intensity = 1.0  # Default to full intensity (firmware default)
 
     def connect(self, **connection_params: Any) -> bool:
         """Connect to PicoP4SPR controller.
@@ -222,20 +223,68 @@ class PicoP4SPRHAL(SPRControllerHAL):
             return None
 
     def set_led_intensity(self, intensity: float) -> bool:
-        """Set LED intensity (not supported by PicoP4SPR)."""
-        # PicoP4SPR doesn't support variable LED intensity
+        """Set LED intensity for all channels.
+
+        Args:
+            intensity: LED intensity (0.0 to 1.0 normalized scale)
+
+        Returns:
+            True if setting successful, False otherwise
+
+        Note:
+            - Firmware uses 0-255 range (8-bit PWM)
+            - 4LED PCB: Limited to 204 max (~80% range)
+            - 8LED PCB: Full 255 range
+            - Commands: baXXX\n, bbXXX\n, bcXXX\n, bdXXX\n
+        """
         if not self.validate_led_intensity(intensity):
             return False
 
-        # For P4SPR, LED is either on (when channel is active) or off
-        # This is handled by channel activation
-        logger.debug("LED intensity control not supported by PicoP4SPR")
-        return True  # Return True since LED control is handled by channel activation
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "set_led_intensity")
+
+        try:
+            # Convert 0.0-1.0 to 0-255 firmware range
+            # Apply hardware-specific max intensity limit (204 for 4LED, 255 for 8LED)
+            # TODO: Get max from device config - for now assume 204 (4LED PCB)
+            max_intensity = 204
+            firmware_value = int(intensity * max_intensity)
+            firmware_value = max(0, min(firmware_value, max_intensity))  # Clamp
+
+            # Format as 3-digit zero-padded string
+            intensity_str = f"{firmware_value:03d}"
+
+            # Set intensity for all 4 channels
+            success = True
+            for channel_letter in ['a', 'b', 'c', 'd']:
+                cmd = f"b{channel_letter}{intensity_str}\n"
+                if not self._send_command_with_response(cmd, expected_response=b"1"):
+                    logger.warning(f"Failed to set intensity for channel {channel_letter}")
+                    success = False
+
+            if success:
+                self._current_intensity = intensity
+                logger.debug(f"Set LED intensity to {intensity:.2f} (firmware: {firmware_value})")
+
+            return success
+
+        except Exception as e:
+            raise HALOperationError(
+                f"LED intensity control failed: {e}",
+                "set_led_intensity",
+            )
 
     def get_led_intensity(self) -> float | None:
-        """Get LED intensity (not supported by PicoP4SPR)."""
-        # Return 1.0 if a channel is active, 0.0 if not
-        return 1.0 if self.status.active_channel is not None else 0.0
+        """Get current LED intensity.
+
+        Returns:
+            Current LED intensity (0.0 to 1.0), or None if not available
+
+        Note:
+            PicoP4SPR firmware doesn't support reading back intensity,
+            so we return the last set value.
+        """
+        return getattr(self, '_current_intensity', 1.0)  # Default to full intensity
 
     def emergency_shutdown(self) -> bool:
         """Emergency shutdown - turn off all LEDs and safe shutdown."""

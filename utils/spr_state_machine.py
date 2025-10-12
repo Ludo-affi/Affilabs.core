@@ -132,6 +132,7 @@ class DataAcquisitionWrapper:
         self.led_delay = 0.1
         self.med_filt_win = 5
         self.dark_noise = np.zeros(3648)  # Match USB4000 pixel count (3648)
+        self.base_integration_time_factor = 1.0  # Fiber-specific speed multiplier
 
     def _init_threading_events(self) -> None:
         """Initialize threading control events."""
@@ -241,6 +242,7 @@ class DataAcquisitionWrapper:
                 led_delay=self.led_delay,
                 med_filt_win=self.med_filt_win,
                 dark_noise=self.dark_noise,
+                base_integration_time_factor=self.base_integration_time_factor,
                 # State management
                 _b_kill=self._b_kill,
                 _b_stop=self._b_stop,
@@ -353,6 +355,13 @@ class DataAcquisitionWrapper:
                     if self.calib_state.ref_sig.get(ch) is not None:
                         self.ref_sig[ch] = self.calib_state.ref_sig[ch]
                         logger.info(f"✅ Synced ref_sig[{ch}]: {len(self.ref_sig[ch])} points")
+
+                # Sync fiber-specific integration time factor
+                self.base_integration_time_factor = self.calib_state.base_integration_time_factor
+                logger.info(
+                    f"⚡ Integration time factor: {self.base_integration_time_factor}x "
+                    f"({'2x faster' if self.base_integration_time_factor == 0.5 else 'standard'})"
+                )
 
                 # Calculate dynamic scan count based on integration time
                 # Goal: Maintain ~1 second total acquisition time (1 Hz frequency)
@@ -688,12 +697,40 @@ class SPRStateMachine(QObject):
                     ctrl_device = self._get_device_from_hal(self.hardware_manager.ctrl)
                     usb_device = self._get_device_from_hal(self.hardware_manager.usb)
 
+                    # Get device configuration from app
+                    device_config = getattr(self.app, 'device_config', None)
+                    optical_fiber_diameter = 100
+                    led_pcb_model = "4LED"
+
+                    if device_config:
+                        try:
+                            optical_fiber_diameter = device_config.get_optical_fiber_diameter()
+                            led_pcb_model = device_config.get_led_pcb_model()
+                            logger.info(f"🔧 Using device config: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error getting device config ({e}), using defaults (100µm, 4LED)")
+                    else:
+                        logger.warning("⚠️ No device config found - using defaults (100µm, 4LED)")
+
                     from utils.spr_calibrator import SPRCalibrator
+
+                    # ✨ NEW (Phase 2): Get device config dict for optical calibration
+                    try:
+                        from config.device_config import get_device_config
+                        dev_cfg = get_device_config()
+                        device_config_dict = dev_cfg.to_dict()
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not get device config dict ({e})")
+                        device_config_dict = None
+
                     self.calibrator = SPRCalibrator(
                         ctrl=ctrl_device,
                         usb=usb_device,
                         device_type="PicoP4SPR",
-                        calib_state=self.calib_state  # 🎯 Pass shared state!
+                        calib_state=self.calib_state,  # 🎯 Pass shared state!
+                        optical_fiber_diameter=optical_fiber_diameter,  # 🔧 Device-specific config
+                        led_pcb_model=led_pcb_model,  # 🔧 Device-specific config
+                        device_config=device_config_dict,  # ✨ NEW: Optical calibration
                     )
                     # Connect calibrator progress signals for real calibrator
                     self.calibrator.set_progress_callback(self._on_calibration_progress)

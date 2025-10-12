@@ -57,6 +57,7 @@ class SPRDataAcquisition:
         led_delay: float,
         med_filt_win: int,
         dark_noise: np.ndarray,
+        base_integration_time_factor: float = 1.0,
         # State management
         _b_kill: threading.Event,
         _b_stop: threading.Event,
@@ -92,6 +93,7 @@ class SPRDataAcquisition:
         self.led_delay = led_delay
         self.med_filt_win = med_filt_win
         self.dark_noise = dark_noise
+        self.base_integration_time_factor = base_integration_time_factor
 
         # State management
         self._b_kill = _b_kill
@@ -114,6 +116,15 @@ class SPRDataAcquisition:
         self.calibrated: bool = False
         self.filt_on: bool = True
         self.recording: bool = False
+
+        # Log integration time acceleration status
+        if self.base_integration_time_factor < 1.0:
+            logger.info(
+                f"⚡ Integration time acceleration ACTIVE: {self.base_integration_time_factor}x factor "
+                f"({1/self.base_integration_time_factor:.1f}x faster measurements)"
+            )
+        else:
+            logger.info("⏱️ Standard integration time (no acceleration)")
 
         # Debug data saving
         self.debug_data_counter = 0

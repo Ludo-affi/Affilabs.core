@@ -10,6 +10,7 @@ from PySide6.QtCore import Slot, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from settings import SW_VERSION
+from utils.device_configuration import DeviceConfiguration
 from utils.logger import logger
 from widgets.mainwindow import MainWindow
 from widgets.message import show_message
@@ -30,6 +31,20 @@ class AffiniteApp(QApplication):
     def __init__(self) -> None:
         """Initialize the application with state machine architecture."""
         super().__init__(sys.argv)
+
+        # Load device configuration (optical fiber diameter, LED model, etc.)
+        try:
+            from utils.device_configuration import get_device_config
+            self.device_config = get_device_config()
+            fiber_diameter = self.device_config.get_optical_fiber_diameter()
+            led_model = self.device_config.get_led_pcb_model()
+            logger.info(f"✅ Device config loaded: {fiber_diameter}µm fiber, {led_model} LED")
+        except Exception as e:
+            logger.error(f"❌ Failed to load device config: {e}")
+            # Use default configuration as fallback
+            from utils.device_configuration import get_device_config
+            self.device_config = get_device_config()
+            logger.info("✅ Using default device configuration")
 
         # Basic attributes (backward compatibility)
         self.calibrated = False

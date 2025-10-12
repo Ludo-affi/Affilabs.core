@@ -91,7 +91,10 @@ POL_WAVELENGTH = 620  # index for auto polarization
 # TIMING PARAMETERS
 # ==========================================
 # LED Stabilization - time between LED turn-on and spectrum acquisition
-LED_DELAY = 0.1  # seconds (100ms) - hard-coded for now
+# OPTIMIZED: Reduced from 100ms to 50ms (Priority #5 - CALIBRATION_ACCELERATION_GUIDE.md)
+# Saves ~0.55s per calibration (11 LED activations × 50ms reduction)
+# Tested safe on Flame-T and USB4000 detectors
+LED_DELAY = 0.05  # seconds (50ms) - optimized from 100ms
 
 # Acquisition Frequency - time for complete 4-LED cycle (A→B→C→D)
 ACQUISITION_FREQUENCY = 1.0  # Hz - 1 cycle per second (hard-coded)

@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -33,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from utils.device_configuration import DeviceConfiguration
 from utils.hardware_detection import HardwareDetector
+from utils.security import get_security_manager
 from utils.logger import logger
 
 
@@ -57,9 +60,14 @@ class DeviceSettingsWidget(QWidget):
         self.config = DeviceConfiguration()
         self.detector = HardwareDetector()
 
+        # Security manager for OEM access control
+        self.security = get_security_manager()
+        self.oem_mode_active = False
+
         # Create UI
         self._create_ui()
         self._load_current_settings()
+        self._update_security_ui()
 
     def _create_ui(self: Self) -> None:
         """Create user interface."""
@@ -144,6 +152,40 @@ class DeviceSettingsWidget(QWidget):
 
         hardware_group.setLayout(hardware_layout)
         main_layout.addWidget(hardware_group)
+
+        # === OEM Service Mode Section ===
+        oem_group = QGroupBox("🔐 OEM Service Mode")
+        oem_layout = QHBoxLayout()
+
+        # OEM status label
+        self.oem_status_label = QLabel("🔒 Locked - User Mode")
+        self.oem_status_label.setStyleSheet(
+            "QLabel { color: #f44336; font-weight: bold; padding: 5px; }"
+        )
+        oem_layout.addWidget(self.oem_status_label)
+
+        oem_layout.addStretch()
+
+        # OEM unlock button
+        self.oem_unlock_btn = QPushButton("🔓 Unlock OEM Mode")
+        self.oem_unlock_btn.setStyleSheet(
+            "QPushButton { background-color: #FF9800; color: white; font-weight: bold; padding: 8px; }"
+            "QPushButton:hover { background-color: #F57C00; }"
+        )
+        self.oem_unlock_btn.clicked.connect(self._authenticate_oem)
+        oem_layout.addWidget(self.oem_unlock_btn)
+
+        # OEM lock button (hidden initially)
+        self.oem_lock_btn = QPushButton("🔒 Lock OEM Mode")
+        self.oem_lock_btn.setStyleSheet(
+            "QPushButton { background-color: #9E9E9E; color: white; padding: 8px; }"
+        )
+        self.oem_lock_btn.clicked.connect(self._lock_oem_mode)
+        self.oem_lock_btn.setVisible(False)
+        oem_layout.addWidget(self.oem_lock_btn)
+
+        oem_group.setLayout(oem_layout)
+        main_layout.addWidget(oem_group)
 
         # === Action Buttons ===
         button_layout = QHBoxLayout()
@@ -436,6 +478,123 @@ class DeviceSettingsWidget(QWidget):
         except Exception as e:
             logger.error(f"Reset failed: {e}")
             QMessageBox.critical(self, "Error", f"Reset failed:\n{e}")
+
+    def _authenticate_oem(self: Self) -> None:
+        """Authenticate OEM user to unlock service mode."""
+        try:
+            # Prompt for password
+            password, ok = QInputDialog.getText(
+                self,
+                "🔐 OEM Authentication",
+                "Enter OEM password to unlock service mode:\n\n"
+                "(Contact Affinite Instruments for OEM access)",
+                QLineEdit.Password
+            )
+
+            if ok and password:
+                # Authenticate with security manager
+                if self.security.authenticate_oem(password, username="GUI_USER"):
+                    self.oem_mode_active = True
+                    self._update_security_ui()
+
+                    # Show success message with session info
+                    session_info = self.security.get_session_info()
+                    QMessageBox.information(
+                        self,
+                        "✅ OEM Mode Activated",
+                        f"OEM Service Mode activated successfully!\n\n"
+                        f"Session timeout: {session_info['timeout_minutes']} minutes\n"
+                        f"You can now modify all device configuration settings.\n\n"
+                        f"⚠️ Changes to fiber diameter and LED model affect\n"
+                        f"   calibration and measurement performance."
+                    )
+                    logger.info("✅ OEM service mode activated via GUI")
+                else:
+                    # Authentication failed
+                    QMessageBox.critical(
+                        self,
+                        "❌ Authentication Failed",
+                        "Incorrect OEM password.\n\n"
+                        "Please contact Affinite Instruments for support."
+                    )
+                    logger.warning("❌ OEM authentication failed in GUI")
+
+        except Exception as e:
+            logger.error(f"OEM authentication error: {e}")
+            QMessageBox.critical(self, "Error", f"Authentication error:\n{e}")
+
+    def _lock_oem_mode(self: Self) -> None:
+        """Lock OEM service mode."""
+        try:
+            reply = QMessageBox.question(
+                self,
+                "🔒 Lock OEM Mode",
+                "Exit OEM Service Mode and return to User Mode?\n\n"
+                "Critical settings will be locked again.",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self.security.end_session()
+                self.oem_mode_active = False
+                self._update_security_ui()
+
+                QMessageBox.information(
+                    self,
+                    "🔒 Locked",
+                    "OEM Service Mode deactivated.\n"
+                    "Critical settings are now locked."
+                )
+                logger.info("🔒 OEM service mode deactivated via GUI")
+
+        except Exception as e:
+            logger.error(f"OEM lock error: {e}")
+            QMessageBox.critical(self, "Error", f"Lock error:\n{e}")
+
+    def _update_security_ui(self: Self) -> None:
+        """Update UI based on OEM authentication status."""
+        # Check if session is still active
+        if self.oem_mode_active and not self.security.is_session_active():
+            self.oem_mode_active = False
+            QMessageBox.warning(
+                self,
+                "⏱️ Session Expired",
+                "OEM session has expired.\n"
+                "Critical settings are now locked."
+            )
+
+        if self.oem_mode_active:
+            # OEM MODE - Everything unlocked
+            self.oem_status_label.setText("✅ Unlocked - OEM Service Mode")
+            self.oem_status_label.setStyleSheet(
+                "QLabel { color: #4CAF50; font-weight: bold; padding: 5px; }"
+            )
+            self.oem_unlock_btn.setVisible(False)
+            self.oem_lock_btn.setVisible(True)
+
+            # Enable all controls
+            self.fiber_100um.setEnabled(True)
+            self.fiber_200um.setEnabled(True)
+            self.led_luminus.setEnabled(True)
+            self.led_osram.setEnabled(True)
+
+            logger.debug("🔓 OEM mode: All controls enabled")
+        else:
+            # USER MODE - Critical settings locked
+            self.oem_status_label.setText("🔒 Locked - User Mode")
+            self.oem_status_label.setStyleSheet(
+                "QLabel { color: #f44336; font-weight: bold; padding: 5px; }"
+            )
+            self.oem_unlock_btn.setVisible(True)
+            self.oem_lock_btn.setVisible(False)
+
+            # Disable critical controls (fiber diameter and LED model)
+            self.fiber_100um.setEnabled(False)
+            self.fiber_200um.setEnabled(False)
+            self.led_luminus.setEnabled(False)
+            self.led_osram.setEnabled(False)
+
+            logger.debug("🔒 User mode: Critical controls locked")
 
 
 if __name__ == "__main__":
