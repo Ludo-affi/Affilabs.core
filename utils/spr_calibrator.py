@@ -2910,17 +2910,23 @@ class SPRCalibrator:
             logger.debug("Step 6: LED intensity calibration (S-mode adaptive)")
             self._emit_progress(6, "Calibrating LED intensities (adaptive S-mode)...")
 
-            # ✨ CRITICAL FIX: Set weakest channel to 255, calibrate others
+            # Get weakest channel from state (set in Step 3)
             weakest_ch = getattr(self.state, 'weakest_channel', None)
-            logger.info(f"🔍 DEBUG: weakest_channel from state = {weakest_ch}")
-            logger.info(f"🔍 DEBUG: state attributes = {dir(self.state)}")
             
-            if weakest_ch:
-                # Weakest channel FIXED at maximum LED intensity
-                self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
-                logger.info(f"✅ Weakest channel {weakest_ch} FIXED at LED={MAX_LED_INTENSITY}")
-                logger.info(f"   Calibrating other channels to match...")
+            if not weakest_ch:
+                logger.error("❌ CRITICAL ERROR: weakest_channel not set! Step 3 did not execute properly.")
+                logger.error("   Cannot proceed with LED calibration without knowing weakest channel.")
+                self._safe_hardware_cleanup()
+                return False, "Weakest channel not identified - calibration failed"
+            
+            logger.info(f"📊 Weakest channel: {weakest_ch} (from Step 3)")
+            logger.info(f"   Setting {weakest_ch} to LED=255 (fixed)")
+            logger.info(f"   Other channels will be binary-searched to match intensity")
+            
+            # Set weakest channel to maximum LED intensity (fixed)
+            self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
 
+            # Binary search calibration for all other channels
             for ch in ch_list:
                 if self._is_stopped():
                     break
