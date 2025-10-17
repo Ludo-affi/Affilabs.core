@@ -210,6 +210,7 @@ class SPRDataAcquisition:
     def grab_data(self) -> None:
         """Main data acquisition loop."""
         first_run = True
+        integration_time_applied = False
 
         while not self._b_kill.is_set():
             ch = CH_LIST[0]
@@ -222,6 +223,37 @@ class SPRDataAcquisition:
                 if first_run:
                     self.exp_start = time.time()
                     first_run = False
+                    
+                    # ✨ CRITICAL FIX: Apply scaled integration time at start of live measurements
+                    if self.base_integration_time_factor < 1.0 and hasattr(self.usb, 'integration_time'):
+                        try:
+                            # Get calibrated integration time and scale it
+                            calibrated_integration = self.usb.integration_time  # Already in seconds
+                            scaled_integration = calibrated_integration * self.base_integration_time_factor
+                            
+                            # Apply the scaled value
+                            if hasattr(self.usb, 'set_integration'):
+                                self.usb.set_integration(scaled_integration)
+                                integration_time_applied = True
+                                logger.info(
+                                    f"🔧 LIVE MODE: Applied scaled integration time: "
+                                    f"{calibrated_integration*1000:.1f}ms → {scaled_integration*1000:.1f}ms "
+                                    f"(factor={self.base_integration_time_factor})"
+                                )
+                            elif hasattr(self.usb, 'set_integration_time'):
+                                self.usb.set_integration_time(scaled_integration)
+                                integration_time_applied = True
+                                logger.info(
+                                    f"🔧 LIVE MODE: Applied scaled integration time: "
+                                    f"{calibrated_integration*1000:.1f}ms → {scaled_integration*1000:.1f}ms "
+                                    f"(factor={self.base_integration_time_factor})"
+                                )
+                            else:
+                                logger.error("❌ LIVE MODE: Cannot set integration time - no suitable method")
+                        except Exception as e:
+                            logger.error(f"❌ LIVE MODE: Failed to apply scaled integration time: {e}")
+                    elif not integration_time_applied and first_run:
+                        logger.info("ℹ️ LIVE MODE: Using calibrated integration time (no scaling)")
 
                 if not self._check_buffer_lengths():
                     self.pad_values()
