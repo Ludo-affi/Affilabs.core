@@ -1376,7 +1376,214 @@ class SPRCalibrator:
             return False, 1.0
 
     # ========================================================================
-    # STEP 3: INTEGRATION TIME CALIBRATION
+    # STEP 3: WEAKEST CHANNEL IDENTIFICATION
+    # ========================================================================
+
+    def _identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
+        """Identify the weakest LED channel by testing all at standard intensity.
+        
+        Args:
+            ch_list: List of channels to test
+            
+        Returns:
+            Tuple of (weakest_channel_id, dict of all channel intensities)
+        """
+        try:
+            if self.ctrl is None or self.usb is None:
+                return None, {}
+
+            # Set to S-mode and turn off all channels
+            self.ctrl.set_mode(mode="s")
+            time.sleep(0.5)
+            self.ctrl.turn_off_channels()
+            time.sleep(0.2)
+
+            # Get target wavelength range for measurements
+            wave_data = self.state.wavelengths
+            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
+            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
+            
+            logger.info(f"📊 Testing all channels at LED={S_LED_INT} (66% intensity)")
+            logger.info(f"   Measuring in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range")
+
+            channel_intensities = {}
+            
+            for ch in ch_list:
+                if self._is_stopped():
+                    return None, {}
+
+                # Turn on channel at standard intensity
+                intensities_dict = {ch: S_LED_INT}
+                self._activate_channel_batch([ch], intensities_dict)
+                time.sleep(LED_DELAY)
+                
+                # Track for afterglow correction
+                self._last_active_channel = ch
+
+                # Read spectrum
+                raw_array = self.usb.read_intensity()
+                if raw_array is None:
+                    logger.error(f"Failed to read intensity for channel {ch}")
+                    continue
+
+                # Apply spectral filter
+                filtered_array = self._apply_spectral_filter(raw_array)
+                
+                # Measure max intensity in target range
+                max_intensity = filtered_array[target_min_idx:target_max_idx].max()
+                channel_intensities[ch] = max_intensity
+                
+                logger.info(f"   Channel {ch}: {max_intensity:.0f} counts")
+
+            # Turn off all channels
+            self._all_leds_off_batch()
+            time.sleep(LED_DELAY)
+
+            if not channel_intensities:
+                logger.error("No channel intensities measured!")
+                return None, {}
+
+            # Find weakest channel (lowest intensity)
+            weakest_ch = min(channel_intensities, key=channel_intensities.get)
+            logger.info(f"")
+            logger.info(f"✅ Weakest channel: {weakest_ch} ({channel_intensities[weakest_ch]:.0f} counts)")
+            logger.info(f"   Strongest channel: {max(channel_intensities, key=channel_intensities.get)} ({channel_intensities[max(channel_intensities, key=channel_intensities.get)]:.0f} counts)")
+            logger.info(f"   Ratio: {channel_intensities[max(channel_intensities, key=channel_intensities.get)] / channel_intensities[weakest_ch]:.2f}x")
+
+            return weakest_ch, channel_intensities
+
+        except Exception as e:
+            logger.exception(f"Error identifying weakest channel: {e}")
+            return None, {}
+
+    # ========================================================================
+    # STEP 4: INTEGRATION TIME OPTIMIZATION
+    # ========================================================================
+
+    def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
+        """Optimize integration time for the weakest channel at maximum LED intensity.
+        
+        The weakest channel is set to LED=255. Integration time is adjusted until
+        this channel reaches ~80% of detector max in the 580-610nm range.
+        
+        Args:
+            weakest_ch: The weakest channel ID
+            integration_step: Step size for integration time adjustments
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if self.ctrl is None or self.usb is None:
+                return False
+
+            # Get integration time limits from detector profile
+            if self.detector_profile:
+                min_int = self.detector_profile.min_integration_time_ms / MS_TO_SECONDS
+                max_int = self.detector_profile.max_integration_time_ms / MS_TO_SECONDS
+                detector_max = self.detector_profile.max_intensity_counts
+                logger.info(f"📊 Using detector profile: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms}ms")
+            else:
+                min_int = MIN_INTEGRATION / MS_TO_SECONDS
+                max_int = MAX_INTEGRATION / MS_TO_SECONDS
+                detector_max = DETECTOR_MAX_COUNTS
+                logger.warning("Using legacy integration limits from settings.py")
+
+            # Start at 50% of max integration time
+            self.state.integration = (min_int + max_int) / 2.0
+            self.usb.set_integration(self.state.integration)
+            time.sleep(0.1)
+            
+            logger.info(f"📊 Starting integration: {self.state.integration * 1000:.1f}ms")
+            logger.info(f"   Weakest channel ({weakest_ch}) will be set to LED=255")
+            
+            # Get target wavelength range
+            wave_data = self.state.wavelengths
+            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
+            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
+
+            # Target: 80% of detector max in target range
+            target_counts = int(TARGET_INTENSITY_PERCENT / 100 * detector_max)
+            logger.info(f"   Target: {target_counts:.0f} counts ({TARGET_INTENSITY_PERCENT}% of {detector_max})")
+
+            # Turn on weakest channel at maximum LED intensity
+            intensities_dict = {weakest_ch: MAX_LED_INTENSITY}
+            self._activate_channel_batch([weakest_ch], intensities_dict)
+            time.sleep(LED_DELAY)
+            self._last_active_channel = weakest_ch
+
+            # Measure initial intensity
+            raw_array = self.usb.read_intensity()
+            if raw_array is not None:
+                filtered_array = self._apply_spectral_filter(raw_array)
+                current_count = filtered_array[target_min_idx:target_max_idx].max()
+                logger.info(f"   Initial: {current_count:.0f} counts ({current_count/detector_max*100:.1f}%)")
+            else:
+                current_count = 0
+
+            # Adjust integration time to reach target
+            max_iterations = 50
+            for iteration in range(max_iterations):
+                if self._is_stopped():
+                    return False
+
+                # Check if we've reached target (within 5%)
+                if target_counts * 0.95 <= current_count <= target_counts * 1.05:
+                    logger.info(f"   ✅ Target reached after {iteration} iterations")
+                    break
+
+                # Adjust integration time
+                if current_count < target_counts:
+                    # Too low - increase integration time
+                    self.state.integration = min(self.state.integration + integration_step, max_int)
+                else:
+                    # Too high - decrease integration time
+                    self.state.integration = max(self.state.integration - integration_step, min_int)
+
+                self.usb.set_integration(self.state.integration)
+                time.sleep(0.05)
+
+                # Re-measure
+                raw_array = self.usb.read_intensity()
+                if raw_array is None:
+                    logger.error("Failed to read intensity during optimization")
+                    return False
+
+                filtered_array = self._apply_spectral_filter(raw_array)
+                current_count = filtered_array[target_min_idx:target_max_idx].max()
+
+                # Log progress every 5 iterations
+                if iteration % 5 == 0:
+                    logger.debug(f"   Iteration {iteration}: {self.state.integration*1000:.1f}ms → {current_count:.0f} counts ({current_count/detector_max*100:.1f}%)")
+
+            # Turn off weakest channel
+            self._all_leds_off_batch()
+            time.sleep(LED_DELAY)
+
+            # Validate final result
+            final_percent = (current_count / detector_max) * 100
+            logger.info(f"")
+            logger.info(f"✅ INTEGRATION TIME OPTIMIZED: {self.state.integration*1000:.1f}ms")
+            logger.info(f"   Weakest channel ({weakest_ch}) at LED=255: {current_count:.0f} counts ({final_percent:.1f}%)")
+
+            if final_percent < MINIMUM_ACCEPTABLE_PERCENT:
+                logger.warning(f"⚠️  Weakest channel only reached {final_percent:.1f}% (target {MINIMUM_ACCEPTABLE_PERCENT}%+)")
+                logger.warning(f"   This is a hardware limitation - proceeding anyway")
+            else:
+                logger.info(f"   Status: {'EXCELLENT' if final_percent >= IDEAL_TARGET_PERCENT else 'ACCEPTABLE'}")
+
+            # Calculate scan count for averaging
+            self.state.num_scans = int(MAX_READ_TIME_MS / (self.state.integration * MS_TO_SECONDS))
+            logger.debug(f"   Scans to average: {self.state.num_scans}")
+
+            return True
+
+        except Exception as e:
+            logger.exception(f"Error optimizing integration time: {e}")
+            return False
+
+    # ========================================================================
+    # STEP 3: INTEGRATION TIME CALIBRATION (LEGACY - TO BE REMOVED)
     # ========================================================================
 
     def calibrate_integration_time(
@@ -2650,16 +2857,38 @@ class SPRCalibrator:
             if self.device_type in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
                 ch_list = EZ_CH_LIST
 
-            # Step 4: Integration time calibration
-            logger.debug(f"Step 4: Integration time calibration for channels {ch_list}")
-            self._emit_progress(
-                4,
-                f"Optimizing integration time ({len(ch_list)} channels)...",
-            )
-            success = self.calibrate_integration_time(ch_list, integration_step)
+            # ========================================================================
+            # STEP 3: FIND WEAKEST CHANNEL
+            # ========================================================================
+            logger.info("=" * 80)
+            logger.info("STEP 3: Identifying Weakest Channel")
+            logger.info("=" * 80)
+            self._emit_progress(3, "Identifying weakest channel...")
+            
+            weakest_ch, channel_intensities = self._identify_weakest_channel(ch_list)
+            if weakest_ch is None or self._is_stopped():
+                self._safe_hardware_cleanup()
+                return False, "Failed to identify weakest channel"
+            
+            # Store weakest channel in calibration state
+            self.state.weakest_channel = weakest_ch
+            logger.info(f"✅ Weakest channel: {weakest_ch}")
+            logger.info(f"   This channel will be FIXED at LED=255")
+            logger.info(f"   Other channels will be adjusted DOWN to match")
+
+            # ========================================================================
+            # STEP 4: OPTIMIZE INTEGRATION TIME
+            # ========================================================================
+            logger.info("=" * 80)
+            logger.info("STEP 4: Optimizing Integration Time")
+            logger.info("=" * 80)
+            logger.debug(f"Step 4: Integration time optimization for weakest channel {weakest_ch}")
+            self._emit_progress(4, f"Optimizing integration time for {weakest_ch}...")
+            
+            success = self._optimize_integration_time(weakest_ch, integration_step)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Integration time calibration failed"
+                return False, "Integration time optimization failed"
 
             # Step 5: Re-measure dark noise with optimized integration time
             logger.info("=" * 80)
@@ -2675,11 +2904,17 @@ class SPRCalibrator:
             logger.info("✅ Final dark noise captured with optimized integration time")
 
             # Step 6: LED intensity calibration in S-mode (adaptive)
+            logger.info("=" * 80)
+            logger.info("STEP 6: LED Intensity Calibration (S-mode Binary Search)")
+            logger.info("=" * 80)
             logger.debug("Step 6: LED intensity calibration (S-mode adaptive)")
             self._emit_progress(6, "Calibrating LED intensities (adaptive S-mode)...")
 
             # ✨ CRITICAL FIX: Set weakest channel to 255, calibrate others
             weakest_ch = getattr(self.state, 'weakest_channel', None)
+            logger.info(f"🔍 DEBUG: weakest_channel from state = {weakest_ch}")
+            logger.info(f"🔍 DEBUG: state attributes = {dir(self.state)}")
+            
             if weakest_ch:
                 # Weakest channel FIXED at maximum LED intensity
                 self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
