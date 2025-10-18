@@ -3149,6 +3149,7 @@ class SPRCalibrator:
                 "num_scans": self.state.num_scans,
                 "ref_intensity": self.state.ref_intensity.copy(),
                 "leds_calibrated": self.state.leds_calibrated.copy(),
+                "weakest_channel": getattr(self.state, 'weakest_channel', None),  # ✨ NEW: Store weakest channel
                 "wave_min_index": self.state.wave_min_index,
                 "wave_max_index": self.state.wave_max_index,
                 "led_delay": self.state.led_delay,
