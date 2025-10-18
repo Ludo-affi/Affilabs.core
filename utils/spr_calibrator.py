@@ -1204,11 +1204,172 @@ class SPRCalibrator:
             # Even if cleanup fails, log and continue to prevent cascading failures
 
     # ========================================================================
-    # STEP 1: WAVELENGTH RANGE CALIBRATION
+    # STEP 2: WAVELENGTH CALIBRATION (DETECTOR-SPECIFIC)
     # ========================================================================
 
+    def _detect_spectrometer_type(self) -> str:
+        """
+        Detect the spectrometer type from USB device info.
+        
+        Returns:
+            "USB4000", "Flame", "Generic", "Custom", etc.
+        """
+        try:
+            # Try to get model name from USB device
+            if hasattr(self.usb, 'get_device_info'):
+                device_info = self.usb.get_device_info()
+                if device_info and 'model' in device_info:
+                    model = device_info['model']
+                    logger.debug(f"   Detected model from USB: {model}")
+                    return model
+            
+            # Try to get serial number and infer model
+            if hasattr(self.usb, 'get_device_info'):
+                device_info = self.usb.get_device_info()
+                if device_info and 'serial_number' in device_info:
+                    serial = device_info['serial_number']
+                    # Ocean Optics serial numbers often encode model info
+                    if serial.startswith("USB4"):
+                        logger.debug(f"   Serial {serial} → USB4000")
+                        return "USB4000"
+                    elif serial.startswith("FLMS") or serial.startswith("FLMT"):
+                        logger.debug(f"   Serial {serial} → Flame")
+                        return "Flame"
+                    elif serial.startswith("USB2"):
+                        logger.debug(f"   Serial {serial} → USB2000")
+                        return "USB2000"
+                    elif serial.startswith("HR4"):
+                        logger.debug(f"   Serial {serial} → HR4000")
+                        return "HR4000"
+            
+            # Try to infer from pixel count
+            test_wl = None
+            if hasattr(self.usb, "read_wavelength"):
+                test_wl = self.usb.read_wavelength()
+            elif hasattr(self.usb, "get_wavelengths"):
+                test_wl = self.usb.get_wavelengths()
+            
+            if test_wl is not None:
+                pixel_count = len(test_wl)
+                if pixel_count == 3648:
+                    logger.debug(f"   Pixel count {pixel_count} → likely USB4000")
+                    return "USB4000"
+                elif pixel_count == 2048:
+                    logger.debug(f"   Pixel count {pixel_count} → likely Flame")
+                    return "Flame"
+                elif pixel_count == 1044:
+                    logger.debug(f"   Pixel count {pixel_count} → likely QE65000")
+                    return "QE65000"
+            
+            # Default to Ocean Optics compatible if can't detect
+            logger.debug("   Could not detect spectrometer model, assuming Ocean Optics compatible")
+            return "Ocean Optics"
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Error detecting spectrometer type: {e}")
+            return "Ocean Optics"  # Safe default
+
+    def _calibrate_wavelength_ocean_optics(self) -> tuple[np.ndarray | None, str]:
+        """
+        Read factory wavelength calibration from Ocean Optics EEPROM.
+        
+        Ocean Optics spectrometers store wavelength calibration coefficients
+        in EEPROM during manufacturing. This method reads that data.
+        
+        Returns:
+            Tuple of (wavelength_array, serial_number)
+        """
+        try:
+            logger.info("   Method: Factory EEPROM (Ocean Optics)")
+            
+            # Get serial number from device info
+            serial_number = "unknown"
+            try:
+                if hasattr(self.usb, "get_device_info"):
+                    device_info = self.usb.get_device_info()
+                    serial_number = device_info.get("serial_number", "unknown")
+                    logger.debug(f"   Spectrometer serial number: {serial_number}")
+            except Exception as e:
+                logger.warning(f"   Could not get serial number: {e}")
+            
+            # Read wavelengths from EEPROM
+            wave_data = None
+            if hasattr(self.usb, "read_wavelength"):
+                wave_data = self.usb.read_wavelength()
+            elif hasattr(self.usb, "get_wavelengths"):
+                # Direct HAL access
+                wave_data = self.usb.get_wavelengths()
+                if wave_data is not None:
+                    wave_data = np.array(wave_data)
+            else:
+                logger.error("❌ USB spectrometer has no wavelength reading method")
+                logger.error("   Expected: read_wavelength() or get_wavelengths()")
+                return None, serial_number
+            
+            if wave_data is None or len(wave_data) == 0:
+                logger.error("❌ Failed to read wavelengths from EEPROM")
+                return None, serial_number
+            
+            logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration")
+            logger.info(f"   Range: {wave_data[0]:.1f} - {wave_data[-1]:.1f} nm")
+            logger.info(f"   Resolution: {(wave_data[-1] - wave_data[0]) / len(wave_data):.3f} nm/pixel")
+            
+            return wave_data, serial_number
+            
+        except Exception as e:
+            logger.error(f"❌ Error reading Ocean Optics EEPROM: {e}")
+            return None, "unknown"
+
+    def _calibrate_wavelength_from_file(self) -> tuple[np.ndarray | None, str]:
+        """
+        Load wavelength calibration from external file.
+        
+        For custom detectors or when polynomial calibration is not available,
+        load pre-computed wavelength array from file.
+        
+        Expected file format:
+        - CSV or NPY file with wavelength array
+        - One wavelength per pixel
+        - Units: nanometers (nm)
+        
+        Returns:
+            Tuple of (wavelength_array, "custom")
+        """
+        try:
+            from pathlib import Path
+            
+            logger.info("   Method: Loading from calibration file")
+            
+            # Check for calibration file
+            calib_file_npy = Path("calibration") / "wavelength_calibration.npy"
+            calib_file_csv = Path("calibration") / "wavelength_calibration.csv"
+            
+            if calib_file_npy.exists():
+                logger.info(f"   Loading from: {calib_file_npy}")
+                wavelengths = np.load(calib_file_npy)
+                logger.info(f"   ✅ Loaded {len(wavelengths)} wavelengths from .npy file")
+                logger.info(f"   Range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
+                return wavelengths, "custom"
+                
+            elif calib_file_csv.exists():
+                logger.info(f"   Loading from: {calib_file_csv}")
+                wavelengths = np.loadtxt(calib_file_csv, delimiter=',')
+                logger.info(f"   ✅ Loaded {len(wavelengths)} wavelengths from .csv file")
+                logger.info(f"   Range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
+                return wavelengths, "custom"
+                
+            else:
+                logger.error(f"❌ No wavelength calibration file found")
+                logger.error(f"   Expected: {calib_file_csv} or {calib_file_npy}")
+                logger.error(f"   Please create calibration file or use Ocean Optics detector")
+                return None, "custom"
+            
+        except Exception as e:
+            logger.error(f"❌ Error loading wavelength calibration file: {e}")
+            return None, "custom"
+
     def calibrate_wavelength_range(self) -> tuple[bool, float]:
-        """Calibrate wavelength range and calculate Fourier weights.
+        """Calibrate wavelength range and calculate Fourier weights (Detector-Specific).
 
         Returns:
             Tuple of (success, integration_step)
@@ -1223,33 +1384,33 @@ class SPRCalibrator:
                 logger.error("USB spectrometer not available")
                 return False, 1.0
 
-            # Get serial number from device info
-            try:
-                device_info = (
-                    self.usb.get_device_info()
-                    if hasattr(self.usb, "get_device_info")
-                    else {}
-                )
-                serial_number = device_info.get("serial_number", "unknown")
-                logger.debug(f"Spectrometer serial number: {serial_number}")
-            except Exception as e:
-                logger.warning(f"Could not get serial number: {e}")
-                serial_number = "unknown"
-
-            # Check if this is the HAL or adapter and use appropriate method
-            if hasattr(self.usb, "read_wavelength"):
-                wave_data = self.usb.read_wavelength()
-            elif hasattr(self.usb, "get_wavelengths"):
-                # Direct HAL access
-                wave_data = self.usb.get_wavelengths()
-                if wave_data is not None:
-                    wave_data = np.array(wave_data)
+            # ========================================================================
+            # DETECTOR-SPECIFIC WAVELENGTH CALIBRATION
+            # ========================================================================
+            logger.info("📊 Reading wavelength calibration (detector-specific)...")
+            
+            # Detect spectrometer type
+            detector_type = self._detect_spectrometer_type()
+            logger.info(f"   Detector type: {detector_type}")
+            
+            # Route to appropriate calibration method
+            if detector_type in ["USB4000", "Flame", "USB2000", "HR4000", "QE65000", "Ocean Optics"]:
+                # Ocean Optics detectors - use factory EEPROM calibration
+                wave_data, serial_number = self._calibrate_wavelength_ocean_optics()
+            elif detector_type == "Generic":
+                # Generic spectrometer - would require polynomial calibration
+                logger.warning("⚠️  Generic detector detected - polynomial calibration not yet implemented")
+                logger.warning("    Attempting to read wavelengths as if Ocean Optics compatible...")
+                wave_data, serial_number = self._calibrate_wavelength_ocean_optics()
+            elif detector_type == "Custom":
+                # Custom detector - load from calibration file
+                wave_data, serial_number = self._calibrate_wavelength_from_file()
             else:
-                logger.error("USB spectrometer has no wavelength reading method")
-                return False, 1.0
+                logger.warning(f"⚠️  Unknown detector type: {detector_type}, trying Ocean Optics method...")
+                wave_data, serial_number = self._calibrate_wavelength_ocean_optics()
 
             if wave_data is None or len(wave_data) == 0:
-                logger.error("Failed to read wavelength data")
+                logger.error("❌ Failed to obtain wavelength calibration")
                 return False, 1.0
 
             # Apply serial-specific corrections
