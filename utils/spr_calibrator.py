@@ -3,7 +3,7 @@
 Handles all SPR spectrometer calibration operations:
 - Wavelength range calibration
 - Integration time optimization
-- LED intensity calibration (S-mode and P-mode)
+- LED intensity calibration (S-mode)
 - Dark noise measurement
 - Reference signal acquisition
 - Calibration validation
@@ -3047,339 +3047,90 @@ class SPRCalibrator:
         return self.step_7_measure_reference_signals(ch_list)
 
     # ========================================================================
-    # STEP 8: LED INTENSITY CALIBRATION (P-MODE) - SIMPLIFIED
+    # STEP 8: VALIDATION
     # ========================================================================
 
-    def calibrate_led_p_mode_s_based(self, ch_list: list[str]) -> bool:
-        """Simplified P-mode calibration: Keep S-mode settings, boost LEDs if possible.
-
-        STRATEGY (user specification):
-        1. Keep S-mode integration time (global)
-        2. Keep S-mode LED intensities (local per channel)
-        3. Switch to P-mode position
-        4. Try to boost LEDs by up to 33% (if no saturation detected)
-
-        This is the simplest approach:
-        - Uses same integration time as S-mode
-        - Starts with same LED intensities as S-mode
-        - Optionally boosts LEDs by 33% to improve SNR (if detector allows)
-
-        Args:
-            ch_list: List of channels to calibrate
-
+    def step_8_validate_calibration(self) -> tuple[bool, str]:
+        """STEP 8: Validate calibration using Step 7 reference signals (SIMPLIFIED).
+        
+        No redundant measurements - validates using existing reference signals
+        from Step 7 which were measured in full SPR ROI (580-720nm).
+        
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, error_channels_string)
         """
         try:
-            if self.ctrl is None or self.usb is None:
-                return False
-
-            logger.info("=" * 70)
-            logger.info("🔬 P-MODE CALIBRATION: Simplified S-Based Strategy")
-            logger.info("=" * 70)
-
-            # Get detector-specific max counts for saturation check
-            if self.detector_profile:
-                detector_max = self.detector_profile.max_intensity_counts
-            else:
-                detector_max = DETECTOR_MAX_COUNTS
-
-            SATURATION_THRESHOLD = detector_max * (SATURATION_THRESHOLD_PERCENT / PERCENT_MULTIPLIER)
-
-            # Step 1: Keep S-mode settings (integration time + LED intensities)
-            logger.info("📊 Step 1: Using S-mode settings as baseline...")
-            s_mode_integration = self.state.integration
-            s_mode_led_values = {}
-
-            for ch in ch_list:
-                if ch in self.state.ref_intensity:
-                    s_mode_led_values[ch] = self.state.ref_intensity[ch]
-                    logger.info(f"  • Channel {ch}: LED={s_mode_led_values[ch]} (from S-mode)")
-                else:
-                    logger.error(f"❌ Channel {ch}: No S-mode LED value available!")
-                    return False
-
-            logger.info(f"  • Integration time: {s_mode_integration * 1000:.1f}ms (from S-mode)")
-
-            # Step 2: Switch to P-mode position
-            logger.info("📊 Step 2: Switching to P-mode position...")
-            self.ctrl.set_mode(mode="p")
-            time.sleep(0.4)  # Allow polarizer to rotate
-
-            # Step 3: Measure P-mode baseline signal in target range (580-610nm)
-            logger.info("📊 Step 3: Measuring P-mode baseline signal in target range (580-610nm)...")
-
-            # Get target wavelength range indices (same as used in S-mode calibration)
-            wave_data = self.state.wavelengths  # Already filtered to SPR range
-            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-            logger.info(f"  • Target range: {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm (indices {target_min_idx}-{target_max_idx})")
-
-            baseline_p_signals = {}  # Full spectrum per channel
-            baseline_p_target_max = {}  # Max in target range per channel
-
-            for ch in ch_list:
-                if self._is_stopped():
-                    return False
-
-                # ⚡ Use batch command for LED activation
-                intensities_dict = {ch: s_mode_led_values[ch]}
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
-
-                raw_spectrum = self.usb.read_intensity()
-                if raw_spectrum is not None:
-                    spectrum = self._apply_spectral_filter(raw_spectrum)
-                    baseline_p_signals[ch] = spectrum
-
-                    # Measure max in TARGET range (580-610nm), not full spectrum
-                    target_region = spectrum[target_min_idx:target_max_idx]
-                    baseline_p_target_max[ch] = float(target_region.max())
-
-                    logger.info(
-                        f"  • Channel {ch}: LED={s_mode_led_values[ch]}, "
-                        f"target max={baseline_p_target_max[ch]:.0f} counts ({baseline_p_target_max[ch]/detector_max*100:.1f}% of detector max)"
-                    )
-
-            overall_baseline_max = max(baseline_p_target_max.values())
-            logger.info(f"  • Overall baseline target max: {overall_baseline_max:.0f} counts")
-
-            # Step 4: Calculate LED boost to achieve signal increase in target range
-            logger.info(f"📊 Step 4: Calculating LED adjustments for {(SIGNAL_BOOST_TARGET-1)*PERCENT_MULTIPLIER:.0f}% signal boost in target range...")
-
-            p_mode_led_values = {}
-            final_p_signals = {}
-            final_p_target_max = {}
-
-            for ch in ch_list:
-                if self._is_stopped():
-                    return False
-
-                baseline_signal = baseline_p_target_max[ch]
-                target_signal = baseline_signal * SIGNAL_BOOST_TARGET
-
-                logger.info(f"  • Channel {ch}: baseline={baseline_signal:.0f}, target={target_signal:.0f} counts (+{(SIGNAL_BOOST_TARGET-1)*100:.0f}%)")
-
-                # Check if target signal would saturate
-                if target_signal > SATURATION_THRESHOLD:
-                    logger.warning(
-                        f"    ⚠️ Target signal ({target_signal:.0f}) would exceed saturation threshold ({SATURATION_THRESHOLD:.0f})"
-                    )
-                    logger.info(f"    → Using baseline LED={s_mode_led_values[ch]} (no boost)")
-                    p_mode_led_values[ch] = s_mode_led_values[ch]
-                    final_p_signals[ch] = baseline_p_signals[ch]
-                    final_p_target_max[ch] = baseline_signal
-                    continue
-
-                # Calculate required LED increase (assume linear relationship)
-                # target_signal / baseline_signal = led_boost_factor
-                required_led_boost = target_signal / baseline_signal
-                boosted_led = int(s_mode_led_values[ch] * required_led_boost)
-
-                # Clamp to valid LED range
-                boosted_led = max(MIN_LED_INTENSITY, min(MAX_LED_INTENSITY, boosted_led))
-
-                logger.info(f"    → Testing LED boost: {s_mode_led_values[ch]} → {boosted_led} ({required_led_boost:.2f}x)")
-
-                # ⚡ Test with boosted LED using batch command
-                intensities_dict = {ch: boosted_led}
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
-
-                raw_spectrum = self.usb.read_intensity()
-                if raw_spectrum is not None:
-                    spectrum = self._apply_spectral_filter(raw_spectrum)
-                    target_region = spectrum[target_min_idx:target_max_idx]
-                    measured_signal = float(target_region.max())
-
-                    # Check if measured signal is acceptable (not saturated)
-                    if measured_signal > SATURATION_THRESHOLD:
-                        logger.warning(
-                            f"    ⚠️ Measured signal ({measured_signal:.0f}) exceeds saturation - reverting to baseline"
-                        )
-                        p_mode_led_values[ch] = s_mode_led_values[ch]
-                        final_p_signals[ch] = baseline_p_signals[ch]
-                        final_p_target_max[ch] = baseline_signal
-                    else:
-                        actual_boost = (measured_signal / baseline_signal - 1) * 100
-                        logger.info(
-                            f"    ✅ LED={boosted_led}, measured={measured_signal:.0f} counts "
-                            f"(+{actual_boost:.1f}% vs baseline)"
-                        )
-                        p_mode_led_values[ch] = boosted_led
-                        final_p_signals[ch] = spectrum
-                        final_p_target_max[ch] = measured_signal
-                else:
-                    # Failed to measure - use baseline
-                    logger.warning(f"    ⚠️ Failed to measure boosted signal - using baseline")
-                    p_mode_led_values[ch] = s_mode_led_values[ch]
-                    final_p_signals[ch] = baseline_p_signals[ch]
-                    final_p_target_max[ch] = baseline_signal
-
-            # Summary of LED adjustments
-            logger.info("  • LED adjustment summary:")
-            for ch in ch_list:
-                boost_pct = ((p_mode_led_values[ch] / s_mode_led_values[ch]) - 1) * 100
-                signal_boost_pct = ((final_p_target_max[ch] / baseline_p_target_max[ch]) - 1) * 100
-                logger.info(
-                    f"    - Channel {ch}: LED {s_mode_led_values[ch]} → {p_mode_led_values[ch]} "
-                    f"(+{boost_pct:.0f}%), signal +{signal_boost_pct:.1f}%"
-                )
-
-            # Persist final P-mode LED intensities immediately (no separate step 6)
-            for ch in ch_list:
-                self.state.leds_calibrated[ch] = p_mode_led_values[ch]
-
-            # Final summary
-            overall_p_target_max = max(final_p_target_max.values())
-            logger.info("=" * 70)
-            logger.info("✅ P-MODE CALIBRATION COMPLETE")
-            logger.info(f"  • Integration time: {s_mode_integration*1000:.1f}ms (same as S-mode)")
-            logger.info(f"  • Signal boost target: +{(SIGNAL_BOOST_TARGET-1)*100:.0f}% in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range")
-            for ch in ch_list:
-                led_boost_pct = ((p_mode_led_values[ch] / s_mode_led_values[ch]) - 1) * 100
-                signal_boost_pct = ((final_p_target_max[ch] / baseline_p_target_max[ch]) - 1) * 100
-                logger.info(
-                    f"  • Channel {ch}: LED {s_mode_led_values[ch]} → {p_mode_led_values[ch]} "
-                    f"(+{led_boost_pct:.0f}%), signal +{signal_boost_pct:.1f}%"
-                )
-            logger.info(f"  • Overall P-mode target max: {overall_p_target_max:.0f} counts ({overall_p_target_max/detector_max*100:.1f}% of detector max)")
-            logger.info("  • Ready for dark capture and transmittance ratio calculation")
-            logger.info("=" * 70)
-            return True
-
-        except Exception as e:
-            logger.exception(f"Error in S-based P-mode calibration: {e}")
-            return False
-        finally:
-            # ⚡ Always turn off all LEDs after P-mode calibration using batch command
-            try:
-                if self.ctrl is not None:
-                    self._all_leds_off_batch()
-                    logger.debug("Turned off all P-mode LEDs using batch command")
-            except Exception as e:
-                logger.warning(f"Failed to turn off P-mode LEDs: {e}")
-
-    # ========================================================================
-    # STEP 9: VALIDATION
-    # ========================================================================
-
-    def validate_calibration(self) -> tuple[bool, str]:
-        """Validate that all channels meet calibration requirements.
-
-        In DEVELOPMENT_MODE: Always passes, just logs measurements for debugging.
-        In Production Mode: Checks percentage-based thresholds in target wavelength range.
-
-        Returns:
-            Tuple of (success, error_string)
-
-        """
-        try:
-            if self.ctrl is None or self.usb is None:
-                return False, "No devices"
-
+            logger.info("=" * 80)
+            logger.info("STEP 8: Calibration Validation (Using Step 7 Data)")
+            logger.info("=" * 80)
+            
             if DEVELOPMENT_MODE:
                 logger.info("🔧 DEVELOPMENT MODE - Skipping validation thresholds")
-                logger.info("   Logging measurements for debugging...")
-
-                # Get detector-specific max for percentage calculations
-                if self.detector_profile:
-                    detector_max = self.detector_profile.max_intensity_counts
-                else:
-                    detector_max = DETECTOR_MAX_COUNTS
-
-                # Just log measurements, don't validate
-                for ch in CH_LIST:
-                    if self._is_stopped():
-                        break
-
-                    intensity = self.state.leds_calibrated[ch]
-                    # ⚡ Use batch command
-                    intensities_dict = {ch: intensity}
-                    self._activate_channel_batch([ch], intensities_dict)
-                    time.sleep(LED_DELAY)
-
-                    spectrum = self.usb.read_intensity()
-                    max_intensity = spectrum.max()
-                    max_percent = (max_intensity / detector_max) * 100
-
-                    # Find target range
-                    wave_data = self.state.wavelengths
-                    target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-                    target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-                    target_max = spectrum[target_min_idx:target_max_idx].max()
-                    target_percent = (target_max / detector_max) * 100
-
-                    logger.info(
-                        f"   Channel {ch}: LED={intensity}, "
-                        f"max={max_intensity:.0f} ({max_percent:.1f}%), "
-                        f"target_range={target_max:.0f} ({target_percent:.1f}%)"
-                    )
-
-                # Always pass in development mode
                 self.state.ch_error_list = []
                 self.state.is_calibrated = True
                 self.state.calibration_timestamp = time.time()
-                logger.info("✅ DEVELOPMENT MODE - Calibration accepted without validation")
+                logger.info("✅ DEVELOPMENT MODE - Calibration accepted")
                 return True, ""
-
-            # Production mode - validate with percentage thresholds
+            
             # Get detector-specific max for threshold calculations
             if self.detector_profile:
                 detector_max = self.detector_profile.max_intensity_counts
             else:
                 detector_max = DETECTOR_MAX_COUNTS
-
-            self.state.ch_error_list = []
-            wave_data = self.state.wavelengths
-            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-
+            
             min_threshold = detector_max * MIN_INTENSITY_PERCENT / 100.0
             max_threshold = detector_max * MAX_INTENSITY_PERCENT / 100.0
-
+            
+            logger.info(f"Validation thresholds: {MIN_INTENSITY_PERCENT}-{MAX_INTENSITY_PERCENT}% "
+                       f"({min_threshold:.0f}-{max_threshold:.0f} counts)")
+            
+            # Validate using reference signals from Step 7 (already measured!)
+            self.state.ch_error_list = []
+            
             for ch in CH_LIST:
-                if self._is_stopped():
-                    break
-
-                intensity = self.state.leds_calibrated[ch]
-                # ⚡ Use batch command
-                intensities_dict = {ch: intensity}
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
-
-                spectrum = self.usb.read_intensity()
-                target_max = spectrum[target_min_idx:target_max_idx].max()
-                target_percent = (target_max / detector_max) * 100
-
-                if target_max < min_threshold or target_max > max_threshold:
+                if ch not in self.state.ref_sig or self.state.ref_sig[ch] is None:
+                    logger.error(f"   ❌ Channel {ch}: No reference signal from Step 7")
                     self.state.ch_error_list.append(ch)
-                    logger.warning(
-                        f"Calibration failed on channel {ch}: "
-                        f"intensity={target_max:.1f} ({target_percent:.1f}%) at LED={intensity} "
-                        f"(range: {MIN_INTENSITY_PERCENT}-{MAX_INTENSITY_PERCENT}%)",
-                    )
-
-            # Build error string
-            ch_str = (
-                ", ".join(self.state.ch_error_list) if self.state.ch_error_list else ""
-            )
+                    continue
+                
+                # Check MAX signal in full spectrum (same as Steps 4 & 7)
+                signal_max = float(np.max(self.state.ref_sig[ch]))
+                signal_percent = (signal_max / detector_max) * 100
+                
+                # Validate against thresholds
+                if signal_max < min_threshold:
+                    logger.warning(f"   ❌ Channel {ch}: Signal too low ({signal_percent:.1f}% < {MIN_INTENSITY_PERCENT}%)")
+                    self.state.ch_error_list.append(ch)
+                elif signal_max > max_threshold:
+                    logger.warning(f"   ❌ Channel {ch}: Signal too high ({signal_percent:.1f}% > {MAX_INTENSITY_PERCENT}%)")
+                    self.state.ch_error_list.append(ch)
+                else:
+                    logger.info(f"   ✅ Channel {ch}: {signal_percent:.1f}% (valid)")
+            
+            # Determine success
             calibration_success = len(self.state.ch_error_list) == 0
-
+            ch_str = ", ".join(self.state.ch_error_list) if self.state.ch_error_list else ""
+            
             if calibration_success:
-                logger.info("✓ Calibration validation passed for all channels")
+                logger.info("✅ Calibration validation passed for all channels")
                 self.state.is_calibrated = True
                 self.state.calibration_timestamp = time.time()
             else:
-                logger.warning(
-                    f"✗ Calibration validation failed for channels: {ch_str}",
-                )
-
+                logger.warning(f"❌ Calibration validation failed for channels: {ch_str}")
+            
+            logger.info("=" * 80)
             return calibration_success, ch_str
-
+            
         except Exception as e:
             logger.exception(f"Error validating calibration: {e}")
-            return False, "Validation error"
+            return False, f"Validation error: {e}"
+
+    def validate_calibration(self) -> tuple[bool, str]:
+        """Backward compatibility wrapper for Step 8 validation.
+        
+        DEPRECATED: Use step_8_validate_calibration() for clarity.
+        """
+        return self.step_8_validate_calibration()
 
     # ========================================================================
     # FULL CALIBRATION ORCHESTRATION
@@ -3392,7 +3143,7 @@ class SPRCalibrator:
         use_previous_data: bool = False,  # DISABLED: Always run fresh calibration to avoid stale data
         auto_save: bool = True,
     ) -> tuple[bool, str]:
-        """Execute the complete 9-step calibration sequence.
+        """Execute the complete 8-step calibration sequence.
 
         Args:
             auto_polarize: Whether to run auto-polarization in step 2
@@ -3542,38 +3293,16 @@ class SPRCalibrator:
 
             # Step 7: Reference signal measurement (S-mode)
             logger.debug("Step 7: Reference signal measurement (S-mode)")
-            self._emit_progress(6, "Capturing reference signals...")
+            self._emit_progress(7, "Capturing reference signals...")
             success = self.step_7_measure_reference_signals(ch_list)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Reference signal measurement failed"
+                return False, "Step 7: Reference signal measurement failed"
 
-            # Step 7: Switch to P-mode
-            logger.debug("Step 7: Switching to P-mode")
-            self._emit_progress(7, "Switching to P-polarization mode...")
-            if self.ctrl is None:
-                self._safe_hardware_cleanup()
-                return False, "No controller available"
-
-            self.ctrl.set_mode(mode="p")
-            time.sleep(0.4)
-
-            # Step 8: LED intensity calibration (P-mode S-based)
-            logger.debug("Step 8: LED intensity calibration (P-mode S-based)")
-            self._emit_progress(8, "Optimizing P-mode using S-mode profile...")
-            success = self.calibrate_led_p_mode_s_based(ch_list)
-            if not success or self._is_stopped():
-                self._safe_hardware_cleanup()
-                return False, "P-mode LED calibration failed"
-
-            logger.debug(
-                f"P-mode LED calibration complete: {self.state.leds_calibrated}",
-            )
-
-            # Step 9: Validate calibration
-            logger.debug("Step 9: Validation")
-            self._emit_progress(9, "Validating calibration...")
-            calibration_success, ch_error_str = self.validate_calibration()
+            # Step 8: Validate calibration
+            logger.debug("Step 8: Validation")
+            self._emit_progress(8, "Validating calibration...")
+            calibration_success, ch_error_str = self.step_8_validate_calibration()
 
             # Always cleanup hardware after validation
             self._safe_hardware_cleanup()
@@ -4053,3 +3782,4 @@ class SPRCalibrator:
             self._calibration_success = False
             self._error_message = str(e)
             self._calibration_complete = True
+
