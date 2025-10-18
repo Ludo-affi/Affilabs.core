@@ -239,6 +239,7 @@ class CalibrationState:
         self.ref_intensity: dict[str, int] = dict.fromkeys(CH_LIST, 0)
         self.leds_calibrated: dict[str, int] = dict.fromkeys(CH_LIST, 0)
         self.weakest_channel: Optional[str] = None  # ✨ NEW: Track weakest channel for S-mode calibration
+        self.led_ranking: list[tuple[str, tuple[float, float, bool]]] = []  # ✨ NEW: Full LED ranking (weakest → strongest) from Step 3
 
         # Reference data
         self.dark_noise: np.ndarray = np.array([])
@@ -1708,6 +1709,9 @@ class SPRCalibrator:
             # ✨ RANK LEDs: Weakest → Strongest (by mean intensity)
             ranked_channels = sorted(channel_data.items(), key=lambda x: x[1][0])  # Sort by mean
             
+            # ✨ Store ranking in state for Step 4 constrained optimization
+            self.state.led_ranking = ranked_channels
+            
             logger.info(f"")
             logger.info(f"📊 LED Ranking (weakest → strongest):")
             for rank, (ch, (mean, max_val, was_saturated)) in enumerate(ranked_channels, 1):
@@ -1744,14 +1748,27 @@ class SPRCalibrator:
     # ========================================================================
 
     def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
-        """Optimize integration time for the weakest channel at maximum LED intensity.
+        """STEP 4: Constrained dual optimization for integration time.
 
-        The weakest channel is set to LED=255. Integration time is adjusted until
-        this channel reaches ~80% of detector max in the 580-610nm range.
+        Dual optimization with constraints:
+        
+        PRIMARY GOAL (maximize):
+          - Weakest LED at LED=255 produces 60-80% detector max
+          - Target: 70% = ~45,900 counts
+          - Measured as MAX signal across full ROI (580-720nm)
+        
+        CONSTRAINT 1:
+          - Strongest LED at LED≥25 → <95% detector max
+        
+        CONSTRAINT 2:
+          - Integration time ≤ 200ms (from detector profile)
+        
+        CONSEQUENCE:
+          - Middle LEDs (2nd and 3rd in ranking) automatically fall within boundaries
 
         Args:
-            weakest_ch: The weakest channel ID
-            integration_step: Step size for integration time adjustments
+            weakest_ch: The weakest channel ID (from Step 3)
+            integration_step: Step size for integration time adjustments (unused, uses binary search)
 
         Returns:
             True if successful, False otherwise
@@ -1760,100 +1777,200 @@ class SPRCalibrator:
             if self.ctrl is None or self.usb is None:
                 return False
 
+            # Import constrained optimization constants
+            from settings import (
+                WEAKEST_TARGET_PERCENT, WEAKEST_MIN_PERCENT, WEAKEST_MAX_PERCENT,
+                STRONGEST_MAX_PERCENT, STRONGEST_MIN_LED
+            )
+
             # Get integration time limits from detector profile
             if self.detector_profile:
                 min_int = self.detector_profile.min_integration_time_ms / MS_TO_SECONDS
                 max_int = self.detector_profile.max_integration_time_ms / MS_TO_SECONDS
                 detector_max = self.detector_profile.max_intensity_counts
+                spr_min_nm = self.detector_profile.spr_wavelength_min_nm
+                spr_max_nm = self.detector_profile.spr_wavelength_max_nm
                 logger.info(f"📊 Using detector profile: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms}ms")
+                logger.info(f"   SPR Range: {spr_min_nm}-{spr_max_nm}nm")
             else:
                 min_int = MIN_INTEGRATION / MS_TO_SECONDS
                 max_int = MAX_INTEGRATION / MS_TO_SECONDS
                 detector_max = DETECTOR_MAX_COUNTS
+                spr_min_nm = 580.0
+                spr_max_nm = 720.0
                 logger.warning("Using legacy integration limits from settings.py")
 
-            # Start at 50% of max integration time
-            self.state.integration = (min_int + max_int) / 2.0
-            self.usb.set_integration(self.state.integration)
-            time.sleep(0.1)
+            # Get LED ranking from Step 3
+            if not self.state.led_ranking or len(self.state.led_ranking) < 2:
+                logger.error("⚠️  LED ranking not found! Step 3 must run before Step 4.")
+                return False
 
-            logger.info(f"📊 Starting integration: {self.state.integration * 1000:.1f}ms")
-            logger.info(f"   Weakest channel ({weakest_ch}) will be set to LED=255")
+            weakest_ch = self.state.led_ranking[0][0]
+            strongest_ch = self.state.led_ranking[-1][0]
+            weakest_intensity = self.state.led_ranking[0][1][0]
+            strongest_intensity = self.state.led_ranking[-1][1][0]
+            brightness_ratio = strongest_intensity / weakest_intensity
 
-            # Get target wavelength range
+            logger.info(f"")
+            logger.info(f"⚡ STEP 4: CONSTRAINED DUAL OPTIMIZATION")
+            logger.info(f"   Weakest LED: {weakest_ch} (reference brightness)")
+            logger.info(f"   Strongest LED: {strongest_ch} ({brightness_ratio:.2f}× brighter)")
+            logger.info(f"")
+            logger.info(f"   PRIMARY GOAL: Maximize weakest LED signal")
+            logger.info(f"      → Target: {WEAKEST_TARGET_PERCENT}% @ LED=255 ({int(WEAKEST_TARGET_PERCENT/100*detector_max):,} counts)")
+            logger.info(f"      → Range: {WEAKEST_MIN_PERCENT}-{WEAKEST_MAX_PERCENT}% ({int(WEAKEST_MIN_PERCENT/100*detector_max):,}-{int(WEAKEST_MAX_PERCENT/100*detector_max):,} counts)")
+            logger.info(f"")
+            logger.info(f"   CONSTRAINT 1: Strongest LED must not saturate")
+            logger.info(f"      → Maximum: <{STRONGEST_MAX_PERCENT}% @ LED={STRONGEST_MIN_LED} ({int(STRONGEST_MAX_PERCENT/100*detector_max):,} counts)")
+            logger.info(f"")
+            logger.info(f"   CONSTRAINT 2: Integration time ≤ {max_int*1000:.0f}ms")
+            logger.info(f"")
+
+            # Get full SPR ROI indices (580-720nm, not just 580-610nm)
             wave_data = self.state.wavelengths
-            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
+            roi_min_idx = np.argmin(np.abs(wave_data - spr_min_nm))
+            roi_max_idx = np.argmin(np.abs(wave_data - spr_max_nm))
+            logger.debug(f"   Measuring MAX signal in ROI: {spr_min_nm}-{spr_max_nm}nm (indices {roi_min_idx}-{roi_max_idx})")
 
-            # Target: 80% of detector max in target range
-            target_counts = int(TARGET_INTENSITY_PERCENT / 100 * detector_max)
-            logger.info(f"   Target: {target_counts:.0f} counts ({TARGET_INTENSITY_PERCENT}% of {detector_max})")
+            # Define targets
+            weakest_target = int(WEAKEST_TARGET_PERCENT / 100 * detector_max)
+            weakest_min = int(WEAKEST_MIN_PERCENT / 100 * detector_max)
+            weakest_max = int(WEAKEST_MAX_PERCENT / 100 * detector_max)
+            strongest_max = int(STRONGEST_MAX_PERCENT / 100 * detector_max)
 
-            # Turn on weakest channel at maximum LED intensity
-            intensities_dict = {weakest_ch: MAX_LED_INTENSITY}
-            self._activate_channel_batch([weakest_ch], intensities_dict)
-            time.sleep(LED_DELAY)
-            self._last_active_channel = weakest_ch
+            # Binary search for optimal integration time
+            integration_min = min_int
+            integration_max = max_int
+            best_integration = None
+            best_weakest_signal = 0
+            best_strongest_signal = 0
 
-            # Measure initial intensity
-            raw_array = self.usb.read_intensity()
-            if raw_array is not None:
-                filtered_array = self._apply_spectral_filter(raw_array)
-                current_count = filtered_array[target_min_idx:target_max_idx].max()
-                logger.info(f"   Initial: {current_count:.0f} counts ({current_count/detector_max*100:.1f}%)")
-            else:
-                current_count = 0
+            max_iterations = 20
+            logger.info(f"🔍 Binary search: {integration_min*1000:.1f}ms - {integration_max*1000:.1f}ms")
+            logger.info(f"")
 
-            # Adjust integration time to reach target
-            max_iterations = 50
             for iteration in range(max_iterations):
                 if self._is_stopped():
                     return False
 
-                # Check if we've reached target (within 5%)
-                if target_counts * 0.95 <= current_count <= target_counts * 1.05:
-                    logger.info(f"   ✅ Target reached after {iteration} iterations")
-                    break
+                # Test integration time (midpoint)
+                test_integration = (integration_min + integration_max) / 2.0
+                self.state.integration = test_integration
+                self.usb.set_integration(test_integration)
+                time.sleep(0.1)
 
-                # Adjust integration time
-                if current_count < target_counts:
-                    # Too low - increase integration time
-                    self.state.integration = min(self.state.integration + integration_step, max_int)
-                else:
-                    # Too high - decrease integration time
-                    self.state.integration = max(self.state.integration - integration_step, min_int)
+                # ========================================================================
+                # Test 1: Measure weakest LED at LED=255
+                # ========================================================================
+                intensities_dict = {weakest_ch: MAX_LED_INTENSITY}
+                self._activate_channel_batch([weakest_ch], intensities_dict)
+                time.sleep(LED_DELAY)
+                self._last_active_channel = weakest_ch
 
-                self.usb.set_integration(self.state.integration)
-                time.sleep(0.05)
-
-                # Re-measure
                 raw_array = self.usb.read_intensity()
                 if raw_array is None:
-                    logger.error("Failed to read intensity during optimization")
+                    logger.error("Failed to read intensity for weakest LED")
                     return False
 
                 filtered_array = self._apply_spectral_filter(raw_array)
-                current_count = filtered_array[target_min_idx:target_max_idx].max()
+                weakest_signal = float(np.max(filtered_array[roi_min_idx:roi_max_idx]))
+                weakest_percent = (weakest_signal / detector_max) * 100
 
-                # Log progress every 5 iterations
-                if iteration % 5 == 0:
-                    logger.debug(f"   Iteration {iteration}: {self.state.integration*1000:.1f}ms → {current_count:.0f} counts ({current_count/detector_max*100:.1f}%)")
+                # Turn off weakest channel
+                self._all_leds_off_batch()
+                time.sleep(LED_DELAY)
 
-            # Turn off weakest channel
-            self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
+                # ========================================================================
+                # Test 2: Measure strongest LED at LED=25 (minimum practical LED)
+                # ========================================================================
+                intensities_dict = {strongest_ch: STRONGEST_MIN_LED}
+                self._activate_channel_batch([strongest_ch], intensities_dict)
+                time.sleep(LED_DELAY)
+                self._last_active_channel = strongest_ch
+
+                raw_array = self.usb.read_intensity()
+                if raw_array is None:
+                    logger.error("Failed to read intensity for strongest LED")
+                    return False
+
+                filtered_array = self._apply_spectral_filter(raw_array)
+                strongest_signal = float(np.max(filtered_array[roi_min_idx:roi_max_idx]))
+                strongest_percent = (strongest_signal / detector_max) * 100
+
+                # Turn off strongest channel
+                self._all_leds_off_batch()
+                time.sleep(LED_DELAY)
+
+                # ========================================================================
+                # Check constraints and adjust search range
+                # ========================================================================
+                logger.info(f"   Iteration {iteration+1}: {test_integration*1000:.1f}ms")
+                logger.info(f"      Weakest ({weakest_ch} @ LED=255): {weakest_signal:6.0f} counts ({weakest_percent:5.1f}%)")
+                logger.info(f"      Strongest ({strongest_ch} @ LED={STRONGEST_MIN_LED}): {strongest_signal:6.0f} counts ({strongest_percent:5.1f}%)")
+
+                # CONSTRAINT 1: Check if strongest LED would saturate
+                if strongest_signal > strongest_max:
+                    logger.info(f"      ❌ Strongest LED too high (would saturate at >95%) → Reduce integration")
+                    integration_max = test_integration
+                    continue
+
+                # PRIMARY GOAL: Check if weakest LED is in target range
+                if weakest_min <= weakest_signal <= weakest_max:
+                    # ✅ Perfect! Both constraints satisfied
+                    best_integration = test_integration
+                    best_weakest_signal = weakest_signal
+                    best_strongest_signal = strongest_signal
+                    logger.info(f"      ✅ OPTIMAL! Both constraints satisfied")
+                    break
+
+                # Adjust search range based on weakest LED
+                if weakest_signal < weakest_min:
+                    logger.info(f"      ⚠️  Weakest LED too low → Increase integration")
+                    integration_min = test_integration
+                else:
+                    logger.info(f"      ⚠️  Weakest LED too high → Reduce integration")
+                    integration_max = test_integration
+
+                # Track best so far (closest to target)
+                if abs(weakest_signal - weakest_target) < abs(best_weakest_signal - weakest_target):
+                    best_integration = test_integration
+                    best_weakest_signal = weakest_signal
+                    best_strongest_signal = strongest_signal
+
+            # ========================================================================
+            # Finalize and validate
+            # ========================================================================
+            if best_integration is None:
+                logger.error("Failed to find optimal integration time!")
+                return False
+
+            self.state.integration = best_integration
+            self.usb.set_integration(best_integration)
+            time.sleep(0.1)
+
+            # Calculate P-mode integration time (50% of S-mode)
+            from settings import LIVE_MODE_INTEGRATION_FACTOR
+            p_mode_integration = best_integration * LIVE_MODE_INTEGRATION_FACTOR
 
             # Validate final result
-            final_percent = (current_count / detector_max) * 100
-            logger.info(f"")
-            logger.info(f"✅ INTEGRATION TIME OPTIMIZED: {self.state.integration*1000:.1f}ms")
-            logger.info(f"   Weakest channel ({weakest_ch}) at LED=255: {current_count:.0f} counts ({final_percent:.1f}%)")
+            weakest_percent = (best_weakest_signal / detector_max) * 100
+            strongest_percent = (best_strongest_signal / detector_max) * 100
 
-            if final_percent < MINIMUM_ACCEPTABLE_PERCENT:
-                logger.warning(f"⚠️  Weakest channel only reached {final_percent:.1f}% (target {MINIMUM_ACCEPTABLE_PERCENT}%+)")
-                logger.warning(f"   This is a hardware limitation - proceeding anyway")
-            else:
-                logger.info(f"   Status: {'EXCELLENT' if final_percent >= IDEAL_TARGET_PERCENT else 'ACCEPTABLE'}")
+            logger.info(f"")
+            logger.info(f"✅ INTEGRATION TIME OPTIMIZED!")
+            logger.info(f"")
+            logger.info(f"   S-mode (calibration): {best_integration*1000:.1f}ms")
+            logger.info(f"   P-mode (live): {p_mode_integration*1000:.1f}ms (factor={LIVE_MODE_INTEGRATION_FACTOR})")
+            logger.info(f"")
+            logger.info(f"   Weakest LED ({weakest_ch} @ LED=255):")
+            logger.info(f"      Signal: {best_weakest_signal:6.0f} counts ({weakest_percent:5.1f}%)")
+            logger.info(f"      Status: {'✅ OPTIMAL' if weakest_min <= best_weakest_signal <= weakest_max else '⚠️  Acceptable'}")
+            logger.info(f"")
+            logger.info(f"   Strongest LED ({strongest_ch} @ LED={STRONGEST_MIN_LED}):")
+            logger.info(f"      Signal: {best_strongest_signal:6.0f} counts ({strongest_percent:5.1f}%)")
+            logger.info(f"      Status: {'✅ Safe (<95%)' if best_strongest_signal < strongest_max else '⚠️  Near saturation!'}")
+            logger.info(f"")
+            logger.info(f"   Middle LEDs: Automatically within boundaries ✅")
 
             # Calculate scan count for averaging
             self.state.num_scans = int(MAX_READ_TIME_MS / (self.state.integration * MS_TO_SECONDS))

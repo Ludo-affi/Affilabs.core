@@ -13,7 +13,7 @@ for line in lines[-3:]:
     integ = d.get('integration_time_ms', 'N/A')
     leds = d.get('leds_calibrated', d.get('ref_intensity', {}))
     weakest = d.get('weakest_channel', 'N/A')
-    
+
     print(f'\nTimestamp: {ts}')
     print(f'Integration: {integ}ms')
     print(f'LED Intensities: {leds}')

@@ -1,8 +1,8 @@
 # Binary Search LED Calibration Fix
 
-**Status**: ✅ **IMPLEMENTED**  
-**Date**: October 12, 2025  
-**Issue**: S-mode LED intensities getting stuck at 128 instead of proper values  
+**Status**: ✅ **IMPLEMENTED**
+**Date**: October 12, 2025
+**Issue**: S-mode LED intensities getting stuck at 128 instead of proper values
 **Root Cause**: Adaptive algorithm convergence issues
 
 ---
@@ -48,10 +48,10 @@ When the algorithm:
 
 Binary search is the **gold standard** for finding optimal values because it:
 
-✅ **Guaranteed convergence** in log₂(n) iterations (8-10 steps for LED range 13-255)  
-✅ **Predictable behavior** - always converges to optimal value  
-✅ **No oscillation** - monotonically narrows search range  
-✅ **Simple logic** - easier to debug and maintain  
+✅ **Guaranteed convergence** in log₂(n) iterations (8-10 steps for LED range 13-255)
+✅ **Predictable behavior** - always converges to optimal value
+✅ **No oscillation** - monotonically narrows search range
+✅ **Simple logic** - easier to debug and maintain
 ✅ **Faster** - typically converges in fewer iterations than adaptive methods
 
 ### Algorithm Overview
@@ -64,14 +64,14 @@ led_max = 255  # MAX_LED_INTENSITY
 for iteration in range(12):  # log2(255) ≈ 8, add margin
     # Calculate midpoint
     current_led = (led_min + led_max) // 2
-    
+
     # Measure intensity at current LED
     measured_intensity = measure_spectrum_at_led(current_led)
-    
+
     # Check if within tolerance
     if abs(measured_intensity - target_intensity) <= tolerance:
         return current_led  # Found optimal LED!
-    
+
     # Adjust search range
     if measured_intensity < target_intensity:
         # Need more LED - search upper half
@@ -123,7 +123,7 @@ led_min = MIN_LED_INTENSITY  # 13
 led_max = MAX_LED_INTENSITY  # 255
 for iteration in range(12):
     current_led = (led_min + led_max) // 2  # Midpoint
-    
+
     # Simple binary adjustment
     if measured < target:
         led_min = current_led + 1  # Search upper half
@@ -187,7 +187,7 @@ logger.info(f"✅ Channel {ch} binary search complete: LED={best_led}, intensity
 
 ### Convergence Speed
 
-**Binary Search**: 
+**Binary Search**:
 - Worst case: 12 iterations (guaranteed upper bound)
 - Typical: 6-8 iterations
 - Time per channel: ~1.5 seconds (8 × 0.15s stabilization + 0.3s overhead)
@@ -296,9 +296,9 @@ Add metrics to track calibration quality:
 
 ## Summary
 
-✅ **Replaced unreliable adaptive algorithm with proven binary search**  
-✅ **Eliminated "stuck at LED=128" problem**  
-✅ **Guaranteed convergence in 6-10 iterations**  
+✅ **Replaced unreliable adaptive algorithm with proven binary search**
+✅ **Eliminated "stuck at LED=128" problem**
+✅ **Guaranteed convergence in 6-10 iterations**
 ✅ **More predictable and maintainable code**
 
 The S-mode LED calibration is now **robust, reliable, and fast**.

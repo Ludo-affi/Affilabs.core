@@ -223,14 +223,14 @@ class SPRDataAcquisition:
                 if first_run:
                     self.exp_start = time.time()
                     first_run = False
-                    
+
                     # ✨ CRITICAL FIX: Apply scaled integration time at start of live measurements
                     if self.base_integration_time_factor < 1.0 and hasattr(self.usb, 'integration_time'):
                         try:
                             # Get calibrated integration time and scale it
                             calibrated_integration = self.usb.integration_time  # Already in seconds
                             scaled_integration = calibrated_integration * self.base_integration_time_factor
-                            
+
                             # Apply the scaled value
                             if hasattr(self.usb, 'set_integration'):
                                 self.usb.set_integration(scaled_integration)
