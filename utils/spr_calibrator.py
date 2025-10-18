@@ -2833,22 +2833,127 @@ class SPRCalibrator:
             return self.step_5_remeasure_dark_noise()
 
     # ========================================================================
-    # STEP 6: REFERENCE SIGNAL MEASUREMENT
+    # STEP 7: REFERENCE SIGNAL MEASUREMENT - HELPER METHODS
     # ========================================================================
 
-    def measure_reference_signals(self, ch_list: list[str]) -> bool:
-        """Measure reference signals in S-mode for all channels.
+    def _apply_afterglow_correction_to_references(
+        self,
+        ch_list: list[str],
+        ref_scans: int,
+        last_active_ch: str | None
+    ) -> bool:
+        """Apply afterglow correction to all reference signals.
+        
+        Measures dark noise after all channels are measured, applies afterglow 
+        correction if available, and subtracts the corrected dark from all 
+        reference signals.
+        
+        This consolidates the dark noise measurement and correction logic that
+        was previously scattered throughout step_7_measure_reference_signals().
+        
+        Args:
+            ch_list: Channels that were measured
+            ref_scans: Number of scans to use for dark measurement
+            last_active_ch: Last channel that was active (for afterglow correction)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info("📊 Measuring dark noise after all channels for correction...")
+            
+            # Turn off all LEDs
+            self._all_leds_off_batch()
+            time.sleep(LED_DELAY)
+            
+            # Measure dark noise (no dark subtraction, no filtering applied yet)
+            dark_spectrum = self._acquire_averaged_spectrum(
+                num_scans=ref_scans,
+                apply_filter=True,
+                subtract_dark=False,
+                description="dark noise (afterglow correction)"
+            )
+            
+            if dark_spectrum is None:
+                logger.warning("Failed to acquire dark noise for afterglow correction")
+                # Use Step 5 dark as fallback
+                dark_spectrum = self.state.dark_noise.copy()
+            
+            # Apply afterglow correction if available
+            corrected_dark = dark_spectrum
+            if self.afterglow_correction and last_active_ch:
+                try:
+                    dark_before_correction = dark_spectrum.copy()
+                    dark_mean_before = float(np.mean(dark_before_correction))
+                    baseline_dark_mean = float(np.mean(self.state.dark_noise))
+                    
+                    corrected_dark = self.afterglow_correction.correct_spectrum(
+                        spectrum=dark_spectrum,
+                        last_active_channel=last_active_ch,
+                        integration_time_ms=self.state.integration * 1000
+                    )
+                    
+                    dark_mean_after = float(np.mean(corrected_dark))
+                    contamination = dark_mean_before - baseline_dark_mean
+                    correction_effectiveness = dark_mean_before - dark_mean_after
+                    
+                    if contamination > 1.0:  # Only log if meaningful contamination
+                        logger.info(
+                            f"   ✨ Afterglow correction: "
+                            f"baseline={baseline_dark_mean:.1f}, "
+                            f"contaminated={dark_mean_before:.1f} (+{contamination:.1f}), "
+                            f"corrected={dark_mean_after:.1f} "
+                            f"({correction_effectiveness/contamination*100:.1f}% effective)"
+                        )
+                    else:
+                        logger.debug(f"   Minimal afterglow contamination ({contamination:.2f} counts)")
+                        
+                except Exception as e:
+                    logger.warning(f"Afterglow correction failed: {e}")
+                    corrected_dark = dark_spectrum
+            else:
+                if not self.afterglow_correction:
+                    logger.debug("⚠️ No afterglow correction available")
+                elif not last_active_ch:
+                    logger.debug("⚠️ No last active channel for afterglow correction")
+            
+            # Subtract corrected dark from all reference signals
+            for ch in ch_list:
+                if self.state.ref_sig[ch] is not None:
+                    # Single subtraction: raw_signal - corrected_dark
+                    self.state.ref_sig[ch] = self.state.ref_sig[ch] - corrected_dark
+                    logger.debug(f"   Applied dark correction to channel {ch}")
+            
+            logger.info("✅ Dark noise correction applied to all reference signals")
+            return True
+            
+        except Exception as e:
+            logger.exception(f"Error applying afterglow correction: {e}")
+            return False
 
+    # ========================================================================
+    # STEP 7: REFERENCE SIGNAL MEASUREMENT
+    # ========================================================================
+
+    def step_7_measure_reference_signals(self, ch_list: list[str]) -> bool:
+        """STEP 7: Measure reference signals in S-mode for all channels.
+        
+        Measures reference signals for each channel using calibrated LED intensities
+        from Step 4/6. Applies afterglow correction if available.
+        
         Args:
             ch_list: List of channels to measure
 
         Returns:
             True if successful, False otherwise
-
         """
         try:
             if self.ctrl is None or self.usb is None:
                 return False
+
+            logger.info("=" * 80)
+            logger.info("STEP 7: Reference Signal Measurement (S-mode)")
+            logger.info("=" * 80)
 
             self.ctrl.set_mode(mode="s")
             time.sleep(0.4)
@@ -2862,29 +2967,28 @@ class SPRCalibrator:
                 f"total time={ref_scans * self.state.integration:.2f}s)"
             )
 
-            # Store last active channel for afterglow correction (will be last in ch_list)
+            # Measure all channels (raw signals, no dark subtraction yet)
             last_ch = None
-
             for ch in ch_list:
                 if self._is_stopped():
                     return False
 
                 logger.debug(f"Measuring reference signal for channel {ch}")
 
-                # ⚡ Use batch command for LED activation
+                # Activate LED with calibrated intensity from Step 4/6
                 intensities_dict = {ch: self.state.ref_intensity[ch]}
                 self._activate_channel_batch([ch], intensities_dict)
                 time.sleep(LED_DELAY)
 
-                # ✨ Track last active channel for afterglow correction
+                # Track last active channel for afterglow correction
                 self._last_active_channel = ch
                 last_ch = ch
 
-                # ✨ VECTORIZED SPECTRUM ACQUISITION (2-3× faster than loop)
+                # Acquire raw spectrum (no dark subtraction - we'll do it once at the end)
                 averaged_signal = self._acquire_averaged_spectrum(
                     num_scans=ref_scans,
                     apply_filter=True,
-                    subtract_dark=True,  # Automatically subtract dark noise
+                    subtract_dark=False,  # Keep raw signal for single dark subtraction
                     description=f"reference signal (ch {ch})"
                 )
 
@@ -2892,91 +2996,21 @@ class SPRCalibrator:
                     logger.error(f"Failed to acquire reference signal for channel {ch}")
                     return False
 
-                self.state.ref_sig[ch] = deepcopy(averaged_signal)
+                # Store raw signal (no deepcopy needed - averaged_signal is already new)
+                self.state.ref_sig[ch] = averaged_signal
 
                 # Log reference signal strength
-                ref_array = self.state.ref_sig[ch]
-                if ref_array is not None:
-                    logger.debug(
-                        f"Channel {ch} reference signal: max={float(np.max(ref_array)):.1f} counts",
-                    )
-                else:
-                    logger.warning(f"Channel {ch} reference signal is None")
+                logger.debug(
+                    f"Channel {ch} reference signal: max={float(np.max(averaged_signal)):.1f} counts"
+                )
 
-            # ✨ NEW (Phase 2 - Priority 3 & 10): Single dark measurement at END for afterglow correction
-            # Optimization: Measure dark ONCE after all channels instead of after each channel
-            # Saves ~6-8 seconds (3 dark measurements × 2-3s each)
-            logger.info(f"📊 Measuring single dark noise after all channels for afterglow correction...")
-
-            # Turn off all LEDs
-            self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
-
-            # ✨ VECTORIZED SPECTRUM ACQUISITION (2-3× faster than loop)
-            dark_after_all = self._acquire_averaged_spectrum(
-                num_scans=ref_scans,
-                apply_filter=True,
-                subtract_dark=False,
-                description="dark noise (afterglow correction)"
-            )
-
-            if dark_after_all is None:
-                logger.warning("Failed to acquire dark noise for afterglow correction")
-                # Continue without afterglow correction
-                dark_after_all = self.state.dark_noise.copy()
-
-            # Apply afterglow correction if available (uses last active channel)
-            if self.afterglow_correction and last_ch:
-                dark_before_correction = dark_after_all.copy()
-                dark_mean_before = float(np.mean(dark_before_correction))
-                baseline_dark_mean = float(np.mean(self.state.dark_noise))
-
-                try:
-                    corrected_dark = self.afterglow_correction.correct_spectrum(
-                        spectrum=dark_after_all,
-                        last_active_channel=last_ch,
-                        integration_time_ms=self.state.integration * 1000
-                    )
-
-                    dark_mean_after = float(np.mean(corrected_dark))
-                    contamination = dark_mean_before - baseline_dark_mean
-                    correction_effectiveness = dark_mean_before - dark_mean_after
-
-                    if contamination > 1.0:  # Only log if there was meaningful contamination
-                        logger.info(
-                            f"   ✨ Step 7 afterglow correction: "
-                            f"baseline={baseline_dark_mean:.1f}, "
-                            f"contaminated={dark_mean_before:.1f} (+{contamination:.1f}), "
-                            f"corrected={dark_mean_after:.1f} "
-                            f"({correction_effectiveness/contamination*100:.1f}% effective)"
-                        )
-
-                        # Apply correction delta to ALL reference signals
-                        # (The dark contamination affects all measurements equally)
-                        dark_correction_delta = corrected_dark - dark_after_all
-
-                        for ch in ch_list:
-                            if self.state.ref_sig[ch] is not None:
-                                # Correct the reference signal by adjusting for dark contamination
-                                # ref_sig = (signal + LED) - dark_contaminated
-                                # corrected_ref_sig = (signal + LED) - dark_corrected
-                                # = ref_sig + (dark_corrected - dark_contaminated)
-                                self.state.ref_sig[ch] = self.state.ref_sig[ch] + dark_correction_delta
-
-                                logger.debug(
-                                    f"   Applied afterglow correction to ref_sig[{ch}]: "
-                                    f"delta_mean={float(np.mean(dark_correction_delta)):.2f} counts"
-                                )
-                    else:
-                        logger.debug(f"   Minimal afterglow contamination ({contamination:.2f} counts) - no correction needed")
-
-                except Exception as e:
-                    logger.warning(f"Failed to apply afterglow correction to reference signals: {e}")
-            else:
-                if not self.afterglow_correction:
-                    logger.debug(f"⚠️ No afterglow correction available for Step 7 reference signals")
-                elif not last_ch:
-                    logger.debug(f"⚠️ No last active channel for Step 7 afterglow correction")
+            # Apply afterglow correction and dark subtraction to all channels at once
+            if not self._apply_afterglow_correction_to_references(ch_list, ref_scans, last_ch):
+                logger.warning("Afterglow correction failed, continuing with uncorrected signals")
+                # Apply basic dark subtraction as fallback
+                for ch in ch_list:
+                    if self.state.ref_sig[ch] is not None:
+                        self.state.ref_sig[ch] = self.state.ref_sig[ch] - self.state.dark_noise
 
             # Save S-mode reference signals to disk for longitudinal data processing
             from pathlib import Path
@@ -3004,6 +3038,13 @@ class SPRCalibrator:
         except Exception as e:
             logger.exception(f"Error measuring reference signals: {e}")
             return False
+
+    def measure_reference_signals(self, ch_list: list[str]) -> bool:
+        """Backward compatibility wrapper for Step 7.
+        
+        DEPRECATED: Use step_7_measure_reference_signals() for clarity.
+        """
+        return self.step_7_measure_reference_signals(ch_list)
 
     # ========================================================================
     # STEP 8: LED INTENSITY CALIBRATION (P-MODE) - SIMPLIFIED
@@ -3502,7 +3543,7 @@ class SPRCalibrator:
             # Step 7: Reference signal measurement (S-mode)
             logger.debug("Step 7: Reference signal measurement (S-mode)")
             self._emit_progress(6, "Capturing reference signals...")
-            success = self.measure_reference_signals(ch_list)
+            success = self.step_7_measure_reference_signals(ch_list)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
                 return False, "Reference signal measurement failed"
