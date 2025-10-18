@@ -1558,12 +1558,18 @@ class SPRCalibrator:
             return False, 1.0
 
     # ========================================================================
-    # STEP 3: WEAKEST CHANNEL IDENTIFICATION
+    # STEP 3: WEAKEST CHANNEL IDENTIFICATION (OPTIMIZED)
     # ========================================================================
 
     def _identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
         """Identify the weakest LED channel by testing all at standard intensity.
-
+        
+        ✨ OPTIMIZED:
+        - Lower test LED (50% vs 66%) to avoid saturation during testing
+        - Saturation detection with auto-retry at 25% LED
+        - Single-pass wavelength filtering (no double-filter)
+        - Scaled comparison when retry needed
+        
         Args:
             ch_list: List of channels to test
 
@@ -1585,17 +1591,30 @@ class SPRCalibrator:
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
 
-            logger.info(f"📊 Testing all channels at LED={S_LED_INT} (66% intensity)")
+            # ✨ OPTIMIZATION 1: Use LOWER test LED to avoid saturation during testing
+            # Start at 50% instead of 66% to leave headroom for bright channels
+            test_led_intensity = int(0.5 * MAX_LED_INTENSITY)  # 128 (was 168)
+            
+            logger.info(f"📊 Testing all channels at LED={test_led_intensity} (50% intensity)")
             logger.info(f"   Measuring in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range")
 
             channel_intensities = {}
+            saturated_channels = set()
+            
+            # ✨ OPTIMIZATION 2: Get detector max for saturation detection
+            if self.detector_profile:
+                detector_max = self.detector_profile.max_intensity_counts
+            else:
+                detector_max = DETECTOR_MAX_COUNTS
+            
+            SATURATION_THRESHOLD = int(0.95 * detector_max)  # 95% of max
 
             for ch in ch_list:
                 if self._is_stopped():
                     return None, {}
 
-                # Turn on channel at standard intensity
-                intensities_dict = {ch: S_LED_INT}
+                # Turn on channel at test intensity
+                intensities_dict = {ch: test_led_intensity}
                 self._activate_channel_batch([ch], intensities_dict)
                 time.sleep(LED_DELAY)
 
@@ -1608,18 +1627,65 @@ class SPRCalibrator:
                     logger.error(f"Failed to read intensity for channel {ch}")
                     continue
 
-                # Apply spectral filter
+                # Apply spectral filter (single pass - already filtered to SPR range)
                 filtered_array = self._apply_spectral_filter(raw_array)
 
-                # Measure max intensity in target range
+                # Measure max intensity in target range (580-610nm within SPR range)
                 max_intensity = filtered_array[target_min_idx:target_max_idx].max()
+                
+                # ✨ OPTIMIZATION 3: Detect saturation
+                if max_intensity >= SATURATION_THRESHOLD:
+                    logger.warning(f"⚠️  Channel {ch} SATURATED at LED={test_led_intensity} (max={max_intensity:.0f})")
+                    saturated_channels.add(ch)
+                
                 channel_intensities[ch] = max_intensity
-
-                logger.info(f"   Channel {ch}: {max_intensity:.0f} counts")
+                
+                sat_flag = " [SATURATED]" if ch in saturated_channels else ""
+                logger.info(f"   Channel {ch}: {max_intensity:.0f} counts{sat_flag}")
 
             # Turn off all channels
             self._all_leds_off_batch()
             time.sleep(LED_DELAY)
+
+            # ✨ OPTIMIZATION 4: Handle saturation - retry at lower LED
+            if saturated_channels:
+                logger.warning(f"⚠️  {len(saturated_channels)} channel(s) saturated at LED={test_led_intensity}")
+                logger.warning(f"   Retrying saturated channels at LED=64 (25%)...")
+                
+                retry_led = int(0.25 * MAX_LED_INTENSITY)  # 64
+                
+                for ch in saturated_channels:
+                    if self._is_stopped():
+                        return None, {}
+                    
+                    # Turn on channel at lower intensity
+                    intensities_dict = {ch: retry_led}
+                    self._activate_channel_batch([ch], intensities_dict)
+                    time.sleep(LED_DELAY)
+                    
+                    self._last_active_channel = ch
+                    
+                    # Read spectrum
+                    raw_array = self.usb.read_intensity()
+                    if raw_array is None:
+                        logger.error(f"Failed to read intensity for channel {ch} on retry")
+                        continue
+                    
+                    # Apply spectral filter
+                    filtered_array = self._apply_spectral_filter(raw_array)
+                    
+                    # Measure max intensity in target range
+                    max_intensity_retry = filtered_array[target_min_idx:target_max_idx].max()
+                    
+                    # Scale up to equivalent of test_led_intensity for fair comparison
+                    scaled_intensity = max_intensity_retry * (test_led_intensity / retry_led)
+                    channel_intensities[ch] = scaled_intensity
+                    
+                    logger.info(f"   Channel {ch} retry: {max_intensity_retry:.0f} counts at LED={retry_led} (scaled: {scaled_intensity:.0f})")
+                
+                # Turn off all channels after retry
+                self._all_leds_off_batch()
+                time.sleep(LED_DELAY)
 
             if not channel_intensities:
                 logger.error("No channel intensities measured!")
@@ -1627,10 +1693,15 @@ class SPRCalibrator:
 
             # Find weakest channel (lowest intensity)
             weakest_ch = min(channel_intensities, key=channel_intensities.get)
+            strongest_ch = max(channel_intensities, key=channel_intensities.get)
+            
             logger.info(f"")
             logger.info(f"✅ Weakest channel: {weakest_ch} ({channel_intensities[weakest_ch]:.0f} counts)")
-            logger.info(f"   Strongest channel: {max(channel_intensities, key=channel_intensities.get)} ({channel_intensities[max(channel_intensities, key=channel_intensities.get)]:.0f} counts)")
-            logger.info(f"   Ratio: {channel_intensities[max(channel_intensities, key=channel_intensities.get)] / channel_intensities[weakest_ch]:.2f}x")
+            logger.info(f"   Strongest channel: {strongest_ch} ({channel_intensities[strongest_ch]:.0f} counts)")
+            logger.info(f"   Ratio: {channel_intensities[strongest_ch] / channel_intensities[weakest_ch]:.2f}x")
+            
+            if saturated_channels:
+                logger.info(f"   Note: Channels {saturated_channels} were saturated and retested at lower LED")
 
             return weakest_ch, channel_intensities
 
