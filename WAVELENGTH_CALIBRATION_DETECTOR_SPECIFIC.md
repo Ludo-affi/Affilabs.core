@@ -2,7 +2,7 @@
 
 **Step 2** of calibration is detector-specific to handle different spectrometer types.
 
-**Date**: October 18, 2025  
+**Date**: October 18, 2025
 **Status**: ✅ **IMPLEMENTED**
 
 ---
@@ -451,7 +451,7 @@ grep "Detector type:" logs/app.log
 ```
 ❌ Failed to obtain wavelength calibration
 ```
-**Cause**: EEPROM read failed, no calibration file found  
+**Cause**: EEPROM read failed, no calibration file found
 **Solution**: Check USB connection, create calibration file for custom detectors
 
 ### No Wavelength Method
@@ -459,7 +459,7 @@ grep "Detector type:" logs/app.log
 ❌ USB spectrometer has no wavelength reading method
    Expected: read_wavelength() or get_wavelengths()
 ```
-**Cause**: HAL adapter missing wavelength methods  
+**Cause**: HAL adapter missing wavelength methods
 **Solution**: Implement wavelength reading in HAL adapter, or use file-based method
 
 ### File Not Found
@@ -468,7 +468,7 @@ grep "Detector type:" logs/app.log
    Expected: calibration/wavelength_calibration.csv or calibration/wavelength_calibration.npy
    Please create calibration file or use Ocean Optics detector
 ```
-**Cause**: Custom detector selected but no calibration file exists  
+**Cause**: Custom detector selected but no calibration file exists
 **Solution**: Create `calibration/wavelength_calibration.npy` with wavelength array
 
 ---

@@ -70,27 +70,27 @@ integration_max = 200ms            # Detector maximum
 for iteration in range(20):
     # Test midpoint
     test_integration = (integration_min + integration_max) / 2
-    
+
     # Test 1: Measure weakest LED at LED=255
     weakest_signal = measure(weakest_ch, LED=255, integration=test_integration)
     weakest_percent = weakest_signal / detector_max * 100
-    
+
     # Test 2: Measure strongest LED at LED=25
     strongest_signal = measure(strongest_ch, LED=25, integration=test_integration)
     strongest_percent = strongest_signal / detector_max * 100
-    
+
     # Check CONSTRAINT 1: Strongest LED saturation
     if strongest_signal > 95% detector_max:
         # Strongest would saturate, reduce integration
         integration_max = test_integration
         continue
-    
+
     # Check PRIMARY GOAL: Weakest LED in target range
     if 60% <= weakest_percent <= 80%:
         # ✅ OPTIMAL! Both constraints satisfied
         best_integration = test_integration
         break
-    
+
     # Adjust search range based on weakest LED
     if weakest_percent < 60%:
         # Too low, increase integration
@@ -112,14 +112,14 @@ p_mode_integration = best_integration * 0.5  # P-mode (live)
 ⚡ STEP 4: CONSTRAINED DUAL OPTIMIZATION
    Weakest LED: A (reference brightness)
    Strongest LED: D (2.85× brighter)
-   
+
    PRIMARY GOAL: Maximize weakest LED signal
       → Target: 70% @ LED=255 (45,900 counts)
       → Range: 60-80% (39,321-52,428 counts)
-   
+
    CONSTRAINT 1: Strongest LED must not saturate
       → Maximum: <95% @ LED=25 (62,259 counts)
-   
+
    CONSTRAINT 2: Integration time ≤ 200ms
 
 🔍 Binary search: 1.0ms - 200.0ms
@@ -138,15 +138,15 @@ p_mode_integration = best_integration * 0.5  # P-mode (live)
 
    S-mode (calibration): 150.2ms
    P-mode (live): 75.1ms (factor=0.5)
-   
+
    Weakest LED (A @ LED=255):
       Signal: 42,675 counts ( 65.1%)
       Status: ✅ OPTIMAL
-   
+
    Strongest LED (D @ LED=25):
       Signal: 12,185 counts ( 18.6%)
       Status: ✅ Safe (<95%)
-   
+
    Middle LEDs: Automatically within boundaries ✅
 ```
 
@@ -195,7 +195,7 @@ STRONGEST_MIN_LED = 25        # Minimum practical LED intensity for validation
 class CalibrationState:
     def __init__(self):
         # ... existing fields ...
-        
+
         # ✨ NEW: Full LED ranking from Step 3
         self.led_ranking: list[tuple[str, tuple[float, float, bool]]] = []
         # Format: [(ch, (mean, max, saturated)), ...]
@@ -207,13 +207,13 @@ class CalibrationState:
 ```python
 def _identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
     # ... existing measurement code ...
-    
+
     # ✨ RANK LEDs: Weakest → Strongest
     ranked_channels = sorted(channel_data.items(), key=lambda x: x[1][0])
-    
+
     # ✨ Store ranking in state for Step 4
     self.state.led_ranking = ranked_channels
-    
+
     # ... rest of method ...
 ```
 
@@ -222,24 +222,24 @@ def _identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dic
 ```python
 def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
     """STEP 4: Constrained dual optimization for integration time."""
-    
+
     # Get LED ranking from Step 3
     weakest_ch = self.state.led_ranking[0][0]
     strongest_ch = self.state.led_ranking[-1][0]
-    
+
     # Binary search with dual measurements
     for iteration in range(max_iterations):
         test_integration = (integration_min + integration_max) / 2
-        
+
         # Test weakest LED at LED=255
         weakest_signal = measure_and_get_max_signal(weakest_ch, LED=255)
-        
+
         # Test strongest LED at LED=25
         strongest_signal = measure_and_get_max_signal(strongest_ch, LED=25)
-        
+
         # Validate constraints and adjust search range
         # ...
-    
+
     # Store S-mode and calculate P-mode integration times
     self.state.integration = best_integration
     p_mode_integration = best_integration * LIVE_MODE_INTEGRATION_FACTOR

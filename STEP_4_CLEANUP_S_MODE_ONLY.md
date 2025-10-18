@@ -48,7 +48,7 @@ def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -
 
     This optimizes integration time for CALIBRATION (S-mode) only.
     P-mode integration time is calculated later when entering live mode.
-    
+
     ...
     """
 ```

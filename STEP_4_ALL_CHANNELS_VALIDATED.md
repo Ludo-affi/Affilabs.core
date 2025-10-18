@@ -46,13 +46,13 @@ Step 4: Complete Validation
 ```python
 for iteration in range(20):
     test_integration = (min_integration + max_integration) / 2
-    
+
     # Test weakest LED at LED=255
     weakest_signal = measure(weakest_ch, LED=255, integration=test_integration)
-    
+
     # Validate strongest LED at LED=25
     strongest_signal = measure(strongest_ch, LED=25, integration=test_integration)
-    
+
     # Check constraints
     if strongest_signal > 95% detector_max:
         # Reduce integration
@@ -85,7 +85,7 @@ for ch in [A, B, C, D]:
     activate(ch, LED=predicted_led[ch])
     signal = measure_max_signal(ch, integration=best_integration)
     signal_percent = signal / detector_max * 100
-    
+
     # Classify signal level
     if signal_percent > 95:
         status = "❌ SATURATED"
@@ -95,7 +95,7 @@ for ch in [A, B, C, D]:
         status = "⚠️  LOW (Step 6 will adjust)"
     else:
         status = "✅ OPTIMAL"
-    
+
     log(f"{ch} @ LED={predicted_led}: {signal} ({signal_percent}%) {status}")
 
 # Step 3: Final summary
@@ -326,7 +326,7 @@ for ch, (intensity, _, _) in self.state.led_ranking:
         ratio = intensity / weakest_intensity
         predicted_led = int(MAX_LED_INTENSITY / ratio)
         predicted_led = max(STRONGEST_MIN_LED, min(MAX_LED_INTENSITY, predicted_led))
-    
+
     predicted_leds[ch] = predicted_led
 
 # Measure all channels explicitly

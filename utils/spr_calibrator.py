@@ -1211,12 +1211,12 @@ class SPRCalibrator:
     def _detect_spectrometer_type_fast(self, wavelengths: np.ndarray) -> str:
         """
         Fast detector detection using already-read wavelengths.
-        
+
         ✨ OPTIMIZED: No redundant USB reads, minimal string operations
-        
+
         Args:
             wavelengths: Already-read wavelength array (avoids redundant USB read)
-        
+
         Returns:
             Detector type string (e.g., "Ocean Optics USB4000/HR4000")
         """
@@ -1228,7 +1228,7 @@ class SPRCalibrator:
                 1044: "QE65000",
                 1024: "USB2000+",
             }
-            
+
             # Try to get model name from USB device (fast path)
             if hasattr(self.usb, 'get_device_info'):
                 try:
@@ -1238,7 +1238,7 @@ class SPRCalibrator:
                         if 'model' in device_info and device_info['model']:
                             model = device_info['model']
                             return f"Ocean Optics {model}"
-                        
+
                         # Try serial number for model inference (single check)
                         if 'serial_number' in device_info and device_info['serial_number']:
                             serial = device_info['serial_number']
@@ -1255,15 +1255,15 @@ class SPRCalibrator:
                                     return f"Ocean Optics {model}"
                 except Exception:
                     pass  # Fallback to pixel count
-            
+
             # Infer from pixel count (already have wavelengths!)
             pixel_count = len(wavelengths)
             if pixel_count in OCEAN_OPTICS_PIXELS:
                 return f"Ocean Optics {OCEAN_OPTICS_PIXELS[pixel_count]}"
-            
+
             # Default to Ocean Optics (safe assumption for SPR systems)
             return "Ocean Optics (Generic)"
-            
+
         except Exception as e:
             logger.warning(f"⚠️  Error detecting spectrometer type: {e}")
             return "Ocean Optics (Generic)"  # Safe default
@@ -1271,16 +1271,16 @@ class SPRCalibrator:
     def _calibrate_wavelength_ocean_optics(self) -> tuple[np.ndarray | None, str]:
         """
         Read factory wavelength calibration from Ocean Optics EEPROM.
-        
+
         Ocean Optics spectrometers store wavelength calibration coefficients
         in EEPROM during manufacturing. This method reads that data.
-        
+
         Returns:
             Tuple of (wavelength_array, serial_number)
         """
         try:
             logger.info("   Method: Factory EEPROM (Ocean Optics)")
-            
+
             # Get serial number from device info
             serial_number = "unknown"
             try:
@@ -1290,7 +1290,7 @@ class SPRCalibrator:
                     logger.debug(f"   Spectrometer serial number: {serial_number}")
             except Exception as e:
                 logger.warning(f"   Could not get serial number: {e}")
-            
+
             # Read wavelengths from EEPROM
             wave_data = None
             if hasattr(self.usb, "read_wavelength"):
@@ -1304,17 +1304,17 @@ class SPRCalibrator:
                 logger.error("❌ USB spectrometer has no wavelength reading method")
                 logger.error("   Expected: read_wavelength() or get_wavelengths()")
                 return None, serial_number
-            
+
             if wave_data is None or len(wave_data) == 0:
                 logger.error("❌ Failed to read wavelengths from EEPROM")
                 return None, serial_number
-            
+
             logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration")
             logger.info(f"   Range: {wave_data[0]:.1f} - {wave_data[-1]:.1f} nm")
             logger.info(f"   Resolution: {(wave_data[-1] - wave_data[0]) / len(wave_data):.3f} nm/pixel")
-            
+
             return wave_data, serial_number
-            
+
         except Exception as e:
             logger.error(f"❌ Error reading Ocean Optics EEPROM: {e}")
             return None, "unknown"
@@ -1322,62 +1322,62 @@ class SPRCalibrator:
     def _calibrate_wavelength_from_file(self) -> tuple[np.ndarray | None, str]:
         """
         Load wavelength calibration from external file.
-        
+
         For custom detectors or when polynomial calibration is not available,
         load pre-computed wavelength array from file.
-        
+
         Expected file format:
         - CSV or NPY file with wavelength array
         - One wavelength per pixel
         - Units: nanometers (nm)
-        
+
         Returns:
             Tuple of (wavelength_array, "custom")
         """
         try:
             from pathlib import Path
-            
+
             logger.info("   Method: Loading from calibration file")
-            
+
             # Check for calibration file
             calib_file_npy = Path("calibration") / "wavelength_calibration.npy"
             calib_file_csv = Path("calibration") / "wavelength_calibration.csv"
-            
+
             if calib_file_npy.exists():
                 logger.info(f"   Loading from: {calib_file_npy}")
                 wavelengths = np.load(calib_file_npy)
                 logger.info(f"   ✅ Loaded {len(wavelengths)} wavelengths from .npy file")
                 logger.info(f"   Range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
                 return wavelengths, "custom"
-                
+
             elif calib_file_csv.exists():
                 logger.info(f"   Loading from: {calib_file_csv}")
                 wavelengths = np.loadtxt(calib_file_csv, delimiter=',')
                 logger.info(f"   ✅ Loaded {len(wavelengths)} wavelengths from .csv file")
                 logger.info(f"   Range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
                 return wavelengths, "custom"
-                
+
             else:
                 logger.error(f"❌ No wavelength calibration file found")
                 logger.error(f"   Expected: {calib_file_csv} or {calib_file_npy}")
                 logger.error(f"   Please create calibration file or use Ocean Optics detector")
                 return None, "custom"
-            
+
         except Exception as e:
             logger.error(f"❌ Error loading wavelength calibration file: {e}")
             return None, "custom"
 
-    def calibrate_wavelength_range(self) -> tuple[bool, float]:
-        """Calibrate wavelength range and calculate Fourier weights (Detector-Specific).
-        
+    def step_2_calibrate_wavelength_range(self) -> tuple[bool, float]:
+        """STEP 2: Calibrate wavelength range and calculate Fourier weights (Detector-Specific).
+
         ✨ OPTIMIZED: Single wavelength read (no redundant USB calls)
-        
+
         Improvements:
         - Reads wavelengths once (not 2×)
         - Uses wavelengths for both detection and calibration
         - Fast dict-based detector detection
         - Consolidated logging (cleaner output)
-        
+
         Returns:
             Tuple of (success, integration_step)
 
@@ -1395,12 +1395,12 @@ class SPRCalibrator:
             # DETECTOR-SPECIFIC WAVELENGTH CALIBRATION (OPTIMIZED)
             # ========================================================================
             logger.info("📊 Reading wavelength calibration (detector-specific)...")
-            
+
             # ✨ OPTIMIZATION: Read wavelengths ONCE and use for both detection AND calibration
             # (Avoids redundant USB read in _detect_spectrometer_type)
             wave_data = None
             serial_number = "unknown"
-            
+
             # Get serial number from device info (fast metadata read)
             try:
                 if hasattr(self.usb, "get_device_info"):
@@ -1409,7 +1409,7 @@ class SPRCalibrator:
                         serial_number = device_info.get("serial_number", "unknown")
             except Exception:
                 pass  # Continue with unknown serial
-            
+
             # Read wavelengths from EEPROM (single read)
             if hasattr(self.usb, "read_wavelength"):
                 wave_data = self.usb.read_wavelength()
@@ -1425,10 +1425,10 @@ class SPRCalibrator:
             if wave_data is None or len(wave_data) == 0:
                 logger.error("❌ Failed to read wavelengths from spectrometer")
                 return False, 1.0
-            
+
             # ✨ OPTIMIZATION: Detect spectrometer type using already-read wavelengths
             detector_type = self._detect_spectrometer_type_fast(wave_data)
-            
+
             # Log detection results (consolidated)
             logger.info(f"   Detector: {detector_type} (Serial: {serial_number})")
             logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration")
@@ -1558,18 +1558,28 @@ class SPRCalibrator:
             logger.exception(f"Error in wavelength calibration: {e}")
             return False, 1.0
 
+    def calibrate_wavelength_range(self) -> tuple[bool, float]:
+        """Calibrate wavelength range (backward compatibility wrapper).
+        
+        For new code, use step_2_calibrate_wavelength_range() for clarity.
+        
+        Returns:
+            Tuple of (success, integration_step)
+        """
+        return self.step_2_calibrate_wavelength_range()
+
     # ========================================================================
     # STEP 3: LED BRIGHTNESS RANKING (OPTIMIZED FOR SPEED)
     # ========================================================================
 
-    def _identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
-        """Rank all LED channels by brightness to identify weakest and strongest.
-        
+    def step_3_identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
+        """STEP 3: Rank all LED channels by brightness to identify weakest and strongest.
+
         Purpose: Quick LED brightness test to determine:
         - Weakest LED → Will be fixed at LED=255
         - Strongest LED → Most likely to saturate (needs most dimming)
         - Full ranking → For diagnostic purposes
-        
+
         ✨ OPTIMIZED FOR SPEED:
         - Single raw read per channel (no averaging)
         - NO dark subtraction (comparing relative brightness only)
@@ -1577,7 +1587,7 @@ class SPRCalibrator:
         - 580-610nm test region (arbitrary, just for consistent measurement)
         - Saturation detection with auto-retry at 25%
         - Full LED ranking (weakest → strongest)
-        
+
         Args:
             ch_list: List of channels to test
 
@@ -1589,7 +1599,7 @@ class SPRCalibrator:
                 return None, {}
 
             logger.info(f"📊 Testing all LEDs to rank by brightness (weakest → strongest)...")
-            
+
             # Set to S-mode and turn off all channels
             self.ctrl.set_mode(mode="s")
             time.sleep(0.5)
@@ -1608,13 +1618,13 @@ class SPRCalibrator:
             logger.info(f"   Test region: {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm (arbitrary measurement region)")
 
             channel_data = {}  # {channel: (mean_intensity, max_intensity, saturated)}
-            
+
             # Get detector max for saturation detection
             if self.detector_profile:
                 detector_max = self.detector_profile.max_intensity_counts
             else:
                 detector_max = DETECTOR_MAX_COUNTS
-            
+
             SATURATION_THRESHOLD = int(0.95 * detector_max)  # 95% of max
 
             # ✨ FAST TEST: Single read per channel, no averaging, no dark subtraction
@@ -1643,12 +1653,12 @@ class SPRCalibrator:
                 test_region = filtered_array[target_min_idx:target_max_idx]
                 mean_intensity = float(np.mean(test_region))
                 max_intensity = float(np.max(test_region))
-                
+
                 # Detect saturation
                 is_saturated = max_intensity >= SATURATION_THRESHOLD
-                
+
                 channel_data[ch] = (mean_intensity, max_intensity, is_saturated)
-                
+
                 sat_flag = " ⚠️ SATURATED" if is_saturated else ""
                 logger.info(f"   {ch}: mean={mean_intensity:6.0f}, max={max_intensity:6.0f}{sat_flag}")
 
@@ -1658,46 +1668,46 @@ class SPRCalibrator:
 
             # ✨ HANDLE SATURATION: Retry at lower LED for accurate ranking
             saturated_channels = [ch for ch, (_, _, sat) in channel_data.items() if sat]
-            
+
             if saturated_channels:
                 logger.warning(f"⚠️  {len(saturated_channels)} channel(s) saturated: {saturated_channels}")
                 logger.warning(f"   Retrying at LED=64 (25%) for accurate ranking...")
-                
+
                 retry_led = int(0.25 * MAX_LED_INTENSITY)  # 64
-                
+
                 for ch in saturated_channels:
                     if self._is_stopped():
                         return None, {}
-                    
+
                     # Turn on channel at lower intensity
                     intensities_dict = {ch: retry_led}
                     self._activate_channel_batch([ch], intensities_dict)
                     time.sleep(LED_DELAY)
-                    
+
                     self._last_active_channel = ch
-                    
+
                     # Single raw read
                     raw_array = self.usb.read_intensity()
                     if raw_array is None:
                         logger.error(f"Failed to read intensity for channel {ch} on retry")
                         continue
-                    
+
                     # Apply spectral filter
                     filtered_array = self._apply_spectral_filter(raw_array)
-                    
+
                     # Extract test region
                     test_region = filtered_array[target_min_idx:target_max_idx]
                     mean_intensity = float(np.mean(test_region))
                     max_intensity = float(np.max(test_region))
-                    
+
                     # Scale up to equivalent of test_led_intensity for fair ranking
                     scaled_mean = mean_intensity * (test_led_intensity / retry_led)
                     scaled_max = max_intensity * (test_led_intensity / retry_led)
-                    
+
                     channel_data[ch] = (scaled_mean, scaled_max, False)  # Not saturated after scaling
-                    
+
                     logger.info(f"   {ch} retry: mean={mean_intensity:6.0f} @ LED={retry_led} (scaled: {scaled_mean:6.0f})")
-                
+
                 # Turn off all channels after retry
                 self._all_leds_off_batch()
                 time.sleep(LED_DELAY)
@@ -1708,23 +1718,23 @@ class SPRCalibrator:
 
             # ✨ RANK LEDs: Weakest → Strongest (by mean intensity)
             ranked_channels = sorted(channel_data.items(), key=lambda x: x[1][0])  # Sort by mean
-            
+
             # ✨ Store ranking in state for Step 4 constrained optimization
             self.state.led_ranking = ranked_channels
-            
+
             logger.info(f"")
             logger.info(f"📊 LED Ranking (weakest → strongest):")
             for rank, (ch, (mean, max_val, was_saturated)) in enumerate(ranked_channels, 1):
                 ratio = mean / ranked_channels[0][1][0]  # Ratio to weakest
                 sat_flag = " [was saturated]" if was_saturated else ""
                 logger.info(f"   {rank}. Channel {ch}: {mean:6.0f} counts ({ratio:.2f}× weakest){sat_flag}")
-            
+
             # Identify weakest and strongest
             weakest_ch = ranked_channels[0][0]
             weakest_intensity = ranked_channels[0][1][0]
             strongest_ch = ranked_channels[-1][0]
             strongest_intensity = ranked_channels[-1][1][0]
-            
+
             logger.info(f"")
             logger.info(f"✅ Weakest LED: Channel {weakest_ch} ({weakest_intensity:.0f} counts)")
             logger.info(f"   → Will be FIXED at LED=255 (maximum)")
@@ -1733,10 +1743,10 @@ class SPRCalibrator:
             logger.info(f"⚠️  Strongest LED: Channel {strongest_ch} ({strongest_intensity:.0f} counts)")
             logger.info(f"   → Most likely to saturate (brightest LED)")
             logger.info(f"   → Will need most dimming (ratio: {strongest_intensity/weakest_intensity:.2f}×)")
-            
+
             # Build dict for return (maintain compatibility)
             channel_intensities = {ch: data[0] for ch, data in channel_data.items()}
-            
+
             return weakest_ch, channel_intensities
 
         except Exception as e:
@@ -1806,7 +1816,7 @@ class SPRCalibrator:
     # STEP 4: INTEGRATION TIME OPTIMIZATION
     # ========================================================================
 
-    def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
+    def step_4_optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
         """STEP 4: Constrained dual optimization for integration time (S-MODE ONLY) - COMPLETE.
 
         This optimizes integration time for CALIBRATION (S-mode) only.
@@ -1818,18 +1828,18 @@ class SPRCalibrator:
           ✅ No Step 5 needed - optimization complete
 
         Dual optimization with constraints:
-        
+
         PRIMARY GOAL (maximize):
           - Weakest LED at LED=255 produces 60-80% detector max
           - Target: 70% = ~45,900 counts
           - Measured as MAX signal across full ROI (580-720nm)
-        
+
         CONSTRAINT 1:
           - Strongest LED at LED≥25 → <95% detector max
-        
+
         CONSTRAINT 2:
           - Integration time ≤ 200ms (from detector profile)
-        
+
         VALIDATION (all channels):
           - Explicitly measure ALL channels (A, B, C, D) at predicted LED intensities
           - Verify all signals are within acceptable range
@@ -2025,10 +2035,10 @@ class SPRCalibrator:
             # Calculate predicted LED intensities for all channels based on Step 3 ranking
             weakest_intensity = self.state.led_ranking[0][1][0]
             predicted_leds = {}
-            
+
             logger.info(f"")
             logger.info(f"   Predicted LED intensities (based on Step 3 brightness ratios):")
-            
+
             for ch, (intensity, _, _) in self.state.led_ranking:
                 if ch == weakest_ch:
                     predicted_led = MAX_LED_INTENSITY  # Weakest always at 255
@@ -2038,26 +2048,26 @@ class SPRCalibrator:
                     predicted_led = int(MAX_LED_INTENSITY / ratio)
                     # Clamp to valid range
                     predicted_led = max(STRONGEST_MIN_LED, min(MAX_LED_INTENSITY, predicted_led))
-                
+
                 predicted_leds[ch] = predicted_led
                 logger.info(f"      {ch}: LED={predicted_led:3d} (brightness ratio: {intensity/weakest_intensity:.2f}×)")
 
             # Measure all channels explicitly
             logger.info(f"")
             logger.info(f"   Measuring all channels explicitly:")
-            
+
             all_channel_signals = {}
-            
+
             for ch, led_intensity in predicted_leds.items():
                 # Use helper to measure channel
                 result = self._measure_channel_in_roi(
                     ch, led_intensity, roi_min_idx, roi_max_idx, f"channel {ch}"
                 )
-                
+
                 if result is None:
                     logger.error(f"Failed to measure channel {ch}")
                     continue
-                
+
                 signal_max, signal_mean = result
                 signal_percent = (signal_max / detector_max) * 100
 
@@ -2080,11 +2090,11 @@ class SPRCalibrator:
             logger.info(f"="*80)
             logger.info(f"📊 FINAL VALIDATION SUMMARY (ALL CHANNELS)")
             logger.info(f"="*80)
-            
+
             all_ok = True
             for ch in sorted(all_channel_signals.keys()):
                 sig_max, sig_mean, sig_percent, led_val = all_channel_signals[ch]
-                
+
                 if sig_percent > 95:
                     logger.error(f"   ❌ Channel {ch}: SATURATED ({sig_percent:.1f}%)")
                     all_ok = False
@@ -2625,15 +2635,68 @@ class SPRCalibrator:
         self.state.dark_noise_contamination = contamination
 
     # ========================================================================
-    # STEP 5: DARK NOISE MEASUREMENT
+    # STEPS 1 & 5: DARK NOISE MEASUREMENT
     # ========================================================================
 
-    def measure_dark_noise(self) -> bool:
-        """Measure dark noise with all LEDs off.
-
+    def step_1_measure_initial_dark_noise(self) -> bool:
+        """STEP 1: Measure baseline dark noise before any LEDs are activated.
+        
+        This is the first calibration step. It measures the detector's dark noise
+        before any LEDs have been turned on, providing a clean baseline for
+        comparison with Step 5.
+        
+        Uses a faster measurement (5 scans) since this is just a sanity check.
+        
         Returns:
             True if successful, False otherwise
+        """
+        logger.info("=" * 80)
+        logger.info("STEP 1: Dark Noise Baseline (Before LEDs)")
+        logger.info("=" * 80)
+        logger.info("Measuring baseline dark noise before any LED activation...")
+        
+        # Ensure clean state
+        self._last_active_channel = None
+        
+        return self._measure_dark_noise_internal(is_baseline=True)
+    
+    def step_5_remeasure_dark_noise(self) -> bool:
+        """STEP 5: Re-measure dark noise with final integration time.
+        
+        This step re-measures dark noise after integration time optimization
+        (Step 4) is complete. It uses the final optimized integration time and
+        applies afterglow correction if available.
+        
+        The purpose is to get accurate dark noise for the actual integration
+        time that will be used during SPR measurements (Step 1 used a temporary
+        32ms integration time).
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info("=" * 80)
+        logger.info("STEP 5: Dark Noise Re-measurement (Final Integration Time)")
+        logger.info("=" * 80)
+        logger.info(f"Re-measuring dark noise with final integration time ({self.state.integration*1000:.1f}ms)...")
+        
+        return self._measure_dark_noise_internal(is_baseline=False)
 
+    def _measure_dark_noise_internal(self, is_baseline: bool) -> bool:
+        """Internal helper for dark noise measurement.
+        
+        This method contains the shared logic for both Step 1 (baseline dark noise
+        before any LEDs are activated) and Step 5 (re-measure dark noise with final
+        integration time after LED calibration).
+        
+        Args:
+            is_baseline: If True, this is Step 1 (baseline). If False, this is Step 5 (re-measure).
+            
+        Returns:
+            True if successful, False otherwise
+            
+        Note:
+            This is an internal helper. Use step_1_measure_initial_dark_noise() or
+            step_5_remeasure_dark_noise() for explicit step execution.
         """
         try:
             if self.ctrl is None or self.usb is None:
@@ -2663,7 +2726,7 @@ class SPRCalibrator:
 
             # Adjust scan count based on integration time
             # OPTIMIZATION: Step 1 (baseline) is just a sanity check - use fewer scans for speed
-            if self._last_active_channel is None:
+            if is_baseline:
                 # Step 1: Baseline dark noise (fast sanity check - 5 scans)
                 dark_scans = 5
                 logger.debug(f"Measuring baseline dark noise with {dark_scans} scans (fast sanity check)")
@@ -2672,7 +2735,7 @@ class SPRCalibrator:
             else:
                 dark_scans = int(DARK_NOISE_SCANS / 2)
 
-            if self._last_active_channel is not None:
+            if not is_baseline:
                 logger.debug(f"Measuring dark noise with {dark_scans} scans")
 
             # Measure dark noise - apply spectral filter to measure only SPR-relevant range
@@ -2703,21 +2766,21 @@ class SPRCalibrator:
                 return False
 
             # ✨ NEW (Phase 2): Store Step 1 as baseline for comparison
-            if self._last_active_channel is None:
+            if is_baseline:
                 # Step 1: First dark measurement (before any LEDs activated)
                 self.state.dark_noise_before_leds = full_spectrum_dark_noise.copy()
                 before_mean = np.mean(full_spectrum_dark_noise)
                 before_max = np.max(full_spectrum_dark_noise)
                 before_std = np.std(full_spectrum_dark_noise)
-                
+
                 logger.info(f"📊 Dark BEFORE LEDs (Step 1): {before_mean:.1f} counts (baseline)")
                 logger.info("   (No LEDs have been activated yet - clean measurement)")
-                
+
                 # ⚡ SANITY CHECK: Flag abnormally high dark noise (5× higher than expected)
                 EXPECTED_DARK_MEAN = 400.0  # Typical detector noise floor
                 EXPECTED_DARK_MAX = 600.0
                 TOLERANCE_FACTOR = 5.0  # Flag if 5× higher than expected
-                
+
                 if before_mean > EXPECTED_DARK_MEAN * TOLERANCE_FACTOR:
                     logger.warning(f"⚠️  STEP 1 WARNING: Dark noise mean ({before_mean:.1f}) is {before_mean/EXPECTED_DARK_MEAN:.1f}× higher than expected ({EXPECTED_DARK_MEAN:.1f})")
                     logger.warning(f"    Possible issues:")
@@ -2726,18 +2789,19 @@ class SPRCalibrator:
                     logger.warning(f"    • Detector thermal noise (check cooling)")
                     logger.warning(f"    • Previous measurement residual signal")
                     logger.warning(f"    ⚠️  Continuing calibration, but results may be affected...")
-                
+
                 if before_max > EXPECTED_DARK_MAX * TOLERANCE_FACTOR:
                     logger.warning(f"⚠️  STEP 1 WARNING: Dark noise max ({before_max:.1f}) is {before_max/EXPECTED_DARK_MAX:.1f}× higher than expected ({EXPECTED_DARK_MAX:.1f})")
                     logger.warning(f"    Check for stray light or hot pixels in detector")
-                
+
                 # If dark noise is reasonable, confirm success
                 if before_mean <= EXPECTED_DARK_MEAN * TOLERANCE_FACTOR and before_max <= EXPECTED_DARK_MAX * TOLERANCE_FACTOR:
                     logger.info(f"✅ Dark noise levels normal (within {TOLERANCE_FACTOR:.0f}× expected)")
                     logger.info(f"   Mean: {before_mean:.1f}, Max: {before_max:.1f}, Std: {before_std:.1f}")
 
             # ✨ NEW (Phase 2): Apply afterglow correction if available
-            if (self.afterglow_correction and
+            if (not is_baseline and
+                self.afterglow_correction and
                 self._last_active_channel and
                 self.afterglow_correction_enabled):
                 try:
@@ -2787,7 +2851,7 @@ class SPRCalibrator:
                     logger.warning("⚠️ Using uncorrected dark noise")
                     # Continue with uncorrected data
             else:
-                if self._last_active_channel is not None:
+                if not is_baseline:
                     # Step 5 without correction
                     if not self.afterglow_correction:
                         logger.info("ℹ️ No optical calibration loaded - dark noise uncorrected")
@@ -2831,6 +2895,27 @@ class SPRCalibrator:
         except Exception as e:
             logger.exception(f"Error measuring dark noise: {e}")
             return False
+
+    def measure_dark_noise(self) -> bool:
+        """Measure dark noise (backward compatibility wrapper).
+        
+        This method provides backward compatibility for code that calls
+        measure_dark_noise() directly. It delegates to the appropriate
+        step method based on calibration state.
+        
+        For new code, use explicit step methods:
+        - step_1_measure_initial_dark_noise() for Step 1
+        - step_5_remeasure_dark_noise() for Step 5
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if self._last_active_channel is None:
+            # No LEDs activated yet - this is Step 1
+            return self.step_1_measure_initial_dark_noise()
+        else:
+            # LEDs have been activated - this is Step 5
+            return self.step_5_remeasure_dark_noise()
 
     # ========================================================================
     # STEP 6: REFERENCE SIGNAL MEASUREMENT
@@ -3419,29 +3504,24 @@ class SPRCalibrator:
             # ========================================================================
             # STEP 1: DARK NOISE MEASUREMENT (FIRST - BEFORE ANY LED ACTIVATION!)
             # ========================================================================
-            logger.info("=" * 80)
-            logger.info("STEP 1: Dark Noise Measurement (FIRST - No LED contamination)")
-            logger.info("=" * 80)
-            logger.debug("Step 1: Dark noise measurement (before any LED activation)")
-            self._emit_progress(1, "Measuring dark noise (LEDs never activated)...")
+            self._emit_progress(1, "Step 1: Measuring baseline dark noise...")
 
             # Set a temporary default integration time for dark measurement
-            # This will be refined in Step 3, but we need a reasonable value now
+            # This will be refined in Step 4, but we need a reasonable value now
             self.usb.set_integration(TEMP_INTEGRATION_TIME_S)
             self.state.integration = TEMP_INTEGRATION_TIME_S
             logger.info(f"   Using temporary integration time: {TEMP_INTEGRATION_TIME_S * MS_TO_SECONDS:.1f}ms for initial dark")
 
-            success = self.measure_dark_noise()
+            success = self.step_1_measure_initial_dark_noise()
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Dark noise measurement failed"
+                return False, "Step 1: Dark noise measurement failed"
 
-            logger.info("✅ Initial dark noise captured with ZERO LED contamination")
-
-            # Step 2: Wavelength range calibration
-            logger.debug("Step 2: Wavelength range calibration")
-            self._emit_progress(2, "Calibrating wavelength range...")
-            success, integration_step = self.calibrate_wavelength_range()
+            # ========================================================================
+            # STEP 2: WAVELENGTH RANGE CALIBRATION
+            # ========================================================================
+            self._emit_progress(2, "Step 2: Calibrating wavelength range...")
+            success, integration_step = self.step_2_calibrate_wavelength_range()
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
                 return False, "Wavelength calibration failed"
@@ -3461,15 +3541,12 @@ class SPRCalibrator:
             # ========================================================================
             # STEP 3: FIND WEAKEST CHANNEL
             # ========================================================================
-            logger.info("=" * 80)
-            logger.info("STEP 3: Identifying Weakest Channel")
-            logger.info("=" * 80)
-            self._emit_progress(3, "Identifying weakest channel...")
+            self._emit_progress(3, "Step 3: Identifying weakest channel...")
 
-            weakest_ch, channel_intensities = self._identify_weakest_channel(ch_list)
+            weakest_ch, channel_intensities = self.step_3_identify_weakest_channel(ch_list)
             if weakest_ch is None or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Failed to identify weakest channel"
+                return False, "Step 3: Failed to identify weakest channel"
 
             # Store weakest channel in calibration state
             self.state.weakest_channel = weakest_ch
@@ -3480,29 +3557,21 @@ class SPRCalibrator:
             # ========================================================================
             # STEP 4: OPTIMIZE INTEGRATION TIME
             # ========================================================================
-            logger.info("=" * 80)
-            logger.info("STEP 4: Optimizing Integration Time")
-            logger.info("=" * 80)
-            logger.debug(f"Step 4: Integration time optimization for weakest channel {weakest_ch}")
-            self._emit_progress(4, f"Optimizing integration time for {weakest_ch}...")
+            self._emit_progress(4, f"Step 4: Optimizing integration time for {weakest_ch}...")
 
-            success = self._optimize_integration_time(weakest_ch, integration_step)
+            success = self.step_4_optimize_integration_time(weakest_ch, integration_step)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Integration time optimization failed"
+                return False, "Step 4: Integration time optimization failed"
 
-            # Step 5: Re-measure dark noise with optimized integration time
-            logger.info("=" * 80)
-            logger.info("STEP 5: Re-measuring Dark Noise (with optimized integration time)")
-            logger.info("=" * 80)
-            logger.debug("Step 5: Dark noise re-measurement (after integration optimization)")
-            self._emit_progress(5, "Re-measuring dark noise (optimized settings)...")
-            success = self.measure_dark_noise()
+            # ========================================================================
+            # STEP 5: RE-MEASURE DARK NOISE (FINAL INTEGRATION TIME)
+            # ========================================================================
+            self._emit_progress(5, "Step 5: Re-measuring dark noise (final settings)...")
+            success = self.step_5_remeasure_dark_noise()
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Dark noise re-measurement failed"
-
-            logger.info("✅ Final dark noise captured with optimized integration time")
+                return False, "Step 5: Dark noise re-measurement failed"
 
             # Step 6: LED intensity calibration in S-mode (adaptive)
             logger.info("=" * 80)

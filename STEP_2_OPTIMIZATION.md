@@ -1,6 +1,6 @@
 # Step 2 Wavelength Calibration - Performance Optimization
 
-**Date**: October 18, 2025  
+**Date**: October 18, 2025
 **Status**: ✅ **IMPLEMENTED**
 
 ---
@@ -143,12 +143,12 @@ logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration"
 def _detect_spectrometer_type_fast(self, wavelengths: np.ndarray) -> str:
     """
     Fast detector detection using already-read wavelengths.
-    
+
     ✨ OPTIMIZED: No redundant USB reads, minimal string operations
-    
+
     Args:
         wavelengths: Already-read wavelength array (avoids redundant USB read)
-    
+
     Returns:
         Detector type string (e.g., "Ocean Optics USB4000/HR4000")
     """
@@ -159,13 +159,13 @@ def _detect_spectrometer_type_fast(self, wavelengths: np.ndarray) -> str:
         1044: "QE65000",
         1024: "USB2000+",
     }
-    
+
     # Try model name from USB (fast path)
     try:
         device_info = self.usb.get_device_info()
         if device_info and 'model' in device_info:
             return f"Ocean Optics {device_info['model']}"
-        
+
         # Try serial prefix matching (single loop)
         if 'serial_number' in device_info:
             serial = device_info['serial_number']
@@ -180,12 +180,12 @@ def _detect_spectrometer_type_fast(self, wavelengths: np.ndarray) -> str:
                     return f"Ocean Optics {model}"
     except Exception:
         pass
-    
+
     # Infer from pixel count (already have wavelengths!)
     pixel_count = len(wavelengths)
     if pixel_count in OCEAN_OPTICS_PIXELS:
         return f"Ocean Optics {OCEAN_OPTICS_PIXELS[pixel_count]}"
-    
+
     return "Ocean Optics (Generic)"
 ```
 

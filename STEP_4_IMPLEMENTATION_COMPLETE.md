@@ -25,7 +25,7 @@ STRONGEST_MIN_LED = 25        # Minimum practical LED intensity (10% of 255)
 class CalibrationState:
     def __init__(self):
         # ... existing fields ...
-        
+
         # ✨ NEW: Full LED ranking from Step 3
         self.led_ranking: list[tuple[str, tuple[float, float, bool]]] = []
         # Format: [(ch, (mean, max, saturated)), ...]
@@ -36,13 +36,13 @@ class CalibrationState:
 ```python
 def _identify_weakest_channel(self, ch_list: list[str]):
     # ... existing measurement code ...
-    
+
     # ✨ RANK LEDs: Weakest → Strongest
     ranked_channels = sorted(channel_data.items(), key=lambda x: x[1][0])
-    
+
     # ✨ Store ranking in state for Step 4
     self.state.led_ranking = ranked_channels
-    
+
     # ... rest of method ...
 ```
 
@@ -99,23 +99,23 @@ integration_max = 200ms
 
 for iteration in range(20):
     test_integration = (integration_min + integration_max) / 2
-    
+
     # Measure weakest LED at LED=255 (maximum)
     weakest_signal = measure(weakest_ch, LED=255, integration)
-    
+
     # Measure strongest LED at LED=25 (minimum practical)
     strongest_signal = measure(strongest_ch, LED=25, integration)
-    
+
     # CONSTRAINT 1: Check strongest LED saturation
     if strongest_signal > 95% detector_max:
         integration_max = test_integration  # Too high, reduce
         continue
-    
+
     # PRIMARY GOAL: Check weakest LED in target range
     if 60% <= weakest_signal <= 80%:
         # ✅ OPTIMAL! Both constraints satisfied
         break
-    
+
     # Adjust search range
     if weakest_signal < 60%:
         integration_min = test_integration  # Too low, increase
@@ -133,14 +133,14 @@ for iteration in range(20):
 ⚡ STEP 4: CONSTRAINED DUAL OPTIMIZATION
    Weakest LED: A (reference brightness)
    Strongest LED: D (2.85× brighter)
-   
+
    PRIMARY GOAL: Maximize weakest LED signal
       → Target: 70% @ LED=255 (45,900 counts)
       → Range: 60-80% (39,321-52,428 counts)
-   
+
    CONSTRAINT 1: Strongest LED must not saturate
       → Maximum: <95% @ LED=25 (62,259 counts)
-   
+
    CONSTRAINT 2: Integration time ≤ 200ms
 
 🔍 Binary search: 1.0ms - 200.0ms
@@ -159,15 +159,15 @@ for iteration in range(20):
 
    S-mode (calibration): 150.2ms
    P-mode (live): 75.1ms (factor=0.5)
-   
+
    Weakest LED (A @ LED=255):
       Signal: 42,675 counts ( 65.1%)
       Status: ✅ OPTIMAL
-   
+
    Strongest LED (D @ LED=25):
       Signal: 12,185 counts ( 18.6%)
       Status: ✅ Safe (<95%)
-   
+
    Middle LEDs: Automatically within boundaries ✅
 ```
 
