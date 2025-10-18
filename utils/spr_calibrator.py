@@ -1744,6 +1744,65 @@ class SPRCalibrator:
             return None, {}
 
     # ========================================================================
+    # STEP 4: INTEGRATION TIME OPTIMIZATION - HELPER METHODS
+    # ========================================================================
+
+    def _measure_channel_in_roi(
+        self,
+        channel: str,
+        led_intensity: int,
+        roi_min_idx: int,
+        roi_max_idx: int,
+        description: str = "channel"
+    ) -> tuple[float, float] | None:
+        """Measure a single channel's signal in ROI range.
+
+        Helper method to reduce code duplication in Step 4.
+        Handles activation, measurement, filtering, and cleanup.
+
+        Args:
+            channel: Channel ID ('a', 'b', 'c', 'd')
+            led_intensity: LED intensity to use (0-255)
+            roi_min_idx: Start index of ROI in filtered spectrum
+            roi_max_idx: End index of ROI in filtered spectrum
+            description: Description for logging (e.g., "weakest LED", "strongest LED")
+
+        Returns:
+            Tuple of (max_signal, mean_signal) in ROI, or None if measurement failed
+        """
+        try:
+            # Activate channel
+            intensities_dict = {channel: led_intensity}
+            self._activate_channel_batch([channel], intensities_dict)
+            time.sleep(LED_DELAY)
+            self._last_active_channel = channel
+
+            # Read spectrum
+            raw_array = self.usb.read_intensity()
+            if raw_array is None:
+                logger.error(f"❌ Failed to read {description} for channel {channel}")
+                return None
+
+            # Apply spectral filter
+            filtered_array = self._apply_spectral_filter(raw_array)
+
+            # Extract ROI and calculate statistics
+            roi_spectrum = filtered_array[roi_min_idx:roi_max_idx]
+            signal_max = float(np.max(roi_spectrum))
+            signal_mean = float(np.mean(roi_spectrum))
+
+            # Turn off channel
+            self._all_leds_off_batch()
+            time.sleep(LED_DELAY)
+
+            return signal_max, signal_mean
+
+        except Exception as e:
+            logger.error(f"Error measuring {description} for channel {channel}: {e}")
+            self._all_leds_off_batch()
+            return None
+
+    # ========================================================================
     # STEP 4: INTEGRATION TIME OPTIMIZATION
     # ========================================================================
 
@@ -1872,44 +1931,24 @@ class SPRCalibrator:
                 # ========================================================================
                 # Test 1: Measure weakest LED at LED=255
                 # ========================================================================
-                intensities_dict = {weakest_ch: MAX_LED_INTENSITY}
-                self._activate_channel_batch([weakest_ch], intensities_dict)
-                time.sleep(LED_DELAY)
-                self._last_active_channel = weakest_ch
-
-                raw_array = self.usb.read_intensity()
-                if raw_array is None:
-                    logger.error("Failed to read intensity for weakest LED")
+                result = self._measure_channel_in_roi(
+                    weakest_ch, MAX_LED_INTENSITY, roi_min_idx, roi_max_idx, "weakest LED"
+                )
+                if result is None:
                     return False
-
-                filtered_array = self._apply_spectral_filter(raw_array)
-                weakest_signal = float(np.max(filtered_array[roi_min_idx:roi_max_idx]))
+                weakest_signal, _ = result
                 weakest_percent = (weakest_signal / detector_max) * 100
-
-                # Turn off weakest channel
-                self._all_leds_off_batch()
-                time.sleep(LED_DELAY)
 
                 # ========================================================================
                 # Test 2: Measure strongest LED at LED=25 (minimum practical LED)
                 # ========================================================================
-                intensities_dict = {strongest_ch: STRONGEST_MIN_LED}
-                self._activate_channel_batch([strongest_ch], intensities_dict)
-                time.sleep(LED_DELAY)
-                self._last_active_channel = strongest_ch
-
-                raw_array = self.usb.read_intensity()
-                if raw_array is None:
-                    logger.error("Failed to read intensity for strongest LED")
+                result = self._measure_channel_in_roi(
+                    strongest_ch, STRONGEST_MIN_LED, roi_min_idx, roi_max_idx, "strongest LED"
+                )
+                if result is None:
                     return False
-
-                filtered_array = self._apply_spectral_filter(raw_array)
-                strongest_signal = float(np.max(filtered_array[roi_min_idx:roi_max_idx]))
+                strongest_signal, _ = result
                 strongest_percent = (strongest_signal / detector_max) * 100
-
-                # Turn off strongest channel
-                self._all_leds_off_batch()
-                time.sleep(LED_DELAY)
 
                 # ========================================================================
                 # Check constraints and adjust search range
@@ -2010,24 +2049,16 @@ class SPRCalibrator:
             all_channel_signals = {}
             
             for ch, led_intensity in predicted_leds.items():
-                # Activate channel at predicted LED intensity
-                intensities_dict = {ch: led_intensity}
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
-                self._last_active_channel = ch
-
-                # Read spectrum
-                raw_array = self.usb.read_intensity()
-                if raw_array is None:
-                    logger.error(f"Failed to read intensity for channel {ch}")
-                    continue
-
-                # Apply spectral filter
-                filtered_array = self._apply_spectral_filter(raw_array)
+                # Use helper to measure channel
+                result = self._measure_channel_in_roi(
+                    ch, led_intensity, roi_min_idx, roi_max_idx, f"channel {ch}"
+                )
                 
-                # Get signal in ROI
-                signal_max = float(np.max(filtered_array[roi_min_idx:roi_max_idx]))
-                signal_mean = float(np.mean(filtered_array[roi_min_idx:roi_max_idx]))
+                if result is None:
+                    logger.error(f"Failed to measure channel {ch}")
+                    continue
+                
+                signal_max, signal_mean = result
                 signal_percent = (signal_max / detector_max) * 100
 
                 all_channel_signals[ch] = (signal_max, signal_mean, signal_percent, led_intensity)
@@ -2043,10 +2074,6 @@ class SPRCalibrator:
                     status = "✅ OPTIMAL"
 
                 logger.info(f"      {ch} @ LED={led_intensity:3d}: max={signal_max:6.0f} ({signal_percent:5.1f}%), mean={signal_mean:6.0f} {status}")
-
-                # Turn off channel
-                self._all_leds_off_batch()
-                time.sleep(LED_DELAY)
 
             # Final summary
             logger.info(f"")
@@ -2548,6 +2575,56 @@ class SPRCalibrator:
                 logger.warning(f"Failed to turn off LEDs: {e}")
 
     # ========================================================================
+    # STEP 5: DARK NOISE MEASUREMENT - HELPER METHODS
+    # ========================================================================
+
+    def _compare_dark_noise_measurements(
+        self,
+        dark_before: np.ndarray,
+        dark_after_raw: np.ndarray,
+        dark_after_corrected: np.ndarray | None = None,
+        correction_value: float = 0.0
+    ) -> None:
+        """Compare Step 1 (before LEDs) vs Step 5 (after LEDs) dark noise.
+
+        Logs contamination analysis and correction effectiveness if applied.
+
+        Args:
+            dark_before: Dark noise from Step 1 (baseline, before LEDs)
+            dark_after_raw: Dark noise from Step 5 (uncorrected)
+            dark_after_corrected: Dark noise from Step 5 (corrected), optional
+            correction_value: Afterglow correction applied (counts), optional
+        """
+        before_mean = float(np.mean(dark_before))
+        after_raw_mean = float(np.mean(dark_after_raw))
+        contamination = after_raw_mean - before_mean
+
+        logger.info("=" * 80)
+        logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
+        logger.info("=" * 80)
+        logger.info(f"   Before LEDs (Step 1):      {before_mean:.1f} counts (baseline)")
+        logger.info(f"   After LEDs (raw):          {after_raw_mean:.1f} counts")
+        logger.info(f"   Contamination:             +{contamination:.1f} counts ({contamination/before_mean*100:.1f}% increase)")
+
+        if dark_after_corrected is not None and correction_value > 0:
+            after_corrected_mean = float(np.mean(dark_after_corrected))
+            correction_effectiveness = ((after_raw_mean - after_corrected_mean) / contamination * 100
+                                       if contamination > 0 else 0)
+            residual = after_corrected_mean - before_mean
+
+            logger.info(f"   After LEDs (corrected):    {after_corrected_mean:.1f} counts")
+            logger.info(f"   Correction removed:        {correction_value:.1f} counts")
+            logger.info(f"   ✨ Correction effectiveness: {correction_effectiveness:.1f}%")
+            logger.info(f"   Residual error:            {residual:+.1f} counts ({abs(residual)/before_mean*100:.2f}%)")
+        else:
+            logger.info(f"   ⚠️  No afterglow correction applied")
+
+        logger.info("=" * 80)
+
+        # Store contamination in state for analysis
+        self.state.dark_noise_contamination = contamination
+
+    # ========================================================================
     # STEP 5: DARK NOISE MEASUREMENT
     # ========================================================================
 
@@ -2683,28 +2760,14 @@ class SPRCalibrator:
                     full_spectrum_dark_noise = full_spectrum_dark_noise - correction_value
                     corrected_mean = np.mean(full_spectrum_dark_noise)
 
-                    # ✨ NEW: Compare with Step 1 baseline
+                    # ✨ NEW: Compare with Step 1 baseline using helper
                     if self.state.dark_noise_before_leds is not None:
-                        before_mean = np.mean(self.state.dark_noise_before_leds)
-                        contamination = uncorrected_mean - before_mean
-                        correction_effectiveness = ((uncorrected_mean - corrected_mean) / contamination * 100
-                                                   if contamination > 0 else 0)
-                        residual = corrected_mean - before_mean
-
-                        self.state.dark_noise_contamination = contamination
-
-                        logger.info("=" * 80)
-                        logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
-                        logger.info("=" * 80)
-                        logger.info(f"   Before LEDs (Step 1):      {before_mean:.1f} counts")
-                        logger.info(f"   After LEDs (uncorrected):  {uncorrected_mean:.1f} counts")
-                        logger.info(f"   After LEDs (corrected):    {corrected_mean:.1f} counts")
-                        logger.info(f"   ---")
-                        logger.info(f"   Contamination:             +{contamination:.1f} counts ({contamination/before_mean*100:.1f}% increase)")
-                        logger.info(f"   Correction removed:        {correction_value:.1f} counts")
-                        logger.info(f"   ✨ Correction effectiveness: {correction_effectiveness:.2f}%")
-                        logger.info(f"   Residual error:            {residual:+.1f} counts ({abs(residual)/before_mean*100:.2f}%)")
-                        logger.info("=" * 80)
+                        self._compare_dark_noise_measurements(
+                            dark_before=self.state.dark_noise_before_leds,
+                            dark_after_raw=self.state.dark_noise_after_leds_uncorrected,
+                            dark_after_corrected=full_spectrum_dark_noise,
+                            correction_value=correction_value
+                        )
                     else:
                         logger.info(
                             f"✨ Afterglow correction applied to dark noise:"
@@ -2731,20 +2794,12 @@ class SPRCalibrator:
                     elif not self.afterglow_correction_enabled:
                         logger.info("ℹ️ Afterglow correction disabled in config")
 
-                    # Still do comparison even without correction
+                    # Still do comparison even without correction using helper
                     if self.state.dark_noise_before_leds is not None:
-                        before_mean = np.mean(self.state.dark_noise_before_leds)
-                        after_mean = np.mean(full_spectrum_dark_noise)
-                        contamination = after_mean - before_mean
-
-                        logger.info("=" * 80)
-                        logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
-                        logger.info("=" * 80)
-                        logger.info(f"   Before LEDs (Step 1): {before_mean:.1f} counts")
-                        logger.info(f"   After LEDs (Step 5):  {after_mean:.1f} counts")
-                        logger.info(f"   Contamination:        +{contamination:.1f} counts ({contamination/before_mean*100:.1f}% increase)")
-                        logger.info(f"   ⚠️ No afterglow correction applied")
-                        logger.info("=" * 80)            # Store dark noise (corrected if available, uncorrected otherwise)
+                        self._compare_dark_noise_measurements(
+                            dark_before=self.state.dark_noise_before_leds,
+                            dark_after_raw=full_spectrum_dark_noise
+                        )            # Store dark noise (corrected if available, uncorrected otherwise)
             # No resampling needed - spectral filter ensures correct size
             self.state.dark_noise = full_spectrum_dark_noise
             self.state.full_spectrum_dark_noise = full_spectrum_dark_noise
