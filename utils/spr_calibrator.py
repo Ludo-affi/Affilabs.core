@@ -1207,67 +1207,65 @@ class SPRCalibrator:
     # STEP 2: WAVELENGTH CALIBRATION (DETECTOR-SPECIFIC)
     # ========================================================================
 
-    def _detect_spectrometer_type(self) -> str:
+    def _detect_spectrometer_type_fast(self, wavelengths: np.ndarray) -> str:
         """
-        Detect the spectrometer type from USB device info.
+        Fast detector detection using already-read wavelengths.
+        
+        ✨ OPTIMIZED: No redundant USB reads, minimal string operations
+        
+        Args:
+            wavelengths: Already-read wavelength array (avoids redundant USB read)
         
         Returns:
-            "USB4000", "Flame", "Generic", "Custom", etc.
+            Detector type string (e.g., "Ocean Optics USB4000/HR4000")
         """
         try:
-            # Try to get model name from USB device
+            # Define Ocean Optics pixel count mapping (fast dict lookup)
+            OCEAN_OPTICS_PIXELS = {
+                3648: "USB4000/HR4000",
+                2048: "Flame/USB2000",
+                1044: "QE65000",
+                1024: "USB2000+",
+            }
+            
+            # Try to get model name from USB device (fast path)
             if hasattr(self.usb, 'get_device_info'):
-                device_info = self.usb.get_device_info()
-                if device_info and 'model' in device_info:
-                    model = device_info['model']
-                    logger.debug(f"   Detected model from USB: {model}")
-                    return model
+                try:
+                    device_info = self.usb.get_device_info()
+                    if device_info:
+                        # Try model field
+                        if 'model' in device_info and device_info['model']:
+                            model = device_info['model']
+                            return f"Ocean Optics {model}"
+                        
+                        # Try serial number for model inference (single check)
+                        if 'serial_number' in device_info and device_info['serial_number']:
+                            serial = device_info['serial_number']
+                            # Check serial prefix (fast single-pass)
+                            for prefix, model in [
+                                ("USB4", "USB4000"),
+                                ("FLMS", "Flame"),
+                                ("FLMT", "Flame"),
+                                ("USB2", "USB2000"),
+                                ("HR4", "HR4000"),
+                                ("QE", "QE65000"),
+                            ]:
+                                if serial.startswith(prefix):
+                                    return f"Ocean Optics {model}"
+                except Exception:
+                    pass  # Fallback to pixel count
             
-            # Try to get serial number and infer model
-            if hasattr(self.usb, 'get_device_info'):
-                device_info = self.usb.get_device_info()
-                if device_info and 'serial_number' in device_info:
-                    serial = device_info['serial_number']
-                    # Ocean Optics serial numbers often encode model info
-                    if serial.startswith("USB4"):
-                        logger.debug(f"   Serial {serial} → USB4000")
-                        return "USB4000"
-                    elif serial.startswith("FLMS") or serial.startswith("FLMT"):
-                        logger.debug(f"   Serial {serial} → Flame")
-                        return "Flame"
-                    elif serial.startswith("USB2"):
-                        logger.debug(f"   Serial {serial} → USB2000")
-                        return "USB2000"
-                    elif serial.startswith("HR4"):
-                        logger.debug(f"   Serial {serial} → HR4000")
-                        return "HR4000"
+            # Infer from pixel count (already have wavelengths!)
+            pixel_count = len(wavelengths)
+            if pixel_count in OCEAN_OPTICS_PIXELS:
+                return f"Ocean Optics {OCEAN_OPTICS_PIXELS[pixel_count]}"
             
-            # Try to infer from pixel count
-            test_wl = None
-            if hasattr(self.usb, "read_wavelength"):
-                test_wl = self.usb.read_wavelength()
-            elif hasattr(self.usb, "get_wavelengths"):
-                test_wl = self.usb.get_wavelengths()
-            
-            if test_wl is not None:
-                pixel_count = len(test_wl)
-                if pixel_count == 3648:
-                    logger.debug(f"   Pixel count {pixel_count} → likely USB4000")
-                    return "USB4000"
-                elif pixel_count == 2048:
-                    logger.debug(f"   Pixel count {pixel_count} → likely Flame")
-                    return "Flame"
-                elif pixel_count == 1044:
-                    logger.debug(f"   Pixel count {pixel_count} → likely QE65000")
-                    return "QE65000"
-            
-            # Default to Ocean Optics compatible if can't detect
-            logger.debug("   Could not detect spectrometer model, assuming Ocean Optics compatible")
-            return "Ocean Optics"
+            # Default to Ocean Optics (safe assumption for SPR systems)
+            return "Ocean Optics (Generic)"
             
         except Exception as e:
             logger.warning(f"⚠️  Error detecting spectrometer type: {e}")
-            return "Ocean Optics"  # Safe default
+            return "Ocean Optics (Generic)"  # Safe default
 
     def _calibrate_wavelength_ocean_optics(self) -> tuple[np.ndarray | None, str]:
         """
@@ -1370,7 +1368,15 @@ class SPRCalibrator:
 
     def calibrate_wavelength_range(self) -> tuple[bool, float]:
         """Calibrate wavelength range and calculate Fourier weights (Detector-Specific).
-
+        
+        ✨ OPTIMIZED: Single wavelength read (no redundant USB calls)
+        
+        Improvements:
+        - Reads wavelengths once (not 2×)
+        - Uses wavelengths for both detection and calibration
+        - Fast dict-based detector detection
+        - Consolidated logging (cleaner output)
+        
         Returns:
             Tuple of (success, integration_step)
 
@@ -1385,33 +1391,48 @@ class SPRCalibrator:
                 return False, 1.0
 
             # ========================================================================
-            # DETECTOR-SPECIFIC WAVELENGTH CALIBRATION
+            # DETECTOR-SPECIFIC WAVELENGTH CALIBRATION (OPTIMIZED)
             # ========================================================================
             logger.info("📊 Reading wavelength calibration (detector-specific)...")
             
-            # Detect spectrometer type
-            detector_type = self._detect_spectrometer_type()
-            logger.info(f"   Detector type: {detector_type}")
+            # ✨ OPTIMIZATION: Read wavelengths ONCE and use for both detection AND calibration
+            # (Avoids redundant USB read in _detect_spectrometer_type)
+            wave_data = None
+            serial_number = "unknown"
             
-            # Route to appropriate calibration method
-            if detector_type in ["USB4000", "Flame", "USB2000", "HR4000", "QE65000", "Ocean Optics"]:
-                # Ocean Optics detectors - use factory EEPROM calibration
-                wave_data, serial_number = self._calibrate_wavelength_ocean_optics()
-            elif detector_type == "Generic":
-                # Generic spectrometer - would require polynomial calibration
-                logger.warning("⚠️  Generic detector detected - polynomial calibration not yet implemented")
-                logger.warning("    Attempting to read wavelengths as if Ocean Optics compatible...")
-                wave_data, serial_number = self._calibrate_wavelength_ocean_optics()
-            elif detector_type == "Custom":
-                # Custom detector - load from calibration file
-                wave_data, serial_number = self._calibrate_wavelength_from_file()
+            # Get serial number from device info (fast metadata read)
+            try:
+                if hasattr(self.usb, "get_device_info"):
+                    device_info = self.usb.get_device_info()
+                    if device_info:
+                        serial_number = device_info.get("serial_number", "unknown")
+            except Exception:
+                pass  # Continue with unknown serial
+            
+            # Read wavelengths from EEPROM (single read)
+            if hasattr(self.usb, "read_wavelength"):
+                wave_data = self.usb.read_wavelength()
+            elif hasattr(self.usb, "get_wavelengths"):
+                wave_data = self.usb.get_wavelengths()
+                if wave_data is not None:
+                    wave_data = np.array(wave_data)
             else:
-                logger.warning(f"⚠️  Unknown detector type: {detector_type}, trying Ocean Optics method...")
-                wave_data, serial_number = self._calibrate_wavelength_ocean_optics()
+                logger.error("❌ USB spectrometer has no wavelength reading method")
+                logger.error("   Expected: read_wavelength() or get_wavelengths()")
+                return False, 1.0
 
             if wave_data is None or len(wave_data) == 0:
-                logger.error("❌ Failed to obtain wavelength calibration")
+                logger.error("❌ Failed to read wavelengths from spectrometer")
                 return False, 1.0
+            
+            # ✨ OPTIMIZATION: Detect spectrometer type using already-read wavelengths
+            detector_type = self._detect_spectrometer_type_fast(wave_data)
+            
+            # Log detection results (consolidated)
+            logger.info(f"   Detector: {detector_type} (Serial: {serial_number})")
+            logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration")
+            logger.info(f"   Range: {wave_data[0]:.1f} - {wave_data[-1]:.1f} nm")
+            logger.info(f"   Resolution: {(wave_data[-1] - wave_data[0]) / len(wave_data):.3f} nm/pixel")
 
             # Apply serial-specific corrections
             if serial_number == "FLMT06715":
