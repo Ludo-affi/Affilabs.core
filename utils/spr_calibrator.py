@@ -1748,7 +1748,10 @@ class SPRCalibrator:
     # ========================================================================
 
     def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
-        """STEP 4: Constrained dual optimization for integration time.
+        """STEP 4: Constrained dual optimization for integration time (S-MODE ONLY).
+
+        This optimizes integration time for CALIBRATION (S-mode) only.
+        P-mode integration time is calculated later when entering live mode.
 
         Dual optimization with constraints:
         
@@ -1948,19 +1951,16 @@ class SPRCalibrator:
             self.usb.set_integration(best_integration)
             time.sleep(0.1)
 
-            # Calculate P-mode integration time (50% of S-mode)
-            from settings import LIVE_MODE_INTEGRATION_FACTOR
-            p_mode_integration = best_integration * LIVE_MODE_INTEGRATION_FACTOR
-
             # Validate final result
             weakest_percent = (best_weakest_signal / detector_max) * 100
             strongest_percent = (best_strongest_signal / detector_max) * 100
 
             logger.info(f"")
-            logger.info(f"✅ INTEGRATION TIME OPTIMIZED!")
+            logger.info(f"="*80)
+            logger.info(f"✅ INTEGRATION TIME OPTIMIZED (S-MODE)")
+            logger.info(f"="*80)
             logger.info(f"")
-            logger.info(f"   S-mode (calibration): {best_integration*1000:.1f}ms")
-            logger.info(f"   P-mode (live): {p_mode_integration*1000:.1f}ms (factor={LIVE_MODE_INTEGRATION_FACTOR})")
+            logger.info(f"   Optimal integration time: {best_integration*1000:.1f}ms")
             logger.info(f"")
             logger.info(f"   Weakest LED ({weakest_ch} @ LED=255):")
             logger.info(f"      Signal: {best_weakest_signal:6.0f} counts ({weakest_percent:5.1f}%)")
@@ -1971,6 +1971,14 @@ class SPRCalibrator:
             logger.info(f"      Status: {'✅ Safe (<95%)' if best_strongest_signal < strongest_max else '⚠️  Near saturation!'}")
             logger.info(f"")
             logger.info(f"   Middle LEDs: Automatically within boundaries ✅")
+            logger.info(f"")
+            logger.info(f"   This integration time will be used for:")
+            logger.info(f"      • Step 5: Fine-tune detector range")
+            logger.info(f"      • Step 6: LED intensity calibration")
+            logger.info(f"      • Step 7: Reference signal measurement")
+            logger.info(f"")
+            logger.info(f"   Note: P-mode integration time is calculated later when entering live mode")
+            logger.info(f"="*80)
 
             # Calculate scan count for averaging
             self.state.num_scans = int(MAX_READ_TIME_MS / (self.state.integration * MS_TO_SECONDS))

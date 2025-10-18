@@ -127,11 +127,12 @@ MIN_INTENSITY_PERCENT = 30  # % - minimum acceptable intensity (reduced from 60%
 MAX_INTENSITY_PERCENT = 60  # % - maximum acceptable intensity (reduced from 90% to prevent saturation)
 DETECTOR_MAX_COUNTS = 65535  # Maximum detector counts (16-bit ADC)
 
-# Step 4 constrained dual optimization targets (OPTIMIZED for weakest/strongest LED ranking)
-WEAKEST_TARGET_PERCENT = 70  # % - target for weakest LED at LED=255 (maximize SNR)
-WEAKEST_MIN_PERCENT = 60  # % - minimum acceptable for weakest LED
-WEAKEST_MAX_PERCENT = 80  # % - maximum acceptable for weakest LED
-STRONGEST_MAX_PERCENT = 95  # % - saturation threshold for strongest LED at LED≥25
+# Step 4 constrained dual optimization targets (S-MODE CALIBRATION ONLY)
+# P-mode integration time is calculated later using LIVE_MODE_INTEGRATION_FACTOR
+WEAKEST_TARGET_PERCENT = 70  # % - target for weakest LED at LED=255 (maximize SNR for calibration)
+WEAKEST_MIN_PERCENT = 60  # % - minimum acceptable for weakest LED during calibration
+WEAKEST_MAX_PERCENT = 80  # % - maximum acceptable for weakest LED during calibration
+STRONGEST_MAX_PERCENT = 95  # % - saturation threshold for strongest LED at LED≥25 (ensures calibration can succeed)
 STRONGEST_MIN_LED = 25  # Minimum practical LED intensity (10% of 255) for strongest LED validation
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
