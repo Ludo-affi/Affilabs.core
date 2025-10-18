@@ -1381,10 +1381,10 @@ class SPRCalibrator:
 
     def _identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
         """Identify the weakest LED channel by testing all at standard intensity.
-        
+
         Args:
             ch_list: List of channels to test
-            
+
         Returns:
             Tuple of (weakest_channel_id, dict of all channel intensities)
         """
@@ -1402,12 +1402,12 @@ class SPRCalibrator:
             wave_data = self.state.wavelengths
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-            
+
             logger.info(f"📊 Testing all channels at LED={S_LED_INT} (66% intensity)")
             logger.info(f"   Measuring in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm range")
 
             channel_intensities = {}
-            
+
             for ch in ch_list:
                 if self._is_stopped():
                     return None, {}
@@ -1416,7 +1416,7 @@ class SPRCalibrator:
                 intensities_dict = {ch: S_LED_INT}
                 self._activate_channel_batch([ch], intensities_dict)
                 time.sleep(LED_DELAY)
-                
+
                 # Track for afterglow correction
                 self._last_active_channel = ch
 
@@ -1428,11 +1428,11 @@ class SPRCalibrator:
 
                 # Apply spectral filter
                 filtered_array = self._apply_spectral_filter(raw_array)
-                
+
                 # Measure max intensity in target range
                 max_intensity = filtered_array[target_min_idx:target_max_idx].max()
                 channel_intensities[ch] = max_intensity
-                
+
                 logger.info(f"   Channel {ch}: {max_intensity:.0f} counts")
 
             # Turn off all channels
@@ -1462,14 +1462,14 @@ class SPRCalibrator:
 
     def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
         """Optimize integration time for the weakest channel at maximum LED intensity.
-        
+
         The weakest channel is set to LED=255. Integration time is adjusted until
         this channel reaches ~80% of detector max in the 580-610nm range.
-        
+
         Args:
             weakest_ch: The weakest channel ID
             integration_step: Step size for integration time adjustments
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -1493,10 +1493,10 @@ class SPRCalibrator:
             self.state.integration = (min_int + max_int) / 2.0
             self.usb.set_integration(self.state.integration)
             time.sleep(0.1)
-            
+
             logger.info(f"📊 Starting integration: {self.state.integration * 1000:.1f}ms")
             logger.info(f"   Weakest channel ({weakest_ch}) will be set to LED=255")
-            
+
             # Get target wavelength range
             wave_data = self.state.wavelengths
             target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
@@ -1970,7 +1970,8 @@ class SPRCalibrator:
                 )
 
                 # Track best result
-                if intensity_error < best_error:
+                # CRITICAL: If error is equal, prefer LOWER LED (for saturation cases)
+                if intensity_error < best_error or (intensity_error == best_error and current_led < best_led):
                     best_error = intensity_error
                     best_led = current_led
 
@@ -2071,12 +2072,18 @@ class SPRCalibrator:
             logger.info(f"✅ All LEDs OFF; waited {settle_delay*1000:.0f}ms for hardware to settle")
 
             # Adjust scan count based on integration time
-            if self.state.integration < INTEGRATION_STEP_THRESHOLD:
+            # OPTIMIZATION: Step 1 (baseline) is just a sanity check - use fewer scans for speed
+            if self._last_active_channel is None:
+                # Step 1: Baseline dark noise (fast sanity check - 5 scans)
+                dark_scans = 5
+                logger.debug(f"Measuring baseline dark noise with {dark_scans} scans (fast sanity check)")
+            elif self.state.integration < INTEGRATION_STEP_THRESHOLD:
                 dark_scans = DARK_NOISE_SCANS
             else:
                 dark_scans = int(DARK_NOISE_SCANS / 2)
 
-            logger.debug(f"Measuring dark noise with {dark_scans} scans")
+            if self._last_active_channel is not None:
+                logger.debug(f"Measuring dark noise with {dark_scans} scans")
 
             # Measure dark noise - apply spectral filter to measure only SPR-relevant range
             try:
@@ -2110,8 +2117,34 @@ class SPRCalibrator:
                 # Step 1: First dark measurement (before any LEDs activated)
                 self.state.dark_noise_before_leds = full_spectrum_dark_noise.copy()
                 before_mean = np.mean(full_spectrum_dark_noise)
+                before_max = np.max(full_spectrum_dark_noise)
+                before_std = np.std(full_spectrum_dark_noise)
+                
                 logger.info(f"📊 Dark BEFORE LEDs (Step 1): {before_mean:.1f} counts (baseline)")
                 logger.info("   (No LEDs have been activated yet - clean measurement)")
+                
+                # ⚡ SANITY CHECK: Flag abnormally high dark noise (5× higher than expected)
+                EXPECTED_DARK_MEAN = 400.0  # Typical detector noise floor
+                EXPECTED_DARK_MAX = 600.0
+                TOLERANCE_FACTOR = 5.0  # Flag if 5× higher than expected
+                
+                if before_mean > EXPECTED_DARK_MEAN * TOLERANCE_FACTOR:
+                    logger.warning(f"⚠️  STEP 1 WARNING: Dark noise mean ({before_mean:.1f}) is {before_mean/EXPECTED_DARK_MEAN:.1f}× higher than expected ({EXPECTED_DARK_MEAN:.1f})")
+                    logger.warning(f"    Possible issues:")
+                    logger.warning(f"    • Light leaking into detector (check enclosure)")
+                    logger.warning(f"    • LEDs not fully turned off (check hardware)")
+                    logger.warning(f"    • Detector thermal noise (check cooling)")
+                    logger.warning(f"    • Previous measurement residual signal")
+                    logger.warning(f"    ⚠️  Continuing calibration, but results may be affected...")
+                
+                if before_max > EXPECTED_DARK_MAX * TOLERANCE_FACTOR:
+                    logger.warning(f"⚠️  STEP 1 WARNING: Dark noise max ({before_max:.1f}) is {before_max/EXPECTED_DARK_MAX:.1f}× higher than expected ({EXPECTED_DARK_MAX:.1f})")
+                    logger.warning(f"    Check for stray light or hot pixels in detector")
+                
+                # If dark noise is reasonable, confirm success
+                if before_mean <= EXPECTED_DARK_MEAN * TOLERANCE_FACTOR and before_max <= EXPECTED_DARK_MAX * TOLERANCE_FACTOR:
+                    logger.info(f"✅ Dark noise levels normal (within {TOLERANCE_FACTOR:.0f}× expected)")
+                    logger.info(f"   Mean: {before_mean:.1f}, Max: {before_max:.1f}, Std: {before_std:.1f}")
 
             # ✨ NEW (Phase 2): Apply afterglow correction if available
             if (self.afterglow_correction and
@@ -2864,12 +2897,12 @@ class SPRCalibrator:
             logger.info("STEP 3: Identifying Weakest Channel")
             logger.info("=" * 80)
             self._emit_progress(3, "Identifying weakest channel...")
-            
+
             weakest_ch, channel_intensities = self._identify_weakest_channel(ch_list)
             if weakest_ch is None or self._is_stopped():
                 self._safe_hardware_cleanup()
                 return False, "Failed to identify weakest channel"
-            
+
             # Store weakest channel in calibration state
             self.state.weakest_channel = weakest_ch
             logger.info(f"✅ Weakest channel: {weakest_ch}")
@@ -2884,7 +2917,7 @@ class SPRCalibrator:
             logger.info("=" * 80)
             logger.debug(f"Step 4: Integration time optimization for weakest channel {weakest_ch}")
             self._emit_progress(4, f"Optimizing integration time for {weakest_ch}...")
-            
+
             success = self._optimize_integration_time(weakest_ch, integration_step)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
@@ -2912,17 +2945,17 @@ class SPRCalibrator:
 
             # Get weakest channel from state (set in Step 3)
             weakest_ch = getattr(self.state, 'weakest_channel', None)
-            
+
             if not weakest_ch:
                 logger.error("❌ CRITICAL ERROR: weakest_channel not set! Step 3 did not execute properly.")
                 logger.error("   Cannot proceed with LED calibration without knowing weakest channel.")
                 self._safe_hardware_cleanup()
                 return False, "Weakest channel not identified - calibration failed"
-            
+
             logger.info(f"📊 Weakest channel: {weakest_ch} (from Step 3)")
             logger.info(f"   Setting {weakest_ch} to LED=255 (fixed)")
             logger.info(f"   Other channels will be binary-searched to match intensity")
-            
+
             # Set weakest channel to maximum LED intensity (fixed)
             self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
 
