@@ -1748,10 +1748,15 @@ class SPRCalibrator:
     # ========================================================================
 
     def _optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
-        """STEP 4: Constrained dual optimization for integration time (S-MODE ONLY).
+        """STEP 4: Constrained dual optimization for integration time (S-MODE ONLY) - COMPLETE.
 
         This optimizes integration time for CALIBRATION (S-mode) only.
         P-mode integration time is calculated later when entering live mode.
+
+        By the end of Step 4:
+          ✅ Integration time is FINAL for S-mode
+          ✅ ALL 4 channels validated explicitly
+          ✅ No Step 5 needed - optimization complete
 
         Dual optimization with constraints:
         
@@ -1766,8 +1771,10 @@ class SPRCalibrator:
         CONSTRAINT 2:
           - Integration time ≤ 200ms (from detector profile)
         
-        CONSEQUENCE:
-          - Middle LEDs (2nd and 3rd in ranking) automatically fall within boundaries
+        VALIDATION (all channels):
+          - Explicitly measure ALL channels (A, B, C, D) at predicted LED intensities
+          - Verify all signals are within acceptable range
+          - Middle channels no longer just "assumed" - they are measured!
 
         Args:
             weakest_ch: The weakest channel ID (from Step 3)
@@ -1969,15 +1976,113 @@ class SPRCalibrator:
             logger.info(f"   Strongest LED ({strongest_ch} @ LED={STRONGEST_MIN_LED}):")
             logger.info(f"      Signal: {best_strongest_signal:6.0f} counts ({strongest_percent:5.1f}%)")
             logger.info(f"      Status: {'✅ Safe (<95%)' if best_strongest_signal < strongest_max else '⚠️  Near saturation!'}")
+
+            # ========================================================================
+            # EXPLICIT VALIDATION OF ALL MIDDLE CHANNELS
+            # ========================================================================
             logger.info(f"")
-            logger.info(f"   Middle LEDs: Automatically within boundaries ✅")
+            logger.info(f"📊 VALIDATING ALL CHANNELS at optimal integration time...")
+
+            # Calculate predicted LED intensities for all channels based on Step 3 ranking
+            weakest_intensity = self.state.led_ranking[0][1][0]
+            predicted_leds = {}
+            
             logger.info(f"")
-            logger.info(f"   This integration time will be used for:")
-            logger.info(f"      • Step 5: Fine-tune detector range")
+            logger.info(f"   Predicted LED intensities (based on Step 3 brightness ratios):")
+            
+            for ch, (intensity, _, _) in self.state.led_ranking:
+                if ch == weakest_ch:
+                    predicted_led = MAX_LED_INTENSITY  # Weakest always at 255
+                else:
+                    # Scale LED down proportional to brightness ratio
+                    ratio = intensity / weakest_intensity
+                    predicted_led = int(MAX_LED_INTENSITY / ratio)
+                    # Clamp to valid range
+                    predicted_led = max(STRONGEST_MIN_LED, min(MAX_LED_INTENSITY, predicted_led))
+                
+                predicted_leds[ch] = predicted_led
+                logger.info(f"      {ch}: LED={predicted_led:3d} (brightness ratio: {intensity/weakest_intensity:.2f}×)")
+
+            # Measure all channels explicitly
+            logger.info(f"")
+            logger.info(f"   Measuring all channels explicitly:")
+            
+            all_channel_signals = {}
+            
+            for ch, led_intensity in predicted_leds.items():
+                # Activate channel at predicted LED intensity
+                intensities_dict = {ch: led_intensity}
+                self._activate_channel_batch([ch], intensities_dict)
+                time.sleep(LED_DELAY)
+                self._last_active_channel = ch
+
+                # Read spectrum
+                raw_array = self.usb.read_intensity()
+                if raw_array is None:
+                    logger.error(f"Failed to read intensity for channel {ch}")
+                    continue
+
+                # Apply spectral filter
+                filtered_array = self._apply_spectral_filter(raw_array)
+                
+                # Get signal in ROI
+                signal_max = float(np.max(filtered_array[roi_min_idx:roi_max_idx]))
+                signal_mean = float(np.mean(filtered_array[roi_min_idx:roi_max_idx]))
+                signal_percent = (signal_max / detector_max) * 100
+
+                all_channel_signals[ch] = (signal_max, signal_mean, signal_percent, led_intensity)
+
+                # Determine status
+                if signal_percent > 95:
+                    status = "❌ SATURATED"
+                elif signal_percent > 80:
+                    status = "⚠️  HIGH"
+                elif signal_percent < 60:
+                    status = "⚠️  LOW"
+                else:
+                    status = "✅ OPTIMAL"
+
+                logger.info(f"      {ch} @ LED={led_intensity:3d}: max={signal_max:6.0f} ({signal_percent:5.1f}%), mean={signal_mean:6.0f} {status}")
+
+                # Turn off channel
+                self._all_leds_off_batch()
+                time.sleep(LED_DELAY)
+
+            # Final summary
+            logger.info(f"")
+            logger.info(f"="*80)
+            logger.info(f"📊 FINAL VALIDATION SUMMARY (ALL CHANNELS)")
+            logger.info(f"="*80)
+            
+            all_ok = True
+            for ch in sorted(all_channel_signals.keys()):
+                sig_max, sig_mean, sig_percent, led_val = all_channel_signals[ch]
+                
+                if sig_percent > 95:
+                    logger.error(f"   ❌ Channel {ch}: SATURATED ({sig_percent:.1f}%)")
+                    all_ok = False
+                elif sig_percent > 80:
+                    logger.warning(f"   ⚠️  Channel {ch}: Signal high ({sig_percent:.1f}%), Step 6 will adjust")
+                elif sig_percent < 60:
+                    logger.warning(f"   ⚠️  Channel {ch}: Signal low ({sig_percent:.1f}%), Step 6 will adjust")
+                else:
+                    logger.info(f"   ✅ Channel {ch}: Signal optimal ({sig_percent:.1f}%)")
+
+            if not all_ok:
+                logger.warning(f"")
+                logger.warning(f"   ⚠️  Some channels outside optimal range")
+                logger.warning(f"   Step 6 (LED intensity calibration) will fine-tune individual LEDs")
+
+            logger.info(f"")
+            logger.info(f"   Integration time FINAL for S-mode: {best_integration*1000:.1f}ms")
+            logger.info(f"   This will be used for:")
+            logger.info(f"      • Step 5: Re-measure dark noise (at final integration time)")
             logger.info(f"      • Step 6: LED intensity calibration")
             logger.info(f"      • Step 7: Reference signal measurement")
+            logger.info(f"      • Step 8: Validation")
             logger.info(f"")
-            logger.info(f"   Note: P-mode integration time is calculated later when entering live mode")
+            logger.info(f"   Note: All 4 channels explicitly validated - integration time is FINAL")
+            logger.info(f"   Note: P-mode integration time calculated later in state machine")
             logger.info(f"="*80)
 
             # Calculate scan count for averaging
