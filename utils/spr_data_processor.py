@@ -414,15 +414,14 @@ class SPRDataProcessor:
     ) -> float:
         """Find SPR resonance wavelength by locating minimum transmission.
 
-        IMPROVED METHOD: Directly finds the wavelength with minimum transmission
-        instead of using derivative zero-crossing. This is simpler, faster, and
-        more robust to noise.
+        ENHANCED METHOD (Optional): Uses 4-stage pipeline for <2 RU stability:
+        1. FFT Preprocessing: Remove high-frequency noise
+        2. Polynomial Fitting: Smooth curve representation
+        3. Derivative Peak Finding: Mathematically exact minimum
+        4. Temporal Smoothing: Kalman filter for optimal tracking
 
-        Process:
-        1. Find search range from adaptive peak detection settings
-        2. Locate minimum transmission in search range
-        3. Apply parabolic interpolation for sub-pixel accuracy
-        4. Validate result
+        FALLBACK METHOD: Direct minimum finding with parabolic interpolation
+        (simpler, faster, but ~5-10 RU standard deviation)
 
         Args:
             spectrum: Transmission spectrum
@@ -433,7 +432,35 @@ class SPRDataProcessor:
 
         """
         try:
-            # Import adaptive peak detection settings
+            # Import settings
+            from settings.settings import (
+                ADAPTIVE_PEAK_DETECTION,
+                SPR_PEAK_EXPECTED_MIN,
+                SPR_PEAK_EXPECTED_MAX,
+                ENHANCED_PEAK_TRACKING,
+            )
+
+            # Try enhanced pipeline first if enabled
+            if ENHANCED_PEAK_TRACKING:
+                try:
+                    from utils.enhanced_peak_tracking import find_resonance_wavelength_enhanced
+                    
+                    enhanced_result = find_resonance_wavelength_enhanced(
+                        spectrum=spectrum,
+                        wavelengths=self.wave_data,
+                    )
+                    
+                    # If enhanced method succeeded, return result
+                    if not np.isnan(enhanced_result):
+                        logger.debug(f"Enhanced peak tracking: {enhanced_result:.3f} nm")
+                        return enhanced_result
+                    else:
+                        logger.debug("Enhanced peak tracking failed, using fallback method")
+                
+                except Exception as e:
+                    logger.warning(f"Enhanced peak tracking error: {e}, using fallback method")
+            
+            # Fallback to direct minimum method
             from settings.settings import (
                 ADAPTIVE_PEAK_DETECTION,
                 SPR_PEAK_EXPECTED_MIN,

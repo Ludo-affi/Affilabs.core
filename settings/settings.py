@@ -174,6 +174,32 @@ SPR_PEAK_EXPECTED_MIN = 600.0  # nm - minimum expected SPR peak wavelength (Phas
 SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phase 1: widened)
 
 # ============================================================================
+# ENHANCED PEAK TRACKING (4-Stage Pipeline for <2 RU Stability)
+# ============================================================================
+
+# Enable enhanced peak tracking with FFT → Polynomial → Derivative → Kalman pipeline
+# Target: <2 RU standard deviation @ >1 Hz acquisition rate
+ENHANCED_PEAK_TRACKING = False  # Set to True after testing to enable enhanced pipeline
+
+# Stage 1: FFT Preprocessing Parameters
+FFT_CUTOFF_FREQUENCY = 0.15  # Low-pass cutoff (0.1-0.3), lower = more smoothing
+FFT_NOISE_REDUCTION = True   # Enable FFT-based high-frequency noise removal
+
+# Stage 2: Polynomial Fitting Parameters
+POLYNOMIAL_DEGREE = 6           # Polynomial order (4-8), 6 optimal for SPR dips
+POLYNOMIAL_FIT_RANGE = (600, 720)  # Wavelength range for polynomial fit (nm)
+
+# Stage 3: Derivative Peak Finding
+# (Uses analytical derivative of polynomial - no additional parameters needed)
+
+# Stage 4: Temporal Smoothing Parameters
+TEMPORAL_SMOOTHING_ENABLED = True      # Enable Kalman filter or moving average
+TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
+TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
+KALMAN_MEASUREMENT_NOISE = 0.5         # R parameter: lower = trust measurements more
+KALMAN_PROCESS_NOISE = 0.1             # Q parameter: lower = expect less change
+
+# ============================================================================
 # GUI RENDERING PERFORMANCE (G1, G4 Optimizations)
 # ============================================================================
 
