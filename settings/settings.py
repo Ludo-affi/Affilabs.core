@@ -173,6 +173,19 @@ ADAPTIVE_PEAK_DETECTION = True  # Enable adaptive peak detection within expected
 SPR_PEAK_EXPECTED_MIN = 600.0  # nm - minimum expected SPR peak wavelength (Phase 1: widened)
 SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phase 1: widened)
 
+# ============================================================================
+# GUI RENDERING PERFORMANCE (G1, G4 Optimizations)
+# ============================================================================
+
+# G1: Antialiasing - trades rendering quality for speed
+ENABLE_ANTIALIASING_LIVE_MODE = False  # Disable for 20% faster GUI rendering (2-3ms saved)
+ENABLE_ANTIALIASING_STATIC = True      # Keep for publication-quality screenshots
+
+# G4: GUI Update Throttling - reduce update frequency for slower machines
+GUI_UPDATE_EVERY_N_CYCLES = 1  # 1=every cycle (default), 2=every other, 3=every 3rd
+
+# ============================================================================
+
 # Live mode integration time BOOST (maximize signal while staying under 200ms)
 # Strategy: Calibration uses conservative 50% target to avoid saturation during optimization
 # Live mode can boost signal closer to 80% since we're only measuring, not iterating

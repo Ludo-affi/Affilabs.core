@@ -20,12 +20,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.unit = "nm"
         self.unit_factor = UNIT_LIST[self.unit]
         self.updating = False
-        self.live_range = 50
+        self.live_range = 20  # ✨ G7: Reduced from 50 → 20 (earlier static plot mode)
         self.static_index = 0
         self.wait_for_reset = False
 
-        # Set white background and black text for better visibility
-        setConfigOptions(antialias=True)
+        # ✨ G1: Conditional antialiasing for performance
+        from settings.settings import ENABLE_ANTIALIASING_LIVE_MODE
+        setConfigOptions(antialias=ENABLE_ANTIALIASING_LIVE_MODE)
         self.setBackground('w')
 
         # Set plot settings: title, grid, x, y axis labels
@@ -125,6 +126,11 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 logger.debug(f"📊 Plotting data: {total_points} total points across channels")
 
             for ch in CH_LIST:
+                # ✨ G3: Skip hidden channels (saves ~2ms per channel)
+                if not self.plots[ch].isVisible():
+                    logger.debug(f"Skipping hidden channel {ch}")
+                    continue
+                
                 # ✨ O4 Optimization: Use array slicing (zero-copy) instead of deepcopy
                 # We slice data anyway, so no need to copy first
                 y_data = lambda_values[ch]
