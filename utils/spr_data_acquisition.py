@@ -11,6 +11,14 @@ from datetime import datetime
 import numpy as np
 from typing import Optional
 
+# Optional scipy for interpolation (fallback available if not installed)
+try:
+    from scipy.interpolate import interp1d
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+    interp1d = None
+
 from settings import CH_LIST, DEVICES, EZ_CH_LIST, MIN_WAVELENGTH, MAX_WAVELENGTH
 from utils.logger import logger
 from widgets.datawindow import DataDict
@@ -18,7 +26,7 @@ from widgets.message import show_message
 
 # Constants
 DERIVATIVE_WINDOW = 165  # Window size for derivative calculation
-SAVE_DEBUG_DATA = True  # Enable saving intermediate processing steps
+SAVE_DEBUG_DATA = False  # Enable saving intermediate processing steps (set to True for debugging)
 
 
 class SignalEmitter(Protocol):
@@ -396,11 +404,16 @@ class SPRDataAcquisition:
                     target_size = len(averaged_intensity)
                     source_size = len(self.dark_noise)
 
-                    logger.info(
-                        f"Dark noise size differs from data: dark_noise=({source_size},) vs data=({target_size},). "
-                        f"SPR range: {MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm. "
-                        f"Applying universal resampling (no cropping)."
-                    )
+                    # Log size mismatch (debug level to avoid hot path overhead)
+                    if not hasattr(self, '_size_mismatch_logged'):
+                        logger.info(
+                            f"Dark noise size differs from data: dark_noise=({source_size},) vs data=({target_size},). "
+                            f"SPR range: {MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm. "
+                            f"Applying universal resampling (subsequent occurrences logged at debug level)."
+                        )
+                        self._size_mismatch_logged = True
+                    else:
+                        logger.debug(f"Dark noise resampling: {source_size} → {target_size} pixels")
 
                     if source_size == 1:
                         # Single value - broadcast to full size
@@ -417,16 +430,15 @@ class SPRDataAcquisition:
                             logger.warning("Using zero dark correction due to shape incompatibility")
                     else:
                         # Different sizes - use linear interpolation to resample
-                        try:
-                            from scipy.interpolate import interp1d
-                            # Create interpolation function
+                        if HAS_SCIPY:
+                            # Use scipy interpolation (more accurate)
                             source_indices = np.linspace(0, 1, source_size)
                             target_indices = np.linspace(0, 1, target_size)
                             interpolator = interp1d(source_indices, self.dark_noise,
                                                   kind='linear', bounds_error=False, fill_value='extrapolate')
                             dark_correction = interpolator(target_indices)
                             logger.debug(f"Interpolated dark noise from {source_size} to {target_size} pixels")
-                        except ImportError:
+                        else:
                             # Fallback to simple resampling if scipy not available
                             step = source_size / target_size
                             indices = np.arange(target_size) * step
@@ -499,8 +511,8 @@ class SPRDataAcquisition:
 
                         # STEP 3: Save S-mode reference (for comparison)
                         if SAVE_DEBUG_DATA:
-                            # Log sizes for debugging
-                            logger.info(
+                            # Log sizes for debugging (debug level - only when saving files)
+                            logger.debug(
                                 f"🔍 Debug sizes ch{ch}: "
                                 f"ref_sig={len(self.ref_sig[ch])}, "
                                 f"dark_correction={len(dark_correction)}, "
