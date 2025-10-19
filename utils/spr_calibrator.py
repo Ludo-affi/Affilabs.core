@@ -165,31 +165,33 @@ def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT,
 
 
 def calculate_dynamic_scans(integration_time_seconds: float,
-                            target_cycle_time: float = ACQUISITION_CYCLE_TIME,
-                            min_scans: int = 5,
-                            max_scans: int = 50) -> int:
+                            target_cycle_time: float = 0.2,
+                            min_scans: int = 1,
+                            max_scans: int = 10) -> int:
     """Calculate number of scans to average based on integration time.
 
-    The goal is to maintain a consistent total acquisition time (~1 second)
-    regardless of integration time. At lower integration times, we average
-    more scans. At higher integration times, we average fewer scans.
+    The goal is to maintain a fast acquisition time (≤200ms) for responsive
+    sensorgram updates while still providing noise reduction through averaging
+    when integration time allows. Noise will be handled through mathematical
+    post-processing (filtering, Kalman, etc.) rather than excessive averaging.
 
-    Formula: num_scans = target_cycle_time / integration_time
+    Formula: num_scans = min(max_scans, max(min_scans, target_cycle_time / integration_time))
 
     Args:
         integration_time_seconds: Integration time in seconds
-        target_cycle_time: Target total time for acquisition (default 1.0s)
-        min_scans: Minimum number of scans (default 5)
-        max_scans: Maximum number of scans (default 50)
+        target_cycle_time: Target total time for acquisition (default 0.2s = 200ms)
+        min_scans: Minimum number of scans (default 1 - single scan allowed)
+        max_scans: Maximum number of scans (default 10 - sufficient for 200ms target)
 
     Returns:
         Number of scans to average
 
     Examples:
-        integration=0.01s (10ms) → 100 scans (capped at 50)
-        integration=0.05s (50ms) → 20 scans
-        integration=0.10s (100ms) → 10 scans
-        integration=0.20s (200ms) → 5 scans
+        integration=0.150s (150ms) → 1 scan (150ms total) - fast response!
+        integration=0.100s (100ms) → 2 scans (200ms total)
+        integration=0.050s (50ms)  → 4 scans (200ms total)
+        integration=0.020s (20ms)  → 10 scans (200ms total, capped at max)
+        integration=0.010s (10ms)  → 10 scans (100ms total, capped at max)
     """
     calculated_scans = int(target_cycle_time / integration_time_seconds)
     clamped_scans = max(min_scans, min(max_scans, calculated_scans))
@@ -3002,8 +3004,8 @@ class SPRCalibrator:
             time.sleep(0.4)
 
             # Calculate dynamic scan count based on integration time
-            # Goal: Maintain ~1 second total acquisition time
-            ref_scans = calculate_dynamic_scans(self.state.integration, ACQUISITION_CYCLE_TIME)
+            # Goal: Maintain ≤200ms total acquisition time (fast response)
+            ref_scans = calculate_dynamic_scans(self.state.integration)
             logger.info(
                 f"📊 Reference signal averaging: {ref_scans} scans "
                 f"(integration={self.state.integration*1000:.1f}ms, "
