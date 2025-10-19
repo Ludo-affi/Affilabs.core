@@ -5,8 +5,9 @@ build-backend = "pdm.backend"
 [project]
 # PEP 621 project metadata
 # See https://www.python.org/dev/peps/pep-0621/
-dynamic = ["version"]
-name = "ezControl"
+version = "0.1.0"
+name = "affilabs-spr-control"
+description = "Affilabs 0.1 - Core SPR measurement and calibration system"
 dependencies = [
     "pyqtgraph>=0.13.3",
     "pyserial>=3.5",

@@ -1,10 +1,12 @@
-# ezControl-AI
+# Affilabs SPR Control System
 
-AI-Enhanced Surface Plasmon Resonance (SPR) Control System
+**Version 0.1.0** - The Core
 
 ## Overview
 
-ezControl-AI is a modern, AI-enhanced control system for Surface Plasmon Resonance (SPR) instrumentation. This project represents a complete refactoring of the original control software with advanced configuration management, hardware abstraction layers, and AI-assisted development.
+**Affilabs** is a production-ready Surface Plasmon Resonance (SPR) control system providing automated calibration, real-time measurements, and intelligent data processing. This release establishes the core foundation for advanced SPR analysis and represents the culmination of extensive refinement in hardware abstraction, polarizer management, and detector-agnostic design.
+
+Built with AI-enhanced development practices, Affilabs combines robust hardware control with modern software architecture to deliver a reliable, user-friendly SPR measurement platform.
 
 ## Features
 
