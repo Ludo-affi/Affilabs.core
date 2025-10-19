@@ -30,13 +30,19 @@ __pycache__/
 *.so
 .Python
 
-# Build
-build/
+# Build artifacts (but allow build/*.spec files)
+build/*.exe
+build/*.app
+build/*.dmg
 dist/
 .pdm-build
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Allow build spec files
+!build/*.spec
+!build/*.md
 
 # Python environments
 pyvenv.cfg
