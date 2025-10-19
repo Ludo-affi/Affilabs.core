@@ -884,7 +884,7 @@ class SPRCalibrator:
                 if intensities and ch in intensities:
                     self.ctrl.set_intensity(ch=ch, raw_val=intensities[ch])
                 else:
-                    self.ctrl.turn_on_channel(ch=ch)
+                    self.ctrl.activate_channel(channel=ch)
             return True
         except Exception as e:
             logger.error(f"Sequential LED activation failed: {e}")
@@ -1839,7 +1839,7 @@ class SPRCalibrator:
 
             # Turn on LED A at moderate intensity for testing
             self.ctrl.set_intensity("a", 150)
-            self.ctrl.turn_on_channel("a")
+            self.ctrl.activate_channel(channel="a")
             time.sleep(0.3)
 
             # Measure S-mode intensity (should be HIGH - reference, no resonance)
