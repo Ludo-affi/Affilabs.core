@@ -448,16 +448,27 @@ class PicoP4SPRHAL(SPRControllerHAL):
             cmd = "sr\n"
             self._send_command(cmd)
 
-            # Read 6-byte response: "SSSPPP" (e.g., "010100" = S at 10°, P at 100°)
-            response = self._ser.read(6)
+            # Read full line response: "SSS,PPP\n" (e.g., "165,050\n")
+            # Firmware sends comma-separated format with newline
+            response = self._ser.readline()
 
-            if response and len(response) >= 6:
-                s_pos = response[0:3]
-                p_pos = response[3:6]
-                logger.debug(f"Current servo positions: S={s_pos}, P={p_pos}")
-                return {"s": s_pos, "p": p_pos}
+            if response:
+                # Decode and strip newline/whitespace
+                response_str = response.decode().strip()
+                
+                # Split by comma separator
+                if ',' in response_str:
+                    parts = response_str.split(',')
+                    if len(parts) == 2:
+                        s_pos = parts[0].encode()  # Convert back to bytes for consistency
+                        p_pos = parts[1].encode()
+                        logger.debug(f"Current servo positions: S={s_pos}, P={p_pos}")
+                        return {"s": s_pos, "p": p_pos}
+                
+                logger.warning(f"Invalid servo position response format: {response_str}")
+                return None
             else:
-                logger.warning(f"Invalid servo position response: {response}")
+                logger.warning("No servo position response received")
                 return None
 
         except Exception as e:
