@@ -684,6 +684,25 @@ class SPRCalibrator:
         # Progress callback (can be set externally)
         self.progress_callback: Callable[[int, str], None] | None = None
 
+        # ✨ NEW: Calibration complete callback for auto-starting live measurements
+        self.on_calibration_complete_callback: Callable[[], None] | None = None
+
+    def set_on_calibration_complete_callback(self, callback: Callable[[], None]) -> None:
+        """Set callback to be called when calibration completes successfully.
+
+        This enables automatic starting of live measurements after calibration.
+
+        Args:
+            callback: Function to call when calibration completes (no arguments)
+
+        Example:
+            >>> def auto_start():
+            ...     data_acquisition.start_acquisition()
+            >>> calibrator.set_on_calibration_complete_callback(auto_start)
+        """
+        self.on_calibration_complete_callback = callback
+        logger.info("✅ Calibration complete callback registered (auto-start enabled)")
+
     # ========================================================================
     # BATCH LED CONTROL HELPERS (Performance Optimization)
     # ========================================================================
@@ -1370,13 +1389,14 @@ class SPRCalibrator:
     def step_2_calibrate_wavelength_range(self) -> tuple[bool, float]:
         """STEP 2: Calibrate wavelength range and calculate Fourier weights (Detector-Specific).
 
-        ✨ OPTIMIZED: Single wavelength read (no redundant USB calls)
+        ✨ OPTIMIZED: Single wavelength read (no redundant USB calls) + caching
 
         Improvements:
         - Reads wavelengths once (not 2×)
         - Uses wavelengths for both detection and calibration
         - Fast dict-based detector detection
         - Consolidated logging (cleaner output)
+        - Caches wavelengths to skip EEPROM reads (saves ~1s per calibration)
 
         Returns:
             Tuple of (success, integration_step)
@@ -1392,32 +1412,51 @@ class SPRCalibrator:
                 return False, 1.0
 
             # ========================================================================
-            # DETECTOR-SPECIFIC WAVELENGTH CALIBRATION (OPTIMIZED)
+            # DETECTOR-SPECIFIC WAVELENGTH CALIBRATION (OPTIMIZED WITH CACHING)
             # ========================================================================
-            logger.info("📊 Reading wavelength calibration (detector-specific)...")
 
-            # ✨ OPTIMIZATION: Read wavelengths ONCE and use for both detection AND calibration
-            # (Avoids redundant USB read in _detect_spectrometer_type)
+            # ✨ OPTIMIZATION: Check for cached wavelengths first (skip EEPROM read)
             wave_data = None
             serial_number = "unknown"
+            used_cache = False
 
-            # Get serial number from device info (fast metadata read)
-            try:
-                if hasattr(self.usb, "get_device_info"):
-                    device_info = self.usb.get_device_info()
-                    if device_info:
-                        serial_number = device_info.get("serial_number", "unknown")
-            except Exception:
-                pass  # Continue with unknown serial
+            cached_wavelengths_file = Path(ROOT_DIR) / "calibration_data" / "wavelengths_latest.npy"
+            if cached_wavelengths_file.exists():
+                try:
+                    file_age_days = (time.time() - cached_wavelengths_file.stat().st_mtime) / 86400
+                    if file_age_days < 30:  # Use cache if less than 30 days old
+                        wave_data = np.load(cached_wavelengths_file)
+                        if wave_data is not None and len(wave_data) > 0:
+                            used_cache = True
+                            logger.info(f"📊 Using cached wavelengths (age: {file_age_days:.1f} days, skip EEPROM read)")
+                except Exception as e:
+                    logger.debug(f"Failed to load cached wavelengths: {e}")
+                    wave_data = None
 
-            # Read wavelengths from EEPROM (single read)
-            if hasattr(self.usb, "read_wavelength"):
-                wave_data = self.usb.read_wavelength()
-            elif hasattr(self.usb, "get_wavelengths"):
-                wave_data = self.usb.get_wavelengths()
-                if wave_data is not None:
-                    wave_data = np.array(wave_data)
-            else:
+            # If no valid cache, read from EEPROM
+            if wave_data is None:
+                logger.info("📊 Reading wavelength calibration from EEPROM (detector-specific)...")
+
+                # ✨ OPTIMIZATION: Read wavelengths ONCE and use for both detection AND calibration
+                # (Avoids redundant USB read in _detect_spectrometer_type)
+
+                # Get serial number from device info (fast metadata read)
+                try:
+                    if hasattr(self.usb, "get_device_info"):
+                        device_info = self.usb.get_device_info()
+                        if device_info:
+                            serial_number = device_info.get("serial_number", "unknown")
+                except Exception:
+                    pass  # Continue with unknown serial
+
+                # Read wavelengths from EEPROM (single read)
+                if hasattr(self.usb, "read_wavelength"):
+                    wave_data = self.usb.read_wavelength()
+                elif hasattr(self.usb, "get_wavelengths"):
+                    wave_data = self.usb.get_wavelengths()
+                    if wave_data is not None:
+                        wave_data = np.array(wave_data)
+                else:
                 logger.error("❌ USB spectrometer has no wavelength reading method")
                 logger.error("   Expected: read_wavelength() or get_wavelengths()")
                 return False, 1.0
@@ -1430,13 +1469,17 @@ class SPRCalibrator:
             detector_type = self._detect_spectrometer_type_fast(wave_data)
 
             # Log detection results (consolidated)
-            logger.info(f"   Detector: {detector_type} (Serial: {serial_number})")
-            logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration")
+            if not used_cache:
+                logger.info(f"   Detector: {detector_type} (Serial: {serial_number})")
+                logger.info(f"   ✅ Read {len(wave_data)} wavelengths from factory calibration")
+            else:
+                logger.info(f"   Detector: {detector_type} (from cache)")
+                logger.info(f"   ✅ Loaded {len(wave_data)} wavelengths from cache")
             logger.info(f"   Range: {wave_data[0]:.1f} - {wave_data[-1]:.1f} nm")
             logger.info(f"   Resolution: {(wave_data[-1] - wave_data[0]) / len(wave_data):.3f} nm/pixel")
 
-            # Apply serial-specific corrections
-            if serial_number == "FLMT06715":
+            # Apply serial-specific corrections (only if from EEPROM, not cache)
+            if not used_cache and serial_number == "FLMT06715":
                 wave_data = wave_data + WAVELENGTH_OFFSET
 
             # Get integration step from detector profile (or fall back to default)
@@ -2129,7 +2172,7 @@ class SPRCalibrator:
             # Store these as the final LED calibration (Step 6 will use these).
             logger.info(f"")
             logger.info(f"💾 Storing LED calibration from Step 4 validation...")
-            
+
             for ch, (intensity, max_sig, saturated) in self.state.led_ranking:
                 if ch == weakest_ch:
                     # Weakest channel fixed at maximum LED
@@ -2142,7 +2185,7 @@ class SPRCalibrator:
                     predicted_led = max(MIN_LED_INTENSITY, min(MAX_LED_INTENSITY, predicted_led))
                     self.state.ref_intensity[ch] = predicted_led
                     logger.info(f"   {ch.upper()}: LED={predicted_led} (ratio={ratio:.2f}×)")
-            
+
             logger.info(f"✅ LED calibration stored (from Step 4 validation)")
             logger.info(f"   Step 6 will apply these values directly (no binary search needed)")
             logger.info(f"="*80)
@@ -2458,20 +2501,20 @@ class SPRCalibrator:
     # ========================================================================
     # STEP 6: APPLY LED CALIBRATION (SIMPLIFIED - NO BINARY SEARCH)
     # ========================================================================
-    
+
     def step_6_apply_led_calibration(self, ch_list: list[str]) -> bool:
         """STEP 6: Apply LED calibration from Step 4 validation (SIMPLIFIED).
-        
+
         Step 4 already validated all channels at predicted LED intensities.
         This step simply applies those calibrated values without redundant
         binary search optimization.
-        
+
         This eliminates 6-8 seconds of redundant calibration time while
         maintaining the same signal quality validated in Step 4.
-        
+
         Args:
             ch_list: List of channels to apply calibration for
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -2481,20 +2524,20 @@ class SPRCalibrator:
             logger.info("=" * 80)
             logger.info("LED intensities already calibrated and stored from Step 4:")
             logger.info("")
-            
+
             # Display stored LED calibration from Step 4
             for ch in ch_list:
                 led_value = self.state.ref_intensity.get(ch, 0)
                 logger.info(f"   Channel {ch.upper()}: LED = {led_value}")
-            
+
             logger.info("")
             logger.info("✅ Step 6 complete: LED calibration applied (from Step 4 validation)")
             logger.info("   No binary search needed - Step 4 already optimized all channels!")
             logger.info("   Time saved: ~6-8 seconds (eliminated redundant optimization)")
             logger.info("=" * 80)
-            
+
             return True
-            
+
         except Exception as e:
             logger.exception(f"Error in Step 6 LED calibration application: {e}")
             return False
@@ -2843,29 +2886,29 @@ class SPRCalibrator:
         last_active_ch: str | None
     ) -> bool:
         """Apply afterglow correction to all reference signals.
-        
-        Measures dark noise after all channels are measured, applies afterglow 
-        correction if available, and subtracts the corrected dark from all 
+
+        Measures dark noise after all channels are measured, applies afterglow
+        correction if available, and subtracts the corrected dark from all
         reference signals.
-        
+
         This consolidates the dark noise measurement and correction logic that
         was previously scattered throughout step_7_measure_reference_signals().
-        
+
         Args:
             ch_list: Channels that were measured
             ref_scans: Number of scans to use for dark measurement
             last_active_ch: Last channel that was active (for afterglow correction)
-        
+
         Returns:
             True if successful, False otherwise
         """
         try:
             logger.info("📊 Measuring dark noise after all channels for correction...")
-            
+
             # Turn off all LEDs
             self._all_leds_off_batch()
             time.sleep(LED_DELAY)
-            
+
             # Measure dark noise (no dark subtraction, no filtering applied yet)
             dark_spectrum = self._acquire_averaged_spectrum(
                 num_scans=ref_scans,
@@ -2873,12 +2916,12 @@ class SPRCalibrator:
                 subtract_dark=False,
                 description="dark noise (afterglow correction)"
             )
-            
+
             if dark_spectrum is None:
                 logger.warning("Failed to acquire dark noise for afterglow correction")
                 # Use Step 5 dark as fallback
                 dark_spectrum = self.state.dark_noise.copy()
-            
+
             # Apply afterglow correction if available
             corrected_dark = dark_spectrum
             if self.afterglow_correction and last_active_ch:
@@ -2886,17 +2929,17 @@ class SPRCalibrator:
                     dark_before_correction = dark_spectrum.copy()
                     dark_mean_before = float(np.mean(dark_before_correction))
                     baseline_dark_mean = float(np.mean(self.state.dark_noise))
-                    
+
                     corrected_dark = self.afterglow_correction.correct_spectrum(
                         spectrum=dark_spectrum,
                         last_active_channel=last_active_ch,
                         integration_time_ms=self.state.integration * 1000
                     )
-                    
+
                     dark_mean_after = float(np.mean(corrected_dark))
                     contamination = dark_mean_before - baseline_dark_mean
                     correction_effectiveness = dark_mean_before - dark_mean_after
-                    
+
                     if contamination > 1.0:  # Only log if meaningful contamination
                         logger.info(
                             f"   ✨ Afterglow correction: "
@@ -2907,7 +2950,7 @@ class SPRCalibrator:
                         )
                     else:
                         logger.debug(f"   Minimal afterglow contamination ({contamination:.2f} counts)")
-                        
+
                 except Exception as e:
                     logger.warning(f"Afterglow correction failed: {e}")
                     corrected_dark = dark_spectrum
@@ -2916,17 +2959,17 @@ class SPRCalibrator:
                     logger.debug("⚠️ No afterglow correction available")
                 elif not last_active_ch:
                     logger.debug("⚠️ No last active channel for afterglow correction")
-            
+
             # Subtract corrected dark from all reference signals
             for ch in ch_list:
                 if self.state.ref_sig[ch] is not None:
                     # Single subtraction: raw_signal - corrected_dark
                     self.state.ref_sig[ch] = self.state.ref_sig[ch] - corrected_dark
                     logger.debug(f"   Applied dark correction to channel {ch}")
-            
+
             logger.info("✅ Dark noise correction applied to all reference signals")
             return True
-            
+
         except Exception as e:
             logger.exception(f"Error applying afterglow correction: {e}")
             return False
@@ -2937,10 +2980,10 @@ class SPRCalibrator:
 
     def step_7_measure_reference_signals(self, ch_list: list[str]) -> bool:
         """STEP 7: Measure reference signals in S-mode for all channels.
-        
+
         Measures reference signals for each channel using calibrated LED intensities
         from Step 4/6. Applies afterglow correction if available.
-        
+
         Args:
             ch_list: List of channels to measure
 
@@ -3041,7 +3084,7 @@ class SPRCalibrator:
 
     def measure_reference_signals(self, ch_list: list[str]) -> bool:
         """Backward compatibility wrapper for Step 7.
-        
+
         DEPRECATED: Use step_7_measure_reference_signals() for clarity.
         """
         return self.step_7_measure_reference_signals(ch_list)
@@ -3052,10 +3095,10 @@ class SPRCalibrator:
 
     def step_8_validate_calibration(self) -> tuple[bool, str]:
         """STEP 8: Validate calibration using Step 7 reference signals (SIMPLIFIED).
-        
+
         No redundant measurements - validates using existing reference signals
         from Step 7 which were measured in full SPR ROI (580-720nm).
-        
+
         Returns:
             Tuple of (success, error_channels_string)
         """
@@ -3063,7 +3106,7 @@ class SPRCalibrator:
             logger.info("=" * 80)
             logger.info("STEP 8: Calibration Validation (Using Step 7 Data)")
             logger.info("=" * 80)
-            
+
             if DEVELOPMENT_MODE:
                 logger.info("🔧 DEVELOPMENT MODE - Skipping validation thresholds")
                 self.state.ch_error_list = []
@@ -3071,32 +3114,32 @@ class SPRCalibrator:
                 self.state.calibration_timestamp = time.time()
                 logger.info("✅ DEVELOPMENT MODE - Calibration accepted")
                 return True, ""
-            
+
             # Get detector-specific max for threshold calculations
             if self.detector_profile:
                 detector_max = self.detector_profile.max_intensity_counts
             else:
                 detector_max = DETECTOR_MAX_COUNTS
-            
+
             min_threshold = detector_max * MIN_INTENSITY_PERCENT / 100.0
             max_threshold = detector_max * MAX_INTENSITY_PERCENT / 100.0
-            
+
             logger.info(f"Validation thresholds: {MIN_INTENSITY_PERCENT}-{MAX_INTENSITY_PERCENT}% "
                        f"({min_threshold:.0f}-{max_threshold:.0f} counts)")
-            
+
             # Validate using reference signals from Step 7 (already measured!)
             self.state.ch_error_list = []
-            
+
             for ch in CH_LIST:
                 if ch not in self.state.ref_sig or self.state.ref_sig[ch] is None:
                     logger.error(f"   ❌ Channel {ch}: No reference signal from Step 7")
                     self.state.ch_error_list.append(ch)
                     continue
-                
+
                 # Check MAX signal in full spectrum (same as Steps 4 & 7)
                 signal_max = float(np.max(self.state.ref_sig[ch]))
                 signal_percent = (signal_max / detector_max) * 100
-                
+
                 # Validate against thresholds
                 if signal_max < min_threshold:
                     logger.warning(f"   ❌ Channel {ch}: Signal too low ({signal_percent:.1f}% < {MIN_INTENSITY_PERCENT}%)")
@@ -3106,28 +3149,28 @@ class SPRCalibrator:
                     self.state.ch_error_list.append(ch)
                 else:
                     logger.info(f"   ✅ Channel {ch}: {signal_percent:.1f}% (valid)")
-            
+
             # Determine success
             calibration_success = len(self.state.ch_error_list) == 0
             ch_str = ", ".join(self.state.ch_error_list) if self.state.ch_error_list else ""
-            
+
             if calibration_success:
                 logger.info("✅ Calibration validation passed for all channels")
                 self.state.is_calibrated = True
                 self.state.calibration_timestamp = time.time()
             else:
                 logger.warning(f"❌ Calibration validation failed for channels: {ch_str}")
-            
+
             logger.info("=" * 80)
             return calibration_success, ch_str
-            
+
         except Exception as e:
             logger.exception(f"Error validating calibration: {e}")
             return False, f"Validation error: {e}"
 
     def validate_calibration(self) -> tuple[bool, str]:
         """Backward compatibility wrapper for Step 8 validation.
-        
+
         DEPRECATED: Use step_8_validate_calibration() for clarity.
         """
         return self.step_8_validate_calibration()
@@ -3317,6 +3360,17 @@ class SPRCalibrator:
                     logger.info(f"✅ Calibration saved as: {profile_name}")
                 else:
                     logger.warning("⚠️ Failed to auto-save calibration")
+
+            # ✨ NEW: Trigger auto-start callback if calibration successful
+            if calibration_success and self.on_calibration_complete_callback is not None:
+                logger.info("=" * 80)
+                logger.info("🚀 TRIGGERING AUTO-START CALLBACK")
+                logger.info("=" * 80)
+                try:
+                    self.on_calibration_complete_callback()
+                    logger.info("✅ Auto-start callback executed successfully")
+                except Exception as e:
+                    logger.exception(f"❌ Auto-start callback failed: {e}")
 
             logger.debug("=== Calibration sequence complete ===")
             return calibration_success, ch_error_str

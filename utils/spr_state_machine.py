@@ -763,6 +763,23 @@ class SPRStateMachine(QObject):
                     )
                     # Connect calibrator progress signals for real calibrator
                     self.calibrator.set_progress_callback(self._on_calibration_progress)
+                    
+                    # ✨ NEW: Register auto-start callback for live measurements
+                    def auto_start_live_measurements():
+                        """Auto-start live measurements after successful calibration."""
+                        logger.info("=" * 80)
+                        logger.info("🚀 AUTO-STARTING LIVE MEASUREMENTS (from calibration callback)")
+                        logger.info("=" * 80)
+                        try:
+                            # Trigger transition to CALIBRATED state, which will start acquisition
+                            self._transition_to_state(SPRSystemState.CALIBRATED)
+                            logger.info("✅ State transitioned to CALIBRATED - acquisition will start automatically")
+                        except Exception as e:
+                            logger.exception(f"❌ Failed to auto-start measurements: {e}")
+                    
+                    self.calibrator.set_on_calibration_complete_callback(auto_start_live_measurements)
+                    logger.info("✅ Auto-start callback registered with calibrator")
+                    
                     logger.warning("✅ REAL CALIBRATOR CREATED SUCCESSFULLY!")
                 elif MOCK_MODE_AVAILABLE:
                     logger.info("Using mock calibrator for testing")
