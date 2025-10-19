@@ -625,6 +625,64 @@ class SPRCalibrator:
             self.state = CalibrationState()
             logger.info("⚠️ SPRCalibrator created NEW CalibrationState")
 
+        # ========================================================================
+        # ✨ P1 OPTIMIZATION: Early OEM Position Loading (Fail-Fast)
+        # ========================================================================
+        # Load OEM calibration positions immediately at initialization.
+        # This enables fail-fast behavior (<1 second) instead of failing at Step 2B (~2 minutes).
+        # Previously positions were lazily loaded in validate_polarizer_positions().
+        
+        if device_config and 'oem_calibration' in device_config:
+            oem_cal = device_config['oem_calibration']
+            self.state.polarizer_s_position = oem_cal.get('polarizer_s_position')
+            self.state.polarizer_p_position = oem_cal.get('polarizer_p_position')
+            self.state.polarizer_sp_ratio = oem_cal.get('polarizer_sp_ratio')
+            
+            if self.state.polarizer_s_position is not None and self.state.polarizer_p_position is not None:
+                logger.info("=" * 80)
+                logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
+                logger.info("=" * 80)
+                logger.info(f"   S-position: {self.state.polarizer_s_position} (HIGH transmission - reference)")
+                logger.info(f"   P-position: {self.state.polarizer_p_position} (LOWER transmission - resonance)")
+                if self.state.polarizer_sp_ratio:
+                    logger.info(f"   S/P ratio: {self.state.polarizer_sp_ratio:.2f}x")
+                logger.info("   ⚡ Fail-fast enabled: Invalid config detected immediately (<1s)")
+                logger.info("=" * 80)
+            else:
+                logger.error("=" * 80)
+                logger.error("❌ CRITICAL: OEM CALIBRATION POSITIONS INVALID")
+                logger.error("=" * 80)
+                logger.error(f"   S-position: {self.state.polarizer_s_position}")
+                logger.error(f"   P-position: {self.state.polarizer_p_position}")
+                logger.error("")
+                logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
+                logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+                logger.error("=" * 80)
+                raise ValueError("OEM calibration positions are None - cannot proceed with calibration")
+        else:
+            logger.error("=" * 80)
+            logger.error("❌ CRITICAL: NO OEM CALIBRATION FOUND IN DEVICE CONFIG")
+            logger.error("=" * 80)
+            logger.error("   device_config provided: " + ("Yes" if device_config else "No"))
+            if device_config:
+                logger.error(f"   device_config keys: {list(device_config.keys())}")
+                logger.error("   'oem_calibration' section: MISSING")
+            logger.error("")
+            logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
+            logger.error("   This tool finds optimal S and P positions during manufacturing.")
+            logger.error("")
+            logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+            logger.error("")
+            logger.error("   The OEM tool will:")
+            logger.error("   1. Sweep servo through full range (10-255)")
+            logger.error("   2. Find optimal S-mode position (HIGH transmission - reference)")
+            logger.error("   3. Find optimal P-mode position (LOWER transmission - resonance)")
+            logger.error("   4. Save positions to device_config.json")
+            logger.error("")
+            logger.error("   ❌ NO DEFAULT POSITIONS - OEM calibration is MANDATORY")
+            logger.error("=" * 80)
+            raise ValueError("OEM calibration required but not found in device config")
+
         # Initialize LED response model for predictive calibration
         self.led_model = LEDResponseModel()
         logger.debug("LED response model initialized")
@@ -714,6 +772,46 @@ class SPRCalibrator:
         """
         self.on_calibration_complete_callback = callback
         logger.info("✅ Calibration complete callback registered (auto-start enabled)")
+
+    # ========================================================================
+    # OEM CALIBRATION POSITION ACCESS (P2 Optimization)
+    # ========================================================================
+
+    def _get_oem_positions(self) -> tuple[int | None, int | None, float | None]:
+        """Get OEM calibration positions from single source of truth.
+        
+        This centralizes all OEM position access to avoid 40+ scattered checks
+        throughout the codebase. Returns positions from calibration state (preferred)
+        or device_config (fallback if state not populated).
+        
+        Returns:
+            tuple: (s_position, p_position, sp_ratio) or (None, None, None) if not available
+        
+        Example:
+            >>> s_pos, p_pos, sp_ratio = self._get_oem_positions()
+            >>> if s_pos is None:
+            ...     logger.error("OEM positions not available")
+            ...     return False
+        """
+        # Prefer state (already loaded during init - see P1 optimization)
+        if hasattr(self.state, 'polarizer_s_position') and self.state.polarizer_s_position is not None:
+            return (
+                self.state.polarizer_s_position,
+                self.state.polarizer_p_position,
+                getattr(self.state, 'polarizer_sp_ratio', None)
+            )
+        
+        # Fallback to device_config (shouldn't happen if init properly loads positions)
+        if self.device_config and 'oem_calibration' in self.device_config:
+            oem = self.device_config['oem_calibration']
+            return (
+                oem.get('polarizer_s_position'),
+                oem.get('polarizer_p_position'),
+                oem.get('polarizer_sp_ratio')
+            )
+        
+        # No positions available
+        return (None, None, None)
 
     # ========================================================================
     # BATCH LED CONTROL HELPERS (Performance Optimization)
@@ -1656,40 +1754,34 @@ class SPRCalibrator:
             logger.info("=" * 80)
             logger.info("Verifying P-mode (HIGH) and S-mode (LOW) positions...")
 
-            # ✨ CRITICAL: Load positions from device_config if not already in state
-            if not hasattr(self.state, 'polarizer_s_position') or self.state.polarizer_s_position is None:
-                if self.device_config and 'oem_calibration' in self.device_config:
-                    oem_cal = self.device_config['oem_calibration']
-                    self.state.polarizer_s_position = oem_cal.get('polarizer_s_position')
-                    self.state.polarizer_p_position = oem_cal.get('polarizer_p_position')
-                    self.state.polarizer_sp_ratio = oem_cal.get('polarizer_sp_ratio')
-                    logger.info(f"   Loaded OEM positions from device_config:")
-                    logger.info(f"      S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position}")
-                else:
-                    # No device_config or missing oem_calibration - FAIL EARLY
-                    logger.error("=" * 80)
-                    logger.error("❌ POLARIZER CONFIGURATION MISSING")
-                    logger.error("=" * 80)
-                    logger.error("⚠️ No device_config or missing 'oem_calibration' section")
-                    logger.error("")
-                    logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
-                    logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
-                    logger.error("=" * 80)
-                    return False
+            # ========================================================================
+            # ✨ P3 OPTIMIZATION: Simplified Validation (No Lazy Loading)
+            # ========================================================================
+            # Positions are now loaded at init (P1), so this method only validates.
+            # Uses centralized helper method (P2) for cleaner code.
+            
+            # Get OEM positions using centralized helper (P2 optimization)
+            s_pos, p_pos, sp_ratio_config = self._get_oem_positions()
+            
+            # Positions should ALWAYS be available here (loaded at init via P1)
+            if s_pos is None or p_pos is None:
+                # This should NEVER happen if P1 optimization is working correctly
+                logger.error("=" * 80)
+                logger.error("❌ INTERNAL ERROR: OEM positions not loaded at init")
+                logger.error("=" * 80)
+                logger.error("   This indicates a bug in the P1 optimization (early loading)")
+                logger.error(f"   S-position: {s_pos}")
+                logger.error(f"   P-position: {p_pos}")
+                logger.error("=" * 80)
+                return False
 
-            # ✨ CRITICAL: Apply positions from calibration state to hardware BEFORE validation
-            # These positions come from OEM calibration and must be set before we validate
-            if hasattr(self.state, 'polarizer_s_position') and hasattr(self.state, 'polarizer_p_position'):
-                if self.state.polarizer_s_position is not None and self.state.polarizer_p_position is not None:
-                    logger.info(f"   Applying OEM-calibrated positions to hardware:")
-                    logger.info(f"      S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position}")
-                    self.ctrl.servo_set(s=self.state.polarizer_s_position, p=self.state.polarizer_p_position)
-                    time.sleep(1.0)  # Wait for servo to move to both positions
-                    logger.info(f"   ✅ Polarizer positions applied to hardware")
-                else:
-                    logger.warning("⚠️ Polarizer positions in state are None - skipping pre-application")
-            else:
-                logger.warning("⚠️ No polarizer positions in state - skipping pre-application")
+            # Apply OEM-calibrated positions to hardware BEFORE validation
+            logger.info(f"   Applying OEM-calibrated positions to hardware:")
+            logger.info(f"      S={s_pos} (HIGH transmission - reference)")
+            logger.info(f"      P={p_pos} (LOWER transmission - resonance)")
+            self.ctrl.servo_set(s=s_pos, p=p_pos)
+            time.sleep(1.0)  # Wait for servo to move to both positions
+            logger.info(f"   ✅ Polarizer positions applied to hardware")
 
             # Read current servo positions from hardware to verify they match config
             try:
@@ -1716,13 +1808,13 @@ class SPRCalibrator:
                 # Hardware should now match config values we just applied
 
                 # Verify hardware matches what we just set from config
-                if s_hardware != self.state.polarizer_s_position or p_hardware != self.state.polarizer_p_position:
-                    logger.warning(f"   ⚠️ Hardware mismatch: Expected S={self.state.polarizer_s_position} P={self.state.polarizer_p_position}, got S={s_hardware} P={p_hardware}")
+                if s_hardware != s_pos or p_hardware != p_pos:
+                    logger.warning(f"   ⚠️ Hardware mismatch: Expected S={s_pos} P={p_pos}, got S={s_hardware} P={p_hardware}")
                     logger.warning(f"   Re-applying positions to hardware...")
-                    self.ctrl.servo_set(s=self.state.polarizer_s_position, p=self.state.polarizer_p_position)
+                    self.ctrl.servo_set(s=s_pos, p=p_pos)
                     time.sleep(0.5)
                 else:
-                    logger.info(f"   ✅ Hardware matches config: S={self.state.polarizer_s_position} (LOW), P={self.state.polarizer_p_position} (HIGH)")
+                    logger.info(f"   ✅ Hardware matches config: S={s_pos}, P={p_pos}")
             except Exception as e:
                 logger.error("=" * 80)
                 logger.error("❌ POLARIZER CONFIGURATION MISSING")
@@ -1738,14 +1830,12 @@ class SPRCalibrator:
                 logger.error("   1. Sweep servo through full range (10-255)")
                 logger.error("   2. Find optimal S-mode position (perpendicular - HIGH transmission)")
                 logger.error("   3. Find optimal P-mode position (parallel - LOWER transmission)")
-                logger.error("   4. Save positions to device profile (single source of truth)")
+                logger.error("   4. Save positions to device_config.json")
                 logger.error("")
                 logger.error("   ❌ NO DEFAULT POSITIONS - OEM calibration is MANDATORY")
                 logger.error("=" * 80)
-                # DO NOT SET DEFAULT POSITIONS - Force user to run OEM tool
-                self.state.polarizer_s_position = None
-                self.state.polarizer_p_position = None
-                return False  # Fail calibration - OEM tool must be run first
+                # Note: With P1 optimization, this error should not occur (fail at init instead)
+                return False  # Fail calibration
 
             # Turn on LED A at moderate intensity for testing
             self.ctrl.set_intensity("a", 150)
@@ -1771,11 +1861,13 @@ class SPRCalibrator:
             ratio = s_max / p_max if p_max > 0 else 0.0
 
             # Store validated ratio in state for reference
-            self.state.polarizer_sp_ratio = ratio  # S/P ratio (correct for SPR)
+            self.state.polarizer_sp_ratio = ratio  # Measured S/P ratio (correct for SPR)
 
             logger.info(f"   S-mode intensity: {s_max:.1f} counts (HIGH expected - reference)")
             logger.info(f"   P-mode intensity: {p_max:.1f} counts (LOWER expected - resonance)")
-            logger.info(f"   S/P ratio: {ratio:.2f}x")
+            logger.info(f"   Measured S/P ratio: {ratio:.2f}x")
+            if sp_ratio_config:
+                logger.info(f"   Expected S/P ratio: {sp_ratio_config:.2f}x (from OEM calibration)")
 
             # Validate: S-mode should be significantly higher than P-mode (SPR behavior)
             MIN_RATIO = 2.0  # S should be at least 2× higher than P
@@ -1787,8 +1879,10 @@ class SPRCalibrator:
                 logger.error("❌ POLARIZER POSITION ERROR DETECTED")
                 logger.error("=" * 80)
                 logger.error(f"   S-mode intensity ({s_max:.1f}) is NOT significantly higher than P-mode ({p_max:.1f})")
-                logger.error(f"   Ratio: {ratio:.2f}x (expected: >{MIN_RATIO}x)")
-                logger.error(f"   Servo positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.error(f"   Measured ratio: {ratio:.2f}x (expected: >{MIN_RATIO}x)")
+                logger.error(f"   OEM positions: S={s_pos}, P={p_pos} (0-255 scale)")
+                if sp_ratio_config:
+                    logger.error(f"   Expected ratio: {sp_ratio_config:.2f}x (from OEM calibration)")
                 logger.error("")
                 logger.error("Possible causes:")
                 logger.error("   1. Polarizer positions are swapped (S and P reversed)")
@@ -1796,6 +1890,7 @@ class SPRCalibrator:
                 logger.error("   3. Polarizer not properly aligned")
                 logger.error("")
                 logger.error("💡 Solution: Run OEM calibration tool to find correct positions")
+                logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
                 logger.error("=" * 80)
                 return False
             elif ratio < IDEAL_RATIO_MIN:
