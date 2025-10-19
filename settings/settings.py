@@ -96,19 +96,32 @@ POL_WAVELENGTH = 620  # index for auto polarization
 # Tested safe on Flame-T and USB4000 detectors
 LED_DELAY = 0.05  # seconds (50ms) - optimized from 100ms
 
-# Acquisition Frequency - time for complete 4-LED cycle (A→B→C→D)
-ACQUISITION_FREQUENCY = 1.0  # Hz - 1 cycle per second (hard-coded)
-ACQUISITION_CYCLE_TIME = 1.0 / ACQUISITION_FREQUENCY  # 1.0 second for full cycle
-TIME_PER_CHANNEL = ACQUISITION_CYCLE_TIME / 4  # 0.25 seconds per channel
+# ==========================================
+# MODERN TIMING ARCHITECTURE (≤200ms per channel)
+# ==========================================
+# Acquisition timing is now DYNAMIC based on integration time.
+# Use calculate_dynamic_scans() from utils.spr_calibrator for all scan calculations.
+# Target: ≤200ms acquisition time per channel for responsive sensorgram updates.
+#
+# Performance:
+#   - Per-channel: ~200ms (LED 50ms + acquisition 150ms)
+#   - Full cycle: ~800ms (4 channels × 200ms)
+#   - Update rate: ~1.2 Hz (perceived ~5 Hz with staggered updates)
+
+# Legacy timing constants (DEPRECATED - kept for backward compatibility only)
+# DO NOT USE these for new code - use calculate_dynamic_scans() instead
+ACQUISITION_FREQUENCY = 1.0  # Hz - DEPRECATED (use calculate_dynamic_scans)
+ACQUISITION_CYCLE_TIME = 1.0 / ACQUISITION_FREQUENCY  # DEPRECATED (target is now 200ms/channel)
+TIME_PER_CHANNEL = ACQUISITION_CYCLE_TIME / 4  # DEPRECATED (use calculate_dynamic_scans)
+CYCLE_TIME = 1.3  # DEPRECATED: Use calculate_dynamic_scans() instead
 
 # Reference Signal Averaging
-# Number of scans is now DYNAMIC based on integration time to maintain ~1 second total
-# REF_SCANS = int(ACQUISITION_CYCLE_TIME / integration_time) - calculated at runtime
+# Number of scans is DYNAMIC based on integration time (via calculate_dynamic_scans)
+# to maintain ≤200ms acquisition time per channel
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
+REF_SCANS = 20  # DEPRECATED: Now calculated dynamically via calculate_dynamic_scans()
 
-# Legacy parameters
-CYCLE_TIME = 1.3  # DEPRECATED: Use ACQUISITION_CYCLE_TIME instead
-REF_SCANS = 20  # DEPRECATED: Now calculated dynamically based on integration time
+# Legacy LED parameters
 S_LED_INT = int(0.66 * 255)  # max s-polarized led intensity
 S_LED_MIN = int(0.05 * 255)  # minimum LED intensity (5% of max = 13)
 P_LED_MAX = 255  # max p-polarized led intensity

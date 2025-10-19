@@ -367,24 +367,26 @@ class DataAcquisitionWrapper:
                 )
 
                 # Calculate dynamic scan count based on integration time
-                # Goal: Maintain ~1 second total acquisition time (1 Hz frequency)
+                # Goal: Maintain ≤200ms acquisition time per channel for responsive sensorgram
                 # Apply live mode integration time scaling to prevent saturation
                 if self.calib_state.integration > 0:
-                    from settings import ACQUISITION_CYCLE_TIME, LIVE_MODE_INTEGRATION_FACTOR
+                    from settings import LIVE_MODE_INTEGRATION_FACTOR
+                    from utils.spr_calibrator import calculate_dynamic_scans
                     integration_seconds = self.calib_state.integration
 
                     # Scale integration time for live mode to prevent saturation
                     live_integration_seconds = integration_seconds * LIVE_MODE_INTEGRATION_FACTOR
 
-                    calculated_scans = int(ACQUISITION_CYCLE_TIME / live_integration_seconds)
-                    self.num_scans = max(5, min(50, calculated_scans))  # Clamp 5-50
+                    # Use calculate_dynamic_scans() for consistent 200ms target
+                    self.num_scans = calculate_dynamic_scans(live_integration_seconds)
                     logger.info(
                         f"✅ Live mode integration scaled: {integration_seconds*1000:.1f}ms → {live_integration_seconds*1000:.1f}ms (factor={LIVE_MODE_INTEGRATION_FACTOR})"
                     )
                     logger.info(
                         f"✅ Dynamic scan count: {self.num_scans} scans "
                         f"(integration={live_integration_seconds*1000:.1f}ms, "
-                        f"total time={self.num_scans * live_integration_seconds:.2f}s)"
+                        f"total time={self.num_scans * live_integration_seconds:.2f}s, "
+                        f"target=200ms)"
                     )
 
                     # ✨ CRITICAL FIX: Apply the scaled integration time to the spectrometer

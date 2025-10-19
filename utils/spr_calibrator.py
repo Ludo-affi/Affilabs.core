@@ -137,9 +137,6 @@ SATURATION_THRESHOLD_PERCENT = 95  # 95% = near saturation warning threshold
 LED_BOOST_FACTOR = 1.33  # 33% boost for P-mode if possible
 SIGNAL_BOOST_TARGET = 1.20  # 20% signal increase target for P-mode
 
-# Detector Max Readout Time
-MAX_READ_TIME_MS = 50  # Maximum detector readout time in milliseconds
-
 # Wavelength Calibration
 WAVELENGTH_OFFSET = 20  # Offset applied to wavelength data in some configurations
 
@@ -1459,9 +1456,9 @@ class SPRCalibrator:
                     if wave_data is not None:
                         wave_data = np.array(wave_data)
                 else:
-                logger.error("❌ USB spectrometer has no wavelength reading method")
-                logger.error("   Expected: read_wavelength() or get_wavelengths()")
-                return False, 1.0
+                    logger.error("❌ USB spectrometer has no wavelength reading method")
+                    logger.error("   Expected: read_wavelength() or get_wavelengths()")
+                    return False, 1.0
 
             if wave_data is None or len(wave_data) == 0:
                 logger.error("❌ Failed to read wavelengths from spectrometer")
@@ -2192,9 +2189,9 @@ class SPRCalibrator:
             logger.info(f"   Step 6 will apply these values directly (no binary search needed)")
             logger.info(f"="*80)
 
-            # Calculate scan count for averaging
-            self.state.num_scans = int(MAX_READ_TIME_MS / (self.state.integration * MS_TO_SECONDS))
-            logger.debug(f"   Scans to average: {self.state.num_scans}")
+            # Calculate scan count for averaging using consistent 200ms target
+            self.state.num_scans = calculate_dynamic_scans(self.state.integration)
+            logger.debug(f"   Scans to average: {self.state.num_scans} (200ms target)")
 
             return True
 
@@ -2490,9 +2487,9 @@ class SPRCalibrator:
             logger.info(f"   (This integration time will be used for ALL channels)")
             logger.info(f"   (Next step: adjust LED intensities to balance channels)")
 
-            # Calculate number of scans to average (MAX_READ_TIME from settings)
-            self.state.num_scans = int(MAX_READ_TIME_MS / (self.state.integration * MS_TO_SECONDS))
-            logger.debug(f"Scans to average: {self.state.num_scans}")
+            # Calculate number of scans to average using consistent 200ms target
+            self.state.num_scans = calculate_dynamic_scans(self.state.integration)
+            logger.debug(f"Scans to average: {self.state.num_scans} (200ms target)")
 
             return True
 
