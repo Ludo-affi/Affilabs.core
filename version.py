@@ -7,7 +7,7 @@ __status__ = "Production"
 
 def get_version_info() -> dict:
     """Get complete version information.
-    
+
     Returns:
         Dictionary with version details
     """
@@ -21,7 +21,7 @@ def get_version_info() -> dict:
 
 def get_version_string() -> str:
     """Get formatted version string for display.
-    
+
     Returns:
         Formatted version string
     """

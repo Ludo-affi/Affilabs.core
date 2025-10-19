@@ -1,9 +1,9 @@
 # 🎉 Affilabs 0.1.0 - Release Summary
 
-**Release Date**: October 19, 2025  
-**Version**: 0.1.0 "The Core"  
-**Status**: ✅ Production Ready  
-**Git Tag**: `v0.1.0`  
+**Release Date**: October 19, 2025
+**Version**: 0.1.0 "The Core"
+**Status**: ✅ Production Ready
+**Git Tag**: `v0.1.0`
 **Commit**: `e1cd6c3`
 
 ---
@@ -27,7 +27,7 @@ The defining achievement of this release is the **complete resolution** of polar
 ### The Journey
 1. **Problem Identified**: Positions not loading from config
 2. **Root Cause Found**: Multiple config loading issues + swapped S/P positions
-3. **Solution Implemented**: 
+3. **Solution Implemented**:
    - Fixed config storage and loading pipeline
    - Corrected SPR physics documentation throughout codebase
    - Swapped S/P positions to match actual signal behavior
@@ -244,7 +244,7 @@ This release represents months of refinement with AI-assisted development, focus
 
 **Affilabs 0.1.0** is more than a software release - it's the **foundation of a platform**. Every design decision prioritizes:
 - **Reliability** over features
-- **Correctness** over speed  
+- **Correctness** over speed
 - **Clarity** over cleverness
 
 This is "The Core" upon which Affilabs will build advanced SPR capabilities.

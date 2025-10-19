@@ -112,7 +112,7 @@ This release represents the stable foundation upon which Affilabs will build adv
 
 ---
 
-**Release Date**: October 19, 2025  
-**Commit**: `1bff6f6`  
-**Branch**: `master`  
+**Release Date**: October 19, 2025
+**Commit**: `1bff6f6`
+**Branch**: `master`
 **Status**: ✅ Production Ready

@@ -197,7 +197,7 @@ class DeviceConfiguration:
     def to_dict(self) -> Dict[str, Any]:
         """
         Return configuration as dictionary.
-        
+
         Returns:
             Configuration dictionary
         """

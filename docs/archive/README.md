@@ -67,6 +67,6 @@ For up-to-date information, see the root directory:
 
 ---
 
-**Archived**: October 19, 2025  
-**Release**: Affilabs 0.1.0 "The Core"  
+**Archived**: October 19, 2025
+**Release**: Affilabs 0.1.0 "The Core"
 **Total Files**: 84 documents

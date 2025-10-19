@@ -61,7 +61,7 @@ pip install numpy scipy
 pip install pyserial
 pip install oceandirect
 
-# Development dependencies  
+# Development dependencies
 pip install pdm pytest mypy
 ```
 

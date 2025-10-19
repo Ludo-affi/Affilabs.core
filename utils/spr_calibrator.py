@@ -578,7 +578,7 @@ class SPRCalibrator:
         self.optical_fiber_diameter = optical_fiber_diameter
         self.led_pcb_model = led_pcb_model
         self.device_config = device_config  # ✨ CRITICAL: Store device_config for OEM polarizer positions
-        
+
         # Debug logging to verify device_config
         if self.device_config:
             logger.info(f"✅ device_config received: {list(self.device_config.keys())}")
@@ -589,7 +589,7 @@ class SPRCalibrator:
                 logger.warning("⚠️ device_config missing oem_calibration section")
         else:
             logger.warning("⚠️ device_config is None")
-        
+
         logger.info(f"🔧 Calibrator configured: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED PCB")
 
         # Apply fiber-specific calibration parameters
@@ -1714,7 +1714,7 @@ class SPRCalibrator:
                 # S-mode position (HIGH transmission - reference) = state.polarizer_s_position
                 # P-mode position (LOWER transmission - resonance) = state.polarizer_p_position
                 # Hardware should now match config values we just applied
-                
+
                 # Verify hardware matches what we just set from config
                 if s_hardware != self.state.polarizer_s_position or p_hardware != self.state.polarizer_p_position:
                     logger.warning(f"   ⚠️ Hardware mismatch: Expected S={self.state.polarizer_s_position} P={self.state.polarizer_p_position}, got S={s_hardware} P={p_hardware}")

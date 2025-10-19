@@ -371,13 +371,13 @@ class PolarizerCalibrator:
         # Get peak positions directly from angles array
         pos1 = int(angles[peaks[peak_indices[0]]])
         pos2 = int(angles[peaks[peak_indices[1]]])
-        
+
         # ✨ CRITICAL: Enforce minimum separation for barrel polarizers
         # Barrel polarizers have 2 perpendicular windows ~90° apart (≈64 servo units on 0-255 scale)
         # If peaks are too close, they're likely from the same window (noise/shoulders)
         MIN_SEPARATION_SERVO_UNITS = 40  # Minimum ~56° apart (half of expected 90°)
         peak_separation = abs(pos2 - pos1)
-        
+
         if peak_separation < MIN_SEPARATION_SERVO_UNITS:
             logger.error("=" * 80)
             logger.error("❌ INVALID POLARIZER CALIBRATION - Peaks Too Close")
@@ -399,7 +399,7 @@ class PolarizerCalibrator:
             logger.error("   3. Increase integration time for cleaner signal")
             logger.error("   4. Manually verify servo reaches all positions")
             logger.error("=" * 80)
-            
+
             # Return partial results for debugging
             self.results.update({
                 's_position': None,
