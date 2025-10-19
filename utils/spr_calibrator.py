@@ -3220,22 +3220,26 @@ class SPRCalibrator:
             logger.info(f"⚡ Integration time factor: {self.base_integration_time_factor}x "
                        f"({'2x faster' if self.base_integration_time_factor == 0.5 else 'standard speed'})")
 
-            # Auto-detect and load detector profile
-            self.detector_profile = self.detector_manager.auto_detect(self.usb)
-
+            # Auto-detect and load detector profile (cached after first detection)
             if self.detector_profile is None:
-                logger.error("❌ Failed to load detector profile - using legacy defaults")
-                # Will fall back to hardcoded values from settings.py
+                logger.info("📊 Auto-detecting detector profile...")
+                self.detector_profile = self.detector_manager.auto_detect(self.usb)
+                
+                if self.detector_profile is None:
+                    logger.error("❌ Failed to load detector profile - using legacy defaults")
+                    # Will fall back to hardcoded values from settings.py
+                else:
+                    logger.info(f"✅ Detector Profile Loaded:")
+                    logger.info(f"   Manufacturer: {self.detector_profile.manufacturer}")
+                    logger.info(f"   Model: {self.detector_profile.model}")
+                    logger.info(f"   Pixels: {self.detector_profile.pixel_count}")
+                    logger.info(f"   Wavelength Range: {self.detector_profile.wavelength_min_nm:.1f}-{self.detector_profile.wavelength_max_nm:.1f} nm")
+                    logger.info(f"   Max Intensity: {self.detector_profile.max_intensity_counts} counts")
+                    logger.info(f"   Max Integration Time: {self.detector_profile.max_integration_time_ms} ms")
+                    logger.info(f"   Target Signal: {self.detector_profile.target_signal_counts} ± {self.detector_profile.signal_tolerance_counts} counts")
+                    logger.info(f"   SPR Range: {self.detector_profile.spr_wavelength_min_nm}-{self.detector_profile.spr_wavelength_max_nm} nm")
             else:
-                logger.info(f"✅ Detector Profile Loaded:")
-                logger.info(f"   Manufacturer: {self.detector_profile.manufacturer}")
-                logger.info(f"   Model: {self.detector_profile.model}")
-                logger.info(f"   Pixels: {self.detector_profile.pixel_count}")
-                logger.info(f"   Wavelength Range: {self.detector_profile.wavelength_min_nm:.1f}-{self.detector_profile.wavelength_max_nm:.1f} nm")
-                logger.info(f"   Max Intensity: {self.detector_profile.max_intensity_counts} counts")
-                logger.info(f"   Max Integration Time: {self.detector_profile.max_integration_time_ms} ms")
-                logger.info(f"   Target Signal: {self.detector_profile.target_signal_counts} ± {self.detector_profile.signal_tolerance_counts} counts")
-                logger.info(f"   SPR Range: {self.detector_profile.spr_wavelength_min_nm}-{self.detector_profile.spr_wavelength_max_nm} nm")
+                logger.info(f"📊 Using cached detector profile: {self.detector_profile.manufacturer} {self.detector_profile.model}")
 
             logger.debug("=== Starting FRESH calibration sequence (no legacy data) ===")
 
@@ -3380,6 +3384,44 @@ class SPRCalibrator:
             # Emergency hardware cleanup on any exception
             self._safe_hardware_cleanup()
             return False, f"Exception: {e!s}"
+
+    def get_calibration_summary(self) -> dict:
+        """Get calibration summary for state machine/UI display.
+        
+        Provides complete calibration metadata and results in a clean dictionary
+        format suitable for logging, UI display, or state machine use.
+        
+        Returns:
+            Dictionary containing:
+            - success: bool - Overall calibration success status
+            - timestamp: float - Unix timestamp of calibration completion
+            - timestamp_str: str - Human-readable timestamp
+            - failed_channels: list[str] - Channels that failed validation
+            - weakest_channel: str - Channel requiring highest LED intensity
+            - led_ranking: list[tuple] - [(channel, intensity), ...] sorted by signal strength
+            - integration_time_ms: float - Optimized integration time in milliseconds
+            - num_scans: int - Number of scans per measurement
+            - dark_contamination_counts: float - Dark noise contamination level
+            - led_intensities: dict - Calibrated LED intensity for each channel
+            - detector_model: str - Detector model name
+        """
+        return {
+            'success': self.state.is_calibrated,
+            'timestamp': self.state.calibration_timestamp if hasattr(self.state, 'calibration_timestamp') else None,
+            'timestamp_str': time.strftime("%Y-%m-%d %H:%M:%S", 
+                                           time.localtime(self.state.calibration_timestamp))
+                             if hasattr(self.state, 'calibration_timestamp') and self.state.calibration_timestamp else None,
+            'failed_channels': self.state.ch_error_list.copy() if hasattr(self.state, 'ch_error_list') else [],
+            'weakest_channel': self.state.weakest_channel if hasattr(self.state, 'weakest_channel') else None,
+            'led_ranking': [(ch, intensity) for ch, (intensity, _, _) in self.state.led_ranking]
+                           if hasattr(self.state, 'led_ranking') and self.state.led_ranking else [],
+            'integration_time_ms': self.state.integration * 1000 if self.state.integration else 0,
+            'num_scans': self.state.num_scans,
+            'dark_contamination_counts': self.state.dark_noise_contamination if hasattr(self.state, 'dark_noise_contamination') else 0.0,
+            'led_intensities': self.state.ref_intensity.copy(),
+            'detector_model': f"{self.detector_profile.manufacturer} {self.detector_profile.model}" 
+                             if self.detector_profile else "Unknown"
+        }
 
     # ========================================================================
     # CALIBRATION HISTORY LOGGING

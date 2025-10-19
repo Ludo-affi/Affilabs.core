@@ -763,7 +763,7 @@ class SPRStateMachine(QObject):
                     )
                     # Connect calibrator progress signals for real calibrator
                     self.calibrator.set_progress_callback(self._on_calibration_progress)
-                    
+
                     # ✨ NEW: Register auto-start callback for live measurements
                     def auto_start_live_measurements():
                         """Auto-start live measurements after successful calibration."""
@@ -776,10 +776,10 @@ class SPRStateMachine(QObject):
                             logger.info("✅ State transitioned to CALIBRATED - acquisition will start automatically")
                         except Exception as e:
                             logger.exception(f"❌ Failed to auto-start measurements: {e}")
-                    
+
                     self.calibrator.set_on_calibration_complete_callback(auto_start_live_measurements)
                     logger.info("✅ Auto-start callback registered with calibrator")
-                    
+
                     logger.warning("✅ REAL CALIBRATOR CREATED SUCCESSFULLY!")
                 elif MOCK_MODE_AVAILABLE:
                     logger.info("Using mock calibrator for testing")
@@ -839,7 +839,28 @@ class SPRStateMachine(QObject):
                 self._transition_to_error(f"Calibration failed: {error_msg}")
 
     def _handle_calibrated(self) -> None:
-        """Start data acquisition."""
+        """Start data acquisition after validating calibration."""
+        # ✅ Validate calibration state before proceeding
+        if not self.calibrator or not self.calibrator.state.is_valid():
+            logger.error("❌ Calibration state invalid - missing required data")
+            self._transition_to_error("Calibration data incomplete or invalid")
+            return
+        
+        # Log calibration summary for diagnostics
+        summary = self.calibrator.get_calibration_summary()
+        logger.info("=" * 80)
+        logger.info("📊 CALIBRATION SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"✅ Success: {summary['success']}")
+        logger.info(f"⏱️  Timestamp: {summary['timestamp_str']}")
+        logger.info(f"🔧 Integration Time: {summary['integration_time_ms']:.1f} ms")
+        logger.info(f"💡 LED Intensities: {summary['led_intensities']}")
+        logger.info(f"📉 Weakest Channel: {summary['weakest_channel']}")
+        logger.info(f"🔬 Detector: {summary['detector_model']}")
+        if summary['failed_channels']:
+            logger.warning(f"⚠️  Failed Channels: {summary['failed_channels']}")
+        logger.info("=" * 80)
+        
         if not self.data_acquisition:
             logger.debug("Creating data acquisition wrapper...")
             try:
@@ -1066,3 +1087,13 @@ class SPRStateMachine(QObject):
             SPRSystemState.CALIBRATED,
             SPRSystemState.MEASURING
         ]
+
+    def get_calibration_info(self) -> dict:
+        """Get calibration summary for UI display.
+        
+        Returns:
+            Dictionary with calibration metadata, or empty dict if not calibrated.
+        """
+        if self.calibrator:
+            return self.calibrator.get_calibration_summary()
+        return {}
