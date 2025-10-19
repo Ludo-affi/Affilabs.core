@@ -3224,7 +3224,7 @@ class SPRCalibrator:
             if self.detector_profile is None:
                 logger.info("📊 Auto-detecting detector profile...")
                 self.detector_profile = self.detector_manager.auto_detect(self.usb)
-                
+
                 if self.detector_profile is None:
                     logger.error("❌ Failed to load detector profile - using legacy defaults")
                     # Will fall back to hardcoded values from settings.py
@@ -3387,10 +3387,10 @@ class SPRCalibrator:
 
     def get_calibration_summary(self) -> dict:
         """Get calibration summary for state machine/UI display.
-        
+
         Provides complete calibration metadata and results in a clean dictionary
         format suitable for logging, UI display, or state machine use.
-        
+
         Returns:
             Dictionary containing:
             - success: bool - Overall calibration success status
@@ -3408,7 +3408,7 @@ class SPRCalibrator:
         return {
             'success': self.state.is_calibrated,
             'timestamp': self.state.calibration_timestamp if hasattr(self.state, 'calibration_timestamp') else None,
-            'timestamp_str': time.strftime("%Y-%m-%d %H:%M:%S", 
+            'timestamp_str': time.strftime("%Y-%m-%d %H:%M:%S",
                                            time.localtime(self.state.calibration_timestamp))
                              if hasattr(self.state, 'calibration_timestamp') and self.state.calibration_timestamp else None,
             'failed_channels': self.state.ch_error_list.copy() if hasattr(self.state, 'ch_error_list') else [],
@@ -3419,7 +3419,7 @@ class SPRCalibrator:
             'num_scans': self.state.num_scans,
             'dark_contamination_counts': self.state.dark_noise_contamination if hasattr(self.state, 'dark_noise_contamination') else 0.0,
             'led_intensities': self.state.ref_intensity.copy(),
-            'detector_model': f"{self.detector_profile.manufacturer} {self.detector_profile.model}" 
+            'detector_model': f"{self.detector_profile.manufacturer} {self.detector_profile.model}"
                              if self.detector_profile else "Unknown"
         }
 

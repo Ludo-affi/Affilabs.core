@@ -1,6 +1,6 @@
 # Steps 1-5 Code Organization - COMPLETE ✅
 
-**Date**: October 18, 2025  
+**Date**: October 18, 2025
 **Status**: ✅ **COMPLETE** - Steps 1-5 now organized with explicit `step_N_*` methods
 
 ---
@@ -20,7 +20,7 @@ Transformed calibration Steps 1-5 from scattered, inconsistent methods into a cl
 def measure_dark_noise(self) -> bool:
     """Measure dark noise (used by BOTH Step 1 AND Step 5)."""
     # ... 255 lines of code ...
-    
+
     if self._last_active_channel is None:
         # Step 1 logic (baseline dark noise)
         # ... 30 lines ...
@@ -155,21 +155,21 @@ success = self.step_5_remeasure_dark_noise()
 ```python
 def step_1_measure_initial_dark_noise(self) -> bool:
     """STEP 1: Measure baseline dark noise before any LEDs are activated.
-    
+
     This is the first calibration step. It measures the detector's dark noise
     before any LEDs have been turned on, providing a clean baseline for
     comparison with Step 5.
-    
+
     Uses a faster measurement (5 scans) since this is just a sanity check.
-    
+
     Returns:
         True if successful, False otherwise
     """
 ```
 
-**Purpose**: Baseline dark noise measurement (before any LED activation)  
-**Integration Time**: Temporary 32ms  
-**Scans**: 5 (fast sanity check)  
+**Purpose**: Baseline dark noise measurement (before any LED activation)
+**Integration Time**: Temporary 32ms
+**Scans**: 5 (fast sanity check)
 **Stores**: `self.state.dark_noise_before_leds` (baseline for Step 5 comparison)
 
 ---
@@ -179,14 +179,14 @@ def step_1_measure_initial_dark_noise(self) -> bool:
 ```python
 def step_2_calibrate_wavelength_range(self) -> tuple[bool, float]:
     """STEP 2: Calibrate wavelength range and calculate Fourier weights (Detector-Specific).
-    
+
     Returns:
         Tuple of (success, integration_step)
     """
 ```
 
-**Purpose**: Detector-specific wavelength calibration  
-**Changes**: Renamed from `calibrate_wavelength_range()` for consistency  
+**Purpose**: Detector-specific wavelength calibration
+**Changes**: Renamed from `calibrate_wavelength_range()` for consistency
 **Returns**: Integration step size (unused in Step 4 binary search)
 
 ---
@@ -196,17 +196,17 @@ def step_2_calibrate_wavelength_range(self) -> tuple[bool, float]:
 ```python
 def step_3_identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
     """STEP 3: Rank all LED channels by brightness to identify weakest and strongest.
-    
+
     Args:
         ch_list: List of channels to test
-        
+
     Returns:
         Tuple of (weakest_channel_id, dict of all channel intensities)
     """
 ```
 
-**Purpose**: LED brightness ranking (weakest → strongest)  
-**Changes**: Made public (was private `_identify_weakest_channel`)  
+**Purpose**: LED brightness ranking (weakest → strongest)
+**Changes**: Made public (was private `_identify_weakest_channel`)
 **Optimization**: Single read per channel, no dark subtraction, 50% LED test
 
 ---
@@ -216,25 +216,25 @@ def step_3_identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | Non
 ```python
 def step_4_optimize_integration_time(self, weakest_ch: str, integration_step: float) -> bool:
     """STEP 4: Constrained dual optimization for integration time (S-MODE ONLY) - COMPLETE.
-    
+
     Dual optimization with constraints:
     - PRIMARY: Weakest LED at LED=255 → 60-80% detector max
     - CONSTRAINT 1: Strongest LED at LED≥25 → <95% detector max
     - CONSTRAINT 2: Integration time ≤200ms
     - VALIDATION: ALL 4 channels measured at predicted LED intensities
-    
+
     Args:
         weakest_ch: The weakest channel ID (from Step 3)
         integration_step: Step size (unused, uses binary search)
-        
+
     Returns:
         True if successful, False otherwise
     """
 ```
 
-**Purpose**: Optimize integration time for S-mode calibration  
-**Changes**: Made public (was private `_optimize_integration_time`)  
-**Algorithm**: Binary search with dual measurement (weakest + strongest)  
+**Purpose**: Optimize integration time for S-mode calibration
+**Changes**: Made public (was private `_optimize_integration_time`)
+**Algorithm**: Binary search with dual measurement (weakest + strongest)
 **Validation**: ALL 4 channels explicitly measured and validated
 
 ---
@@ -244,24 +244,24 @@ def step_4_optimize_integration_time(self, weakest_ch: str, integration_step: fl
 ```python
 def step_5_remeasure_dark_noise(self) -> bool:
     """STEP 5: Re-measure dark noise with final integration time.
-    
+
     This step re-measures dark noise after integration time optimization
     (Step 4) is complete. It uses the final optimized integration time and
     applies afterglow correction if available.
-    
+
     The purpose is to get accurate dark noise for the actual integration
     time that will be used during SPR measurements (Step 1 used a temporary
     32ms integration time).
-    
+
     Returns:
         True if successful, False otherwise
     """
 ```
 
-**Purpose**: Re-measure dark noise with FINAL integration time  
-**Integration Time**: Optimized value from Step 4 (~150ms typical)  
-**Scans**: Dynamic based on integration time  
-**Comparison**: Logs contamination vs Step 1 baseline  
+**Purpose**: Re-measure dark noise with FINAL integration time
+**Integration Time**: Optimized value from Step 4 (~150ms typical)
+**Scans**: Dynamic based on integration time
+**Comparison**: Logs contamination vs Step 1 baseline
 **Correction**: Applies afterglow correction if available
 
 ---
@@ -273,21 +273,21 @@ def step_5_remeasure_dark_noise(self) -> bool:
 ```python
 def _measure_dark_noise_internal(self, is_baseline: bool) -> bool:
     """Internal helper for dark noise measurement.
-    
+
     This method contains the shared logic for both Step 1 (baseline dark noise
     before any LEDs are activated) and Step 5 (re-measure dark noise with final
     integration time after LED calibration).
-    
+
     Args:
         is_baseline: If True, this is Step 1 (baseline). If False, this is Step 5 (re-measure).
-        
+
     Returns:
         True if successful, False otherwise
     """
 ```
 
-**Purpose**: Extract shared dark noise measurement logic  
-**Replaces**: 255-line dual-purpose `measure_dark_noise()` method  
+**Purpose**: Extract shared dark noise measurement logic
+**Replaces**: 255-line dual-purpose `measure_dark_noise()` method
 **Parameters**:
 - `is_baseline=True`: Step 1 behavior (baseline, 5 scans, no correction comparison)
 - `is_baseline=False`: Step 5 behavior (final integration, dynamic scans, afterglow correction)
@@ -307,7 +307,7 @@ def _measure_dark_noise_internal(self, is_baseline: bool) -> bool:
 ```python
 def measure_dark_noise(self) -> bool:
     """Measure dark noise (backward compatibility wrapper).
-    
+
     For new code, use explicit step methods:
     - step_1_measure_initial_dark_noise() for Step 1
     - step_5_remeasure_dark_noise() for Step 5
@@ -318,7 +318,7 @@ def measure_dark_noise(self) -> bool:
         return self.step_5_remeasure_dark_noise()
 ```
 
-**Purpose**: Maintain backward compatibility with existing code  
+**Purpose**: Maintain backward compatibility with existing code
 **Recommendation**: New code should use explicit `step_1_*` or `step_5_*` methods
 
 ---
@@ -328,13 +328,13 @@ def measure_dark_noise(self) -> bool:
 ```python
 def calibrate_wavelength_range(self) -> tuple[bool, float]:
     """Calibrate wavelength range (backward compatibility wrapper).
-    
+
     For new code, use step_2_calibrate_wavelength_range() for clarity.
     """
     return self.step_2_calibrate_wavelength_range()
 ```
 
-**Purpose**: Maintain backward compatibility  
+**Purpose**: Maintain backward compatibility
 **Recommendation**: New code should use `step_2_calibrate_wavelength_range()`
 
 ---
@@ -347,16 +347,16 @@ def calibrate_wavelength_range(self) -> tuple[bool, float]:
 def run_full_calibration(self, ...):
     # Step 1 (not obvious)
     success = self.measure_dark_noise()
-    
+
     # Step 2 (ok)
     success, integration_step = self.calibrate_wavelength_range()
-    
+
     # Step 3 (why private?)
     weakest_ch, channel_intensities = self._identify_weakest_channel(ch_list)
-    
+
     # Step 4 (why private?)
     success = self._optimize_integration_time(weakest_ch, integration_step)
-    
+
     # Step 5 (same method as Step 1?!)
     success = self.measure_dark_noise()
 ```
@@ -378,25 +378,25 @@ def run_full_calibration(self, ...):
     success = self.step_1_measure_initial_dark_noise()
     if not success or self._is_stopped():
         return False, "Step 1: Dark noise measurement failed"
-    
+
     # STEP 2: Wavelength calibration
     self._emit_progress(2, "Step 2: Calibrating wavelength range...")
     success, integration_step = self.step_2_calibrate_wavelength_range()
     if not success or self._is_stopped():
         return False, "Step 2: Wavelength calibration failed"
-    
+
     # STEP 3: Identify weakest LED
     self._emit_progress(3, "Step 3: Identifying weakest channel...")
     weakest_ch = self.step_3_identify_weakest_channel(ch_list)
     if weakest_ch is None or self._is_stopped():
         return False, "Step 3: Failed to identify weakest channel"
-    
+
     # STEP 4: Optimize integration time
     self._emit_progress(4, f"Step 4: Optimizing integration time for {weakest_ch}...")
     success = self.step_4_optimize_integration_time(weakest_ch, integration_step)
     if not success or self._is_stopped():
         return False, "Step 4: Integration time optimization failed"
-    
+
     # STEP 5: Re-measure dark noise
     self._emit_progress(5, "Step 5: Re-measuring dark noise (final settings)...")
     success = self.step_5_remeasure_dark_noise()
@@ -498,9 +498,9 @@ def test_step_1_baseline_dark_noise():
     """Test Step 1: Baseline dark noise measurement."""
     calibrator = SPRCalibrator(mock_ctrl, mock_usb, "PicoP4SPR")
     calibrator._last_active_channel = None  # Force Step 1 state
-    
+
     success = calibrator.step_1_measure_initial_dark_noise()
-    
+
     assert success
     assert calibrator.state.dark_noise_before_leds is not None
     assert len(calibrator.state.dark_noise_before_leds) > 0
@@ -511,9 +511,9 @@ def test_step_5_remeasure_dark_noise():
     calibrator._last_active_channel = "a"  # Force Step 5 state
     calibrator.state.integration = 0.15  # 150ms
     calibrator.state.dark_noise_before_leds = np.array([...])  # Baseline
-    
+
     success = calibrator.step_5_remeasure_dark_noise()
-    
+
     assert success
     assert calibrator.state.dark_noise is not None
 ```
@@ -526,24 +526,24 @@ def test_step_5_remeasure_dark_noise():
 def test_full_calibration_steps_1_to_5():
     """Test complete calibration Steps 1-5."""
     calibrator = SPRCalibrator(ctrl, usb, "PicoP4SPR")
-    
+
     # Step 1
     assert calibrator.step_1_measure_initial_dark_noise()
-    
+
     # Step 2
     success, integration_step = calibrator.step_2_calibrate_wavelength_range()
     assert success
-    
+
     # Step 3
     weakest_ch = calibrator.step_3_identify_weakest_channel(["a", "b", "c", "d"])
     assert weakest_ch is not None
-    
+
     # Step 4
     assert calibrator.step_4_optimize_integration_time(weakest_ch, integration_step)
-    
+
     # Step 5
     assert calibrator.step_5_remeasure_dark_noise()
-    
+
     # Verify contamination analysis
     assert hasattr(calibrator.state, 'dark_noise_contamination')
 ```
@@ -584,6 +584,6 @@ def test_full_calibration_steps_1_to_5():
 
 ---
 
-**Author**: GitHub Copilot  
-**Date**: October 18, 2025  
+**Author**: GitHub Copilot
+**Date**: October 18, 2025
 **Status**: ✅ **PRODUCTION READY**

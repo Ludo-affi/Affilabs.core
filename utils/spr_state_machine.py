@@ -845,7 +845,7 @@ class SPRStateMachine(QObject):
             logger.error("❌ Calibration state invalid - missing required data")
             self._transition_to_error("Calibration data incomplete or invalid")
             return
-        
+
         # Log calibration summary for diagnostics
         summary = self.calibrator.get_calibration_summary()
         logger.info("=" * 80)
@@ -860,7 +860,7 @@ class SPRStateMachine(QObject):
         if summary['failed_channels']:
             logger.warning(f"⚠️  Failed Channels: {summary['failed_channels']}")
         logger.info("=" * 80)
-        
+
         if not self.data_acquisition:
             logger.debug("Creating data acquisition wrapper...")
             try:
@@ -1090,7 +1090,7 @@ class SPRStateMachine(QObject):
 
     def get_calibration_info(self) -> dict:
         """Get calibration summary for UI display.
-        
+
         Returns:
             Dictionary with calibration metadata, or empty dict if not calibrated.
         """
