@@ -58,7 +58,7 @@ class AffiniteApp(QApplication):
         # Initialize main window
         self.main_window = MainWindow(self)
 
-        # Set application-wide gray background
+        # Set application-wide styling with improved contrast
         self.setStyleSheet("""
             QMainWindow, QWidget {
                 background-color: #D3D3D3;
@@ -69,17 +69,21 @@ class AffiniteApp(QApplication):
                 border-radius: 4px;
                 margin-top: 0.5em;
                 font-weight: bold;
+                color: #000000;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 3px 0 3px;
+                color: #000000;
             }
             QPushButton {
                 background-color: #E8E8E8;
                 border: 1px solid #A0A0A0;
                 border-radius: 3px;
                 padding: 5px;
+                color: #000000;
+                font-weight: 500;
             }
             QPushButton:hover {
                 background-color: #F0F0F0;
@@ -92,18 +96,32 @@ class AffiniteApp(QApplication):
                 border: 1px solid #A0A0A0;
                 border-radius: 3px;
                 padding: 3px;
+                color: #000000;
             }
             QTableWidget {
                 background-color: #FFFFFF;
                 gridline-color: #C0C0C0;
+                color: #000000;
             }
             QHeaderView::section {
                 background-color: #E0E0E0;
                 padding: 4px;
                 border: 1px solid #A0A0A0;
+                color: #000000;
+                font-weight: bold;
             }
             QLabel {
                 color: #000000;
+            }
+            QCheckBox {
+                color: #000000;
+            }
+            QRadioButton {
+                color: #000000;
+            }
+            GraphicsLayoutWidget {
+                background-color: #FFFFFF;
+                border: 1px solid #A0A0A0;
             }
         """)
 

@@ -143,8 +143,8 @@ WAVELENGTH_OFFSET = 20  # Offset applied to wavelength data in some configuratio
 # Percentage Conversion
 PERCENT_MULTIPLIER = 100  # For converting ratios to percentages
 
-# Polarizer Angle Constraint
-MAX_POLARIZER_ANGLE = 170  # Maximum polarizer angle in degrees
+# Polarizer Servo Position Constraint (0-255 range)
+MAX_POLARIZER_POSITION = 255  # Maximum servo position (raw value, NOT degrees)
 
 
 def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT,
@@ -577,6 +577,19 @@ class SPRCalibrator:
         # Device-specific configuration
         self.optical_fiber_diameter = optical_fiber_diameter
         self.led_pcb_model = led_pcb_model
+        self.device_config = device_config  # ✨ CRITICAL: Store device_config for OEM polarizer positions
+        
+        # Debug logging to verify device_config
+        if self.device_config:
+            logger.info(f"✅ device_config received: {list(self.device_config.keys())}")
+            if 'oem_calibration' in self.device_config:
+                oem = self.device_config['oem_calibration']
+                logger.info(f"✅ oem_calibration found: S={oem.get('polarizer_s_position')}, P={oem.get('polarizer_p_position')}")
+            else:
+                logger.warning("⚠️ device_config missing oem_calibration section")
+        else:
+            logger.warning("⚠️ device_config is None")
+        
         logger.info(f"🔧 Calibrator configured: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED PCB")
 
         # Apply fiber-specific calibration parameters
@@ -890,11 +903,11 @@ class SPRCalibrator:
                     return False
 
             def servo_set(self, s=10, p=100):
-                """Set servo polarizer positions."""
+                """Set servo polarizer positions (0-255 raw values)."""
                 logger.info(f"Setting servo positions: s={s}, p={p}")
                 try:
-                    if (s < 0) or (p < 0) or (s > 180) or (p > 180):
-                        raise ValueError(f"Invalid polarizer position given: {s}, {p}")
+                    if (s < 0) or (p < 0) or (s > 255) or (p > 255):
+                        raise ValueError(f"Invalid polarizer position given: {s}, {p} (must be 0-255)")
 
                     # Use HAL's serial connection directly
                     if hasattr(self._hal, "_ser") and self._hal._ser:
@@ -1563,7 +1576,6 @@ class SPRCalibrator:
             )
 
             # Save wavelength array to disk for longitudinal data processing
-            from pathlib import Path
             calib_dir = Path(ROOT_DIR) / "calibration_data"
             calib_dir.mkdir(exist_ok=True)
 
@@ -1609,6 +1621,209 @@ class SPRCalibrator:
             Tuple of (success, integration_step)
         """
         return self.step_2_calibrate_wavelength_range()
+
+    # ========================================================================
+    # STEP 2B: POLARIZER POSITION VALIDATION
+    # ========================================================================
+
+    def validate_polarizer_positions(self) -> bool:
+        """Validate that polarizer positions are correctly configured.
+
+        ⚠️ IMPORTANT: In SPR transmission mode, the polarization behavior is:
+        - S-mode (perpendicular): HIGH transmission - flat reference spectrum
+        - P-mode (parallel): LOWER transmission - shows resonance dip
+
+        This validates that S/P ratio is correct (S should be significantly higher than P).
+
+        Also reads and stores the actual servo positions being used for
+        S and P modes to ensure they're consistently applied throughout calibration.
+
+        Expected behavior in SPR:
+        - S-mode: High transmission (reference, no resonance)
+        - P-mode: Lower transmission (measurement, resonance dip)
+        - Ratio: S-mode should be 3-15× higher than P-mode
+
+        Returns:
+            True if polarizer positions are valid, False otherwise
+        """
+        try:
+            if self.ctrl is None or self.usb is None:
+                logger.warning("⚠️ Cannot validate polarizer - hardware not available")
+                return True  # Skip validation if hardware unavailable
+
+            logger.info("=" * 80)
+            logger.info("STEP 2B: Polarizer Position Validation (Transmission Mode)")
+            logger.info("=" * 80)
+            logger.info("Verifying P-mode (HIGH) and S-mode (LOW) positions...")
+
+            # ✨ CRITICAL: Load positions from device_config if not already in state
+            if not hasattr(self.state, 'polarizer_s_position') or self.state.polarizer_s_position is None:
+                if self.device_config and 'oem_calibration' in self.device_config:
+                    oem_cal = self.device_config['oem_calibration']
+                    self.state.polarizer_s_position = oem_cal.get('polarizer_s_position')
+                    self.state.polarizer_p_position = oem_cal.get('polarizer_p_position')
+                    self.state.polarizer_sp_ratio = oem_cal.get('polarizer_sp_ratio')
+                    logger.info(f"   Loaded OEM positions from device_config:")
+                    logger.info(f"      S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position}")
+                else:
+                    # No device_config or missing oem_calibration - FAIL EARLY
+                    logger.error("=" * 80)
+                    logger.error("❌ POLARIZER CONFIGURATION MISSING")
+                    logger.error("=" * 80)
+                    logger.error("⚠️ No device_config or missing 'oem_calibration' section")
+                    logger.error("")
+                    logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
+                    logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+                    logger.error("=" * 80)
+                    return False
+
+            # ✨ CRITICAL: Apply positions from calibration state to hardware BEFORE validation
+            # These positions come from OEM calibration and must be set before we validate
+            if hasattr(self.state, 'polarizer_s_position') and hasattr(self.state, 'polarizer_p_position'):
+                if self.state.polarizer_s_position is not None and self.state.polarizer_p_position is not None:
+                    logger.info(f"   Applying OEM-calibrated positions to hardware:")
+                    logger.info(f"      S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position}")
+                    self.ctrl.servo_set(s=self.state.polarizer_s_position, p=self.state.polarizer_p_position)
+                    time.sleep(1.0)  # Wait for servo to move to both positions
+                    logger.info(f"   ✅ Polarizer positions applied to hardware")
+                else:
+                    logger.warning("⚠️ Polarizer positions in state are None - skipping pre-application")
+            else:
+                logger.warning("⚠️ No polarizer positions in state - skipping pre-application")
+
+            # Read current servo positions from hardware to verify they match config
+            try:
+                current_positions = self.ctrl.servo_get()
+
+                # Decode bytes to string and sanitize (remove non-digit characters)
+                s_raw = current_positions["s"].decode() if isinstance(current_positions["s"], bytes) else str(current_positions["s"])
+                p_raw = current_positions["p"].decode() if isinstance(current_positions["p"], bytes) else str(current_positions["p"])
+
+                # Remove non-digit characters (commas, spaces, etc.) that can corrupt the response
+                s_clean = ''.join(filter(str.isdigit, s_raw))
+                p_clean = ''.join(filter(str.isdigit, p_raw))
+
+                if not s_clean or not p_clean:
+                    raise ValueError(f"Invalid servo position data: S='{s_raw}', P='{p_raw}' (no digits found after sanitization)")
+
+                s_hardware = int(s_clean)
+                p_hardware = int(p_clean)
+                logger.info(f"   Hardware confirmation: S={s_hardware}, P={p_hardware} (should match OEM config)")
+
+                # ✅ NO SWAPPING: OEM calibration provides correct S/P positions directly
+                # S-mode position (HIGH transmission - reference) = state.polarizer_s_position
+                # P-mode position (LOWER transmission - resonance) = state.polarizer_p_position
+                # Hardware should now match config values we just applied
+                
+                # Verify hardware matches what we just set from config
+                if s_hardware != self.state.polarizer_s_position or p_hardware != self.state.polarizer_p_position:
+                    logger.warning(f"   ⚠️ Hardware mismatch: Expected S={self.state.polarizer_s_position} P={self.state.polarizer_p_position}, got S={s_hardware} P={p_hardware}")
+                    logger.warning(f"   Re-applying positions to hardware...")
+                    self.ctrl.servo_set(s=self.state.polarizer_s_position, p=self.state.polarizer_p_position)
+                    time.sleep(0.5)
+                else:
+                    logger.info(f"   ✅ Hardware matches config: S={self.state.polarizer_s_position} (LOW), P={self.state.polarizer_p_position} (HIGH)")
+            except Exception as e:
+                logger.error("=" * 80)
+                logger.error("❌ POLARIZER CONFIGURATION MISSING")
+                logger.error("=" * 80)
+                logger.error(f"⚠️ Could not read servo positions from hardware: {e}")
+                logger.error("")
+                logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
+                logger.error("   This tool finds optimal S and P positions during manufacturing.")
+                logger.error("")
+                logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+                logger.error("")
+                logger.error("   The OEM tool will:")
+                logger.error("   1. Sweep servo through full range (10-255)")
+                logger.error("   2. Find optimal S-mode position (perpendicular - HIGH transmission)")
+                logger.error("   3. Find optimal P-mode position (parallel - LOWER transmission)")
+                logger.error("   4. Save positions to device profile (single source of truth)")
+                logger.error("")
+                logger.error("   ❌ NO DEFAULT POSITIONS - OEM calibration is MANDATORY")
+                logger.error("=" * 80)
+                # DO NOT SET DEFAULT POSITIONS - Force user to run OEM tool
+                self.state.polarizer_s_position = None
+                self.state.polarizer_p_position = None
+                return False  # Fail calibration - OEM tool must be run first
+
+            # Turn on LED A at moderate intensity for testing
+            self.ctrl.set_intensity("a", 150)
+            self.ctrl.turn_on_channel("a")
+            time.sleep(0.3)
+
+            # Measure S-mode intensity (should be HIGH - reference, no resonance)
+            self.ctrl.set_mode("s")
+            time.sleep(0.4)  # Wait for servo to move
+            s_spectrum = self.usb.read_intensity()
+            s_max = float(np.max(s_spectrum)) if s_spectrum is not None else 0.0
+
+            # Measure P-mode intensity (should be LOWER - shows resonance)
+            self.ctrl.set_mode("p")
+            time.sleep(0.4)  # Wait for servo to move
+            p_spectrum = self.usb.read_intensity()
+            p_max = float(np.max(p_spectrum)) if p_spectrum is not None else 0.0
+
+            # Turn off LED
+            self.ctrl.turn_off_channels()
+
+            # Calculate ratio (S/P - should be > 2 in SPR, typically 3-15×)
+            ratio = s_max / p_max if p_max > 0 else 0.0
+
+            # Store validated ratio in state for reference
+            self.state.polarizer_sp_ratio = ratio  # S/P ratio (correct for SPR)
+
+            logger.info(f"   S-mode intensity: {s_max:.1f} counts (HIGH expected - reference)")
+            logger.info(f"   P-mode intensity: {p_max:.1f} counts (LOWER expected - resonance)")
+            logger.info(f"   S/P ratio: {ratio:.2f}x")
+
+            # Validate: S-mode should be significantly higher than P-mode (SPR behavior)
+            MIN_RATIO = 2.0  # S should be at least 2× higher than P
+            IDEAL_RATIO_MIN = 3.0
+            IDEAL_RATIO_MAX = 15.0
+
+            if ratio < MIN_RATIO:
+                logger.error("=" * 80)
+                logger.error("❌ POLARIZER POSITION ERROR DETECTED")
+                logger.error("=" * 80)
+                logger.error(f"   S-mode intensity ({s_max:.1f}) is NOT significantly higher than P-mode ({p_max:.1f})")
+                logger.error(f"   Ratio: {ratio:.2f}x (expected: >{MIN_RATIO}x)")
+                logger.error(f"   Servo positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.error("")
+                logger.error("Possible causes:")
+                logger.error("   1. Polarizer positions are swapped (S and P reversed)")
+                logger.error("   2. Servo positions need adjustment")
+                logger.error("   3. Polarizer not properly aligned")
+                logger.error("")
+                logger.error("💡 Solution: Run OEM calibration tool to find correct positions")
+                logger.error("=" * 80)
+                return False
+            elif ratio < IDEAL_RATIO_MIN:
+                logger.warning("=" * 80)
+                logger.warning("⚠️ POLARIZER POSITION WARNING")
+                logger.warning("=" * 80)
+                logger.warning(f"   S/P ratio ({ratio:.2f}x) is lower than ideal ({IDEAL_RATIO_MIN}-{IDEAL_RATIO_MAX}x)")
+                logger.warning(f"   Servo positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.warning("   Calibration will continue, but consider running auto-polarization")
+                logger.warning("   (Available in Settings menu)")
+                logger.warning("=" * 80)
+                return True  # Allow calibration to continue with warning
+            elif ratio > IDEAL_RATIO_MAX:
+                logger.warning(f"⚠️ S/P ratio ({ratio:.2f}x) is higher than typical ({IDEAL_RATIO_MAX}x)")
+                logger.warning("   This may indicate P-mode is blocking too much light")
+                logger.info(f"✅ Polarizer positions are valid: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.info("=" * 80)
+                return True
+            else:
+                logger.info(f"✅ Polarizer positions VALIDATED (ratio: {ratio:.2f}x is ideal)")
+                logger.info(f"   Servo positions confirmed: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.info("=" * 80)
+                return True
+
+        except Exception as e:
+            logger.exception(f"Error validating polarizer positions: {e}")
+            logger.warning("⚠️ Polarizer validation failed - continuing calibration anyway")
+            return True  # Don't block calibration on validation errors
 
     # ========================================================================
     # STEP 3: LED BRIGHTNESS RANKING (OPTIMIZED FOR SPEED)
@@ -3279,9 +3494,18 @@ class SPRCalibrator:
                 self._safe_hardware_cleanup()
                 return False, "Wavelength calibration failed"
 
-            # Step 3: Auto-polarize if enabled
+            # ========================================================================
+            # STEP 2B: POLARIZER POSITION VALIDATION
+            # ========================================================================
+            self._emit_progress(2, "Step 2B: Validating polarizer positions...")
+            polarizer_valid = self.validate_polarizer_positions()
+            if not polarizer_valid:
+                self._safe_hardware_cleanup()
+                return False, "Polarizer positions invalid - run auto-polarization from Settings"
+
+            # Step 3: Auto-polarize if enabled (advanced feature)
             if auto_polarize and not self._is_stopped():
-                logger.debug("Step 3: Auto-polarization")
+                logger.debug("Step 3: Auto-polarization (advanced)")
                 self._emit_progress(3, "Auto-aligning polarizer...")
                 if auto_polarize_callback is not None:
                     auto_polarize_callback()
@@ -3403,6 +3627,9 @@ class SPRCalibrator:
             - dark_contamination_counts: float - Dark noise contamination level
             - led_intensities: dict - Calibrated LED intensity for each channel
             - detector_model: str - Detector model name
+            - polarizer_s_position: int - Validated S-mode servo position (degrees)
+            - polarizer_p_position: int - Validated P-mode servo position (degrees)
+            - polarizer_sp_ratio: float - Validated S/P intensity ratio
         """
         return {
             'success': self.state.is_calibrated,
@@ -3419,7 +3646,10 @@ class SPRCalibrator:
             'dark_contamination_counts': self.state.dark_noise_contamination if hasattr(self.state, 'dark_noise_contamination') else 0.0,
             'led_intensities': self.state.ref_intensity.copy(),
             'detector_model': f"{self.detector_profile.manufacturer} {self.detector_profile.model}"
-                             if self.detector_profile else "Unknown"
+                             if self.detector_profile else "Unknown",
+            'polarizer_s_position': getattr(self.state, 'polarizer_s_position', None),
+            'polarizer_p_position': getattr(self.state, 'polarizer_p_position', None),
+            'polarizer_sp_ratio': getattr(self.state, 'polarizer_sp_ratio', None)
         }
 
     # ========================================================================
@@ -3559,6 +3789,24 @@ class SPRCalibrator:
             profiles_dir.mkdir(exist_ok=True)
 
             # Build calibration data from state
+            # ⚠️ CRITICAL: Polarizer positions MUST come from OEM calibration (NO DEFAULTS)
+            # Fail if positions are missing - force user to run OEM tool
+            s_pos = getattr(self.state, 'polarizer_s_position', None)
+            p_pos = getattr(self.state, 'polarizer_p_position', None)
+
+            if s_pos is None or p_pos is None:
+                logger.error("=" * 80)
+                logger.error("❌ CANNOT SAVE PROFILE - Missing Polarizer Configuration")
+                logger.error("=" * 80)
+                logger.error("Polarizer positions are not configured in calibration state.")
+                logger.error("")
+                logger.error("🔧 REQUIRED: Run OEM calibration tool first:")
+                logger.error("   python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+                logger.error("")
+                logger.error("The OEM tool finds optimal S/P positions (single source of truth).")
+                logger.error("=" * 80)
+                return False
+
             calibration_data = {
                 "profile_name": profile_name,
                 "device_type": device_type,
@@ -3567,7 +3815,10 @@ class SPRCalibrator:
                 "num_scans": self.state.num_scans,
                 "ref_intensity": self.state.ref_intensity.copy(),
                 "leds_calibrated": self.state.leds_calibrated.copy(),
-                "weakest_channel": getattr(self.state, 'weakest_channel', None),  # ✨ NEW: Store weakest channel
+                "weakest_channel": getattr(self.state, 'weakest_channel', None),
+                "polarizer_s_position": s_pos,  # ✨ From OEM calibration ONLY (no defaults!)
+                "polarizer_p_position": p_pos,  # ✨ From OEM calibration ONLY (no defaults!)
+                "polarizer_sp_ratio": getattr(self.state, 'polarizer_sp_ratio', None),
                 "wave_min_index": self.state.wave_min_index,
                 "wave_max_index": self.state.wave_max_index,
                 "led_delay": self.state.led_delay,
@@ -3642,7 +3893,29 @@ class SPRCalibrator:
             self.state.led_delay = calibration_data.get("led_delay", LED_DELAY)
             self.state.med_filt_win = calibration_data.get("med_filt_win", 11)
 
+            # ✨ Load validated polarizer positions from OEM calibration (NO DEFAULTS!)
+            # These values MUST come from OEM calibration tool - it's the single source of truth
+            self.state.polarizer_s_position = calibration_data.get("polarizer_s_position")
+            self.state.polarizer_p_position = calibration_data.get("polarizer_p_position")
+            self.state.polarizer_sp_ratio = calibration_data.get("polarizer_sp_ratio", None)
+
+            # Validate that OEM-calibrated positions were loaded
+            if self.state.polarizer_s_position is None or self.state.polarizer_p_position is None:
+                logger.error("=" * 80)
+                logger.error("❌ INVALID CALIBRATION PROFILE - Missing Polarizer Positions")
+                logger.error("=" * 80)
+                logger.error("This calibration profile was created before OEM polarizer calibration.")
+                logger.error("")
+                logger.error("🔧 REQUIRED ACTION: Run OEM calibration tool to configure polarizer:")
+                logger.error("   python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+                logger.error("")
+                logger.error("The OEM tool will find optimal S/P positions and save to device profile.")
+                logger.error("=" * 80)
+                return False, "Profile missing OEM polarizer calibration data"
+
             logger.info(f"Calibration profile loaded: {profile_path}")
+            if hasattr(self.state, 'polarizer_s_position'):
+                logger.info(f"   Polarizer positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
             return True, "Profile loaded successfully"
 
         except Exception as e:
@@ -3718,6 +3991,13 @@ class SPRCalibrator:
                 if ch in self.state.leds_calibrated:
                     ctrl.set_intensity(ch=ch, raw_val=self.state.leds_calibrated[ch])
 
+            # ✨ Apply validated polarizer positions if available
+            if hasattr(self.state, 'polarizer_s_position') and hasattr(self.state, 'polarizer_p_position'):
+                s_pos = self.state.polarizer_s_position
+                p_pos = self.state.polarizer_p_position
+                ctrl.servo_set(s=s_pos, p=p_pos)
+                logger.info(f"Polarizer positions applied: S={s_pos}, P={p_pos} (0-255 scale)")
+
             logger.info("Calibration profile applied to hardware")
             return True
 
@@ -3754,26 +4034,26 @@ class SPRCalibrator:
             ctrl.set_intensity("a", 255)
             usb.set_integration(max(MIN_INTEGRATION / 1000.0, usb.min_integration))
 
-            # Define sweep parameters
-            min_angle = 10
-            max_angle = MAX_POLARIZER_ANGLE
-            half_range = (max_angle - min_angle) // 2
-            angle_step = 5
-            steps = half_range // angle_step
+            # Define sweep parameters (0-255 servo position range)
+            min_position = 10
+            max_position = MAX_POLARIZER_POSITION
+            half_range = (max_position - min_position) // 2
+            position_step = 5
+            steps = half_range // position_step
 
             # Initialize intensity array
             max_intensities = np.zeros(2 * steps + 1)
 
             # Set starting position
-            ctrl.servo_set(half_range + min_angle, max_angle)
+            ctrl.servo_set(half_range + min_position, max_position)
             ctrl.set_mode("p")
             ctrl.set_mode("s")
             max_intensities[steps] = usb.read_intensity().max()
 
-            # Sweep through angles
+            # Sweep through positions
             for i in range(steps):
-                x = min_angle + angle_step * i
-                ctrl.servo_set(s=x, p=x + half_range + angle_step)
+                x = min_position + position_step * i
+                ctrl.servo_set(s=x, p=x + half_range + position_step)
                 ctrl.set_mode("s")
                 max_intensities[i] = usb.read_intensity().max()
                 ctrl.set_mode("p")
@@ -3786,11 +4066,11 @@ class SPRCalibrator:
             edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
             edges = np.array(edges)[:, i]
 
-            # Calculate final positions
-            p_pos, s_pos = (min_angle + angle_step * edges.mean(0)).astype(int)
+            # Calculate final positions (0-255 scale)
+            p_pos, s_pos = (min_position + position_step * edges.mean(0)).astype(int)
             ctrl.servo_set(s_pos, p_pos)
 
-            logger.info(f"Auto-polarization complete: s={s_pos}, p={p_pos}")
+            logger.info(f"Auto-polarization complete: s={s_pos}, p={p_pos} (0-255 scale)")
             return s_pos, p_pos
 
         except Exception as e:
@@ -3860,8 +4140,12 @@ class SPRCalibrator:
             # For now, run synchronously but set completion flags properly
             # In a full implementation, this would be truly asynchronous
 
-            # Run the full calibration (no extra parameters needed)
-            success, error_channels = self.run_full_calibration()
+            # Run the full calibration (auto-polarization disabled by default)
+            # Note: Polarizer position validation happens in Step 2
+            success, error_channels = self.run_full_calibration(
+                auto_polarize=False,  # Auto-alignment is an advanced feature (handled in settings)
+                auto_polarize_callback=None
+            )
 
             self._calibration_success = success
             self._error_message = error_channels if not success else ""

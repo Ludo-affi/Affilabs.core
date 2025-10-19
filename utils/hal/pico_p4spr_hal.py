@@ -309,6 +309,190 @@ class PicoP4SPRHAL(SPRControllerHAL):
             logger.error(f"❌ Emergency shutdown failed: {e}")
             return False
 
+    def set_intensity(self, ch: str = "a", raw_val: int = 1) -> bool:
+        """Set LED intensity for a specific channel.
+
+        Args:
+            ch: Channel identifier ('a', 'b', 'c', or 'd')
+            raw_val: Intensity value (0-255, where 0=off, 255=max)
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            HALOperationError: If device not connected or invalid parameters
+        """
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "set_intensity")
+
+        try:
+            # Validate channel
+            if ch not in {"a", "b", "c", "d"}:
+                raise ValueError(f"Invalid channel: {ch}. Must be 'a', 'b', 'c', or 'd'")
+
+            # Clamp intensity to valid range (0-255)
+            if raw_val > 255:
+                logger.debug(f"Invalid intensity value {raw_val}, clamping to 255")
+                raw_val = 255
+            elif raw_val < 0:
+                logger.debug(f"Invalid intensity value {raw_val}, clamping to 0")
+                raw_val = 0
+
+            # Build command: format is "b{ch}{intensity:03d}\n"
+            # Example: "ba128\n" sets channel A to intensity 128
+            cmd = f"b{ch}{int(raw_val):03d}\n"
+
+            logger.debug(f"Setting LED {ch.upper()} intensity to {raw_val}")
+
+            # Send command and check response
+            success = self._send_command_with_response(cmd, b"1")
+
+            if success:
+                # Turn on the channel after setting intensity
+                turn_on_cmd = f"l{ch}\n"
+                self._send_command_with_response(turn_on_cmd, b"1")
+                logger.debug(f"✅ LED {ch.upper()} set to intensity {raw_val}")
+            else:
+                logger.error(f"❌ Failed to set LED {ch.upper()} intensity")
+
+            return success
+
+        except ValueError as e:
+            logger.error(f"❌ Invalid parameters: {e}")
+            raise HALOperationError(f"Invalid parameters: {e}", "set_intensity")
+        except Exception as e:
+            logger.error(f"❌ Error setting LED intensity: {e}")
+            raise HALOperationError(f"Failed to set LED intensity: {e}", "set_intensity")
+
+    def set_mode(self, mode: str = "s") -> bool:
+        """Set polarizer mode.
+
+        Args:
+            mode: "s" for S-mode (perpendicular), "p" for P-mode (parallel)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "set_mode")
+
+        try:
+            # Map mode to firmware command
+            if mode.lower() == "s":
+                cmd = "ss\n"  # S-mode command
+            else:
+                cmd = "sp\n"  # P-mode command
+
+            logger.info(f"🔄 Setting polarizer to {mode.upper()}-mode (command: {cmd.strip()})")
+
+            # Send command and get response
+            success = self._send_command_with_response(cmd, b"1")
+
+            if success:
+                logger.info(f"✅ Polarizer set to {mode.upper()}-mode successfully")
+            else:
+                logger.warning(f"⚠️ Unexpected polarizer response")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"❌ Error moving polarizer: {e}")
+            raise HALOperationError(f"Failed to set polarizer mode: {e}", "set_mode")
+
+    def servo_set(self, s: int, p: int) -> bool:
+        """Set servo positions for S and P modes.
+
+        Args:
+            s: S-mode position (0-255 raw servo value)
+            p: P-mode position (0-255 raw servo value)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "servo_set")
+
+        try:
+            # Validate positions (0-255 servo range, NOT degrees)
+            if not (0 <= s <= 255) or not (0 <= p <= 255):
+                raise ValueError(f"Servo positions must be 0-255 (got s={s}, p={p})")
+
+            # Format command: sv{s:03d}{p:03d}
+            cmd = f"sv{s:03d}{p:03d}\n"
+            logger.info(f"🔧 Setting servo positions: S={s}, P={p} (0-255 scale, command: {cmd.strip()})")
+
+            # Send command and get response
+            success = self._send_command_with_response(cmd, b"1")
+
+            if success:
+                logger.info(f"✅ Servo positions set successfully")
+            else:
+                logger.warning(f"⚠️ Unexpected servo response")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"❌ Error setting servo positions: {e}")
+            raise HALOperationError(f"Failed to set servo positions: {e}", "servo_set")
+
+    def servo_get(self) -> dict[str, bytes] | None:
+        """Get current servo positions.
+
+        Returns:
+            Dictionary with 's' and 'p' keys containing position bytes, or None if failed
+        """
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "servo_get")
+
+        try:
+            cmd = "sr\n"
+            self._send_command(cmd)
+
+            # Read 6-byte response: "SSSPPP" (e.g., "010100" = S at 10°, P at 100°)
+            response = self._ser.read(6)
+
+            if response and len(response) >= 6:
+                s_pos = response[0:3]
+                p_pos = response[3:6]
+                logger.debug(f"Current servo positions: S={s_pos}, P={p_pos}")
+                return {"s": s_pos, "p": p_pos}
+            else:
+                logger.warning(f"Invalid servo position response: {response}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ Error reading servo positions: {e}")
+            return None
+
+    def turn_off_channels(self) -> bool:
+        """Turn off all LED channels.
+
+        Sends the 'lx' command to turn off all channels at once.
+        This is used for dark noise measurements and emergency shutdowns.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "turn_off_channels")
+
+        try:
+            cmd = "lx\n"
+            logger.debug("🔦 Turning off all LED channels...")
+
+            success = self._send_command_with_response(cmd, b"1")
+
+            if success:
+                logger.debug("✅ All LED channels turned off")
+            else:
+                logger.warning("⚠️ Unexpected response when turning off LEDs")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"❌ Error turning off LED channels: {e}")
+            raise HALOperationError(f"Failed to turn off channels: {e}", "turn_off_channels")
+
     def reset_device(self) -> bool:
         """Reset PicoP4SPR to default state."""
         if not self.is_connected():

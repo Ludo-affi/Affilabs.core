@@ -1,8 +1,8 @@
 # Sensorgram Latency Analysis - UPDATED ✅
 
-**Date**: October 18, 2025  
-**Status**: ✅ **IMPLEMENTED** - 200ms acquisition target everywhere  
-**Focus**: Time from raw spectrum acquisition to sensorgram peak display  
+**Date**: October 18, 2025
+**Status**: ✅ **IMPLEMENTED** - 200ms acquisition target everywhere
+**Focus**: Time from raw spectrum acquisition to sensorgram peak display
 **Priority**: CRITICAL - Users monitor this in real-time
 
 ---
@@ -33,7 +33,7 @@ def calculate_dynamic_scans(integration_time_seconds: float,
 
 ### **Sensorgram Update Frequency**
 
-**Before**: 0.22 Hz (1 point every 4.5 seconds) ❌  
+**Before**: 0.22 Hz (1 point every 4.5 seconds) ❌
 **After**: ~1.5-2.5 Hz (1 point every 0.4-0.7 seconds) ✅
 
 **Result**: ~6-10× faster sensorgram updates! 🚀
@@ -117,7 +117,7 @@ num_scans = int(ACQUISITION_CYCLE_TIME / integration_time_seconds)
 # num_scans = 1.0 / 0.15 = 6.67 ≈ 7 scans
 ```
 
-**Purpose**: Noise reduction through averaging  
+**Purpose**: Noise reduction through averaging
 **Cost**: 7× the raw acquisition time
 
 ### **Secondary Bottlenecks**
@@ -146,7 +146,7 @@ num_scans = int(ACQUISITION_CYCLE_TIME / integration_time_seconds)
 
 ### **Option 1: Reduce Scan Averaging (FASTEST, NOISIER)**
 
-**Current**: 7 scans averaged per channel  
+**Current**: 7 scans averaged per channel
 **Proposed**: 1-3 scans averaged per channel
 
 ```python
@@ -165,7 +165,7 @@ self.num_scans = 3  # Moderate averaging (balanced)
 - ⚠️ More noise in sensorgram (may need post-processing)
 - ⚠️ May affect peak detection accuracy
 
-**Recommendation**: 
+**Recommendation**:
 - Try 3 scans first (balanced approach)
 - Add median filtering window to compensate for noise
 - Monitor peak position stability
@@ -203,7 +203,7 @@ for ch, reading in batch_readings.items():
 
 ### **Option 3: Accelerated Integration Time (FIBER-SPECIFIC)**
 
-**Current**: 150ms integration time (optimized for 100µm fiber)  
+**Current**: 150ms integration time (optimized for 100µm fiber)
 **Mechanism**: `base_integration_time_factor < 1.0`
 
 ```python
@@ -219,7 +219,7 @@ num_scans = 1.0 / 0.075 = 13.3 ≈ 13 scans
 # Time per channel: 75ms × 13 = 975ms (only 13% faster!)
 ```
 
-**Problem**: Dynamic scan calculation negates the speedup!  
+**Problem**: Dynamic scan calculation negates the speedup!
 **Solution**: Fix `num_scans` instead of calculating dynamically
 
 ```python
@@ -243,10 +243,10 @@ def _should_use_fast_mode(self) -> bool:
     """Detect if signal is changing rapidly (binding event)."""
     if len(self.lambda_values[ch]) < 10:
         return False
-    
+
     recent_values = self.lambda_values[ch][-10:]
     signal_change = np.std(recent_values)
-    
+
     # High variance = active event = use fast mode
     return signal_change > CHANGE_THRESHOLD
 
@@ -292,21 +292,21 @@ class KalmanFilter:
         self.measurement_variance = measurement_variance
         self.estimate = None
         self.estimate_error = 1.0
-    
+
     def update(self, measurement):
         if self.estimate is None:
             self.estimate = measurement
             return measurement
-        
+
         # Prediction
         prediction = self.estimate
         prediction_error = self.estimate_error + self.process_variance
-        
+
         # Update
         kalman_gain = prediction_error / (prediction_error + self.measurement_variance)
         self.estimate = prediction + kalman_gain * (measurement - prediction)
         self.estimate_error = (1 - kalman_gain) * prediction_error
-        
+
         return self.estimate
 ```
 
@@ -461,6 +461,6 @@ User injects sample at t=0 (binding event detected)
 
 ---
 
-**Author**: GitHub Copilot  
-**Date**: October 18, 2025  
+**Author**: GitHub Copilot
+**Date**: October 18, 2025
 **Priority**: 🔴 **CRITICAL** - Directly impacts user experience

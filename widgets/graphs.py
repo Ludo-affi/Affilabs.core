@@ -24,19 +24,27 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.static_index = 0
         self.wait_for_reset = False
 
+        # Set white background and black text for better visibility
         setConfigOptions(antialias=True)
+        self.setBackground('w')
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, size="13pt")
-        self.plot.showGrid(x=True, y=True)
+        self.plot.titleLabel.setText(title_string, size="13pt", color='k')
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
         self.plot.setAxisItems()
-        self.plot.setLabel("left", text=f"Lambda ({self.unit})")
-        self.plot.setLabel("bottom", text="Time (s)")
+        self.plot.setLabel("left", text=f"Lambda ({self.unit})", color='k')
+        self.plot.setLabel("bottom", text="Time (s)", color='k')
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.enableAutoRange()
         self.plot.setAutoVisible()
+
+        # Set axis colors to black
+        self.plot.getAxis('left').setPen('k')
+        self.plot.getAxis('left').setTextPen('k')
+        self.plot.getAxis('bottom').setPen('k')
+        self.plot.getAxis('bottom').setTextPen('k')
 
         # set up channel data and plots
         self.plots = {}
@@ -271,20 +279,29 @@ class SegmentGraph(GraphicsLayoutWidget):
 
     def __init__(self, title_string, unit_string, parent=None, has_cursors=False):
         super().__init__(parent=parent)
+        # Set white background and black text for better visibility
         setConfigOptions(antialias=True)
+        self.setBackground('w')
         self.unit = unit_string
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, size="10pt")
+        self.plot.titleLabel.setText(title_string, size="10pt", color='k')
         self.plot.setDownsampling(ds=False, mode="subsample")
-        self.plot.showGrid(x=True, y=True)
-        self.plot.setLabel("left", f"Shift ({unit_string})")
-        self.plot.setLabel("bottom", "Time (s)")
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
+        self.plot.setLabel("left", f"Shift ({unit_string})", color='k')
+        self.plot.setLabel("bottom", "Time (s)", color='k')
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.enableAutoRange()
         self.plot.setAutoVisible(x=True, y=True)
+
+        # Set axis colors to black
+        self.plot.getAxis('left').setPen('k')
+        self.plot.getAxis('left').setTextPen('k')
+        self.plot.getAxis('bottom').setPen('k')
+        self.plot.getAxis('bottom').setTextPen('k')
+
         self.plots = {}
 
         self.wait_to_update = False

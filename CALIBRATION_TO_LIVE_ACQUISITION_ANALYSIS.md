@@ -1,7 +1,7 @@
 # Calibration → Live Acquisition Data Flow Analysis
 
-**Date**: October 18, 2025  
-**Purpose**: Complete end-to-end analysis from calibration to sensorgram display  
+**Date**: October 18, 2025
+**Purpose**: Complete end-to-end analysis from calibration to sensorgram display
 **Goal**: Identify inconsistencies, optimization opportunities, and areas to tighten/clarify
 
 ---
@@ -54,7 +54,7 @@ Step 3: Integration Time Optimization (LEGACY)
 
 Step 4: Integration Time Validation
 ├─ Integration: From Step 3
-├─ ⚠️ Scans: int(MAX_READ_TIME_MS / integration) 
+├─ ⚠️ Scans: int(MAX_READ_TIME_MS / integration)
 │   └─ PROBLEM: Same as Step 3 - not using calculate_dynamic_scans()
 ├─ Purpose: Validate all 4 channels
 └─ ❌ INCONSISTENT - Should use calculate_dynamic_scans()
@@ -154,7 +154,7 @@ self.num_scans = calculate_dynamic_scans(live_integration_seconds)
 # With 150ms integration: 1 scan (150ms total) ✅
 ```
 
-**Impact**: 
+**Impact**:
 - Live mode **5× slower** than calibration (1,050ms vs 200ms per channel)
 - Sensorgram updates at **0.22 Hz** instead of **1.2 Hz**
 - Completely negates 200ms optimization work
@@ -186,7 +186,7 @@ self.state.num_scans = calculate_dynamic_scans(self.state.integration)
 # With 150ms integration: 1 scan (150ms total) ✅
 ```
 
-**Impact**: 
+**Impact**:
 - Steps 3-4 **accidentally work** with long integration times
 - But **fail to average properly** with short integration times
 - **Inconsistent** with Step 7 which uses correct function
@@ -217,7 +217,7 @@ TIME_PER_CHANNEL = 0.2  # 200ms per channel (matches calculate_dynamic_scans tar
 # Target: ≤200ms per channel for responsive sensorgram
 ```
 
-**Impact**: 
+**Impact**:
 - Other code imports `ACQUISITION_CYCLE_TIME` and gets wrong value
 - Live mode uses this wrong value to calculate scans
 - Creates confusion between "design target" (200ms) and "legacy constant" (1000ms)
@@ -307,7 +307,7 @@ CYCLE_TIME = 1.3  # DEPRECATED
 # DEPRECATED: Acquisition timing is now DYNAMIC based on integration time
 # Use calculate_dynamic_scans(integration_time) from utils.spr_calibrator
 # Target: ≤200ms per channel for responsive sensorgram updates
-# 
+#
 # Legacy constants (kept for backward compatibility, but should not be used):
 ACQUISITION_CYCLE_TIME = 1.0 / ACQUISITION_FREQUENCY  # DEPRECATED - use calculate_dynamic_scans()
 TIME_PER_CHANNEL = ACQUISITION_CYCLE_TIME / 4  # DEPRECATED - target is now 200ms/channel
@@ -471,7 +471,7 @@ Replace all hardcoded timing calculations with `calculate_dynamic_scans()`:
 
 ---
 
-**Status**: Ready for implementation  
-**Estimated Time**: 30 minutes (code changes) + 30 minutes (testing)  
-**Risk**: Low (well-defined changes, easy to revert if issues)  
+**Status**: Ready for implementation
+**Estimated Time**: 30 minutes (code changes) + 30 minutes (testing)
+**Risk**: Low (well-defined changes, easy to revert if issues)
 **Benefit**: 5.4× faster sensorgram updates, consistent timing architecture

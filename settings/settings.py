@@ -152,16 +152,34 @@ CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment
 TRANS_SEG_H_REQ = 0.5  # factor for calibrated channel fitting height on both ends
 AUTO_POLARIZE_ENABLE = False  # enable/disable auto-polarization during calibration
-FILTERING_ON = True  # enabled/disable filtering
-MED_FILT_WIN = 5  # default median filter window size
+FILTERING_ON = False  # DISABLED for development - see raw unfiltered data
+MED_FILT_WIN = 5  # default median filter window size (when filtering is enabled)
 
 # Transmittance spectrum denoising (NEW - for improved peak tracking)
 DENOISE_TRANSMITTANCE = True  # Enable Savitzky-Golay denoising on transmittance spectrum
 DENOISE_WINDOW = 11  # Window size for Savitzky-Golay filter (must be odd, ~3nm smoothing)
 DENOISE_POLYORDER = 3  # Polynomial order for Savitzky-Golay filter (cubic)
 
-# Live mode integration time adjustment (to prevent saturation)
-LIVE_MODE_INTEGRATION_FACTOR = 0.5  # Use 50% of calibrated integration time for live measurements
+# Kalman filtering for optimal time-series noise reduction (OPTIONAL - adds ~0.5ms/spectrum)
+# Provides 2-3× better SNR than Savitzky-Golay alone for real-time peak tracking
+KALMAN_FILTER_ENABLED = True  # Enable Kalman filter after Savitzky-Golay denoising
+KALMAN_PROCESS_NOISE = 0.01  # Process noise covariance (Q) - how much we trust the model
+KALMAN_MEASUREMENT_NOISE = 0.1  # Measurement noise covariance (R) - how much we trust the data
+
+# Adaptive peak detection (OPTIONAL - saves ~0.3ms/spectrum)
+# Focuses search on expected SPR wavelength range for faster, more robust peak finding
+ADAPTIVE_PEAK_DETECTION = True  # Enable adaptive peak detection within expected range
+SPR_PEAK_EXPECTED_MIN = 630.0  # nm - minimum expected SPR peak wavelength
+SPR_PEAK_EXPECTED_MAX = 650.0  # nm - maximum expected SPR peak wavelength
+
+# Live mode integration time BOOST (maximize signal while staying under 200ms)
+# Strategy: Calibration uses conservative 50% target to avoid saturation during optimization
+# Live mode can boost signal closer to 80% since we're only measuring, not iterating
+# ⚠️ REDUCED from 75% to 60% to prevent saturation in bright channels (C, D)
+LIVE_MODE_MAX_INTEGRATION_MS = 200.0  # Maximum integration time for live mode (ms)
+LIVE_MODE_TARGET_INTENSITY_PERCENT = 60  # % - target 60% of detector max (was 75%, reduced to prevent saturation)
+LIVE_MODE_MIN_BOOST_FACTOR = 1.0  # Never reduce integration time below calibrated value
+LIVE_MODE_MAX_BOOST_FACTOR = 2.5  # Maximum boost allowed (up to 2.5× calibrated time)
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data

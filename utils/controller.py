@@ -551,20 +551,44 @@ class PicoP4SPR(ControllerBase):
             return False
 
     def set_mode(self, mode="s"):
+        """Set polarizer mode.
+
+        Args:
+            mode: "s" for S-mode (perpendicular), "p" for P-mode (parallel)
+
+        Returns:
+            True if successful, False otherwise
+        """
         try:
             if self.valid():
+                # ✅ FIXED: Correct firmware command mapping
+                # Firmware: "ss\n" = S-mode, "sp\n" = P-mode
                 if mode == "s":
-                    cmd = "sp\n"
+                    cmd = "ss\n"  # ✅ S-mode command
                 else:
-                    cmd = "ss\n"
+                    cmd = "sp\n"  # ✅ P-mode command
+
+                logger.info(f"🔄 Setting polarizer to {mode.upper()}-mode (command: {cmd.strip()})")
+
                 try:
                     if not self.safe_write(cmd):
+                        logger.error(f"❌ Failed to write polarizer command: {cmd.strip()}")
                         return False
-                    return self.safe_read() == b"1"
+
+                    response = self.safe_read()
+                    success = response == b"1"
+
+                    if success:
+                        logger.info(f"✅ Polarizer set to {mode.upper()}-mode successfully")
+                    else:
+                        logger.warning(f"⚠️ Unexpected polarizer response: {response}")
+
+                    return success
                 except PermissionError:
+                    logger.error("❌ Permission error during polarizer command")
                     return False
         except Exception as e:
-            logger.debug(f"error moving polarizer {e}")
+            logger.error(f"❌ Error moving polarizer: {e}")
             return False
 
     def servo_get(self):

@@ -4,7 +4,7 @@ Device Configuration Management System
 Manages device-specific calibration data, hardware parameters, and operational settings.
 Configuration persists across sessions and includes:
 - Hardware identification (LED PCB model, spectrometer serial, etc.)
-- Optical parameters (fiber diameter)
+- Optical parameters (fiber diameter, polarizer type)
 - Timing parameters (LED delays, integration times)
 - Calibration data (dark spectra, reference spectra)
 - Maintenance tracking (last calibration date, cycle counts)
@@ -35,6 +35,7 @@ class DeviceConfiguration:
     Configuration includes:
     - Hardware identification (LED PCB model, spectrometer serial)
     - Optical fiber diameter (200 µm or 100 µm)
+    - Polarizer type (barrel with 2 fixed windows, or round with continuous rotation)
     - Timing parameters (LED delays, integration times)
     - Calibration data (dark, reference, wavelengths)
     - Frequency limits and safety margins
@@ -45,6 +46,7 @@ class DeviceConfiguration:
     VALID_LED_PCB_MODELS = ['luminus_cool_white', 'osram_warm_white']
     VALID_FIBER_DIAMETERS = [100, 200]  # micrometers
     VALID_LED_MODES = [2, 4]  # number of LEDs
+    VALID_POLARIZER_TYPES = ['barrel', 'round']  # barrel (2 fixed windows) or round (continuous rotation)
 
     # Default values
     DEFAULT_CONFIG = {
@@ -62,6 +64,7 @@ class DeviceConfiguration:
             'controller_model': 'Raspberry Pi Pico P4SPR',
             'controller_serial': None,
             'optical_fiber_diameter_um': 200,  # 200 µm or 100 µm
+            'polarizer_type': 'barrel',  # 'barrel' (2 fixed windows) or 'round' (continuous rotation)
         },
         'timing_parameters': {
             'led_a_delay_ms': 0,
@@ -160,13 +163,16 @@ class DeviceConfiguration:
         import copy
         merged = copy.deepcopy(self.DEFAULT_CONFIG)
 
-        # Deep merge
+        # Deep merge - preserve ALL sections from loaded config, not just defaults
         for section, values in config.items():
             if section in merged:
                 if isinstance(values, dict):
                     merged[section].update(values)
                 else:
                     merged[section] = values
+            else:
+                # ✨ CRITICAL: Preserve sections not in defaults (e.g., oem_calibration)
+                merged[section] = values
 
         return merged
 
@@ -187,6 +193,15 @@ class DeviceConfiguration:
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
             raise
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Return configuration as dictionary.
+        
+        Returns:
+            Configuration dictionary
+        """
+        return self.config.copy()
 
     def validate(self) -> tuple[bool, List[str]]:
         """
@@ -211,6 +226,14 @@ class DeviceConfiguration:
             errors.append(
                 f"Invalid optical fiber diameter {fiber_diameter} µm. "
                 f"Valid options: {self.VALID_FIBER_DIAMETERS} µm"
+            )
+
+        # Validate polarizer type
+        polarizer_type = self.config['hardware'].get('polarizer_type', 'barrel')  # Default for backward compatibility
+        if polarizer_type not in self.VALID_POLARIZER_TYPES:
+            errors.append(
+                f"Invalid polarizer type '{polarizer_type}'. "
+                f"Valid options: {self.VALID_POLARIZER_TYPES}"
             )
 
         # Validate timing parameters
@@ -249,6 +272,7 @@ class DeviceConfiguration:
         logger.info("=" * 60)
         logger.info(f"  LED PCB Model: {hw['led_pcb_model']}")
         logger.info(f"  Optical Fiber: {hw['optical_fiber_diameter_um']} µm")
+        logger.info(f"  Polarizer Type: {hw.get('polarizer_type', 'barrel')} ({'2 fixed windows' if hw.get('polarizer_type', 'barrel') == 'barrel' else 'continuous rotation'})")
         logger.info(f"  Spectrometer: {hw['spectrometer_model']} (S/N: {hw['spectrometer_serial'] or 'N/A'})")
         logger.info(f"  Controller: {hw['controller_model']}")
 
@@ -302,6 +326,25 @@ class DeviceConfiguration:
             )
         self.config['hardware']['optical_fiber_diameter_um'] = diameter_um
         logger.info(f"Optical fiber diameter set to: {diameter_um} µm")
+
+    def get_polarizer_type(self) -> str:
+        """Get polarizer type ('barrel' or 'round')."""
+        return self.config['hardware'].get('polarizer_type', 'barrel')  # Default to barrel for backward compatibility
+
+    def set_polarizer_type(self, polarizer_type: str):
+        """
+        Set polarizer type.
+
+        Args:
+            polarizer_type: 'barrel' (2 fixed perpendicular windows) or 'round' (continuous rotation)
+        """
+        if polarizer_type not in self.VALID_POLARIZER_TYPES:
+            raise ValueError(
+                f"Invalid polarizer type '{polarizer_type}'. "
+                f"Valid options: {self.VALID_POLARIZER_TYPES}"
+            )
+        self.config['hardware']['polarizer_type'] = polarizer_type
+        logger.info(f"Polarizer type set to: {polarizer_type}")
 
     def get_spectrometer_serial(self) -> Optional[str]:
         """Get spectrometer serial number."""
