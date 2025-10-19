@@ -410,22 +410,23 @@ class SPRDataProcessor:
     def find_resonance_wavelength(
         self,
         spectrum: np.ndarray,
-        window: int = 165,
+        window: int = 165,  # Kept for backward compatibility
     ) -> float:
-        """Find SPR resonance wavelength via zero-crossing of derivative.
+        """Find SPR resonance wavelength by locating minimum transmission.
 
-        The SPR resonance corresponds to the minimum transmission, which
-        occurs at the zero-crossing of the derivative (dT/dλ = 0).
+        IMPROVED METHOD: Directly finds the wavelength with minimum transmission
+        instead of using derivative zero-crossing. This is simpler, faster, and
+        more robust to noise.
 
         Process:
-        1. Calculate smoothed spectrum derivative
-        2. Find zero-crossing point (optionally within expected range)
-        3. Fit linear regression around zero-crossing
-        4. Interpolate exact wavelength
+        1. Find search range from adaptive peak detection settings
+        2. Locate minimum transmission in search range
+        3. Apply parabolic interpolation for sub-pixel accuracy
+        4. Validate result
 
         Args:
             spectrum: Transmission spectrum
-            window: Window size around zero-crossing for linear fit (default: 165)
+            window: (unused, kept for compatibility)
 
         Returns:
             Resonance wavelength in nm, or np.nan if detection fails
@@ -439,16 +440,12 @@ class SPRDataProcessor:
                 SPR_PEAK_EXPECTED_MAX,
             )
 
-            # Calculate derivative
-            derivative = self.calculate_derivative(spectrum)
-
-            # Apply adaptive peak detection if enabled
+            # Determine search range
             search_start = 0
             search_end = len(spectrum)
 
             if ADAPTIVE_PEAK_DETECTION:
                 # Find indices corresponding to expected wavelength range
-                # This narrows the search space for faster, more robust peak finding
                 expected_min_idx = int(np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MIN))
                 expected_max_idx = int(np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MAX))
 
@@ -467,47 +464,65 @@ class SPRDataProcessor:
                         f"Searching full spectrum."
                     )
 
-            # Find zero-crossing (where derivative changes sign) within search range
-            derivative_search = derivative[search_start:search_end]
-            zero_idx_relative = derivative_search.searchsorted(0)
-            zero_idx = int(search_start + zero_idx_relative)
+            # Extract search region
+            search_spectrum = spectrum[search_start:search_end]
+            search_wavelengths = self.wave_data[search_start:search_end]
 
-            # Validate zero-crossing index
-            if zero_idx <= 0 or zero_idx >= len(spectrum):
-                logger.debug(f"Zero-crossing out of bounds: {zero_idx}")
+            if len(search_spectrum) < 3:
+                logger.debug(f"Search region too small: {len(search_spectrum)} points")
                 return np.nan
 
-            # Define window around zero-crossing
-            start = int(max(zero_idx - window, 0))
-            end = int(min(zero_idx + window, len(spectrum) - 1))
+            # Find minimum transmission in search region
+            min_idx = int(np.argmin(search_spectrum))
 
-            if end - start < 3:
-                logger.debug(f"Window too small for linear regression: {end - start}")
-                return np.nan
+            # Parabolic interpolation for sub-pixel accuracy
+            # Use 3 points around minimum to fit parabola
+            if 0 < min_idx < len(search_spectrum) - 1:
+                try:
+                    # Extract 3 points: [idx-1, idx, idx+1]
+                    y = search_spectrum[min_idx-1:min_idx+2]
+                    x = search_wavelengths[min_idx-1:min_idx+2]
 
-            # Linear regression: derivative = slope * wavelength + intercept
-            result = linregress(
-                self.wave_data[start:end],
-                derivative[start:end],
-            )
+                    # Fit parabola: y = ax² + bx + c
+                    # Minimum occurs at: x_min = -b/(2a)
+                    A = np.vstack([x**2, x, np.ones_like(x)]).T
+                    coeffs, residuals, rank, s = np.linalg.lstsq(A, y, rcond=None)
+                    a, b, c = coeffs
 
-            # Zero-crossing wavelength: where derivative = 0
-            # 0 = slope * lambda + intercept
-            # lambda = -intercept / slope
-            if result.slope == 0:
-                logger.debug("Zero slope in linear regression")
-                return np.nan
+                    # Check if parabola opens upward (a > 0) - valid minimum
+                    if a > 0:
+                        resonance_wavelength = -b / (2 * a)
 
-            resonance_wavelength = -result.intercept / result.slope
+                        # Validate interpolated result is near the minimum
+                        # Should be within ±5nm of discrete minimum
+                        discrete_min_wavelength = search_wavelengths[min_idx]
+                        if abs(resonance_wavelength - discrete_min_wavelength) < 5.0:
+                            # Final validation: within wavelength bounds
+                            if self.wave_data[0] <= resonance_wavelength <= self.wave_data[-1]:
+                                return resonance_wavelength
+                            else:
+                                logger.debug(
+                                    f"Parabolic fit out of wavelength bounds: {resonance_wavelength:.2f} nm"
+                                )
+                        else:
+                            logger.debug(
+                                f"Parabolic fit too far from discrete minimum: "
+                                f"{resonance_wavelength:.2f} vs {discrete_min_wavelength:.2f} nm"
+                            )
+                except Exception as e:
+                    logger.debug(f"Parabolic interpolation failed: {e}")
+
+            # Fallback: return wavelength at discrete minimum
+            resonance_wavelength = search_wavelengths[min_idx]
 
             # Validate result is within reasonable range
-            if not (self.wave_data[0] <= resonance_wavelength <= self.wave_data[-1]):
+            if self.wave_data[0] <= resonance_wavelength <= self.wave_data[-1]:
+                return resonance_wavelength
+            else:
                 logger.debug(
-                    f"Resonance wavelength out of range: {resonance_wavelength:.2f} nm",
+                    f"Resonance wavelength out of bounds: {resonance_wavelength:.2f} nm"
                 )
                 return np.nan
-
-            return resonance_wavelength
 
         except Exception as e:
             logger.exception(f"Error finding resonance wavelength: {e}")
