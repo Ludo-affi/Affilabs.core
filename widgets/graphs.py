@@ -125,8 +125,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 logger.debug(f"📊 Plotting data: {total_points} total points across channels")
 
             for ch in CH_LIST:
-                y_data = deepcopy(lambda_values[ch])
-                x_data = deepcopy(lambda_times[ch])
+                # ✨ O4 Optimization: Use array slicing (zero-copy) instead of deepcopy
+                # We slice data anyway, so no need to copy first
+                y_data = lambda_values[ch]
+                x_data = lambda_times[ch]
                 if ch == "a":
                     self.check_subsample(len(y_data))
                     if STATIC_PLOT:

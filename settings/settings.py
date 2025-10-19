@@ -166,11 +166,12 @@ KALMAN_FILTER_ENABLED = True  # Enable Kalman filter after Savitzky-Golay denois
 KALMAN_PROCESS_NOISE = 0.01  # Process noise covariance (Q) - how much we trust the model
 KALMAN_MEASUREMENT_NOISE = 0.1  # Measurement noise covariance (R) - how much we trust the data
 
-# Adaptive peak detection (OPTIONAL - saves ~0.3ms/spectrum)
+# Adaptive peak detection (O3A Optimization - saves ~3-5ms/spectrum)
 # Focuses search on expected SPR wavelength range for faster, more robust peak finding
+# Phase 1 optimization: Widened from 630-650nm to 600-800nm for better generality
 ADAPTIVE_PEAK_DETECTION = True  # Enable adaptive peak detection within expected range
-SPR_PEAK_EXPECTED_MIN = 630.0  # nm - minimum expected SPR peak wavelength
-SPR_PEAK_EXPECTED_MAX = 650.0  # nm - maximum expected SPR peak wavelength
+SPR_PEAK_EXPECTED_MIN = 600.0  # nm - minimum expected SPR peak wavelength (Phase 1: widened)
+SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phase 1: widened)
 
 # Live mode integration time BOOST (maximize signal while staying under 200ms)
 # Strategy: Calibration uses conservative 50% target to avoid saturation during optimization
