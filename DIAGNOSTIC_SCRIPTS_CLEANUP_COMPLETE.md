@@ -1,7 +1,7 @@
 # Diagnostic Scripts Cleanup Complete
 
-**Date**: October 19, 2025  
-**Version**: Affilabs 0.1.0 "The Core"  
+**Date**: October 19, 2025
+**Version**: Affilabs 0.1.0 "The Core"
 **Status**: ✅ Complete
 
 ## Summary
@@ -93,7 +93,7 @@ tools/diagnostic_scripts/:
 
 Essential scripts kept in root directory:
 - **`run_app.py`** - Main application launcher
-- **`run_app.bat`** - Windows convenience launcher  
+- **`run_app.bat`** - Windows convenience launcher
 - **`factory_provision_device.py`** - Factory device setup
 - **`setup_device.py`** - Device configuration
 - **`install_config.py`** - Configuration installer
@@ -135,7 +135,7 @@ From project root:
 # Example: Scan polarizer positions
 python tools/diagnostic_scripts/scan_polarizer_positions.py
 
-# Example: Check calibration history  
+# Example: Check calibration history
 python tools/diagnostic_scripts/check_calib.py
 ```
 
@@ -212,6 +212,6 @@ git log --follow tools/diagnostic_scripts/scan_polarizer_positions.py
 
 ---
 
-**Status**: ✅ Diagnostic script cleanup complete  
-**Workspace**: Production-ready for Affilabs 0.1.0 release  
+**Status**: ✅ Diagnostic script cleanup complete
+**Workspace**: Production-ready for Affilabs 0.1.0 release
 **Next Steps**: Optional - review sample data files, build specs

@@ -121,7 +121,7 @@ python tools/diagnostic_scripts/check_calib.py
 
 **Status**: Archived as of Affilabs 0.1.0 (2025-10-19)
 
-**Future Updates**: 
+**Future Updates**:
 - Scripts frozen at v0.1.0 state
 - May be updated for future research/development
 - Not part of regular maintenance cycle
@@ -139,5 +139,5 @@ python tools/diagnostic_scripts/check_calib.py
 
 ---
 
-**Affilabs 0.1.0 "The Core"**  
+**Affilabs 0.1.0 "The Core"**
 Diagnostic Scripts Archive - October 2025
