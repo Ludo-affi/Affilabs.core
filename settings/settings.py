@@ -35,7 +35,7 @@ def get_version() -> str:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         spec_file = Path(sys._MEIPASS) / "main.spec"  # noqa: SLF001
     else:
-        spec_file = Path("main.spec")
+        spec_file = Path("build/main.spec")
     match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
     if match is None:
         msg = "Could not find version in spec file."
