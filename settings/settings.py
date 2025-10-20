@@ -211,18 +211,18 @@ TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks r
 # =============================================================================
 
 # Integration time and scan averaging for optimal noise vs speed balance
-# ✨ PHASE 5 AGGRESSIVE: Targeting 1.1s cycle time to match old software
+# ✨ OVERHEAD INVESTIGATION: Old software uses 200ms/spec but only has 300ms overhead
+# New software has 1180ms overhead (880ms MORE) - this is the real problem!
 # 
-# SPEED PRESETS:
-# - ULTRA FAST: 30ms × 3 scans = 90ms/channel × 4 = 360ms + overhead = ~1.0s total ⚡⚡⚡
-# - AGGRESSIVE: 35ms × 3 scans = 105ms/channel × 4 = 420ms + overhead = ~1.1s total ⚡⚡
-# - BALANCED:   40ms × 4 scans = 160ms/channel × 4 = 640ms + overhead = ~1.2s total ⚡
-# - SAFE:       50ms × 4 scans = 200ms/channel × 4 = 800ms + overhead = ~1.4s total
+# OLD SOFTWARE: 200ms × 4 channels = 800ms acquisition + 300ms overhead = 1.1s total
+# NEW SOFTWARE: 200ms × 4 channels = 800ms acquisition + 1180ms overhead = 2.0s total
 #
-# Current target: Match old software at 1.1s/cycle
-INTEGRATION_TIME_MS = 35.0      # ✨ AGGRESSIVE: 35ms (was 40ms, was 50ms baseline)
-NUM_SCANS_PER_ACQUISITION = 3   # ✨ AGGRESSIVE: 3 scans (was 4) - reduces noise averaging but gains speed
-# Total acquisition time = 35ms × 3 = 105ms per channel (4 channels = 420ms base + ~680ms overhead = 1.1s)
+# CONCLUSION: Don't reduce integration further - FIX THE OVERHEAD!
+# Using baseline settings until overhead identified and fixed
+INTEGRATION_TIME_MS = 50.0      # Baseline (matches old software 200ms/4 scans)
+NUM_SCANS_PER_ACQUISITION = 4   # Baseline (matches old software averaging)
+# Total acquisition time = 50ms × 4 = 200ms per channel (same as old software)
+# Target: Reduce overhead from 1180ms to 300ms (880ms savings!) then re-optimize integration
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
