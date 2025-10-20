@@ -1,7 +1,7 @@
 # GUI Rendering Optimization Opportunities
 
-**Date**: October 19, 2025  
-**Focus**: Display/Update Performance on GUI Side  
+**Date**: October 19, 2025
+**Focus**: Display/Update Performance on GUI Side
 **Current State**: After Phase 1 optimizations (data acquisition already optimized)
 
 ---
@@ -138,7 +138,7 @@ for ch in CH_LIST:
     # Skip if channel is hidden
     if not self.plots[ch].isVisible():
         continue
-    
+
     y_data = lambda_values[ch]
     x_data = lambda_times[ch]
     self.plots[ch].setData(y=y_data, x=x_data)
@@ -169,18 +169,18 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # ...
         self.gui_update_counter = 0
         self.gui_update_interval = 2  # Update every 2nd cycle
-    
+
     def update(self, lambda_values, lambda_times):
         # Increment counter
         self.gui_update_counter += 1
-        
+
         # Skip update if not time yet
         if self.gui_update_counter < self.gui_update_interval:
             return
-        
+
         # Reset counter and do update
         self.gui_update_counter = 0
-        
+
         # ... normal update logic ...
 ```
 
@@ -392,7 +392,7 @@ for ch, x, y in updates:
 - Enable hardware rendering
 - Time saved: 3-10× for large datasets
 - Risk: Medium (compatibility)
-- **Requires**: 
+- **Requires**:
   - Install PyOpenGL: `pip install PyOpenGL PyOpenGL_accelerate`
   - Hardware testing on target machines
   - Fallback mechanism
@@ -433,17 +433,17 @@ def update(self, lambda_values, lambda_times):
     try:
         self.updating = True
         # ... existing code ...
-        
+
         for ch in CH_LIST:
             # ✨ G3: Skip hidden channels (saves 2ms per channel)
             if not self.plots[ch].isVisible():
                 logger.debug(f"Skipping hidden channel {ch}")
                 continue
-            
+
             # Only process visible channels
             y_data = lambda_values[ch]
             x_data = lambda_times[ch]
-            
+
             # ... rest of update logic ...
             self.plots[ch].setData(y=y_data, x=x_data)
 ```
@@ -456,7 +456,7 @@ def update(self, lambda_values, lambda_times):
 ```python
 def __init__(self, title_string):
     super().__init__()
-    
+
     self.subsample_threshold = 301
     self.subsample_target = 150
     self.subsampling = False
@@ -493,7 +493,7 @@ def update(self, lambda_values, lambda_times):
     if self.gui_update_counter < self.gui_update_interval:
         return  # Skip this update
     self.gui_update_counter = 0
-    
+
     # ... normal update logic ...
 ```
 
@@ -518,7 +518,7 @@ from settings.settings import ENABLE_OPENGL
 
 def __init__(self, title_string):
     super().__init__()
-    
+
     # ✨ G2: OpenGL acceleration (if available)
     if ENABLE_OPENGL:
         try:
@@ -527,7 +527,7 @@ def __init__(self, title_string):
             logger.info("✅ OpenGL acceleration enabled")
         except Exception as e:
             logger.warning(f"⚠️ OpenGL acceleration failed: {e}. Falling back to software rendering.")
-    
+
     # ... rest of initialization ...
 ```
 

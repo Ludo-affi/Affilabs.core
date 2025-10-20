@@ -132,7 +132,7 @@ class SPRDataProcessor:
         self.wave_data = wave_data
         self.fourier_weights = fourier_weights
         self.med_filt_win = self._ensure_odd(med_filt_win)
-        
+
         # Initialize temporal smoother for enhanced peak tracking (persistent across calls)
         self.temporal_smoother = None
         try:
@@ -473,7 +473,7 @@ class SPRDataProcessor:
                         POLYNOMIAL_DEGREE,
                         POLYNOMIAL_FIT_RANGE,
                     )
-                    
+
                     # Call enhanced function (returns tuple: peak, diagnostics)
                     enhanced_result, diagnostics = find_resonance_wavelength_enhanced(
                         spectrum=spectrum,
@@ -483,17 +483,17 @@ class SPRDataProcessor:
                         search_range=POLYNOMIAL_FIT_RANGE,
                         temporal_smoother=self.temporal_smoother,
                     )
-                    
+
                     # If enhanced method succeeded, return result
                     if not np.isnan(enhanced_result):
                         logger.debug(f"Enhanced peak tracking: {enhanced_result:.3f} nm")
                         return float(enhanced_result)
                     else:
                         logger.debug("Enhanced peak tracking returned NaN, using fallback method")
-                
+
                 except Exception as e:
                     logger.warning(f"Enhanced peak tracking error: {e}, using fallback method")
-            
+
             # Fallback to direct minimum method
             from settings.settings import (
                 ADAPTIVE_PEAK_DETECTION,

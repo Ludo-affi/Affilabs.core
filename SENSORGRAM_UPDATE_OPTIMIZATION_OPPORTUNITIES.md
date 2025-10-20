@@ -1,7 +1,7 @@
 # Sensorgram Update Speed Optimization Analysis
 
-**Date**: October 19, 2025  
-**Version**: Affilabs 0.1.0 "The Core"  
+**Date**: October 19, 2025
+**Version**: Affilabs 0.1.0 "The Core"
 **Goal**: Reduce latency from spectrum acquisition → GUI update
 
 ---
@@ -107,21 +107,21 @@ from concurrent.futures import ThreadPoolExecutor
 
 def grab_data(self):
     # ... initialization ...
-    
+
     # Create thread pool for parallel channel processing (size = 4 channels)
     with ThreadPoolExecutor(max_workers=4) as executor:
         while not self._b_kill.is_set():
             # ... first_run logic ...
-            
+
             ch_list = self._get_active_channels()
-            
+
             # Submit all channels for parallel processing
             futures = {}
             for ch in CH_LIST:
                 if self._should_read_channel(ch, ch_list):
                     future = executor.submit(self._read_channel_data, ch)
                     futures[ch] = future
-            
+
             # Wait for all channels to complete
             results = {}
             for ch, future in futures.items():
@@ -131,13 +131,13 @@ def grab_data(self):
                 except Exception as e:
                     logger.error(f"Channel {ch} failed: {e}")
                     results[ch] = np.nan
-            
+
             # Update lambda data and filtering (serial - fast anyway)
             for ch in CH_LIST:
                 fit_lambda = results.get(ch, np.nan)
                 self._update_lambda_data(ch, fit_lambda)
                 self._apply_filtering(ch, ch_list, fit_lambda)
-            
+
             # Emit updates
             if not self._b_stop.is_set():
                 self._emit_data_updates()
@@ -192,11 +192,11 @@ def grab_data(self):
 
 def calculate_transmission(self, p_pol, s_ref, dark_noise, denoise=True):
     # ... calculation ...
-    
+
     if denoise:
         # Apply denoising (for spectroscopy display)
         trans_spectrum = self._denoise_spectrum(trans_spectrum)
-    
+
     return trans_spectrum
 
 # In _read_channel_data():
@@ -239,11 +239,11 @@ def find_resonance_wavelength(self, spectrum, window, expected_range=(600, 800))
     mask = (self.wavelengths >= expected_range[0]) & (self.wavelengths <= expected_range[1])
     cropped_spectrum = spectrum[mask]
     cropped_wavelengths = self.wavelengths[mask]
-    
+
     # Find peak in reduced range (2-3× faster)
     min_idx = np.argmin(cropped_spectrum)
     peak_wavelength = cropped_wavelengths[min_idx]
-    
+
     return peak_wavelength
 ```
 
@@ -321,7 +321,7 @@ for ch in CH_LIST:
     # Use array slicing (creates view, not copy)
     y_data = lambda_values[ch][self.static_index:]
     x_data = lambda_times[ch][self.static_index:]
-    
+
     # pyqtgraph setData() doesn't mutate input - view is safe
     self.plots[ch].setData(y=y_data, x=x_data)
 ```
@@ -332,11 +332,11 @@ for ch in CH_LIST:
 def update_data(self, app_data):
     # Don't copy - just store reference
     self.data = app_data  # Remove deepcopy
-    
+
     # Create views for plotting (zero-copy)
     y_data = app_data["lambda_values"]
     x_data = app_data["lambda_times"]
-    
+
     self.full_segment_view.update(y_data, x_data)
 ```
 
@@ -372,7 +372,7 @@ def _emit_data_updates(self):
         'spectroscopy': self.spectroscopy_data(),
         'timestamp': time.time()
     }
-    
+
     # Single emission (reduces signal overhead)
     self.update_data_signal.emit(combined_data)
 
@@ -384,7 +384,7 @@ def _create_ui_signal_emitter(self, signal_name='update_data_signal'):
             self.app.main_window.sensorgram.update_data(data['sensorgram'])
         if hasattr(self.app.main_window, 'spectroscopy'):
             self.app.main_window.spectroscopy.update_data(data['spectroscopy'])
-    
+
     return type('SignalEmitter', (), {'emit': emit_to_ui})()
 ```
 
@@ -414,7 +414,7 @@ def _create_ui_signal_emitter(self, signal_name='update_data_signal'):
 def _emit_data_updates(self):
     # Always emit sensorgram (real-time display)
     self.update_live_signal.emit(self.sensorgram_data())
-    
+
     # Only emit spectroscopy if tab is visible
     if self.spectroscopy_tab_visible:
         self.update_spec_signal.emit(self.spectroscopy_data())
@@ -452,7 +452,7 @@ def set_spectroscopy_visible(self, visible: bool):
 # Only update visible channels
 def update(self, lambda_values, lambda_times, visible_channels=None):
     visible_channels = visible_channels or CH_LIST
-    
+
     for ch in visible_channels:  # Only update visible
         y_data = lambda_values[ch][self.static_index:]
         x_data = lambda_times[ch][self.static_index:]
@@ -469,7 +469,7 @@ def update(self, lambda_values, lambda_times):
     self.update_counter += 1
     if self.update_counter < self.update_interval:
         return  # Skip this update
-    
+
     self.update_counter = 0
     # ... normal update logic ...
 ```
@@ -524,10 +524,10 @@ def _update_lambda_data(self, ch, fit_lambda):
     if self.data_index >= BUFFER_SIZE:
         # Extend buffer if needed (rare)
         self._extend_buffers()
-    
+
     self.lambda_values[ch][self.data_index] = fit_lambda
     self.lambda_times[ch][self.data_index] = time.time() - self.exp_start
-    
+
     self.data_index += 1
 
 # In sensorgram_data():
@@ -685,10 +685,10 @@ import time
 class PerformanceTimer:
     def __init__(self):
         self.times = {}
-    
+
     def start(self, label):
         self.times[label] = time.perf_counter()
-    
+
     def stop(self, label):
         if label in self.times:
             elapsed = (time.perf_counter() - self.times[label]) * 1000
@@ -751,6 +751,6 @@ After each optimization, validate:
 
 ---
 
-**Author**: GitHub Copilot  
-**Date**: October 19, 2025  
+**Author**: GitHub Copilot
+**Date**: October 19, 2025
 **Status**: Analysis complete - ready for implementation

@@ -1,6 +1,6 @@
 # Batch Processing Status and Opportunities
 
-**Date**: 2025-10-19  
+**Date**: 2025-10-19
 **Question**: "Is there any processing optimization we can do using batch processing of spectra or LEDs?"
 
 ---
@@ -22,7 +22,7 @@
 
 **Status**: **FULLY DEPLOYED** in production
 
-**Location**: 
+**Location**:
 - `utils/spr_calibrator.py` - Method: `_activate_channel_batch()` (line 821)
 - `utils/spr_data_acquisition.py` - Method: `_activate_channel_batch()` (line 807)
 
@@ -99,8 +99,8 @@ average = np.mean(spectra, axis=0)  # Vectorized C code (fast)
 - Per-channel acquisition: 255ms → 247ms (3% faster)
 - 4-channel cycle: 1020ms → 990ms (30ms saved)
 
-**Effort**: 2-3 hours  
-**Risk**: Very low (proven method from calibration)  
+**Effort**: 2-3 hours
+**Risk**: Very low (proven method from calibration)
 **Priority**: 🟡 MEDIUM (quick win)
 
 **Documentation**: See `BATCH_VECTORIZED_SPECTRUM_OPTIMIZATION.md` for full implementation plan
@@ -176,23 +176,23 @@ If you want maximum impact, combine with other optimizations:
 
 ### 3. Array-Based Dark Noise Correction
 
-**Current**: Applied per-channel after averaging  
-**Potential**: Batch correct all channels together  
-**Benefit**: Minimal (already fast at ~3ms)  
+**Current**: Applied per-channel after averaging
+**Potential**: Batch correct all channels together
+**Benefit**: Minimal (already fast at ~3ms)
 **Priority**: 🟢 LOW (not worth the effort)
 
 ### 4. Batch Spectral Filtering
 
-**Current**: Applied per-scan in loop  
-**Status**: ✅ **ALREADY OPTIMIZED** by V1 proposal  
-**Reason**: Wavelength mask computed once, applied to all scans  
+**Current**: Applied per-scan in loop
+**Status**: ✅ **ALREADY OPTIMIZED** by V1 proposal
+**Reason**: Wavelength mask computed once, applied to all scans
 **Benefit**: Included in V1 (saves ~2ms)
 
 ### 5. Batch Peak Finding
 
-**Current**: Sequential per-channel  
-**Potential**: Find peaks for all channels in parallel  
-**Benefit**: Minimal (~2ms saved, but adds complexity)  
+**Current**: Sequential per-channel
+**Potential**: Find peaks for all channels in parallel
+**Benefit**: Minimal (~2ms saved, but adds complexity)
 **Priority**: 🟢 LOW (covered by O1 parallel optimization)
 
 ---
@@ -201,11 +201,11 @@ If you want maximum impact, combine with other optimizations:
 
 **Q**: "Is there any processing optimization we can do using batch processing of spectra or LEDs?"
 
-**A**: 
+**A**:
 - **LEDs**: ✅ **DONE** - Batch control fully implemented (15× speedup achieved)
 - **Spectra**: ⚠️ **PARTIALLY DONE** - Vectorized averaging exists in calibration but not in live mode
 
-**Next Step**: 
+**Next Step**:
 Apply vectorized spectrum averaging to live mode (2-3 hours, 3% speedup, very low risk)
 
 See `BATCH_VECTORIZED_SPECTRUM_OPTIMIZATION.md` for complete implementation guide.

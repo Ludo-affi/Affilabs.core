@@ -373,24 +373,24 @@ class AfterglowCorrection:
         for channel in self.tau_interpolators.keys():
             # Interpolate τ for this integration time
             tau_interp = self.tau_interpolators[channel]
-            
+
             # Clamp to calibrated range
             int_time = np.clip(
                 integration_time_ms,
                 self.int_time_range_ms[0],
                 self.int_time_range_ms[1]
             )
-            
+
             tau = float(tau_interp(int_time))
             max_tau = max(max_tau, tau)
-        
+
         # Calculate delay for target residual: delay = -τ × ln(residual/100)
         # residual% = 100 × exp(-delay/τ)  →  delay = -τ × ln(residual/100)
         delay_ms = -max_tau * np.log(target_residual_percent / 100.0)
-        
+
         # Add safety margin (10%) and convert to seconds
         delay_s = (delay_ms * 1.1) / 1000.0
-        
+
         logger.debug(
             f"📊 Optimal LED delay calculation:\n"
             f"   Integration time: {integration_time_ms:.1f}ms\n"
@@ -399,7 +399,7 @@ class AfterglowCorrection:
             f"   Calculated delay: {delay_ms:.1f}ms\n"
             f"   With 10% safety margin: {delay_s*1000:.1f}ms ({delay_s:.3f}s)"
         )
-        
+
         return delay_s
 
     def get_calibration_info(self) -> dict:

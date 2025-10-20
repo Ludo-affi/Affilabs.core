@@ -41,5 +41,5 @@ To add new sample data:
 
 ---
 
-**Affilabs 0.1.0 "The Core"**  
+**Affilabs 0.1.0 "The Core"**
 Sample Data - October 2025

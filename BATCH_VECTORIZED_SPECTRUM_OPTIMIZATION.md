@@ -1,21 +1,21 @@
 # Batch Processing Optimization: Vectorized Spectrum Averaging in Live Mode
 
-**Date**: 2025-10-19  
-**Status**: PROPOSAL - Ready to Implement  
-**Priority**: 🟡 MEDIUM (Quick Win)  
-**Estimated Time**: 2-3 hours  
+**Date**: 2025-10-19
+**Status**: PROPOSAL - Ready to Implement
+**Priority**: 🟡 MEDIUM (Quick Win)
+**Estimated Time**: 2-3 hours
 **Expected Speedup**: 2-3× faster multi-scan averaging (6-10ms savings per channel)
 
 ---
 
 ## Executive Summary
 
-**Current State**: 
+**Current State**:
 - ✅ Batch LED control: IMPLEMENTED (15× speedup achieved)
 - ✅ Vectorized spectrum averaging: EXISTS in calibration code
 - ❌ Vectorized spectrum averaging: NOT USED in live data acquisition
 
-**Opportunity**: 
+**Opportunity**:
 Apply the proven vectorized spectrum averaging method from calibration to live mode for 2-3× faster multi-scan averaging.
 
 **Impact**:
@@ -39,7 +39,7 @@ for scan in range(num_scans):
         int_data_sum = reading
     else:
         int_data_sum += reading  # Python-level addition
-        
+
 average = int_data_sum / num_scans  # Final division
 ```
 
@@ -49,7 +49,7 @@ average = int_data_sum / num_scans  # Final division
 spectra_stack = np.empty((num_scans, spectrum_length))
 for scan in range(num_scans):
     spectra_stack[scan] = read_spectrum()
-    
+
 average = np.mean(spectra_stack, axis=0)  # Vectorized C code
 ```
 
@@ -79,7 +79,7 @@ average = np.mean(spectra_stack, axis=0)  # Vectorized C code
 
 ### Location 1: Calibration (VECTORIZED ✅)
 
-**File**: `utils/spr_calibrator.py`  
+**File**: `utils/spr_calibrator.py`
 **Method**: `_acquire_averaged_spectrum_vectorized()` (lines 1205-1275)
 
 ```python
@@ -91,7 +91,7 @@ def _acquire_averaged_spectrum_vectorized(
     description: str = "spectrum"
 ) -> Optional[np.ndarray]:
     """Vectorized spectrum acquisition and averaging.
-    
+
     Performance:
         Old method: for loop with accumulation (slow)
         New method: vectorized stack + mean (2-3× faster)
@@ -100,25 +100,25 @@ def _acquire_averaged_spectrum_vectorized(
     first_spectrum = self.usb.read_intensity()
     if apply_filter:
         first_spectrum = self._apply_spectral_filter(first_spectrum)
-    
+
     spectrum_length = len(first_spectrum)
     spectra_stack = np.empty((num_scans, spectrum_length), dtype=first_spectrum.dtype)
     spectra_stack[0] = first_spectrum
-    
+
     # Acquire remaining spectra
     for i in range(1, num_scans):
         raw_spectrum = self.usb.read_intensity()
         if apply_filter:
             raw_spectrum = self._apply_spectral_filter(raw_spectrum)
         spectra_stack[i] = raw_spectrum
-    
+
     # ✨ VECTORIZED AVERAGING (2-3× faster)
     averaged_spectrum = np.mean(spectra_stack, axis=0)
-    
+
     # Optionally subtract dark noise
     if subtract_dark and self.state.dark_noise is not None:
         averaged_spectrum = averaged_spectrum - self.state.dark_noise
-    
+
     return averaged_spectrum
 ```
 
@@ -128,38 +128,38 @@ def _acquire_averaged_spectrum_vectorized(
 
 ### Location 2: Live Data Acquisition (SEQUENTIAL ❌)
 
-**File**: `utils/spr_data_acquisition.py`  
+**File**: `utils/spr_data_acquisition.py`
 **Method**: `_read_channel_data()` (lines 325-420)
 
 ```python
 def _read_channel_data(self, ch: str) -> float:
     """Read and process data from a specific channel."""
     int_data_sum: np.ndarray | None = None
-    
+
     # ✨ Batch LED control (ALREADY OPTIMIZED)
     self._activate_channel_batch(ch)
     time.sleep(self.led_delay)
-    
+
     # ❌ SEQUENTIAL AVERAGING (NOT OPTIMIZED)
     for _scan in range(self.num_scans):
         reading = self.usb.read_intensity()
-        
+
         # Apply spectral filter...
         # ... wavelength mask processing ...
         int_data_single = reading[wavelength_mask]
-        
+
         # ❌ Sequential accumulation (slow)
         if int_data_sum is None:
             int_data_sum = int_data_single
         else:
             int_data_sum += int_data_single  # Python-level addition
-    
+
     # Final average
     int_data_avg = int_data_sum / self.num_scans
-    
+
     # Apply dark noise correction
     int_data_corrected = int_data_avg - dark_data
-    
+
     # ... rest of processing ...
 ```
 
@@ -189,55 +189,55 @@ def _acquire_averaged_spectrum(
     description: str = "spectrum"
 ) -> Optional[np.ndarray]:
     """Acquire and average multiple spectra using vectorization.
-    
+
     Args:
         num_scans: Number of spectra to acquire and average
         wavelength_mask: Boolean mask for spectral filtering
         description: Description for logging
-    
+
     Returns:
         Averaged spectrum (filtered), or None if error
-    
+
     Performance:
         Sequential: 10-15ms for 10 scans
         Vectorized: 4-6ms for 10 scans (2-3× faster)
     """
     if num_scans <= 0:
         return None
-    
+
     try:
         # Read first spectrum to determine size
         first_reading = self.usb.read_intensity()
         if first_reading is None:
             logger.error(f"Failed to read first {description}")
             return None
-        
+
         # Apply wavelength filter
         first_spectrum = first_reading[wavelength_mask]
         spectrum_length = len(first_spectrum)
-        
+
         # Pre-allocate array for all spectra (vectorization key!)
         spectra_stack = np.empty((num_scans, spectrum_length), dtype=first_spectrum.dtype)
         spectra_stack[0] = first_spectrum
-        
+
         # Acquire remaining spectra
         for i in range(1, num_scans):
             if self._b_stop.is_set():
                 return None
-            
+
             reading = self.usb.read_intensity()
             if reading is None:
                 logger.warning(f"Failed to read {description} scan {i+1}/{num_scans}")
                 return None
-            
+
             # Apply wavelength filter to each scan
             spectra_stack[i] = reading[wavelength_mask]
-        
+
         # ✨ VECTORIZED AVERAGING (2-3× faster than sequential)
         averaged_spectrum = np.mean(spectra_stack, axis=0)
-        
+
         return averaged_spectrum
-    
+
     except Exception as e:
         logger.error(f"Error in vectorized spectrum acquisition: {e}")
         return None
@@ -274,7 +274,7 @@ def _read_channel_data(self, ch: str) -> float:
 
             # Get wavelengths and create mask...
             # ... (lines 350-385) ...
-            
+
             # ❌ Sequential accumulation
             if int_data_sum is None:
                 int_data_sum = int_data_single
@@ -283,7 +283,7 @@ def _read_channel_data(self, ch: str) -> float:
 
         # Average the accumulated scans
         int_data_avg = int_data_sum / self.num_scans
-        
+
         # ... rest of processing ...
 ```
 
@@ -489,7 +489,7 @@ TOTAL:                     247.5ms  ✅ 7.8ms saved per channel
 **Approach**: Side-by-side comparison
 
 1. **Save reference data** from current sequential method
-2. **Implement vectorized version** 
+2. **Implement vectorized version**
 3. **Run both methods** on same hardware
 4. **Compare results**: Peak wavelengths, sensorgram, spectra
 5. **Measure timing**: Confirm 2-3× speedup in averaging step
@@ -566,24 +566,24 @@ def _acquire_averaged_spectrum(
     description: str = "spectrum"
 ) -> Optional[np.ndarray]:
     """Acquire and average multiple spectra using vectorization.
-    
+
     Optimized method using NumPy vectorization for 2-3× faster averaging.
     Pre-allocates array and uses vectorized np.mean() instead of sequential
     accumulation in Python loop.
-    
+
     Args:
         num_scans: Number of spectra to acquire and average
         wavelength_mask: Boolean mask for spectral filtering
         description: Description for logging (e.g., "channel a")
-    
+
     Returns:
         Averaged spectrum (filtered by wavelength mask), or None if error
-    
+
     Performance:
         Sequential accumulation: 10-12ms for 10 scans
         Vectorized np.mean(): 4-6ms for 10 scans
         Speedup: 2-3× faster
-    
+
     Example:
         >>> mask = (wavelengths >= 550) & (wavelengths <= 900)
         >>> avg = self._acquire_averaged_spectrum(10, mask, "channel a")
@@ -591,49 +591,49 @@ def _acquire_averaged_spectrum(
     if num_scans <= 0:
         logger.warning(f"Invalid num_scans: {num_scans}, using 1")
         num_scans = 1
-    
+
     try:
         # Read first spectrum to determine filtered size
         first_reading = self.usb.read_intensity()
         if first_reading is None:
             logger.error(f"Failed to read first {description}")
             return None
-        
+
         # Apply wavelength filter to first spectrum
         first_spectrum = first_reading[wavelength_mask]
         spectrum_length = len(first_spectrum)
-        
+
         # Handle single scan case (no averaging needed)
         if num_scans == 1:
             return first_spectrum
-        
+
         # Pre-allocate array for all spectra (key to vectorization performance)
         # Shape: (num_scans, spectrum_length)
         spectra_stack = np.empty((num_scans, spectrum_length), dtype=first_spectrum.dtype)
         spectra_stack[0] = first_spectrum
-        
+
         # Acquire remaining spectra
         for i in range(1, num_scans):
             # Check for stop signal
             if self._b_stop.is_set():
                 logger.debug(f"Stop signal received during {description} acquisition")
                 return None
-            
+
             reading = self.usb.read_intensity()
             if reading is None:
                 logger.warning(f"Failed to read {description} scan {i+1}/{num_scans}")
                 # Could return partial average here, but safer to fail
                 return None
-            
+
             # Apply wavelength filter to this scan
             spectra_stack[i] = reading[wavelength_mask]
-        
+
         # ✨ VECTORIZED AVERAGING (2-3× faster than sequential accumulation)
         # NumPy's np.mean() uses optimized C code with SIMD instructions
         averaged_spectrum = np.mean(spectra_stack, axis=0)
-        
+
         return averaged_spectrum
-    
+
     except Exception as e:
         logger.error(f"Error in vectorized spectrum acquisition for {description}: {e}")
         return None
@@ -653,12 +653,12 @@ from utils.spr_data_acquisition import SPRDataAcquisition
 
 def compare_methods():
     """Compare sequential vs vectorized averaging."""
-    
+
     # Mock spectrum data
     num_scans = 10
     spectrum_length = 1500
     test_data = [np.random.rand(spectrum_length) for _ in range(num_scans)]
-    
+
     # Test 1: Sequential (current method)
     start = time.perf_counter()
     sum_seq = None
@@ -669,17 +669,17 @@ def compare_methods():
             sum_seq += data
     avg_seq = sum_seq / num_scans
     time_seq = (time.perf_counter() - start) * 1000
-    
+
     # Test 2: Vectorized (proposed method)
     start = time.perf_counter()
     stack = np.array(test_data)
     avg_vec = np.mean(stack, axis=0)
     time_vec = (time.perf_counter() - start) * 1000
-    
+
     # Compare results
     diff = np.abs(avg_seq - avg_vec)
     max_diff = np.max(diff)
-    
+
     print("=" * 60)
     print("Vectorized Averaging Performance Test")
     print("=" * 60)
@@ -693,7 +693,7 @@ def compare_methods():
     print(f"Max difference:      {max_diff:.2e} (numerical precision)")
     print(f"Results match:       {max_diff < 1e-10}")
     print("=" * 60)
-    
+
     assert time_vec < time_seq, "Vectorized should be faster!"
     assert max_diff < 1e-10, "Results should match exactly!"
     print("✅ All tests passed!")
@@ -728,7 +728,7 @@ if __name__ == "__main__":
 
 ## Summary
 
-**Bottom Line**: 
+**Bottom Line**:
 The vectorized spectrum averaging method **already exists** in your codebase (calibration) and is proven to work. Applying it to live mode is a **low-risk, quick win** that gives 2-3× faster averaging.
 
 **Why Now?**

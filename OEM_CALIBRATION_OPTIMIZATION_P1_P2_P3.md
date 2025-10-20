@@ -1,7 +1,7 @@
 # OEM Calibration Integration Optimization (P1, P2, P3)
 
-**Date**: October 19, 2025  
-**Version**: Affilabs 0.1.0 "The Core"  
+**Date**: October 19, 2025
+**Version**: Affilabs 0.1.0 "The Core"
 **Status**: ✅ COMPLETE
 
 ---
@@ -65,17 +65,17 @@ def __init__(self, ...):
 def __init__(self, ...):
     # ... initialization ...
     self.device_config = device_config
-    
+
     # ✨ P1 OPTIMIZATION: Load OEM positions immediately (fail-fast)
     if device_config and 'oem_calibration' in device_config:
         oem_cal = device_config['oem_calibration']
         self.state.polarizer_s_position = oem_cal.get('polarizer_s_position')
         self.state.polarizer_p_position = oem_cal.get('polarizer_p_position')
         self.state.polarizer_sp_ratio = oem_cal.get('polarizer_sp_ratio')
-        
+
         if positions are None:
             raise ValueError("OEM calibration positions invalid")
-        
+
         logger.info("✅ OEM positions loaded at init - fail-fast enabled")
     else:
         raise ValueError("OEM calibration required but not found")
@@ -110,9 +110,9 @@ if self.device_config and 'oem_calibration' in self.device_config:
 ```python
 def _get_oem_positions(self) -> tuple[int | None, int | None, float | None]:
     """Get OEM calibration positions from single source of truth.
-    
+
     This centralizes all OEM position access to avoid 40+ scattered checks.
-    
+
     Returns:
         tuple: (s_position, p_position, sp_ratio) or (None, None, None) if not available
     """
@@ -123,7 +123,7 @@ def _get_oem_positions(self) -> tuple[int | None, int | None, float | None]:
             self.state.polarizer_p_position,
             getattr(self.state, 'polarizer_sp_ratio', None)
         )
-    
+
     # Fallback to device_config
     if self.device_config and 'oem_calibration' in self.device_config:
         oem = self.device_config['oem_calibration']
@@ -132,7 +132,7 @@ def _get_oem_positions(self) -> tuple[int | None, int | None, float | None]:
             oem.get('polarizer_p_position'),
             oem.get('polarizer_sp_ratio')
         )
-    
+
     return (None, None, None)
 
 # Usage throughout code:
@@ -162,7 +162,7 @@ if s_pos is None:
 ```python
 def validate_polarizer_positions(self) -> bool:
     """Validate polarizer positions."""
-    
+
     # ✨ LAZY LOADING: Load positions if not already in state
     if not hasattr(self.state, 'polarizer_s_position') or self.state.polarizer_s_position is None:
         if self.device_config and 'oem_calibration' in self.device_config:
@@ -173,7 +173,7 @@ def validate_polarizer_positions(self) -> bool:
         else:
             logger.error("Missing OEM calibration")
             return False
-    
+
     # Apply positions to hardware
     if hasattr(self.state, 'polarizer_s_position'):
         if self.state.polarizer_s_position is not None:
@@ -185,21 +185,21 @@ def validate_polarizer_positions(self) -> bool:
 ```python
 def validate_polarizer_positions(self) -> bool:
     """Validate polarizer positions (positions loaded at init via P1)."""
-    
+
     # ✨ P3 OPTIMIZATION: No lazy loading - positions guaranteed at init
     # Use centralized helper (P2)
     s_pos, p_pos, sp_ratio = self._get_oem_positions()
-    
+
     # Should NEVER be None if P1 working correctly
     if s_pos is None:
         logger.error("INTERNAL ERROR: OEM positions not loaded at init")
         return False
-    
+
     # Apply positions to hardware (simplified)
     logger.info(f"Applying OEM positions: S={s_pos}, P={p_pos}")
     self.ctrl.servo_set(s=s_pos, p=p_pos)
     time.sleep(1.0)
-    
+
     # ... validation logic ...
 ```
 
@@ -220,20 +220,20 @@ def validate_polarizer_positions(self) -> bool:
 ```
 1. Startup
    └─> Load device_config.json
-   
+
 2. SPRCalibrator.__init__()
    └─> Store device_config reference (don't parse)
-   
+
 3. Calibration Steps 1-2A
    └─> Running... (~2 minutes)
-   
+
 4. Step 2B: validate_polarizer_positions()
    └─> LAZY LOAD: Check if positions in state
    └─> If missing: Parse device_config for OEM data
    └─> Apply to hardware
    └─> Validate with LED test
    └─> ❌ FAIL if missing OEM config (after 2 minutes!)
-   
+
 5. Steps 3-8
    └─> Use positions via state
 ```
@@ -243,18 +243,18 @@ def validate_polarizer_positions(self) -> bool:
 ```
 1. Startup
    └─> Load device_config.json
-   
+
 2. SPRCalibrator.__init__()
    └─> ✨ P1: IMMEDIATE LOAD of OEM positions into state
    └─> ✅ Fail-fast if missing (<1 second)
    └─> Positions guaranteed available after init
-   
+
 3. Calibration Step 2B: validate_polarizer_positions()
    └─> ✨ P2: Use _get_oem_positions() helper
    └─> ✨ P3: Skip lazy loading (already in state)
    └─> Apply to hardware
    └─> Validate with LED test
-   
+
 4. Steps 3-8
    └─> ✨ P2: All code uses _get_oem_positions() helper
    └─> Single source of truth
@@ -468,7 +468,7 @@ def validate_polarizer_positions(self) -> bool:
 
 ---
 
-**Author**: GitHub Copilot  
-**Reviewed by**: User (lucia)  
-**Status**: ✅ Implementation complete, ready for integration testing  
+**Author**: GitHub Copilot
+**Reviewed by**: User (lucia)
+**Status**: ✅ Implementation complete, ready for integration testing
 **Date**: October 19, 2025

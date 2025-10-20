@@ -1,8 +1,8 @@
 # Phase 1 Optimization Implementation - COMPLETE
 
-**Date**: October 19, 2025  
-**Status**: ✅ IMPLEMENTED  
-**Checkpoint Tag**: `v0.1.0-pre-vectorized-optimization`  
+**Date**: October 19, 2025
+**Status**: ✅ IMPLEMENTED
+**Checkpoint Tag**: `v0.1.0-pre-vectorized-optimization`
 **Commit**: [To be filled after push]
 
 ---
@@ -212,14 +212,14 @@ import time
 def _read_channel_data(self, ch: str) -> float:
     """Read and process data from a specific channel."""
     start_time = time.perf_counter()
-    
+
     try:
         # ... existing code ...
-        
+
         # At the end, before return:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         logger.info(f"⏱️ Channel {ch} acquisition: {elapsed_ms:.1f}ms")
-        
+
     except Exception as e:
         logger.exception(f"error reading {ch}")
 ```

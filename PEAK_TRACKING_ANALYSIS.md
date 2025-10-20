@@ -37,37 +37,37 @@ def find_resonance_wavelength_direct(
     search_range: tuple[float, float] = (600, 720),
 ) -> float:
     """Find SPR resonance by locating minimum transmission.
-    
+
     Simpler and more robust than zero-crossing derivative method.
     Directly finds the wavelength with lowest transmission.
     """
     # Find indices for search range
     start_idx = np.searchsorted(self.wave_data, search_range[0])
     end_idx = np.searchsorted(self.wave_data, search_range[1])
-    
+
     # Extract search region
     search_spectrum = spectrum[start_idx:end_idx]
     search_wavelengths = self.wave_data[start_idx:end_idx]
-    
+
     # Find minimum in search region
     min_idx = np.argmin(search_spectrum)
-    
+
     # Parabolic interpolation for sub-pixel accuracy
     if 0 < min_idx < len(search_spectrum) - 1:
         # Fit parabola through 3 points around minimum
         y = search_spectrum[min_idx-1:min_idx+2]
         x = search_wavelengths[min_idx-1:min_idx+2]
-        
+
         # Parabolic fit: y = ax² + bx + c
         # Minimum at: x = -b/(2a)
         A = np.vstack([x**2, x, np.ones_like(x)]).T
         coeffs = np.linalg.lstsq(A, y, rcond=None)[0]
         a, b, c = coeffs
-        
+
         if a > 0:  # Valid parabola (opens upward)
             resonance = -b / (2 * a)
             return resonance
-    
+
     # Fallback: return wavelength at minimum index
     return search_wavelengths[min_idx]
 ```
@@ -97,10 +97,10 @@ def find_resonance_gaussian(self, spectrum, search_range=(600, 720)):
     """Fit Gaussian to SPR dip for robust peak tracking."""
     start_idx = np.searchsorted(self.wave_data, search_range[0])
     end_idx = np.searchsorted(self.wave_data, search_range[1])
-    
+
     x = self.wave_data[start_idx:end_idx]
     y = spectrum[start_idx:end_idx]
-    
+
     # Initial guess
     min_idx = np.argmin(y)
     p0 = [
@@ -109,7 +109,7 @@ def find_resonance_gaussian(self, spectrum, search_range=(600, 720)):
         10.0,                    # width (nm)
         np.max(y),               # offset
     ]
-    
+
     try:
         popt, _ = curve_fit(gaussian_dip, x, y, p0=p0, maxfev=1000)
         return popt[1]  # center wavelength

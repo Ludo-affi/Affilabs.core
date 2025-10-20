@@ -41,32 +41,32 @@ Replaced with a simpler, more robust approach:
 ```python
 def find_resonance_wavelength(self, spectrum: np.ndarray, window: int = 165) -> float:
     """Find SPR resonance by locating minimum transmission.
-    
+
     IMPROVED: Direct minimum finding instead of derivative zero-crossing.
     """
     # 1. Determine search range (adaptive peak detection)
     search_start = np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MIN)  # 600nm
     search_end = np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MAX)    # 720nm
-    
+
     # 2. Find discrete minimum
     search_spectrum = spectrum[search_start:search_end]
     min_idx = np.argmin(search_spectrum)
-    
+
     # 3. Parabolic interpolation (3-point fit)
     if 0 < min_idx < len(search_spectrum) - 1:
         # Fit parabola: y = ax² + bx + c
         y = search_spectrum[min_idx-1:min_idx+2]  # 3 points
         x = search_wavelengths[min_idx-1:min_idx+2]
-        
+
         A = np.vstack([x**2, x, np.ones_like(x)]).T
         coeffs = np.linalg.lstsq(A, y, rcond=None)[0]
         a, b, c = coeffs
-        
+
         # Minimum at: x = -b/(2a)
         if a > 0:  # Parabola opens upward
             resonance = -b / (2 * a)
             return resonance
-    
+
     # 4. Fallback: discrete minimum
     return search_wavelengths[min_idx]
 ```
@@ -202,7 +202,7 @@ Add peak quality indicators:
 
 **Commit**: 5ea37d2
 **Message**: "Improve peak tracking: use direct minimum finding instead of zero-crossing derivative"
-**Files**: 
+**Files**:
 - `utils/spr_data_processor.py` (46 lines removed, 119 added)
 - `PEAK_TRACKING_ANALYSIS.md` (new file, 231 lines)
 

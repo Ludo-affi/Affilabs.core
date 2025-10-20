@@ -50,5 +50,5 @@ To add hardware documentation:
 
 ---
 
-**Affilabs 0.1.0 "The Core"**  
+**Affilabs 0.1.0 "The Core"**
 Hardware Documentation - October 2025

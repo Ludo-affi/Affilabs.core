@@ -455,7 +455,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
             if response:
                 # Decode and strip newline/whitespace
                 response_str = response.decode().strip()
-                
+
                 # Split by comma separator
                 if ',' in response_str:
                     parts = response_str.split(',')
@@ -464,7 +464,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
                         p_pos = parts[1].encode()
                         logger.debug(f"Current servo positions: S={s_pos}, P={p_pos}")
                         return {"s": s_pos, "p": p_pos}
-                
+
                 logger.warning(f"Invalid servo position response format: {response_str}")
                 return None
             else:

@@ -1,7 +1,7 @@
 # Sensorgram Update Speed - Quick Reference
 
-**Date**: October 19, 2025  
-**Goal**: Reduce latency from spectrum → GUI  
+**Date**: October 19, 2025
+**Goal**: Reduce latency from spectrum → GUI
 **Full Analysis**: `SENSORGRAM_UPDATE_OPTIMIZATION_OPPORTUNITIES.md`
 
 ---
@@ -17,8 +17,8 @@
 ## Top 3 Quick Wins ⚡
 
 ### 1. Skip Denoising for Sensorgram (O2) 🔴
-**Time Saved**: 15-20ms per channel  
-**Effort**: 2-3 hours  
+**Time Saved**: 15-20ms per channel
+**Effort**: 2-3 hours
 **Risk**: Low (validate peak detection accuracy)
 
 ```python
@@ -31,8 +31,8 @@ def calculate_transmission(self, p_pol, s_ref, dark_noise, denoise=False):
 ---
 
 ### 2. Eliminate deepcopy Operations (O4) 🟡
-**Time Saved**: 8-13ms per cycle  
-**Effort**: 2-4 hours  
+**Time Saved**: 8-13ms per cycle
+**Effort**: 2-4 hours
 **Risk**: Low (careful testing needed)
 
 ```python
@@ -50,8 +50,8 @@ y_data = lambda_values[ch][self.static_index:]  # Array view (zero-copy)
 ---
 
 ### 3. Optimize Peak Finding Range (O3A) 🟡
-**Time Saved**: 3-5ms per channel  
-**Effort**: 1-2 hours  
+**Time Saved**: 3-5ms per channel
+**Effort**: 1-2 hours
 **Risk**: Very low
 
 ```python
@@ -167,6 +167,6 @@ Log these functions:
 
 ---
 
-**Next Step**: Implement Phase 1 optimizations (O3A + O4 + O2)  
-**Expected Time**: 6-9 hours  
+**Next Step**: Implement Phase 1 optimizations (O3A + O4 + O2)
+**Expected Time**: 6-9 hours
 **Expected Result**: **25-30% faster** sensorgram updates

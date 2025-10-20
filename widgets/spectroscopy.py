@@ -161,7 +161,7 @@ class SpecPlot(GraphicsLayoutWidget):
 
         # Enable antialiasing for prettier plots
         setConfigOptions(antialias=True)
-        
+
         # Set white background for better visibility
         self.setBackground('w')
 
@@ -178,7 +178,7 @@ class SpecPlot(GraphicsLayoutWidget):
         self.plot.setDownsampling(ds=50, mode="subsample")
         self.plot.setLabel("left", y_axis_string, color='k')  # Black text
         self.plot.setLabel("bottom", x_axis_string, color='k')  # Black text
-        
+
         # Set axis colors to black for visibility on white background
         self.plot.getAxis('left').setPen('k')
         self.plot.getAxis('left').setTextPen('k')

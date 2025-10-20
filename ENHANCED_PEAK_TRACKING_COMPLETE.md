@@ -10,10 +10,10 @@ Implemented sophisticated 4-stage peak tracking pipeline to achieve **<2 RU stan
 
 ## Performance Target
 
-**Critical User Requirement**: 
+**Critical User Requirement**:
 > "The number one challenge is to be able to monitor the position of the transmission minimum the cleanest way possible by reducing the variation...standard deviation was 2 RU...acquisition frequency was just above 1 HZ. This is what we have to improve on."
 
-**Goal**: 
+**Goal**:
 - Standard deviation: **<2 RU** (ideally <1 RU with Kalman filter)
 - Acquisition rate: **>1 Hz** (maintain current ~4-5 Hz performance)
 - Method: Replicate proven FFT→Polynomial→Derivative approach with temporal smoothing
@@ -255,7 +255,7 @@ def find_resonance_wavelength(self, spectrum, window=165):
                 return result  # Enhanced succeeded
         except Exception as e:
             logger.warning("Enhanced failed, using fallback")
-    
+
     # Fallback: Direct minimum method
     # ... existing code ...
 ```
@@ -389,7 +389,7 @@ KALMAN_PROCESS_NOISE = 0.1      # Expect slow changes
    # Calculate standard deviation
    baseline_std = np.std(baseline_peaks) * RU_CONVERSION  # RU
    enhanced_std = np.std(enhanced_peaks) * RU_CONVERSION  # RU
-   
+
    improvement = baseline_std / enhanced_std
    print(f"Baseline: {baseline_std:.2f} RU")
    print(f"Enhanced: {enhanced_std:.2f} RU")
@@ -600,7 +600,7 @@ All 4 stages implemented, integrated, and ready for testing. The enhanced pipeli
 
 ---
 
-**Document Version**: 1.0  
-**Date**: January 2025  
-**Author**: GitHub Copilot  
+**Document Version**: 1.0
+**Date**: January 2025
+**Author**: GitHub Copilot
 **Status**: Implementation Complete - Ready for Testing

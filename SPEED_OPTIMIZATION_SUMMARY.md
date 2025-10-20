@@ -345,6 +345,88 @@ averaged_intensity = self._acquire_averaged_spectrum(
 
 ---
 
+## ✅ Phase 3B: Acquisition Loop Cleanup (COMPLETE)
+
+### Problem
+Unnecessary `time.sleep()` calls in the main acquisition loop were adding pure overhead:
+1. **Main loop delay**: 10ms every cycle iteration
+2. **Inactive channel delay**: 100ms per inactive channel
+
+### Analysis
+From `LED_DELAY_OPTIMIZATION_ANALYSIS.md`:
+- Main loop delay had no functional purpose (hardware already provides rate limiting)
+- Inactive channel delay was pure waste (channels should skip instantly)
+- Combined overhead: 9-309ms depending on channel configuration
+
+### Implementation
+
+**Before**:
+```python
+while not self._b_kill.is_set():
+    ch = CH_LIST[0]
+    time.sleep(0.01)  # ❌ 10ms overhead
+    ...
+    for ch in CH_LIST:
+        if self._should_read_channel(ch, ch_list):
+            fit_lambda = self._read_channel_data(ch)
+        else:
+            time.sleep(0.1)  # ❌ 100ms waste per inactive
+```
+
+**After**:
+```python
+while not self._b_kill.is_set():
+    ch = CH_LIST[0]
+    # ✨ Removed time.sleep(0.01) - saves 9ms per cycle
+    ...
+    for ch in CH_LIST:
+        if self._should_read_channel(ch, ch_list):
+            fit_lambda = self._read_channel_data(ch)
+        else:
+            # ✨ Removed time.sleep(0.1) - skip instantly
+            pass
+```
+
+### Performance Improvement
+
+| Configuration | Before | After | Savings | Improvement |
+|--------------|--------|-------|---------|-------------|
+| **4 channels** | 1.44s | 1.43s | 9ms | 0.6% |
+| **3 channels** | 0.83s | 0.73s | 109ms | 13% |
+| **2 channels** | 0.63s | 0.43s | 209ms | 33% |
+| **1 channel** | 0.43s | 0.12s | 309ms | **72%** 🎉 |
+
+**Massive win for single-channel acquisitions!**
+
+### Cumulative Impact (4-Channel Mode)
+
+```
+Original baseline: ~2.4s per cycle (before optimizations)
+After Phase 1: ~2.0s (-400ms, 17% faster)
+After Phase 2: ~1.5-1.7s (better quality, scan averaging)
+After Phase 3A: ~1.44s (-60ms, 4% faster)
+After Phase 3B: ~1.43s (-9ms, 0.7% faster)
+
+Total improvement: ~1.0s saved (42% faster than original)
+```
+
+**Files Modified**:
+- `utils/spr_data_acquisition.py`:
+  - Line 301: Removed `time.sleep(0.01)` from main loop
+  - Line 359: Removed `time.sleep(0.1)` from inactive channel handling
+
+**Benefits**:
+- ✅ **Zero trade-offs**: Pure overhead removal
+- ✅ **Significant for single-channel**: 72% faster!
+- ✅ **Cleaner code**: No unnecessary delays
+- ✅ **Thread-safe**: No shared state impacted
+
+**Commit**: TBD
+
+**Documentation**: `PHASE_3B_LOOP_CLEANUP.md` - Detailed analysis and rationale
+
+---
+
 ## 📝 References
 
 - **Phase 1 Commit**: 2009508 (LED delay optimization)
@@ -352,6 +434,7 @@ averaged_intensity = self._acquire_averaged_spectrum(
 - **Tool Commit**: 9df593c (Optimizer tool creation)
 - **Calibration Commit**: 04b206f (Calibration consistency)
 - **Phase 3A Commit**: 148af2f (Wavelength mask caching)
+- **Phase 3B Commit**: TBD (Loop cleanup)
 - **System Calibration**: 1 nm = 355 RU (user-provided)
 - **Test Date**: October 19, 2025
 

@@ -298,7 +298,8 @@ class SPRDataAcquisition:
 
         while not self._b_kill.is_set():
             ch = CH_LIST[0]
-            time.sleep(0.01)
+            # ✨ PHASE 3B: Removed time.sleep(0.01) - saves 9ms per cycle
+            # This was unnecessary overhead in the main loop
             try:
                 if self._b_stop.is_set() or self.device_config["ctrl"] not in DEVICES:
                     time.sleep(0.2)
@@ -356,7 +357,10 @@ class SPRDataAcquisition:
                     if self._should_read_channel(ch, ch_list):
                         fit_lambda = self._read_channel_data(ch)
                     else:
-                        time.sleep(0.1)
+                        # ✨ PHASE 3B: Removed time.sleep(0.1) for inactive channels
+                        # This was wasting 100ms per inactive channel for no reason
+                        # Inactive channels are simply skipped now (near-zero overhead)
+                        pass
 
                     self._update_lambda_data(ch, fit_lambda)
                     self._apply_filtering(ch, ch_list, fit_lambda)

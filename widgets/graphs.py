@@ -130,7 +130,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 if not self.plots[ch].isVisible():
                     logger.debug(f"Skipping hidden channel {ch}")
                     continue
-                
+
                 # ✨ O4 Optimization: Use array slicing (zero-copy) instead of deepcopy
                 # We slice data anyway, so no need to copy first
                 y_data = lambda_values[ch]

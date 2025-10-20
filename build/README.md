@@ -99,5 +99,5 @@ Update `version.py` before building releases.
 
 ---
 
-**Affilabs 0.1.0 "The Core"**  
+**Affilabs 0.1.0 "The Core"**
 Build Specifications - October 2025

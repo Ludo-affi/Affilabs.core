@@ -69,7 +69,7 @@ Compares:
    - No binding events during test
    - All channels calibrated
 
-2. **Time required**: 
+2. **Time required**:
    - ~10-15 minutes per channel
    - Test one channel first (usually Channel A)
 
@@ -135,7 +135,7 @@ Channel A:
   Expected RU noise: 1.8 RU
   SNR: 551
   LED delay: 52.0ms
-  
+
   Speedup: 2.0× FASTER
 ```
 
@@ -242,7 +242,7 @@ Speedup: 1.59× FASTER (~2× with Phase 1+2)
 
 **Symptom**: Signal doesn't scale linearly with integration time
 
-**Solution**: 
+**Solution**:
 - Reduce LED intensity during test
 - Optimizer uses calibrated intensity by default
 
@@ -250,7 +250,7 @@ Speedup: 1.59× FASTER (~2× with Phase 1+2)
 
 **Cause**: Intrinsic measurement variability
 
-**Solution**: 
+**Solution**:
 - Ensure thermal equilibrium
 - Run optimizer twice and average
 - Use 200 measurements instead of 100
