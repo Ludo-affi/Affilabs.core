@@ -177,27 +177,31 @@ SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phas
 # ENHANCED PEAK TRACKING (4-Stage Pipeline for <2 RU Stability)
 # ============================================================================
 
-# Enable enhanced peak tracking with FFT → Polynomial → Derivative → Kalman pipeline
-# Target: <2 RU standard deviation @ >1 Hz acquisition rate
-ENHANCED_PEAK_TRACKING = True  # ENABLED: Testing 4-stage pipeline for <2 RU stability
+# Enable enhanced peak tracking with FFT → Polynomial → Derivative pipeline
+# ⚠️ CURRENTLY DISABLED - Using simple direct minimum for better time resolution
+# The enhanced pipeline can introduce lag and mask real SPR binding events
+# Only enable if you need noise reduction MORE than time resolution
+ENHANCED_PEAK_TRACKING = False  # DISABLED: Using direct minimum for real-time SPR tracking
 
-# Stage 1: FFT Preprocessing Parameters
+# Stage 1: FFT Preprocessing Parameters (only used if ENHANCED_PEAK_TRACKING=True)
 FFT_CUTOFF_FREQUENCY = 0.15  # Low-pass cutoff (0.1-0.3), lower = more smoothing
 FFT_NOISE_REDUCTION = True   # Enable FFT-based high-frequency noise removal
 
-# Stage 2: Polynomial Fitting Parameters
+# Stage 2: Polynomial Fitting Parameters (only used if ENHANCED_PEAK_TRACKING=True)
 POLYNOMIAL_DEGREE = 6           # Polynomial order (4-8), 6 optimal for SPR dips
-POLYNOMIAL_FIT_RANGE = (620, 680)  # NARROWED: Wavelength range for polynomial fit (nm) - reduced from (600,720) to avoid multiple peaks
+POLYNOMIAL_FIT_RANGE = (620, 680)  # Wavelength range for polynomial fit (nm)
 
-# Stage 3: Derivative Peak Finding
+# Stage 3: Derivative Peak Finding (only used if ENHANCED_PEAK_TRACKING=True)
 # (Uses analytical derivative of polynomial - no additional parameters needed)
 
-# Stage 4: Temporal Smoothing Parameters
-TEMPORAL_SMOOTHING_ENABLED = True      # Enable Kalman filter or moving average
-TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
+# Stage 4: Temporal Smoothing Parameters (only used if ENHANCED_PEAK_TRACKING=True)
+TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks real SPR signal changes
+#   ⚠️ DO NOT ENABLE unless you want to sacrifice time resolution for noise reduction
+#   SPR needs to track REAL binding events, not smooth them away!
+TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"  
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
-KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: INCREASED from 0.5 - trust measurements more (faster tracking)
-KALMAN_PROCESS_NOISE = 0.5             # Q parameter: INCREASED from 0.1 - allow more change (reduce lag)
+KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
+KALMAN_PROCESS_NOISE = 0.5             # Q parameter: allow more change (reduce lag)
 
 # ============================================================================
 # GUI RENDERING PERFORMANCE (G1, G4 Optimizations)
