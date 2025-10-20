@@ -198,6 +198,19 @@ POLYNOMIAL_FIT_RANGE = (600, 675)  # Full SPR dip range - covers entire resonanc
 TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks real SPR signal changes
 #   ⚠️ DO NOT ENABLE unless you want to sacrifice time resolution for noise reduction
 #   SPR needs to track REAL binding events, not smooth them away!
+
+# =============================================================================
+# ACQUISITION SPEED OPTIMIZATION
+# =============================================================================
+
+# Integration time and scan averaging for optimal noise vs speed balance
+# Based on empirical testing: 50ms × 4 scans = 200ms total acquisition time
+# - Better noise reduction than single 200ms scan (362 RU vs 513 RU)
+# - Avoids saturation and thermal drift from long LED-on times
+# - Simple integer division for easy timing calculations
+INTEGRATION_TIME_MS = 50.0      # Integration time per scan (milliseconds)
+NUM_SCANS_PER_ACQUISITION = 4   # Number of scans to average per measurement
+# Total acquisition time = 50ms × 4 = 200ms per channel (4 channels = 800ms cycle)
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"  
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)

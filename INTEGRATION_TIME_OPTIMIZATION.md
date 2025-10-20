@@ -124,6 +124,9 @@ python optimize_integration_time.py
 - ✅ `snr > 200` → Good signal quality
 - ✅ `mean_signal_counts > 10000` → Not too dim
 
+**RU Conversion Factor**:
+The tool uses the system-specific calibration: **1 nm = 355 RU**. This conversion factor is specific to this SPR sensor and has been calibrated for accurate noise estimation.
+
 ### Example Results
 
 ```

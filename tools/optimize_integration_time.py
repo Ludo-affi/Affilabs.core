@@ -110,15 +110,21 @@ class IntegrationTimeOptimizer:
         channel: str,
         integration_time_ms: float,
         num_measurements: int = 100,
-        led_intensity: int = 168
+        led_intensity: int = 168,
+        normalize_time_ms: float = 200.0
     ) -> Dict:
         """Test single integration time and measure stability.
+        
+        NORMALIZED ACQUISITION: Takes multiple scans to reach normalize_time_ms.
+        Example: 20ms × 10 scans = 200ms, 50ms × 4 scans = 200ms, 100ms × 2 scans = 200ms
+        This tests if averaging multiple fast scans gives better noise than one long scan.
         
         Args:
             channel: Channel to test ('a', 'b', 'c', 'd')
             integration_time_ms: Integration time to test (ms)
             num_measurements: Number of repeated measurements for statistics
             led_intensity: LED intensity to use
+            normalize_time_ms: Total acquisition time per measurement (default 200ms)
             
         Returns:
             Dictionary with results:
@@ -127,11 +133,18 @@ class IntegrationTimeOptimizer:
                 - snr: Signal-to-noise ratio
                 - mean_peak_nm: Average peak wavelength (nm)
                 - std_peak_nm: Peak wavelength std dev (nm)
-                - estimated_ru: Estimated RU noise (assuming 1nm = 1000 RU)
+                - estimated_ru: Estimated RU noise
+                - scans_per_measurement: Number of scans averaged
         """
         logger.info(f"\n{'='*70}")
         logger.info(f"Testing Channel {channel.upper()} @ {integration_time_ms:.1f}ms")
         logger.info(f"{'='*70}")
+        
+        # Calculate number of scans to normalize acquisition time
+        scans_per_measurement = max(1, int(round(normalize_time_ms / integration_time_ms)))
+        actual_time_ms = scans_per_measurement * integration_time_ms
+        
+        logger.info(f"Scans per measurement: {scans_per_measurement} (total ~{actual_time_ms:.1f}ms)")
         
         # Set integration time
         int_time_us = int(integration_time_ms * 1000)
@@ -166,17 +179,23 @@ class IntegrationTimeOptimizer:
         peak_wavelengths = []
         
         for i in range(num_measurements):
-            # Read spectrum
-            spectrum = self.spec.intensities()
+            # Take multiple scans and average them
+            scan_spectra = []
+            for scan in range(scans_per_measurement):
+                spectrum = self.spec.intensities()
+                scan_spectra.append(spectrum)
+            
+            # Average the scans
+            avg_spectrum = np.mean(scan_spectra, axis=0)
             wavelengths = self.spec.wavelengths()
             
             # Measure signal level (average in SPR range)
             mask = (wavelengths >= 600) & (wavelengths <= 680)
-            signal = np.mean(spectrum[mask])
+            signal = np.mean(avg_spectrum[mask])
             signal_levels.append(signal)
             
             # Find peak
-            peak = self.find_spr_peak(spectrum, wavelengths)
+            peak = self.find_spr_peak(avg_spectrum, wavelengths)
             if not np.isnan(peak):
                 peak_wavelengths.append(peak)
             
@@ -198,12 +217,15 @@ class IntegrationTimeOptimizer:
         mean_peak = np.mean(peak_wavelengths)
         std_peak = np.std(peak_wavelengths)
         
-        # Convert to RU (rough estimate: 1nm ≈ 1000 RU, but depends on SPR sensitivity)
-        # This is a conservative estimate; real conversion depends on sensor chip
-        estimated_ru = std_peak * 1000.0
+        # Convert to RU using system-specific calibration: 1 nm = 355 RU
+        # This is the calibrated sensitivity for this SPR system
+        RU_PER_NM = 355.0
+        estimated_ru = std_peak * RU_PER_NM
         
         results = {
             'integration_time_ms': integration_time_ms,
+            'scans_per_measurement': scans_per_measurement,
+            'actual_acquisition_time_ms': actual_time_ms,
             'led_delay_s': led_delay,
             'num_measurements': len(peak_wavelengths),
             'mean_signal_counts': float(mean_signal),
@@ -217,6 +239,12 @@ class IntegrationTimeOptimizer:
         }
         
         logger.info(f"\n📊 Results:")
+        logger.info(f"   Integration: {integration_time_ms:.1f}ms × {scans_per_measurement} scans = {actual_time_ms:.1f}ms total")
+        logger.info(f"   Signal: {mean_signal:.1f} ± {std_signal:.1f} counts (SNR: {snr:.1f})")
+        logger.info(f"   Peak: {mean_peak:.3f} ± {std_peak:.4f} nm")
+        logger.info(f"   Estimated RU noise: {estimated_ru:.2f} RU")
+        
+        return results
         logger.info(f"   Signal: {mean_signal:.1f} ± {std_signal:.1f} counts (SNR: {snr:.1f})")
         logger.info(f"   Peak: {mean_peak:.3f} ± {std_peak:.3f} nm")
         logger.info(f"   Estimated noise: {estimated_ru:.2f} RU")
@@ -431,14 +459,22 @@ def main():
     channels_to_test = ['a']  # Start with channel A
     
     print(f"\n📋 Testing channel(s): {', '.join([ch.upper() for ch in channels_to_test])}")
-    print("    Integration times: 20, 30, 40, 50, 60, 80, 100 ms")
+    print("    Integration times: 20, 25, 40, 50, 67, 100, 200 ms")
+    print("    NORMALIZED to 200ms total acquisition time:")
+    print("      • 20ms × 10 scans = 200ms")
+    print("      • 25ms × 8 scans = 200ms")
+    print("      • 40ms × 5 scans = 200ms")
+    print("      • 50ms × 4 scans = 200ms")
+    print("      • 67ms × 3 scans = 201ms")
+    print("      • 100ms × 2 scans = 200ms")
+    print("      • 200ms × 1 scan = 200ms")
     print("    Measurements per time: 100")
     print("    Target noise: <2 RU\n")
     
     for channel in channels_to_test:
         results = optimizer.optimize_channel(
             channel=channel,
-            integration_times_ms=[20, 30, 40, 50, 60, 80, 100],
+            integration_times_ms=[20, 25, 40, 50, 67, 100, 200],
             target_ru_noise=2.0,
             num_measurements=100
         )

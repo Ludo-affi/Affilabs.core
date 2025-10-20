@@ -9,6 +9,7 @@ from typing import Any, Optional, Union
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from utils.logger import logger
+from settings.settings import SETTINGS
 
 # Import real components first (preferred)
 try:
@@ -128,7 +129,7 @@ class DataAcquisitionWrapper:
 
         # Configuration defaults
         self.wave_data = np.array([])
-        self.num_scans = 1
+        self.num_scans = SETTINGS.get('NUM_SCANS_PER_ACQUISITION', 4)  # ✨ PHASE 2: 4 × 50ms scans = 200ms
         self.led_delay = 0.1  # Default fallback - will be optimized if afterglow calibration available
         self.med_filt_win = 5
         self.dark_noise = np.zeros(3648)  # Match USB4000 pixel count (3648)
