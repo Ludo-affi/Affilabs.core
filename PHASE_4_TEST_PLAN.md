@@ -1,0 +1,300 @@
+# Phase 4: 40ms Integration Time Test Plan
+
+**Date**: October 19, 2025  
+**Current Setting**: 50ms × 4 scans = 200ms per channel  
+**Test Setting**: 40ms × 4 scans = 160ms per channel  
+**Expected Savings**: 160ms per 4-channel cycle (11% faster)  
+
+---
+
+## 📋 Test Configuration
+
+### Changed Settings
+- **File**: `settings/settings.py` line 212
+- **Before**: `INTEGRATION_TIME_MS = 50.0`
+- **After**: `INTEGRATION_TIME_MS = 40.0`
+- **Scans**: Still 4 (NUM_SCANS_PER_ACQUISITION = 4)
+- **Total per channel**: 160ms (was 200ms)
+
+### Expected Performance
+```
+Current cycle time:  1.43s per 4-channel cycle
+Expected after 40ms: 1.27s per 4-channel cycle
+Improvement:         160ms (11% faster)
+```
+
+---
+
+## ✅ Test Checklist
+
+### Phase 1: Basic Functionality
+- [ ] Application starts without errors
+- [ ] Calibration completes successfully
+- [ ] Live mode displays sensorgram
+- [ ] All 4 channels acquire data
+- [ ] No saturation warnings
+- [ ] No hardware errors
+
+### Phase 2: Performance Validation
+- [ ] Measure actual cycle time (should be ~1.27s)
+- [ ] Check acquisition feels faster/more responsive
+- [ ] Verify enhanced peak tracking R² > 0.999
+- [ ] Monitor CPU usage (should be similar)
+
+### Phase 3: Data Quality Assessment
+- [ ] **CRITICAL**: Measure sensorgram noise in RU
+  - Target: <2 RU baseline noise
+  - Method: 2-minute stable baseline, calculate std dev
+  - Conversion: σ_nm × 355 RU/nm = σ_RU
+- [ ] Verify peak detection accuracy
+- [ ] Check for increased jitter/instability
+- [ ] Compare to 50ms baseline data
+
+### Phase 4: Long-Term Stability
+- [ ] Run for 10+ minutes continuous acquisition
+- [ ] Check for drift or artifacts
+- [ ] Verify no memory leaks
+- [ ] Monitor temperature stability
+
+---
+
+## 📊 Success Criteria
+
+### Must Pass (Critical)
+1. ✅ **Noise < 2 RU** - Primary requirement
+2. ✅ **R² > 0.999** - Enhanced tracking still effective
+3. ✅ **Cycle time ~1.27s** - Performance improvement achieved
+4. ✅ **No saturation** - Signal levels still in range
+5. ✅ **No hardware errors** - System remains stable
+
+### Should Pass (Important)
+1. ✅ Peak detection accuracy similar to 50ms
+2. ✅ GUI remains responsive
+3. ✅ No increase in CPU usage
+4. ✅ Temperature readings stable
+
+### Nice to Have
+1. ✅ Slightly faster GUI updates
+2. ✅ Lower CPU usage (less processing time)
+3. ✅ Better thermal stability (less LED-on time)
+
+---
+
+## 🔬 Measurement Procedures
+
+### 1. Cycle Time Measurement
+```
+Method 1 (Log-based):
+- Enable timing logs in grab_data()
+- Measure time between "Channel d completed" messages
+- Average over 10 cycles
+
+Method 2 (Visual):
+- Watch sensorgram update timestamps
+- Calculate time between updates
+- Should see ~1.27s intervals
+```
+
+### 2. Noise Measurement (RU)
+```
+Procedure:
+1. Complete calibration (to get valid RU baseline)
+2. Start live acquisition
+3. Wait for system to stabilize (30 seconds)
+4. Record 2 minutes of stable baseline (no binding)
+5. Export data or use diagnostic tools
+6. Calculate std dev of lambda values for each channel
+7. Convert to RU: σ_RU = σ_nm × 355 RU/nm
+
+Expected:
+- 50ms baseline: ~362 RU (from optimization data)
+- 40ms target: ~400-450 RU (acceptable if <2 RU after conversion)
+- 40ms with enhanced tracking: Should be <2 RU equivalent
+
+Note: The 362 RU was measured with simple argmin, enhanced tracking
+      significantly reduces this (R² > 0.999 = better filtering)
+```
+
+### 3. Signal Level Check
+```
+Check logs for saturation warnings:
+- "⚠️ Saturation detected" messages
+- Peak intensity should be <90% of detector max
+- If saturation occurs, integration time too high (shouldn't happen at 40ms)
+```
+
+### 4. Peak Tracking Quality
+```
+During live acquisition, check logs for:
+- "📊 Enhanced Tracking: R² = 0.XXXX" messages
+- Should maintain R² > 0.999 (three 9's minimum)
+- If R² drops below 0.995, tracking degraded
+```
+
+---
+
+## 🎯 Expected Results
+
+### Best Case Scenario ✅
+- Noise: <2 RU (meets target)
+- Cycle time: ~1.27s (11% faster)
+- Quality: Equivalent to 50ms
+- Decision: **ADOPT 40ms permanently**
+
+### Acceptable Scenario ✅
+- Noise: 2-3 RU (slightly above target but usable)
+- Cycle time: ~1.27s (11% faster)
+- Quality: Slightly noisier but acceptable
+- Decision: **User choice** - speed vs noise trade-off
+
+### Marginal Scenario ⚠️
+- Noise: 3-5 RU (above target)
+- Cycle time: ~1.27s (faster but noisier)
+- Quality: Noticeably degraded
+- Decision: **Consider 45ms compromise** or stay at 50ms
+
+### Failure Scenario ❌
+- Noise: >5 RU (unacceptable)
+- Saturation or hardware errors
+- Tracking degraded (R² < 0.99)
+- Decision: **REVERT to 50ms immediately**
+
+---
+
+## 🔄 Rollback Procedure
+
+If test fails, revert immediately:
+
+```python
+# In settings/settings.py line 212:
+INTEGRATION_TIME_MS = 50.0  # Revert from 40.0
+```
+
+Then:
+1. Restart application
+2. Re-run calibration
+3. Verify stability restored
+4. Document failure reasons
+
+---
+
+## 📈 Comparison Matrix
+
+| Metric | 50ms (baseline) | 40ms (test) | Target |
+|--------|-----------------|-------------|--------|
+| **Integration** | 50ms | 40ms | - |
+| **Scans** | 4 | 4 | - |
+| **Total/channel** | 200ms | 160ms | - |
+| **Cycle time** | 1.43s | ~1.27s | <1.3s ✅ |
+| **Signal level** | 12,641 | ~10,100 | >5,000 |
+| **Noise (RU)** | ~362* | ? | <2 RU** |
+| **R² tracking** | >0.999 | ? | >0.999 |
+| **Speedup** | baseline | 11% | >10% |
+
+\* Raw noise without enhanced tracking  
+\*\* With enhanced tracking applied
+
+---
+
+## 💡 Testing Tips
+
+### Before Starting Test:
+1. ✅ Close other applications (reduce system load)
+2. ✅ Ensure stable room temperature
+3. ✅ Check hardware connections
+4. ✅ Have 50ms baseline data for comparison
+5. ✅ Enable detailed logging if needed
+
+### During Test:
+1. ✅ Monitor console for warnings/errors
+2. ✅ Watch sensorgram for obvious noise/artifacts
+3. ✅ Check CPU usage in Task Manager
+4. ✅ Note any unusual behavior
+
+### After Test:
+1. ✅ Save/export test data for analysis
+2. ✅ Compare side-by-side with 50ms baseline
+3. ✅ Document findings
+4. ✅ Make go/no-go decision
+
+---
+
+## 📝 Data Collection
+
+### Information to Record:
+```
+Test Run: [Date/Time]
+Duration: [X minutes]
+Channels: [a, b, c, d] or [subset]
+
+Performance:
+- Cycle time: _____ seconds (target: 1.27s)
+- Update frequency: _____ Hz
+
+Quality:
+- Noise (channel a): _____ RU
+- Noise (channel b): _____ RU  
+- Noise (channel c): _____ RU
+- Noise (channel d): _____ RU
+- R² tracking: _____ (target: >0.999)
+
+Observations:
+- Saturation: Yes/No
+- Artifacts: Yes/No/Description
+- Stability: Excellent/Good/Fair/Poor
+- CPU usage: _____% (vs ____% at 50ms)
+
+Recommendation:
+[ ] ADOPT 40ms permanently
+[ ] TEST 40ms × 3 scans next (Phase 5)
+[ ] Try 45ms compromise
+[ ] REVERT to 50ms
+```
+
+---
+
+## 🎯 Next Steps Based on Results
+
+### If 40ms × 4 scans succeeds:
+1. ✅ Document success in PHASE_4_RESULTS.md
+2. ✅ Update SPEED_OPTIMIZATION_SUMMARY.md
+3. ✅ Consider **Phase 5**: Test 40ms × 3 scans (even faster!)
+4. ✅ Commit changes with detailed results
+
+### If 40ms × 4 scans marginal:
+1. ⚠️ Try 45ms × 4 scans as compromise
+2. ⚠️ Analyze which channels are noisier
+3. ⚠️ Consider per-channel integration times (advanced)
+
+### If 40ms × 4 scans fails:
+1. ❌ Revert to 50ms immediately
+2. ❌ Document why it failed
+3. ❌ Consider alternative optimizations:
+   - CPU micro-optimizations instead
+   - GUI update frequency reduction
+   - Skip denoising for live mode
+
+---
+
+## 🚀 Ready to Test!
+
+**Current Status**: Settings changed to 40ms  
+**Next Action**: Run application and follow test checklist  
+**Expected Duration**: 15-30 minutes full test  
+**Success Probability**: HIGH (80% signal should be sufficient)
+
+**Command to run**:
+```bash
+python run_app.py
+```
+
+---
+
+**Good luck with testing!** 🎉
+
+Remember:
+- 40ms = 80% of photons vs 50ms
+- Enhanced peak tracking compensates for lower signal
+- 160ms savings is significant (11% faster)
+- Easy to revert if needed
+

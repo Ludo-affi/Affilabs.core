@@ -205,13 +205,14 @@ TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks r
 # =============================================================================
 
 # Integration time and scan averaging for optimal noise vs speed balance
-# Based on empirical testing: 50ms × 4 scans = 200ms total acquisition time
-# - Better noise reduction than single 200ms scan (362 RU vs 513 RU)
-# - Avoids saturation and thermal drift from long LED-on times
-# - Simple integer division for easy timing calculations
-INTEGRATION_TIME_MS = 50.0      # Integration time per scan (milliseconds)
+# ✨ PHASE 4 TESTING: Reduced to 40ms for speed optimization
+# Testing: 40ms × 4 scans = 160ms total acquisition time (vs 200ms baseline)
+# Expected: ~160ms savings per 4-channel cycle (11% faster: 1.43s → 1.27s)
+# - 80% of photons vs 50ms (should still maintain <2 RU with enhanced tracking)
+# - Validate noise levels before permanent deployment
+INTEGRATION_TIME_MS = 40.0      # Integration time per scan (milliseconds) [TESTING: was 50.0]
 NUM_SCANS_PER_ACQUISITION = 4   # Number of scans to average per measurement
-# Total acquisition time = 50ms × 4 = 200ms per channel (4 channels = 800ms cycle)
+# Total acquisition time = 40ms × 4 = 160ms per channel (4 channels = 640ms cycle)
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
