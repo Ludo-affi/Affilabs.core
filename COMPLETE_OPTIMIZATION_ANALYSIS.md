@@ -1,8 +1,8 @@
 # Complete Remaining Optimization Analysis
 
-**Date**: October 19, 2025  
-**Current Performance**: 1.43s per 4-channel cycle  
-**Target**: <1.3s per cycle  
+**Date**: October 19, 2025
+**Current Performance**: 1.43s per 4-channel cycle
+**Target**: <1.3s per cycle
 **Gap**: 130ms needed
 
 ---
@@ -63,7 +63,7 @@
 - **Current**: Uses `np.append()` every acquisition (creates new array each time)
 - **Problem**: `np.append()` is inefficient - copies entire array
 - **Proposed**: Pre-allocate arrays or use list appending
-  
+
 **Current (inefficient)**:
 ```python
 self.lambda_values[ch] = np.append(self.lambda_values[ch], fit_lambda)  # Copy entire array
@@ -109,7 +109,7 @@ for i in range(first_filt_index):
 **Optimized**:
 ```python
 # Vectorize the operation
-filtered_section = [np.nanmean(self.lambda_values[ch][0:i]) 
+filtered_section = [np.nanmean(self.lambda_values[ch][0:i])
                    for i in range(first_filt_index)]
 new_filtered_lambda[ch] = np.array(filtered_section)  # Single allocation
 ```
@@ -174,7 +174,7 @@ if not self._b_stop.is_set():
 ```python
 def _emit_data_updates(self) -> None:
     self.update_live_signal.emit(self.sensorgram_data())
-    
+
     # Only update spectroscopy if visible
     if self.spectroscopy_tab_visible:
         self.update_spec_signal.emit(self.spectroscopy_data())
@@ -213,7 +213,7 @@ self.full_segment_view.update(
 # In _read_channel_data():
 if self.skip_denoising_for_live:
     trans_spectrum = self.data_processor.calculate_transmission(
-        ..., 
+        ...,
         denoise=False  # Skip S-G filter for live mode
     )
 ```

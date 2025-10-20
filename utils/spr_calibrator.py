@@ -1298,22 +1298,22 @@ class SPRCalibrator:
                                       apply_filter: bool = True,
                                       subtract_dark: bool = False) -> Optional[np.ndarray]:
         """Acquire spectrum with proper averaging for calibration consistency.
-        
+
         Helper method that ensures all calibration spectrum acquisitions use
         the same averaging as live mode (NUM_SCANS_PER_ACQUISITION = 4).
-        
+
         This provides consistency between:
         - Calibration measurements (dark, S-pol, P-pol references)
         - Live data acquisition
         - Same noise characteristics throughout workflow
-        
+
         Args:
             apply_filter: Whether to apply spectral range filter (default: True)
             subtract_dark: Whether to subtract dark noise (default: False)
-            
+
         Returns:
             Averaged spectrum as numpy array, or None if error
-            
+
         Example:
             # Instead of: raw = self.usb.read_intensity()
             # Use: raw = self._acquire_calibration_spectrum()

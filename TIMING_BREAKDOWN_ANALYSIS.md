@@ -1,7 +1,7 @@
 # ⏱️ 4-Channel Acquisition Cycle Timing Breakdown
 
-**Current Performance**: 1.5-1.7 seconds per 4-LED cycle  
-**Expected Performance**: ~0.8 seconds (based on settings)  
+**Current Performance**: 1.5-1.7 seconds per 4-LED cycle
+**Expected Performance**: ~0.8 seconds (based on settings)
 **Slowdown Factor**: ~2× slower than expected
 
 ---
@@ -74,7 +74,7 @@ Based on current settings (`INTEGRATION_TIME_MS = 50.0`, `NUM_SCANS_PER_ACQUISIT
 
 ### **Primary Bottleneck: USB Communication Overhead**
 
-**Expected**: 50ms × 4 scans = 200ms  
+**Expected**: 50ms × 4 scans = 200ms
 **Actual**: ~170-210ms = **Close to expected ✅**
 
 The USB read operations are the dominant factor and appear to be working correctly.
@@ -155,7 +155,7 @@ def _read_channel_data(self, ch: str) -> float:
     # Read wavelengths EVERY acquisition
     current_wavelengths = self.usb.read_wavelength()  # 5-10ms
     wavelength_mask = (current_wavelengths >= min_wavelength) & (current_wavelengths <= max_wavelength)
-    
+
     averaged_intensity = self._acquire_averaged_spectrum(
         num_scans=self.num_scans,
         wavelength_mask=wavelength_mask,  # Created every time
@@ -168,7 +168,7 @@ def _read_channel_data(self, ch: str) -> float:
 def __init__(self, ...):
     # Create mask ONCE during initialization
     self._wavelength_mask = None
-    
+
 def _initialize_wavelength_mask(self):
     """Create wavelength mask once and cache it."""
     if self._wavelength_mask is None:
@@ -191,8 +191,8 @@ def _read_channel_data(self, ch: str) -> float:
 
 ### **Priority 2: Reduce Integration Time to 40ms** (Save ~160ms per cycle = 10% speedup)
 
-Current: 50ms × 4 scans = 200ms per channel  
-Proposed: 40ms × 4 scans = 160ms per channel  
+Current: 50ms × 4 scans = 200ms per channel
+Proposed: 40ms × 4 scans = 160ms per channel
 Savings: 40ms × 4 channels = **160ms per cycle**
 
 **New cycle time**: 1.5s - 0.16s = **1.34s per cycle**
@@ -201,8 +201,8 @@ Savings: 40ms × 4 channels = **160ms per cycle**
 
 ### **Priority 3: Reduce Scans to 3** (Save ~150ms per cycle = 10% speedup)
 
-Current: 50ms × 4 scans = 200ms per channel  
-Proposed: 50ms × 3 scans = 150ms per channel  
+Current: 50ms × 4 scans = 200ms per channel
+Proposed: 50ms × 3 scans = 150ms per channel
 Savings: 50ms × 4 channels = **200ms per cycle**
 
 **New cycle time**: 1.5s - 0.2s = **1.3s per cycle**

@@ -1,7 +1,7 @@
 # Logging and Diagnostic Overhead Analysis
 
-**Date**: October 19, 2025  
-**Question**: Would removing diagnostic windows and simplifying logging improve speed?  
+**Date**: October 19, 2025
+**Question**: Would removing diagnostic windows and simplifying logging improve speed?
 **Answer**: **YES, but the impact is SMALL (~5-15ms, or 0.3-1% speedup)**
 
 ---
@@ -69,7 +69,7 @@ if self.processing_steps_signal:  # If diagnostic window connected
 ```python
 # Per-cycle logging (happens every acquisition):
 logger.debug(...)   # ~20-30 calls per cycle
-logger.info(...)    # ~5-10 calls per cycle  
+logger.info(...)    # ~5-10 calls per cycle
 logger.warning(...) # ~0-2 calls per cycle (conditional)
 logger.error(...)   # ~0-1 calls per cycle (exceptions only)
 ```
@@ -114,7 +114,7 @@ from widgets.message import show_message
 
 ### **Option 1: Disable Diagnostic Signal Emission** ⭐⭐⭐
 
-**Current**: Always packages and emits diagnostic data (5 array copies)  
+**Current**: Always packages and emits diagnostic data (5 array copies)
 **Proposed**: Make it conditional on window visibility
 
 **Implementation**:
@@ -132,7 +132,7 @@ if self.emit_diagnostic_data and self.processing_steps_signal:
 - User opens diagnostic viewer → set `emit_diagnostic_data = True`
 - User closes diagnostic viewer → set `emit_diagnostic_data = False`
 
-**Savings**: 
+**Savings**:
 - **12-20ms per cycle** when disabled
 - **1.27s → 1.25s** (~1.6% faster)
 
@@ -144,7 +144,7 @@ if self.emit_diagnostic_data and self.processing_steps_signal:
 
 ### **Option 2: Reduce Logging Verbosity** ⭐⭐
 
-**Current**: INFO level includes many messages  
+**Current**: INFO level includes many messages
 **Proposed**: Use DEBUG for non-critical messages in hot path
 
 **Implementation**:
@@ -220,8 +220,8 @@ diagnostic_data = {
 - Disable diagnostic emission when window closed
 - Keep all logging as-is
 
-**Savings**: 12-20ms → **1.27s → 1.25s** (1.6% faster)  
-**Risk**: LOW  
+**Savings**: 12-20ms → **1.27s → 1.25s** (1.6% faster)
+**Risk**: LOW
 **Effort**: 30 minutes
 
 ---
@@ -231,8 +231,8 @@ diagnostic_data = {
 - Move hot-path logs to DEBUG level
 - Remove array copies in diagnostic
 
-**Savings**: 15-25ms → **1.27s → 1.245s** (2% faster)  
-**Risk**: MEDIUM (harder to debug issues)  
+**Savings**: 15-25ms → **1.27s → 1.245s** (2% faster)
+**Risk**: MEDIUM (harder to debug issues)
 **Effort**: 1-2 hours
 
 ---
@@ -242,9 +242,9 @@ diagnostic_data = {
 - Remove all logging in hot path
 - No error recovery logging
 
-**Savings**: 20-30ms → **1.27s → 1.24s** (2.4% faster)  
-**Risk**: HIGH (blind to production issues)  
-**Effort**: 2-3 hours  
+**Savings**: 20-30ms → **1.27s → 1.24s** (2.4% faster)
+**Risk**: HIGH (blind to production issues)
+**Effort**: 2-3 hours
 **Recommendation**: ❌ **DON'T DO THIS**
 
 ---
@@ -279,7 +279,7 @@ diagnostic_data = {
 4. Test that diagnostic works when enabled
 5. Measure performance improvement (~1.25s target)
 
-**Expected Result**: 
+**Expected Result**:
 - **Current**: 1.27s per cycle (with 40ms integration)
 - **After**: 1.25s per cycle
 - **Improvement**: 20ms (1.6% faster)

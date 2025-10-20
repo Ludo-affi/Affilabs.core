@@ -41,7 +41,7 @@ while not self._b_kill.is_set():
 **Purpose**: Probably intended to reduce CPU usage / prevent tight loop
 **Impact**: 10ms × every cycle = constant overhead
 
-**Optimization Potential**: 
+**Optimization Potential**:
 - Could remove entirely (CPU usage negligible)
 - Or reduce to 0.001s (1ms)
 - **Savings**: ~10ms per cycle
@@ -77,7 +77,7 @@ for ch in CH_LIST:
 **Scenario 2** - 3 channels active: 100ms wasted ⚠️
 **Scenario 3** - 2 channels active: 200ms wasted ⚠️
 
-**Impact**: 
+**Impact**:
 - In normal 4-channel operation: 0ms (all active)
 - If running single-channel mode: 300ms wasted!
 
@@ -177,7 +177,7 @@ for ch in CH_LIST:
     # else: just continue - no delay needed!
 ```
 
-**Savings**: 
+**Savings**:
 - 4-channel mode: 0ms (all active anyway)
 - 3-channel mode: 100ms
 - 2-channel mode: 200ms
@@ -194,7 +194,7 @@ for ch in CH_LIST:
 1. **Reduce main loop delay**: 10ms → 1ms (save 9ms)
 2. **Remove inactive channel delay**: (save 0-300ms depending on mode)
 
-**Total savings**: 
+**Total savings**:
 - 4-channel mode: **~9ms per cycle** (0.6% faster)
 - 1-channel mode: **~309ms per cycle** (significant!)
 
@@ -251,7 +251,7 @@ for ch in CH_LIST:
 
 **Question**: "Is the LED delay and delay between LED optimized?"
 
-**Answer**: 
+**Answer**:
 1. ✅ **LED delay itself (50ms)**: YES, OPTIMIZED (Phase 1) - physics-based, cannot improve
 2. ✅ **Between-LED switching**: YES, OPTIMIZED (Phase 1) - batch control is fastest method
 3. ⚠️ **Main loop delay (10ms)**: NO, can reduce to 1ms (save 9ms)

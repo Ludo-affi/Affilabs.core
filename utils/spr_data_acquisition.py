@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from time import perf_counter  # ⏱️ TIMING: High-precision monotonic timer
 from collections.abc import Callable
 from copy import deepcopy
 from typing import Any, Protocol, cast
@@ -193,6 +194,11 @@ class SPRDataAcquisition:
         else:
             logger.info("⏱️ Standard integration time (no acceleration)")
 
+        # ⏱️ TIMING INSTRUMENTATION: Performance analysis and optimization
+        self.enable_timing_logs = True  # Set to False to disable detailed timing logs
+        self.timing_samples = []  # Store timing samples for analysis
+        self.cycle_count = 0  # Track cycle number for periodic reporting
+
         # Debug data saving
         self.debug_data_counter = 0
         self.debug_save_dir = Path("generated-files/debug_processing_steps")
@@ -206,17 +212,17 @@ class SPRDataAcquisition:
 
     def _initialize_wavelength_mask(self) -> bool:
         """Initialize and cache the wavelength mask once.
-        
+
         This optimization saves ~12ms per channel (48ms per 4-channel cycle) by
         avoiding repeated USB reads and mask creation. Wavelengths are constant
         during a session, so we only need to create the mask once.
-        
+
         Returns:
             bool: True if mask initialized successfully, False otherwise
         """
         if self._wavelength_mask_initialized:
             return True
-            
+
         try:
             # Read wavelengths from spectrometer (one-time operation)
             current_wavelengths = None
@@ -237,18 +243,18 @@ class SPRDataAcquisition:
 
             # Create mask using calibration boundaries
             self._wavelength_mask = (current_wavelengths >= min_wavelength) & (current_wavelengths <= max_wavelength)
-            
+
             num_pixels = np.sum(self._wavelength_mask)
             self._wavelength_mask_initialized = True
-            
+
             logger.info(
                 f"✅ Wavelength mask cached: {num_pixels} pixels "
                 f"({min_wavelength:.1f}-{max_wavelength:.1f} nm)"
             )
             logger.info(f"⚡ Optimization: Saves ~48ms per 4-channel cycle (no repeated mask creation)")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to initialize wavelength mask: {e}")
             return False
@@ -352,6 +358,9 @@ class SPRDataAcquisition:
                     self.pad_values()
 
                 ch_list = self._get_active_channels()
+                
+                # ⏱️ TIMING: Start cycle timing
+                t_cycle_start = perf_counter()
 
                 for ch in CH_LIST:
                     fit_lambda = np.nan
@@ -373,8 +382,39 @@ class SPRDataAcquisition:
                         self.filt_buffer_index += 1
 
                 if not self._b_stop.is_set():
+                    t_before_emit = perf_counter()
                     self._emit_data_updates()
                     self._emit_temperature_update()
+                    t_after_emit = perf_counter()
+                    
+                    # ⏱️ TIMING: Log complete cycle timing
+                    t_cycle_total = t_after_emit - t_cycle_start
+                    t_emit_time = t_after_emit - t_before_emit
+                    
+                    self.cycle_count += 1
+                    self.timing_samples.append(t_cycle_total * 1000)  # Store in ms
+                    
+                    if self.enable_timing_logs:
+                        logger.info(
+                            f"⏱️ CYCLE #{self.cycle_count}: "
+                            f"total={int(t_cycle_total*1000)}ms, "
+                            f"emit={int(t_emit_time*1000)}ms, "
+                            f"acq={int((t_cycle_total-t_emit_time)*1000)}ms"
+                        )
+                        
+                        # Every 10 cycles, report statistics
+                        if self.cycle_count % 10 == 0 and len(self.timing_samples) >= 10:
+                            recent_samples = self.timing_samples[-10:]
+                            avg_time = sum(recent_samples) / len(recent_samples)
+                            min_time = min(recent_samples)
+                            max_time = max(recent_samples)
+                            logger.info(
+                                f"📊 TIMING STATS (last 10 cycles): "
+                                f"avg={int(avg_time)}ms, "
+                                f"min={int(min_time)}ms, "
+                                f"max={int(max_time)}ms, "
+                                f"rate={1000/avg_time:.2f} Hz"
+                            )
 
             except Exception as e:
                 self._handle_acquisition_error(e, ch)
@@ -412,14 +452,23 @@ class SPRDataAcquisition:
 
     def _read_channel_data(self, ch: str) -> float:
         """Read and process data from a specific channel."""
+        # ⏱️ TIMING: Start channel acquisition timing
+        t_start = perf_counter()
+        t_led_on = t_start
+        t_led_settle = t_start
+        t_scan_complete = t_start
+        t_dark_ready = t_start
+        t_trans_complete = t_start
+        t_peak_complete = t_start
+        
         try:
             # ✨ Use batch LED control for 15× speedup
             self._activate_channel_batch(ch)
+            t_led_on = perf_counter()
 
             if self.led_delay > 0:
                 time.sleep(self.led_delay)
-
-            # ✨ PHASE 3A OPTIMIZATION: Use cached wavelength mask (saves ~12ms per channel)
+            t_led_settle = perf_counter()            # ✨ PHASE 3A OPTIMIZATION: Use cached wavelength mask (saves ~12ms per channel)
             # Mask is initialized once in grab_data() and reused for all acquisitions
             if self._wavelength_mask is None:
                 logger.error("❌ Wavelength mask not initialized - this should not happen!")
@@ -433,6 +482,7 @@ class SPRDataAcquisition:
                 wavelength_mask=self._wavelength_mask,  # Use cached mask!
                 description=f"channel {ch}"
             )
+            t_scan_complete = perf_counter()
 
             if averaged_intensity is not None:
 
@@ -493,6 +543,8 @@ class SPRDataAcquisition:
                     logger.warning(f"Final shape mismatch: {dark_correction.shape} vs {averaged_intensity.shape}. Using zero correction.")
                     dark_correction = np.zeros_like(averaged_intensity)
 
+                t_dark_ready = perf_counter()
+
                 # STEP 1: Save raw spectrum (before any processing)
                 if SAVE_DEBUG_DATA:
                     self._save_debug_step(ch, "1_raw_spectrum", averaged_intensity, self.wave_data)
@@ -539,6 +591,7 @@ class SPRDataAcquisition:
                     self._save_debug_step(ch, "2_after_dark_correction", self.int_data[ch], self.wave_data)
 
                 # Calculate transmission
+                t_trans_complete = t_dark_ready  # Default if not calculated
                 if self.ref_sig[ch] is not None and self.data_processor is not None:
                     try:
                         # Handle size mismatch between ref_sig and current data
@@ -580,6 +633,7 @@ class SPRDataAcquisition:
                                 denoise=False,  # ✨ O2: Skip denoising for sensorgram speed
                             )
                         )
+                        t_trans_complete = perf_counter()
 
                         # STEP 4: Save final transmittance spectrum (after P/S calibration + denoising)
                         if SAVE_DEBUG_DATA and self.trans_data[ch] is not None:
@@ -623,18 +677,35 @@ class SPRDataAcquisition:
                 self.ctrl.turn_off_channels()
 
             # Find resonance wavelength
+            fit_lambda = np.nan
             if not (self._b_stop.is_set() or self.trans_data[ch] is None):
                 if self.data_processor is not None:
                     spectrum = self.trans_data[ch]
-                    return self.data_processor.find_resonance_wavelength(
+                    fit_lambda = self.data_processor.find_resonance_wavelength(
                         spectrum=spectrum,
                         window=DERIVATIVE_WINDOW,  # 165
                     )
+            t_peak_complete = perf_counter()
+            
+            # ⏱️ TIMING: Log detailed breakdown for this channel
+            if self.enable_timing_logs:
+                t_total = t_peak_complete - t_start
+                logger.info(
+                    f"⏱️ TIMING ch={ch}: "
+                    f"LED_on={int((t_led_on-t_start)*1000)}ms, "
+                    f"LED_settle={int((t_led_settle-t_led_on)*1000)}ms, "
+                    f"scan={int((t_scan_complete-t_led_settle)*1000)}ms, "
+                    f"dark={int((t_dark_ready-t_scan_complete)*1000)}ms, "
+                    f"trans={int((t_trans_complete-t_dark_ready)*1000)}ms, "
+                    f"peak={int((t_peak_complete-t_trans_complete)*1000)}ms, "
+                    f"TOTAL={int(t_total*1000)}ms"
+                )
+            
+            return fit_lambda
 
         except Exception as e:
             logger.exception(f"Error reading channel {ch}: {e}")
-
-        return np.nan
+            return np.nan
 
     def _update_lambda_data(self, ch: str, fit_lambda: float) -> None:
         """Update lambda values and times for a channel."""
@@ -854,9 +925,9 @@ class SPRDataAcquisition:
 
     def set_diagnostic_emission(self, enabled: bool) -> None:
         """Enable or disable diagnostic data emission.
-        
+
         ✨ MICRO-OPT: Saves 12-20ms per cycle when disabled
-        
+
         Args:
             enabled: True to enable diagnostic emission (when window open),
                     False to disable (saves 12-20ms per cycle)

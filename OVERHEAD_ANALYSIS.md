@@ -1,6 +1,6 @@
 # Overhead Analysis: Why 880ms Slower Than Old Software?
 
-**Date**: October 20, 2025  
+**Date**: October 20, 2025
 **Critical Discovery**: The problem is OVERHEAD, not acquisition time!
 
 ---
@@ -85,7 +85,7 @@ Total: 1.6s per cycle
 1. How does old software handle LED switching?
    - Batch or sequential?
    - Any delays between LEDs?
-   
+
 2. How does old software read spectrometer?
    - Blocking or async?
    - Any buffering?
@@ -152,12 +152,12 @@ print(f"LED: {(t1-t0)*1000:.1f}ms, Read: {(t2-t1)*1000:.1f}ms, "
 ## Hypotheses (Ordered by Likelihood)
 
 ### Hypothesis 1: LED Delay is 50ms (not optimized) ⭐⭐⭐⭐⭐
-**Evidence**: 
+**Evidence**:
 - Phase 1 claimed to reduce LED delay to 50ms
 - Old software might use 0ms or minimal delay
 - 50ms × 4 channels = 200ms overhead
 
-**Test**: 
+**Test**:
 ```python
 # settings/settings.py
 LED_DELAY = 0.001  # Try minimal delay (1ms)
@@ -176,7 +176,7 @@ LED_DELAY = 0.001  # Try minimal delay (1ms)
 - Maybe enhanced method is still being called somewhere
 - Debugging logs show which method
 
-**Test**: 
+**Test**:
 ```python
 ENHANCED_PEAK_TRACKING = False  # Disable completely
 ```

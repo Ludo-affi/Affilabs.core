@@ -1,8 +1,8 @@
 # Phase 3B: Acquisition Loop Cleanup
 
-**Date**: October 19, 2025  
-**Version**: Affilabs 0.1.0 "The Core"  
-**Goal**: Remove unnecessary delays in acquisition loop  
+**Date**: October 19, 2025
+**Version**: Affilabs 0.1.0 "The Core"
+**Goal**: Remove unnecessary delays in acquisition loop
 **Commit**: TBD
 
 ---
@@ -54,7 +54,7 @@ while not self._b_kill.is_set():
     try:
 ```
 
-**Why it existed**: 
+**Why it existed**:
 - Likely added to prevent CPU spinning
 - Intended as rate limiting
 

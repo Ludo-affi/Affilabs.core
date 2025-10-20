@@ -1,6 +1,6 @@
 # Quick Performance Check - What to Look For
 
-**Date**: October 19, 2025  
+**Date**: October 19, 2025
 **Purpose**: Quick guide for comparing new vs old software
 
 ---
@@ -111,7 +111,7 @@ Old Software:
 
 New Software (Current Settings):
 - Updates per minute: _____
-- Baseline smoothness: ☐ Smooth ☐ Noisy  
+- Baseline smoothness: ☐ Smooth ☐ Noisy
 - GUI responsiveness: ☐ Good ☐ Laggy
 - Overall impression: ☐ Good ☐ Fair ☐ Poor
 
@@ -159,7 +159,7 @@ _________________________________
 
 You're running with:
 - ✅ 40ms integration (was 50ms) = 160ms faster
-- ✅ Centroid method (was enhanced) = 52ms faster  
+- ✅ Centroid method (was enhanced) = 52ms faster
 - ✅ No diagnostic overhead = 15ms faster
 - ✅ Reduced logging = 2ms faster
 - ✅ All Phase 1-3 optimizations = ~257ms faster

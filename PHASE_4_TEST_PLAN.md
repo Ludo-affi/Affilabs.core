@@ -1,9 +1,9 @@
 # Phase 4: 40ms Integration Time Test Plan
 
-**Date**: October 19, 2025  
-**Current Setting**: 50ms × 4 scans = 200ms per channel  
-**Test Setting**: 40ms × 4 scans = 160ms per channel  
-**Expected Savings**: 160ms per 4-channel cycle (11% faster)  
+**Date**: October 19, 2025
+**Current Setting**: 50ms × 4 scans = 200ms per channel
+**Test Setting**: 40ms × 4 scans = 160ms per channel
+**Expected Savings**: 160ms per 4-channel cycle (11% faster)
 
 ---
 
@@ -191,7 +191,7 @@ Then:
 | **R² tracking** | >0.999 | ? | >0.999 |
 | **Speedup** | baseline | 11% | >10% |
 
-\* Raw noise without enhanced tracking  
+\* Raw noise without enhanced tracking
 \*\* With enhanced tracking applied
 
 ---
@@ -233,7 +233,7 @@ Performance:
 
 Quality:
 - Noise (channel a): _____ RU
-- Noise (channel b): _____ RU  
+- Noise (channel b): _____ RU
 - Noise (channel c): _____ RU
 - Noise (channel d): _____ RU
 - R² tracking: _____ (target: >0.999)
@@ -278,9 +278,9 @@ Recommendation:
 
 ## 🚀 Ready to Test!
 
-**Current Status**: Settings changed to 40ms  
-**Next Action**: Run application and follow test checklist  
-**Expected Duration**: 15-30 minutes full test  
+**Current Status**: Settings changed to 40ms
+**Next Action**: Run application and follow test checklist
+**Expected Duration**: 15-30 minutes full test
 **Success Probability**: HIGH (80% signal should be sufficient)
 
 **Command to run**:

@@ -211,18 +211,15 @@ TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks r
 # =============================================================================
 
 # Integration time and scan averaging for optimal noise vs speed balance
-# ✨ OVERHEAD INVESTIGATION: Old software uses 200ms/spec but only has 300ms overhead
-# New software has 1180ms overhead (880ms MORE) - this is the real problem!
-# 
-# OLD SOFTWARE: 200ms × 4 channels = 800ms acquisition + 300ms overhead = 1.1s total
-# NEW SOFTWARE: 200ms × 4 channels = 800ms acquisition + 1180ms overhead = 2.0s total
+# ✨ MATCHING OLD SOFTWARE EXACTLY: 2 scans × 100ms = 200ms per spectrum
+# Old software: 2 scans × 100ms = 200ms/channel × 4 = 800ms + 300ms overhead = 1.1s
+# Old LED values: (82, 231, 41, 45) for channels (a, b, c, d)
 #
-# CONCLUSION: Don't reduce integration further - FIX THE OVERHEAD!
-# Using baseline settings until overhead identified and fixed
-INTEGRATION_TIME_MS = 50.0      # Baseline (matches old software 200ms/4 scans)
-NUM_SCANS_PER_ACQUISITION = 4   # Baseline (matches old software averaging)
-# Total acquisition time = 50ms × 4 = 200ms per channel (same as old software)
-# Target: Reduce overhead from 1180ms to 300ms (880ms savings!) then re-optimize integration
+# KEY INSIGHT: Old uses 2 scans (not 4!) - less loop overhead, less averaging computation
+# This might explain significant portion of the 880ms overhead gap
+INTEGRATION_TIME_MS = 100.0     # ✨ MATCH OLD: 100ms (was 50ms)
+NUM_SCANS_PER_ACQUISITION = 2   # ✨ MATCH OLD: 2 scans (was 4) - 50% less scan overhead!
+# Total acquisition time = 100ms × 2 = 200ms per channel (exactly matches old software)
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
@@ -266,7 +263,7 @@ POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
 # =============================================================================
 # Control logging verbosity for performance optimization
 # Console logging can add 1-2ms overhead per cycle with DEBUG level
-# 
+#
 # Levels (increasing verbosity):
 # - ERROR: Only critical errors (fastest, minimal output)
 # - WARNING: Warnings and errors (recommended for production)

@@ -1,8 +1,8 @@
 # Centroid Peak Tracking Method
 
-**Date**: October 19, 2025  
-**Status**: TESTING  
-**Performance**: 1-2ms per cycle (5-10× faster than enhanced method)  
+**Date**: October 19, 2025
+**Status**: TESTING
+**Performance**: 1-2ms per cycle (5-10× faster than enhanced method)
 **Stability**: <2 RU standard deviation (comparable to enhanced method)
 
 ---
@@ -65,13 +65,13 @@ Savings:          ~13ms per cycle × 4 channels = ~52ms total savings! 🎉
 
 ### Code Location
 
-**File**: `utils/enhanced_peak_tracking.py`  
-**Function**: `find_peak_centroid()`  
+**File**: `utils/enhanced_peak_tracking.py`
+**Function**: `find_peak_centroid()`
 **Lines**: 28-102
 
 ### Configuration
 
-**File**: `settings/settings.py`  
+**File**: `settings/settings.py`
 **Setting**: `PEAK_TRACKING_METHOD`
 
 ```python
@@ -257,8 +257,8 @@ If centroid method succeeds, consider:
 
 ## Status
 
-✅ **Implemented**: Centroid method added to codebase  
-🔄 **Testing**: Currently enabled, validating performance  
+✅ **Implemented**: Centroid method added to codebase
+🔄 **Testing**: Currently enabled, validating performance
 ⏸️ **Decision Pending**: Keep centroid or revert to enhanced based on results
 
 **Next Steps**:

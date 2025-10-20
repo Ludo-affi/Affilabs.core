@@ -521,12 +521,12 @@ def find_resonance_wavelength_enhanced(
             if 0 < min_idx < len(spec_region) - 1:
                 x = wl_region[min_idx-1:min_idx+2]
                 y = spec_region[min_idx-1:min_idx+2]
-                
+
                 # Analytical parabolic vertex (faster than lstsq)
                 denom = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2])
                 A = (x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])) / denom
                 B = (x[2]**2 * (y[0] - y[1]) + x[1]**2 * (y[2] - y[0]) + x[0]**2 * (y[1] - y[2])) / denom
-                
+
                 peak_raw = -B / (2 * A) if A > 0 else wl_region[min_idx]
             else:
                 peak_raw = wl_region[min_idx]
