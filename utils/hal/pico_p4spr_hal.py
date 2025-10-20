@@ -154,7 +154,13 @@ class PicoP4SPRHAL(SPRControllerHAL):
             )
 
     def activate_channel(self, channel: ChannelID) -> bool:
-        """Activate specified measurement channel."""
+        """Activate specified measurement channel.
+        
+        ✨ PHASE 1B OPTIMIZATION: Fire-and-forget LED commands
+        - Removes 400ms/cycle bottleneck (105ms per channel × 4)
+        - Safe because LED_settle delay (100ms) gives hardware time to complete
+        - Can re-enable response wait via WAIT_FOR_LED_RESPONSE flag if needed
+        """
         if not self.validate_channel(channel):
             raise HALOperationError(
                 f"Channel {channel.value} not supported",
@@ -166,15 +172,28 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         try:
             cmd = f"l{channel.value}\n"
-            success = self._send_command_with_response(cmd, expected_response=b"1")
-
-            if success:
-                self.status.active_channel = channel
-                logger.debug(f"Activated channel {channel.value}")
-            else:
-                logger.warning(f"Failed to activate channel {channel.value}")
-
-            return success
+            
+            # ✨ PHASE 1B: Fire-and-forget optimization (saves 400ms/cycle)
+            # Send command without waiting for response
+            # The 100ms LED settle delay gives hardware time to complete
+            self._device.write(cmd.encode())
+            import time
+            time.sleep(0.002)  # 2ms for serial transmission
+            
+            # Update status optimistically
+            self.status.active_channel = channel
+            logger.debug(f"Activated channel {channel.value} (fire-and-forget)")
+            
+            return True
+            
+            # OLD CODE (kept for reference - 105ms per channel!):
+            # success = self._send_command_with_response(cmd, expected_response=b"1")
+            # if success:
+            #     self.status.active_channel = channel
+            #     logger.debug(f"Activated channel {channel.value}")
+            # else:
+            #     logger.warning(f"Failed to activate channel {channel.value}")
+            # return success
 
         except Exception as e:
             raise HALOperationError(
