@@ -211,14 +211,18 @@ TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks r
 # =============================================================================
 
 # Integration time and scan averaging for optimal noise vs speed balance
-# ✨ PHASE 4 TESTING: Reduced to 40ms for speed optimization
-# Testing: 40ms × 4 scans = 160ms total acquisition time (vs 200ms baseline)
-# Expected: ~160ms savings per 4-channel cycle (11% faster: 1.43s → 1.27s)
-# - 80% of photons vs 50ms (should still maintain <2 RU with enhanced tracking)
-# - Validate noise levels before permanent deployment
-INTEGRATION_TIME_MS = 40.0      # Integration time per scan (milliseconds) [TESTING: was 50.0]
-NUM_SCANS_PER_ACQUISITION = 4   # Number of scans to average per measurement
-# Total acquisition time = 40ms × 4 = 160ms per channel (4 channels = 640ms cycle)
+# ✨ PHASE 5 AGGRESSIVE: Targeting 1.1s cycle time to match old software
+# 
+# SPEED PRESETS:
+# - ULTRA FAST: 30ms × 3 scans = 90ms/channel × 4 = 360ms + overhead = ~1.0s total ⚡⚡⚡
+# - AGGRESSIVE: 35ms × 3 scans = 105ms/channel × 4 = 420ms + overhead = ~1.1s total ⚡⚡
+# - BALANCED:   40ms × 4 scans = 160ms/channel × 4 = 640ms + overhead = ~1.2s total ⚡
+# - SAFE:       50ms × 4 scans = 200ms/channel × 4 = 800ms + overhead = ~1.4s total
+#
+# Current target: Match old software at 1.1s/cycle
+INTEGRATION_TIME_MS = 35.0      # ✨ AGGRESSIVE: 35ms (was 40ms, was 50ms baseline)
+NUM_SCANS_PER_ACQUISITION = 3   # ✨ AGGRESSIVE: 3 scans (was 4) - reduces noise averaging but gains speed
+# Total acquisition time = 35ms × 3 = 105ms per channel (4 channels = 420ms base + ~680ms overhead = 1.1s)
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
