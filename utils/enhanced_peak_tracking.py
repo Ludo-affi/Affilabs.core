@@ -277,6 +277,9 @@ class TemporalPeakSmoother:
         Returns:
             Smoothed peak wavelength
         """
+        # Convert to float to avoid numpy scalar type issues
+        measurement = float(measurement)
+        
         if np.isnan(measurement):
             logger.warning("NaN measurement received, skipping smoothing")
             return measurement
@@ -324,7 +327,7 @@ class TemporalPeakSmoother:
     def _moving_average_update(self, measurement: float) -> float:
         """Simple moving average."""
         self.history.append(measurement)
-        smoothed = np.mean(self.history)
+        smoothed = float(np.mean(self.history))
         
         logger.debug(
             f"Moving avg: meas={measurement:.3f}, smoothed={smoothed:.3f}, "

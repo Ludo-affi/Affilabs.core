@@ -132,6 +132,30 @@ class SPRDataProcessor:
         self.wave_data = wave_data
         self.fourier_weights = fourier_weights
         self.med_filt_win = self._ensure_odd(med_filt_win)
+        
+        # Initialize temporal smoother for enhanced peak tracking (persistent across calls)
+        self.temporal_smoother = None
+        try:
+            from settings.settings import ENHANCED_PEAK_TRACKING
+            if ENHANCED_PEAK_TRACKING:
+                from utils.enhanced_peak_tracking import TemporalPeakSmoother
+                from settings.settings import (
+                    TEMPORAL_SMOOTHING_ENABLED,
+                    TEMPORAL_SMOOTHING_METHOD,
+                    TEMPORAL_WINDOW_SIZE,
+                    KALMAN_MEASUREMENT_NOISE,
+                    KALMAN_PROCESS_NOISE,
+                )
+                if TEMPORAL_SMOOTHING_ENABLED:
+                    self.temporal_smoother = TemporalPeakSmoother(
+                        method=TEMPORAL_SMOOTHING_METHOD,
+                        window_size=TEMPORAL_WINDOW_SIZE,
+                        measurement_noise=KALMAN_MEASUREMENT_NOISE,
+                        process_noise=KALMAN_PROCESS_NOISE,
+                    )
+                    logger.info(f"✅ Enhanced peak tracking initialized with {TEMPORAL_SMOOTHING_METHOD} smoother")
+        except Exception as e:
+            logger.debug(f"Enhanced peak tracking not initialized: {e}")
 
     @staticmethod
     def _ensure_odd(value: int) -> int:
@@ -444,18 +468,28 @@ class SPRDataProcessor:
             if ENHANCED_PEAK_TRACKING:
                 try:
                     from utils.enhanced_peak_tracking import find_resonance_wavelength_enhanced
+                    from settings.settings import (
+                        FFT_CUTOFF_FREQUENCY,
+                        POLYNOMIAL_DEGREE,
+                        POLYNOMIAL_FIT_RANGE,
+                    )
                     
-                    enhanced_result = find_resonance_wavelength_enhanced(
+                    # Call enhanced function (returns tuple: peak, diagnostics)
+                    enhanced_result, diagnostics = find_resonance_wavelength_enhanced(
                         spectrum=spectrum,
                         wavelengths=self.wave_data,
+                        fft_cutoff=FFT_CUTOFF_FREQUENCY,
+                        poly_degree=POLYNOMIAL_DEGREE,
+                        search_range=POLYNOMIAL_FIT_RANGE,
+                        temporal_smoother=self.temporal_smoother,
                     )
                     
                     # If enhanced method succeeded, return result
                     if not np.isnan(enhanced_result):
                         logger.debug(f"Enhanced peak tracking: {enhanced_result:.3f} nm")
-                        return enhanced_result
+                        return float(enhanced_result)
                     else:
-                        logger.debug("Enhanced peak tracking failed, using fallback method")
+                        logger.debug("Enhanced peak tracking returned NaN, using fallback method")
                 
                 except Exception as e:
                     logger.warning(f"Enhanced peak tracking error: {e}, using fallback method")

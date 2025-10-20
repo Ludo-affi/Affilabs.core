@@ -187,7 +187,7 @@ FFT_NOISE_REDUCTION = True   # Enable FFT-based high-frequency noise removal
 
 # Stage 2: Polynomial Fitting Parameters
 POLYNOMIAL_DEGREE = 6           # Polynomial order (4-8), 6 optimal for SPR dips
-POLYNOMIAL_FIT_RANGE = (600, 720)  # Wavelength range for polynomial fit (nm)
+POLYNOMIAL_FIT_RANGE = (620, 680)  # NARROWED: Wavelength range for polynomial fit (nm) - reduced from (600,720) to avoid multiple peaks
 
 # Stage 3: Derivative Peak Finding
 # (Uses analytical derivative of polynomial - no additional parameters needed)
@@ -196,8 +196,8 @@ POLYNOMIAL_FIT_RANGE = (600, 720)  # Wavelength range for polynomial fit (nm)
 TEMPORAL_SMOOTHING_ENABLED = True      # Enable Kalman filter or moving average
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
-KALMAN_MEASUREMENT_NOISE = 0.5         # R parameter: lower = trust measurements more
-KALMAN_PROCESS_NOISE = 0.1             # Q parameter: lower = expect less change
+KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: INCREASED from 0.5 - trust measurements more (faster tracking)
+KALMAN_PROCESS_NOISE = 0.5             # Q parameter: INCREASED from 0.1 - allow more change (reduce lag)
 
 # ============================================================================
 # GUI RENDERING PERFORMANCE (G1, G4 Optimizations)
