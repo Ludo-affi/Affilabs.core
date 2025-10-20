@@ -78,6 +78,7 @@ from settings import (
     MIN_INTENSITY_PERCENT,
     MIN_INTEGRATION,
     MIN_WAVELENGTH,
+    NUM_SCANS_PER_ACQUISITION,  # ✨ Phase 2: 4-scan averaging for consistency
     P_COUNT_THRESHOLD,
     P_LED_MAX,
     P_MAX_INCREASE,
@@ -631,13 +632,13 @@ class SPRCalibrator:
         # Load OEM calibration positions immediately at initialization.
         # This enables fail-fast behavior (<1 second) instead of failing at Step 2B (~2 minutes).
         # Previously positions were lazily loaded in validate_polarizer_positions().
-        
+
         if device_config and 'oem_calibration' in device_config:
             oem_cal = device_config['oem_calibration']
             self.state.polarizer_s_position = oem_cal.get('polarizer_s_position')
             self.state.polarizer_p_position = oem_cal.get('polarizer_p_position')
             self.state.polarizer_sp_ratio = oem_cal.get('polarizer_sp_ratio')
-            
+
             if self.state.polarizer_s_position is not None and self.state.polarizer_p_position is not None:
                 logger.info("=" * 80)
                 logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
@@ -706,7 +707,7 @@ class SPRCalibrator:
                     from afterglow_correction import AfterglowCorrection
                     self.afterglow_correction = AfterglowCorrection(optical_cal_file)
                     self.afterglow_correction_enabled = True
-                    
+
                     # 🚀 PHASE 1: Calculate optimal LED delay from afterglow calibration
                     # Use typical calibration integration time (usually ~100ms)
                     integration_time_ms = 100.0
@@ -714,13 +715,13 @@ class SPRCalibrator:
                         integration_time_ms = usb.integration_time * 1000.0
                     elif hasattr(usb, '_integration_time'):
                         integration_time_ms = usb._integration_time * 1000.0
-                    
+
                     # Calculate optimal delay (2% residual = good balance)
                     self.led_delay = self.afterglow_correction.get_optimal_led_delay(
                         integration_time_ms=integration_time_ms,
                         target_residual_percent=2.0
                     )
-                    
+
                     logger.info(
                         f"✅ Optical calibration loaded for calibration afterglow correction\n"
                         f"   File: {Path(optical_cal_file).name}\n"
@@ -800,14 +801,14 @@ class SPRCalibrator:
 
     def _get_oem_positions(self) -> tuple[int | None, int | None, float | None]:
         """Get OEM calibration positions from single source of truth.
-        
+
         This centralizes all OEM position access to avoid 40+ scattered checks
         throughout the codebase. Returns positions from calibration state (preferred)
         or device_config (fallback if state not populated).
-        
+
         Returns:
             tuple: (s_position, p_position, sp_ratio) or (None, None, None) if not available
-        
+
         Example:
             >>> s_pos, p_pos, sp_ratio = self._get_oem_positions()
             >>> if s_pos is None:
@@ -821,7 +822,7 @@ class SPRCalibrator:
                 self.state.polarizer_p_position,
                 getattr(self.state, 'polarizer_sp_ratio', None)
             )
-        
+
         # Fallback to device_config (shouldn't happen if init properly loads positions)
         if self.device_config and 'oem_calibration' in self.device_config:
             oem = self.device_config['oem_calibration']
@@ -830,7 +831,7 @@ class SPRCalibrator:
                 oem.get('polarizer_p_position'),
                 oem.get('polarizer_sp_ratio')
             )
-        
+
         # No positions available
         return (None, None, None)
 
@@ -1292,6 +1293,37 @@ class SPRCalibrator:
         except Exception as e:
             logger.error(f"Error in vectorized spectrum acquisition: {e}")
             return None
+
+    def _acquire_calibration_spectrum(self,
+                                      apply_filter: bool = True,
+                                      subtract_dark: bool = False) -> Optional[np.ndarray]:
+        """Acquire spectrum with proper averaging for calibration consistency.
+        
+        Helper method that ensures all calibration spectrum acquisitions use
+        the same averaging as live mode (NUM_SCANS_PER_ACQUISITION = 4).
+        
+        This provides consistency between:
+        - Calibration measurements (dark, S-pol, P-pol references)
+        - Live data acquisition
+        - Same noise characteristics throughout workflow
+        
+        Args:
+            apply_filter: Whether to apply spectral range filter (default: True)
+            subtract_dark: Whether to subtract dark noise (default: False)
+            
+        Returns:
+            Averaged spectrum as numpy array, or None if error
+            
+        Example:
+            # Instead of: raw = self.usb.read_intensity()
+            # Use: raw = self._acquire_calibration_spectrum()
+        """
+        return self._acquire_averaged_spectrum(
+            num_scans=NUM_SCANS_PER_ACQUISITION,
+            apply_filter=apply_filter,
+            subtract_dark=subtract_dark,
+            description="calibration spectrum"
+        )
 
     def set_progress_callback(self, callback: Callable[[int, str], None]) -> None:
         """Set callback for progress updates."""
@@ -1780,10 +1812,10 @@ class SPRCalibrator:
             # ========================================================================
             # Positions are now loaded at init (P1), so this method only validates.
             # Uses centralized helper method (P2) for cleaner code.
-            
+
             # Get OEM positions using centralized helper (P2 optimization)
             s_pos, p_pos, sp_ratio_config = self._get_oem_positions()
-            
+
             # Positions should ALWAYS be available here (loaded at init via P1)
             if s_pos is None or p_pos is None:
                 # This should NEVER happen if P1 optimization is working correctly
@@ -1866,13 +1898,15 @@ class SPRCalibrator:
             # Measure S-mode intensity (should be HIGH - reference, no resonance)
             self.ctrl.set_mode("s")
             time.sleep(0.4)  # Wait for servo to move
-            s_spectrum = self.usb.read_intensity()
+            # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+            s_spectrum = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
             s_max = float(np.max(s_spectrum)) if s_spectrum is not None else 0.0
 
             # Measure P-mode intensity (should be LOWER - shows resonance)
             self.ctrl.set_mode("p")
             time.sleep(0.4)  # Wait for servo to move
-            p_spectrum = self.usb.read_intensity()
+            # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+            p_spectrum = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
             p_max = float(np.max(p_spectrum)) if p_spectrum is not None else 0.0
 
             # Turn off LED
@@ -2013,8 +2047,8 @@ class SPRCalibrator:
                 # Track for afterglow correction
                 self._last_active_channel = ch
 
-                # ✨ SINGLE RAW READ (no averaging, no dark subtraction)
-                raw_array = self.usb.read_intensity()
+                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+                raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
                 if raw_array is None:
                     logger.error(f"Failed to read intensity for channel {ch}")
                     continue
@@ -2059,8 +2093,8 @@ class SPRCalibrator:
 
                     self._last_active_channel = ch
 
-                    # Single raw read
-                    raw_array = self.usb.read_intensity()
+                    # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+                    raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
                     if raw_array is None:
                         logger.error(f"Failed to read intensity for channel {ch} on retry")
                         continue
@@ -2160,8 +2194,8 @@ class SPRCalibrator:
             time.sleep(LED_DELAY)
             self._last_active_channel = channel
 
-            # Read spectrum
-            raw_array = self.usb.read_intensity()
+            # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+            raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
             if raw_array is None:
                 logger.error(f"❌ Failed to read {description} for channel {channel}")
                 return None
@@ -2605,7 +2639,8 @@ class SPRCalibrator:
                 # ✨ NEW (Phase 2): Track last active channel for afterglow correction
                 self._last_active_channel = ch
 
-                raw_array = self.usb.read_intensity()
+                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+                raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
                 if raw_array is None:
                     logger.error(f"Failed to read intensity for channel {ch}")
                     continue
@@ -2709,7 +2744,8 @@ class SPRCalibrator:
                 self.usb.set_integration(self.state.integration)
                 time.sleep(0.02)
 
-                raw_array = self.usb.read_intensity()
+                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+                raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
                 if raw_array is None:
                     break
 
@@ -2768,7 +2804,8 @@ class SPRCalibrator:
             self._activate_channel_batch([weakest_ch], intensities_dict)
             time.sleep(LED_DELAY)
 
-            raw_array = self.usb.read_intensity()
+            # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+            raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
             if raw_array is not None:
                 filtered_array = self._apply_spectral_filter(raw_array)
                 final_count = filtered_array[target_min_idx:target_max_idx].max()
@@ -3028,7 +3065,8 @@ class SPRCalibrator:
 
             # Measure dark noise - apply spectral filter to measure only SPR-relevant range
             try:
-                test_spectrum = self.usb.read_intensity()
+                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+                test_spectrum = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
                 if test_spectrum is None or len(test_spectrum) == 0:
                     logger.error("Cannot determine spectrum length for dark noise measurement")
                     return False

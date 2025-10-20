@@ -118,7 +118,8 @@ CYCLE_TIME = 1.3  # DEPRECATED: Use calculate_dynamic_scans() instead
 # Reference Signal Averaging
 # Number of scans is DYNAMIC based on integration time (via calculate_dynamic_scans)
 # to maintain ≤200ms acquisition time per channel
-DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
+# ✨ Phase 2 Optimization: Reduced to 4 scans to match live acquisition (50ms × 4 = 200ms)
+DARK_NOISE_SCANS = 4  # number of scans to average in dark noise measurement (was 30)
 REF_SCANS = 20  # DEPRECATED: Now calculated dynamically via calculate_dynamic_scans()
 
 # Legacy LED parameters
@@ -211,7 +212,7 @@ TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks r
 INTEGRATION_TIME_MS = 50.0      # Integration time per scan (milliseconds)
 NUM_SCANS_PER_ACQUISITION = 4   # Number of scans to average per measurement
 # Total acquisition time = 50ms × 4 = 200ms per channel (4 channels = 800ms cycle)
-TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"  
+TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
 KALMAN_PROCESS_NOISE = 0.5             # Q parameter: allow more change (reduce lag)
