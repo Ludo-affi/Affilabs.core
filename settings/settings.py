@@ -181,15 +181,15 @@ SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phas
 # ⚠️ CURRENTLY DISABLED - Using simple direct minimum for better time resolution
 # The enhanced pipeline can introduce lag and mask real SPR binding events
 # Only enable if you need noise reduction MORE than time resolution
-ENHANCED_PEAK_TRACKING = False  # DISABLED: Using direct minimum for real-time SPR tracking
+ENHANCED_PEAK_TRACKING = True  # ENABLED: Using FFT + Polynomial (Stages 1-3 only, NO temporal smoothing)
 
 # Stage 1: FFT Preprocessing Parameters (only used if ENHANCED_PEAK_TRACKING=True)
-FFT_CUTOFF_FREQUENCY = 0.15  # Low-pass cutoff (0.1-0.3), lower = more smoothing
+FFT_CUTOFF_FREQUENCY = 0.20  # INCREASED from 0.15 - less aggressive smoothing, more responsive
 FFT_NOISE_REDUCTION = True   # Enable FFT-based high-frequency noise removal
 
 # Stage 2: Polynomial Fitting Parameters (only used if ENHANCED_PEAK_TRACKING=True)
-POLYNOMIAL_DEGREE = 6           # Polynomial order (4-8), 6 optimal for SPR dips
-POLYNOMIAL_FIT_RANGE = (620, 680)  # Wavelength range for polynomial fit (nm)
+POLYNOMIAL_DEGREE = 4           # REDUCED from 6 - simpler fit, less overfitting, faster response
+POLYNOMIAL_FIT_RANGE = (625, 675)  # NARROWED from (620,680) - tighter focus on main SPR peak
 
 # Stage 3: Derivative Peak Finding (only used if ENHANCED_PEAK_TRACKING=True)
 # (Uses analytical derivative of polynomial - no additional parameters needed)
