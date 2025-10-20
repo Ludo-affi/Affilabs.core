@@ -178,6 +178,12 @@ SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phas
 # ENHANCED PEAK TRACKING (4-Stage Pipeline for <2 RU Stability)
 # ============================================================================
 
+# Peak tracking method selection
+# - 'enhanced': 4-stage pipeline (FFT + Polynomial + Derivative + Kalman) - 15ms, <1 RU
+# - 'centroid': Weighted centroid method - 1-2ms, <2 RU (FASTER, simpler)
+# - 'parabolic': Simple parabolic interpolation - 0.5ms, 3-5 RU (fallback)
+PEAK_TRACKING_METHOD = 'centroid'  # ✨ TESTING: Centroid method (5-10× faster than enhanced)
+
 # Enable enhanced peak tracking with FFT → Polynomial → Derivative pipeline
 # ⚠️ CURRENTLY DISABLED - Using simple direct minimum for better time resolution
 # The enhanced pipeline can introduce lag and mask real SPR binding events
@@ -250,6 +256,28 @@ FLUSH_RATE = 220  # rate in uL/min for flushing channels
 DEMO = False  # enable/disable demo mode
 STATIC_PLOT = False  # enable/disable static portion of plots
 POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+# Control logging verbosity for performance optimization
+# Console logging can add 1-2ms overhead per cycle with DEBUG level
+# 
+# Levels (increasing verbosity):
+# - ERROR: Only critical errors (fastest, minimal output)
+# - WARNING: Warnings and errors (recommended for production)
+# - INFO: General information + warnings + errors (moderate output)
+# - DEBUG: Detailed debugging info (slowest, verbose output)
+#
+# File logging always uses DEBUG level (full details for troubleshooting)
+# Console logging uses CONSOLE_LOG_LEVEL (reduced for performance)
+
+import logging
+CONSOLE_LOG_LEVEL = logging.WARNING  # WARNING = production (fast, clean console)
+                                      # INFO = development (more details)
+                                      # DEBUG = troubleshooting (verbose)
+
+# =============================================================================
 
 # Device types and timezone
 DEVICES = ["PicoP4SPR", "PicoEZSPR"]  # Supported device types

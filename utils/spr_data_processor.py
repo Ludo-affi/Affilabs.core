@@ -472,9 +472,10 @@ class SPRDataProcessor:
                         FFT_CUTOFF_FREQUENCY,
                         POLYNOMIAL_DEGREE,
                         POLYNOMIAL_FIT_RANGE,
+                        PEAK_TRACKING_METHOD,
                     )
 
-                    # Call enhanced function (returns tuple: peak, diagnostics)
+                    # Call with selected method (centroid/enhanced/parabolic)
                     enhanced_result, diagnostics = find_resonance_wavelength_enhanced(
                         spectrum=spectrum,
                         wavelengths=self.wave_data,
@@ -482,17 +483,21 @@ class SPRDataProcessor:
                         poly_degree=POLYNOMIAL_DEGREE,
                         search_range=POLYNOMIAL_FIT_RANGE,
                         temporal_smoother=self.temporal_smoother,
+                        method=PEAK_TRACKING_METHOD,  # ✨ NEW: Method selection
                     )
 
-                    # If enhanced method succeeded, return result
+                    # If method succeeded, return result
                     if not np.isnan(enhanced_result):
-                        logger.debug(f"Enhanced peak tracking: {enhanced_result:.3f} nm")
+                        logger.debug(
+                            f"{diagnostics.get('method', 'unknown').capitalize()} peak tracking: "
+                            f"{enhanced_result:.3f} nm (perf: {diagnostics.get('performance', 'N/A')})"
+                        )
                         return float(enhanced_result)
                     else:
-                        logger.debug("Enhanced peak tracking returned NaN, using fallback method")
+                        logger.debug(f"{PEAK_TRACKING_METHOD} method returned NaN, using fallback")
 
                 except Exception as e:
-                    logger.warning(f"Enhanced peak tracking error: {e}, using fallback method")
+                    logger.warning(f"Peak tracking error ({PEAK_TRACKING_METHOD}): {e}, using fallback")
 
             # Fallback to direct minimum method
             from settings.settings import (
