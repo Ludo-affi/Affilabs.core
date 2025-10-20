@@ -242,11 +242,43 @@ NUM_SCANS_PER_ACQUISITION = 4            # Scans to average
 
 ---
 
-## 📝 References
+## � Calibration Consistency (Added October 19, 2025)
+
+**Problem**: Calibration routines used different acquisition parameters than live mode:
+- Dark noise: 30-scan averaging
+- LED/Integration calibration: Single-scan reads
+- Reference signals: Dynamic (but different base)
+
+**Solution**: Apply same 4-scan averaging throughout calibration
+- `DARK_NOISE_SCANS`: 30 → 4 scans
+- Added `_acquire_calibration_spectrum()` helper method
+- Replaced all single `read_intensity()` calls with 4-scan averaging:
+  - Polarizer S/P test measurements
+  - Channel ranking/detection measurements
+  - LED calibration intensity measurements
+  - Integration time optimization measurements
+  - Dark noise test spectrum
+  - All helper methods
+
+**Benefits**:
+- ✅ Calibration references match live signal quality
+- ✅ No systematic differences between calibration and measurement
+- ✅ Consistent noise characteristics throughout workflow
+- ✅ Afterglow correction trained on same conditions
+- ✅ Faster calibration (4 vs 30 scans for dark = 7.5× faster)
+
+**Result**: Complete consistency - calibration and live mode use identical 50ms × 4 scan = 200ms acquisition
+
+**Commit**: 04b206f
+
+---
+
+## �📝 References
 
 - **Phase 1 Commit**: 2009508 (LED delay optimization)
 - **Phase 2 Commit**: 7ee8baa (Scan averaging implementation)
 - **Tool Commit**: 9df593c (Optimizer tool creation)
+- **Calibration Commit**: 04b206f (Calibration consistency)
 - **System Calibration**: 1 nm = 355 RU (user-provided)
 - **Test Date**: October 19, 2025
 
@@ -260,6 +292,7 @@ NUM_SCANS_PER_ACQUISITION = 4            # Scans to average
 - [x] Comprehensive testing and validation
 - [x] Reproducible methodology
 - [x] Production-ready implementation
+- [x] Calibration consistency with live mode ✨ NEW
 
 **Status**: ✅ **OPTIMIZATION COMPLETE AND DEPLOYED**
 
