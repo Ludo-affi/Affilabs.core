@@ -161,11 +161,14 @@ class SpecPlot(GraphicsLayoutWidget):
 
         # Enable antialiasing for prettier plots
         setConfigOptions(antialias=True)
+        
+        # Set white background for better visibility
+        self.setBackground('w')
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, color=(250, 250, 250), size="10pt")
-        self.plot.showGrid(x=True, y=True)
+        self.plot.titleLabel.setText(title_string, color='k', size="10pt")  # Black text
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
         if DEV:
             self.plot.setMenuEnabled(True)
             self.plot.setMouseEnabled(True)
@@ -173,8 +176,14 @@ class SpecPlot(GraphicsLayoutWidget):
             self.plot.setMenuEnabled(False)
             self.plot.setMouseEnabled(False)
         self.plot.setDownsampling(ds=50, mode="subsample")
-        self.plot.setLabel("left", y_axis_string)
-        self.plot.setLabel("bottom", x_axis_string)
+        self.plot.setLabel("left", y_axis_string, color='k')  # Black text
+        self.plot.setLabel("bottom", x_axis_string, color='k')  # Black text
+        
+        # Set axis colors to black for visibility on white background
+        self.plot.getAxis('left').setPen('k')
+        self.plot.getAxis('left').setTextPen('k')
+        self.plot.getAxis('bottom').setPen('k')
+        self.plot.getAxis('bottom').setTextPen('k')
 
         # create plots for channels
         self.plots = {}

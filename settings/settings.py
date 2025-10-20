@@ -179,7 +179,7 @@ SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phas
 
 # Enable enhanced peak tracking with FFT → Polynomial → Derivative → Kalman pipeline
 # Target: <2 RU standard deviation @ >1 Hz acquisition rate
-ENHANCED_PEAK_TRACKING = False  # Set to True after testing to enable enhanced pipeline
+ENHANCED_PEAK_TRACKING = True  # ENABLED: Testing 4-stage pipeline for <2 RU stability
 
 # Stage 1: FFT Preprocessing Parameters
 FFT_CUTOFF_FREQUENCY = 0.15  # Low-pass cutoff (0.1-0.3), lower = more smoothing
