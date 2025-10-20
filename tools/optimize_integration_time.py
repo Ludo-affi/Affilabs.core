@@ -26,6 +26,7 @@ Author: GitHub Copilot
 Date: October 19, 2025
 """
 
+import sys
 import time
 import json
 import numpy as np
@@ -33,6 +34,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.logger import logger
 from utils.device_configuration import get_device_config
@@ -145,9 +149,16 @@ class IntegrationTimeOptimizer:
         
         logger.info(f"LED delay: {led_delay*1000:.1f}ms")
         
-        # Activate channel and turn on LED
-        self.ctrl.activate_channel(ChannelID[channel.upper()])
-        self.ctrl.set_intensity(ChannelID[channel.upper()], led_intensity)
+        # Activate channel and turn on LED (use string channel ID)
+        channel_enum = ChannelID[channel.upper()]
+        self.ctrl.activate_channel(channel_enum)
+        time.sleep(0.1)  # Let channel activate
+        
+        # Set LED intensity (HAL uses string channel internally)
+        if not self.ctrl.set_intensity(channel, led_intensity):
+            logger.error(f"Failed to set LED intensity for channel {channel}")
+            return {}
+        
         time.sleep(led_delay * 2)  # Extra settling time for first measurement
         
         # Collect measurements
@@ -174,7 +185,7 @@ class IntegrationTimeOptimizer:
                 logger.info(f"  Progress: {i+1}/{num_measurements} measurements...")
         
         # Turn off LED
-        self.ctrl.set_intensity(ChannelID[channel.upper()], 0)
+        self.ctrl.set_intensity(channel, 0)
         
         # Calculate statistics
         signal_levels = np.array(signal_levels)
