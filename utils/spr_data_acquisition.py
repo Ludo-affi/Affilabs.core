@@ -395,7 +395,7 @@ class SPRDataAcquisition:
                     self.timing_samples.append(t_cycle_total * 1000)  # Store in ms
                     
                     if self.enable_timing_logs:
-                        logger.info(
+                        logger.warning(
                             f"⏱️ CYCLE #{self.cycle_count}: "
                             f"total={int(t_cycle_total*1000)}ms, "
                             f"emit={int(t_emit_time*1000)}ms, "
@@ -408,7 +408,7 @@ class SPRDataAcquisition:
                             avg_time = sum(recent_samples) / len(recent_samples)
                             min_time = min(recent_samples)
                             max_time = max(recent_samples)
-                            logger.info(
+                            logger.warning(
                                 f"📊 TIMING STATS (last 10 cycles): "
                                 f"avg={int(avg_time)}ms, "
                                 f"min={int(min_time)}ms, "
@@ -690,7 +690,7 @@ class SPRDataAcquisition:
             # ⏱️ TIMING: Log detailed breakdown for this channel
             if self.enable_timing_logs:
                 t_total = t_peak_complete - t_start
-                logger.info(
+                logger.warning(
                     f"⏱️ TIMING ch={ch}: "
                     f"LED_on={int((t_led_on-t_start)*1000)}ms, "
                     f"LED_settle={int((t_led_settle-t_led_on)*1000)}ms, "
