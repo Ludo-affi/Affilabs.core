@@ -141,16 +141,38 @@ class SPRDataAcquisition:
                     from afterglow_correction import AfterglowCorrection
                     self.afterglow_correction = AfterglowCorrection(optical_cal_file)
                     self.afterglow_correction_enabled = True
-                    logger.info("✅ Optical calibration loaded for live mode afterglow correction")
+                    
+                    # 🚀 PHASE 1: Calculate optimal LED delay from afterglow calibration
+                    # Get current integration time (or use calibrated default)
+                    integration_time_ms = 100.0  # Default
+                    if hasattr(usb, 'integration_time'):
+                        integration_time_ms = usb.integration_time * 1000.0
+                    elif hasattr(usb, '_integration_time'):
+                        integration_time_ms = usb._integration_time * 1000.0
+                    
+                    # Calculate optimal delay (2% residual = good balance of speed vs accuracy)
+                    self.led_delay = self.afterglow_correction.get_optimal_led_delay(
+                        integration_time_ms=integration_time_ms,
+                        target_residual_percent=2.0
+                    )
+                    
+                    logger.info(
+                        f"✅ Optical calibration loaded for live mode afterglow correction\n"
+                        f"   LED delay optimized: {self.led_delay*1000:.1f}ms "
+                        f"(based on τ decay @ {integration_time_ms:.1f}ms integration)"
+                    )
                 except FileNotFoundError:
                     logger.warning("⚠️ Optical calibration file not found - afterglow correction disabled for live mode")
+                    logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to load optical calibration: {e}")
+                    logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
             else:
                 if not afterglow_enabled:
                     logger.info("ℹ️ Afterglow correction disabled for live mode (device_config)")
                 else:
                     logger.debug("ℹ️ No optical calibration file - afterglow correction disabled for live mode")
+                logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
 
         # Log optimization status
         if self._batch_led_available:

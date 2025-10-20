@@ -706,14 +706,35 @@ class SPRCalibrator:
                     from afterglow_correction import AfterglowCorrection
                     self.afterglow_correction = AfterglowCorrection(optical_cal_file)
                     self.afterglow_correction_enabled = True
-                    logger.info("✅ Optical calibration loaded for calibration afterglow correction")
-                    logger.info(f"   File: {Path(optical_cal_file).name}")
+                    
+                    # 🚀 PHASE 1: Calculate optimal LED delay from afterglow calibration
+                    # Use typical calibration integration time (usually ~100ms)
+                    integration_time_ms = 100.0
+                    if hasattr(usb, 'integration_time'):
+                        integration_time_ms = usb.integration_time * 1000.0
+                    elif hasattr(usb, '_integration_time'):
+                        integration_time_ms = usb._integration_time * 1000.0
+                    
+                    # Calculate optimal delay (2% residual = good balance)
+                    self.led_delay = self.afterglow_correction.get_optimal_led_delay(
+                        integration_time_ms=integration_time_ms,
+                        target_residual_percent=2.0
+                    )
+                    
+                    logger.info(
+                        f"✅ Optical calibration loaded for calibration afterglow correction\n"
+                        f"   File: {Path(optical_cal_file).name}\n"
+                        f"   LED delay optimized: {self.led_delay*1000:.1f}ms "
+                        f"(based on τ decay @ {integration_time_ms:.1f}ms integration)"
+                    )
                 except FileNotFoundError as e:
                     logger.info(f"ℹ️ Optical calibration file not found: {e}")
                     logger.info("ℹ️ Afterglow correction DISABLED for calibration")
+                    logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to load optical calibration: {e}")
                     logger.warning("⚠️ Afterglow correction DISABLED for calibration")
+                    logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
             else:
                 if not optical_cal_file:
                     logger.debug("ℹ️ No optical calibration file specified in device_config")

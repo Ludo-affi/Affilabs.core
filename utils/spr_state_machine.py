@@ -129,7 +129,7 @@ class DataAcquisitionWrapper:
         # Configuration defaults
         self.wave_data = np.array([])
         self.num_scans = 1
-        self.led_delay = 0.1
+        self.led_delay = 0.1  # Default fallback - will be optimized if afterglow calibration available
         self.med_filt_win = 5
         self.dark_noise = np.zeros(3648)  # Match USB4000 pixel count (3648)
         self.base_integration_time_factor = 1.0  # Fiber-specific speed multiplier

@@ -189,7 +189,7 @@ FFT_NOISE_REDUCTION = True   # Enable FFT-based high-frequency noise removal
 
 # Stage 2: Polynomial Fitting Parameters (only used if ENHANCED_PEAK_TRACKING=True)
 POLYNOMIAL_DEGREE = 4           # REDUCED from 6 - simpler fit, less overfitting, faster response
-POLYNOMIAL_FIT_RANGE = (625, 675)  # NARROWED from (620,680) - tighter focus on main SPR peak
+POLYNOMIAL_FIT_RANGE = (600, 675)  # Full SPR dip range - covers entire resonance feature
 
 # Stage 3: Derivative Peak Finding (only used if ENHANCED_PEAK_TRACKING=True)
 # (Uses analytical derivative of polynomial - no additional parameters needed)
