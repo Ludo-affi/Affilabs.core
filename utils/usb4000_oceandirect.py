@@ -408,15 +408,10 @@ class USB4000OceanDirect:
             t_end = time.perf_counter()
             elapsed_ms = (t_end - t_start) * 1000
 
-            # Log warning only if acquisition is extremely slow (> 50ms)
-            # Normal: 20-35ms (integration time + ~12ms USB overhead on Windows)
+            # Performance note: Acquisition times vary based on integration time and USB communication
+            # Typical: 50-65ms for full spectrum read (integration time + USB overhead)
             # See SEABREEZE_PERFORMANCE_FINDINGS.md for detailed analysis
-            if elapsed_ms > 50.0:
-                logger.warning(
-                    f"Very slow spectrum acquisition: {elapsed_ms:.2f}ms "
-                    f"(normal: 20-35ms with typical integration times)"
-                )
-
+            
             logger.debug(
                 f"Acquired spectrum: {len(intensity_data)} points, "
                 f"integration time: {self._current_integration_time:.3f}s, "

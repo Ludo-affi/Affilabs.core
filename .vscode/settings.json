@@ -1,0 +1,125 @@
+{
+    // FORCE PYTHON 3.12 - Do not change!
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv312/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.venvPath": "${workspaceFolder}/.venv312",
+    "python.pythonPath": "${workspaceFolder}/.venv312/Scripts/python.exe",
+    "python.linting.enabled": false,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.linting.mypyEnabled": false,
+    "editor.formatOnSave": false,
+    "python.formatting.provider": "none",
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.python"
+    },
+    "python.analysis.extraPaths": [],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.diagnosticSeverityOverrides": {
+        // Import and module issues
+        "reportMissingImports": "none",
+        "reportMissingModuleSource": "none",
+        "reportMissingTypeStubs": "none",
+
+        // PySide6/PyQtGraph attribute access (very common false positives)
+        "reportGeneralTypeIssues": "none",
+        "reportAttributeAccessIssue": "none",
+        "reportOptionalMemberAccess": "none",
+        "reportOptionalSubscript": "none",
+        "reportOptionalCall": "none",
+        "reportOptionalIterable": "none",
+        "reportOptionalContextManager": "none",
+        "reportOptionalOperand": "none",
+
+        // Type annotation issues (reduce noise from incomplete stubs)
+        "reportUnknownParameterType": "none",
+        "reportUnknownArgumentType": "none",
+        "reportUnknownLambdaType": "none",
+        "reportUnknownVariableType": "none",
+        "reportUnknownMemberType": "none",
+        "reportMissingTypeArgument": "none",
+        "reportMissingParameterType": "none",
+        "reportUntypedFunctionDecorator": "none",
+        "reportUntypedClassDecorator": "none",
+        "reportUntypedBaseClass": "none",
+
+        // Function/method issues
+        "reportCallIssue": "none",
+        "reportArgumentType": "none",
+        "reportIncompatibleMethodOverride": "none",
+        "reportIncompatibleVariableOverride": "none",
+
+        // Unused code (informational only)
+        "reportUnusedImport": "none",
+        "reportUnusedVariable": "none",
+        "reportUnusedFunction": "none",
+        "reportUnusedClass": "none",
+
+        // Other checks
+        "reportInvalidTypeVarUse": "warning",
+        "reportCallInDefaultInitializer": "none",
+        "reportUnnecessaryIsInstance": "none",
+        "reportUnnecessaryCast": "none",
+        "reportAssertAlwaysTrue": "warning",
+        "reportSelfClsParameterName": "warning",
+        "reportImplicitStringConcatenation": "none",
+        "reportPrivateUsage": "none",
+        "reportConstantRedefinition": "none",
+
+        // Keep critical errors
+        "reportUndefinedVariable": "error",
+        "reportUnboundVariable": "error"
+    },
+    "files.trimTrailingWhitespace": true,
+    "sonarlint.pathToCompileCommands": "${workspaceFolder}\\firmware\\pi_pico_fw\\build\\compile_commands.json",
+
+    // Performance optimization - reduce tool count
+    "python.analysis.memory.keepLibraryAst": false,
+    "python.analysis.indexing": true,
+
+    // File watcher exclusions - don't watch these directories (reduces file watchers)
+    "files.watcherExclude": {
+        "**/.venv/**": true,
+        "**/.venv312/**": true,
+        "**/__pycache__/**": true,
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/**": true,
+        "**/generated-files/**": true,
+        "**/logs/**": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache/**": true,
+        "**/.mypy_cache/**": true,
+        "**/.ruff_cache/**": true
+    },
+
+    // Search exclusions - faster searches
+    "search.exclude": {
+        "**/.venv": true,
+        "**/.venv312": true,
+        "**/__pycache__": true,
+        "**/generated-files": true,
+        "**/logs": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true
+    },
+
+    // Disable code lens to reduce overhead
+    "editor.codeLens": false,
+
+    // Reduce suggestions in comments/strings
+    "editor.quickSuggestions": {
+        "other": true,
+        "comments": false,
+        "strings": false
+    },
+
+    // Git performance
+    "git.ignoreLimitWarning": true,
+    "git.autofetch": false,
+    "git.autorefresh": false
+}

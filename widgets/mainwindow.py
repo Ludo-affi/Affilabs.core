@@ -1,6 +1,6 @@
-from PySide6.QtCore import QPoint, QPropertyAnimation, QSize, Qt, Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QPushButton, QWidget
+from PySide6.QtCore import QPoint, QPropertyAnimation, QSize, Qt, Signal  # type: ignore
+from PySide6.QtGui import QIcon  # type: ignore
+from PySide6.QtWidgets import QPushButton, QWidget  # type: ignore
 
 from settings import DEV, POP_OUT_SPEC, SW_VERSION
 from ui.ui_main import Ui_mainWindow

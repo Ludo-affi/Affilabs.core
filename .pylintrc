@@ -23,13 +23,6 @@ disable=
     # PySide6 attribute access
     no-member,
     too-few-public-methods,
-    # Type hints and annotations
-    missing-type-doc,
-    missing-return-type-doc,
-    missing-yield-type-doc,
-    missing-return-type-annotation,
-    missing-param-doc,
-    missing-raises-doc,
     # Documentation
     missing-module-docstring,
     missing-class-docstring,
