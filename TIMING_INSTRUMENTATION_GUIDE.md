@@ -16,25 +16,25 @@ Comprehensive performance profiling added to identify and quantify overhead sour
 1. **LED_on** (1-5ms): Time to activate LED via serial command
    - Includes: Serial communication, command parsing
    - Expected: <5ms (batch control), 10-20ms (sequential)
-   
+
 2. **LED_settle** (0-100ms): Stabilization delay after LED activation
    - Value from settings: `LED_DELAY` (default 50ms)
    - Expected: 50ms (new software), 100ms (old software)
-   
+
 3. **scan** (100-300ms): Spectrum acquisition and averaging
    - Includes: N scans × integration time + USB transfer overhead
    - Expected: ~200ms for 4×50ms or 2×100ms scans
    - Critical bottleneck if >250ms
-   
+
 4. **dark** (5-30ms): Dark noise correction and interpolation
    - Includes: Array operations, scipy interpolation if size mismatch
    - Expected: <20ms
    - Can be high (30ms) if scipy interpolation needed
-   
+
 5. **trans** (5-15ms): Transmittance calculation (P/S ratio)
    - Includes: Array division, denoising (if enabled)
    - Expected: <10ms with denoising disabled
-   
+
 6. **peak** (1-15ms): Resonance wavelength detection
    - Centroid method: 1-2ms
    - Enhanced method: 10-15ms
@@ -50,12 +50,12 @@ Comprehensive performance profiling added to identify and quantify overhead sour
 1. **total**: Complete cycle time (all 4 channels + GUI emission)
    - Target: <1200ms to match old software
    - Current: ~1600ms
-   
+
 2. **emit**: Time to emit data to GUI (Qt signals)
    - Sensorgram data: lightweight (~5-10ms)
    - Spectroscopy data: heavy arrays (~40-80ms)
    - Optimization: Throttle spectroscopy to every 3rd cycle
-   
+
 3. **acq**: Pure acquisition time (total - emit)
    - Expected: 4 channels × ~300ms = ~1200ms
    - If >1400ms, indicates channel-level bottleneck
@@ -150,7 +150,7 @@ scan=310ms  ❌  70ms overhead per channel!
 = 210-230ms target
 
 2 scans × 100ms = 200ms integration
-+ 5-15ms USB overhead  
++ 5-15ms USB overhead
 = 205-215ms target (BETTER - less loop overhead)
 ```
 
@@ -244,11 +244,11 @@ Look for patterns in the logs:
 - Scan time is 45-55ms above target (250ms vs 205ms) ❌
   - 50ms × 4 channels = 200ms extra per cycle
   - **PRIMARY BOTTLENECK**
-  
+
 - Emit time is 75ms (should be <50ms) ⚠️
   - 25ms × 4 channels (if throttled) = 100ms saved
   - **SECONDARY OPTIMIZATION**
-  
+
 - LED settle is 50ms (conservative, could reduce) ⏸️
   - 30ms reduction × 4 channels = 120ms potential savings
   - **TERTIARY OPTIMIZATION** (requires validation)
@@ -263,10 +263,10 @@ Based on timing data, implement in order:
 1. **Optimize scan time** (200ms savings) ⭐⭐⭐⭐⭐
    - Implement fast-path USB read
    - Add `acquire_averaged_spectrum()` to HAL
-   
+
 2. **Throttle GUI emissions** (100ms savings) ⭐⭐⭐⭐
    - Emit spectroscopy data every 3rd cycle only
-   
+
 3. **Reduce LED settle** (120ms savings) ⭐⭐⭐
    - Test 30ms delay (requires noise validation)
    - Enable afterglow correction
@@ -395,7 +395,7 @@ Compare your numbers to expected values in this guide.
 - Lines: ~425-705 (complete method with timing points)
 
 **Per-cycle timing:**
-- File: `utils/spr_data_acquisition.py`  
+- File: `utils/spr_data_acquisition.py`
 - Method: `grab_data()` main loop
 - Lines: ~360-410 (cycle loop with timing)
 

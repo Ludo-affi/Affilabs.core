@@ -52,7 +52,7 @@ The `_send_command_with_response()` method:
 
 ### Serial Communication Timeline
 ```
-[Python sends "la\n"] → [Serial TX] → [Hardware receives] 
+[Python sends "la\n"] → [Serial TX] → [Hardware receives]
                                           ↓
                         [Motors move: ~50-80ms]
                                           ↓
@@ -112,10 +112,10 @@ def activate_all_channels_async(self):
     # Send all commands first
     for ch in ['a', 'b', 'c', 'd']:
         self._device.write(f"l{ch}\n".encode())
-    
+
     # Wait for all responses (100ms once, not 400ms total)
     time.sleep(0.1)
-    
+
     # Read confirmations
     for _ in range(4):
         response = self._device.read_until(b"1")
@@ -187,7 +187,7 @@ time.sleep(0.001)  # 1ms for TX
    - Add configuration flag: `WAIT_FOR_LED_RESPONSE = False`
    - Keep response-wait code for debugging mode
    - Add startup validation to confirm LEDs working
-   
+
 2. If test shows issues:
    - Implement Option 2 (async) or Option 3 (batch)
    - Add proper error handling

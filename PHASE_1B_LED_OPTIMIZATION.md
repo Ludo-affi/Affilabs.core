@@ -2,15 +2,15 @@
 
 ## Implementation Summary
 
-**Date**: 2025-10-20  
-**Status**: ✅ IMPLEMENTED - Ready for testing  
+**Date**: 2025-10-20
+**Status**: ✅ IMPLEMENTED - Ready for testing
 **Expected Impact**: 400ms savings per cycle (1704ms → 1304ms)
 
 ## What Was Changed
 
 ### File Modified: `utils/hal/pico_p4spr_hal.py`
 
-**Method**: `activate_channel()`  
+**Method**: `activate_channel()`
 **Lines**: ~156-195
 
 ### Before (Phase 1A - Baseline)
@@ -37,7 +37,7 @@ def activate_channel(self, channel: ChannelID) -> bool:
     return True
 ```
 
-**Time**: 2ms per channel × 4 = **8ms per cycle**  
+**Time**: 2ms per channel × 4 = **8ms per cycle**
 **Savings**: 420ms - 8ms = **412ms per cycle!**
 
 ## Why This is Safe
@@ -102,7 +102,7 @@ t_led_settle = perf_counter()
 1. Run application: `python run_app.py`
 2. Wait for calibration to complete
 3. Check console for timing logs
-4. **Verify**: 
+4. **Verify**:
    - ✅ LEDs actually activate (watch hardware)
    - ✅ Sensorgram displays data
    - ✅ No error messages
@@ -268,8 +268,8 @@ To revert, simply uncomment this block and remove the fire-and-forget code.
 
 ---
 
-**Status**: ✅ Ready to test  
-**Expected outcome**: 400ms cycle time improvement  
-**Risk level**: Low (LED settle delay provides safety)  
-**Test time needed**: 30 minutes  
+**Status**: ✅ Ready to test
+**Expected outcome**: 400ms cycle time improvement
+**Risk level**: Low (LED settle delay provides safety)
+**Test time needed**: 30 minutes
 **Rollback time**: 2 minutes

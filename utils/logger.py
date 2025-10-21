@@ -1,7 +1,24 @@
 import logging
 import os
+import sys
 from logging import Formatter, StreamHandler
 from logging.handlers import RotatingFileHandler
+
+# ============================================================================
+# PYTHON VERSION CHECK - Import early warning banner
+# ============================================================================
+try:
+    from utils.python_version_check import check_python_version
+    check_python_version()
+except ImportError:
+    # Fallback if check module not available
+    if sys.version_info < (3, 12):
+        print("\n" + "!" * 80)
+        print(f"⚠️  WARNING: Python {sys.version_info.major}.{sys.version_info.minor} detected - Expected 3.12+")
+        print("!" * 80)
+        print(f"   This may cause runtime errors with type hints and modern syntax!")
+        print(f"   Python executable: {sys.executable}")
+        print("!" * 80 + "\n")
 
 from settings import ROOT_DIR, CONSOLE_LOG_LEVEL
 

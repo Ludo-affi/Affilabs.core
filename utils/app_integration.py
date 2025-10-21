@@ -99,7 +99,7 @@ app_integration = ApplicationIntegration()
 
 
 # Decorator functions for easy use in existing code
-def with_hardware_protection(recovery_fn: callable | None = None):
+def with_hardware_protection(recovery_fn: Optional[callable] = None):
     """Decorator for hardware operations with error protection."""
     return hardware_error_boundary(recovery_fn=recovery_fn)
 

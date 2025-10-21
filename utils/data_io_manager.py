@@ -598,7 +598,7 @@ class DataIOManager:
         self,
         base_dir: str,
         directory_name: str,
-    ) -> Path | None:
+    ) -> Optional[Path]:
         """Create a directory for exporting data.
 
         Args:
@@ -647,7 +647,7 @@ class DataIOManager:
             logger.exception(f"Error validating file path: {e}")
             return False
 
-    def get_file_size(self, file_path: str) -> int | None:
+    def get_file_size(self, file_path: str) -> Optional[int]:
         """Get file size in bytes.
 
         Args:

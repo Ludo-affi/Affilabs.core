@@ -40,10 +40,10 @@ class ThreadManager:
         self.status_callback = status_callback
 
         # Thread references
-        self.data_thread: threading.Thread | None = None
-        self.calibration_thread: threading.Thread | None = None
-        self.connection_thread: threading.Thread | None = None
-        self.new_signal_thread: threading.Thread | None = None
+        self.data_thread: threading.Optional[Thread] = None
+        self.calibration_thread: threading.Optional[Thread] = None
+        self.connection_thread: threading.Optional[Thread] = None
+        self.new_signal_thread: threading.Optional[Thread] = None
 
         # Sensor thread removed (obsolete flow sensors)
 

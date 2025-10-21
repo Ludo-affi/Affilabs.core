@@ -204,7 +204,7 @@ class CavroPumpManager(QObject):
     error_occurred = Signal(int, str)  # address, error_message
     operation_progress = Signal(str, int)  # operation_name, progress_percent
 
-    def __init__(self, pump_controller: PumpController | None = None) -> None:
+    def __init__(self, pump_controller: Optional[PumpController] = None) -> None:
         """Initialize pump manager.
 
         Args:
@@ -235,7 +235,7 @@ class CavroPumpManager(QObject):
         address: int,
         command: bytes,
         retry_count: int = 3,
-    ) -> list[int] | None:
+    ) -> Optional[list[int]]:
         """Send command to pump with retry logic.
 
         Args:
@@ -412,7 +412,7 @@ class CavroPumpManager(QObject):
 
         return result is not None
 
-    def get_syringe_position(self, address: int) -> int | None:
+    def get_syringe_position(self, address: int) -> Optional[int]:
         """Query current plunger position.
 
         Args:
@@ -585,7 +585,7 @@ class CavroPumpManager(QObject):
 
         return result is not None
 
-    def get_valve_position(self, address: int) -> int | None:
+    def get_valve_position(self, address: int) -> Optional[int]:
         """Query current valve position.
 
         Args:
@@ -683,7 +683,7 @@ class CavroPumpManager(QObject):
 
         return result is not None
 
-    def stop(self, address: int | None = None) -> bool:
+    def stop(self, address: Optional[int] = None) -> bool:
         """Stop pump immediately.
 
         Args:
@@ -848,7 +848,7 @@ class CavroPumpManager(QObject):
 
         return result is not None
 
-    def get_pump_state(self, address: int) -> PumpState | None:
+    def get_pump_state(self, address: int) -> Optional[PumpState]:
         """Get complete state of a pump.
 
         Args:

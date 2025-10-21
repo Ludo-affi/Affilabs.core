@@ -6,6 +6,8 @@ try:
 except ImportError:
     from typing_extensions import Self  # Python < 3.11
 
+from typing import Optional
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QWidget
 
@@ -21,7 +23,7 @@ class P4SPRAdvMenu(QDialog):
     new_parameter_sig = Signal(dict)
     get_parameter_sig = Signal()
 
-    def __init__(self: Self, parent: QWidget | None = None) -> None:
+    def __init__(self: Self, parent: Optional[QWidget] = None) -> None:
         """Create the advance settings widget."""
         super().__init__(parent)
         self.ui = Ui_P4SPR_Advanced()

@@ -29,11 +29,24 @@ from .logger import logger
 
 try:
     # Try SeaBreeze first (modern Ocean Optics Python library)
+    # CRITICAL: Use cseabreeze (C backend) for performance
+    # Without this, pyseabreeze adds ~10ms overhead per spectrum acquisition
+    import seabreeze
+    seabreeze.use('cseabreeze')
+
     from seabreeze.spectrometers import Spectrometer, list_devices
 
     OCEANDIRECT_AVAILABLE = True
     BACKEND_TYPE = "seabreeze"
-    logger.info("Using SeaBreeze backend for Ocean Optics devices")
+    logger.info("Using SeaBreeze (cseabreeze C backend) for Ocean Optics devices")
+
+    # Verify backend selection
+    try:
+        import seabreeze.backends
+        actual_backend = seabreeze.backends.get_backend()
+        logger.info(f"SeaBreeze backend confirmed: {actual_backend}")
+    except Exception:
+        pass  # Backend verification is optional
 except ImportError:
     try:
         # Fallback to legacy OceanDirect if available
@@ -77,17 +90,17 @@ class USB4000OceanDirect:
                 "OceanDirect API not available. Install with: pip install oceandirect",
             )
 
-        self._api: OceanDirectAPI | None = None
+        self._api: Optional[OceanDirectAPI] = None
         self._device = None
         self._device_ids: list[int] = []
         self._connected = False
         self._current_integration_time = self.DEFAULT_INTEGRATION_TIME
 
         # Cached device properties
-        self._wavelengths: np.Optional[ndarray] = None
-        self._serial_number: str | None = None
-        self._min_integration_time: float | None = None
-        self._max_integration_time: float | None = None
+        self._wavelengths: Optional[np.ndarray] = None
+        self._serial_number: Optional[str] = None
+        self._min_integration_time: Optional[float] = None
+        self._max_integration_time: Optional[float] = None
 
         logger.info(f"Initialized {self.DEVICE_MODEL} OceanDirect interface")
 
@@ -369,7 +382,7 @@ class USB4000OceanDirect:
         """Get current integration time in seconds."""
         return self._current_integration_time
 
-    def acquire_spectrum(self) -> np.ndarray | None:
+    def acquire_spectrum(self) -> Optional[np.ndarray]:
         """Acquire spectrum from USB4000.
 
         Returns:
@@ -381,6 +394,9 @@ class USB4000OceanDirect:
             return None
 
         try:
+            # Measure acquisition timing to detect slow backend (pyseabreeze vs cseabreeze)
+            t_start = time.perf_counter()
+
             # Acquire spectrum - different methods for different backends
             if BACKEND_TYPE == "seabreeze":
                 # SeaBreeze uses intensities() method
@@ -389,9 +405,22 @@ class USB4000OceanDirect:
                 # OceanDirect uses get_formatted_spectrum() method
                 intensity_data = np.array(self._device.get_formatted_spectrum())
 
+            t_end = time.perf_counter()
+            elapsed_ms = (t_end - t_start) * 1000
+
+            # Log warning only if acquisition is extremely slow (> 50ms)
+            # Normal: 20-35ms (integration time + ~12ms USB overhead on Windows)
+            # See SEABREEZE_PERFORMANCE_FINDINGS.md for detailed analysis
+            if elapsed_ms > 50.0:
+                logger.warning(
+                    f"Very slow spectrum acquisition: {elapsed_ms:.2f}ms "
+                    f"(normal: 20-35ms with typical integration times)"
+                )
+
             logger.debug(
                 f"Acquired spectrum: {len(intensity_data)} points, "
-                f"integration time: {self._current_integration_time:.3f}s",
+                f"integration time: {self._current_integration_time:.3f}s, "
+                f"read time: {elapsed_ms:.2f}ms",
             )
 
             return intensity_data
@@ -400,7 +429,7 @@ class USB4000OceanDirect:
             logger.error(f"Spectrum acquisition failed: {e}")
             return None
 
-    def get_wavelengths(self) -> np.ndarray | None:
+    def get_wavelengths(self) -> Optional[np.ndarray]:
         """Get wavelength calibration data.
 
         Returns:

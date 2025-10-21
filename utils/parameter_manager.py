@@ -36,11 +36,11 @@ class ParameterManager:
         # Legacy compatibility (will be deprecated)
         device_config: dict[str, Any] | None = None,
         leds_calibrated: dict[str, int] | None = None,
-        led_delay: float | None = None,
-        ht_req: float | None = None,
-        sensor_interval: float | None = None,
-        integration: float | None = None,
-        num_scans: int | None = None,
+        led_delay: Optional[float] = None,
+        ht_req: Optional[float] = None,
+        sensor_interval: Optional[float] = None,
+        integration: Optional[float] = None,
+        num_scans: Optional[int] = None,
         # Legacy callbacks (will be deprecated)
         pause_acquisition: Callable[[], None] | None = None,
         resume_acquisition: Callable[[], None] | None = None,

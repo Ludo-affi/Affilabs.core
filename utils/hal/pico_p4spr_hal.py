@@ -153,53 +153,44 @@ class PicoP4SPRHAL(SPRControllerHAL):
                 "get_device_info",
             )
 
-    def activate_channel(self, channel: ChannelID) -> bool:
+    def activate_channel(self, channel: ChannelID | str) -> bool:
         """Activate specified measurement channel.
-        
-        ✨ PHASE 1B OPTIMIZATION: Fire-and-forget LED commands
-        - Removes 400ms/cycle bottleneck (105ms per channel × 4)
-        - Safe because LED_settle delay (100ms) gives hardware time to complete
-        - Can re-enable response wait via WAIT_FOR_LED_RESPONSE flag if needed
-        """
-        if not self.validate_channel(channel):
-            raise HALOperationError(
-                f"Channel {channel.value} not supported",
-                "activate_channel",
-            )
 
-        if not self.is_connected():
-            raise HALOperationError("Device not connected", "activate_channel")
+        ✨ PHASE 1B OPTIMIZATION: Fire-and-forget LED activation
+        - Removes 400ms/cycle bottleneck (saves 103ms per channel × 4)
+        - Safe because LED_settle delay (100ms) gives hardware time to complete
+
+        Args:
+            channel: ChannelID enum or string ('a', 'b', 'c', 'd')
+        """
+        # Convert string to ChannelID if needed
+        if isinstance(channel, str):
+            channel_map = {'a': ChannelID.A, 'b': ChannelID.B, 'c': ChannelID.C, 'd': ChannelID.D}
+            channel_id = channel_map.get(channel.lower())
+            if channel_id is None:
+                logger.warning(f"Invalid channel: {channel}")
+                return False
+            channel = channel_id
+
+        # ✨ PHASE 1B: Fire-and-forget optimization
+        # Send command directly without response wait
+        # The 100ms LED settle delay gives hardware time to complete
+        if not self._ser:
+            logger.warning("Serial port not connected")
+            return False
 
         try:
             cmd = f"l{channel.value}\n"
-            
-            # ✨ PHASE 1B: Fire-and-forget optimization (saves 400ms/cycle)
-            # Send command without waiting for response
-            # The 100ms LED settle delay gives hardware time to complete
-            self._device.write(cmd.encode())
+            self._ser.write(cmd.encode())
             import time
             time.sleep(0.002)  # 2ms for serial transmission
-            
+
             # Update status optimistically
             self.status.active_channel = channel
-            logger.debug(f"Activated channel {channel.value} (fire-and-forget)")
-            
             return True
-            
-            # OLD CODE (kept for reference - 105ms per channel!):
-            # success = self._send_command_with_response(cmd, expected_response=b"1")
-            # if success:
-            #     self.status.active_channel = channel
-            #     logger.debug(f"Activated channel {channel.value}")
-            # else:
-            #     logger.warning(f"Failed to activate channel {channel.value}")
-            # return success
-
         except Exception as e:
-            raise HALOperationError(
-                f"Channel activation failed: {e}",
-                "activate_channel",
-            )
+            logger.warning(f"activate_channel failed: {e}")
+            return False
 
     def get_temperature(self) -> float | None:
         """Read controller temperature."""
@@ -273,25 +264,37 @@ class PicoP4SPRHAL(SPRControllerHAL):
             # Format as 3-digit zero-padded string
             intensity_str = f"{firmware_value:03d}"
 
-            # Set intensity for all 4 channels
-            success = True
-            for channel_letter in ['a', 'b', 'c', 'd']:
-                cmd = f"b{channel_letter}{intensity_str}\n"
-                if not self._send_command_with_response(cmd, expected_response=b"1"):
-                    logger.warning(f"Failed to set intensity for channel {channel_letter}")
-                    success = False
+            # ✨ PHASE 1B: Fire-and-forget optimization for LED intensity
+            # Set intensity for all 4 channels WITHOUT waiting for responses
+            # Safe because LED settle delay (100ms) gives hardware time to complete
+            if self._ser:
+                for channel_letter in ['a', 'b', 'c', 'd']:
+                    cmd = f"b{channel_letter}{intensity_str}\n"
+                    self._ser.write(cmd.encode())
 
-            if success:
+                import time
+                time.sleep(0.008)  # 8ms for 4 serial transmissions (2ms each)
+
+                # Update cached value optimistically
                 self._current_intensity = intensity
-                logger.debug(f"Set LED intensity to {intensity:.2f} (firmware: {firmware_value})")
+                logger.debug(f"Set LED intensity to {intensity:.2f} (fire-and-forget, firmware: {firmware_value})")
 
-            return success
+            return True
 
-        except Exception as e:
-            raise HALOperationError(
-                f"LED intensity control failed: {e}",
-                "set_led_intensity",
-            )
+            # OLD CODE (kept for reference - 100ms delay waiting for 4 responses!):
+            # success = True
+            # for channel_letter in ['a', 'b', 'c', 'd']:
+            #     cmd = f"b{channel_letter}{intensity_str}\n"
+            #     if not self._send_command_with_response(cmd, expected_response=b"1"):
+            #         logger.warning(f"Failed to set intensity for channel {channel_letter}")
+            #         success = False
+            # if success:
+            #     self._current_intensity = intensity
+            #     logger.debug(f"Set LED intensity to {intensity:.2f} (firmware: {firmware_value})")
+            # return success
+
+        except Exception:
+            return False
 
     def get_led_intensity(self) -> float | None:
         """Get current LED intensity.
@@ -493,6 +496,36 @@ class PicoP4SPRHAL(SPRControllerHAL):
         except Exception as e:
             logger.error(f"❌ Error reading servo positions: {e}")
             return None
+
+    def flash(self) -> bool:
+        """Flash/save servo settings to EEPROM (non-volatile storage).
+
+        CRITICAL: Call this after servo_set() to persist positions to EEPROM.
+        Without this, positions are lost on power cycle.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_connected():
+            raise HALOperationError("Device not connected", "flash")
+
+        try:
+            cmd = "sf\n"
+            logger.info("💾 Flashing servo positions to EEPROM...")
+
+            # Send command and get response
+            success = self._send_command_with_response(cmd, b"1")
+
+            if success:
+                logger.info("✅ Servo positions saved to EEPROM")
+            else:
+                logger.warning("⚠️ Unexpected flash response")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"❌ Error flashing servo positions: {e}")
+            raise HALOperationError(f"Failed to flash servo positions: {e}", "flash")
 
     def turn_off_channels(self) -> bool:
         """Turn off all LED channels.

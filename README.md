@@ -1,102 +1,186 @@
-# Affilabs SPR Control System
+# Affilabs SPR Control System (ezControl-AI)
 
-**Version 0.1.0** - The Core
+**Version 3.2.9** - Production Ready (October 2025)
+
+## ⚡ Quick Start
+
+### Prerequisites
+- Windows 10/11
+- Python 3.12+ (**REQUIRED** - enforced by launcher)
+- USB4000 spectrometer with WinUSB drivers
+- PicoP4SPR 4-channel controller
+
+### Running the Application
+```powershell
+# PRIMARY METHOD (Recommended)
+.\run_app_312.ps1
+
+# Alternative
+.\run_app_312.bat
+```
+
+The launcher will:
+- ✅ Verify Python 3.12 is being used
+- ✅ Activate the correct virtual environment (`.venv312`)
+- ✅ Display Python version confirmation
+- ✅ Start the application
+
+---
 
 ## Overview
 
-**Affilabs** is a production-ready Surface Plasmon Resonance (SPR) control system providing automated calibration, real-time measurements, and intelligent data processing. This release establishes the core foundation for advanced SPR analysis and represents the culmination of extensive refinement in hardware abstraction, polarizer management, and detector-agnostic design.
+**ezControl-AI** is a production-ready Surface Plasmon Resonance (SPR) control system providing automated calibration, real-time measurements, and intelligent data processing for PicoP4SPR 4-channel devices with USB4000 spectrometer.
 
-Built with AI-enhanced development practices, Affilabs combines robust hardware control with modern software architecture to deliver a reliable, user-friendly SPR measurement platform.
+### Recent Major Fixes (October 2025)
+1. ✅ **Saturation Issue Fixed**: Step 4 calibration now tests all channels at correct LED values
+2. ✅ **Python 3.12 Enforcement**: 5-layer protection prevents version confusion
+3. ✅ **Dark Noise Warnings Corrected**: Now uses detector profile baselines
+4. ✅ **UI Cleanup**: Removed diagnostic viewer (development tool no longer needed)
+
+See `CURRENT_STATUS.md` for complete details.
+
+---
 
 ## Features
 
 ### Core Functionality
-- **Real-time SPR data acquisition** from PicoP4SPR devices
-- **Spectrometer integration** with USB4000 via Ocean Direct API
-- **Advanced data processing** with filtering and calibration
+- **Real-time SPR data acquisition** from PicoP4SPR 4-channel devices
+- **USB4000 spectrometer integration** via seabreeze (Ocean Direct API)
+- **8-step automated calibration** with saturation prevention
+- **Advanced data processing** with filtering and peak tracking
 - **Temperature monitoring** and control
-- **Pump management** for fluid handling
+- **Pump management** (Cavro integration) for fluid handling
 - **Kinetic measurements** with automated protocols
+- **Real-time sensorgram display** for all 4 channels
 
-### Modern Architecture
+### Production-Ready Architecture
 - **Hardware Abstraction Layer (HAL)** for device independence
-- **Configuration Management System** with dataclass-based settings
-- **Data Buffer Management** for efficient data handling
-- **Modular calibration system** with profile persistence
+- **Detector-agnostic design** with profile-based configuration
+- **Robust Python 3.12 enforcement** (5-layer protection)
 - **Thread-safe operations** with proper resource management
+- **Persistent calibration** with automatic validation
+- **Comprehensive error handling** and logging
 
-### AI Enhancements
-- **Intelligent configuration management** with automatic validation
-- **Smart error handling** and recovery mechanisms
-- **Optimized data processing** algorithms
-- **Enhanced user interface** responsiveness
+### Key Improvements (October 2025)
+- ✅ **Fixed calibration saturation** - Step 4 tests all channels at predicted LED values
+- ✅ **Python version enforcement** - Clear warnings and execution blocking if wrong version
+- ✅ **Corrected dark noise warnings** - Uses detector profile baselines (3500 for USB4000)
+- ✅ **Optimized polarizer threshold** - Reduced false alarms (1.33× ratio)
+- ✅ **Streamlined UI** - Removed diagnostic viewer (development tool)
 
 ## Hardware Support
 
 ### Supported Devices
-- **PicoP4SPR**: 4-channel SPR controller (Serial/USB communication)
-- **USB4000**: Ocean Optics spectrometer (WinUSB/Ocean Direct API)
-- **KNX systems**: For advanced kinetic measurements
+- **PicoP4SPR**: 4-channel SPR controller (Serial/COM communication)
+  - LED control: 0-255 intensity per channel
+  - Polarizer modes: P-mode (signal) / S-mode (reference)
+  - Channels: a, b, c, d
+  
+- **USB4000**: Ocean Optics spectrometer (via seabreeze library)
+  - Wavelength range: 200-1100 nm
+  - Integration time: 1-65000 ms
+  - Dynamic range: 65000 counts
+  - Connection: USB with WinUSB drivers
+
 - **Temperature sensors**: For environmental monitoring
-- **Pump systems**: For automated fluid handling
+- **Pump systems** (Cavro): For automated fluid handling
 
 ### Communication Protocols
 - **Serial/COM**: For PicoP4SPR devices
-- **WinUSB/Ocean Direct**: For USB4000 spectrometers (VISA-free)
-- **USB**: For various auxiliary devices
+- **USB/seabreeze**: For USB4000 spectrometers
+- **USB**: For auxiliary devices
 
 ## Installation
 
 ### Requirements
-- Python 3.11+
+- **Python 3.12+** (REQUIRED - Python 3.9/3.10/3.11 NOT supported)
 - Windows 10/11
 - WinUSB drivers for USB4000
 - Serial drivers for PicoP4SPR
 
-### Dependencies
-```bash
-# Core dependencies
-pip install PySide6 qasync pyqtgraph
-pip install numpy scipy
-pip install pyserial
-pip install oceandirect
+### Quick Setup
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Ludo-affi/ezControl-AI.git
+   cd ezControl-AI
+   ```
 
-# Development dependencies
-pip install pdm pytest mypy
-```
+2. **Create Python 3.12 virtual environment**:
+   ```powershell
+   py -3.12 -m venv .venv312
+   .\.venv312\Scripts\Activate.ps1
+   ```
 
-### Setup
-1. Clone the repository
-2. Install dependencies: `pdm install`
-3. Connect hardware devices
-4. Run hardware test: `python quick_hardware_test.py`
-5. Launch application: `python main/main.py`
+3. **Install dependencies**:
+   ```powershell
+   pip install -r requirements.txt
+   # or
+   pip install PySide6 qasync pyqtgraph numpy scipy pyserial seabreeze
+   ```
+
+4. **Connect hardware**:
+   - USB4000 spectrometer (USB)
+   - PicoP4SPR controller (COM port)
+
+5. **Launch application**:
+   ```powershell
+   .\run_app_312.ps1
+   ```
+
+### Python Version Enforcement
+The application will **NOT RUN** on Python < 3.12. If wrong version detected:
+- ❌ Application exits immediately with error dialog
+- ❌ Terminal shows large ASCII warning banner
+- ✅ Use `run_app_312.ps1` launcher to ensure correct version
+
+See `PYTHON_312_REQUIREMENT.md` for details.
 
 ## Usage
 
-### Quick Start
-1. **Connect Hardware**: Ensure PicoP4SPR and USB4000 are connected
-2. **Test Connections**: Run `python quick_hardware_test.py`
-3. **Launch Application**: Run `python main/main.py`
-4. **Configure Settings**: Use the configuration manager for device setup
-5. **Start Measurement**: Begin SPR data acquisition
+### Starting the Application
+```powershell
+# RECOMMENDED: Use the launcher script
+.\run_app_312.ps1
 
-### Configuration
-The system uses a sophisticated configuration management system:
+# Alternative launcher
+.\run_app_312.bat
 
-```python
-from utils.config_manager import ConfigurationManager
+# Manual method (if needed)
+.\.venv312\Scripts\Activate.ps1
+python main/main.py
+```
 
-# Initialize configuration
-config = ConfigurationManager()
+### First-Time Calibration
+1. **Connect Hardware**: Ensure USB4000 and PicoP4SPR are connected
+2. **Launch Application**: Use `run_app_312.ps1`
+3. **Open Settings**: Click "Settings" button in toolbar
+4. **Run Calibration**: Follow the 8-step calibration wizard
+   - **Step 1**: Dark noise measurement (LED OFF)
+   - **Step 2**: Dark measurement (LED ON, no polarizer)
+   - **Step 3**: Polarizer ratio scan
+   - **Step 4**: Binary search for integration time (**saturation-free**)
+   - **Step 5**: Final integration time validation
+   - **Step 6**: Reference spectrum measurement
+   - **Step 7**: LED range validation
+   - **Step 8**: Final system validation
+5. **Wait for Completion**: Calibration takes ~5-10 minutes
+6. **Start Measurement**: Return to Sensorgram view and click "Start"
 
-# Device settings
-config.device.integration_time = 50  # milliseconds
-config.device.num_scans = 10
+### Live Mode Operation
+- **Sensorgram View**: Real-time SPR signal for all 4 channels (a, b, c, d)
+- **Acquisition Rate**: ~1.2 Hz (850ms per cycle)
+- **Automatic Saturation Prevention**: System reduces LED if signal > 85%
+- **Data Recording**: Click record button to log data
+- **Emergency Stop**: Red button immediately halts acquisition
 
-# Calibration settings
-config.calibration.auto_calibrate = True
-config.calibration.reference_channels = ['a', 'b']
+### UI Overview
+- **Toolbar**: Settings, Recording, Advanced menu
+- **Sidebar**: Kinetic measurement controls (toggle with sidebar button)
+- **Main Display**: 4 view modes
+  1. Sensorgram (real-time SPR tracking)
+  2. Spectroscopy (raw spectra)
+  3. Data Processing (processed data)
+  4. Data Analysis (analysis tools)
 
 # Save configuration
 config.save_profile("my_experiment")
@@ -196,44 +280,75 @@ This represents a complete refactoring of the original SPR control system:
 - **Hardware independence**: HAL abstraction layer
 
 ## Configuration
+## Troubleshooting
 
-### Device Configuration
-```python
-# Device settings
-device_config = DeviceConfiguration(
-    integration_time=50,
-    num_scans=10,
-    selected_channels=['a', 'b', 'c', 'd'],
-    led_intensity=75
-)
-```
+### USB4000 Not Detected
+- Check Device Manager for "USB4000" device
+- Verify WinUSB drivers installed
+- Try unplugging/replugging USB cable
+- Restart application
+- Check seabreeze backend: `python -c "import seabreeze; seabreeze.list_devices()"`
 
-### Calibration Configuration
-```python
-# Calibration settings
-cal_config = CalibrationConfiguration(
-    auto_calibrate=True,
-    reference_channels=['a', 'b'],
-    dark_subtraction=True,
-    wavelength_calibration=True
-)
-```
+### Python Version Errors
+- **ALWAYS use `run_app_312.ps1` launcher**
+- Check terminal banner shows "Python 3.12.10" or higher
+- If wrong version detected, app will EXIT immediately
+- Do NOT try to run with Python 3.9/3.10/3.11 (typing incompatibilities)
+
+### Calibration Issues
+- **Saturation during Step 4**: ✅ **FIXED** - Update to latest version
+- **Dark noise warnings**: Ensure LEDs are OFF during Step 1
+- **Polarizer ratio low**: Check polarizer alignment (warning threshold 1.33×)
+- **Integration time too long**: Reduce LED intensity or check sample alignment
+
+### Slow Acquisition
+- Normal: ~60ms per spectrum with typical integration times
+- Expected cycle time: ~850ms (12 spectra: 4 channels × 3 acquisitions)
+- Rate: ~1.2 Hz sustained
+- If slower: Check USB connection, system load, or integration time settings
+
+### Application Crashes
+- Check logs in terminal output
+- Verify all hardware connections
+- Ensure no other software is using COM port or USB4000
+- Kill residual Python processes: `Stop-Process -Name python -Force`
 
 ## Contributing
 
 ### Development Setup
 1. Fork the repository
 2. Create a feature branch
-3. Install development dependencies: `pdm install --dev`
+3. Install Python 3.12 virtual environment
 4. Make changes with proper testing
 5. Submit pull request
 
 ### Code Standards
 - Follow PEP 8 style guidelines
-- Add type hints for all functions
+- Add type hints for all functions (Python 3.12 syntax)
 - Include docstrings for public APIs
 - Write tests for new functionality
 - Update documentation as needed
+
+## Documentation
+
+### Key Documents
+- `README.md` - Project overview and quick start
+- `CURRENT_STATUS.md` - Complete system status (October 2025)
+- `PYTHON_312_REQUIREMENT.md` - Python version requirements
+- `PYTHON_VERSION_ENFORCEMENT.md` - Technical implementation details
+- `CALIBRATION_SUCCESS_CONFIRMATION.md` - Calibration guide
+
+### Support Resources
+For hardware issues:
+- Check device connections and drivers
+- Verify Device Manager recognition
+- Test with `seabreeze.list_devices()`
+
+For software issues:
+- Check terminal output for Python version
+- Use `run_app_312.ps1` launcher
+- Review logs for error details
+- Verify Python 3.12 environment
 
 ## License
 
@@ -241,28 +356,25 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- **AI-Enhanced Development**: This project was developed with advanced AI assistance
-- **Ocean Optics**: For USB4000 spectrometer support
-- **Qt Framework**: For the user interface
+- **AI-Enhanced Development**: Developed with advanced AI assistance
+- **Ocean Optics**: For USB4000 spectrometer support and seabreeze library
+- **Qt Framework** (PySide6): For the user interface
 - **Python Community**: For excellent libraries and tools
-
-## Support
-
-For hardware issues:
-- Check device connections and drivers
-- Run hardware test scripts
-- Verify Device Manager recognition
-
-For software issues:
-- Check logs for error details
-- Verify Python environment setup
-- Test with minimal configuration
 
 ## Version History
 
-- **v3.2.9**: AI-enhanced refactoring with modern architecture
+- **v3.2.9** (October 2025): 
+  - ✅ Fixed calibration saturation bug (Step 4)
+  - ✅ Implemented Python 3.12 enforcement (5-layer protection)
+  - ✅ Corrected dark noise warnings (detector profiles)
+  - ✅ Optimized polarizer threshold (1.33×)
+  - ✅ Removed diagnostic viewer (development tool)
+  - **Status**: Production ready
+
 - **Previous versions**: Legacy SPR control system
 
 ---
 
 **ezControl-AI** - Advanced SPR Control with AI Enhancement
+
+*For complete technical details and recent fixes, see `CURRENT_STATUS.md`*

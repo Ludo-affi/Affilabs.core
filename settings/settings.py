@@ -91,10 +91,11 @@ POL_WAVELENGTH = 620  # index for auto polarization
 # TIMING PARAMETERS
 # ==========================================
 # LED Stabilization - time between LED turn-on and spectrum acquisition
-# OPTIMIZED: Reduced from 100ms to 50ms (Priority #5 - CALIBRATION_ACCELERATION_GUIDE.md)
-# Saves ~0.55s per calibration (11 LED activations × 50ms reduction)
-# Tested safe on Flame-T and USB4000 detectors
-LED_DELAY = 0.05  # seconds (50ms) - optimized from 100ms
+# OPTIMIZED: Based on actual LED afterglow characterization measurements (Oct 2025)
+# Measured decay constants: Channel A=2.05ms, B=2.13ms, C=2.64ms, D=2.35ms
+# Using worst-case value (Channel C) rounded up to 3ms for safety margin
+# This is ~33× faster than the old 100ms default, saving ~400ms per 4-channel cycle
+LED_DELAY = 0.003  # seconds (3ms) - measured optimal value from LED afterglow characterization
 
 # ==========================================
 # MODERN TIMING ARCHITECTURE (≤200ms per channel)

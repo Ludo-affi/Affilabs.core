@@ -16,7 +16,7 @@ DEFAULT_UF2 = Path("firmware/pi_pico_fw/build_mgw/affinite_p4spr/affinite_p4spr.
 FALLBACK_UF2 = Path("firmware/pi_pico_fw/build/affinite_p4spr/affinite_p4spr.uf2")
 
 
-def find_pico_port() -> str | None:
+def find_pico_port() -> Optional[str]:
     ports = list_ports.comports()
     # Prefer MI_00 interface when possible
     for p in ports:
@@ -68,7 +68,7 @@ def send_ub(port: str) -> bool:
             pass
 
 
-def find_rpi_rp2_drive(timeout: float = 30.0) -> Path | None:
+def find_rpi_rp2_drive(timeout: float = 30.0) -> Optional[Path]:
     """Poll Windows drive letters to find the UF2 bootloader drive by marker files."""
     deadline = time.monotonic() + timeout
     candidates = [f"{d}:\\" for d in string.ascii_uppercase]
@@ -104,7 +104,7 @@ def wait_for_drive_disconnect(drive_root: Path, timeout: float = 30.0) -> bool:
     return False
 
 
-def resolve_uf2_path(cli_path: str | None) -> Path:
+def resolve_uf2_path(cli_path: Optional[str]) -> Path:
     if cli_path:
         p = Path(cli_path)
         if not p.exists():

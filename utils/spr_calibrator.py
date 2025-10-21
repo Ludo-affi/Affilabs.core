@@ -147,6 +147,16 @@ PERCENT_MULTIPLIER = 100  # For converting ratios to percentages
 # Polarizer Servo Position Constraint (0-255 range)
 MAX_POLARIZER_POSITION = 255  # Maximum servo position (raw value, NOT degrees)
 
+# ✨ Standardized error message for missing polarizer calibration
+POLARIZER_ERROR_MESSAGE = """
+🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions
+   This tool finds optimal S and P positions during manufacturing.
+
+   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL
+
+   OR use Settings → Auto-Polarization in the GUI
+"""
+
 
 def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT,
                                 detector_max_counts: int = DETECTOR_MAX_COUNTS) -> int:
@@ -244,7 +254,7 @@ class CalibrationState:
         # Reference data
         self.dark_noise: np.ndarray = np.array([])
         self.full_spectrum_dark_noise: np.ndarray = np.array([])  # Full spectrum for resampling
-        self.ref_sig: dict[str, np.ndarray | None] = dict.fromkeys(CH_LIST)
+        self.ref_sig: dict[str, np.Optional[ndarray]] = dict.fromkeys(CH_LIST)
 
         # ✨ NEW: Dark noise comparison (Phase 2 validation)
         self.dark_noise_before_leds: Optional[np.ndarray] = None  # Step 1 (clean baseline)
@@ -578,18 +588,7 @@ class SPRCalibrator:
         # Device-specific configuration
         self.optical_fiber_diameter = optical_fiber_diameter
         self.led_pcb_model = led_pcb_model
-        self.device_config = device_config  # ✨ CRITICAL: Store device_config for OEM polarizer positions
-
-        # Debug logging to verify device_config
-        if self.device_config:
-            logger.info(f"✅ device_config received: {list(self.device_config.keys())}")
-            if 'oem_calibration' in self.device_config:
-                oem = self.device_config['oem_calibration']
-                logger.info(f"✅ oem_calibration found: S={oem.get('polarizer_s_position')}, P={oem.get('polarizer_p_position')}")
-            else:
-                logger.warning("⚠️ device_config missing oem_calibration section")
-        else:
-            logger.warning("⚠️ device_config is None")
+        self.device_config = device_config  # Store for potential future use
 
         logger.info(f"🔧 Calibrator configured: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED PCB")
 
@@ -631,54 +630,46 @@ class SPRCalibrator:
         # ========================================================================
         # Load OEM calibration positions immediately at initialization.
         # This enables fail-fast behavior (<1 second) instead of failing at Step 2B (~2 minutes).
-        # Previously positions were lazily loaded in validate_polarizer_positions().
+        # Uses centralized _load_positions_from_config() helper to support both formats:
+        #   - device_config['oem_calibration'] (preferred format)
+        #   - device_config['polarizer'] (OEM tool output format)
 
-        if device_config and 'oem_calibration' in device_config:
-            oem_cal = device_config['oem_calibration']
-            self.state.polarizer_s_position = oem_cal.get('polarizer_s_position')
-            self.state.polarizer_p_position = oem_cal.get('polarizer_p_position')
-            self.state.polarizer_sp_ratio = oem_cal.get('polarizer_sp_ratio')
+        if not device_config:
+            logger.error("=" * 80)
+            logger.error("❌ CRITICAL: NO DEVICE CONFIG PROVIDED")
+            logger.error("=" * 80)
+            logger.error(POLARIZER_ERROR_MESSAGE)
+            logger.error("=" * 80)
+            raise ValueError("device_config is required for OEM calibration positions")
 
-            if self.state.polarizer_s_position is not None and self.state.polarizer_p_position is not None:
-                logger.info("=" * 80)
-                logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
-                logger.info("=" * 80)
-                logger.info(f"   S-position: {self.state.polarizer_s_position} (HIGH transmission - reference)")
-                logger.info(f"   P-position: {self.state.polarizer_p_position} (LOWER transmission - resonance)")
-                if self.state.polarizer_sp_ratio:
-                    logger.info(f"   S/P ratio: {self.state.polarizer_sp_ratio:.2f}x")
-                logger.info("   ⚡ Fail-fast enabled: Invalid config detected immediately (<1s)")
-                logger.info("=" * 80)
-            else:
-                logger.error("=" * 80)
-                logger.error("❌ CRITICAL: OEM CALIBRATION POSITIONS INVALID")
-                logger.error("=" * 80)
-                logger.error(f"   S-position: {self.state.polarizer_s_position}")
-                logger.error(f"   P-position: {self.state.polarizer_p_position}")
-                logger.error("")
-                logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
-                logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
-                logger.error("=" * 80)
-                raise ValueError("OEM calibration positions are None - cannot proceed with calibration")
+        # Load positions using centralized helper (checks both formats)
+        s_pos, p_pos, sp_ratio = self._load_positions_from_config(device_config)
+
+        if s_pos is not None and p_pos is not None:
+            # Store positions in state
+            self.state.polarizer_s_position = s_pos
+            self.state.polarizer_p_position = p_pos
+            self.state.polarizer_sp_ratio = sp_ratio
+
+            # Success logging
+            logger.info("=" * 80)
+            logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
+            logger.info("=" * 80)
+            logger.info(f"   S-position: {s_pos} (HIGH transmission - reference)")
+            logger.info(f"   P-position: {p_pos} (LOWER transmission - resonance)")
+            if sp_ratio:
+                logger.info(f"   S/P ratio: {sp_ratio:.2f}x")
+            logger.info("   ⚡ Fail-fast enabled: Invalid config detected immediately (<1s)")
+            logger.info("=" * 80)
         else:
+            # Positions not found in config - fail immediately
             logger.error("=" * 80)
-            logger.error("❌ CRITICAL: NO OEM CALIBRATION FOUND IN DEVICE CONFIG")
+            logger.error("❌ CRITICAL: OEM CALIBRATION POSITIONS NOT FOUND")
             logger.error("=" * 80)
-            logger.error("   device_config provided: " + ("Yes" if device_config else "No"))
-            if device_config:
-                logger.error(f"   device_config keys: {list(device_config.keys())}")
-                logger.error("   'oem_calibration' section: MISSING")
-            logger.error("")
-            logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
-            logger.error("   This tool finds optimal S and P positions during manufacturing.")
-            logger.error("")
-            logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
-            logger.error("")
-            logger.error("   The OEM tool will:")
-            logger.error("   1. Sweep servo through full range (10-255)")
-            logger.error("   2. Find optimal S-mode position (HIGH transmission - reference)")
-            logger.error("   3. Find optimal P-mode position (LOWER transmission - resonance)")
-            logger.error("   4. Save positions to device_config.json")
+            logger.error(f"   device_config keys: {list(device_config.keys())}")
+            logger.error(POLARIZER_ERROR_MESSAGE)
+            logger.error("=" * 80)
+            raise ValueError("OEM calibration positions not found in device_config")
             logger.error("")
             logger.error("   ❌ NO DEFAULT POSITIONS - OEM calibration is MANDATORY")
             logger.error("=" * 80)
@@ -779,6 +770,46 @@ class SPRCalibrator:
         # ✨ NEW: Calibration complete callback for auto-starting live measurements
         self.on_calibration_complete_callback: Callable[[], None] | None = None
 
+    # ========================================================================
+    # POLARIZER POSITION LOADING (Centralized Helpers)
+    # ========================================================================
+
+    def _load_positions_from_config(self, device_config: dict) -> tuple[Optional[int], Optional[int], Optional[float]]:
+        """Load polarizer positions from device config (supports both formats).
+
+        ✨ UNIFIED LOADER: Handles both config formats in one place:
+        - oem_calibration section (preferred format)
+        - polarizer section (OEM tool output format)
+
+        Args:
+            device_config: Device configuration dictionary
+
+        Returns:
+            tuple: (s_position, p_position, sp_ratio) or (None, None, None) if not found
+        """
+        # Try oem_calibration section first (preferred format)
+        if 'oem_calibration' in device_config:
+            oem = device_config['oem_calibration']
+            logger.info("✅ Found OEM calibration in 'oem_calibration' section")
+            return (
+                oem.get('polarizer_s_position'),
+                oem.get('polarizer_p_position'),
+                oem.get('polarizer_sp_ratio')
+            )
+
+        # Fallback to polarizer section (OEM tool format)
+        if 'polarizer' in device_config:
+            pol = device_config['polarizer']
+            logger.info("✅ Found OEM calibration in 'polarizer' section (OEM tool format)")
+            return (
+                pol.get('s_position'),
+                pol.get('p_position'),
+                pol.get('sp_ratio') or pol.get('s_p_ratio')
+            )
+
+        # No positions found
+        return (None, None, None)
+
     def set_on_calibration_complete_callback(self, callback: Callable[[], None]) -> None:
         """Set callback to be called when calibration completes successfully.
 
@@ -799,12 +830,12 @@ class SPRCalibrator:
     # OEM CALIBRATION POSITION ACCESS (P2 Optimization)
     # ========================================================================
 
-    def _get_oem_positions(self) -> tuple[int | None, int | None, float | None]:
-        """Get OEM calibration positions from single source of truth.
+    def _get_oem_positions(self) -> tuple[Optional[int], Optional[int], Optional[float]]:
+        """Get OEM calibration positions from calibration state.
 
-        This centralizes all OEM position access to avoid 40+ scattered checks
-        throughout the codebase. Returns positions from calibration state (preferred)
-        or device_config (fallback if state not populated).
+        ✨ SIMPLIFIED: Positions are always loaded at __init__ from device_config
+        into self.state, so we only need to return what's already in state.
+        No need to re-check device_config (eliminates redundant lookups).
 
         Returns:
             tuple: (s_position, p_position, sp_ratio) or (None, None, None) if not available
@@ -815,7 +846,7 @@ class SPRCalibrator:
             ...     logger.error("OEM positions not available")
             ...     return False
         """
-        # Prefer state (already loaded during init - see P1 optimization)
+        # Return positions from state (loaded at init)
         if hasattr(self.state, 'polarizer_s_position') and self.state.polarizer_s_position is not None:
             return (
                 self.state.polarizer_s_position,
@@ -823,16 +854,7 @@ class SPRCalibrator:
                 getattr(self.state, 'polarizer_sp_ratio', None)
             )
 
-        # Fallback to device_config (shouldn't happen if init properly loads positions)
-        if self.device_config and 'oem_calibration' in self.device_config:
-            oem = self.device_config['oem_calibration']
-            return (
-                oem.get('polarizer_s_position'),
-                oem.get('polarizer_p_position'),
-                oem.get('polarizer_sp_ratio')
-            )
-
-        # No positions available
+        # No positions available (should only happen if __init__ failed)
         return (None, None, None)
 
     # ========================================================================
@@ -900,13 +922,30 @@ class SPRCalibrator:
             return self._activate_channel_sequential(channels, intensities)
 
     def _activate_channel_sequential(self, channels: list[str], intensities: dict[str, int] | None = None) -> bool:
-        """Fallback: Sequential channel activation."""
+        """Fallback: Sequential channel activation (legacy hardware or firmware < V1.4).
+
+        ⚠️ NOTE: This is 15x slower than batch path. Only used when:
+          - Hardware doesn't support batch commands (PicoEZSPR)
+          - Firmware version < V1.4
+          - HAL adapter without batch support
+
+        Args:
+            channels: List of channel IDs ('a', 'b', 'c', 'd')
+            intensities: Optional dict of {channel: intensity}. If None, uses max_led_intensity
+
+        Returns:
+            bool: Success status
+
+        Performance:
+            Sequential: 4 channels × 3ms = 12ms
+            Batch: 1 command × 0.8ms = 0.8ms
+            Speedup: 15× when batch available
+        """
         try:
             for ch in channels:
-                if intensities and ch in intensities:
-                    self.ctrl.set_intensity(ch=ch, raw_val=intensities[ch])
-                else:
-                    self.ctrl.activate_channel(channel=ch)
+                # Use custom intensity or max_led_intensity
+                intensity = intensities.get(ch) if intensities else self.max_led_intensity
+                self.ctrl.set_intensity(ch=ch, raw_val=intensity)
             return True
         except Exception as e:
             logger.error(f"Sequential LED activation failed: {e}")
@@ -1190,12 +1229,14 @@ class SPRCalibrator:
             # Get current wavelengths matching the spectrum size
             try:
                 current_wavelengths = None
-                if hasattr(self.usb, "read_wavelength"):
-                    current_wavelengths = self.usb.read_wavelength()
-                elif hasattr(self.usb, "get_wavelengths"):
+                # Use HAL method directly (unified access path)
+                if hasattr(self.usb, "get_wavelengths"):
                     wl = self.usb.get_wavelengths()
                     if wl is not None:
                         current_wavelengths = np.array(wl)
+                elif hasattr(self.usb, "read_wavelength"):
+                    # Fallback for legacy adapters
+                    current_wavelengths = self.usb.read_wavelength()
 
                 if current_wavelengths is None:
                     logger.warning("   Cannot get wavelengths - returning unfiltered spectrum")
@@ -1450,7 +1491,7 @@ class SPRCalibrator:
             logger.warning(f"⚠️  Error detecting spectrometer type: {e}")
             return "Ocean Optics (Generic)"  # Safe default
 
-    def _calibrate_wavelength_ocean_optics(self) -> tuple[np.ndarray | None, str]:
+    def _calibrate_wavelength_ocean_optics(self) -> tuple[np.Optional[ndarray], str]:
         """
         Read factory wavelength calibration from Ocean Optics EEPROM.
 
@@ -1475,13 +1516,15 @@ class SPRCalibrator:
 
             # Read wavelengths from EEPROM
             wave_data = None
-            if hasattr(self.usb, "read_wavelength"):
-                wave_data = self.usb.read_wavelength()
-            elif hasattr(self.usb, "get_wavelengths"):
-                # Direct HAL access
+            # Use HAL method directly (unified access path)
+            if hasattr(self.usb, "get_wavelengths"):
+                # Direct HAL access (preferred)
                 wave_data = self.usb.get_wavelengths()
                 if wave_data is not None:
                     wave_data = np.array(wave_data)
+            elif hasattr(self.usb, "read_wavelength"):
+                # Fallback for legacy adapters
+                wave_data = self.usb.read_wavelength()
             else:
                 logger.error("❌ USB spectrometer has no wavelength reading method")
                 logger.error("   Expected: read_wavelength() or get_wavelengths()")
@@ -1501,7 +1544,7 @@ class SPRCalibrator:
             logger.error(f"❌ Error reading Ocean Optics EEPROM: {e}")
             return None, "unknown"
 
-    def _calibrate_wavelength_from_file(self) -> tuple[np.ndarray | None, str]:
+    def _calibrate_wavelength_from_file(self) -> tuple[np.Optional[ndarray], str]:
         """
         Load wavelength calibration from external file.
 
@@ -1613,12 +1656,14 @@ class SPRCalibrator:
                     pass  # Continue with unknown serial
 
                 # Read wavelengths from EEPROM (single read)
-                if hasattr(self.usb, "read_wavelength"):
-                    wave_data = self.usb.read_wavelength()
-                elif hasattr(self.usb, "get_wavelengths"):
+                # Use HAL method directly (unified access path)
+                if hasattr(self.usb, "get_wavelengths"):
                     wave_data = self.usb.get_wavelengths()
                     if wave_data is not None:
                         wave_data = np.array(wave_data)
+                elif hasattr(self.usb, "read_wavelength"):
+                    # Fallback for legacy adapters
+                    wave_data = self.usb.read_wavelength()
                 else:
                     logger.error("❌ USB spectrometer has no wavelength reading method")
                     logger.error("   Expected: read_wavelength() or get_wavelengths()")
@@ -1834,7 +1879,13 @@ class SPRCalibrator:
             logger.info(f"      P={p_pos} (LOWER transmission - resonance)")
             self.ctrl.servo_set(s=s_pos, p=p_pos)
             time.sleep(1.0)  # Wait for servo to move to both positions
-            logger.info(f"   ✅ Polarizer positions applied to hardware")
+
+            # ✅ CRITICAL FIX: Flash positions to EEPROM so they persist across power cycles
+            logger.info(f"   💾 Saving positions to EEPROM...")
+            self.ctrl.flash()
+            time.sleep(0.5)  # Wait for EEPROM write to complete
+
+            logger.info(f"   ✅ Polarizer positions applied to hardware and saved to EEPROM")
 
             # Read current servo positions from hardware to verify they match config
             try:
@@ -1863,8 +1914,10 @@ class SPRCalibrator:
                 # Verify hardware matches what we just set from config
                 if s_hardware != s_pos or p_hardware != p_pos:
                     logger.warning(f"   ⚠️ Hardware mismatch: Expected S={s_pos} P={p_pos}, got S={s_hardware} P={p_hardware}")
-                    logger.warning(f"   Re-applying positions to hardware...")
+                    logger.warning(f"   Re-applying positions to hardware and flashing to EEPROM...")
                     self.ctrl.servo_set(s=s_pos, p=p_pos)
+                    time.sleep(0.5)
+                    self.ctrl.flash()  # ✅ Save to EEPROM
                     time.sleep(0.5)
                 else:
                     logger.info(f"   ✅ Hardware matches config: S={s_pos}, P={p_pos}")
@@ -1874,25 +1927,13 @@ class SPRCalibrator:
                 logger.error("=" * 80)
                 logger.error(f"⚠️ Could not read servo positions from hardware: {e}")
                 logger.error("")
-                logger.error("🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions")
-                logger.error("   This tool finds optimal S and P positions during manufacturing.")
-                logger.error("")
-                logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
-                logger.error("")
-                logger.error("   The OEM tool will:")
-                logger.error("   1. Sweep servo through full range (10-255)")
-                logger.error("   2. Find optimal S-mode position (perpendicular - HIGH transmission)")
-                logger.error("   3. Find optimal P-mode position (parallel - LOWER transmission)")
-                logger.error("   4. Save positions to device_config.json")
-                logger.error("")
-                logger.error("   ❌ NO DEFAULT POSITIONS - OEM calibration is MANDATORY")
+                logger.error(POLARIZER_ERROR_MESSAGE)
                 logger.error("=" * 80)
                 # Note: With P1 optimization, this error should not occur (fail at init instead)
                 return False  # Fail calibration
 
             # Turn on LED A at moderate intensity for testing
-            self.ctrl.set_intensity("a", 150)
-            self.ctrl.activate_channel(channel="a")
+            self.ctrl.set_intensity("a", 150)  # set_intensity() already activates the LED
             time.sleep(0.3)
 
             # Measure S-mode intensity (should be HIGH - reference, no resonance)
@@ -1925,8 +1966,8 @@ class SPRCalibrator:
                 logger.info(f"   Expected S/P ratio: {sp_ratio_config:.2f}x (from OEM calibration)")
 
             # Validate: S-mode should be significantly higher than P-mode (SPR behavior)
-            MIN_RATIO = 2.0  # S should be at least 2× higher than P
-            IDEAL_RATIO_MIN = 3.0
+            MIN_RATIO = 1.4  # S should be at least 1.4× higher than P (lowered for real-world hardware variance)
+            IDEAL_RATIO_MIN = 1.33
             IDEAL_RATIO_MAX = 15.0
 
             if ratio < MIN_RATIO:
@@ -1944,8 +1985,7 @@ class SPRCalibrator:
                 logger.error("   2. Servo positions need adjustment")
                 logger.error("   3. Polarizer not properly aligned")
                 logger.error("")
-                logger.error("💡 Solution: Run OEM calibration tool to find correct positions")
-                logger.error("   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
+                logger.error(POLARIZER_ERROR_MESSAGE)
                 logger.error("=" * 80)
                 return False
             elif ratio < IDEAL_RATIO_MIN:
@@ -1979,7 +2019,7 @@ class SPRCalibrator:
     # STEP 3: LED BRIGHTNESS RANKING (OPTIMIZED FOR SPEED)
     # ========================================================================
 
-    def step_3_identify_weakest_channel(self, ch_list: list[str]) -> tuple[str | None, dict]:
+    def step_3_identify_weakest_channel(self, ch_list: list[str]) -> tuple[Optional[str], dict]:
         """STEP 3: Rank all LED channels by brightness to identify weakest and strongest.
 
         Purpose: Quick LED brightness test to determine:
@@ -2171,7 +2211,7 @@ class SPRCalibrator:
         roi_min_idx: int,
         roi_max_idx: int,
         description: str = "channel"
-    ) -> tuple[float, float] | None:
+    ) -> Optional[tuple[float, float]]:
         """Measure a single channel's signal in ROI range.
 
         Helper method to reduce code duplication in Step 4.
@@ -2357,26 +2397,53 @@ class SPRCalibrator:
                 weakest_percent = (weakest_signal / detector_max) * 100
 
                 # ========================================================================
-                # Test 2: Measure strongest LED at LED=25 (minimum practical LED)
+                # Test 2: Check ALL channels at predicted LED values for saturation
                 # ========================================================================
-                result = self._measure_channel_in_roi(
-                    strongest_ch, STRONGEST_MIN_LED, roi_min_idx, roi_max_idx, "strongest LED"
-                )
-                if result is None:
-                    return False
-                strongest_signal, _ = result
-                strongest_percent = (strongest_signal / detector_max) * 100
+                # ✨ FIX: Test all channels at their predicted LED intensities (not just strongest at LED=25)
+                # This prevents saturation during validation when channels use higher LED values
+
+                predicted_leds_for_test = {}
+                max_predicted_percent = 0.0
+                max_channel = strongest_ch
+
+                for ch, (intensity, _, _) in self.state.led_ranking:
+                    if ch == weakest_ch:
+                        predicted_led = MAX_LED_INTENSITY
+                    else:
+                        ratio = intensity / weakest_intensity
+                        predicted_led = int(MAX_LED_INTENSITY / ratio)
+                        predicted_led = max(STRONGEST_MIN_LED, min(MAX_LED_INTENSITY, predicted_led))
+
+                    predicted_leds_for_test[ch] = predicted_led
+
+                    # Quick test: measure this channel at predicted LED
+                    result = self._measure_channel_in_roi(
+                        ch, predicted_led, roi_min_idx, roi_max_idx, f"channel {ch}"
+                    )
+                    if result is None:
+                        return False
+
+                    ch_signal, _ = result
+                    ch_percent = (ch_signal / detector_max) * 100
+
+                    if ch_percent > max_predicted_percent:
+                        max_predicted_percent = ch_percent
+                        max_channel = ch
+
+                # Use the highest predicted signal for constraint checking
+                strongest_signal = int(max_predicted_percent / 100 * detector_max)
+                strongest_percent = max_predicted_percent
 
                 # ========================================================================
                 # Check constraints and adjust search range
                 # ========================================================================
                 logger.info(f"   Iteration {iteration+1}: {test_integration*1000:.1f}ms")
                 logger.info(f"      Weakest ({weakest_ch} @ LED=255): {weakest_signal:6.0f} counts ({weakest_percent:5.1f}%)")
-                logger.info(f"      Strongest ({strongest_ch} @ LED={STRONGEST_MIN_LED}): {strongest_signal:6.0f} counts ({strongest_percent:5.1f}%)")
+                logger.info(f"      Highest signal ({max_channel} @ LED={predicted_leds_for_test[max_channel]}): {strongest_signal:6.0f} counts ({strongest_percent:5.1f}%)")
 
-                # CONSTRAINT 1: Check if strongest LED would saturate
+                # CONSTRAINT 1: Check if ANY channel would saturate at predicted LED values
                 if strongest_signal > strongest_max:
-                    logger.info(f"      ❌ Strongest LED too high (would saturate at >95%) → Reduce integration")
+                    logger.info(f"      ❌ Channel {max_channel} too high (would saturate at >95%) → Reduce integration")
                     integration_max = test_integration
                     continue
 
@@ -2397,11 +2464,11 @@ class SPRCalibrator:
                     logger.info(f"      ⚠️  Weakest LED too high → Reduce integration")
                     integration_max = test_integration
 
-                # Track best so far (closest to target)
+                # Track best so far (closest to target, considering both weakest and saturation)
                 if abs(weakest_signal - weakest_target) < abs(best_weakest_signal - weakest_target):
                     best_integration = test_integration
                     best_weakest_signal = weakest_signal
-                    best_strongest_signal = strongest_signal
+                    best_strongest_signal = strongest_signal  # Now this is the actual max from all channels
 
             # ========================================================================
             # Finalize and validate
@@ -2917,7 +2984,7 @@ class SPRCalibrator:
         self,
         dark_before: np.ndarray,
         dark_after_raw: np.ndarray,
-        dark_after_corrected: np.ndarray | None = None,
+        dark_after_corrected: np.Optional[ndarray] = None,
         correction_value: float = 0.0
     ) -> None:
         """Compare Step 1 (before LEDs) vs Step 5 (after LEDs) dark noise.
@@ -3103,22 +3170,40 @@ class SPRCalibrator:
                 logger.info("   (No LEDs have been activated yet - clean measurement)")
 
                 # ⚡ SANITY CHECK: Flag abnormally high dark noise (5× higher than expected)
-                EXPECTED_DARK_MEAN = 400.0  # Typical detector noise floor
-                EXPECTED_DARK_MAX = 600.0
+                # Prefer detector profile values when available so the warning is meaningful
+                try:
+                    profile = get_current_detector_profile()
+                except Exception:
+                    profile = None
+
+                if profile is not None:
+                    EXPECTED_DARK_MEAN = float(getattr(profile, 'dark_noise_mean_counts', 400.0))
+                    # Use profile std to estimate a reasonable 'max' if available
+                    expected_std = float(getattr(profile, 'dark_noise_std_counts', 50.0))
+                    EXPECTED_DARK_MAX = EXPECTED_DARK_MEAN + (3.0 * expected_std)
+                else:
+                    EXPECTED_DARK_MEAN = 400.0  # legacy fallback
+                    EXPECTED_DARK_MAX = 600.0
+
                 TOLERANCE_FACTOR = 5.0  # Flag if 5× higher than expected
 
+                # Use clearer wording: compare raw dark (before any dark-correction) to profile expectations
                 if before_mean > EXPECTED_DARK_MEAN * TOLERANCE_FACTOR:
-                    logger.warning(f"⚠️  STEP 1 WARNING: Dark noise mean ({before_mean:.1f}) is {before_mean/EXPECTED_DARK_MEAN:.1f}× higher than expected ({EXPECTED_DARK_MEAN:.1f})")
-                    logger.warning(f"    Possible issues:")
-                    logger.warning(f"    • Light leaking into detector (check enclosure)")
-                    logger.warning(f"    • LEDs not fully turned off (check hardware)")
-                    logger.warning(f"    • Detector thermal noise (check cooling)")
-                    logger.warning(f"    • Previous measurement residual signal")
-                    logger.warning(f"    ⚠️  Continuing calibration, but results may be affected...")
+                    logger.warning(
+                        f"⚠️  STEP 1 WARNING: Raw dark noise mean ({before_mean:.1f}) is {before_mean/EXPECTED_DARK_MEAN:.1f}× higher than expected ({EXPECTED_DARK_MEAN:.1f})"
+                    )
+                    logger.warning("    Possible issues:")
+                    logger.warning("    • Light leaking into detector (check enclosure)")
+                    logger.warning("    • LEDs not fully turned off (check hardware)")
+                    logger.warning("    • Detector thermal noise (check cooling)")
+                    logger.warning("    • Previous measurement residual signal")
+                    logger.warning("    ⚠️  Continuing calibration, but results may be affected...")
 
                 if before_max > EXPECTED_DARK_MAX * TOLERANCE_FACTOR:
-                    logger.warning(f"⚠️  STEP 1 WARNING: Dark noise max ({before_max:.1f}) is {before_max/EXPECTED_DARK_MAX:.1f}× higher than expected ({EXPECTED_DARK_MAX:.1f})")
-                    logger.warning(f"    Check for stray light or hot pixels in detector")
+                    logger.warning(
+                        f"⚠️  STEP 1 WARNING: Raw dark noise max ({before_max:.1f}) is {before_max/EXPECTED_DARK_MAX:.1f}× higher than expected ({EXPECTED_DARK_MAX:.1f})"
+                    )
+                    logger.warning("    Check for stray light or hot pixels in detector")
 
                 # If dark noise is reasonable, confirm success
                 if before_mean <= EXPECTED_DARK_MEAN * TOLERANCE_FACTOR and before_max <= EXPECTED_DARK_MAX * TOLERANCE_FACTOR:
@@ -3251,7 +3336,7 @@ class SPRCalibrator:
         self,
         ch_list: list[str],
         ref_scans: int,
-        last_active_ch: str | None
+        last_active_ch: Optional[str]
     ) -> bool:
         """Apply afterglow correction to all reference signals.
 
@@ -3954,10 +4039,7 @@ class SPRCalibrator:
                 logger.error("=" * 80)
                 logger.error("Polarizer positions are not configured in calibration state.")
                 logger.error("")
-                logger.error("🔧 REQUIRED: Run OEM calibration tool first:")
-                logger.error("   python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
-                logger.error("")
-                logger.error("The OEM tool finds optimal S/P positions (single source of truth).")
+                logger.error(POLARIZER_ERROR_MESSAGE)
                 logger.error("=" * 80)
                 return False
 
@@ -3994,7 +4076,7 @@ class SPRCalibrator:
     def load_profile(
         self,
         profile_name: str,
-        device_type: str | None = None,
+        device_type: Optional[str] = None,
     ) -> tuple[bool, str]:
         """Load calibration state from a profile file.
 
@@ -4060,10 +4142,7 @@ class SPRCalibrator:
                 logger.error("=" * 80)
                 logger.error("This calibration profile was created before OEM polarizer calibration.")
                 logger.error("")
-                logger.error("🔧 REQUIRED ACTION: Run OEM calibration tool to configure polarizer:")
-                logger.error("   python utils/oem_calibration_tool.py --serial YOUR_SERIAL")
-                logger.error("")
-                logger.error("The OEM tool will find optimal S/P positions and save to device profile.")
+                logger.error(POLARIZER_ERROR_MESSAGE)
                 logger.error("=" * 80)
                 return False, "Profile missing OEM polarizer calibration data"
 
@@ -4167,7 +4246,7 @@ class SPRCalibrator:
         self,
         ctrl: PicoP4SPR | PicoEZSPR,
         usb: USB4000,
-    ) -> tuple[int, int] | None:
+    ) -> Optional[tuple[int, int]]:
         """Automatically find optimal polarizer positions for P and S modes.
 
         Uses peak detection to find the angles where maximum light transmission

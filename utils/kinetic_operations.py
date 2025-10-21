@@ -21,9 +21,9 @@ class KineticOperations:
     def __init__(
         self,
         *,
-        pump_manager: Any | None,
-        kinetic_manager: Any | None,
-        knx: Any | None,
+        pump_manager: Optional[Any],
+        kinetic_manager: Optional[Any],
+        knx: Optional[Any],
         start_progress_bar: Callable[[int], None],
         show_message: Callable[[str], None],
         set_inject_enabled: Callable[[bool], None],

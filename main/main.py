@@ -6,6 +6,53 @@ import os
 import sys
 from typing import Any
 
+# ============================================================================
+# CRITICAL: PYTHON VERSION CHECK - MUST BE 3.12+
+# ============================================================================
+if sys.version_info < (3, 12):
+    print("\n" + "=" * 80)
+    print("❌ CRITICAL ERROR: WRONG PYTHON VERSION")
+    print("=" * 80)
+    print(f"   Current Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    print(f"   Required: 3.12+")
+    print()
+    print("   You are using Python 3.9 or earlier, which is NOT compatible!")
+    print()
+    print("   This will cause errors like:")
+    print("   - TypeError: unsupported operand type(s) for |")
+    print("   - AttributeError: module 'datetime' has no attribute 'UTC'")
+    print()
+    print("   SOLUTION:")
+    print("   1. Use the launcher: run_app_312.bat or run_app_312.ps1")
+    print("   2. Or activate Python 3.12: .venv312\\Scripts\\Activate.ps1")
+    print()
+    print("   Current Python executable: " + sys.executable)
+    print("=" * 80)
+    print()
+
+    # Try to show GUI error if possible
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        app = QApplication(sys.argv)
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Python Version Error")
+        msg.setText(f"Wrong Python Version: {sys.version_info.major}.{sys.version_info.minor}")
+        msg.setInformativeText(
+            f"This application requires Python 3.12+\n\n"
+            f"Current: {sys.executable}\n\n"
+            f"Please use:\n"
+            f"• run_app_312.bat\n"
+            f"• run_app_312.ps1\n\n"
+            f"Or activate .venv312 first"
+        )
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()
+    except:
+        pass
+
+    sys.exit(1)
+
 from PySide6.QtCore import Slot, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
@@ -31,6 +78,19 @@ class AffiniteApp(QApplication):
     def __init__(self) -> None:
         """Initialize the application with state machine architecture."""
         super().__init__(sys.argv)
+
+        # Display Python version banner
+        py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        logger.warning("=" * 80)
+        logger.warning(f"🐍 Python Version: {py_ver}")
+        logger.warning(f"📂 Python Executable: {sys.executable}")
+        if sys.version_info >= (3, 12):
+            logger.warning("✅ Python version OK (3.12+)")
+        else:
+            logger.warning(f"⚠️  WARNING: Python {py_ver} is NOT the required version!")
+            logger.warning("   Expected: Python 3.12+")
+            logger.warning("   Use: run_app_312.bat or run_app_312.ps1")
+        logger.warning("=" * 80)
 
         # Load device configuration (optical fiber diameter, LED model, etc.)
         try:

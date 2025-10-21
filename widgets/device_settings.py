@@ -16,6 +16,7 @@ except ImportError:
     from typing_extensions import Self  # Python < 3.11
 
 from pathlib import Path
+from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -52,7 +53,7 @@ class DeviceSettingsWidget(QWidget):
     # Signal emitted when configuration changes
     configuration_changed = Signal()
 
-    def __init__(self: Self, parent: QWidget | None = None) -> None:
+    def __init__(self: Self, parent: Optional[QWidget] = None) -> None:
         """Initialize device settings widget."""
         super().__init__(parent)
 

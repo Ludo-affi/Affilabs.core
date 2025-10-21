@@ -100,6 +100,7 @@ class HALFactory:
 
         raise HALDeviceNotFoundError(
             "No device type specified and auto-detection disabled",
+            expected_device="SPRController",
         )
 
     @classmethod
@@ -239,7 +240,7 @@ class HALFactory:
 
         # No devices detected
         error_msg = f"No compatible SPR controllers detected. Last error: {last_error}"
-        raise HALDeviceNotFoundError(error_msg)
+        raise HALDeviceNotFoundError(error_msg, expected_device="SPRController")
 
     @classmethod
     def create_controller_from_config(cls, config: dict[str, Any]) -> SPRControllerHAL:
@@ -429,7 +430,7 @@ class HALFactory:
 
         # No devices detected
         error_msg = f"No compatible spectrometers detected. Last error: {last_error}"
-        raise HALDeviceNotFoundError(error_msg)
+        raise HALDeviceNotFoundError(error_msg, expected_device="Spectrometer")
 
     @classmethod
     def register_spectrometer(
@@ -605,7 +606,7 @@ class HALFactory:
                     logger.debug(f"Failed to connect to {name}: {e}")
                     continue
 
-        raise HALDeviceNotFoundError("No kinetic controller found")
+        raise HALDeviceNotFoundError("No kinetic controller found", expected_device="KineticController")
 
     @classmethod
     def detect_kinetic_controllers(cls) -> list[dict[str, Any]]:

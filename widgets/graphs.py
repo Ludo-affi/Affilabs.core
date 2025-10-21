@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+import numpy as np
 from pyqtgraph import GraphicsLayoutWidget, InfiniteLine, mkPen, setConfigOptions
 from PySide6.QtCore import Signal
 
@@ -128,13 +129,21 @@ class SensorgramGraph(GraphicsLayoutWidget):
             for ch in CH_LIST:
                 # ✨ G3: Skip hidden channels (saves ~2ms per channel)
                 if not self.plots[ch].isVisible():
-                    logger.debug(f"Skipping hidden channel {ch}")
+                    logger.debug(f"Skipping hidden channel {ch} (plot not visible)")
                     continue
 
                 # ✨ O4 Optimization: Use array slicing (zero-copy) instead of deepcopy
                 # We slice data anyway, so no need to copy first
                 y_data = lambda_values[ch]
                 x_data = lambda_times[ch]
+
+                # 🐛 DEBUG: Log data availability for each channel
+                has_data = len(y_data) > 0
+                all_nan = has_data and np.all(np.isnan(y_data))
+                logger.debug(
+                    f"Channel {ch}: visible=True, points={len(y_data)}, "
+                    f"has_data={has_data}, all_nan={all_nan}"
+                )
                 if ch == "a":
                     self.check_subsample(len(y_data))
                     if STATIC_PLOT:
@@ -175,13 +184,14 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 # Auto-scroll right cursor to latest time while live
                 if (len(self.time_data.get("d", [])) < 300) or (
                     abs(self.right_cursor.value() - self.latest_time)
-                    > (len(self.time_data) * 0.01)
+                    > (len(self.time_data.get("d", [])) * 0.01)
                 ):
                     self.set_right(self.latest_time, True)
             self.wait_for_reset = False
             self.updating = False
         except Exception as e:
-            logger.debug(f"Error during sensorgram update: {e}")
+            logger.warning(f"⚠️ Error during sensorgram update: {e}")
+            logger.debug(f"Full traceback:", exc_info=True)
 
     def reset_time(self):
         self.static_index = 0
@@ -197,13 +207,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def left_cursor_sig_dragged(self):
         if len(self.time_data.get("d", [])) < 300 or abs(
             self.left_cursor.value() - self.left_cursor_pos
-        ) > (len(self.time_data) * 0.005):
+        ) > (len(self.time_data.get("d", [])) * 0.005):
             self.set_left(self.left_cursor.value())
 
     def right_cursor_sig_dragged(self):
         if len(self.time_data.get("d", [])) < 300 or abs(
             self.right_cursor.value() - self.right_cursor_pos
-        ) > (len(self.time_data) * 0.005):
+        ) > (len(self.time_data.get("d", [])) * 0.005):
             self.set_right(self.right_cursor.value())
 
     def center_cursors(self):

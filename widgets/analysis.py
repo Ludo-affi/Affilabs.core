@@ -36,11 +36,11 @@ from widgets.message import show_message
 
 # Python version compatibility for UTC
 try:
-    TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
-except AttributeError:
-    import datetime as dt
-
-    TIMEZONE = dt.datetime.now(dt.UTC).astimezone().tzinfo
+    from datetime import UTC  # Python 3.11+
+    TIMEZONE = datetime.datetime.now(UTC).astimezone().tzinfo
+except ImportError:
+    # Python < 3.11
+    TIMEZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
 SEGMENT_COLORS = [
     "#c93c8a",
     "#ff8e1c",
@@ -122,8 +122,8 @@ class AnalysisWindow(QWidget):
         self.ui.reset_analysis_btn.clicked.connect(self.clear_analysis_segments)
         self.ui.fit_wizard_btn.clicked.connect(self._show_kd_wizard)
         self.ui.kin_wizard_btn.clicked.connect(self._show_ka_kd_wizard)
-        self._kd_dlg: KDWizardDialog | None = None
-        self._ka_kd_dlg: KAKDWizardDialog | None = None
+        self._kd_dlg: Optional[KDWizardDialog] = None
+        self._ka_kd_dlg: Optional[KAKDWizardDialog] = None
 
         # Stacked Graph Setup
         self.ui.stack_graph.getAxis("bottom").enableAutoSIPrefix(enable=False)
@@ -1004,10 +1004,10 @@ class AnalysisSegment:
 
     def __init__(
         self: Self,
-        base_segment: Segment | None,
+        base_segment: Optional[Segment],
         *,
         json_load: bool = False,
-        json_data: dict | None = None,  # type: ignore[type-arg]
+        json_data: Optional[dict] = None,  # type: ignore[type-arg]
     ) -> None:
         """Make new segment."""
         try:
@@ -1126,7 +1126,7 @@ class AnalysisSegment:
         self: Self,
         new_start: dict[str, int],
         new_end: dict[str, int],
-        single_ch: str | None = None,
+        single_ch: Optional[str] = None,
     ) -> None:
         """Adjust a segment."""
         try:

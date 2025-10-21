@@ -120,7 +120,7 @@ class ValveState:
 class SensorReading:
     """Temperature sensor reading."""
 
-    temperature: float | None = None  # °C
+    temperature: Optional[float] = None  # °C
     timestamp: float = field(default_factory=time.time)
     exp_time: float = 0.0  # Time since experiment start
 
@@ -137,7 +137,7 @@ class ChannelState:
     valve: ValveState = field(default_factory=ValveState)
     pump_running: bool = False
     pump_rate: float = 0.0  # ml/min
-    current_temp: float | None = None  # °C (from sensor)
+    current_temp: Optional[float] = None  # °C (from sensor)
     injection_timer_active: bool = False
     injection_timeout_sec: int = 0
 
@@ -215,8 +215,8 @@ class KineticManager(QObject):
 
     def __init__(
         self,
-        kinetic_controller: Any | None = None,
-        experiment_start_time: float | None = None,
+        kinetic_controller: Optional[Any] = None,
+        experiment_start_time: Optional[float] = None,
     ) -> None:
         """Initialize kinetic manager.
 
@@ -772,7 +772,7 @@ class KineticManager(QObject):
     # Sensor Reading
     # ========================================================================
 
-    def read_sensor(self, channel: str) -> SensorReading | None:
+    def read_sensor(self, channel: str) -> Optional[SensorReading]:
         """Read temperature sensor for a channel.
 
         Args:
@@ -887,7 +887,7 @@ class KineticManager(QObject):
     # Device Temperature
     # ========================================================================
 
-    def read_device_temperature(self) -> float | None:
+    def read_device_temperature(self) -> Optional[float]:
         """Read device internal temperature.
 
         Returns:

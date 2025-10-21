@@ -124,7 +124,7 @@ class RecordingManager:
         set_start_callback: Callable[[], None],
         clear_buffers_callback: Callable[[], None],
         parent_widget: Any = None,
-    ) -> bool | None:
+    ) -> Optional[bool]:
         """Toggle recording state - start if stopped, stop if recording.
 
         Args:
@@ -134,7 +134,7 @@ class RecordingManager:
             parent_widget: Parent widget for dialogs (optional)
 
         Returns:
-            bool | None: Recording state or None if no change
+            Optional[bool]: Recording state or None if no change
 
         """
         if not self.recording:
@@ -156,7 +156,7 @@ class RecordingManager:
         temp_log: dict[str, list],
         log_ch1: dict[str, Any],
         log_ch2: dict[str, Any],
-        knx: Any | None = None,
+        knx: Optional[Any] = None,
     ) -> None:
         """Save all recorded data during recording session.
 
@@ -241,7 +241,7 @@ class RecordingManager:
         log_ch1: dict[str, Any],
         log_ch2: dict[str, Any],
         device_config: dict[str, str],
-        knx: Any | None = None,
+        knx: Optional[Any] = None,
     ) -> None:
         """Save kinetic logs using DataIOManager."""
         if knx is not None:

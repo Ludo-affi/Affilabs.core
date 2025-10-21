@@ -23,14 +23,14 @@ class HardwareManager:
         self,
         *,
         # Hardware state references
-        ctrl: Any | None = None,
-        usb: Any | None = None,
-        knx: Any | None = None,
-        pump: Any | None = None,
+        ctrl: Optional[Any] = None,
+        usb: Optional[Any] = None,
+        knx: Optional[Any] = None,
+        pump: Optional[Any] = None,
         # Manager references (will be created/managed)
-        pump_manager: CavroPumpManager | None = None,
-        kinetic_manager: KineticManager | None = None,
-        calibrator: SPRCalibrator | None = None,
+        pump_manager: Optional[CavroPumpManager] = None,
+        kinetic_manager: Optional[KineticManager] = None,
+        calibrator: Optional[SPRCalibrator] = None,
         # Configuration
         device_config: dict[str, Any],
         # State flags
@@ -553,10 +553,10 @@ class HardwareManager:
     def update_hardware_references(
         self,
         *,
-        ctrl: Any | None = None,
-        usb: Any | None = None,
-        knx: Any | None = None,
-        pump: Any | None = None,
+        ctrl: Optional[Any] = None,
+        usb: Optional[Any] = None,
+        knx: Optional[Any] = None,
+        pump: Optional[Any] = None,
     ) -> None:
         """Update hardware references and reconfigure."""
         if ctrl is not None:

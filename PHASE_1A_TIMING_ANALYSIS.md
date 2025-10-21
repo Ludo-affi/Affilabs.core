@@ -41,7 +41,7 @@ Each channel takes ~400ms total:
 **LED_on timing consistently shows ~105ms per channel:**
 ```
 ch=a: LED_on=105ms
-ch=b: LED_on=105ms  
+ch=b: LED_on=105ms
 ch=c: LED_on=105ms
 ch=d: LED_on=105ms
 TOTAL: 420ms wasted per cycle!
@@ -57,7 +57,7 @@ TOTAL: 420ms wasted per cycle!
 The 105ms likely includes:
 1. Serial command to controller
 2. Polarizer motor movement
-3. LED PWM adjustment  
+3. LED PWM adjustment
 4. Multiple serial round-trips
 
 **Hypothesis**: The code is using sequential commands instead of a single batch command.
@@ -171,18 +171,18 @@ Both use same total photon collection:
    - Read `_activate_channel_batch()` implementation
    - Check HAL serial command structure
    - Profile serial communication timing
-   
+
 2. **FIX**: Implement batch LED control (if not already)
    - Single serial command per channel activation
    - Combine polarizer + LED in one transmission
-   
+
 3. **VALIDATE**: Re-run timing after LED fix
    - Should see LED_on drop to <10ms
    - Cycle time should drop to ~1300ms
-   
+
 4. **OPTIMIZE**: Implement GUI throttling
    - Final cycle time ~1200-1240ms
-   
+
 5. **DOCUMENT**: Update performance comparison guide
 
 ## Data Collection Details

@@ -218,7 +218,7 @@ class HardwareDetector:
         """
         try:
             import seabreeze
-            seabreeze.use('pyseabreeze')
+            seabreeze.use('cseabreeze')  # FIX: Use C backend for performance (was pyseabreeze)
             from seabreeze.spectrometers import Spectrometer
 
             # Try to open spectrometer

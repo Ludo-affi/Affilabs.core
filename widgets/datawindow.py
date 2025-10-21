@@ -18,17 +18,11 @@ try:
     from typing import Literal, Optional, Self, TypedDict, Union  # Python 3.11+
 except ImportError:
     try:
-        from typing import (  # Python 3.8+  # Python < 3.11
-            Literal,
-            Optional,
-            Self,
-            TypedDict,
-            Union,
-        )
+        from typing import Literal, Optional, TypedDict, Union  # Python 3.8-3.10
+        from typing_extensions import Self  # Backport for < 3.11
     except ImportError:
-        from typing import Literal, Self  # Python < 3.8
-
-        from typing_extensions import TypedDict
+        from typing import Literal  # Python < 3.8
+        from typing_extensions import TypedDict, Self
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
@@ -67,11 +61,11 @@ from widgets.metadata import Metadata, MetadataPrompt
 
 # Python version compatibility for UTC
 try:
-    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
-except AttributeError:
-    import datetime as dt
-
-    TIME_ZONE = dt.datetime.now(dt.UTC).astimezone().tzinfo
+    from datetime import UTC  # Python 3.11+
+    TIME_ZONE = datetime.datetime.now(UTC).astimezone().tzinfo
+except ImportError:
+    # Python < 3.11
+    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
 COLUMNS_TO_TOGGLE = frozenset(range(2, 8))
 
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
@@ -230,7 +224,7 @@ class Segment:
 class DataWindow(QWidget):
     """Data processing widget."""
 
-    ui: Ui_Processing | Ui_Sensorgram
+    ui: Union[Ui_Processing, Ui_Sensorgram]
 
     export_error_signal = Signal()
     reset_graphs_sig = Signal()
@@ -281,10 +275,10 @@ class DataWindow(QWidget):
         )
 
         # segment data
-        self.current_segment: Segment | None = None
+        self.current_segment: Optional[Segment] = None
         self.live_segment_start: list[float] | None = None
         self.saved_segments: list[Segment] = []
-        self.deleted_segment: Segment | None = None
+        self.deleted_segment: Optional[Segment] = None
         self.segment_edit: Optional[int] = None
         self.viewing = False
         self.seg_count = 0
@@ -330,6 +324,14 @@ class DataWindow(QWidget):
             getattr(self.ui, f"segment_{ch.upper()}").stateChanged.connect(
                 partial(self.SOI_view.display_channel_changed, ch),
             )
+
+        # ✅ FIX: Initialize plot visibility to match checkbox state
+        # This ensures all checked checkboxes (including 'd') show their plots
+        for ch in CH_LIST:
+            checkbox = getattr(self.ui, f"segment_{ch.upper()}")
+            is_checked = checkbox.isChecked()
+            self.full_segment_view.display_channel_changed(ch, is_checked)
+            self.SOI_view.display_channel_changed(ch, is_checked)
 
         if isinstance(self.ui, Ui_Processing):
             for ch in CH_LIST:
@@ -593,6 +595,20 @@ class DataWindow(QWidget):
                 if (not self.full_segment_view.is_updating()) and (
                     not self.SOI_view.is_updating()
                 ):
+                    # Log per-channel data counts and visibility before plotting
+                    try:
+                        counts = {ch: len(y_data.get(ch, [])) for ch in CH_LIST}
+                        vis = {ch: self.full_segment_view.plots[ch].isVisible() for ch in CH_LIST}
+                        # Also log y-value ranges to check if channel d is out of range
+                        ranges = {}
+                        for ch in CH_LIST:
+                            ch_data = y_data.get(ch, [])
+                            if len(ch_data) > 0:
+                                ranges[ch] = f"[{np.min(ch_data):.1f}, {np.max(ch_data):.1f}]"
+                            else:
+                                ranges[ch] = "[]"
+                    except Exception as e:
+                        logger.debug(f"Could not read plot visibility or data counts: {e}")
                     self.full_segment_view.update(y_data, x_data)
                 else:
                     logger.debug("busy updating")
@@ -675,6 +691,13 @@ class DataWindow(QWidget):
                     self.current_segment.ref_ch,
                 )
                 if self.current_segment.error is None:
+                    # Log SOI data counts and visibility before updating SOI view
+                    try:
+                        seg_counts = {ch: len(self.current_segment.seg_y.get(ch, [])) for ch in CH_LIST}
+                        soi_vis = {ch: self.SOI_view.plots[ch].isVisible() for ch in CH_LIST}
+                        logger.warning(f"📉 SOI update: seg_counts={seg_counts}, soi_visibility={soi_vis}")
+                    except Exception:
+                        logger.debug("Could not read SOI plot visibility or segment counts")
                     self.SOI_view.update_display(self.current_segment)
                 else:
                     logger.debug(f"{self.current_segment.error}")
@@ -1629,7 +1652,7 @@ class DataWindow(QWidget):
         self: Self,
         *,
         preset: bool = False,
-        preset_dir: str | Path = "",
+        preset_dir: Union[str, Path] = "",
     ) -> None:
         """Export raw data."""
         try:

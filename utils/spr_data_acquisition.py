@@ -48,9 +48,9 @@ class SPRDataAcquisition:
         self,
         *,
         # Hardware references
-        ctrl: Any | None,
-        usb: Any | None,
-        data_processor: Any | None,
+        ctrl: Optional[Any],
+        usb: Optional[Any],
+        data_processor: Optional[Any],
         # Data storage references (managed by main app)
         lambda_values: dict[str, np.ndarray],
         lambda_times: dict[str, np.ndarray],
@@ -58,8 +58,8 @@ class SPRDataAcquisition:
         buffered_lambda: dict[str, np.ndarray],
         buffered_times: dict[str, np.ndarray],
         int_data: dict[str, np.ndarray],
-        trans_data: dict[str, np.ndarray | None],
-        ref_sig: dict[str, np.ndarray | None],
+        trans_data: dict[str, np.Optional[ndarray]],
+        ref_sig: dict[str, np.Optional[ndarray]],
         wave_data: np.ndarray,
         # Configuration
         device_config: dict[str, Any],
@@ -79,7 +79,7 @@ class SPRDataAcquisition:
         raise_error: SignalEmitter,
         set_status_text: Callable[[str], None],
         # Diagnostic signals (optional)
-        processing_steps_signal: SignalEmitter | None = None,
+        processing_steps_signal: Optional[SignalEmitter] = None,
     ) -> None:
         # Hardware references
         self.ctrl = ctrl
@@ -132,7 +132,7 @@ class SPRDataAcquisition:
         self.recording: bool = False
 
         # ✨ NEW: Batch LED control and afterglow correction for live mode
-        self._last_active_channel: str | None = None  # Track previous channel for afterglow
+        self._last_active_channel: Optional[str] = None  # Track previous channel for afterglow
         self.afterglow_correction = None
         self.afterglow_correction_enabled = False
         self._batch_led_available = hasattr(ctrl, 'set_batch_intensities') if ctrl else False
@@ -203,7 +203,7 @@ class SPRDataAcquisition:
         # ✨ PIPELINE OPTIMIZATION: Separate acquisition from processing
         # Queue for passing raw data from acquisition thread to processing thread
         self.processing_queue: queue.Queue = queue.Queue(maxsize=20)  # Buffer up to 20 samples
-        self.processing_thread: threading.Thread | None = None
+        self.processing_thread: threading.Optional[Thread] = None
         self.processing_active = False
 
         # Debug data saving
@@ -214,7 +214,7 @@ class SPRDataAcquisition:
 
         # ✨ PHASE 3A OPTIMIZATION: Cache wavelength mask (saves ~48ms per cycle)
         # Wavelengths never change during a session, so create mask once and reuse
-        self._wavelength_mask: np.ndarray | None = None
+        self._wavelength_mask: np.Optional[ndarray] = None
         self._wavelength_mask_initialized = False
 
     def _initialize_wavelength_mask(self) -> bool:
@@ -330,10 +330,6 @@ class SPRDataAcquisition:
 
                 # Unpack queued data
                 ch, raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch = item
-                
-                # 🔍 DEBUG: Track channel D processing
-                if ch == "d":
-                    logger.warning(f"🚀 PROCESSING THREAD: Processing channel D")
 
                 # ===== PROCESSING (happens in parallel with next acquisition) =====
 
@@ -343,10 +339,6 @@ class SPRDataAcquisition:
                 # Calculate transmission if reference available
                 if ref_sig_ch is not None and self.data_processor is not None:
                     try:
-                        # 🔍 DEBUG: Check channel D reference signal
-                        if ch == "d":
-                            logger.warning(f"🔧 Channel D: ref_sig_ch={'available' if ref_sig_ch is not None else 'None'}, processor={'available' if self.data_processor is not None else 'None'}")
-                        
                         # Calculate transmittance (P/S ratio)
                         self.trans_data[ch] = (
                             self.data_processor.calculate_transmission(
@@ -356,18 +348,6 @@ class SPRDataAcquisition:
                                 denoise=False,  # Skip denoising for sensorgram speed
                             )
                         )
-                        
-                        # 🔍 DEBUG: Check channel D transmittance
-                        if ch == "d" and self.trans_data[ch] is not None:
-                            trans_stats = {
-                                'mean': np.mean(self.trans_data[ch]),
-                                'max': np.max(self.trans_data[ch]),
-                                'min': np.min(self.trans_data[ch]),
-                                'std': np.std(self.trans_data[ch]),
-                                'length': len(self.trans_data[ch]),
-                                'has_peak': np.max(self.trans_data[ch]) > np.mean(self.trans_data[ch]) * 1.2
-                            }
-                            logger.warning(f"🔬 Channel D transmittance stats: {trans_stats}")
 
                         # Find resonance wavelength
                         fit_lambda = np.nan
@@ -376,50 +356,14 @@ class SPRDataAcquisition:
                                 spectrum=self.trans_data[ch],
                                 window=DERIVATIVE_WINDOW,
                             )
-                            
-                            # 🔍 DEBUG: Check channel D fit result
-                            if ch == "d":
-                                if not np.isnan(fit_lambda):
-                                    logger.warning(f"🎯 Channel D fit_lambda: {fit_lambda:.4f} nm")
-                                else:
-                                    logger.warning(f"❌ Channel D fit_lambda: NaN (resonance fitting failed)")
-                                    # Save diagnostic data to file
-                                    try:
-                                        import json
-                                        from pathlib import Path
-                                        diag_data = {
-                                            'timestamp': time.time(),
-                                            'spectrum_length': len(self.trans_data[ch]),
-                                            'spectrum_mean': float(np.mean(self.trans_data[ch])),
-                                            'spectrum_min': float(np.min(self.trans_data[ch])),
-                                            'spectrum_max': float(np.max(self.trans_data[ch])),
-                                            'spectrum_min_index': int(np.argmin(self.trans_data[ch])),
-                                            'wave_data_length': len(self.data_processor.wave_data) if self.data_processor.wave_data is not None else 0,
-                                            'wave_data_range': [float(self.data_processor.wave_data[0]), float(self.data_processor.wave_data[-1])] if self.data_processor.wave_data is not None else [0, 0],
-                                            'wavelength_at_min': float(self.data_processor.wave_data[np.argmin(self.trans_data[ch])]) if self.data_processor.wave_data is not None else 0,
-                                        }
-                                        diag_file = Path("generated-files/channel_d_nan_diagnostic.json")
-                                        with open(diag_file, 'w') as f:
-                                            json.dump(diag_data, f, indent=2)
-                                        logger.warning(f"💾 Saved channel D diagnostic to {diag_file}")
-                                    except Exception as e:
-                                        logger.error(f"Failed to save channel D diagnostic: {e}")
                     except Exception as e:
                         logger.exception(f"Failed to process transmission for ch{ch}: {e}")
                         fit_lambda = np.nan
                 else:
-                    # 🔍 DEBUG: Track why channel D didn't process
-                    if ch == "d":
-                        logger.warning(f"❌ Channel D skipped processing: ref_sig_ch={ref_sig_ch is not None}, processor={self.data_processor is not None}")
                     fit_lambda = np.nan
 
                 # Update lambda data with the timestamp from acquisition
                 self._update_lambda_data(ch, fit_lambda, acquisition_timestamp)
-
-                # 🔍 DEBUG: Log before filtering for channel D
-                if ch == "d":
-                    value_str = f"{fit_lambda:.4f}" if not np.isnan(fit_lambda) else "NaN"
-                    logger.warning(f"📊 About to apply filtering for channel D: fit_lambda={value_str}")
 
                 # Apply filtering
                 if hasattr(self, '_last_ch_list'):
@@ -530,18 +474,12 @@ class SPRDataAcquisition:
                         # ✨ PIPELINE: ONLY ACQUIRE - processing happens in parallel thread
                         raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch = self._acquire_raw_spectrum(ch)
 
-                        # 🔍 DEBUG: Log queuing for channel D
-                        if ch == "d":
-                            logger.warning(f"📬 Queuing channel D for processing (queue_size={self.processing_queue.qsize()})")
-
                         # Queue for processing (non-blocking)
                         try:
                             self.processing_queue.put(
                                 (ch, raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch),
                                 block=False  # Don't wait if queue is full
                             )
-                            if ch == "d":
-                                logger.warning(f"✅ Channel D queued successfully (new_size={self.processing_queue.qsize()})")
                         except queue.Full:
                             logger.warning(f"⚠️ PIPELINE: Queue full, dropping frame for ch{ch}")
                     else:
@@ -638,17 +576,9 @@ class SPRDataAcquisition:
             and self.calibrated
             and self.ctrl is not None
         )
-        if ch in ["a", "d"]:  # Log for channel a and d to debug channel d issue
-            logger.warning(
-                f"📊 Channel {ch} read check: in_ch_list={ch in ch_list}, "
-                f"no_read_flag={self._b_no_read.is_set()}, "
-                f"calibrated={self.calibrated}, "
-                f"ctrl_available={self.ctrl is not None}, "
-                f"should_read={should_read}"
-            )
         return should_read
 
-    def _acquire_raw_spectrum(self, ch: str) -> tuple[np.ndarray, float, np.ndarray, np.ndarray | None]:
+    def _acquire_raw_spectrum(self, ch: str) -> tuple[np.ndarray, float, np.ndarray, np.Optional[ndarray]]:
         """FAST acquisition-only method for pipelined architecture.
 
         ✨ PIPELINE OPTIMIZATION: Only acquires raw spectrum and prepares data for processing.
@@ -727,10 +657,6 @@ class SPRDataAcquisition:
         Returns:
             tuple: (fit_lambda, acquisition_timestamp) - resonance wavelength and time of acquisition
         """
-        # Log for channel D to debug why it returns NaN
-        if ch == "d":
-            logger.warning(f"🚀 _read_channel_data called for channel D")
-        
         # ⏱️ TIMING: Start channel acquisition timing
         t_start = perf_counter()
         t_led_on = t_start
@@ -963,38 +889,15 @@ class SPRDataAcquisition:
 
             # Find resonance wavelength
             fit_lambda = np.nan
-            
-            # Log for channel D BEFORE processing
-            if ch == "d":
-                trans_available = self.trans_data[ch] is not None
-                b_stop_set = self._b_stop.is_set()
-                processor_available = self.data_processor is not None
-                logger.warning(f"🔧 Channel D pre-processing: trans_data={trans_available}, b_stop={b_stop_set}, processor={processor_available}")
-            
+
             if not (self._b_stop.is_set() or self.trans_data[ch] is None):
                 if self.data_processor is not None:
                     spectrum = self.trans_data[ch]
-                    
-                    # Log for channel D to debug why it returns NaN
-                    if ch == "d":
-                        spec_stats = {
-                            'mean': np.mean(spectrum),
-                            'max': np.max(spectrum),
-                            'min': np.min(spectrum),
-                            'std': np.std(spectrum),
-                            'length': len(spectrum),
-                            'has_peak': np.max(spectrum) > np.mean(spectrum) * 1.2
-                        }
-                        logger.warning(f"🔬 Channel D spectrum stats: {spec_stats}")
-                    
+
                     fit_lambda = self.data_processor.find_resonance_wavelength(
                         spectrum=spectrum,
                         window=DERIVATIVE_WINDOW,  # 165
                     )
-                    
-                    # Log result for channel D
-                    if ch == "d":
-                        logger.warning(f"🎯 Channel D fit_lambda result: {fit_lambda:.4f}" if not np.isnan(fit_lambda) else f"❌ Channel D fit_lambda: NaN")
             t_peak_complete = perf_counter()
 
             # ⏱️ TIMING: Log detailed breakdown for this channel
@@ -1025,21 +928,8 @@ class SPRDataAcquisition:
             fit_lambda: Resonance wavelength
             acquisition_timestamp: Time when spectrum was acquired (relative to exp_start)
         """
-        # 🔍 DEBUG: Log before appending for channel D
-        if ch == "d":
-            current_len = len(self.lambda_values[ch])
-            value_str = f"{fit_lambda:.4f}" if not np.isnan(fit_lambda) else "NaN"
-            logger.warning(f"💾 Storing channel D: current_len={current_len}, new_value={value_str}")
-        
         self.lambda_values[ch] = np.append(self.lambda_values[ch], fit_lambda)
-        
-        # 🔍 DEBUG: Log after appending for channel D
-        if ch == "d":
-            new_len = len(self.lambda_values[ch])
-            last_val = self.lambda_values[ch][-1]
-            value_str = f"{last_val:.4f}" if not np.isnan(last_val) else "NaN"
-            logger.warning(f"💾 Stored channel D: new_len={new_len}, last_value={value_str}")
-        
+
         # Use the timestamp from when data was actually acquired (not processed)
         self.lambda_times[ch] = np.append(
             self.lambda_times[ch],
@@ -1048,19 +938,6 @@ class SPRDataAcquisition:
 
     def _apply_filtering(self, ch: str, ch_list: list[str], fit_lambda: float) -> None:
         """Apply filtering to lambda data."""
-        # 🔍 DEBUG: Log filtering check for channel D
-        if ch == "d":
-            in_list = ch in ch_list
-            data_len = len(self.lambda_values[ch])
-            buff_idx = self.filt_buffer_index
-            check_result = data_len >= buff_idx  # Fixed to match actual check
-            value_str = f"{fit_lambda:.4f}" if not np.isnan(fit_lambda) else "NaN"
-            logger.warning(
-                f"🔍 FILTERING CHECK D: in_ch_list={in_list}, "
-                f"data_len={data_len}, buffer_idx={buff_idx}, "
-                f"passes_check={check_result}, fit_lambda={value_str}"
-            )
-        
         if ch in ch_list and len(self.lambda_values[ch]) >= self.filt_buffer_index:
             # Use data processor for median filtering
             if self.data_processor is not None:
@@ -1072,11 +949,6 @@ class SPRDataAcquisition:
             else:
                 # Fallback if processor not initialized
                 filtered_value = fit_lambda
-            
-            # 🔍 DEBUG: Log successful filtering for channel D
-            if ch == "d":
-                filt_value_str = f"{filtered_value:.4f}" if not np.isnan(filtered_value) else "NaN"
-                logger.warning(f"✅ FILTERING SUCCESS D: filtered_value={filt_value_str}")
 
             self.filtered_lambda[ch] = np.append(
                 self.filtered_lambda[ch], filtered_value
@@ -1093,8 +965,6 @@ class SPRDataAcquisition:
             )
         else:
             # No data available or channel not in list - append NaN
-            if ch == "d":
-                logger.warning(f"❌ FILTERING FAILED D: Appending NaN to filtered_lambda!")
             self.filtered_lambda[ch] = np.append(self.filtered_lambda[ch], np.nan)
             self.buffered_lambda[ch] = np.append(self.buffered_lambda[ch], np.nan)
             self.buffered_times[ch] = np.append(self.buffered_times[ch], np.nan)
@@ -1373,7 +1243,7 @@ class SPRDataAcquisition:
             logger.error(f"Error in vectorized spectrum acquisition for {description}: {e}")
             return None
 
-    def _activate_channel_batch(self, channel: str, intensity: int | None = None) -> bool:
+    def _activate_channel_batch(self, channel: str, intensity: Optional[int] = None) -> bool:
         """Activate a single channel using batch LED command.
 
         Args:

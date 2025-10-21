@@ -4,7 +4,8 @@
 try:
     from typing import Literal, Self  # Python 3.11+
 except ImportError:
-    from typing import Literal, Self  # Python < 3.11
+    from typing import Literal
+    from typing_extensions import Self  # Python < 3.11
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon

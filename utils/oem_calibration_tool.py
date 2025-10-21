@@ -701,8 +701,8 @@ class DeviceProfileManager:
     def save_profile(
         self,
         serial_number: str,
-        polarizer_results: dict | None,
-        afterglow_results: dict | None,
+        polarizer_results: Optional[dict],
+        afterglow_results: Optional[dict],
         detector_model: str = "Unknown"
     ) -> Path:
         """Save unified device profile.
@@ -739,8 +739,8 @@ class DeviceProfileManager:
     def generate_plots(
         self,
         serial_number: str,
-        polarizer_results: dict | None,
-        afterglow_results: dict | None
+        polarizer_results: Optional[dict],
+        afterglow_results: Optional[dict]
     ) -> None:
         """Generate diagnostic plots for calibration results.
 

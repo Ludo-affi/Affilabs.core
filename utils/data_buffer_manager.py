@@ -56,7 +56,7 @@ class DataBufferManager:
         self.int_data: dict[str, np.ndarray] = {
             ch: np.array([]) for ch in self.channels
         }
-        self.trans_data: dict[str, np.ndarray | None] = dict.fromkeys(self.channels)
+        self.trans_data: dict[str, np.Optional[ndarray]] = dict.fromkeys(self.channels)
 
         # Buffer configuration
         self.max_buffer_size = 100000  # Maximum points per buffer
@@ -200,7 +200,7 @@ class DataBufferManager:
         except Exception as e:
             logger.exception(f"Error setting intensity data for {channel}: {e}")
 
-    def set_transmittance_data(self, channel: str, data: np.ndarray | None) -> None:
+    def set_transmittance_data(self, channel: str, data: np.Optional[ndarray]) -> None:
         """Set transmittance data for a channel.
 
         Args:
@@ -298,7 +298,7 @@ class DataBufferManager:
         """
         return {ch: self.get_channel_data_count(ch) for ch in self.channels}
 
-    def get_latest_value(self, channel: str) -> float | None:
+    def get_latest_value(self, channel: str) -> Optional[float]:
         """Get the latest lambda value for a channel.
 
         Args:
@@ -320,7 +320,7 @@ class DataBufferManager:
             logger.exception(f"Error getting latest value for {channel}: {e}")
             return None
 
-    def get_latest_timestamp(self, channel: str) -> float | None:
+    def get_latest_timestamp(self, channel: str) -> Optional[float]:
         """Get the latest timestamp for a channel.
 
         Args:

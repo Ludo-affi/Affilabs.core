@@ -13,13 +13,18 @@ from pathlib import Path
 def main():
     """Run the Affinite application with Python 3.12."""
     project_root = Path(__file__).parent
-    venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+
+    # Try Python 3.12 venv first, then fall back to .venv
+    venv_python = project_root / ".venv312" / "Scripts" / "python.exe"
+    if not venv_python.exists():
+        venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+
     main_script = project_root / "main" / "main.py"
 
     if not venv_python.exists():
         print("❌ Virtual environment Python not found!")
         print(f"Expected: {venv_python}")
-        print("Run: pdm install")
+        print("Run: py -3.12 -m venv .venv312")
         return 1
 
     if not main_script.exists():

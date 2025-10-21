@@ -23,10 +23,10 @@ class DeviceConfiguration:
 
     ctrl: str = ""
     knx: str = ""
-    pump: str | None = None
+    pump: Optional[str] = None
     usb: str = ""
 
-    def to_dict(self) -> dict[str, str | None]:
+    def to_dict(self) -> dict[str, Optional[str]]:
         """Convert to dictionary format."""
         return asdict(self)
 
@@ -46,9 +46,9 @@ class CalibrationConfiguration:
     pol_intensity: dict[str, int] = field(
         default_factory=lambda: dict.fromkeys(CH_LIST, 0)
     )
-    wave_data: np.ndarray | None = None
-    dark_noise: np.ndarray | None = None
-    fourier_weights: np.ndarray | None = None
+    wave_data: np.Optional[ndarray] = None
+    dark_noise: np.Optional[ndarray] = None
+    fourier_weights: np.Optional[ndarray] = None
 
     def has_calibration_data(self) -> bool:
         """Check if calibration data is available."""
@@ -179,7 +179,7 @@ class ConfigurationManager:
         logger.info("Configuration manager initialized with defaults")
 
     def update_device_config(
-        self, ctrl: str = "", knx: str = "", pump: str | None = None, usb: str = ""
+        self, ctrl: str = "", knx: str = "", pump: Optional[str] = None, usb: str = ""
     ) -> None:
         """Update device configuration.
 
@@ -218,7 +218,7 @@ class ConfigurationManager:
 
         logger.debug("Calibration config updated from calibrator state")
 
-    def get_device_config_dict(self) -> dict[str, str | None]:
+    def get_device_config_dict(self) -> dict[str, Optional[str]]:
         """Get device configuration as dictionary (for backward compatibility)."""
         return self.device.to_dict()
 

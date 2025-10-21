@@ -170,7 +170,7 @@ def fit_polynomial_spectrum(
     wavelengths: np.ndarray,
     search_range: tuple[float, float] = (600, 720),
     degree: int = 6,
-) -> tuple[np.ndarray, np.poly1d | None, np.ndarray]:
+) -> tuple[np.ndarray, Optional[np.poly1d], np.ndarray]:
     """Fit polynomial to spectrum for smooth, differentiable representation.
 
     6th order polynomial is optimal for SPR dips:

@@ -172,7 +172,7 @@ class SPRDataProcessor:
         self,
         p_pol_intensity: np.ndarray,
         s_ref_intensity: np.ndarray,
-        dark_noise: np.ndarray | None = None,
+        dark_noise: np.Optional[ndarray] = None,
         denoise: bool = True,
     ) -> np.ndarray:
         """Calculate transmission spectrum: (P-pol / S-ref) × 100%.
@@ -460,18 +460,18 @@ class SPRDataProcessor:
             if not hasattr(self, 'wave_data') or self.wave_data is None:
                 logger.warning(f"❌ RESONANCE FITTING FAILED: wave_data not initialized!")
                 return np.nan
-            
+
             if spectrum is None or len(spectrum) == 0:
                 logger.warning(f"❌ RESONANCE FITTING FAILED: spectrum is None or empty!")
                 return np.nan
-            
+
             if len(spectrum) != len(self.wave_data):
                 logger.warning(
                     f"❌ RESONANCE FITTING FAILED: Spectrum/wavelength size mismatch! "
                     f"spectrum={len(spectrum)}, wave_data={len(self.wave_data)}"
                 )
                 return np.nan
-            
+
             # Import settings
             from settings.settings import (
                 ADAPTIVE_PEAK_DETECTION,
@@ -644,11 +644,9 @@ class SPRDataProcessor:
         try:
             # Check if current value is NaN
             if buffer_index >= len(data):
-                logger.warning(f"🚫 Filter: buffer_index={buffer_index} >= len(data)={len(data)}, returning NaN")
                 return np.nan
 
             if np.isnan(data[buffer_index]):
-                logger.warning(f"🚫 Filter: data[{buffer_index}] is NaN, returning NaN")
                 return np.nan
 
             # Get causal window (looking backward)
@@ -657,11 +655,9 @@ class SPRDataProcessor:
                 start = max(0, buffer_index - window + 1)
                 end = buffer_index + 1  # Include the current point in the slice
                 unfiltered = data[start:end]
-                logger.warning(f"🔧 Filter: buffer_idx={buffer_index}, len={len(data)}, window=[{start}:{end}], unfiltered_len={len(unfiltered)}, unfiltered_sample={unfiltered[-3:] if len(unfiltered) >= 3 else unfiltered}")
 
-                # FIXED: Use np.nanmedian instead of np.nanmean!
+                # Use np.nanmedian for robust filtering
                 filtered_value = np.nanmedian(unfiltered)
-                logger.warning(f"✅ Filter result: {filtered_value:.4f}")
             else:
                 # Initial case: use all available data
                 unfiltered = data.copy()
@@ -670,7 +666,7 @@ class SPRDataProcessor:
                 if len(unfiltered) % 2 == 0:
                     unfiltered = unfiltered[1:]
 
-                # FIXED: Use np.nanmedian instead of np.nanmean!
+                # Use np.nanmedian for robust filtering
                 filtered_value = np.nanmedian(unfiltered)
 
             return filtered_value
