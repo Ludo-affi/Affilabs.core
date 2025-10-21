@@ -456,6 +456,22 @@ class SPRDataProcessor:
 
         """
         try:
+            # 🔍 DEBUG: Log spectrum and wavelength data status
+            if not hasattr(self, 'wave_data') or self.wave_data is None:
+                logger.warning(f"❌ RESONANCE FITTING FAILED: wave_data not initialized!")
+                return np.nan
+            
+            if spectrum is None or len(spectrum) == 0:
+                logger.warning(f"❌ RESONANCE FITTING FAILED: spectrum is None or empty!")
+                return np.nan
+            
+            if len(spectrum) != len(self.wave_data):
+                logger.warning(
+                    f"❌ RESONANCE FITTING FAILED: Spectrum/wavelength size mismatch! "
+                    f"spectrum={len(spectrum)}, wave_data={len(self.wave_data)}"
+                )
+                return np.nan
+            
             # Import settings
             from settings.settings import (
                 ADAPTIVE_PEAK_DETECTION,
@@ -535,7 +551,8 @@ class SPRDataProcessor:
             search_wavelengths = self.wave_data[search_start:search_end]
 
             if len(search_spectrum) < 3:
-                logger.debug(f"Search region too small: {len(search_spectrum)} points")
+                logger.warning(f"❌ RESONANCE FITTING FAILED: Search region too small: {len(search_spectrum)} points (need ≥3)")
+                logger.warning(f"   search_start={search_start}, search_end={search_end}, total_spectrum_len={len(spectrum)}")
                 return np.nan
 
             # Find minimum transmission in search region
@@ -585,8 +602,9 @@ class SPRDataProcessor:
             if self.wave_data[0] <= resonance_wavelength <= self.wave_data[-1]:
                 return resonance_wavelength
             else:
-                logger.debug(
-                    f"Resonance wavelength out of bounds: {resonance_wavelength:.2f} nm"
+                logger.warning(
+                    f"❌ RESONANCE FITTING FAILED: Wavelength out of bounds: {resonance_wavelength:.2f} nm "
+                    f"(valid range: {self.wave_data[0]:.2f}-{self.wave_data[-1]:.2f} nm)"
                 )
                 return np.nan
 
@@ -626,20 +644,24 @@ class SPRDataProcessor:
         try:
             # Check if current value is NaN
             if buffer_index >= len(data):
+                logger.warning(f"🚫 Filter: buffer_index={buffer_index} >= len(data)={len(data)}, returning NaN")
                 return np.nan
 
             if np.isnan(data[buffer_index]):
+                logger.warning(f"🚫 Filter: data[{buffer_index}] is NaN, returning NaN")
                 return np.nan
 
             # Get causal window (looking backward)
             if len(data) > window:
                 # Standard case: full window available
-                start = max(0, buffer_index - window)
-                end = buffer_index
+                start = max(0, buffer_index - window + 1)
+                end = buffer_index + 1  # Include the current point in the slice
                 unfiltered = data[start:end]
+                logger.warning(f"🔧 Filter: buffer_idx={buffer_index}, len={len(data)}, window=[{start}:{end}], unfiltered_len={len(unfiltered)}, unfiltered_sample={unfiltered[-3:] if len(unfiltered) >= 3 else unfiltered}")
 
                 # FIXED: Use np.nanmedian instead of np.nanmean!
                 filtered_value = np.nanmedian(unfiltered)
+                logger.warning(f"✅ Filter result: {filtered_value:.4f}")
             else:
                 # Initial case: use all available data
                 unfiltered = data.copy()

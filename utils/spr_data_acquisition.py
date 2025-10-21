@@ -8,6 +8,7 @@ from copy import deepcopy
 from typing import Any, Protocol, cast
 from pathlib import Path
 from datetime import datetime
+import queue  # ✨ PIPELINE: For async acquisition/processing
 
 import numpy as np
 from typing import Optional
@@ -199,6 +200,12 @@ class SPRDataAcquisition:
         self.timing_samples = []  # Store timing samples for analysis
         self.cycle_count = 0  # Track cycle number for periodic reporting
 
+        # ✨ PIPELINE OPTIMIZATION: Separate acquisition from processing
+        # Queue for passing raw data from acquisition thread to processing thread
+        self.processing_queue: queue.Queue = queue.Queue(maxsize=20)  # Buffer up to 20 samples
+        self.processing_thread: threading.Thread | None = None
+        self.processing_active = False
+
         # Debug data saving
         self.debug_data_counter = 0
         self.debug_save_dir = Path("generated-files/debug_processing_steps")
@@ -226,12 +233,14 @@ class SPRDataAcquisition:
         try:
             # Read wavelengths from spectrometer (one-time operation)
             current_wavelengths = None
-            if hasattr(self.usb, "read_wavelength"):
-                current_wavelengths = self.usb.read_wavelength()
-            elif hasattr(self.usb, "get_wavelengths"):
+            # Use HAL method directly (unified access path)
+            if hasattr(self.usb, "get_wavelengths"):
                 wl = self.usb.get_wavelengths()
                 if wl is not None:
                     current_wavelengths = np.array(wl)
+            elif hasattr(self.usb, "read_wavelength"):
+                # Fallback for legacy adapters
+                current_wavelengths = self.usb.read_wavelength()
 
             if current_wavelengths is None:
                 logger.error("❌ Cannot get wavelengths from spectrometer for mask initialization")
@@ -301,8 +310,143 @@ class SPRDataAcquisition:
         except Exception as e:
             logger.warning(f"Failed to save debug data: {e}")
 
+    def _processing_worker(self) -> None:
+        """Background thread for processing acquired spectra.
+
+        ✨ PIPELINE OPTIMIZATION: This runs in parallel with data acquisition,
+        allowing the next spectrum to be acquired while current one is processed.
+
+        Expected speedup: 18-20% (processing overhead hidden by next acquisition)
+        """
+        logger.info("✨ PIPELINE: Processing thread started")
+
+        while self.processing_active or not self.processing_queue.empty():
+            try:
+                # Get raw data from queue (timeout to allow checking active flag)
+                try:
+                    item = self.processing_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+
+                # Unpack queued data
+                ch, raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch = item
+                
+                # 🔍 DEBUG: Track channel D processing
+                if ch == "d":
+                    logger.warning(f"🚀 PROCESSING THREAD: Processing channel D")
+
+                # ===== PROCESSING (happens in parallel with next acquisition) =====
+
+                # Apply dark noise correction
+                self.int_data[ch] = raw_spectrum - dark_correction
+
+                # Calculate transmission if reference available
+                if ref_sig_ch is not None and self.data_processor is not None:
+                    try:
+                        # 🔍 DEBUG: Check channel D reference signal
+                        if ch == "d":
+                            logger.warning(f"🔧 Channel D: ref_sig_ch={'available' if ref_sig_ch is not None else 'None'}, processor={'available' if self.data_processor is not None else 'None'}")
+                        
+                        # Calculate transmittance (P/S ratio)
+                        self.trans_data[ch] = (
+                            self.data_processor.calculate_transmission(
+                                p_pol_intensity=raw_spectrum - dark_correction,
+                                s_ref_intensity=ref_sig_ch,
+                                dark_noise=None,  # Already corrected
+                                denoise=False,  # Skip denoising for sensorgram speed
+                            )
+                        )
+                        
+                        # 🔍 DEBUG: Check channel D transmittance
+                        if ch == "d" and self.trans_data[ch] is not None:
+                            trans_stats = {
+                                'mean': np.mean(self.trans_data[ch]),
+                                'max': np.max(self.trans_data[ch]),
+                                'min': np.min(self.trans_data[ch]),
+                                'std': np.std(self.trans_data[ch]),
+                                'length': len(self.trans_data[ch]),
+                                'has_peak': np.max(self.trans_data[ch]) > np.mean(self.trans_data[ch]) * 1.2
+                            }
+                            logger.warning(f"🔬 Channel D transmittance stats: {trans_stats}")
+
+                        # Find resonance wavelength
+                        fit_lambda = np.nan
+                        if self.trans_data[ch] is not None:
+                            fit_lambda = self.data_processor.find_resonance_wavelength(
+                                spectrum=self.trans_data[ch],
+                                window=DERIVATIVE_WINDOW,
+                            )
+                            
+                            # 🔍 DEBUG: Check channel D fit result
+                            if ch == "d":
+                                if not np.isnan(fit_lambda):
+                                    logger.warning(f"🎯 Channel D fit_lambda: {fit_lambda:.4f} nm")
+                                else:
+                                    logger.warning(f"❌ Channel D fit_lambda: NaN (resonance fitting failed)")
+                                    # Save diagnostic data to file
+                                    try:
+                                        import json
+                                        from pathlib import Path
+                                        diag_data = {
+                                            'timestamp': time.time(),
+                                            'spectrum_length': len(self.trans_data[ch]),
+                                            'spectrum_mean': float(np.mean(self.trans_data[ch])),
+                                            'spectrum_min': float(np.min(self.trans_data[ch])),
+                                            'spectrum_max': float(np.max(self.trans_data[ch])),
+                                            'spectrum_min_index': int(np.argmin(self.trans_data[ch])),
+                                            'wave_data_length': len(self.data_processor.wave_data) if self.data_processor.wave_data is not None else 0,
+                                            'wave_data_range': [float(self.data_processor.wave_data[0]), float(self.data_processor.wave_data[-1])] if self.data_processor.wave_data is not None else [0, 0],
+                                            'wavelength_at_min': float(self.data_processor.wave_data[np.argmin(self.trans_data[ch])]) if self.data_processor.wave_data is not None else 0,
+                                        }
+                                        diag_file = Path("generated-files/channel_d_nan_diagnostic.json")
+                                        with open(diag_file, 'w') as f:
+                                            json.dump(diag_data, f, indent=2)
+                                        logger.warning(f"💾 Saved channel D diagnostic to {diag_file}")
+                                    except Exception as e:
+                                        logger.error(f"Failed to save channel D diagnostic: {e}")
+                    except Exception as e:
+                        logger.exception(f"Failed to process transmission for ch{ch}: {e}")
+                        fit_lambda = np.nan
+                else:
+                    # 🔍 DEBUG: Track why channel D didn't process
+                    if ch == "d":
+                        logger.warning(f"❌ Channel D skipped processing: ref_sig_ch={ref_sig_ch is not None}, processor={self.data_processor is not None}")
+                    fit_lambda = np.nan
+
+                # Update lambda data with the timestamp from acquisition
+                self._update_lambda_data(ch, fit_lambda, acquisition_timestamp)
+
+                # 🔍 DEBUG: Log before filtering for channel D
+                if ch == "d":
+                    value_str = f"{fit_lambda:.4f}" if not np.isnan(fit_lambda) else "NaN"
+                    logger.warning(f"📊 About to apply filtering for channel D: fit_lambda={value_str}")
+
+                # Apply filtering
+                if hasattr(self, '_last_ch_list'):
+                    self._apply_filtering(ch, self._last_ch_list, fit_lambda)
+
+                # Mark queue task as done
+                self.processing_queue.task_done()
+
+            except Exception as e:
+                logger.exception(f"Error in processing thread: {e}")
+                # Continue processing even if one item fails
+                try:
+                    self.processing_queue.task_done()
+                except:
+                    pass
+
+        logger.info("✨ PIPELINE: Processing thread stopped")
+
     def grab_data(self) -> None:
-        """Main data acquisition loop."""
+        """Main data acquisition loop.
+
+        ✨ PIPELINE OPTIMIZATION: Acquisition and processing run in parallel threads.
+        - This thread (acquisition): Fast loop that only acquires raw spectra
+        - Processing thread: Consumes from queue and processes data in parallel
+
+        Expected speedup: 18-20% by overlapping acquisition with processing
+        """
         first_run = True
         integration_time_applied = False
 
@@ -318,6 +462,16 @@ class SPRDataAcquisition:
                 if first_run:
                     self.exp_start = time.time()
                     first_run = False
+
+                    # ✨ PIPELINE: Start processing thread on first run
+                    self.processing_active = True
+                    self.processing_thread = threading.Thread(
+                        target=self._processing_worker,
+                        daemon=True,
+                        name="SPR-Processing"
+                    )
+                    self.processing_thread.start()
+                    logger.info("✨ PIPELINE: Started background processing thread")
 
                     # ✨ PHASE 3A: Initialize wavelength mask once (saves ~48ms per cycle)
                     if not self._initialize_wavelength_mask():
@@ -354,46 +508,68 @@ class SPRDataAcquisition:
                     elif not integration_time_applied and first_run:
                         logger.info("ℹ️ LIVE MODE: Using calibrated integration time (no scaling)")
 
+                # Increment buffer index at start of each cycle
+                self.filt_buffer_index += 1
+
                 if not self._check_buffer_lengths():
                     self.pad_values()
 
                 ch_list = self._get_active_channels()
-                
+
+                # ✨ PIPELINE: Store ch_list for processing thread
+                self._last_ch_list = ch_list
+
                 # ⏱️ TIMING: Start cycle timing
                 t_cycle_start = perf_counter()
 
                 for ch in CH_LIST:
-                    fit_lambda = np.nan
                     if self._b_stop.is_set():
                         break
 
                     if self._should_read_channel(ch, ch_list):
-                        fit_lambda = self._read_channel_data(ch)
+                        # ✨ PIPELINE: ONLY ACQUIRE - processing happens in parallel thread
+                        raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch = self._acquire_raw_spectrum(ch)
+
+                        # 🔍 DEBUG: Log queuing for channel D
+                        if ch == "d":
+                            logger.warning(f"📬 Queuing channel D for processing (queue_size={self.processing_queue.qsize()})")
+
+                        # Queue for processing (non-blocking)
+                        try:
+                            self.processing_queue.put(
+                                (ch, raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch),
+                                block=False  # Don't wait if queue is full
+                            )
+                            if ch == "d":
+                                logger.warning(f"✅ Channel D queued successfully (new_size={self.processing_queue.qsize()})")
+                        except queue.Full:
+                            logger.warning(f"⚠️ PIPELINE: Queue full, dropping frame for ch{ch}")
                     else:
                         # ✨ PHASE 3B: Removed time.sleep(0.1) for inactive channels
                         # This was wasting 100ms per inactive channel for no reason
                         # Inactive channels are simply skipped now (near-zero overhead)
-                        pass
+                        fit_lambda = np.nan
+                        acquisition_timestamp = time.time() - self.exp_start
+                        self._update_lambda_data(ch, fit_lambda, acquisition_timestamp)
+                        self._apply_filtering(ch, ch_list, fit_lambda)
 
-                    self._update_lambda_data(ch, fit_lambda)
-                    self._apply_filtering(ch, ch_list, fit_lambda)
-
-                    if ch == CH_LIST[-1]:
-                        self.filt_buffer_index += 1
+                    # REMOVED: Duplicate buffer index increment (already done in pad_values())
+                    # if ch == CH_LIST[-1]:
+                    #     self.filt_buffer_index += 1
 
                 if not self._b_stop.is_set():
                     t_before_emit = perf_counter()
                     self._emit_data_updates()
                     self._emit_temperature_update()
                     t_after_emit = perf_counter()
-                    
+
                     # ⏱️ TIMING: Log complete cycle timing
                     t_cycle_total = t_after_emit - t_cycle_start
                     t_emit_time = t_after_emit - t_before_emit
-                    
+
                     self.cycle_count += 1
                     self.timing_samples.append(t_cycle_total * 1000)  # Store in ms
-                    
+
                     if self.enable_timing_logs:
                         logger.warning(
                             f"⏱️ CYCLE #{self.cycle_count}: "
@@ -401,7 +577,7 @@ class SPRDataAcquisition:
                             f"emit={int(t_emit_time*1000)}ms, "
                             f"acq={int((t_cycle_total-t_emit_time)*1000)}ms"
                         )
-                        
+
                         # Every 10 cycles, report statistics
                         if self.cycle_count % 10 == 0 and len(self.timing_samples) >= 10:
                             recent_samples = self.timing_samples[-10:]
@@ -418,6 +594,28 @@ class SPRDataAcquisition:
 
             except Exception as e:
                 self._handle_acquisition_error(e, ch)
+
+        # ✨ PIPELINE: Clean shutdown of processing thread
+        logger.info("✨ PIPELINE: Shutting down processing thread...")
+        self.processing_active = False
+
+        if self.processing_thread is not None:
+            # Wait for processing thread to finish (max 5 seconds)
+            self.processing_thread.join(timeout=5.0)
+            if self.processing_thread.is_alive():
+                logger.warning("⚠️ PIPELINE: Processing thread did not stop cleanly")
+            else:
+                logger.info("✨ PIPELINE: Processing thread stopped successfully")
+
+        # Clear any remaining items in queue
+        try:
+            while not self.processing_queue.empty():
+                self.processing_queue.get_nowait()
+                self.processing_queue.task_done()
+        except queue.Empty:
+            pass
+
+        logger.info("✨ PIPELINE: Acquisition loop exited cleanly")
 
     def _check_buffer_lengths(self) -> bool:
         """Check if all buffer lengths are synchronized."""
@@ -440,8 +638,8 @@ class SPRDataAcquisition:
             and self.calibrated
             and self.ctrl is not None
         )
-        if ch == "a":  # Only log for channel a to avoid spam
-            logger.debug(
+        if ch in ["a", "d"]:  # Log for channel a and d to debug channel d issue
+            logger.warning(
                 f"📊 Channel {ch} read check: in_ch_list={ch in ch_list}, "
                 f"no_read_flag={self._b_no_read.is_set()}, "
                 f"calibrated={self.calibrated}, "
@@ -450,8 +648,89 @@ class SPRDataAcquisition:
             )
         return should_read
 
-    def _read_channel_data(self, ch: str) -> float:
-        """Read and process data from a specific channel."""
+    def _acquire_raw_spectrum(self, ch: str) -> tuple[np.ndarray, float, np.ndarray, np.ndarray | None]:
+        """FAST acquisition-only method for pipelined architecture.
+
+        ✨ PIPELINE OPTIMIZATION: Only acquires raw spectrum and prepares data for processing.
+        No processing happens here - that's done in the processing thread.
+
+        Returns:
+            tuple: (raw_spectrum, acquisition_timestamp, dark_correction, ref_sig_ch)
+                - raw_spectrum: Averaged intensity data
+                - acquisition_timestamp: Time of acquisition
+                - dark_correction: Dark noise array (resized to match spectrum)
+                - ref_sig_ch: S-mode reference signal for this channel (or None)
+        """
+        # LED control and settling
+        self._activate_channel_batch(ch)
+        if self.led_delay > 0:
+            time.sleep(self.led_delay)
+
+        # ⏱️ TIMESTAMP: Capture RIGHT BEFORE acquisition
+        acquisition_timestamp = time.time() - self.exp_start
+
+        # Wavelength mask check
+        if self._wavelength_mask is None:
+            logger.error("❌ Wavelength mask not initialized!")
+            if not self._initialize_wavelength_mask():
+                raise RuntimeError("Cannot acquire data without wavelength mask")
+
+        # ACQUIRE SPECTRUM (this is the slow part - 450ms)
+        averaged_intensity = self._acquire_averaged_spectrum(
+            num_scans=self.num_scans,
+            wavelength_mask=self._wavelength_mask,
+            description=f"channel {ch}"
+        )
+
+        if averaged_intensity is None:
+            raise RuntimeError(f"Failed to acquire spectrum for channel {ch}")
+
+        # Prepare dark correction (resize if needed)
+        if self.dark_noise.shape == averaged_intensity.shape:
+            dark_correction = self.dark_noise
+        else:
+            target_size = len(averaged_intensity)
+            source_size = len(self.dark_noise)
+
+            if source_size == 1:
+                dark_correction = np.full_like(averaged_intensity, self.dark_noise[0])
+            elif source_size == target_size:
+                try:
+                    dark_correction = self.dark_noise.reshape(averaged_intensity.shape)
+                except ValueError:
+                    dark_correction = np.zeros_like(averaged_intensity)
+            else:
+                if HAS_SCIPY:
+                    source_indices = np.linspace(0, 1, source_size)
+                    target_indices = np.linspace(0, 1, target_size)
+                    interpolator = interp1d(source_indices, self.dark_noise,
+                                          kind='linear', bounds_error=False, fill_value='extrapolate')
+                    dark_correction = interpolator(target_indices)
+                else:
+                    step = source_size / target_size
+                    indices = np.arange(target_size) * step
+                    indices = np.clip(indices.astype(int), 0, source_size - 1)
+                    dark_correction = self.dark_noise[indices]
+
+        # Get reference signal for this channel
+        ref_sig_ch = self.ref_sig[ch] if self.ref_sig[ch] is not None else None
+
+        # Turn off LEDs
+        if self.device_config["ctrl"] in DEVICES:
+            self.ctrl.turn_off_channels()
+
+        return averaged_intensity, acquisition_timestamp, dark_correction, ref_sig_ch
+
+    def _read_channel_data(self, ch: str) -> tuple[float, float]:
+        """Read and process data from a specific channel.
+
+        Returns:
+            tuple: (fit_lambda, acquisition_timestamp) - resonance wavelength and time of acquisition
+        """
+        # Log for channel D to debug why it returns NaN
+        if ch == "d":
+            logger.warning(f"🚀 _read_channel_data called for channel D")
+        
         # ⏱️ TIMING: Start channel acquisition timing
         t_start = perf_counter()
         t_led_on = t_start
@@ -460,7 +739,7 @@ class SPRDataAcquisition:
         t_dark_ready = t_start
         t_trans_complete = t_start
         t_peak_complete = t_start
-        
+
         try:
             # ✨ Use batch LED control for 15× speedup
             self._activate_channel_batch(ch)
@@ -468,7 +747,13 @@ class SPRDataAcquisition:
 
             if self.led_delay > 0:
                 time.sleep(self.led_delay)
-            t_led_settle = perf_counter()            # ✨ PHASE 3A OPTIMIZATION: Use cached wavelength mask (saves ~12ms per channel)
+            t_led_settle = perf_counter()
+
+            # ⏱️ TIMESTAMP FIX: Capture timestamp RIGHT BEFORE spectrum acquisition
+            # This represents when photons are actually collected, not when processing finishes
+            acquisition_timestamp = time.time() - self.exp_start
+
+            # ✨ PHASE 3A OPTIMIZATION: Use cached wavelength mask (saves ~12ms per channel)
             # Mask is initialized once in grab_data() and reused for all acquisitions
             if self._wavelength_mask is None:
                 logger.error("❌ Wavelength mask not initialized - this should not happen!")
@@ -678,15 +963,40 @@ class SPRDataAcquisition:
 
             # Find resonance wavelength
             fit_lambda = np.nan
+            
+            # Log for channel D BEFORE processing
+            if ch == "d":
+                trans_available = self.trans_data[ch] is not None
+                b_stop_set = self._b_stop.is_set()
+                processor_available = self.data_processor is not None
+                logger.warning(f"🔧 Channel D pre-processing: trans_data={trans_available}, b_stop={b_stop_set}, processor={processor_available}")
+            
             if not (self._b_stop.is_set() or self.trans_data[ch] is None):
                 if self.data_processor is not None:
                     spectrum = self.trans_data[ch]
+                    
+                    # Log for channel D to debug why it returns NaN
+                    if ch == "d":
+                        spec_stats = {
+                            'mean': np.mean(spectrum),
+                            'max': np.max(spectrum),
+                            'min': np.min(spectrum),
+                            'std': np.std(spectrum),
+                            'length': len(spectrum),
+                            'has_peak': np.max(spectrum) > np.mean(spectrum) * 1.2
+                        }
+                        logger.warning(f"🔬 Channel D spectrum stats: {spec_stats}")
+                    
                     fit_lambda = self.data_processor.find_resonance_wavelength(
                         spectrum=spectrum,
                         window=DERIVATIVE_WINDOW,  # 165
                     )
+                    
+                    # Log result for channel D
+                    if ch == "d":
+                        logger.warning(f"🎯 Channel D fit_lambda result: {fit_lambda:.4f}" if not np.isnan(fit_lambda) else f"❌ Channel D fit_lambda: NaN")
             t_peak_complete = perf_counter()
-            
+
             # ⏱️ TIMING: Log detailed breakdown for this channel
             if self.enable_timing_logs:
                 t_total = t_peak_complete - t_start
@@ -700,53 +1010,94 @@ class SPRDataAcquisition:
                     f"peak={int((t_peak_complete-t_trans_complete)*1000)}ms, "
                     f"TOTAL={int(t_total*1000)}ms"
                 )
-            
-            return fit_lambda
+
+            return fit_lambda, acquisition_timestamp
 
         except Exception as e:
             logger.exception(f"Error reading channel {ch}: {e}")
-            return np.nan
+            return np.nan, time.time() - self.exp_start
 
-    def _update_lambda_data(self, ch: str, fit_lambda: float) -> None:
-        """Update lambda values and times for a channel."""
+    def _update_lambda_data(self, ch: str, fit_lambda: float, acquisition_timestamp: float) -> None:
+        """Update lambda values and times for a channel.
+
+        Args:
+            ch: Channel identifier
+            fit_lambda: Resonance wavelength
+            acquisition_timestamp: Time when spectrum was acquired (relative to exp_start)
+        """
+        # 🔍 DEBUG: Log before appending for channel D
+        if ch == "d":
+            current_len = len(self.lambda_values[ch])
+            value_str = f"{fit_lambda:.4f}" if not np.isnan(fit_lambda) else "NaN"
+            logger.warning(f"💾 Storing channel D: current_len={current_len}, new_value={value_str}")
+        
         self.lambda_values[ch] = np.append(self.lambda_values[ch], fit_lambda)
+        
+        # 🔍 DEBUG: Log after appending for channel D
+        if ch == "d":
+            new_len = len(self.lambda_values[ch])
+            last_val = self.lambda_values[ch][-1]
+            value_str = f"{last_val:.4f}" if not np.isnan(last_val) else "NaN"
+            logger.warning(f"💾 Stored channel D: new_len={new_len}, last_value={value_str}")
+        
+        # Use the timestamp from when data was actually acquired (not processed)
         self.lambda_times[ch] = np.append(
             self.lambda_times[ch],
-            round(time.time() - self.exp_start, 3),
+            round(acquisition_timestamp, 3),
         )
 
     def _apply_filtering(self, ch: str, ch_list: list[str], fit_lambda: float) -> None:
         """Apply filtering to lambda data."""
-        if ch in ch_list:
+        # 🔍 DEBUG: Log filtering check for channel D
+        if ch == "d":
+            in_list = ch in ch_list
+            data_len = len(self.lambda_values[ch])
+            buff_idx = self.filt_buffer_index
+            check_result = data_len >= buff_idx  # Fixed to match actual check
+            value_str = f"{fit_lambda:.4f}" if not np.isnan(fit_lambda) else "NaN"
+            logger.warning(
+                f"🔍 FILTERING CHECK D: in_ch_list={in_list}, "
+                f"data_len={data_len}, buffer_idx={buff_idx}, "
+                f"passes_check={check_result}, fit_lambda={value_str}"
+            )
+        
+        if ch in ch_list and len(self.lambda_values[ch]) >= self.filt_buffer_index:
             # Use data processor for median filtering
-            if len(self.lambda_values[ch]) > self.filt_buffer_index:
-                if self.data_processor is not None:
-                    filtered_value = self.data_processor.apply_causal_median_filter(
-                        data=self.lambda_values[ch],
-                        buffer_index=self.filt_buffer_index,
-                        window=self.med_filt_win,
-                    )
-                else:
-                    # Fallback if processor not initialized
-                    filtered_value = fit_lambda
+            if self.data_processor is not None:
+                filtered_value = self.data_processor.apply_causal_median_filter(
+                    data=self.lambda_values[ch],
+                    buffer_index=len(self.lambda_values[ch]) - 1,  # Use last valid index
+                    window=self.med_filt_win,
+                )
             else:
+                # Fallback if processor not initialized
                 filtered_value = fit_lambda
+            
+            # 🔍 DEBUG: Log successful filtering for channel D
+            if ch == "d":
+                filt_value_str = f"{filtered_value:.4f}" if not np.isnan(filtered_value) else "NaN"
+                logger.warning(f"✅ FILTERING SUCCESS D: filtered_value={filt_value_str}")
 
             self.filtered_lambda[ch] = np.append(
                 self.filtered_lambda[ch], filtered_value
             )
+            # Use last valid index instead of filt_buffer_index
+            last_idx = len(self.lambda_values[ch]) - 1
             self.buffered_lambda[ch] = np.append(
                 self.buffered_lambda[ch],
-                self.lambda_values[ch][self.filt_buffer_index],
+                self.lambda_values[ch][last_idx],
+            )
+            self.buffered_times[ch] = np.append(
+                self.buffered_times[ch],
+                self.lambda_times[ch][last_idx],
             )
         else:
+            # No data available or channel not in list - append NaN
+            if ch == "d":
+                logger.warning(f"❌ FILTERING FAILED D: Appending NaN to filtered_lambda!")
             self.filtered_lambda[ch] = np.append(self.filtered_lambda[ch], np.nan)
             self.buffered_lambda[ch] = np.append(self.buffered_lambda[ch], np.nan)
-
-        self.buffered_times[ch] = np.append(
-            self.buffered_times[ch],
-            self.lambda_times[ch][self.filt_buffer_index],
-        )
+            self.buffered_times[ch] = np.append(self.buffered_times[ch], np.nan)
 
     def _emit_data_updates(self) -> None:
         """Emit data updates to UI."""
@@ -794,6 +1145,7 @@ class SPRDataAcquisition:
 
             for ch in CH_LIST:
                 if len(self.lambda_times[ch]) < max_raw_len:
+                    logger.warning(f"⚠️ Padding channel {ch} with NaN (has {len(self.lambda_times[ch])}, max is {max_raw_len})")
                     self.lambda_values[ch] = np.append(self.lambda_values[ch], np.nan)
                     self.lambda_times[ch] = np.append(
                         self.lambda_times[ch],
