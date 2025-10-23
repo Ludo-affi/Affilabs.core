@@ -663,10 +663,52 @@ Examples:
                        help='Additional notes (optional)')
     parser.add_argument('--channels', type=str, default='A,B,C,D',
                        help='Channels to collect (comma-separated, e.g., "A,B,C,D")')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Print integration time and LED intensity per channel without connecting to hardware')
 
     args = parser.parse_args()
 
     channels = [ch.strip().upper() for ch in args.channels.split(',')]
+
+    # Dry-run path: report planned settings without touching hardware
+    if args.dry_run:
+        print("\n" + "="*80)
+        print("TRAINING DATA COLLECTION TOOL - DRY RUN")
+        print("="*80)
+        print(f"\nDevice: {args.device}")
+        print(f"Sensor State: {args.label} - {SENSOR_STATES.get(args.label, 'Unknown')}")
+        if args.sensor_id:
+            print(f"Sensor ID: {args.sensor_id}")
+        if args.notes:
+            print(f"Notes: {args.notes}")
+
+        device_config = DeviceConfiguration()
+        calibration = device_config.load_led_calibration()
+        try:
+            min_integration_ms = float(device_config.get_min_integration_time())
+        except Exception:
+            min_integration_ms = 50.0
+
+        print("\nLoaded device configuration")
+        print(f"  → Minimum integration time (device-config): {min_integration_ms} ms")
+
+        for ch in channels:
+            ch_key = ch.lower()
+            if calibration:
+                led_intensity = calibration['s_mode_intensities'].get(ch_key, 128)
+                integration_time_ms = int(calibration.get('integration_time_ms', min_integration_ms))
+                if integration_time_ms < min_integration_ms:
+                    integration_time_ms = int(min_integration_ms)
+                print(f"\nChannel {ch}:")
+                print(f"  LED intensity (device-config calibrated): {led_intensity}")
+                print(f"  Integration time (enforced min): {integration_time_ms} ms ({integration_time_ms/1000.0:.3f} s)")
+            else:
+                print(f"\nChannel {ch}:")
+                print(f"  LED intensity (fallback): 128")
+                print(f"  Integration time (device-config minimum): {min_integration_ms} ms ({min_integration_ms/1000.0:.3f} s)")
+
+        print("\nNo hardware actions were performed. Use without --dry-run to start collection.")
+        return
 
     # Create collector
     collector = TrainingDataCollector(
