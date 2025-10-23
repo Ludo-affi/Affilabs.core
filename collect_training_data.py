@@ -342,14 +342,14 @@ class TrainingDataCollector:
                              s_dark: np.ndarray, p_dark: np.ndarray,
                              s_timestamps: np.ndarray, p_timestamps: np.ndarray,
                              channel: str = 'A') -> Dict:
-        """Process data with optimal pipeline and create visualization."""
+        """Process data with optimal pipeline and create visualization (nm-based)."""
         print("\n" + "="*80)
         print("PROCESSING WITH OPTIMAL PIPELINE")
         print("="*80)
 
         n_spectra = len(s_spectra)
-    positions_nm = np.zeros(n_spectra)
-    transmissions = []
+        positions_nm = np.zeros(n_spectra)
+        transmissions = []
 
         print("\nProcessing spectra...")
         for i in range(n_spectra):
@@ -364,9 +364,8 @@ class TrainingDataCollector:
 
         transmissions = np.array(transmissions)
 
-        # Calculate quality metrics
+        # Calculate quality metrics (nm)
         mean_transmission = np.mean(transmissions, axis=0)
-        metrics = OptimalProcessor.calculate_quality_metrics(positions, mean_transmission)
         metrics = OptimalProcessor.calculate_quality_metrics_nm(
             positions_nm,
             mean_transmission,
@@ -374,30 +373,27 @@ class TrainingDataCollector:
         )
 
         # Convert to RU estimate (rough)
-        nm_per_pixel = 0.091  # Full detector
         ru_per_nm = 355
-    ru_per_nm = 355
-    metrics['p2p_ru_estimate'] = metrics['p2p_nm'] * ru_per_nm
+        metrics['p2p_ru_estimate'] = metrics['p2p_nm'] * ru_per_nm
 
         print("\n" + "="*80)
         print("QUALITY METRICS")
         print("="*80)
-        print(f"Peak-to-peak:      {metrics['p2p_px']:.2f} px  (~{metrics['p2p_ru_estimate']:.0f} RU)")
-    print(f"Peak-to-peak:      {metrics['p2p_nm']:.2f} nm  (~{metrics['p2p_ru_estimate']:.0f} RU)")
-    print(f"Std deviation:     {metrics['std_nm']:.2f} nm")
-    print(f"HF noise:          {metrics['hf_noise_nm']:.2f} nm")
-    print(f"Mean position:     {metrics['mean_position_nm']:.2f} nm")
+        print(f"Peak-to-peak:      {metrics['p2p_nm']:.2f} nm  (~{metrics['p2p_ru_estimate']:.0f} RU)")
+        print(f"Std deviation:     {metrics['std_nm']:.2f} nm")
+        print(f"HF noise:          {metrics['hf_noise_nm']:.2f} nm")
+        print(f"Mean position:     {metrics['mean_position_nm']:.2f} nm")
         print(f"Peak depth:        {metrics['peak_depth']:.2%}")
         print(f"SNR:               {metrics['snr']:.1f}")
 
-        # Quality assessment
+        # Quality assessment (based on RU estimate)
         print("\n" + "="*80)
         print("QUALITY ASSESSMENT")
         print("="*80)
 
-        if metrics['p2p_px'] < 500:
+        if metrics['p2p_ru_estimate'] < 500:
             print("✓ GOOD: Low noise")
-        elif metrics['p2p_px'] < 1000:
+        elif metrics['p2p_ru_estimate'] < 1000:
             print("⚠ ACCEPTABLE: Moderate noise")
         else:
             print("✗ POOR: High noise")
@@ -410,76 +406,71 @@ class TrainingDataCollector:
             print("✗ POOR: Weak SPR signal")
 
         # Create visualization
-        self._create_visualization(positions, s_timestamps, transmissions, metrics, channel=channel)
+        self._create_visualization(positions_nm, s_timestamps, transmissions, metrics, channel=channel)
 
         return metrics
 
-    def _create_visualization(self, positions: np.ndarray, timestamps: np.ndarray,
+    def _create_visualization(self, positions_nm: np.ndarray, timestamps: np.ndarray,
                              transmissions: np.ndarray, metrics: Dict, channel: str = 'A'):
-        """Create comprehensive visualization."""
+        """Create comprehensive visualization (nm-based)."""
         fig = plt.figure(figsize=(16, 10))
 
-        # Sensorgram
+        # Sensorgram (nm)
         ax1 = plt.subplot(2, 3, 1)
-        ax1.plot(timestamps, positions, 'b-', linewidth=1.5, alpha=0.8)
+        ax1.plot(timestamps, positions_nm, 'b-', linewidth=1.5, alpha=0.8)
         ax1.set_xlabel('Time (s)', fontsize=11)
-        ax1.set_ylabel('Resonance Position (px)', fontsize=11)
-        ax1.set_title(f'Sensorgram\nP-P: {metrics["p2p_px"]:.1f} px',
-                     fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Resonance Position (nm)', fontsize=11)
+        ax1.set_title(f"Sensorgram\nP-P: {metrics['p2p_nm']:.2f} nm",
+                      fontsize=12, fontweight='bold')
         ax1.grid(True, alpha=0.3)
 
-        # Add quality indicator
-        quality_color = 'green' if metrics['p2p_px'] < 500 else 'orange' if metrics['p2p_px'] < 1000 else 'red'
-    quality_color = 'green' if metrics['p2p_ru_estimate'] < 500 else 'orange' if metrics['p2p_ru_estimate'] < 1000 else 'red'
-    ax1.axhline(y=np.mean(positions_nm), color=quality_color, linestyle='--', alpha=0.3, linewidth=2)
+        # Add quality indicator (RU thresholds)
+        quality_color = 'green' if metrics['p2p_ru_estimate'] < 500 else 'orange' if metrics['p2p_ru_estimate'] < 1000 else 'red'
+        ax1.axhline(y=np.mean(positions_nm), color=quality_color, linestyle='--', alpha=0.3, linewidth=2)
 
         # Position histogram
         ax2 = plt.subplot(2, 3, 2)
-        ax2.hist(positions, bins=50, color='steelblue', alpha=0.7, edgecolor='black')
-    ax2.hist(positions_nm, bins=50, color='steelblue', alpha=0.7, edgecolor='black')
-    ax2.set_xlabel('Position (nm)', fontsize=11)
+        ax2.hist(positions_nm, bins=50, color='steelblue', alpha=0.7, edgecolor='black')
+        ax2.set_xlabel('Position (nm)', fontsize=11)
         ax2.set_ylabel('Count', fontsize=11)
-    ax2.set_title(f'Position Distribution\nStd: {metrics["std_nm"]:.2f} nm',
-                     fontsize=12, fontweight='bold')
+        ax2.set_title(f"Position Distribution\nStd: {metrics['std_nm']:.2f} nm",
+                      fontsize=12, fontweight='bold')
         ax2.grid(True, alpha=0.3, axis='y')
 
-        # Mean transmission spectrum
+        # Mean transmission spectrum (vs wavelength)
         ax3 = plt.subplot(2, 3, 3)
         mean_trans = np.mean(transmissions, axis=0)
-    mean_trans = np.mean(transmissions, axis=0)
-    wl = self.masked_wavelengths
-    ax3.plot(wl, mean_trans, 'r-', linewidth=2)
-    ax3.axvline(x=metrics['mean_position_nm'], color='blue', linestyle='--',
-           label=f'Mean: {metrics["mean_position_nm"]:.1f} nm')
-    ax3.set_xlabel('Wavelength (nm)', fontsize=11)
+        wl = self.masked_wavelengths
+        ax3.plot(wl, mean_trans, 'r-', linewidth=2)
+        ax3.axvline(x=metrics['mean_position_nm'], color='blue', linestyle='--',
+                    label=f"Mean: {metrics['mean_position_nm']:.1f} nm")
+        ax3.set_xlabel('Wavelength (nm)', fontsize=11)
         ax3.set_ylabel('Transmission', fontsize=11)
-    ax3.set_title(f'Mean Transmission Spectrum\nDepth: {metrics["peak_depth"]:.2%}',
-                     fontsize=12, fontweight='bold')
+        ax3.set_title(f"Mean Transmission Spectrum\nDepth: {metrics['peak_depth']:.2%}",
+                      fontsize=12, fontweight='bold')
         ax3.legend(fontsize=9)
         ax3.grid(True, alpha=0.3)
 
-        # Transmission heatmap
+        # Transmission heatmap (wavelength on y-axis)
         ax4 = plt.subplot(2, 3, 4)
-        im = ax4.imshow(transmissions[:, SEARCH_START:SEARCH_END].T,
-    im = ax4.imshow(transmissions.T,
-               aspect='auto', cmap='viridis', interpolation='nearest',
-               extent=[timestamps[0], timestamps[-1], wl[-1], wl[0]])
-    ax4.plot(timestamps, positions_nm, 'r-', linewidth=2, alpha=0.8, label='Minimum (nm)')
+        im = ax4.imshow(transmissions.T,
+                        aspect='auto', cmap='viridis', interpolation='nearest',
+                        extent=[timestamps[0], timestamps[-1], wl[-1], wl[0]])
+        ax4.plot(timestamps, positions_nm, 'r-', linewidth=2, alpha=0.8, label='Minimum (nm)')
         ax4.set_xlabel('Time (s)', fontsize=11)
-    ax4.set_ylabel('Wavelength (nm)', fontsize=11)
+        ax4.set_ylabel('Wavelength (nm)', fontsize=11)
         ax4.set_title('Transmission Time Series', fontsize=12, fontweight='bold')
         ax4.legend(fontsize=9)
         plt.colorbar(im, ax=ax4, label='Transmission')
 
-        # Noise analysis
+        # Noise analysis (nm)
         ax5 = plt.subplot(2, 3, 5)
-        position_diff = np.diff(positions)
-    position_diff = np.diff(positions_nm)
+        position_diff = np.diff(positions_nm)
         ax5.plot(timestamps[1:], position_diff, 'g-', linewidth=1, alpha=0.7)
         ax5.set_xlabel('Time (s)', fontsize=11)
-    ax5.set_ylabel('Position Change (nm)', fontsize=11)
-    ax5.set_title(f'High-Frequency Noise\nStd: {metrics["hf_noise_nm"]:.2f} nm',
-                     fontsize=12, fontweight='bold')
+        ax5.set_ylabel('Position Change (nm)', fontsize=11)
+        ax5.set_title(f"High-Frequency Noise\nStd: {metrics['hf_noise_nm']:.2f} nm",
+                      fontsize=12, fontweight='bold')
         ax5.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
         ax5.grid(True, alpha=0.3)
 
@@ -488,7 +479,6 @@ class TrainingDataCollector:
         ax6.axis('off')
 
         summary = f"""
-                summary = f"""
 COLLECTION SUMMARY
 
 Sensor State: {self.sensor_state}
@@ -497,7 +487,7 @@ Device: {self.device_name}
 
 QUALITY METRICS:
 Peak-to-peak: {metrics['p2p_nm']:.2f} nm
-    (~{metrics['p2p_ru_estimate']:.0f} RU estimate)
+  (~{metrics['p2p_ru_estimate']:.0f} RU estimate)
 Std deviation: {metrics['std_nm']:.2f} nm
 HF noise: {metrics['hf_noise_nm']:.2f} nm
 Mean position: {metrics['mean_position_nm']:.2f} nm
@@ -511,16 +501,15 @@ Peak finding: Centroid (nm)
 
 STATUS: {'GOOD ✓' if metrics['p2p_ru_estimate'] < 500 else 'ACCEPTABLE ⚠' if metrics['p2p_ru_estimate'] < 1000 else 'POOR ✗'}
         """
-    self._create_visualization(positions_nm, s_timestamps, transmissions, metrics, channel=channel)
 
         ax6.text(0.1, 0.5, summary, transform=ax6.transAxes,
-                fontsize=10, verticalalignment='center',
-                family='monospace',
-                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3, pad=1))
+                 fontsize=10, verticalalignment='center',
+                 family='monospace',
+                 bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3, pad=1))
 
         plt.suptitle(f'Training Data Collection - {self.sensor_state.upper()}\n'
-                    f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
-                    fontsize=14, fontweight='bold')
+                     f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+                     fontsize=14, fontweight='bold')
 
         plt.tight_layout()
 
