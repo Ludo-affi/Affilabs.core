@@ -722,8 +722,8 @@ Examples:
     )
 
     try:
-    # Run collection
-    collector.collect_full_dataset(channels=channels, prompt=(not args.no_prompt))
+        # Run collection
+        collector.collect_full_dataset(channels=channels, prompt=(not args.no_prompt))
 
         print("\n" + "="*80)
         print("SUCCESS!")
