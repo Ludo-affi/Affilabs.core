@@ -553,7 +553,7 @@ STATUS: {'GOOD ✓' if metrics['p2p_px'] < 500 else 'ACCEPTABLE ⚠' if metrics[
 
         return timestamp_str
 
-    def collect_full_dataset(self, channels: list = ['A']):
+    def collect_full_dataset(self, channels: list = ['A'], prompt: bool = True):
         """Collect complete dataset for specified channels."""
         print("\n" + "="*80)
         print("STARTING COLLECTION")
@@ -562,7 +562,8 @@ STATUS: {'GOOD ✓' if metrics['p2p_px'] < 500 else 'ACCEPTABLE ⚠' if metrics[
         print(f"Spectra per mode: {SPECTRA_PER_MODE}")
         print(f"Estimated time per channel: ~{(SPECTRA_PER_MODE / TARGET_RATE * 2) / 60:.1f} minutes")
 
-        input("\nPress ENTER to start collection...")
+        if prompt:
+            input("\nPress ENTER to start collection...")
 
         for channel in channels:
             print(f"\n\n{'#'*80}")
@@ -665,6 +666,8 @@ Examples:
                        help='Channels to collect (comma-separated, e.g., "A,B,C,D")')
     parser.add_argument('--dry-run', action='store_true',
                        help='Print integration time and LED intensity per channel without connecting to hardware')
+    parser.add_argument('--no-prompt', action='store_true',
+                       help='Do not wait for ENTER; start collection immediately')
 
     args = parser.parse_args()
 
@@ -719,8 +722,8 @@ Examples:
     )
 
     try:
-        # Run collection
-        collector.collect_full_dataset(channels=channels)
+    # Run collection
+    collector.collect_full_dataset(channels=channels, prompt=(not args.no_prompt))
 
         print("\n" + "="*80)
         print("SUCCESS!")
