@@ -499,6 +499,133 @@ class DeviceConfiguration:
         logger.info("Configuration reset to defaults")
         self._log_config_summary()
 
+    # ========================================================================
+    # LED CALIBRATION STORAGE (SINGLE SOURCE OF TRUTH)
+    # ========================================================================
+
+    def save_led_calibration(
+        self,
+        integration_time_ms: int,
+        s_mode_intensities: Dict[str, int],
+        p_mode_intensities: Dict[str, int],
+        s_ref_spectra: Dict[str, np.ndarray],
+        s_ref_wavelengths: Optional[np.ndarray] = None
+    ) -> None:
+        """
+        Save LED calibration baseline to device_config.json (single source of truth).
+
+        This stores calibrated LED intensities, integration time, and S-mode reference
+        spectra for quick QC validation. Replaces any existing calibration data.
+
+        Args:
+            integration_time_ms: Calibrated integration time in milliseconds
+            s_mode_intensities: S-mode LED intensities per channel {'A': 128, ...}
+            p_mode_intensities: P-mode LED intensities per channel {'A': 172, ...}
+            s_ref_spectra: S-mode reference spectra per channel {'A': array, ...}
+            s_ref_wavelengths: Optional wavelength array (stored separately if provided)
+        """
+        try:
+            logger.info("💾 Saving LED calibration to device_config.json (single source of truth)")
+
+            # Create/update led_calibration section
+            self.config['led_calibration'] = {
+                'calibration_date': datetime.now().isoformat(),
+                'integration_time_ms': int(integration_time_ms),
+                's_mode_intensities': {ch: int(val) for ch, val in s_mode_intensities.items()},
+                'p_mode_intensities': {ch: int(val) for ch, val in p_mode_intensities.items()},
+                's_ref_baseline': {
+                    ch: spec.tolist() for ch, spec in s_ref_spectra.items()
+                },
+                's_ref_max_intensity': {
+                    ch: float(np.max(spec)) for ch, spec in s_ref_spectra.items()
+                }
+            }
+
+            # Store wavelengths if provided (for reference)
+            if s_ref_wavelengths is not None:
+                self.config['led_calibration']['s_ref_wavelengths'] = s_ref_wavelengths.tolist()
+
+            # Update calibration status
+            self.config['calibration']['s_mode_calibration_date'] = datetime.now().isoformat()
+            self.config['calibration']['user_calibrated'] = True
+
+            # Save to disk
+            self.save()
+
+            logger.info("✅ LED calibration saved successfully")
+            logger.info(f"   Integration time: {integration_time_ms} ms")
+            logger.info(f"   S-mode LEDs: {s_mode_intensities}")
+            logger.info(f"   P-mode LEDs: {p_mode_intensities}")
+            logger.info(f"   S-ref baseline: {len(s_ref_spectra)} channels × {len(next(iter(s_ref_spectra.values())))} pixels")
+
+        except Exception as e:
+            logger.error(f"Failed to save LED calibration: {e}")
+            raise
+
+    def load_led_calibration(self) -> Optional[Dict[str, Any]]:
+        """
+        Load LED calibration baseline from device_config.json.
+
+        Returns:
+            Dictionary containing calibration data:
+            - calibration_date: ISO timestamp
+            - integration_time_ms: int
+            - s_mode_intensities: dict
+            - p_mode_intensities: dict
+            - s_ref_baseline: dict of numpy arrays
+            - s_ref_max_intensity: dict of float
+            - s_ref_wavelengths: numpy array (if available)
+
+            Returns None if no calibration stored.
+        """
+        if 'led_calibration' not in self.config:
+            logger.debug("No LED calibration found in device_config.json")
+            return None
+
+        try:
+            cal = self.config['led_calibration'].copy()
+
+            # Convert lists back to numpy arrays
+            if 's_ref_baseline' in cal:
+                cal['s_ref_baseline'] = {
+                    ch: np.array(spec) for ch, spec in cal['s_ref_baseline'].items()
+                }
+
+            if 's_ref_wavelengths' in cal:
+                cal['s_ref_wavelengths'] = np.array(cal['s_ref_wavelengths'])
+
+            logger.debug(f"Loaded LED calibration from {cal['calibration_date']}")
+            return cal
+
+        except Exception as e:
+            logger.error(f"Failed to load LED calibration: {e}")
+            return None
+
+    def get_calibration_age_days(self) -> Optional[float]:
+        """
+        Get age of stored calibration in days.
+
+        Returns:
+            Age in days, or None if no calibration stored
+        """
+        cal = self.load_led_calibration()
+        if cal is None:
+            return None
+
+        try:
+            cal_date = datetime.fromisoformat(cal['calibration_date'])
+            age = (datetime.now() - cal_date).total_seconds() / 86400.0
+            return age
+        except Exception:
+            return None
+
+    def clear_led_calibration(self) -> None:
+        """Clear stored LED calibration data."""
+        if 'led_calibration' in self.config:
+            del self.config['led_calibration']
+            self.save()
+            logger.info("Cleared LED calibration from device_config.json")
+
 
 def get_device_config(config_path: Optional[str] = None) -> DeviceConfiguration:
     """
