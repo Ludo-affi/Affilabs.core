@@ -26,13 +26,15 @@ from typing import Dict, Tuple, Optional
 from utils.controller import PicoP4SPR
 from utils.usb4000_oceandirect import USB4000OceanDirect
 from utils.device_configuration import DeviceConfiguration
-from settings import MIN_WAVELENGTH, MAX_WAVELENGTH
+from settings import MIN_WAVELENGTH, MAX_WAVELENGTH, SPR_PEAK_EXPECTED_MIN, SPR_PEAK_EXPECTED_MAX
 
 # Configuration
 SAVGOL_WINDOW = 51
 SAVGOL_POLYORDER = 3
-SEARCH_START = 400  # Pixel index in FILTERED spectrum (after wavelength mask)
-SEARCH_END = 1400   # Pixel index in FILTERED spectrum
+# nm-based search window for SPR minimum (aligned with main app)
+SEARCH_NM_MIN = SPR_PEAK_EXPECTED_MIN
+SEARCH_NM_MAX = SPR_PEAK_EXPECTED_MAX
+CENTROID_WINDOW_NM = 4.0  # ± window around minimum for centroid calculation
 SPECTRA_PER_MODE = 480  # 2 minutes @ 4 Hz
 TARGET_RATE = 4.0  # Hz
 
@@ -78,56 +80,75 @@ class OptimalProcessor:
         return transmission
 
     @staticmethod
-    def find_minimum_centroid(transmission: np.ndarray, width: int = 40) -> float:
-        """Find minimum using weighted centroid (best method)."""
-        search_region = transmission[SEARCH_START:SEARCH_END]
-        min_idx = np.argmin(search_region)
+    def find_minimum_centroid_nm(
+        transmission: np.ndarray,
+        wavelengths_nm: np.ndarray,
+        search_min_nm: float = SEARCH_NM_MIN,
+        search_max_nm: float = SEARCH_NM_MAX,
+        window_nm: float = CENTROID_WINDOW_NM,
+    ) -> float:
+        """Find minimum wavelength using weighted centroid within an nm-based window."""
+        # Build nm-based search mask within provided wavelengths
+        search_mask = (wavelengths_nm >= search_min_nm) & (wavelengths_nm <= search_max_nm)
+        if not np.any(search_mask):
+            # Fallback to full range if expected range not within masked wavelengths
+            search_mask = np.ones_like(wavelengths_nm, dtype=bool)
 
-        # Window around minimum
-        window_start = max(0, min_idx - width // 2)
-        window_end = min(len(search_region), min_idx + width // 2)
+        trans_search = transmission[search_mask]
+        wl_search = wavelengths_nm[search_mask]
 
-        window = search_region[window_start:window_end]
-        window_inverted = np.max(window) - window
+        # Argmin in nm region
+        min_idx_rel = int(np.argmin(trans_search))
+        min_wl = float(wl_search[min_idx_rel])
 
-        # Weighted centroid
-        x = np.arange(window_start, window_end)
-        centroid = np.sum(x * window_inverted) / np.sum(window_inverted)
+        # Build centroid window around min wavelength
+        window_mask = (wl_search >= (min_wl - window_nm / 2.0)) & (wl_search <= (min_wl + window_nm / 2.0))
+        w_window = wl_search[window_mask]
+        t_window = trans_search[window_mask]
 
-        return float(SEARCH_START + centroid)
+        # Invert to convert dip into peak weights
+        inv = np.max(t_window) - t_window
+        inv_sum = np.sum(inv)
+        if inv_sum <= 0:
+            # Degenerate case: return min_wl directly
+            return min_wl
+
+        centroid_nm = float(np.sum(w_window * inv) / inv_sum)
+        return centroid_nm
 
     @staticmethod
-    def calculate_quality_metrics(positions: np.ndarray, transmission: np.ndarray) -> Dict:
-        """Calculate quality metrics for sensorgram."""
-        # Peak-to-peak variation
-        p2p = np.ptp(positions)
+    def calculate_quality_metrics_nm(
+        positions_nm: np.ndarray,
+        mean_transmission: np.ndarray,
+        wavelengths_nm: np.ndarray,
+    ) -> Dict:
+        """Calculate quality metrics for sensorgram in nm units."""
+        # Peak-to-peak variation in nm
+        p2p_nm = np.ptp(positions_nm)
 
-        # Standard deviation
-        std = np.std(positions)
+        # Standard deviation in nm
+        std_nm = np.std(positions_nm)
 
-        # Mean position
-        mean_pos = np.mean(positions)
+        # Mean position (nm)
+        mean_nm = np.mean(positions_nm)
 
-        # High-frequency noise (differential)
-        hf_noise = np.std(np.diff(positions))
+        # High-frequency noise (differential, nm)
+        hf_noise_nm = np.std(np.diff(positions_nm))
 
-        # Peak depth (at mean position)
-        mean_idx = int(mean_pos)
-        if SEARCH_START <= mean_idx < SEARCH_END:
-            peak_depth = 1.0 - transmission[mean_idx]
-        else:
-            peak_depth = 0.0
+        # Peak depth (at nearest nm index to mean)
+        nearest_idx = int(np.argmin(np.abs(wavelengths_nm - mean_nm)))
+        peak_depth = float(1.0 - mean_transmission[nearest_idx])
 
-        # Signal-to-noise ratio (inverse of relative variation)
-        snr = mean_pos / std if std > 0 else 0
+        # SNR-like metric (unitless)
+        snr = float(mean_nm / std_nm) if std_nm > 0 else 0.0
 
         return {
-            'p2p_px': float(p2p),
-            'std_px': float(std),
-            'mean_position_px': float(mean_pos),
-            'hf_noise_px': float(hf_noise),
+            'p2p_nm': float(p2p_nm),
+            'std_nm': float(std_nm),
+            'mean_position_nm': float(mean_nm),
+            'hf_noise_nm': float(hf_noise_nm),
             'peak_depth': float(peak_depth),
-            'snr': float(snr)
+            'snr': float(snr),
         }
 
 
@@ -168,6 +189,8 @@ class TrainingDataCollector:
         wavelengths = np.array(self.spectrometer.get_wavelengths())
         self.wavelength_mask = (wavelengths >= MIN_WAVELENGTH) & (wavelengths <= MAX_WAVELENGTH)
         print(f"✓ Wavelength filter: {np.sum(self.wavelength_mask)} pixels ({MIN_WAVELENGTH}-{MAX_WAVELENGTH} nm)")
+        # Store masked wavelengths for nm-based processing
+        self.masked_wavelengths = wavelengths[self.wavelength_mask]
 
         # Output directory
         self.output_dir = Path("training_data") / sensor_state
@@ -271,7 +294,7 @@ class TrainingDataCollector:
             self.spr_device.set_intensity(channel.lower(), 128)
 
         time.sleep(1.0)        # Collect spectra
-        print(f"\nCollecting {SPECTRA_PER_MODE} spectra @ {TARGET_RATE} Hz...")
+    print(f"\nCollecting {SPECTRA_PER_MODE} spectra @ {TARGET_RATE} Hz...")
         print("Progress: ", end="", flush=True)
 
         spectra = []
@@ -325,8 +348,8 @@ class TrainingDataCollector:
         print("="*80)
 
         n_spectra = len(s_spectra)
-        positions = np.zeros(n_spectra)
-        transmissions = []
+    positions_nm = np.zeros(n_spectra)
+    transmissions = []
 
         print("\nProcessing spectra...")
         for i in range(n_spectra):
@@ -334,26 +357,36 @@ class TrainingDataCollector:
                 s_spectra[i], p_spectra[i], s_dark, p_dark
             )
             transmissions.append(transmission)
-            positions[i] = OptimalProcessor.find_minimum_centroid(transmission)
+            positions_nm[i] = OptimalProcessor.find_minimum_centroid_nm(
+                transmission,
+                self.masked_wavelengths,
+            )
 
         transmissions = np.array(transmissions)
 
         # Calculate quality metrics
         mean_transmission = np.mean(transmissions, axis=0)
         metrics = OptimalProcessor.calculate_quality_metrics(positions, mean_transmission)
+        metrics = OptimalProcessor.calculate_quality_metrics_nm(
+            positions_nm,
+            mean_transmission,
+            self.masked_wavelengths,
+        )
 
         # Convert to RU estimate (rough)
         nm_per_pixel = 0.091  # Full detector
         ru_per_nm = 355
-        metrics['p2p_ru_estimate'] = metrics['p2p_px'] * nm_per_pixel * ru_per_nm
+    ru_per_nm = 355
+    metrics['p2p_ru_estimate'] = metrics['p2p_nm'] * ru_per_nm
 
         print("\n" + "="*80)
         print("QUALITY METRICS")
         print("="*80)
         print(f"Peak-to-peak:      {metrics['p2p_px']:.2f} px  (~{metrics['p2p_ru_estimate']:.0f} RU)")
-        print(f"Std deviation:     {metrics['std_px']:.2f} px")
-        print(f"HF noise:          {metrics['hf_noise_px']:.2f} px")
-        print(f"Mean position:     {metrics['mean_position_px']:.2f} px")
+    print(f"Peak-to-peak:      {metrics['p2p_nm']:.2f} nm  (~{metrics['p2p_ru_estimate']:.0f} RU)")
+    print(f"Std deviation:     {metrics['std_nm']:.2f} nm")
+    print(f"HF noise:          {metrics['hf_noise_nm']:.2f} nm")
+    print(f"Mean position:     {metrics['mean_position_nm']:.2f} nm")
         print(f"Peak depth:        {metrics['peak_depth']:.2%}")
         print(f"SNR:               {metrics['snr']:.1f}")
 
@@ -397,28 +430,30 @@ class TrainingDataCollector:
 
         # Add quality indicator
         quality_color = 'green' if metrics['p2p_px'] < 500 else 'orange' if metrics['p2p_px'] < 1000 else 'red'
-        ax1.axhline(y=np.mean(positions), color=quality_color, linestyle='--', alpha=0.3, linewidth=2)
+    quality_color = 'green' if metrics['p2p_ru_estimate'] < 500 else 'orange' if metrics['p2p_ru_estimate'] < 1000 else 'red'
+    ax1.axhline(y=np.mean(positions_nm), color=quality_color, linestyle='--', alpha=0.3, linewidth=2)
 
         # Position histogram
         ax2 = plt.subplot(2, 3, 2)
         ax2.hist(positions, bins=50, color='steelblue', alpha=0.7, edgecolor='black')
-        ax2.set_xlabel('Position (px)', fontsize=11)
+    ax2.hist(positions_nm, bins=50, color='steelblue', alpha=0.7, edgecolor='black')
+    ax2.set_xlabel('Position (nm)', fontsize=11)
         ax2.set_ylabel('Count', fontsize=11)
-        ax2.set_title(f'Position Distribution\nStd: {metrics["std_px"]:.2f} px',
+    ax2.set_title(f'Position Distribution\nStd: {metrics["std_nm"]:.2f} nm',
                      fontsize=12, fontweight='bold')
         ax2.grid(True, alpha=0.3, axis='y')
 
         # Mean transmission spectrum
         ax3 = plt.subplot(2, 3, 3)
         mean_trans = np.mean(transmissions, axis=0)
-        pixels = np.arange(len(mean_trans))
-        ax3.plot(pixels[SEARCH_START:SEARCH_END], mean_trans[SEARCH_START:SEARCH_END],
-                'r-', linewidth=2)
-        ax3.axvline(x=metrics['mean_position_px'], color='blue', linestyle='--',
-                   label=f'Mean: {metrics["mean_position_px"]:.1f} px')
-        ax3.set_xlabel('Pixel Position', fontsize=11)
+    mean_trans = np.mean(transmissions, axis=0)
+    wl = self.masked_wavelengths
+    ax3.plot(wl, mean_trans, 'r-', linewidth=2)
+    ax3.axvline(x=metrics['mean_position_nm'], color='blue', linestyle='--',
+           label=f'Mean: {metrics["mean_position_nm"]:.1f} nm')
+    ax3.set_xlabel('Wavelength (nm)', fontsize=11)
         ax3.set_ylabel('Transmission', fontsize=11)
-        ax3.set_title(f'Mean Transmission Spectrum\nDepth: {metrics["peak_depth"]:.2%}',
+    ax3.set_title(f'Mean Transmission Spectrum\nDepth: {metrics["peak_depth"]:.2%}',
                      fontsize=12, fontweight='bold')
         ax3.legend(fontsize=9)
         ax3.grid(True, alpha=0.3)
@@ -426,11 +461,12 @@ class TrainingDataCollector:
         # Transmission heatmap
         ax4 = plt.subplot(2, 3, 4)
         im = ax4.imshow(transmissions[:, SEARCH_START:SEARCH_END].T,
-                       aspect='auto', cmap='viridis', interpolation='nearest',
-                       extent=[timestamps[0], timestamps[-1], SEARCH_END, SEARCH_START])
-        ax4.plot(timestamps, positions, 'r-', linewidth=2, alpha=0.8, label='Minimum')
+    im = ax4.imshow(transmissions.T,
+               aspect='auto', cmap='viridis', interpolation='nearest',
+               extent=[timestamps[0], timestamps[-1], wl[-1], wl[0]])
+    ax4.plot(timestamps, positions_nm, 'r-', linewidth=2, alpha=0.8, label='Minimum (nm)')
         ax4.set_xlabel('Time (s)', fontsize=11)
-        ax4.set_ylabel('Pixel Position', fontsize=11)
+    ax4.set_ylabel('Wavelength (nm)', fontsize=11)
         ax4.set_title('Transmission Time Series', fontsize=12, fontweight='bold')
         ax4.legend(fontsize=9)
         plt.colorbar(im, ax=ax4, label='Transmission')
@@ -438,10 +474,11 @@ class TrainingDataCollector:
         # Noise analysis
         ax5 = plt.subplot(2, 3, 5)
         position_diff = np.diff(positions)
+    position_diff = np.diff(positions_nm)
         ax5.plot(timestamps[1:], position_diff, 'g-', linewidth=1, alpha=0.7)
         ax5.set_xlabel('Time (s)', fontsize=11)
-        ax5.set_ylabel('Position Change (px)', fontsize=11)
-        ax5.set_title(f'High-Frequency Noise\nStd: {metrics["hf_noise_px"]:.2f} px',
+    ax5.set_ylabel('Position Change (nm)', fontsize=11)
+    ax5.set_title(f'High-Frequency Noise\nStd: {metrics["hf_noise_nm"]:.2f} nm',
                      fontsize=12, fontweight='bold')
         ax5.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
         ax5.grid(True, alpha=0.3)
@@ -451,6 +488,7 @@ class TrainingDataCollector:
         ax6.axis('off')
 
         summary = f"""
+                summary = f"""
 COLLECTION SUMMARY
 
 Sensor State: {self.sensor_state}
@@ -458,21 +496,22 @@ Sensor ID: {self.sensor_id}
 Device: {self.device_name}
 
 QUALITY METRICS:
-Peak-to-peak: {metrics['p2p_px']:.1f} px
-  (~{metrics['p2p_ru_estimate']:.0f} RU estimate)
-Std deviation: {metrics['std_px']:.2f} px
-HF noise: {metrics['hf_noise_px']:.2f} px
-Mean position: {metrics['mean_position_px']:.1f} px
+Peak-to-peak: {metrics['p2p_nm']:.2f} nm
+    (~{metrics['p2p_ru_estimate']:.0f} RU estimate)
+Std deviation: {metrics['std_nm']:.2f} nm
+HF noise: {metrics['hf_noise_nm']:.2f} nm
+Mean position: {metrics['mean_position_nm']:.2f} nm
 Peak depth: {metrics['peak_depth']:.1%}
 SNR: {metrics['snr']:.1f}
 
 PROCESSING:
 Pipeline: dark → denoise S&P → transmission
 Denoising: Savgol (w=51, p=3)
-Peak finding: Centroid
+Peak finding: Centroid (nm)
 
-STATUS: {'GOOD ✓' if metrics['p2p_px'] < 500 else 'ACCEPTABLE ⚠' if metrics['p2p_px'] < 1000 else 'POOR ✗'}
+STATUS: {'GOOD ✓' if metrics['p2p_ru_estimate'] < 500 else 'ACCEPTABLE ⚠' if metrics['p2p_ru_estimate'] < 1000 else 'POOR ✗'}
         """
+    self._create_visualization(positions_nm, s_timestamps, transmissions, metrics, channel=channel)
 
         ax6.text(0.1, 0.5, summary, transform=ax6.transAxes,
                 fontsize=10, verticalalignment='center',
@@ -539,8 +578,9 @@ STATUS: {'GOOD ✓' if metrics['p2p_px'] < 500 else 'ACCEPTABLE ⚠' if metrics[
             'processing_params': {
                 'pipeline': 'dark → denoise S&P → transmission',
                 'denoising': f'Savgol (window={SAVGOL_WINDOW}, polyorder={SAVGOL_POLYORDER})',
-                'peak_finding': 'Centroid',
-                'search_range': [SEARCH_START, SEARCH_END]
+                'peak_finding': 'Centroid (nm)',
+                'search_range_nm': [SEARCH_NM_MIN, SEARCH_NM_MAX],
+                'centroid_window_nm': CENTROID_WINDOW_NM
             },
             'quality_metrics': metrics
         }
