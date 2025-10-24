@@ -509,7 +509,10 @@ class DeviceConfiguration:
         s_mode_intensities: Dict[str, int],
         p_mode_intensities: Dict[str, int],
         s_ref_spectra: Dict[str, np.ndarray],
-        s_ref_wavelengths: Optional[np.ndarray] = None
+        s_ref_wavelengths: Optional[np.ndarray] = None,
+        live_boost_integration_ms: Optional[int] = None,
+        live_boost_led_intensities: Optional[Dict[str, int]] = None,
+        live_boost_factor: Optional[float] = None
     ) -> None:
         """
         Save LED calibration baseline to device_config.json (single source of truth).
@@ -517,12 +520,20 @@ class DeviceConfiguration:
         This stores calibrated LED intensities, integration time, and S-mode reference
         spectra for quick QC validation. Replaces any existing calibration data.
 
+        CRITICAL FOR QC VALIDATION:
+        The S-ref spectra saved here are captured AFTER live mode boost optimization.
+        This ensures QC validation compares against the actual live running parameters,
+        not the calibration baseline.
+
         Args:
-            integration_time_ms: Calibrated integration time in milliseconds
+            integration_time_ms: Calibrated integration time in milliseconds (S-mode baseline)
             s_mode_intensities: S-mode LED intensities per channel {'A': 128, ...}
             p_mode_intensities: P-mode LED intensities per channel {'A': 172, ...}
-            s_ref_spectra: S-mode reference spectra per channel {'A': array, ...}
+            s_ref_spectra: S-mode reference spectra per channel (AFTER boost if provided)
             s_ref_wavelengths: Optional wavelength array (stored separately if provided)
+            live_boost_integration_ms: Optional boosted integration time for live mode (P-mode)
+            live_boost_led_intensities: Optional boosted LED intensities for live mode
+            live_boost_factor: Optional boost factor applied (e.g., 1.5× for 50% → 75%)
         """
         try:
             logger.info("💾 Saving LED calibration to device_config.json (single source of truth)")
@@ -541,6 +552,21 @@ class DeviceConfiguration:
                 }
             }
 
+            # Store live mode boost parameters (for QC validation)
+            if live_boost_integration_ms is not None:
+                self.config['led_calibration']['live_boost_integration_ms'] = int(live_boost_integration_ms)
+                logger.info(f"   Live boost integration: {live_boost_integration_ms} ms")
+
+            if live_boost_led_intensities is not None:
+                self.config['led_calibration']['live_boost_led_intensities'] = {
+                    ch: int(val) for ch, val in live_boost_led_intensities.items()
+                }
+                logger.info(f"   Live boost LEDs: {live_boost_led_intensities}")
+
+            if live_boost_factor is not None:
+                self.config['led_calibration']['live_boost_factor'] = float(live_boost_factor)
+                logger.info(f"   Live boost factor: {live_boost_factor:.2f}×")
+
             # Store wavelengths if provided (for reference)
             if s_ref_wavelengths is not None:
                 self.config['led_calibration']['s_ref_wavelengths'] = s_ref_wavelengths.tolist()
@@ -553,9 +579,14 @@ class DeviceConfiguration:
             self.save()
 
             logger.info("✅ LED calibration saved successfully")
-            logger.info(f"   Integration time: {integration_time_ms} ms")
-            logger.info(f"   S-mode LEDs: {s_mode_intensities}")
-            logger.info(f"   P-mode LEDs: {p_mode_intensities}")
+            logger.info(f"   Calibration baseline:")
+            logger.info(f"      Integration time: {integration_time_ms} ms")
+            logger.info(f"      S-mode LEDs: {s_mode_intensities}")
+            logger.info(f"      P-mode LEDs: {p_mode_intensities}")
+            if live_boost_integration_ms:
+                logger.info(f"   Live mode boost:")
+                logger.info(f"      Integration time: {live_boost_integration_ms} ms ({live_boost_factor:.2f}× boost)")
+                logger.info(f"      Adjusted LEDs: {live_boost_led_intensities}")
             logger.info(f"   S-ref baseline: {len(s_ref_spectra)} channels × {len(next(iter(s_ref_spectra.values())))} pixels")
 
         except Exception as e:
@@ -625,6 +656,75 @@ class DeviceConfiguration:
             del self.config['led_calibration']
             self.save()
             logger.info("Cleared LED calibration from device_config.json")
+
+    # ========================================================================
+    # DIAGNOSTICS STORAGE (LED RANKING FROM CALIBRATION STEP)
+    # ========================================================================
+
+    def save_led_ranking_diagnostics(
+        self,
+        weakest_channel: str,
+        ranked_channels: list[tuple[str, tuple[float, float, bool]]],
+        percent_of_weakest: dict[str, float],
+        mean_counts: Optional[dict[str, float]] = None,
+        saturated_on_first_pass: Optional[list[str]] = None,
+        test_led_intensity: Optional[int] = None,
+        test_region_nm: Optional[tuple[float, float]] = None,
+    ) -> None:
+        """Save LED ranking diagnostics to device_config.json.
+
+        Stores the LED brightness ranking results from calibration as
+        percent-of-weakest for maintenance/diagnostics.
+
+        Args:
+            weakest_channel: Channel id of weakest (e.g., 'a')
+            ranked_channels: List of (channel, (mean, max, was_saturated)) sorted weakest→strongest
+            percent_of_weakest: Mapping channel→percent relative to weakest (weakest = 100.0)
+            mean_counts: Optional mapping channel→mean counts used to compute percentages
+            saturated_on_first_pass: Optional list of channels that saturated at initial test intensity
+            test_led_intensity: Optional test LED value used during ranking (e.g., 128)
+            test_region_nm: Optional (min_nm, max_nm) region used for ranking
+        """
+        try:
+            now = datetime.now().isoformat()
+
+            # Ensure diagnostics section exists
+            if 'diagnostics' not in self.config:
+                self.config['diagnostics'] = {}
+
+            # Build a compact ranked order list
+            ranked_order = [ch for ch, _ in ranked_channels]
+
+            self.config['diagnostics']['led_ranking'] = {
+                'date': now,
+                'weakest_channel': weakest_channel,
+                'ranked_order': ranked_order,
+                'percent_of_weakest': {k: float(v) for k, v in percent_of_weakest.items()},
+            }
+
+            if mean_counts is not None:
+                self.config['diagnostics']['led_ranking']['mean_counts'] = {
+                    k: float(v) for k, v in mean_counts.items()
+                }
+
+            if saturated_on_first_pass is not None:
+                self.config['diagnostics']['led_ranking']['saturated_on_first_pass'] = list(saturated_on_first_pass)
+
+            if test_led_intensity is not None:
+                self.config['diagnostics']['led_ranking']['test_led_intensity'] = int(test_led_intensity)
+
+            if test_region_nm is not None:
+                self.config['diagnostics']['led_ranking']['test_region_nm'] = [
+                    float(test_region_nm[0]), float(test_region_nm[1])
+                ]
+
+            # Persist to disk
+            self.save()
+            logger.info("✅ Saved LED ranking diagnostics to device_config.json → diagnostics.led_ranking")
+
+        except Exception as e:
+            logger.error(f"Failed to save LED ranking diagnostics: {e}")
+            # Don't raise to avoid breaking calibration; diagnostics are optional
 
 
 def get_device_config(config_path: Optional[str] = None) -> DeviceConfiguration:

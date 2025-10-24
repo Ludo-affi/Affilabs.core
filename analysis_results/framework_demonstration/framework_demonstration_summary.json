@@ -1,0 +1,44 @@
+{
+  "dataset": {
+    "device": "demo P4SPR 2.0",
+    "channel": "A",
+    "sensor_quality": "used",
+    "n_spectra": 480,
+    "duration": 119.75222253799438
+  },
+  "methods": {
+    "direct": {
+      "raw_peak_to_peak": 86.0,
+      "corrected_peak_to_peak": 86.00962273198616,
+      "improvement_percent": -0.011189223239704837,
+      "processing_time_ms": 0.15228688716888428
+    },
+    "polynomial": {
+      "raw_peak_to_peak": 94.29443204236657,
+      "corrected_peak_to_peak": 95.24652311472198,
+      "improvement_percent": -1.0097002036426161,
+      "processing_time_ms": 0.17236073811848956
+    },
+    "centroid": {
+      "raw_peak_to_peak": 134.5771422765015,
+      "corrected_peak_to_peak": 122.65631985224059,
+      "improvement_percent": 8.857984515504459,
+      "processing_time_ms": 0.1419469714164734
+    }
+  },
+  "quality_assessment": {
+    "flag": "\u26a0\ufe0f Signal quality concerns",
+    "issues": [
+      "\u26a0\ufe0f Shallow peak (depth > 70%) - possible degraded sensor",
+      "\u26a0\ufe0f Highly asymmetric peak - unusual peak shape",
+      "\u26a0\ufe0f Low SNR (<10) - noisy signal"
+    ],
+    "metrics": {
+      "depth": 0.8529413534817195,
+      "fwhm": 144.6625,
+      "asymmetry": 0.5767220804930633,
+      "snr": 9.861232237238202,
+      "position_stability": 14.721494200421896
+    }
+  }
+}

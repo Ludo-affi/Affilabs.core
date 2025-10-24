@@ -15,7 +15,9 @@ Last Updated: October 18, 2025 (Added Kalman filtering)
 
 from __future__ import annotations
 
+from typing import Optional
 import numpy as np
+from numpy import ndarray
 from scipy.fft import dst, idct
 from scipy.stats import linregress
 
@@ -157,6 +159,35 @@ class SPRDataProcessor:
         except Exception as e:
             logger.debug(f"Enhanced peak tracking not initialized: {e}")
 
+        # Initialize consensus peak tracker (Phase 1 - v0.2.0)
+        self.consensus_tracker = None
+        try:
+            from settings.settings import PEAK_TRACKING_METHOD
+            if PEAK_TRACKING_METHOD == 'consensus':
+                from utils.consensus_peak_tracker import ConsensusTracker
+                from settings.settings import (
+                    CONSENSUS_SAVGOL_WINDOW,
+                    CONSENSUS_SAVGOL_POLYORDER,
+                    CONSENSUS_TARGET_PIXELS,
+                    CONSENSUS_HISTORY_SIZE,
+                    CONSENSUS_OUTLIER_THRESHOLD,
+                    CONSENSUS_SEARCH_RANGE,
+                )
+                self.consensus_tracker = ConsensusTracker(
+                    savgol_window=CONSENSUS_SAVGOL_WINDOW,
+                    savgol_polyorder=CONSENSUS_SAVGOL_POLYORDER,
+                    target_pixels=CONSENSUS_TARGET_PIXELS,
+                    history_size=CONSENSUS_HISTORY_SIZE,
+                    outlier_threshold_mad=CONSENSUS_OUTLIER_THRESHOLD,
+                    search_range=CONSENSUS_SEARCH_RANGE,
+                )
+                logger.info(f"✅ Consensus peak tracker initialized (Phase 1)")
+                logger.info(f"   Spectral smoothing: {CONSENSUS_SAVGOL_WINDOW}-pixel window")
+                logger.info(f"   Target pixels: {CONSENSUS_TARGET_PIXELS}")
+                logger.info(f"   Outlier threshold: {CONSENSUS_OUTLIER_THRESHOLD}× MAD")
+        except Exception as e:
+            logger.warning(f"Consensus peak tracker not initialized: {e}")
+
     @staticmethod
     def _ensure_odd(value: int) -> int:
         """Ensure window size is odd for symmetric filtering."""
@@ -168,11 +199,94 @@ class SPRDataProcessor:
     # TRANSMISSION CALCULATION
     # ========================================================================
 
+    def _apply_dynamic_sg_filter(self, spectrum: np.ndarray, target_smoothness: Optional[float] = None) -> tuple[np.ndarray, int, int]:
+        """Apply Savitzky-Golay filter with dynamically optimized parameters.
+        
+        Finds optimal window size and polynomial order to achieve target smoothness level.
+        This ensures uniform smoothing across channels with different noise characteristics.
+        
+        Args:
+            spectrum: Input spectrum to smooth
+            target_smoothness: Target smoothness level (std of second derivative)
+                             If None, uses median smoothness from quick parameter scan
+        
+        Returns:
+            tuple: (smoothed_spectrum, optimal_window, optimal_polyorder)
+            
+        Note:
+            This implements the same dynamic SG filtering used in centroid analysis,
+            ensuring consistent spectral quality across all processing steps.
+        """
+        from scipy.signal import savgol_filter
+        
+        spectrum_length = len(spectrum)
+        
+        # Quick parameter scan to find optimal settings
+        if target_smoothness is None:
+            # Scan a few window/polyorder combinations to estimate median smoothness
+            test_windows = [7, 11, 15]
+            test_polyorders = [2, 3]
+            smoothness_values = []
+            
+            for window in test_windows:
+                if window >= spectrum_length:
+                    continue
+                for polyorder in test_polyorders:
+                    if polyorder >= window:
+                        continue
+                    try:
+                        smoothed = savgol_filter(spectrum, window, polyorder, mode='nearest')
+                        second_deriv = np.diff(smoothed, n=2)
+                        smoothness = np.std(second_deriv)
+                        smoothness_values.append(smoothness)
+                    except:
+                        continue
+            
+            if smoothness_values:
+                target_smoothness = np.median(smoothness_values)
+            else:
+                # Fallback to default if scan fails
+                target_smoothness = 0.001
+        
+        # Now find optimal parameters that achieve target smoothness
+        window_lengths = range(5, min(51, spectrum_length // 2), 2)  # Must be odd
+        polyorders = [2, 3, 4]
+        
+        best_params = (11, 3)  # Default fallback
+        best_diff = float('inf')
+        
+        for window in window_lengths:
+            for polyorder in polyorders:
+                if polyorder >= window:
+                    continue
+                
+                try:
+                    smoothed = savgol_filter(spectrum, window, polyorder, mode='nearest')
+                    second_deriv = np.diff(smoothed, n=2)
+                    smoothness = np.std(second_deriv)
+                    
+                    diff = abs(smoothness - target_smoothness)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_params = (window, polyorder)
+                except:
+                    continue
+        
+        # Apply optimal filter
+        optimal_window, optimal_polyorder = best_params
+        try:
+            smoothed_spectrum = savgol_filter(spectrum, optimal_window, optimal_polyorder, mode='nearest')
+            return smoothed_spectrum, optimal_window, optimal_polyorder
+        except:
+            # Return original if filtering fails
+            logger.warning(f"Dynamic SG filter failed, returning unfiltered spectrum")
+            return spectrum, 0, 0
+
     def calculate_transmission(
         self,
         p_pol_intensity: np.ndarray,
         s_ref_intensity: np.ndarray,
-        dark_noise: np.Optional[ndarray] = None,
+        dark_noise: Optional[ndarray] = None,
         denoise: bool = True,
     ) -> np.ndarray:
         """Calculate transmission spectrum: (P-pol / S-ref) × 100%.
@@ -246,22 +360,16 @@ class SPRDataProcessor:
             if denoise:
                 from settings.settings import (
                     DENOISE_TRANSMITTANCE,
-                    DENOISE_WINDOW,
-                    DENOISE_POLYORDER,
                     KALMAN_FILTER_ENABLED,
                     KALMAN_PROCESS_NOISE,
                     KALMAN_MEASUREMENT_NOISE,
                 )
 
-                if DENOISE_TRANSMITTANCE and len(transmission) > DENOISE_WINDOW:
-                    from scipy.signal import savgol_filter
-
-                    transmission = savgol_filter(
-                        transmission,
-                        window_length=DENOISE_WINDOW,
-                        polyorder=DENOISE_POLYORDER,
-                        mode="nearest",  # Handle edges without distortion
-                    )
+                if DENOISE_TRANSMITTANCE and len(transmission) > 11:
+                    # ✨ Use dynamic SG filter for uniform smoothness across channels
+                    # This replaces the static window/polyorder approach
+                    transmission, sg_window, sg_polyorder = self._apply_dynamic_sg_filter(transmission)
+                    logger.debug(f"Dynamic SG filter applied: window={sg_window}, polyorder={sg_polyorder}")
 
                 # Apply Kalman filtering if enabled (adds ~0.5ms, provides 2-3× better SNR)
                 # Kalman filter is optimal for time-series data with Gaussian noise
@@ -435,6 +543,7 @@ class SPRDataProcessor:
         self,
         spectrum: np.ndarray,
         window: int = 165,  # Kept for backward compatibility
+        channel: str = 'unknown',  # Channel identifier for consensus tracker
     ) -> float:
         """Find SPR resonance wavelength by locating minimum transmission.
 
@@ -450,6 +559,7 @@ class SPRDataProcessor:
         Args:
             spectrum: Transmission spectrum
             window: (unused, kept for compatibility)
+            channel: Channel identifier ('a', 'b', 'c', 'd') for consensus tracker
 
         Returns:
             Resonance wavelength in nm, or np.nan if detection fails
@@ -478,10 +588,163 @@ class SPRDataProcessor:
                 SPR_PEAK_EXPECTED_MIN,
                 SPR_PEAK_EXPECTED_MAX,
                 ENHANCED_PEAK_TRACKING,
+                PEAK_TRACKING_METHOD,
+                WIDTH_BIAS_CORRECTION_ENABLED,
+                WIDTH_BIAS_K,
+                CENTROID_WINDOW_NM,
+                RIGHT_DECAY_GAMMA,
+                EDGE_DEPTH_FRACTION,
             )
 
-            # Try enhanced pipeline first if enabled
-            if ENHANCED_PEAK_TRACKING:
+            # Optional: width-bias-corrected centroid (fast) — return early if enabled
+            if WIDTH_BIAS_CORRECTION_ENABLED:
+                try:
+                    wl = self.wave_data
+
+                    # Physics-aware centroid around discrete minimum
+                    # Respect adaptive expected range for the initial minimum search to avoid wrong features
+                    if ADAPTIVE_PEAK_DETECTION:
+                        # Determine indices that fall within the expected wavelength band
+                        try:
+                            min_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MIN, side='left'))
+                            max_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MAX, side='right'))
+                            # Clamp and validate
+                            min_idx = max(0, min_idx)
+                            max_idx = min(len(wl), max_idx)
+                        except Exception:
+                            min_idx, max_idx = 0, len(wl)
+
+                        if 0 <= min_idx < max_idx <= len(wl):
+                            local_spec = spectrum[min_idx:max_idx]
+                            local_argmin = int(np.argmin(local_spec))
+                            imin = int(min_idx + local_argmin)
+                        else:
+                            imin = int(np.argmin(spectrum))
+                    else:
+                        imin = int(np.argmin(spectrum))
+                    x0 = float(wl[imin])
+                    half = float(CENTROID_WINDOW_NM) / 2.0
+                    mask = (wl >= x0 - half) & (wl <= x0 + half)
+                    xw = wl[mask]
+                    yw = spectrum[mask]
+                    if len(xw) >= 3:
+                        # Invert for weighting (lower transmission -> higher weight)
+                        w = np.maximum(np.max(yw) - yw, 1e-9)
+                        if RIGHT_DECAY_GAMMA and RIGHT_DECAY_GAMMA > 0:
+                            decay = np.exp(-np.clip(xw - x0, 0, None) * RIGHT_DECAY_GAMMA)
+                            w = w * decay
+                        num = float(np.sum(w * xw))
+                        den = float(np.sum(w))
+                        centroid = num / den if den > 0 else x0
+                    else:
+                        centroid = x0
+
+                    # Edge at fraction of depth (left/right at EDGE_DEPTH_FRACTION)
+                    ymin = float(np.min(spectrum))
+                    ymax = float(np.max(spectrum))
+                    level = ymax - float(EDGE_DEPTH_FRACTION) * (ymax - ymin)
+
+                    # Find min index globally for segmentation
+                    i0 = imin
+
+                    # Left crossing
+                    left_idx = i0
+                    for j in range(i0 - 1, 0, -1):
+                        if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
+                            left_idx = j
+                            break
+                    if left_idx < i0 and spectrum[left_idx+1] != spectrum[left_idx]:
+                        t = (level - spectrum[left_idx]) / (spectrum[left_idx+1] - spectrum[left_idx])
+                        left50 = float(wl[left_idx] + t * (wl[left_idx+1] - wl[left_idx]))
+                    else:
+                        left50 = float(wl[i0])
+
+                    # Right crossing
+                    right_idx = i0
+                    for j in range(i0, len(spectrum) - 1):
+                        if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
+                            right_idx = j
+                            break
+                    if right_idx < len(spectrum) - 1 and spectrum[right_idx+1] != spectrum[right_idx]:
+                        t = (level - spectrum[right_idx]) / (spectrum[right_idx+1] - spectrum[right_idx])
+                        right50 = float(wl[right_idx] + t * (wl[right_idx+1] - wl[right_idx]))
+                    else:
+                        right50 = float(wl[i0])
+
+                    # Asymmetry around centroid (positive if right side is longer)
+                    asym50 = (right50 - centroid) - (centroid - left50)
+
+                    # Correct centroid using calibrated slope
+                    mu_corr = centroid - float(WIDTH_BIAS_K) * asym50
+
+                    # Validate result in bounds
+                    if wl[0] <= mu_corr <= wl[-1]:
+                        return float(mu_corr)
+                except Exception as e:
+                    logger.debug(f"Width-bias correction path failed: {e}; falling back to configured method")
+
+            # Try numerical derivative method (original from old software)
+            if PEAK_TRACKING_METHOD == 'numerical_derivative':
+                try:
+                    from utils.numerical_derivative_peak import find_peak_numerical_derivative
+
+                    # ✨ CRITICAL: Use raw transmission spectrum (0-100%) exactly like old software
+                    # NO normalization - old software worked directly on transmission %
+                    peak_wavelength = find_peak_numerical_derivative(
+                        wavelengths=self.wave_data,
+                        spectrum=spectrum,  # Raw transmission spectrum (0-100%)
+                        search_range=(SPR_PEAK_EXPECTED_MIN, SPR_PEAK_EXPECTED_MAX),
+                        window=165,  # Original window size from old software
+                    )
+
+                    if not np.isnan(peak_wavelength):
+                        return float(peak_wavelength)
+                    else:
+                        logger.warning("Numerical derivative method returned NaN, using fallback")
+
+                except Exception as e:
+                    logger.warning(f"Numerical derivative method failed: {e}, using fallback")
+
+            # Try consensus method first if enabled (Phase 1 - v0.2.0)
+            if PEAK_TRACKING_METHOD == 'consensus' and self.consensus_tracker is not None:
+                try:
+                    # Normalize spectrum to 0-1 range for consensus tracker
+                    spec_min = np.min(spectrum)
+                    spec_max = np.max(spectrum)
+                    if spec_max > spec_min:
+                        spec_normalized = (spectrum - spec_min) / (spec_max - spec_min)
+                    else:
+                        spec_normalized = spectrum
+
+                    # Find peak using consensus method with channel info
+                    result = self.consensus_tracker.find_peak(
+                        wavelengths=self.wave_data,
+                        spectrum=spec_normalized,
+                        channel=channel
+                    )
+
+                    consensus_peak = result['peak_nm']
+
+                    if not np.isnan(consensus_peak):
+                        # Format parabolic result (may be None)
+                        parabolic_str = f"{result['parabolic_nm']:.3f}" if result['parabolic_nm'] is not None else 'N/A'
+
+                        logger.debug(
+                            f"Consensus Ch {channel}: λ={consensus_peak:.3f}nm "
+                            f"(centroid={result['centroid_nm']:.3f}, "
+                            f"parabolic={parabolic_str}, "
+                            f"conf={result['confidence']:.2f}, "
+                            f"outlier={result['is_outlier']})"
+                        )
+                        return float(consensus_peak)
+                    else:
+                        logger.warning(f"Consensus Ch {channel}: method returned NaN, using fallback")
+
+                except Exception as e:
+                    logger.warning(f"Consensus Ch {channel}: peak tracking failed: {e}, using fallback")
+
+            # Try enhanced pipeline if enabled
+            elif ENHANCED_PEAK_TRACKING:
                 try:
                     from utils.enhanced_peak_tracking import find_resonance_wavelength_enhanced
                     from settings.settings import (

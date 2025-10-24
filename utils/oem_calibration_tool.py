@@ -43,7 +43,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -736,6 +736,61 @@ class DeviceProfileManager:
         logger.info(f"✅ Device profile saved: {profile_path}")
         return profile_path
 
+    def update_device_config(self, polarizer_results: Optional[dict]) -> None:
+        """Update config/device_config.json with OEM calibration data.
+
+        This ensures the main application can load OEM positions from the
+        single source of truth (device_config.json) without needing to
+        search for device profile files.
+
+        Args:
+            polarizer_results: Polarizer calibration results with s_position, p_position
+        """
+        if not polarizer_results:
+            logger.warning("⚠️ No polarizer results to save to device_config")
+            return
+
+        # Path to device_config.json
+        config_path = Path(__file__).parent.parent / 'config' / 'device_config.json'
+
+        try:
+            # Load existing config
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+            else:
+                logger.warning(f"⚠️ device_config.json not found at {config_path}, creating new")
+                config = {}
+
+            # Update OEM calibration section
+            config['oem_calibration'] = {
+                'polarizer_s_position': polarizer_results['s_position'],
+                'polarizer_p_position': polarizer_results['p_position'],
+                'polarizer_sp_ratio': polarizer_results.get('sp_ratio', 0.0),
+                'calibration_date': datetime.now().isoformat(),
+                'calibration_method': polarizer_results.get('method', 'oem_tool')
+            }
+
+            # Update last modified timestamp if device_info exists
+            if 'device_info' in config:
+                config['device_info']['last_modified'] = datetime.now().isoformat()
+
+            # Ensure directory exists
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Save updated config
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+
+            logger.info(f"✅ Updated device_config.json with OEM calibration:")
+            logger.info(f"   S position: {polarizer_results['s_position']}")
+            logger.info(f"   P position: {polarizer_results['p_position']}")
+            logger.info(f"   S/P ratio: {polarizer_results.get('sp_ratio', 0.0):.2f}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to update device_config.json: {e}")
+            logger.warning("   Device profile was still saved successfully")
+
     def generate_plots(
         self,
         serial_number: str,
@@ -940,6 +995,10 @@ def main():
             afterglow_results=afterglow_results,
             detector_model=args.detector
         )
+
+        # Update device_config.json with OEM calibration data
+        logger.info("\nUpdating device_config.json...")
+        profile_mgr.update_device_config(polarizer_results)
 
         # Generate plots
         logger.info("\nGenerating diagnostic plots...")

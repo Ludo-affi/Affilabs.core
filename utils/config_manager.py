@@ -297,12 +297,9 @@ class ConfigurationManager:
         try:
             config_data = {
                 "device": self.device.to_dict(),
-                "calibration": {
-                    "integration": self.calibration.integration,
-                    "ref_intensity": self.calibration.ref_intensity,
-                    "pol_intensity": self.calibration.pol_intensity,
-                    # Note: numpy arrays would need special handling for JSON
-                },
+                # Note: LED calibration (ref_intensity, pol_intensity, integration)
+                # is stored in device_config.json via DeviceConfiguration.save_led_calibration()
+                # and should NOT be duplicated here
                 "kinetic": {
                     "flow_rate": self.kinetic.flow_rate,
                     "recording": self.kinetic.recording,
@@ -340,18 +337,9 @@ class ConfigurationManager:
                 device_data = config_data["device"]
                 self.device = DeviceConfiguration(**device_data)
 
-            # Load calibration configuration
-            if "calibration" in config_data:
-                cal_data = config_data["calibration"]
-                self.calibration.integration = cal_data.get(
-                    "integration", MIN_INTEGRATION
-                )
-                self.calibration.ref_intensity = cal_data.get(
-                    "ref_intensity", dict.fromkeys(CH_LIST, 0)
-                )
-                self.calibration.pol_intensity = cal_data.get(
-                    "pol_intensity", dict.fromkeys(CH_LIST, 0)
-                )
+            # Note: LED calibration (ref_intensity, pol_intensity, integration)
+            # is loaded from device_config.json via DeviceConfiguration.load_led_calibration()
+            # and should NOT be duplicated here
 
             # Load kinetic configuration
             if "kinetic" in config_data:

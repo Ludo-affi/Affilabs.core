@@ -2,7 +2,7 @@ from PySide6.QtCore import QPoint, QPropertyAnimation, QSize, Qt, Signal  # type
 from PySide6.QtGui import QIcon  # type: ignore
 from PySide6.QtWidgets import QPushButton, QWidget  # type: ignore
 
-from settings import DEV, POP_OUT_SPEC, SW_VERSION
+from settings import DEV, POP_OUT_SPEC, SW_VERSION, SW_APP_NAME
 from ui.ui_main import Ui_mainWindow
 from widgets.advanced import P4SPRAdvMenu
 from widgets.analysis import AnalysisWindow
@@ -28,13 +28,38 @@ class MainWindow(QWidget):
         self.active_page = "sensorgram"
         self.update_counter = 0
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
+        # Set app identity
+        try:
+            self.setWindowTitle(SW_APP_NAME)
+        except Exception:
+            pass
         self.ui.version.setText(SW_VERSION)
         self.advanced_menu = None
-        self.ui.adv_btn.setEnabled(False)
+        # Enable Settings button by default so users can access configuration any time
+        self.ui.adv_btn.setEnabled(True)
+        # Make settings button more visible with better styling
+        self.ui.adv_btn.setStyleSheet(
+            "QPushButton{\n"
+            "	border: 1px solid rgb(200, 200, 200);\n"
+            "	background: rgb(245, 245, 245);\n"
+            "	border-radius: 4px;\n"
+            "}\n"
+            "QPushButton:hover{\n"
+            "	background: white;\n"
+            "	border: 2px solid rgb(45, 49, 224);\n"
+            "	border-radius: 4px;\n"
+            "}\n"
+            "QPushButton:pressed{\n"
+            "	background: rgb(230, 230, 230);\n"
+            "}"
+        )
+        self.ui.adv_btn.setToolTip("Settings - Configure SPR tracking, calibration, and advanced options")
         self.device_config = {"ctrl": "", "knx": ""}
 
         # set up recording
         self.recording = False
+        # Hide the recording status label initially (shows "ghost button" when empty)
+        self.ui.recording_status.hide()
         self.ui.rec_btn.clicked.connect(self.record_trigger)
 
         # set minimum size
@@ -106,6 +131,22 @@ class MainWindow(QWidget):
         self.ui.spectroscopy_btn.clicked.connect(self.display_spectroscopy_page)
         self.ui.data_processing_btn.clicked.connect(self.display_data_processing_page)
         self.ui.data_analysis_btn.clicked.connect(self.display_data_analysis_page)
+        # Initialize Advanced and Settings menus upfront so the Settings button always works
+        try:
+            self.advanced_menu = P4SPRAdvMenu(parent=self)
+        except Exception:
+            self.advanced_menu = None
+
+        try:
+            self.settings = Settings(
+                self.sensorgram.reference_channel_dlg,  # Channel/SPR settings widget
+                self.advanced_menu if self.advanced_menu is not None else P4SPRAdvMenu(parent=self),
+                self,
+            )
+        except Exception:
+            # Fallback minimal settings if construction fails for any reason
+            self.settings = Settings(self.sensorgram.reference_channel_dlg, P4SPRAdvMenu(parent=self), self)
+
         self.ui.adv_btn.clicked.connect(self.show_adv_settings)
 
         self.set_main_widget("sensorgram")
@@ -119,16 +160,19 @@ class MainWindow(QWidget):
 
     def on_device_config(self, config):
         self.device_config = config
-        if DEV:
-            if config["ctrl"] in [
-                "PicoP4SPR",
-                "PicoEZSPR",
-            ]:  # EZSPR disabled (obsolete)
-                self.advanced_menu = P4SPRAdvMenu(parent=self)
-                self.settings = Settings(
-                    self.sensorgram.reference_channel_dlg, self.advanced_menu, self
-                )
-            self.connect_adv_sig.emit()
+        # Ensure advanced/settings menus exist; refresh when device config arrives
+        if self.advanced_menu is None:
+            self.advanced_menu = P4SPRAdvMenu(parent=self)
+        if not hasattr(self, 'settings') or self.settings is None:
+            self.settings = Settings(self.sensorgram.reference_channel_dlg, self.advanced_menu, self)
+
+        # Optionally refresh advanced values for supported controllers
+        if config.get("ctrl") in ["PicoP4SPR", "PicoEZSPR"]:
+            try:
+                self.advanced_menu.refresh_values()
+            except Exception:
+                pass
+        self.connect_adv_sig.emit()
 
     def main_display_resized(self):
         self.sensorgram.setFixedSize(
@@ -258,6 +302,8 @@ class MainWindow(QWidget):
                 "background: none; color: red; font: 8pt 'Segoe UI Black';"
             )
             self.ui.rec_btn.setIcon(QIcon(":/img/img/record.png"))
+            # Hide the label when not recording to avoid "ghost button" appearance
+            self.ui.recording_status.hide()
 
         else:
             self.recording = True
@@ -267,6 +313,8 @@ class MainWindow(QWidget):
                 "8pt 'Segoe UI Semibold';"
             )
             self.ui.rec_btn.setIcon(QIcon(":/img/img/stop.png"))
+            # Show the label when recording is active
+            self.ui.recording_status.show()
 
     # open/close sidebar
     def toggle_side_bar(self, animation_time=150):
@@ -317,10 +365,19 @@ class MainWindow(QWidget):
         self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
 
     def show_adv_settings(self):
-        if DEV:
-            self.advanced_menu.refresh_values()
+        # Always allow opening the Settings dialog
+        try:
+            if self.advanced_menu is not None:
+                # Best-effort refresh of advanced values before showing
+                try:
+                    self.advanced_menu.refresh_values()
+                except Exception:
+                    pass
             self.settings.show()
             self.settings.activateWindow()
+        except Exception as e:
+            # Fall back to a simple info message if settings cannot be shown
+            show_message(f"Unable to open Settings: {e}", msg_type="Warning")
 
     def closeEvent(self, event):
         if show_message(msg="Quit application?", msg_type="Warning", yes_no=True):

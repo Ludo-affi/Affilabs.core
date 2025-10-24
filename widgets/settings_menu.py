@@ -66,11 +66,11 @@ class Settings(QDialog):
         # Add widgets to layout
         self.main_layout.addWidget(self.tabs)
 
-        # Add sub-widgets to tabs
-        self.tabs.addTab(self.device_settings, "🔧 Device Configuration")
+        # Add sub-widgets to tabs (Device Configuration moved to end)
         self.tabs.addTab(self.spr_settings, "SPR Settings")
         self.tabs.addTab(self.metadata, "TraceDrawer Metadata")
         self.tabs.addTab(self.advanced, "Advanced Settings")
+        self.tabs.addTab(self.device_settings, "🔧 Device Configuration")
 
 
 if __name__ == "__main__":

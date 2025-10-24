@@ -1,0 +1,29 @@
+{
+  "device_serial": "demo P4SPR 2.0",
+  "sensor_quality": "used",
+  "mode": "S",
+  "timestamp": "20251022_133543",
+  "data_location": "spectral_training_data\\demo P4SPR 2.0\\s\\used\\20251022_133543",
+  "channels": {
+    "A": {
+      "num_spectra": 198,
+      "num_dark": 1,
+      "duration_seconds": 119.44016242027283
+    },
+    "B": {
+      "num_spectra": 198,
+      "num_dark": 1,
+      "duration_seconds": 119.44593715667725
+    },
+    "C": {
+      "num_spectra": 198,
+      "num_dark": 1,
+      "duration_seconds": 119.47912430763245
+    },
+    "D": {
+      "num_spectra": 198,
+      "num_dark": 1,
+      "duration_seconds": 119.44697594642639
+    }
+  }
+}

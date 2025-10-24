@@ -44,7 +44,10 @@ def get_version() -> str:
 
 
 DEV = True
-SW_VERSION = f"Version {get_version()}"
+# Application identity for UI
+SW_APP_NAME = "Affilab.core"
+# Pin version to repository tag (requested)
+SW_VERSION = "v0.2"
 TARGET = "win"
 
 if TARGET == "win":
@@ -79,6 +82,13 @@ GRAPH_REGION_UPDATE_GAP = 0.1  # 100 ms
 UNIT = "RU"  # measurement units
 
 # ==========================================
+# TRANSMITTANCE DISPLAY ORIENTATION
+# ==========================================
+# When True, invert transmittance for visualization so the SPR feature appears as a peak
+# UI plots will display 100 - Transmittance(%) and analysis figures will display 1 - T
+INVERT_TRANSMISSION_VISUAL = False
+
+# ==========================================
 # DETECTOR-SPECIFIC PARAMETERS (Use profiles instead!)
 # ==========================================
 # DEPRECATED: These are now loaded from detector profiles
@@ -91,23 +101,26 @@ POL_WAVELENGTH = 620  # index for auto polarization
 # TIMING PARAMETERS
 # ==========================================
 # LED Stabilization - time between LED turn-on and spectrum acquisition
-# OPTIMIZED: Based on actual LED afterglow characterization measurements (Oct 2025)
-# Measured decay constants: Channel A=2.05ms, B=2.13ms, C=2.64ms, D=2.35ms
-# Using worst-case value (Channel C) rounded up to 3ms for safety margin
-# This is ~33× faster than the old 100ms default, saving ~400ms per 4-channel cycle
-LED_DELAY = 0.003  # seconds (3ms) - measured optimal value from LED afterglow characterization
+LED_DELAY = 0.050  # 50ms LED settling time (matching old software timing)
 
 # ==========================================
-# MODERN TIMING ARCHITECTURE (≤200ms per channel)
+# TIMING ARCHITECTURE - MATCHING OLD SOFTWARE
 # ==========================================
-# Acquisition timing is now DYNAMIC based on integration time.
-# Use calculate_dynamic_scans() from utils.spr_calibrator for all scan calculations.
-# Target: ≤200ms acquisition time per channel for responsive sensorgram updates.
+# ✨ OLD SOFTWARE TIMING MODEL (Apple-to-Apple Comparison):
+#   - LED settle: 100ms (hardware stabilization)
+#   - Acquisition: 200ms total (integration_time × num_scans)
+#   - Target: 300ms TOTAL per channel (100ms LED + 200ms acquisition)
 #
-# Performance:
-#   - Per-channel: ~200ms (LED 50ms + acquisition 150ms)
-#   - Full cycle: ~800ms (4 channels × 200ms)
-#   - Update rate: ~1.2 Hz (perceived ~5 Hz with staggered updates)
+# Formula (matching old software exactly):
+#   num_scans = min(200ms / integration_time, 25)
+#
+# Example with 40ms integration time:
+#   num_scans = min(200/40, 25) = 5 scans
+#   Total time = 100ms LED + (40ms × 5) = 300ms per channel
+#   Full cycle = 300ms × 4 channels = 1200ms (~0.83 Hz, 1.2 seconds per cycle)
+#
+# The number of scans is calculated dynamically in calibration using
+# calculate_dynamic_scans() to maintain the 200ms acquisition budget.
 
 # Legacy timing constants (DEPRECATED - kept for backward compatibility only)
 # DO NOT USE these for new code - use calculate_dynamic_scans() instead
@@ -118,9 +131,9 @@ CYCLE_TIME = 1.3  # DEPRECATED: Use calculate_dynamic_scans() instead
 
 # Reference Signal Averaging
 # Number of scans is DYNAMIC based on integration time (via calculate_dynamic_scans)
-# to maintain ≤200ms acquisition time per channel
-# ✨ Phase 2 Optimization: Reduced to 4 scans to match live acquisition (50ms × 4 = 200ms)
-DARK_NOISE_SCANS = 4  # number of scans to average in dark noise measurement (was 30)
+# to maintain 100ms acquisition budget (matching old software)
+# ✨ OLD SOFTWARE FORMULA: num_scans = min(100ms / integration_time, 25)
+DARK_NOISE_SCANS = 25  # Match old software maximum (but will be reduced dynamically)
 REF_SCANS = 20  # DEPRECATED: Now calculated dynamically via calculate_dynamic_scans()
 
 # Legacy LED parameters
@@ -137,34 +150,52 @@ MAX_INTEGRATION = 100  # DEPRECATED: Use profile.max_integration_time_ms (200 ms
 DEVELOPMENT_MODE = True  # When True, skip validation thresholds to allow testing/fixing
 TARGET_WAVELENGTH_MIN = 580  # nm - start of target wavelength range for calibration
 TARGET_WAVELENGTH_MAX = 610  # nm - end of target wavelength range for calibration
-TARGET_INTENSITY_PERCENT = 50  # % - target intensity as percentage of detector max (REDUCED from 80% to prevent P-mode saturation)
-MIN_INTENSITY_PERCENT = 30  # % - minimum acceptable intensity (reduced from 60% to match new target)
-MAX_INTENSITY_PERCENT = 60  # % - maximum acceptable intensity (reduced from 90% to prevent saturation)
+TARGET_INTENSITY_PERCENT = 50  # % - CALIBRATION target ~32,768 counts (conservative - leaves room for boost)
+MIN_INTENSITY_PERCENT = 40  # % - minimum acceptable intensity during calibration
+MAX_INTENSITY_PERCENT = 70  # % - maximum acceptable intensity during calibration (stay under 76% to allow boost)
 DETECTOR_MAX_COUNTS = 65535  # Maximum detector counts (16-bit ADC)
 
-# Step 4 constrained dual optimization targets (S-MODE CALIBRATION ONLY)
-# P-mode integration time is calculated later using LIVE_MODE_INTEGRATION_FACTOR
-WEAKEST_TARGET_PERCENT = 70  # % - target for weakest LED at LED=255 (maximize SNR for calibration)
-WEAKEST_MIN_PERCENT = 60  # % - minimum acceptable for weakest LED during calibration
-WEAKEST_MAX_PERCENT = 80  # % - maximum acceptable for weakest LED during calibration
-STRONGEST_MAX_PERCENT = 95  # % - saturation threshold for strongest LED at LED≥25 (ensures calibration can succeed)
-STRONGEST_MIN_LED = 25  # Minimum practical LED intensity (10% of 255) for strongest LED validation
+# ============================================================================
+# STEP 4: INTEGRATION TIME OPTIMIZATION (TRUE ORIGINAL - SINGLE CONSTRAINT)
+# ============================================================================
+# TRUE ORIGINAL CALIBRATION SEQUENCE:
+# Step 3: Find weakest LED → Set to 255
+# Step 4: Find integration time where weakest @ 255 reaches 50-75% detector max
+# Step 5: Re-measure dark noise
+# Step 6: Calibrate other LEDs (REDUCE intensity to match weakest, keep integration FIXED)
+#
+# This is SEQUENTIAL, not dual-optimization:
+# - Step 4: ONLY optimize integration time for weakest LED
+# - Step 6: ONLY optimize LED intensities for other channels
+#
+WEAKEST_TARGET_PERCENT = 75  # % - target for weakest LED at LED=255 (50,000 counts for 65535 max)
+WEAKEST_MIN_PERCENT = 50  # % - minimum acceptable for weakest LED (~32,768 counts)
+WEAKEST_MAX_PERCENT = 80  # % - maximum acceptable for weakest LED (~52,428 counts)
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment
 TRANS_SEG_H_REQ = 0.5  # factor for calibrated channel fitting height on both ends
 AUTO_POLARIZE_ENABLE = False  # enable/disable auto-polarization during calibration
-FILTERING_ON = False  # DISABLED for development - see raw unfiltered data
-MED_FILT_WIN = 5  # default median filter window size (when filtering is enabled)
 
-# Transmittance spectrum denoising (NEW - for improved peak tracking)
-DENOISE_TRANSMITTANCE = True  # Enable Savitzky-Golay denoising on transmittance spectrum
+# ============================================================================
+# 🎚️ SINGLE SOURCE OF SMOOTHING CONTROL
+# ============================================================================
+# Set FILTERING_ON to control ALL data smoothing in the system:
+#   - False: Completely raw, unsmoothed data (for debugging/validation)
+#   - True: Full smoothing pipeline (temporal + spectral + Kalman)
+FILTERING_ON = True  # ✨ MASTER SMOOTHING SWITCH - ENABLED to match old software (4-5 RU target)
+
+# Temporal smoothing (only active if FILTERING_ON=True)
+MED_FILT_WIN = 5  # ✨ OLD SOFTWARE: backward-looking mean window (np.nanmean, not median!)
+
+# Transmittance spectrum denoising (only active if FILTERING_ON=True)
+DENOISE_TRANSMITTANCE = FILTERING_ON  # Controlled by master switch
 DENOISE_WINDOW = 11  # Window size for Savitzky-Golay filter (must be odd, ~3nm smoothing)
 DENOISE_POLYORDER = 3  # Polynomial order for Savitzky-Golay filter (cubic)
 
-# Kalman filtering for optimal time-series noise reduction (OPTIONAL - adds ~0.5ms/spectrum)
+# Kalman filtering for optimal time-series noise reduction (only active if FILTERING_ON=True)
 # Provides 2-3× better SNR than Savitzky-Golay alone for real-time peak tracking
-KALMAN_FILTER_ENABLED = True  # Enable Kalman filter after Savitzky-Golay denoising
+KALMAN_FILTER_ENABLED = FILTERING_ON  # Controlled by master switch
 KALMAN_PROCESS_NOISE = 0.01  # Process noise covariance (Q) - how much we trust the model
 KALMAN_MEASUREMENT_NOISE = 0.1  # Measurement noise covariance (R) - how much we trust the data
 
@@ -172,24 +203,48 @@ KALMAN_MEASUREMENT_NOISE = 0.1  # Measurement noise covariance (R) - how much we
 # Focuses search on expected SPR wavelength range for faster, more robust peak finding
 # Phase 1 optimization: Widened from 630-650nm to 600-800nm for better generality
 ADAPTIVE_PEAK_DETECTION = True  # Enable adaptive peak detection within expected range
-SPR_PEAK_EXPECTED_MIN = 600.0  # nm - minimum expected SPR peak wavelength (Phase 1: widened)
-SPR_PEAK_EXPECTED_MAX = 800.0  # nm - maximum expected SPR peak wavelength (Phase 1: widened)
+# Live tests target the ~605 nm band; tighten expected search band to reduce mis-tracking.
+# Adjust as needed per chip/profile.
+SPR_PEAK_EXPECTED_MIN = 580.0  # nm - minimum expected SPR peak wavelength
+SPR_PEAK_EXPECTED_MAX = 660.0  # nm - maximum expected SPR peak wavelength
 
 # ============================================================================
 # ENHANCED PEAK TRACKING (4-Stage Pipeline for <2 RU Stability)
 # ============================================================================
 
 # Peak tracking method selection
-# - 'enhanced': 4-stage pipeline (FFT + Polynomial + Derivative + Kalman) - 15ms, <1 RU
+# - 'numerical_derivative': Numerical gradient + zero-crossing (ORIGINAL from old software - shape-proof!)
+# - 'consensus': Centroid + Parabolic combination - 2-3ms, <2 RU (REJECTED - buggy)
+# - 'enhanced': 4-stage pipeline (FFT + Polynomial + Derivative + Kalman) - 15ms, <1 RU (REJECTED - binary signal)
 # - 'centroid': Weighted centroid method - 1-2ms, <2 RU (FASTER, simpler)
 # - 'parabolic': Simple parabolic interpolation - 0.5ms, 3-5 RU (fallback)
-PEAK_TRACKING_METHOD = 'centroid'  # ✨ TESTING: Centroid method (5-10× faster than enhanced)
+PEAK_TRACKING_METHOD = 'numerical_derivative'  # Retained for fallback; centroid path returns early when enabled
 
 # Enable enhanced peak tracking with FFT → Polynomial → Derivative pipeline
-# ⚠️ CURRENTLY DISABLED - Using simple direct minimum for better time resolution
-# The enhanced pipeline can introduce lag and mask real SPR binding events
-# Only enable if you need noise reduction MORE than time resolution
-ENHANCED_PEAK_TRACKING = True  # ENABLED: Using FFT + Polynomial (Stages 1-3 only, NO temporal smoothing)
+# ⚠️ DISABLED - Using old software's numerical_derivative method instead
+# The old software achieves 4-5 RU raw noise with Fourier DST/IDCT derivative + 5-point temporal filter
+# Enhanced pipeline was an attempt to improve, but old software method is proven
+ENHANCED_PEAK_TRACKING = False  # Using numerical_derivative fallback (centroid takes precedence when enabled)
+
+# Width-bias correction (fast, physics-aware centroid + asymmetry correction)
+# When enabled, live peak estimation will use a wide-window centroid with right-side
+# decay and correct it using an asymmetry feature measured from left/right half-depth edges.
+WIDTH_BIAS_CORRECTION_ENABLED = True  # Enable physics-aware centroid + width/asymmetry correction as primary path
+WIDTH_BIAS_K = 0.5                 # Slope for asymmetry correction (tune via simulator)
+CENTROID_WINDOW_NM = 100.0         # Wide centroid window for stability
+RIGHT_DECAY_GAMMA = 0.02           # Right-side exponential downweighting (nm^-1)
+EDGE_DEPTH_FRACTION = 0.5          # Fraction of dip depth for left/right edge (e.g., 50%)
+
+# Fourier Regularization Parameter for numerical_derivative method
+# Controls noise reduction in Fourier DST/IDCT derivative calculation
+# Formula: weights = φ / (1 + α·φ²·(1 + φ²)) where φ = π/n·k
+# Higher α = stronger noise suppression, smoother derivative
+# Lower α = less suppression, more responsive to high-frequency features
+# Default: 2000 (from old software - achieves 4-5 RU noise)
+# Current system: 1 RU noise at α=2000
+# Optimized: 3430 (via optimize_fourier_alpha.py with synthetic data)
+# Test range: 500-10,000 (use optimize_fourier_alpha.py)
+FOURIER_ALPHA = 3430  # Regularization parameter for Fourier derivative (optimized)
 
 # Stage 1: FFT Preprocessing Parameters (only used if ENHANCED_PEAK_TRACKING=True)
 FFT_CUTOFF_FREQUENCY = 0.20  # INCREASED from 0.15 - less aggressive smoothing, more responsive
@@ -203,9 +258,32 @@ POLYNOMIAL_FIT_RANGE = (600, 675)  # Full SPR dip range - covers entire resonanc
 # (Uses analytical derivative of polynomial - no additional parameters needed)
 
 # Stage 4: Temporal Smoothing Parameters (only used if ENHANCED_PEAK_TRACKING=True)
-TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks real SPR signal changes
-#   ⚠️ DO NOT ENABLE unless you want to sacrifice time resolution for noise reduction
-#   SPR needs to track REAL binding events, not smooth them away!
+# CRITICAL: Old software achieved 4-5 RU by applying temporal filtering to sensorgram
+# This is NOT "artificial" - it's REQUIRED for matching old software performance
+TEMPORAL_SMOOTHING_ENABLED = True      # ENABLED - Achieves 4-5 RU target (old software used this)
+TEMPORAL_SMOOTHING_METHOD = 'kalman'   # Kalman filter (optimal for real-time tracking)
+
+# =============================================================================
+# CONSENSUS PEAK TRACKING (Phase 1 - v0.2.0)
+# =============================================================================
+# Combines centroid + parabolic methods for robust peak detection
+# Invariant to peak shape and intensity variations
+
+# Spectral smoothing (Savitzky-Golay filter)
+CONSENSUS_SAVGOL_WINDOW = 7         # Window size (odd number, 5-11 recommended)
+CONSENSUS_SAVGOL_POLYORDER = 3      # Polynomial order (2-3 recommended)
+
+# Centroid method parameters
+CONSENSUS_TARGET_PIXELS = 20        # Target pixels for adaptive thresholding (15-25)
+CONSENSUS_SEARCH_RANGE = (600, 720) # SPR wavelength range (nm)
+
+# Outlier detection
+CONSENSUS_OUTLIER_THRESHOLD = 3.0   # MAD multiplier (2.0-4.0, higher = more lenient)
+CONSENSUS_HISTORY_SIZE = 10         # Number of recent peaks for outlier detection
+
+# Method weighting (Phase 1: fixed 60/40, Phase 3: adaptive)
+CONSENSUS_CENTROID_WEIGHT = 0.60    # Centroid weight (0.5-0.7 recommended)
+CONSENSUS_PARABOLIC_WEIGHT = 0.40   # Parabolic weight (1 - centroid_weight)
 
 # =============================================================================
 # ACQUISITION SPEED OPTIMIZATION
@@ -216,11 +294,12 @@ TEMPORAL_SMOOTHING_ENABLED = False     # DISABLED - Artificial smoothing masks r
 # Old software: 2 scans × 100ms = 200ms/channel × 4 = 800ms + 300ms overhead = 1.1s
 # Old LED values: (82, 231, 41, 45) for channels (a, b, c, d)
 #
-# KEY INSIGHT: Old uses 2 scans (not 4!) - less loop overhead, less averaging computation
-# This might explain significant portion of the 880ms overhead gap
-INTEGRATION_TIME_MS = 100.0     # ✨ MATCH OLD: 100ms (was 50ms)
-NUM_SCANS_PER_ACQUISITION = 2   # ✨ MATCH OLD: 2 scans (was 4) - 50% less scan overhead!
-# Total acquisition time = 100ms × 2 = 200ms per channel (exactly matches old software)
+# Strategy: 200ms budget per channel (matching old software)
+# At 100ms integration: 2 scans fit in budget → better SNR (√2 improvement)
+# At 130ms integration: only 1 scan fits → worse SNR despite more photons
+INTEGRATION_TIME_MS = 100.0     # ✨ 100ms allows 2 scans within 200ms budget
+NUM_SCANS_PER_ACQUISITION = 2  # ✨ Dynamically calculated: min(200ms/integration, 25) = 2 scans
+# Total acquisition time = 100ms × 2 = 200ms per channel (matches old software exactly)
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
 KALMAN_MEASUREMENT_NOISE = 1.0         # R parameter: trust measurements more (faster tracking)
@@ -242,9 +321,9 @@ GUI_UPDATE_EVERY_N_CYCLES = 1  # 1=every cycle (default), 2=every other, 3=every
 # Live mode integration time BOOST (maximize signal while staying under 200ms)
 # Strategy: Calibration uses conservative 50% target to avoid saturation during optimization
 # Live mode can boost signal closer to 80% since we're only measuring, not iterating
-# ⚠️ REDUCED from 75% to 60% to prevent saturation in bright channels (C, D)
+# ✨ Increased to 76% to target ~50,000 counts (was 60%)
 LIVE_MODE_MAX_INTEGRATION_MS = 200.0  # Maximum integration time for live mode (ms)
-LIVE_MODE_TARGET_INTENSITY_PERCENT = 60  # % - target 60% of detector max (was 75%, reduced to prevent saturation)
+LIVE_MODE_TARGET_INTENSITY_PERCENT = 76  # % - target 76% of detector max (~50,000 counts for 65535 max)
 LIVE_MODE_MIN_BOOST_FACTOR = 1.0  # Never reduce integration time below calibrated value
 LIVE_MODE_MAX_BOOST_FACTOR = 2.5  # Maximum boost allowed (up to 2.5× calibrated time)
 

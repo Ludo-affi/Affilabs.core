@@ -13,6 +13,28 @@ Write-Host ""
 $AppDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $AppDir
 
+# Clean up any stale Python processes from previous crashes
+Write-Host "Checking for stale processes..." -ForegroundColor Cyan
+$staleProcesses = Get-Process python* -ErrorAction SilentlyContinue | Where-Object {
+    $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+    # Kill if it's running main.py or from this project directory
+    ($cmdline -like "*main.py*" -or $cmdline -like "*control-3.2.9*") -and
+    ($cmdline -notlike "*lsp_server*" -and $cmdline -notlike "*mypy*" -and $cmdline -notlike "*isort*")
+}
+
+if ($staleProcesses) {
+    Write-Host "Found $($staleProcesses.Count) stale process(es), terminating..." -ForegroundColor Yellow
+    $staleProcesses | ForEach-Object {
+        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "  Killed PID $($_.Id)" -ForegroundColor Gray
+    }
+    Start-Sleep -Seconds 2
+    Write-Host "Stale processes cleaned up" -ForegroundColor Green
+} else {
+    Write-Host "No stale processes found" -ForegroundColor Green
+}
+Write-Host ""
+
 # Check if .venv312 exists
 $PythonExe = Join-Path $AppDir ".venv312\Scripts\python.exe"
 if (-not (Test-Path $PythonExe)) {

@@ -411,7 +411,7 @@ class USB4000OceanDirect:
             # Performance note: Acquisition times vary based on integration time and USB communication
             # Typical: 50-65ms for full spectrum read (integration time + USB overhead)
             # See SEABREEZE_PERFORMANCE_FINDINGS.md for detailed analysis
-            
+
             logger.debug(
                 f"Acquired spectrum: {len(intensity_data)} points, "
                 f"integration time: {self._current_integration_time:.3f}s, "

@@ -75,7 +75,7 @@ See `CURRENT_STATUS.md` for complete details.
   - LED control: 0-255 intensity per channel
   - Polarizer modes: P-mode (signal) / S-mode (reference)
   - Channels: a, b, c, d
-  
+
 - **USB4000**: Ocean Optics spectrometer (via seabreeze library)
   - Wavelength range: 200-1100 nm
   - Integration time: 1-65000 ms
@@ -318,37 +318,16 @@ This represents a complete refactoring of the original SPR control system:
 ### Development Setup
 1. Fork the repository
 2. Create a feature branch
-3. Install Python 3.12 virtual environment
+3. Install development dependencies: `pdm install --dev`
 4. Make changes with proper testing
 5. Submit pull request
 
 ### Code Standards
 - Follow PEP 8 style guidelines
-- Add type hints for all functions (Python 3.12 syntax)
+- Add type hints for all functions
 - Include docstrings for public APIs
 - Write tests for new functionality
 - Update documentation as needed
-
-## Documentation
-
-### Key Documents
-- `README.md` - Project overview and quick start
-- `CURRENT_STATUS.md` - Complete system status (October 2025)
-- `PYTHON_312_REQUIREMENT.md` - Python version requirements
-- `PYTHON_VERSION_ENFORCEMENT.md` - Technical implementation details
-- `CALIBRATION_SUCCESS_CONFIRMATION.md` - Calibration guide
-
-### Support Resources
-For hardware issues:
-- Check device connections and drivers
-- Verify Device Manager recognition
-- Test with `seabreeze.list_devices()`
-
-For software issues:
-- Check terminal output for Python version
-- Use `run_app_312.ps1` launcher
-- Review logs for error details
-- Verify Python 3.12 environment
 
 ## License
 
@@ -356,25 +335,28 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- **AI-Enhanced Development**: Developed with advanced AI assistance
-- **Ocean Optics**: For USB4000 spectrometer support and seabreeze library
-- **Qt Framework** (PySide6): For the user interface
+- **AI-Enhanced Development**: This project was developed with advanced AI assistance
+- **Ocean Optics**: For USB4000 spectrometer support
+- **Qt Framework**: For the user interface
 - **Python Community**: For excellent libraries and tools
+
+## Support
+
+For hardware issues:
+- Check device connections and drivers
+- Run hardware test scripts
+- Verify Device Manager recognition
+
+For software issues:
+- Check logs for error details
+- Verify Python environment setup
+- Test with minimal configuration
 
 ## Version History
 
-- **v3.2.9** (October 2025): 
-  - ✅ Fixed calibration saturation bug (Step 4)
-  - ✅ Implemented Python 3.12 enforcement (5-layer protection)
-  - ✅ Corrected dark noise warnings (detector profiles)
-  - ✅ Optimized polarizer threshold (1.33×)
-  - ✅ Removed diagnostic viewer (development tool)
-  - **Status**: Production ready
-
+- **v3.2.9**: AI-enhanced refactoring with modern architecture
 - **Previous versions**: Legacy SPR control system
 
 ---
 
 **ezControl-AI** - Advanced SPR Control with AI Enhancement
-
-*For complete technical details and recent fixes, see `CURRENT_STATUS.md`*

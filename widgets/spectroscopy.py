@@ -5,7 +5,7 @@ from pyqtgraph import GraphicsLayoutWidget, mkPen, setConfigOptions
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QSizePolicy, QVBoxLayout, QWidget
 
-from settings import CH_LIST, DEV, GRAPH_COLORS
+from settings import CH_LIST, DEV, GRAPH_COLORS, INVERT_TRANSMISSION_VISUAL
 from ui.ui_pop_out_dialog import Ui_SingleDialog
 from ui.ui_spectroscopy import Ui_Spectroscopy
 from utils.logger import logger
@@ -35,8 +35,11 @@ class Spectroscopy(QWidget):
         )
         layout_int.addWidget(self.intensity_plot_view, 1)
 
+        # Transmittance/Absorbance plot (optionally inverted for peak-up view)
+        trans_y_label = "Absorbance (%)" if INVERT_TRANSMISSION_VISUAL else "Transmittance (%)"
+        trans_title = "Absorbance Plot" if INVERT_TRANSMISSION_VISUAL else "Transmittance Plot"
         self.trans_plot_view = SpecPlot(
-            "Transmittance Plot", "Wavelength (nm)", "Transmittance (%)"
+            trans_title, "Wavelength (nm)", trans_y_label
         )
         layout_tr = self._ensure_clean_container(self.ui.transmission_plot)
         self.trans_plot_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -93,9 +96,21 @@ class Spectroscopy(QWidget):
                 self.intensity_plot_view.update_plots(
                     spec_data["wave_data"], spec_data["int_data"], self.led_mode
                 )
-                self.trans_plot_view.update_plots(
-                    spec_data["wave_data"], spec_data["trans_data"], self.led_mode
-                )
+                # Optionally invert transmittance for visualization (peak-up look)
+                trans_data = spec_data["trans_data"]
+                if INVERT_TRANSMISSION_VISUAL and trans_data is not None:
+                    try:
+                        inv_trans = {ch: (None if trans_data[ch] is None else (100.0 - trans_data[ch])) for ch in CH_LIST}
+                    except Exception:
+                        # Fallback: pass through if unexpected structure
+                        inv_trans = trans_data
+                    self.trans_plot_view.update_plots(
+                        spec_data["wave_data"], inv_trans, self.led_mode
+                    )
+                else:
+                    self.trans_plot_view.update_plots(
+                        spec_data["wave_data"], trans_data, self.led_mode
+                    )
         except Exception as e:
             logger.exception(f"Error during spectroscopy update: {e}")
 

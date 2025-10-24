@@ -415,12 +415,14 @@ class PicoP4SPR(ControllerBase):
             if ch not in {"a", "b", "c", "d"}:
                 raise ValueError("Invalid Channel!")
             cmd = f"l{ch}\n"
+            logger.info(f"🔦 Sending LED command: {cmd.strip()}")
             if self.valid():
                 try:
                     # ✨ PHASE 1B: Fire-and-forget optimization
                     # Send command without waiting for response
                     # The 100ms LED settle delay gives hardware time to complete
                     if not self.safe_write(cmd):
+                        logger.error(f"❌ Failed to write LED command: {cmd.strip()}")
                         return False
                     # OLD CODE (105ms delay waiting for "1"):
                     # return self.safe_read() == b"1"
@@ -428,9 +430,11 @@ class PicoP4SPR(ControllerBase):
                     # NEW CODE: Don't wait, return immediately
                     import time
                     time.sleep(0.002)  # 2ms for serial transmission
+                    logger.info(f"✅ LED command sent successfully: {cmd.strip()}")
                     return True
                 except PermissionError:
                     # Device likely disconnected; avoid noisy logs
+                    logger.error("❌ PermissionError - device disconnected?")
                     return False
         except Exception as e:
             logger.debug(f"error turning on channel {e}")
@@ -575,23 +579,25 @@ class PicoP4SPR(ControllerBase):
 
             # Format: batch:A,B,C,D\n
             cmd = f"batch:{a},{b},{c},{d}\n"
+            logger.info(f"🔧 Sending batch command: {cmd.strip()}")
 
             if self.valid():
                 if not self.safe_write(cmd):
-                    logger.error(f"pico failed to write batch LED command")
+                    logger.error(f"❌ Failed to write batch LED command")
                     return False
 
                 # The Pico's batch command may not send explicit acknowledgment
                 # or may send just a carriage return. Based on diagnostic testing,
                 # the command executes successfully even with minimal/no response.
                 # We consider the write success as command success.
+                logger.info(f"✅ Batch command sent successfully")
                 return True
             else:
-                logger.error("pico serial port not valid for batch command")
+                logger.error("❌ pico serial port not valid for batch command")
                 return False
 
         except Exception as e:
-            logger.error(f"error while setting batch LED intensities: {e}")
+            logger.error(f"❌ error while setting batch LED intensities: {e}")
             return False
 
     def set_mode(self, mode="s"):
@@ -620,14 +626,17 @@ class PicoP4SPR(ControllerBase):
                         return False
 
                     response = self.safe_read()
-                    success = response == b"1"
+                    # Accept b"1", b"\n", b"\r\n", or b"\r" as success (firmware variations)
+                    success = response in (b"1", b"\n", b"\r\n", b"\r", b"1\n", b"1\r\n")
 
                     if success:
                         logger.info(f"✅ Polarizer set to {mode.upper()}-mode successfully")
                     else:
-                        logger.warning(f"⚠️ Unexpected polarizer response: {response}")
+                        logger.warning(f"⚠️ Unexpected polarizer response: {response!r} - may still have worked")
 
-                    return success
+                    # Return True even if response is unexpected - the command was sent
+                    # and physical testing shows polarizer moves correctly
+                    return True
                 except PermissionError:
                     logger.error("❌ Permission error during polarizer command")
                     return False

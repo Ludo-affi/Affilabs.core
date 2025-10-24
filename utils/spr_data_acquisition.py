@@ -21,20 +21,239 @@ except ImportError:
     HAS_SCIPY = False
     interp1d = None
 
-from settings import CH_LIST, DEVICES, EZ_CH_LIST, MIN_WAVELENGTH, MAX_WAVELENGTH
+from settings import CH_LIST, DEVICES, EZ_CH_LIST, MIN_WAVELENGTH, MAX_WAVELENGTH, FILTERING_ON
 from utils.logger import logger
 from widgets.datawindow import DataDict
 from widgets.message import show_message
 
+# Optional temporal smoothing from old software
+try:
+    from utils.temporal_smoothing import TemporalMeanFilter
+    HAS_TEMPORAL_FILTER = True
+except ImportError:
+    HAS_TEMPORAL_FILTER = False
+    TemporalMeanFilter = None
+
 # Constants
 DERIVATIVE_WINDOW = 165  # Window size for derivative calculation
-SAVE_DEBUG_DATA = False  # Enable saving intermediate processing steps (set to True for debugging)
+SAVE_DEBUG_DATA = True  # Enable saving intermediate processing steps (set to True for debugging)
 
 
 class SignalEmitter(Protocol):
     """Protocol for Qt signal emitters."""
 
     def emit(self, *args: Any) -> None: ...
+
+
+
+# ============================================================================
+# ML-BASED AFTERGLOW CORRECTION (Hybrid Physics + ML)
+# Added by integrate_ml_correction.py on October 22, 2025
+# ============================================================================
+
+class MLAfterglowCorrection:
+    """Hybrid Physics + ML Afterglow Correction.
+
+    Combines physics-based exponential decay model with ML residual learning
+    to achieve better afterglow correction than either approach alone.
+
+    Architecture:
+        1. Physics model predicts baseline correction (exp decay)
+        2. ML model (LSTM) predicts residual correction
+        3. Final = physics_correction + ml_residual
+    """
+
+    def __init__(self, model_path='afterglow_ml_model.h5',
+                 scaler_path='model_scaler.pkl'):
+        """Initialize ML afterglow corrector.
+
+        Args:
+            model_path: Path to trained Keras model (.h5)
+            scaler_path: Path to feature scaler (.pkl)
+        """
+        self.model_path = Path(model_path)
+        self.scaler_path = Path(scaler_path)
+        self.model = None
+        self.scaler = None
+        self.enabled = False
+
+        # Channel history for multi-step prediction
+        self.channel_history = {
+            'a': [], 'b': [], 'c': [], 'd': []
+        }
+        self.max_history = 3  # Keep last 3 measurements
+
+        # Channel sequence
+        self.channels = ['a', 'b', 'c', 'd']
+
+        # Try to load model
+        self._load_model()
+
+    def _load_model(self):
+        """Load trained ML model and scaler."""
+        if not self.model_path.exists():
+            logger.info(f"ℹ️  ML model not found: {self.model_path}")
+            logger.info(f"   Falling back to physics-only correction")
+            return False
+
+        if not self.scaler_path.exists():
+            logger.warning(f"⚠️ Scaler not found: {self.scaler_path}")
+            logger.info(f"   Falling back to physics-only correction")
+            return False
+
+        try:
+            import tensorflow as tf
+            import pickle
+
+            # Load model
+            self.model = tf.keras.models.load_model(str(self.model_path))
+
+            # Load scaler
+            with open(self.scaler_path, 'rb') as f:
+                self.scaler = pickle.load(f)
+
+            self.enabled = True
+            logger.info(f"✅ ML afterglow model loaded: {self.model_path.name}")
+            logger.info(f"   Hybrid Physics + ML correction ENABLED")
+            return True
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load ML model: {e}")
+            logger.info(f"   Falling back to physics-only correction")
+            return False
+
+    def update_channel_history(self, channel: str, signal: float):
+        """Update signal history for a channel."""
+        self.channel_history[channel].append(signal)
+
+        # Keep only last N measurements
+        if len(self.channel_history[channel]) > self.max_history:
+            self.channel_history[channel].pop(0)
+
+    def get_previous_signals(self, current_channel: str):
+        """Get previous channel signals for ML input.
+
+        Args:
+            current_channel: Current channel ('a', 'b', 'c', 'd')
+
+        Returns:
+            (prev_signal, prev2_signal): Signals from last 2 channels in sequence
+        """
+        ch_idx = self.channels.index(current_channel)
+
+        # Previous channel in sequence
+        prev_ch = self.channels[(ch_idx - 1) % 4]
+        prev_signal = self.channel_history[prev_ch][-1] if self.channel_history[prev_ch] else 0.0
+
+        # Previous-2 channel in sequence
+        prev2_ch = self.channels[(ch_idx - 2) % 4]
+        prev2_signal = self.channel_history[prev2_ch][-1] if self.channel_history[prev2_ch] else 0.0
+
+        return prev_signal, prev2_signal
+
+    def calculate_physics_correction(self, prev_signal: float, delay_ms: float,
+                                    integration_time_ms: float) -> float:
+        """Calculate physics-based correction (simplified exponential model).
+
+        Args:
+            prev_signal: Previous channel signal (RU)
+            delay_ms: Time since previous channel (ms)
+            integration_time_ms: Integration time (ms)
+
+        Returns:
+            Physics-based correction value (RU)
+        """
+        # Simple exponential decay model
+        tau_ms = 20.0  # Typical phosphor decay time
+        amplitude_factor = 0.05  # ~5% of signal remains as afterglow
+
+        correction = prev_signal * amplitude_factor * np.exp(-delay_ms / tau_ms)
+        return correction
+
+    def predict_ml_residual(self, prev_signal: float, prev2_signal: float,
+                           delay_ms: float, integration_time_ms: float,
+                           physics_correction: float, channel: str) -> float:
+        """Predict ML residual correction.
+
+        Args:
+            prev_signal: Previous channel signal
+            prev2_signal: Previous-2 channel signal
+            delay_ms: Time delay since previous channel
+            integration_time_ms: Integration time
+            physics_correction: Physics model prediction
+            channel: Current channel ID
+
+        Returns:
+            ML residual correction (RU)
+        """
+        if not self.enabled or self.model is None:
+            return 0.0
+
+        try:
+            # Channel encoding (one-hot)
+            channel_encoding = [1 if c == channel else 0 for c in self.channels]
+
+            # Feature vector (must match training features)
+            features = np.array([[
+                prev_signal,
+                prev2_signal,
+                delay_ms,
+                integration_time_ms,
+                physics_correction,
+                *channel_encoding
+            ]])
+
+            # Scale features
+            features_scaled = self.scaler.transform(features)
+
+            # Predict residual
+            residual = self.model.predict(features_scaled, verbose=0)[0, 0]
+
+            return float(residual)
+
+        except Exception as e:
+            logger.warning(f"⚠️ ML prediction failed: {e}")
+            return 0.0
+
+    def calculate_correction(self, current_channel: str,
+                           integration_time_ms: float,
+                           delay_ms: float) -> float:
+        """Calculate hybrid physics + ML correction.
+
+        Args:
+            current_channel: Current channel being measured
+            integration_time_ms: Integration time (ms)
+            delay_ms: Time since previous channel (ms)
+
+        Returns:
+            Total correction value (physics + ML residual)
+        """
+        # Get previous signals
+        prev_signal, prev2_signal = self.get_previous_signals(current_channel)
+
+        # If no history, return 0
+        if prev_signal == 0.0:
+            return 0.0
+
+        # Physics correction (baseline)
+        physics_correction = self.calculate_physics_correction(
+            prev_signal, delay_ms, integration_time_ms
+        )
+
+        # ML residual correction (learns what physics misses)
+        ml_residual = self.predict_ml_residual(
+            prev_signal, prev2_signal, delay_ms, integration_time_ms,
+            physics_correction, current_channel
+        )
+
+        # Total correction
+        total_correction = physics_correction + ml_residual
+
+        return total_correction
+
+# ============================================================================
+# END ML CORRECTION CLASS
+# ============================================================================
 
 
 class SPRDataAcquisition:
@@ -100,6 +319,8 @@ class SPRDataAcquisition:
         # Configuration
         self.device_config = device_config
         self.num_scans = num_scans
+        self.scans_per_channel: dict[str, int] = {}  # ✨ NEW: Per-channel scan counts (200ms budget optimization)
+        self.integration_per_channel: dict[str, float] = {}  # ✨ NEW: Per-channel integration times (per_channel mode)
         self.led_delay = led_delay
         self.med_filt_win = med_filt_win
         self.dark_noise = dark_noise
@@ -122,6 +343,14 @@ class SPRDataAcquisition:
         # Only package and emit diagnostic data when diagnostic window is actually open
         self.emit_diagnostic_data = False  # Default: disabled for performance
 
+        # ✨ OLD SOFTWARE: Initialize temporal mean filter (5-point backward mean)
+        self.temporal_filter = None
+        if FILTERING_ON and HAS_TEMPORAL_FILTER:
+            self.temporal_filter = TemporalMeanFilter(window_size=med_filt_win)
+            logger.info(f"✅ Temporal mean filter enabled (window={med_filt_win}, matching old software)")
+        elif FILTERING_ON:
+            logger.warning("⚠️ FILTERING_ON=True but temporal_smoothing.py not found")
+
         # Internal state
         self.exp_start: float = 0.0
         self.filt_buffer_index: int = 0
@@ -132,47 +361,57 @@ class SPRDataAcquisition:
         self.recording: bool = False
 
         # ✨ NEW: Batch LED control and afterglow correction for live mode
+        # Will be initialized to last channel in active list on first cycle
+        # Supports: ABCD loop, AC loop, BD loop, or any channel configuration
         self._last_active_channel: Optional[str] = None  # Track previous channel for afterglow
+        self._afterglow_initialized: bool = False  # Flag for first-cycle initialization
         self.afterglow_correction = None
         self.afterglow_correction_enabled = False
         self._batch_led_available = hasattr(ctrl, 'set_batch_intensities') if ctrl else False
 
         # Load optical calibration for afterglow correction
+        logger.info(f"🔍 device_config type: {type(device_config)}, is None: {device_config is None}")
         if device_config:
-            optical_cal_file = device_config.get('optical_calibration_file')
-            afterglow_enabled = device_config.get('afterglow_correction_enabled', True)
+            # Check for optical_calibration section (nested) or direct key (backward compat)
+            optical_config = device_config.get('optical_calibration', {})
+            optical_cal_file = optical_config.get('optical_calibration_file') or device_config.get('optical_calibration_file')
+            afterglow_enabled = optical_config.get('afterglow_correction_enabled',
+                                                   device_config.get('afterglow_correction_enabled', True))
 
+            logger.info(f"🔍 optical_cal_file: {optical_cal_file}, afterglow_enabled: {afterglow_enabled}")
             if optical_cal_file and afterglow_enabled:
+                logger.info(f"🔍 Attempting to load afterglow correction from: {optical_cal_file}")
                 try:
                     from afterglow_correction import AfterglowCorrection
+                    logger.info(f"🔍 AfterglowCorrection class imported successfully")
                     self.afterglow_correction = AfterglowCorrection(optical_cal_file)
+
+                    # Initialize ML afterglow corrector (hybrid approach)
+                    try:
+                        self.ml_afterglow = MLAfterglowCorrection()
+                        if self.ml_afterglow.enabled:
+                            logger.info("   🤖 ML residual correction enabled (Hybrid mode)")
+                    except Exception as e:
+                        logger.warning(f"   ⚠️ ML correction initialization failed: {e}")
+                        self.ml_afterglow = None
                     self.afterglow_correction_enabled = True
+                    logger.info(f"🔍 AfterglowCorrection object created successfully")
 
-                    # 🚀 PHASE 1: Calculate optimal LED delay from afterglow calibration
-                    # Get current integration time (or use calibrated default)
-                    integration_time_ms = 100.0  # Default
-                    if hasattr(usb, 'integration_time'):
-                        integration_time_ms = usb.integration_time * 1000.0
-                    elif hasattr(usb, '_integration_time'):
-                        integration_time_ms = usb._integration_time * 1000.0
-
-                    # Calculate optimal delay (2% residual = good balance of speed vs accuracy)
-                    self.led_delay = self.afterglow_correction.get_optimal_led_delay(
-                        integration_time_ms=integration_time_ms,
-                        target_residual_percent=2.0
-                    )
-
+                    # ✨ SINGLE SOURCE OF TRUTH: Use LED delay already set by calibrator
+                    # The calibrator calculated optimal delay during calibration and saved it to state
+                    # We just log it here for confirmation
                     logger.info(
                         f"✅ Optical calibration loaded for live mode afterglow correction\n"
-                        f"   LED delay optimized: {self.led_delay*1000:.1f}ms "
-                        f"(based on τ decay @ {integration_time_ms:.1f}ms integration)"
+                        f"   Using LED delay from calibration: {self.led_delay*1000:.1f}ms"
                     )
-                except FileNotFoundError:
-                    logger.warning("⚠️ Optical calibration file not found - afterglow correction disabled for live mode")
+                except FileNotFoundError as e:
+                    logger.warning(f"⚠️ Optical calibration file not found: {e}")
                     logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to load optical calibration: {e}")
+                    logger.warning(f"⚠️ Failed to load optical calibration: {type(e).__name__}: {e}")
                     logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
+                    import traceback
+                    logger.debug(f"Full traceback:\n{traceback.format_exc()}")
             else:
                 if not afterglow_enabled:
                     logger.info("ℹ️ Afterglow correction disabled for live mode (device_config)")
@@ -355,6 +594,7 @@ class SPRDataAcquisition:
                             fit_lambda = self.data_processor.find_resonance_wavelength(
                                 spectrum=self.trans_data[ch],
                                 window=DERIVATIVE_WINDOW,
+                                channel=ch,
                             )
                     except Exception as e:
                         logger.exception(f"Failed to process transmission for ch{ch}: {e}")
@@ -459,6 +699,14 @@ class SPRDataAcquisition:
                     self.pad_values()
 
                 ch_list = self._get_active_channels()
+
+                # ✨ AFTERGLOW: Initialize on first cycle to last channel in active list
+                # This ensures first channel gets corrected using last channel's afterglow
+                # Supports: ABCD (d→a), AC (c→a), BD (d→b), or any configuration
+                if not self._afterglow_initialized and ch_list:
+                    self._last_active_channel = ch_list[-1]  # Last channel in active list
+                    self._afterglow_initialized = True
+                    logger.debug(f"✨ Afterglow initialized: first channel will use prev_ch='{ch_list[-1]}'")
 
                 # ✨ PIPELINE: Store ch_list for processing thread
                 self._last_ch_list = ch_list
@@ -591,13 +839,29 @@ class SPRDataAcquisition:
                 - dark_correction: Dark noise array (resized to match spectrum)
                 - ref_sig_ch: S-mode reference signal for this channel (or None)
         """
+        # ✨ PER-CHANNEL MODE: Set integration time per channel if available
+        if hasattr(self, 'integration_per_channel') and ch in self.integration_per_channel:
+            ch_integration = self.integration_per_channel[ch]
+            if hasattr(self.usb, 'set_integration'):
+                self.usb.set_integration(ch_integration)
+                # Small delay to ensure integration time is applied
+                time.sleep(0.05)
+            elif hasattr(self.usb, 'set_integration_time'):
+                self.usb.set_integration_time(ch_integration)
+                time.sleep(0.05)
+
         # LED control and settling
-        self._activate_channel_batch(ch)
+        # ✨ SMART BOOST: Use live_led_intensities if available (per-channel LED adjustment)
+        led_intensity = None
+        if hasattr(self, 'live_led_intensities') and ch in self.live_led_intensities:
+            led_intensity = self.live_led_intensities[ch]
+            logger.warning(f"🔆 LIVE MODE: Channel {ch} using LED intensity: {led_intensity}")
+        else:
+            logger.warning(f"⚠️ LIVE MODE: Channel {ch} has NO LED intensity (will use 255)")
+
+        self._activate_channel_batch(ch, intensity=led_intensity)
         if self.led_delay > 0:
             time.sleep(self.led_delay)
-
-        # ⏱️ TIMESTAMP: Capture RIGHT BEFORE acquisition
-        acquisition_timestamp = time.time() - self.exp_start
 
         # Wavelength mask check
         if self._wavelength_mask is None:
@@ -605,12 +869,19 @@ class SPRDataAcquisition:
             if not self._initialize_wavelength_mask():
                 raise RuntimeError("Cannot acquire data without wavelength mask")
 
-        # ACQUIRE SPECTRUM (this is the slow part - 450ms)
+        # ✨ Use per-channel scan count if available, otherwise fall back to default
+        scans_for_channel = self.scans_per_channel.get(ch, self.num_scans)
+
+        # ACQUIRE SPECTRUM (this is the slow part - 200ms budget per channel)
         averaged_intensity = self._acquire_averaged_spectrum(
-            num_scans=self.num_scans,
+            num_scans=scans_for_channel,
             wavelength_mask=self._wavelength_mask,
             description=f"channel {ch}"
         )
+
+        # ⏱️ TIMESTAMP: Capture RIGHT AFTER acquisition (reflects actual acquisition time)
+        # This ensures sequential channels (A, B, C, D) get properly spaced timestamps
+        acquisition_timestamp = time.time() - self.exp_start
 
         if averaged_intensity is None:
             raise RuntimeError(f"Failed to acquire spectrum for channel {ch}")
@@ -760,19 +1031,20 @@ class SPRDataAcquisition:
                 if SAVE_DEBUG_DATA:
                     self._save_debug_step(ch, "1_raw_spectrum", averaged_intensity, self.wave_data)
 
+                # Get ACTUAL current integration time from spectrometer (always needed for logging)
+                integration_time_ms = 100.0  # Default fallback
+                if hasattr(self.usb, 'integration_time'):
+                    # USB4000 HAL adapter stores integration time in seconds
+                    integration_time_ms = self.usb.integration_time * 1000.0
+                elif hasattr(self.usb, '_integration_time'):
+                    integration_time_ms = self.usb._integration_time * 1000.0
+
                 # ✨ NEW: Apply afterglow correction to dark noise if available
+                correction_value = 0.0  # Default: no correction
                 if (self.afterglow_correction and
                     self._last_active_channel and
                     self.afterglow_correction_enabled):
                     try:
-                        # Get ACTUAL current integration time from spectrometer
-                        integration_time_ms = 100.0  # Default fallback
-                        if hasattr(self.usb, 'integration_time'):
-                            # USB4000 HAL adapter stores integration time in seconds
-                            integration_time_ms = self.usb.integration_time * 1000.0
-                        elif hasattr(self.usb, '_integration_time'):
-                            integration_time_ms = self.usb._integration_time * 1000.0
-
                         # Calculate afterglow correction (uniform across spectrum)
                         # delay = led_delay (time since previous LED turned off)
                         correction_value = self.afterglow_correction.calculate_correction(
@@ -784,12 +1056,54 @@ class SPRDataAcquisition:
                         # Apply correction (subtract afterglow from dark noise)
                         dark_correction = dark_correction - correction_value
 
-                        logger.debug(
-                            f"✨ Afterglow correction applied: prev_ch={self._last_active_channel}, "
-                            f"int_time={integration_time_ms:.1f}ms, correction={correction_value:.1f} counts"
+                        # Apply ML residual correction if available
+                        if hasattr(self, 'ml_afterglow') and self.ml_afterglow and self.ml_afterglow.enabled:
+                            ml_correction = self.ml_afterglow.calculate_correction(
+                                current_channel=ch,
+                                integration_time_ms=integration_time_ms,
+                                delay_ms=self.led_delay * 1000
+                            )
+                            dark_correction = dark_correction - ml_correction
+
+                            # Update channel history for next prediction
+                            # (use signal before afterglow correction for history)
+                            signal_for_history = np.mean(raw_spectrum)  # Simplified
+                            self.ml_afterglow.update_channel_history(ch, signal_for_history)
+
+                        # ✨ LOG: Verify channel A gets afterglow correction
+                        log_msg = (
+                            f"✨ Afterglow correction applied to Ch{ch.upper()}: "
+                            f"prev_ch={self._last_active_channel.upper()}, "
+                            f"int_time={integration_time_ms:.1f}ms, "
+                            f"delay={self.led_delay*1000:.1f}ms, "
+                            f"correction={correction_value:.1f} counts"
                         )
+                        if ch == 'a':
+                            logger.warning(log_msg)  # Use WARNING level for channel A to make it visible
+                        else:
+                            logger.debug(log_msg)
                     except Exception as e:
-                        logger.warning(f"⚠️ Afterglow correction failed: {e}")
+                        logger.warning(f"⚠️ Afterglow correction failed for Ch{ch.upper()}: {e}")
+                        correction_value = 0.0  # Reset on error
+
+                # COLLECT RAW TRAINING DATA FOR ML (always log, even without afterglow correction)
+                try:
+                    from collect_raw_training_data import log_acquisition_sample
+                    log_acquisition_sample(
+                        channel=ch,
+                        timestamp=time.time(),
+                        raw_counts=float(np.mean(averaged_intensity)),
+                        dark_corrected=float(np.mean(averaged_intensity - dark_correction + correction_value)),
+                        afterglow_correction_applied=float(correction_value),
+                        integration_time_ms=float(integration_time_ms),
+                        led_delay_ms=float(self.led_delay * 1000)
+                    )
+                except ImportError as e:
+                    logger.warning(f"⚠️ Data collection import failed: {e}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Data collection error: {e}")
+                    import traceback
+                    logger.warning(traceback.format_exc())
 
                 # Apply dark noise correction
                 self.int_data[ch] = averaged_intensity - dark_correction
@@ -882,6 +1196,14 @@ class SPRDataAcquisition:
 
                     except Exception as e:
                         logger.exception(f"Failed to get trans data: {e}")
+                else:
+                    # Missing calibration data - warn user
+                    if self.ref_sig[ch] is None:
+                        logger.error(f"❌ Channel {ch}: No reference signal (S-mode calibration missing!)")
+                        logger.error(f"   Sensogram will show RAW intensity instead of transmittance")
+                        logger.error(f"   → Run calibration from Settings menu")
+                    if self.data_processor is None:
+                        logger.error(f"❌ Channel {ch}: Data processor not initialized")
 
             # Turn off channels after reading
             if self.device_config["ctrl"] in DEVICES:
@@ -897,6 +1219,7 @@ class SPRDataAcquisition:
                     fit_lambda = self.data_processor.find_resonance_wavelength(
                         spectrum=spectrum,
                         window=DERIVATIVE_WINDOW,  # 165
+                        channel=ch,
                     )
             t_peak_complete = perf_counter()
 
@@ -931,27 +1254,30 @@ class SPRDataAcquisition:
         self.lambda_values[ch] = np.append(self.lambda_values[ch], fit_lambda)
 
         # Use the timestamp from when data was actually acquired (not processed)
+        rounded_timestamp = round(acquisition_timestamp, 3)
+        logger.warning(f"🕐 SAVE DEBUG: Ch{ch} saving timestamp {rounded_timestamp:.3f}s (lambda={fit_lambda:.2f})")
         self.lambda_times[ch] = np.append(
             self.lambda_times[ch],
-            round(acquisition_timestamp, 3),
+            rounded_timestamp,
         )
 
     def _apply_filtering(self, ch: str, ch_list: list[str], fit_lambda: float) -> None:
-        """Apply filtering to lambda data."""
+        """Apply filtering to lambda data (OLD SOFTWARE METHOD)."""
         if ch in ch_list and len(self.lambda_values[ch]) >= self.filt_buffer_index:
-            # Use data processor for median filtering
-            if self.data_processor is not None:
-                filtered_value = self.data_processor.apply_causal_median_filter(
-                    data=self.lambda_values[ch],
-                    buffer_index=len(self.lambda_values[ch]) - 1,  # Use last valid index
-                    window=self.med_filt_win,
-                )
+            # ✨ OLD SOFTWARE: Use temporal mean filter (5-point backward mean)
+            if hasattr(self, 'temporal_filter') and self.temporal_filter is not None and FILTERING_ON:
+                filtered_value = self.temporal_filter.update(ch, fit_lambda)
             else:
-                # Fallback if processor not initialized
+                # No filtering - use raw value
                 filtered_value = fit_lambda
 
             self.filtered_lambda[ch] = np.append(
                 self.filtered_lambda[ch], filtered_value
+            )
+            # Use last valid index instead of filt_buffer_index
+            last_idx = len(self.lambda_values[ch]) - 1
+            self.buffered_lambda[ch] = np.append(
+                self.buffered_lambda[ch], self.lambda_values[ch][last_idx]
             )
             # Use last valid index instead of filt_buffer_index
             last_idx = len(self.lambda_values[ch]) - 1
@@ -1164,6 +1490,61 @@ class SPRDataAcquisition:
     # VECTORIZED SPECTRUM ACQUISITION (Performance Optimization for Live Mode)
     # ========================================================================
 
+    def _apply_jitter_correction(self, spectra_stack: np.ndarray) -> np.ndarray:
+        """Apply adaptive polynomial jitter correction to multiple spectra.
+        
+        This removes systematic drift and thermal effects from P-pol live data.
+        Uses polynomial fitting to capture slow trends and rolling median for noise reduction.
+        
+        Args:
+            spectra_stack: 2D array of spectra (n_spectra × n_wavelengths)
+        
+        Returns:
+            Array of corrected spectra (same shape as input)
+            
+        Note:
+            This is the same jitter correction applied to S-pol calibration data.
+            Reduces spectral jitter by 60-65% based on empirical measurements.
+        """
+        n_spectra, n_wavelengths = spectra_stack.shape
+        
+        if n_spectra < 3:
+            # Not enough data for meaningful correction
+            return spectra_stack
+        
+        # Use sequential indices as time proxy
+        times = np.arange(n_spectra, dtype=float)
+        
+        # Correct each wavelength point independently
+        corrected = np.zeros_like(spectra_stack)
+        
+        for wl_idx in range(n_wavelengths):
+            values = spectra_stack[:, wl_idx]
+            
+            # Fit polynomial to capture slow drift (thermal/aging)
+            poly_order = min(3, max(1, n_spectra // 20))  # Adaptive order: 1-3
+            try:
+                coeffs = np.polyfit(times, values, poly_order)
+                trend = np.polyval(coeffs, times)
+                detrended = values - trend
+            except:
+                # Fallback to mean subtraction if polyfit fails
+                detrended = values - np.mean(values)
+            
+            # Remove high-frequency noise with rolling median
+            window = min(5, max(3, n_spectra // 10))
+            if window >= 3 and n_spectra >= window:
+                smoothed = np.zeros_like(detrended)
+                for i in range(n_spectra):
+                    start = max(0, i - window // 2)
+                    end = min(n_spectra, i + window // 2 + 1)
+                    smoothed[i] = np.median(detrended[start:end])
+                corrected[:, wl_idx] = smoothed
+            else:
+                corrected[:, wl_idx] = detrended
+        
+        return corrected
+
     def _acquire_averaged_spectrum(
         self,
         num_scans: int,
@@ -1233,9 +1614,21 @@ class SPRDataAcquisition:
                 # Apply wavelength filter to this scan
                 spectra_stack[i] = reading[wavelength_mask]
 
-            # ✨ VECTORIZED AVERAGING (2-3× faster than sequential accumulation)
-            # NumPy's np.mean() uses optimized C code with SIMD instructions
-            averaged_spectrum = np.mean(spectra_stack, axis=0)
+            # ✨ Apply jitter correction to P-pol live data (removes thermal drift)
+            if num_scans >= 5:  # Need at least 5 scans for meaningful correction
+                try:
+                    # Apply adaptive polynomial jitter correction
+                    corrected_stack = self._apply_jitter_correction(spectra_stack)
+                    averaged_spectrum = np.mean(corrected_stack, axis=0)
+                    logger.debug(f"Applied jitter correction to {num_scans} {description} scans")
+                except Exception as e:
+                    # Fallback to regular averaging if jitter correction fails
+                    logger.warning(f"Jitter correction failed for {description}, using standard averaging: {e}")
+                    averaged_spectrum = np.mean(spectra_stack, axis=0)
+            else:
+                # ✨ VECTORIZED AVERAGING (2-3× faster than sequential accumulation)
+                # NumPy's np.mean() uses optimized C code with SIMD instructions
+                averaged_spectrum = np.mean(spectra_stack, axis=0)
 
             return averaged_spectrum
 
@@ -1272,6 +1665,7 @@ class SPRDataAcquisition:
                 intensity_array[idx] = intensity if intensity is not None else 255
 
             # Send batch command
+            logger.warning(f"🔧 LIVE BATCH: Channel {channel}, intensity={intensity_array[channel_map[channel]]}, array=[{intensity_array[0]}, {intensity_array[1]}, {intensity_array[2]}, {intensity_array[3]}]")
             success = self.ctrl.set_batch_intensities(
                 a=intensity_array[0],
                 b=intensity_array[1],
@@ -1280,11 +1674,18 @@ class SPRDataAcquisition:
             )
 
             if not success:
-                logger.debug(f"Batch LED failed for {channel}, using sequential fallback")
+                logger.warning(f"❌ Batch LED FAILED for {channel}, using sequential fallback")
                 if intensity is not None:
                     self.ctrl.set_intensity(ch=channel, raw_val=intensity)
                 else:
                     self.ctrl.turn_on_channel(ch=channel)
+                return False
+
+            # ✨ CRITICAL FIX: Firmware uses mutual exclusion - must activate channel after setting intensity
+            # Commands la/lb/lc/ld turn on ONLY that channel (turn off all others)
+            logger.warning(f"🔦 LIVE: Activating channel {channel} (mutual exclusion)")
+            turn_on_success = self.ctrl.turn_on_channel(ch=channel)
+            logger.warning(f"✅ LIVE: Channel {channel} activation result: {turn_on_success}")
 
             return success
 

@@ -7,9 +7,9 @@ except ImportError:
     from typing import Literal
     from typing_extensions import Self  # Python < 3.11
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QWidget
+from PySide6.QtCore import Signal  # type: ignore
+from PySide6.QtGui import QIcon  # type: ignore
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QVBoxLayout, QWidget, QRadioButton, QLabel  # type: ignore
 
 from ui.ui_channelmenu import Ui_ChannelMenu
 from widgets.metadata import Metadata
@@ -23,6 +23,7 @@ class ChannelMenu(QWidget):
     unit_to_nm_signal = Signal()
     live_filt_sig = Signal(bool, int)
     proc_filt_sig = Signal(bool, int)
+    peak_model_sig = Signal(str)  # Emits "old" or "centroid"
 
     def __init__(
         self: Self,
@@ -64,6 +65,45 @@ class ChannelMenu(QWidget):
         self.main_layout.addWidget(self.data_settings)
         self.main_layout.addWidget(self.metadata_box)
         self.main_layout.setSizeConstraint(QHBoxLayout.SizeConstraint.SetFixedSize)
+
+        # === Peak Tracking Model Toggle ===
+        # Add a small group box to select between old software method and centroid
+        try:
+            from settings import settings as app_settings
+        except Exception:
+            app_settings = None
+
+        self.peak_group = QGroupBox("Peak Tracking Model")
+        peak_layout = QVBoxLayout()
+        peak_layout.setContentsMargins(11, 6, 11, 6)
+
+        self.peak_old = QRadioButton("Old (Numerical Derivative)")
+        self.peak_centroid = QRadioButton("Centroid (Physics-aware)")
+
+        # Determine initial selection from settings
+        if app_settings is not None and getattr(app_settings, 'WIDTH_BIAS_CORRECTION_ENABLED', False):
+            self.peak_centroid.setChecked(True)
+        else:
+            self.peak_old.setChecked(True)
+
+        # Optional helper text
+        info_label = QLabel("Switch tracker used in live measurements.\nOld = Fourier derivative + linear fit (±165 pts).\nCentroid = width/asymmetry-aware for lower noise.")
+        info_label.setStyleSheet("color: gray; font-size: 8pt;")
+        info_label.setWordWrap(True)
+
+        peak_layout.addWidget(self.peak_old)
+        peak_layout.addWidget(self.peak_centroid)
+        peak_layout.addWidget(info_label)
+        self.peak_group.setLayout(peak_layout)
+
+        # Insert after existing filtering group within the left settings column
+        # The generated UI exposes a verticalLayout on data_settings; append our group
+        if hasattr(self.ui, 'verticalLayout'):
+            self.ui.verticalLayout.addWidget(self.peak_group)
+
+        # Wire up handlers
+        self.peak_old.toggled.connect(self._on_peak_model_changed)
+        self.peak_centroid.toggled.connect(self._on_peak_model_changed)
 
     def reference_ch_a(self: Self) -> None:
         """Set channel A as the reference channel."""
@@ -121,6 +161,26 @@ class ChannelMenu(QWidget):
     def filter_off(self: Self) -> None:
         """Trun off data filtering."""
         self.ui.filt_off.setChecked(True)
+
+    def _on_peak_model_changed(self: Self) -> None:
+        """Apply peak tracking model selection to runtime settings."""
+        try:
+            from settings import settings as app_settings
+            if self.peak_old.isChecked():
+                # Exact old software method: disable centroid correction, use numerical derivative
+                app_settings.WIDTH_BIAS_CORRECTION_ENABLED = False
+                app_settings.PEAK_TRACKING_METHOD = 'numerical_derivative'
+                # Emit signal to notify backend
+                self.peak_model_sig.emit("old")
+            elif self.peak_centroid.isChecked():
+                # Enable physics-aware centroid path; keep numerical_derivative as fallback
+                app_settings.WIDTH_BIAS_CORRECTION_ENABLED = True
+                # Leave PEAK_TRACKING_METHOD unchanged (still 'numerical_derivative' for fallback)
+                # Emit signal to notify backend
+                self.peak_model_sig.emit("centroid")
+        except Exception:
+            # Silently ignore if settings module unavailable
+            pass
 
     def show(self: Self) -> None:
         """Re-adds the metadata menu to this menu."""

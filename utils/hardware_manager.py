@@ -785,29 +785,50 @@ class HardwareManager:
                 elif hasattr(self.ctrl, "turn_off_leds"):
                     self.ctrl.turn_off_leds()
                     logger.debug("LEDs turned off via HAL turn_off_leds")
+                    hal_shutdown_success = True
             except Exception as hal_e:
                 logger.warning(f"HAL LED shutdown failed: {hal_e}")
+                hal_shutdown_success = False
 
-            # Method 2: Emergency direct serial LED shutdown as backup
-            try:
-                import time
+            # Method 2: Emergency direct serial LED shutdown as backup (only if HAL failed)
+            # Skip if HAL succeeded to avoid port conflicts
+            if not hal_shutdown_success:
+                try:
+                    import time
+                    import serial
 
-                import serial
+                    logger.debug("Emergency LED shutdown via direct serial (HAL failed)...")
 
-                logger.debug("Emergency LED shutdown via direct serial...")
-                with serial.Serial("COM4", 115200, timeout=1) as ser:
-                    # Turn off all P4SPR LED channels (oa, ob, oc, od)
-                    for channel in ["a", "b", "c", "d"]:
-                        ser.write(f"o{channel}\n".encode())
-                        time.sleep(0.05)
+                    # Try to open port with retry in case it's briefly held
+                    for retry in range(2):
+                        try:
+                            with serial.Serial("COM4", 115200, timeout=1) as ser:
+                                # Turn off all P4SPR LED channels (oa, ob, oc, od)
+                                for channel in ["a", "b", "c", "d"]:
+                                    ser.write(f"o{channel}\n".encode())
+                                    time.sleep(0.05)
 
-                    # Also try generic LED off commands as backup
-                    ser.write(b"lx\n")
-                    time.sleep(0.1)
+                                # Also try generic LED off commands as backup
+                                ser.write(b"lx\n")
+                                time.sleep(0.1)
 
-                    logger.debug("Direct LED shutdown commands sent")
-            except Exception as serial_e:
-                logger.warning(f"Direct serial LED shutdown failed: {serial_e}")
+                                logger.debug("Direct LED shutdown commands sent")
+                                break  # Success, exit retry loop
+                        except serial.SerialException as port_e:
+                            if retry == 0 and "PermissionError" in str(port_e):
+                                # Port might be held by HAL - wait briefly and retry once
+                                time.sleep(0.2)
+                            else:
+                                raise  # Re-raise on final attempt or other errors
+
+                except Exception as serial_e:
+                    # Don't log as warning if it's just a port access issue (HAL likely has it)
+                    if "PermissionError" in str(serial_e) or "Access is denied" in str(serial_e):
+                        logger.debug(f"Direct serial shutdown skipped (port in use by HAL): {serial_e}")
+                    else:
+                        logger.warning(f"Direct serial LED shutdown failed: {serial_e}")
+            else:
+                logger.debug("Direct serial LED shutdown skipped (HAL shutdown succeeded)")
 
             logger.debug("LED shutdown completed")
 

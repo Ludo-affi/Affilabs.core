@@ -24,7 +24,7 @@
     "recommended_integration_time_ms": 10.0
   },
   "calibration_targets": {
-    "target_signal_counts": 50000,
+    "target_signal_counts": 55000,
     "signal_tolerance_counts": 5000,
     "dark_noise_scans": 30,
     "led_characterization_points": [20, 128, 255],

@@ -1694,6 +1694,17 @@ class DataWindow(QWidget):
                     l_val_data = deepcopy(self.data["lambda_values"])
                     l_time_data = deepcopy(self.data["lambda_times"])
 
+                    # 🔍 DEBUG: Check timestamp arrays before export
+                    logger.warning("=" * 80)
+                    logger.warning("📊 CSV EXPORT - Checking timestamp arrays:")
+                    for ch in CH_LIST:
+                        if len(l_time_data[ch]) >= 3:
+                            logger.warning(
+                                f"  Ch{ch.upper()}: First 3 timestamps = "
+                                f"{l_time_data[ch][0]:.3f}, {l_time_data[ch][1]:.3f}, {l_time_data[ch][2]:.3f}s"
+                            )
+                    logger.warning("=" * 80)
+
                     # Finds the first time greater than or equal to 0 on the frist
                     # channel to use as a reference point
                     reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
@@ -1709,6 +1720,16 @@ class DataWindow(QWidget):
                     )
 
                     for i in range(row_count):
+                        # 🔍 DEBUG: Log first 3 rows to see what gets exported
+                        if i < 3:
+                            logger.warning(
+                                f"📝 CSV Row {i}: "
+                                f"A={l_time_data['a'][i]:.3f}s, "
+                                f"B={l_time_data['b'][i]:.3f}s, "
+                                f"C={l_time_data['c'][i]:.3f}s, "
+                                f"D={l_time_data['d'][i]:.3f}s"
+                            )
+
                         for ch in CH_LIST:
                             if np.isnan(l_val_data[ch][i]):
                                 l_val_data[ch][i] = None

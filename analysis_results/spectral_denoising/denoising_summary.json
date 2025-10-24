@@ -1,0 +1,70 @@
+{
+  "baseline": {
+    "peak_to_peak": 86.0,
+    "std": 14.721494200421896
+  },
+  "methods": {
+    "none": {
+      "peak_to_peak": 86.0,
+      "std": 14.721494200421896,
+      "improvement_percent": 0.0,
+      "processing_time_ms": 0.00625153382619222
+    },
+    "savgol_w11": {
+      "peak_to_peak": 72.0,
+      "std": 14.432540484141692,
+      "improvement_percent": 16.279069767441857,
+      "processing_time_ms": 0.6003633141517639
+    },
+    "savgol_w21": {
+      "peak_to_peak": 72.0,
+      "std": 13.691890943334549,
+      "improvement_percent": 16.279069767441857,
+      "processing_time_ms": 0.6147364775339763
+    },
+    "savgol_w51": {
+      "peak_to_peak": 32.0,
+      "std": 5.652183928334447,
+      "improvement_percent": 62.7906976744186,
+      "processing_time_ms": 0.6522948543230693
+    },
+    "median_k5": {
+      "peak_to_peak": 76.0,
+      "std": 19.522235252932315,
+      "improvement_percent": 11.627906976744185,
+      "processing_time_ms": 0.2980475624402364
+    },
+    "median_k11": {
+      "peak_to_peak": 76.0,
+      "std": 19.998259906940792,
+      "improvement_percent": 11.627906976744185,
+      "processing_time_ms": 0.29734522104263306
+    },
+    "gaussian_s2": {
+      "peak_to_peak": 72.0,
+      "std": 14.265049922995559,
+      "improvement_percent": 16.279069767441857,
+      "processing_time_ms": 0.08477320273717245
+    },
+    "gaussian_s5": {
+      "peak_to_peak": 63.0,
+      "std": 10.3306775821122,
+      "improvement_percent": 26.74418604651163,
+      "processing_time_ms": 0.13870646556218463
+    },
+    "wavelet_db4": {
+      "peak_to_peak": 72.0,
+      "std": 15.720799512950633,
+      "improvement_percent": 16.279069767441857,
+      "processing_time_ms": 0.4153663913408915
+    },
+    "wavelet_sym4": {
+      "peak_to_peak": 60.0,
+      "std": 9.429662630571089,
+      "improvement_percent": 30.23255813953488,
+      "processing_time_ms": 0.48624475797017414
+    }
+  },
+  "best_accuracy": "savgol_w51",
+  "best_fast": "savgol_w51"
+}

@@ -13,7 +13,7 @@ This release marks the completion of all critical bug fixes and represents a **p
 ### 1. **Calibration Saturation Bug** (CRITICAL FIX)
 **Problem**: Calibration failed during Step 4 validation due to saturation. The binary search tested the strongest channel at LED=25 but then measured all channels at their individually predicted higher LED values (60-128), causing saturation.
 
-**Solution**: 
+**Solution**:
 - Modified `utils/spr_calibrator.py` (lines 2366-2420)
 - Binary search now tests ALL channels at their predicted LED values during each iteration
 - Finds maximum signal across all channels

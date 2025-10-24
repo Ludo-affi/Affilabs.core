@@ -263,7 +263,7 @@ python main/main.py
   - Integration Time: 1-65000 ms
   - Dynamic Range: 65000 counts
   - Dark Noise: ~3500 counts (profile baseline)
-  
+
 - **Controller**: PicoP4SPR
   - Channels: 4 (a, b, c, d)
   - LED Control: 0-255 intensity

@@ -1,0 +1,51 @@
+{
+  "timestamp": "20251023_010403",
+  "datetime": "2025-10-23T01:04:04.213553",
+  "sensor_state": "used_current",
+  "sensor_state_description": "Current sensor in use",
+  "sensor_id": "SENSOR_20251023_005946",
+  "notes": "",
+  "device_name": "demo P4SPR 2.0",
+  "channel": "A",
+  "collection_params": {
+    "spectra_per_mode": 480,
+    "target_rate_hz": 4.0,
+    "actual_rate_hz": 4.007433246692379
+  },
+  "processing_params": {
+    "pipeline": "dark \u2192 denoise S&P \u2192 transmission",
+    "denoising": "Savgol (window=51, polyorder=3)",
+    "peak_finding": "Centroid (max)",
+    "search_range_nm": [
+      600.0,
+      800.0
+    ],
+    "centroid_window_nm": 100.0,
+    "right_decay_gamma": 0.02,
+    "apply_bias_correction": true,
+    "biascorr_baseline_nm": 8.0,
+    "bias_offset_applied_nm": 6.293249874125195
+  },
+  "hardware_timing": {
+    "device_config_led_delay_ms": 30.0,
+    "per_channel_led_delays_ms": {
+      "a": 0,
+      "b": 0,
+      "c": 0,
+      "d": 0
+    },
+    "min_integration_time_ms": 50,
+    "led_rise_fall_time_ms": 5,
+    "afterglow_correction_enabled": true
+  },
+  "quality_metrics": {
+    "p2p_nm": 0.27730172034375755,
+    "std_nm": 0.06505312738970476,
+    "mean_position_nm": 605.0732103183133,
+    "hf_noise_nm": 0.09105270730706956,
+    "peak_depth": -1.938525593457737,
+    "snr": 9301.216322677079,
+    "bias_offset_applied_nm": 6.293249874125195,
+    "p2p_ru_estimate": 98.44211072203393
+  }
+}

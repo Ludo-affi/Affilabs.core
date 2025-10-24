@@ -1,0 +1,33 @@
+{
+  "timestamp": "20251022_205148",
+  "datetime": "2025-10-22T20:51:49.778575",
+  "sensor_state": "used_current",
+  "sensor_state_description": "Current sensor in use",
+  "sensor_id": "SENSOR_20251022_204731",
+  "notes": "",
+  "device_name": "demo P4SPR 2.0",
+  "channel": "A",
+  "collection_params": {
+    "spectra_per_mode": 480,
+    "target_rate_hz": 4.0,
+    "actual_rate_hz": 4.007233077628337
+  },
+  "processing_params": {
+    "pipeline": "dark \u2192 denoise S&P \u2192 transmission",
+    "denoising": "Savgol (window=51, polyorder=3)",
+    "peak_finding": "Centroid",
+    "search_range": [
+      400,
+      1400
+    ]
+  },
+  "quality_metrics": {
+    "p2p_px": 0.29432485173094847,
+    "std_px": 0.0501960900401498,
+    "mean_position_px": 405.9769807238487,
+    "hf_noise_px": 0.06928691886457183,
+    "peak_depth": 0.7173295758089715,
+    "snr": 8087.8207923988575,
+    "p2p_ru_estimate": 9.50816433516829
+  }
+}

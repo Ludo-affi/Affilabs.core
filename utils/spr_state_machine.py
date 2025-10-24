@@ -6,10 +6,10 @@ import time
 from enum import Enum
 from typing import Any, Optional, Union
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, QThread
 
 from utils.logger import logger
-from settings.settings import NUM_SCANS_PER_ACQUISITION
+from settings.settings import NUM_SCANS_PER_ACQUISITION, LED_DELAY
 
 # Import real components first (preferred)
 try:
@@ -130,7 +130,7 @@ class DataAcquisitionWrapper:
         # Configuration defaults
         self.wave_data = np.array([])
         self.num_scans = NUM_SCANS_PER_ACQUISITION  # ✨ PHASE 2: 4 × 50ms scans = 200ms
-        self.led_delay = 0.0026  # Optimized from LED afterglow measurements (2.6ms worst-case across all channels)
+        self.led_delay = LED_DELAY  # Will be updated from afterglow correction if available
         self.med_filt_win = 5
         self.dark_noise = np.zeros(3648)  # Match USB4000 pixel count (3648)
         self.base_integration_time_factor = 1.0  # Fiber-specific speed multiplier
@@ -274,6 +274,20 @@ class DataAcquisitionWrapper:
             if hasattr(self, 'live_led_intensities') and self.live_led_intensities:
                 self.data_acquisition.live_led_intensities = self.live_led_intensities
                 logger.info(f"✅ Passed adjusted LED intensities to data acquisition")
+
+            # ✨ Pass per-channel scan counts to data acquisition (200ms budget optimization)
+            if self.calib_state is not None and hasattr(self.calib_state, 'scans_per_channel'):
+                self.data_acquisition.scans_per_channel = self.calib_state.scans_per_channel.copy()
+                logger.info("✅ Passed per-channel scan counts to data acquisition:")
+                for ch, scans in self.calib_state.scans_per_channel.items():
+                    logger.info(f"   Channel {ch.upper()}: {scans} scans")
+
+            # ✨ Pass per-channel integration times to data acquisition (per_channel mode)
+            if self.calib_state is not None and hasattr(self.calib_state, 'integration_per_channel'):
+                self.data_acquisition.integration_per_channel = self.calib_state.integration_per_channel.copy()
+                logger.info("✅ Passed per-channel integration times to data acquisition:")
+                for ch, integration in self.calib_state.integration_per_channel.items():
+                    logger.info(f"   Channel {ch.upper()}: {integration*1000:.1f}ms")
 
             logger.info("SPRDataAcquisition created successfully")
 
@@ -421,49 +435,19 @@ class DataAcquisitionWrapper:
                     else:
                         actual_boost = boost_factor
 
-                    # ✨ NEW: Calculate per-channel LED adjustments to prevent saturation
-                    # Strategy: Boost integration time for ALL channels, but reduce LED intensity
-                    # for channels that would saturate at the new integration time
-                    saturation_threshold = 0.85  # 85% of detector max (conservative)
-                    self.live_led_intensities = {}  # Store adjusted LED intensities
+                    # ✨ Store boost parameters for later use (S-ref recapture and device config save)
+                    self.live_integration_seconds = live_integration_seconds
+                    self.live_boost_factor = actual_boost
+
+                    # ✨ CRITICAL: Smart boost ONLY adjusts integration time, NEVER LED values
+                    # LED intensities are set by calibration (Step 6 balancing)
+                    # Use calibrated LED values directly
+                    self.live_led_intensities = self.calib_state.leds_calibrated.copy()
 
                     logger.info("")
-                    logger.info("🔬 Per-channel LED adjustment for boosted integration time:")
-
-                    for ch, ref_spectrum in self.ref_sig.items():
-                        if ref_spectrum is not None and len(ref_spectrum) > 0:
-                            # Get calibrated LED intensity for this channel
-                            calibrated_led = self.calib_state.leds_calibrated.get(ch, 255)
-
-                            # Check maximum signal in S-mode reference (blue wavelengths)
-                            max_signal_calibration = float(np.max(ref_spectrum))
-                            current_percent = (max_signal_calibration / DETECTOR_MAX_COUNTS) * 100
-
-                            # Predict signal after integration time boost
-                            predicted_signal = max_signal_calibration * actual_boost
-                            predicted_percent = (predicted_signal / DETECTOR_MAX_COUNTS) * 100
-
-                            # If predicted signal would saturate, reduce LED intensity proportionally
-                            if predicted_signal > (saturation_threshold * DETECTOR_MAX_COUNTS):
-                                # Calculate LED reduction factor to stay at saturation threshold
-                                led_reduction_factor = (saturation_threshold * DETECTOR_MAX_COUNTS) / predicted_signal
-                                adjusted_led = int(calibrated_led * led_reduction_factor)
-                                adjusted_led = max(10, min(255, adjusted_led))  # Clamp to valid range
-
-                                final_predicted_signal = predicted_signal * led_reduction_factor
-                                final_predicted_percent = (final_predicted_signal / DETECTOR_MAX_COUNTS) * 100
-
-                                self.live_led_intensities[ch] = adjusted_led
-                                logger.info(f"   Channel {ch.upper()}: LED {calibrated_led} → {adjusted_led} "
-                                          f"({current_percent:.1f}% → {final_predicted_percent:.1f}% with boost)")
-                            else:
-                                # No adjustment needed
-                                self.live_led_intensities[ch] = calibrated_led
-                                logger.info(f"   Channel {ch.upper()}: LED {calibrated_led} (no adjustment, "
-                                          f"{current_percent:.1f}% → {predicted_percent:.1f}% with boost)")
-                        else:
-                            # No reference spectrum - use calibrated LED
-                            self.live_led_intensities[ch] = self.calib_state.leds_calibrated.get(ch, 255)
+                    logger.info("🔬 LED intensities for live mode (from calibration):")
+                    for ch, led_val in self.live_led_intensities.items():
+                        logger.info(f"   Channel {ch.upper()}: LED={led_val} (calibrated, no boost adjustment)")
 
                     # Calculate expected signal level (for weakest channel)
                     expected_intensity_percent = TARGET_INTENSITY_PERCENT * actual_boost
@@ -603,40 +587,58 @@ class SimpleHardwareManager:
         try:
             # Try to create controller using class method like original hardware manager
             try:
-                logger.debug("Attempting to connect to PicoP4SPR controller on COM4...")
-                # Use connection_params to specify COM4
-                connection_params = {"port": "COM4"}
+                logger.debug("Attempting to auto-detect PicoP4SPR controller...")
+                # Let HAL auto-detect the correct port
                 self.ctrl = self.HALFactory.create_controller(
                     "PicoP4SPR",
-                    auto_detect=False,
-                    connection_params=connection_params,
+                    auto_detect=True,
                 )
                 if self.ctrl and self.ctrl.is_connected():
-                    logger.info("Controller connected successfully on COM4")
+                    logger.info("Controller connected successfully")
                 else:
-                    logger.warning("Controller connection failed on COM4")
+                    logger.warning("Controller connection failed")
                     self.ctrl = None
             except Exception as e:
                 logger.error(f"Controller connection error: {e}")
                 self.ctrl = None
 
-            # Try to create spectrometer using class method
+            # Try to create spectrometer using class method with timeout
             try:
-                logger.debug("Attempting to connect to USB4000 spectrometer...")
-                self.usb = self.HALFactory.create_spectrometer(
-                    auto_detect=True,
-                )
-                if self.usb:
-                    # Check if connected by trying to get device info or just assume success
+                logger.warning("DEBUG: About to create spectrometer with 5s timeout...")
+
+                # Use threading to implement timeout for blocking SeaBreeze calls
+                import threading
+                spec_result = [None]  # Mutable container for result
+                spec_error = [None]
+
+                def create_spec_with_timeout():
                     try:
-                        # Test connection by checking if we can access device properties
-                        _ = getattr(self.usb, 'device_name', 'USB4000')
-                        logger.info("Spectrometer connected successfully")
-                    except Exception:
-                        logger.warning("Spectrometer connection may be incomplete")
-                else:
-                    logger.warning("Spectrometer connection failed")
+                        spec_result[0] = self.HALFactory.create_spectrometer(auto_detect=True)
+                    except Exception as e:
+                        spec_error[0] = e
+
+                spec_thread = threading.Thread(target=create_spec_with_timeout, daemon=True)
+                spec_thread.start()
+                spec_thread.join(timeout=5.0)  # 5 second timeout
+
+                if spec_thread.is_alive():
+                    logger.warning("Spectrometer creation timed out after 5s - SeaBreeze blocking detected")
                     self.usb = None
+                elif spec_error[0]:
+                    logger.error(f"Spectrometer connection error: {spec_error[0]}")
+                    self.usb = None
+                else:
+                    self.usb = spec_result[0]
+                    logger.warning("DEBUG: Spectrometer creation returned")
+                    if self.usb:
+                        try:
+                            _ = getattr(self.usb, 'device_name', 'USB4000')
+                            logger.info("Spectrometer connected successfully")
+                        except Exception:
+                            logger.warning("Spectrometer connection may be incomplete")
+                    else:
+                        logger.warning("Spectrometer connection failed")
+
             except Exception as e:
                 logger.error(f"Spectrometer connection error: {e}")
                 self.usb = None
@@ -663,6 +665,28 @@ class SimpleHardwareManager:
 
         except Exception as e:
             logger.error(f"Hardware disconnection error: {e}")
+
+
+class HardwareConnectionWorker(QObject):
+    """Worker to perform hardware connection in background thread."""
+
+    # Signals
+    connection_completed = Signal(bool)  # success
+
+    def __init__(self, hardware_manager):
+        super().__init__()
+        self.hardware_manager = hardware_manager
+
+    def run(self):
+        """Perform hardware connection in background thread."""
+        try:
+            logger.warning("DEBUG: Worker starting connect_all()...")
+            success = self.hardware_manager.connect_all()
+            logger.warning(f"DEBUG: Worker connect_all() returned: {success}")
+            self.connection_completed.emit(success)
+        except Exception as e:
+            logger.exception(f"Hardware connection error in worker: {e}")
+            self.connection_completed.emit(False)
 
 
 class SPRSystemState(Enum):
@@ -707,6 +731,11 @@ class SPRStateMachine(QObject):
         self.hardware_manager: Any = None
         self.calibrator: Any = None
         self.data_acquisition: Optional[DataAcquisitionWrapper] = None
+
+        # Background thread for hardware connection
+        self.connection_thread: Optional[QThread] = None
+        self.connection_worker: Optional[HardwareConnectionWorker] = None
+        self.connecting_in_progress = False
 
         # Error tracking
         self.error_count = 0
@@ -791,23 +820,53 @@ class SPRStateMachine(QObject):
             time.sleep(1)  # Brief pause between discovery attempts
 
     def _handle_connecting(self) -> None:
-        """Complete hardware connection."""
+        """Complete hardware connection using background thread."""
         if not self.hardware_manager:
             self._transition_to_error("Hardware manager not available during connection")
             return
 
-        logger.debug("Attempting hardware connection...")
-        if self.hardware_manager.connect_all():
+        # Skip if already connecting
+        if self.connecting_in_progress:
+            return
+
+        logger.warning("DEBUG: Starting hardware connection in background thread...")
+        self.connecting_in_progress = True
+
+        # Create worker and thread
+        self.connection_worker = HardwareConnectionWorker(self.hardware_manager)
+        self.connection_thread = QThread()
+
+        # Move worker to thread
+        self.connection_worker.moveToThread(self.connection_thread)
+
+        # Connect signals
+        self.connection_thread.started.connect(self.connection_worker.run)
+        self.connection_worker.connection_completed.connect(self._on_connection_completed)
+        self.connection_worker.connection_completed.connect(self.connection_thread.quit)
+        self.connection_thread.finished.connect(self.connection_thread.deleteLater)
+
+        # Start thread
+        self.connection_thread.start()
+        logger.warning("DEBUG: Background connection thread started")
+
+    def _on_connection_completed(self, success: bool) -> None:
+        """Handle completion of background hardware connection."""
+        self.connecting_in_progress = False
+
+        if success:
+            logger.warning("DEBUG: Background connection succeeded, syncing to app")
             # Sync hardware to app
             self.app.ctrl = self.hardware_manager.ctrl
             self.app.usb = self.hardware_manager.usb
             self.app.knx = self.hardware_manager.knx
 
+            logger.warning("DEBUG: Emitting hardware status")
             # Update hardware status
             ctrl_ok = self.app.ctrl is not None
             usb_ok = self.app.usb is not None
             self.hardware_status.emit(ctrl_ok, usb_ok)
 
+            logger.warning("DEBUG: Transitioning to CONNECTED state")
             self._transition_to_state(SPRSystemState.CONNECTED)
         else:
             self._transition_to_error("Failed to connect to hardware")
@@ -827,9 +886,6 @@ class SPRStateMachine(QObject):
                     logger.warning("🔌 REAL HARDWARE CONNECTED:")
                     logger.warning(f"   - Controller (PicoP4SPR): {'✅ Connected' if self.hardware_manager.ctrl else '❌ Failed'}")
                     logger.warning(f"   - Spectrometer (USB4000): {'✅ Connected' if self.hardware_manager.usb else '❌ Failed'}")
-
-                    # FORCE REAL CALIBRATOR - NO MOCK FALLBACK
-                    logger.warning("🚀 FORCING REAL CALIBRATION - NO MOCK FALLBACK")
 
                     # Get the actual device objects from HAL wrappers
                     ctrl_device = self._get_device_from_hal(self.hardware_manager.ctrl)
@@ -854,13 +910,18 @@ class SPRStateMachine(QObject):
 
                     # ✨ NEW (Phase 2): Get device config dict for optical calibration
                     try:
+                        logger.warning("DEBUG: About to import get_device_config")
                         from utils.device_configuration import get_device_config
+                        logger.warning("DEBUG: Import successful, getting config")
                         dev_cfg = get_device_config()
+                        logger.warning("DEBUG: Got dev_cfg, converting to dict")
                         device_config_dict = dev_cfg.to_dict()
+                        logger.warning("DEBUG: Config dict created successfully")
                     except Exception as e:
                         logger.warning(f"⚠️ Could not get device config dict ({e})")
                         device_config_dict = None
 
+                    logger.warning("DEBUG: About to create SPRCalibrator")
                     self.calibrator = SPRCalibrator(
                         ctrl=ctrl_device,
                         usb=usb_device,
@@ -1011,6 +1072,92 @@ class SPRStateMachine(QObject):
                 self._transition_to_error(f"Failed to create data acquisition: {e}")
                 return
 
+        # ✨ NEW: Re-capture S-ref spectra with BOOSTED settings (BEFORE switching to P-mode)
+        # This ensures QC validation compares against the actual live mode baseline
+        if self.data_acquisition and hasattr(self.data_acquisition, 'live_led_intensities') and self.data_acquisition.live_led_intensities:
+            logger.info("=" * 80)
+            logger.info("📸 RE-CAPTURING S-REF WITH BOOSTED SETTINGS (for QC validation)")
+            logger.info("=" * 80)
+            try:
+                # Get hardware devices
+                if isinstance(self.hardware_manager, SimpleHardwareManager):
+                    ctrl_device = self._get_device_from_hal(self.hardware_manager.ctrl)
+                    usb_device = self._get_device_from_hal(self.hardware_manager.usb)
+                else:
+                    ctrl_device = self.app.ctrl
+                    usb_device = self.app.usb
+
+                # Ensure we're in S-mode
+                if hasattr(ctrl_device, 'set_mode'):
+                    ctrl_device.set_mode("s")
+                    time.sleep(0.4)  # Wait for servo
+
+                # Apply boosted integration time to spectrometer
+                live_integration_seconds = getattr(self.data_acquisition, 'live_integration_seconds', self.calib_state.integration)
+                if hasattr(usb_device, 'set_integration'):
+                    usb_device.set_integration(live_integration_seconds)
+                elif hasattr(usb_device, 'set_integration_time'):
+                    usb_device.set_integration_time(live_integration_seconds)
+                time.sleep(0.1)
+
+                logger.info(f"   Integration time: {live_integration_seconds * 1000:.1f}ms (boosted)")
+
+                # Measure S-ref with boosted settings for each channel
+                boosted_s_ref = {}
+                ch_list = ['a', 'b', 'c', 'd']
+
+                for ch in ch_list:
+                    boosted_led = self.data_acquisition.live_led_intensities.get(ch, 255)
+
+                    # Set LED for this channel
+                    ctrl_device.set_led(ch, boosted_led)
+                    time.sleep(0.1)  # LED settling time
+
+                    # Measure spectrum
+                    spectrum = usb_device.get_spectrum()
+                    boosted_s_ref[ch] = spectrum
+
+                    avg_signal = np.mean(spectrum) if spectrum is not None else 0
+                    logger.info(f"   Channel {ch.upper()}: LED={boosted_led}, avg signal={avg_signal:.0f}")
+
+                    # Turn off LED
+                    ctrl_device.set_led(ch, 0)
+
+                logger.info("✅ S-ref re-captured with boosted settings")
+
+                # Save to device_config with boost parameters
+                logger.info("=" * 80)
+                logger.info("💾 SAVING BOOSTED CALIBRATION TO DEVICE CONFIG")
+                logger.info("=" * 80)
+
+                from utils.device_configuration import DeviceConfiguration
+                device_config = DeviceConfiguration()
+
+                # Get boost parameters
+                live_integration_ms = int(live_integration_seconds * 1000)
+                live_boost_factor = getattr(self.data_acquisition, 'live_boost_factor', 1.0)
+
+                device_config.save_led_calibration(
+                    integration_time_ms=int(self.calib_state.integration * 1000),  # Calibration baseline
+                    s_mode_intensities=self.calib_state.ref_intensity.copy(),
+                    p_mode_intensities=self.calib_state.ref_intensity.copy(),
+                    s_ref_spectra=boosted_s_ref,  # ✨ Use boosted S-ref
+                    s_ref_wavelengths=self.calib_state.wavelengths if self.calib_state.wavelengths is not None else None,
+                    live_boost_integration_ms=live_integration_ms,  # ✨ Boosted integration time
+                    live_boost_led_intensities=self.data_acquisition.live_led_intensities.copy(),  # ✨ Adjusted LEDs
+                    live_boost_factor=live_boost_factor  # ✨ Boost multiplier
+                )
+
+                logger.info("✅ Boosted calibration saved to device_config.json")
+                logger.info(f"   Calibration baseline: {int(self.calib_state.integration * 1000)}ms")
+                logger.info(f"   Live boost: {live_integration_ms}ms ({live_boost_factor:.2f}×)")
+                logger.info(f"   Live LED adjustments: {self.data_acquisition.live_led_intensities}")
+                logger.info("=" * 80)
+
+            except Exception as e:
+                logger.exception(f"❌ Failed to re-capture S-ref with boosted settings: {e}")
+                logger.warning("   Continuing with calibration baseline S-ref")
+
         # ✨ CRITICAL: Switch polarizer to P-mode BEFORE starting data acquisition
         # This must happen whether data acquisition already exists or not
         if isinstance(self.hardware_manager, SimpleHardwareManager):
@@ -1120,7 +1267,7 @@ class SPRStateMachine(QObject):
 
         # If we can't extract the device, return the HAL object itself
         # (SPRCalibrator might be able to work with it directly)
-        logger.warning(f"Could not extract device from HAL object {type(hal_object)}, returning HAL object")
+        logger.debug(f"Could not extract device from HAL object {type(hal_object)}, returning HAL object")
         return hal_object
 
     def _cleanup(self) -> None:
@@ -1224,6 +1371,70 @@ class SPRStateMachine(QObject):
 
     def get_calibration_info(self) -> dict:
         """Get calibration summary for UI display.
+
+        Returns:
+            Dictionary with calibration information
+        """
+        if self.calib_state is None:
+            return {"calibrated": False}
+
+        return {
+            "calibrated": self.calib_state.is_calibrated,
+            "integration_time": self.calib_state.integration,
+            "num_scans": self.calib_state.num_scans,
+            "led_values": self.calib_state.leds_calibrated,
+        }
+
+    def set_polarizer_mode(self, mode: str) -> None:
+        """Set polarizer to S or P mode.
+
+        Args:
+            mode: 's' for S-mode (reference), 'p' for P-mode (sample)
+        """
+        if self.ctrl_hal is None:
+            logger.warning("Cannot set polarizer - no hardware controller")
+            return
+
+        try:
+            if 's' in mode.lower():
+                self.ctrl_hal.set_mode('s')
+                logger.info("✅ Polarizer set to S-mode (reference)")
+            else:
+                self.ctrl_hal.set_mode('p')
+                logger.info("✅ Polarizer set to P-mode (sample)")
+        except Exception as e:
+            logger.error(f"❌ Failed to set polarizer mode: {e}")
+
+    def set_single_led_mode(self, enabled: bool, channel: str = 'x') -> None:
+        """Enable/disable single LED mode.
+
+        Args:
+            enabled: True to enable single LED mode, False for auto (all channels)
+            channel: Which channel to light ('a', 'b', 'c', 'd', 'x' for none)
+        """
+        if not hasattr(self, 'data_acquisition') or self.data_acquisition is None:
+            logger.warning("Cannot set single LED mode - no data acquisition running")
+            return
+
+        try:
+            # Store the mode for the acquisition loop
+            self.single_led_mode = enabled
+            self.single_led_channel = channel
+
+            if not enabled:
+                logger.info("✅ Single LED mode: OFF (auto - all channels)")
+            elif channel == 'x':
+                logger.info("✅ Single LED mode: All LEDs OFF")
+            else:
+                logger.info(f"✅ Single LED mode: Channel {channel.upper()} only")
+
+            # If measuring, the acquisition loop will pick up the change
+            # If not measuring, this just stores the preference
+        except Exception as e:
+            logger.error(f"❌ Failed to set single LED mode: {e}")
+
+    def get_calibration_summary(self) -> dict:
+        """Get detailed calibration metadata.
 
         Returns:
             Dictionary with calibration metadata, or empty dict if not calibrated.

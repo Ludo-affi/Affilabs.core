@@ -7,7 +7,72 @@ avoiding any Python version conflicts.
 
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+
+def kill_stale_processes():
+    """Kill any stale Python processes from previous runs that might hold COM ports.
+
+    CRITICAL: This aggressively kills all app-related Python processes to ensure
+    COM ports (especially COM4) are released. Ghost processes from frozen/crashed
+    runs can block serial port access.
+    """
+    import psutil
+    import os
+
+    current_pid = os.getpid()
+    killed_count = 0
+    workspace_path = str(Path(__file__).parent).lower()
+
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'exe']):
+            try:
+                # Skip ourselves
+                if proc.info['pid'] == current_pid:
+                    continue
+
+                if proc.info['name'] and 'python' in proc.info['name'].lower():
+                    cmdline = proc.info.get('cmdline', [])
+                    exe_path = proc.info.get('exe', '')
+
+                    if cmdline or exe_path:
+                        cmdline_str = ' '.join(cmdline).lower() if cmdline else ''
+                        exe_str = exe_path.lower() if exe_path else ''
+
+                        # Skip VS Code extensions (mypy, isort, pylance, etc.)
+                        skip_patterns = ['lsp_server', 'mypy', 'isort', 'pylance', 'extensions',
+                                       'language_server', 'debugpy', 'jedi']
+                        if any(skip in cmdline_str for skip in skip_patterns):
+                            continue
+
+                        # Skip this launcher script (but not if it's an old instance)
+                        if 'run_app.py' in cmdline_str and proc.info['pid'] == current_pid:
+                            continue
+
+                        # AGGRESSIVE: Kill ANY Python process running from our workspace
+                        # This catches main.py, background threads, frozen processes, etc.
+                        if workspace_path in cmdline_str or workspace_path in exe_str:
+                            print(f"   Killing workspace process PID {proc.info['pid']}: {proc.info['name']}")
+                            proc.kill()
+                            killed_count += 1
+                        # Also catch control-3.2.9 in case workspace path doesn't match
+                        elif 'control-3.2.9' in cmdline_str and 'main.py' in cmdline_str:
+                            print(f"   Killing app process PID {proc.info['pid']}: {proc.info['name']}")
+                            proc.kill()
+                            killed_count += 1
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+
+        if killed_count > 0:
+            print(f"   Killed {killed_count} stale process(es)")
+            time.sleep(2)  # Wait longer for COM port to be fully released
+        else:
+            print("   No stale processes found")
+
+    except Exception as e:
+        print(f"   WARNING: Could not check for stale processes: {e}")
 
 
 def main():
@@ -22,19 +87,24 @@ def main():
     main_script = project_root / "main" / "main.py"
 
     if not venv_python.exists():
-        print("❌ Virtual environment Python not found!")
+        print("ERROR: Virtual environment Python not found!")
         print(f"Expected: {venv_python}")
         print("Run: py -3.12 -m venv .venv312")
         return 1
 
     if not main_script.exists():
-        print("❌ Main script not found!")
+        print("ERROR: Main script not found!")
         print(f"Expected: {main_script}")
         return 1
 
-    print("🚀 Starting Affinite SPR System...")
+    print("Starting Affinite SPR System...")
     print(f"   Python: {venv_python}")
     print(f"   Script: {main_script}")
+
+    # Kill any stale processes from previous crashes
+    print("\nChecking for stale processes...")
+    kill_stale_processes()
+
     print("=" * 50)
 
     # Set environment
