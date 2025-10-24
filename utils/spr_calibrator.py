@@ -644,6 +644,19 @@ class SPRCalibrator:
             self.state = CalibrationState()
             logger.info("⚠️ SPRCalibrator created NEW CalibrationState")
 
+        # ✨ Load preferred calibration mode from device config (if available)
+        if device_config and 'calibration' in device_config:
+            preferred_mode = device_config['calibration'].get('preferred_calibration_mode', 'global')
+            if preferred_mode in ['global', 'per_channel']:
+                self.state.calibration_mode = preferred_mode
+                logger.info(f"📋 Calibration mode loaded from config: {preferred_mode.upper()}")
+            else:
+                logger.warning(f"⚠️ Invalid calibration mode in config: {preferred_mode}, using default 'global'")
+                self.state.calibration_mode = 'global'
+        else:
+            logger.info("📋 No calibration mode in config, using default: GLOBAL")
+            self.state.calibration_mode = 'global'
+
         # ========================================================================
         # ✨ P1 OPTIMIZATION: Early OEM Position Loading (Fail-Fast)
         # ========================================================================
@@ -850,25 +863,25 @@ class SPRCalibrator:
 
     def set_calibration_mode(self, mode: str) -> bool:
         """Set calibration mode for spectroscopy operation.
-        
+
         Two modes are supported:
         1. 'global' (default): Traditional approach
            - Step 4 calibrates LED intensities per channel
            - Uses single global integration time for all channels
            - Best for balanced signal levels
-           
+
         2. 'per_channel': Modern fixed-LED approach
            - All LEDs set to 255 (maximum intensity)
            - Uses per-channel integration times optimized for each channel
            - Better for channels with widely varying responses
            - Similar to s-roi-stability-test mode
-        
+
         Args:
             mode: Either 'global' or 'per_channel'
-            
+
         Returns:
             True if mode set successfully, False if invalid mode
-            
+
         Example:
             >>> calibrator.set_calibration_mode('per_channel')
             >>> # Step 2 will now configure for per-channel operation
@@ -876,10 +889,10 @@ class SPRCalibrator:
         if mode not in ['global', 'per_channel']:
             logger.error(f"Invalid calibration mode: {mode}. Must be 'global' or 'per_channel'")
             return False
-        
+
         self.state.calibration_mode = mode
         logger.info(f"📊 Calibration mode set to: {mode.upper()}")
-        
+
         if mode == 'per_channel':
             logger.info("   • LEDs will be fixed at 255")
             logger.info("   • Per-channel integration times will be optimized")
@@ -888,7 +901,7 @@ class SPRCalibrator:
             logger.info("   • LEDs will be calibrated per channel")
             logger.info("   • Global integration time will be used")
             logger.info("   • Step 4 (LED calibration) will run normally")
-        
+
         return True
 
     # ========================================================================
@@ -1370,18 +1383,18 @@ class SPRCalibrator:
 
     def _apply_jitter_correction(self, spectra: list[np.ndarray], times: Optional[list[float]] = None) -> np.ndarray:
         """Apply adaptive polynomial jitter correction to multiple spectra.
-        
+
         This removes systematic drift and thermal effects that cause spectral jitter.
         Uses polynomial fitting to capture slow trends and rolling median for noise reduction.
-        
+
         Args:
             spectra: List of spectrum arrays to correct (same shape)
             times: Optional list of acquisition times (for time-dependent fitting)
                   If None, uses sequential indices
-        
+
         Returns:
             Array of corrected spectra (stacked as 2D array)
-            
+
         Example:
             >>> spectra = [spectrum1, spectrum2, spectrum3, ...]  # List of 1D arrays
             >>> corrected = self._apply_jitter_correction(spectra)
@@ -1390,23 +1403,23 @@ class SPRCalibrator:
         if not spectra or len(spectra) < 3:
             # Not enough data for meaningful correction
             return np.array(spectra) if spectra else np.array([])
-        
+
         # Stack spectra into 2D array (n_spectra × n_wavelengths)
         spectra_arr = np.array(spectra)
         n_spectra, n_wavelengths = spectra_arr.shape
-        
+
         # Use sequential indices if times not provided
         if times is None:
             times = np.arange(n_spectra, dtype=float)
         else:
             times = np.array(times, dtype=float)
-        
+
         # Correct each wavelength point independently
         corrected = np.zeros_like(spectra_arr)
-        
+
         for wl_idx in range(n_wavelengths):
             values = spectra_arr[:, wl_idx]
-            
+
             # Fit polynomial to capture slow drift (thermal/aging)
             poly_order = min(3, max(1, n_spectra // 20))  # Adaptive order: 1-3
             try:
@@ -1416,7 +1429,7 @@ class SPRCalibrator:
             except:
                 # Fallback to mean subtraction if polyfit fails
                 detrended = values - np.mean(values)
-            
+
             # Remove high-frequency noise with rolling median
             window = min(5, max(3, n_spectra // 10))
             if window >= 3 and n_spectra >= window:
@@ -1428,7 +1441,7 @@ class SPRCalibrator:
                 corrected[:, wl_idx] = smoothed
             else:
                 corrected[:, wl_idx] = detrended
-        
+
         return corrected
 
     def _acquire_averaged_spectrum(
@@ -2252,13 +2265,15 @@ class SPRCalibrator:
 
             channel_data = {}  # {channel: (mean_intensity, max_intensity, saturated)}
 
-            # Get detector max for saturation detection
-            if self.detector_profile:
-                detector_max = self.detector_profile.max_intensity_counts
-            else:
-                detector_max = DETECTOR_MAX_COUNTS
+            # Get detector max for saturation detection - MUST come from detector profile
+            if not self.detector_profile:
+                logger.error("❌ Detector profile not loaded - cannot determine saturation threshold")
+                logger.error("   Run Step 2 first to load detector profile")
+                return None, {}
 
+            detector_max = self.detector_profile.max_intensity_counts
             SATURATION_THRESHOLD = int(0.95 * detector_max)  # 95% of max
+            logger.debug(f"Saturation threshold: {SATURATION_THRESHOLD} counts (95% of {detector_max})")
 
             # ✨ Leverage prior diagnostics from device_config to reduce retries
             # If a channel previously saturated on first pass, start it at LED=64 and scale up for fair comparison
@@ -2624,25 +2639,25 @@ class SPRCalibrator:
                 logger.info(f"   Step 6 → SKIPPED (no LED balancing needed)")
                 logger.info(f"")
                 logger.info(f"   Setting all LEDs to maximum intensity (255)...")
-                
+
                 # Set all LEDs to 255
                 ch_list = self.state.led_ranking if self.state.led_ranking else [('a', (0,)), ('b', (0,)), ('c', (0,)), ('d', (0,))]
                 for ch_info in ch_list:
                     ch = ch_info[0]
                     self.ctrl.set_intensity(ch, MAX_LED_INTENSITY)
                     self.state.led_intensities[ch] = MAX_LED_INTENSITY
-                
+
                 logger.info(f"   ✅ All LEDs set to 255")
                 logger.info(f"")
                 logger.info(f"   Next: Step 5 will measure dark noise")
                 logger.info(f"   Then: Per-channel integration times will be optimized")
                 logger.info(f"=" * 80)
-                
+
                 # Turn off all channels after setting
                 self.ctrl.turn_off_channels()
-                
+
                 return True
-            
+
             # ========================================================================
             # GLOBAL MODE: STANDARD LED CALIBRATION
             # ========================================================================
@@ -2658,21 +2673,18 @@ class SPRCalibrator:
             )
 
             # Get integration time limits from detector profile
-            if self.detector_profile:
-                min_int = self.detector_profile.min_integration_time_ms / MS_TO_SECONDS
-                max_int = self.detector_profile.max_integration_time_ms / MS_TO_SECONDS
-                detector_max = self.detector_profile.max_intensity_counts
-                spr_min_nm = self.detector_profile.spr_wavelength_min_nm
-                spr_max_nm = self.detector_profile.spr_wavelength_max_nm
-                logger.info(f"📊 Using detector profile: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms}ms")
-                logger.info(f"   SPR Range: {spr_min_nm}-{spr_max_nm}nm")
-            else:
-                min_int = MIN_INTEGRATION / MS_TO_SECONDS
-                max_int = MAX_INTEGRATION / MS_TO_SECONDS
-                detector_max = DETECTOR_MAX_COUNTS
-                spr_min_nm = 580.0
-                spr_max_nm = 720.0
-                logger.warning("Using legacy integration limits from settings.py")
+            if not self.detector_profile:
+                logger.error("❌ Detector profile not loaded - cannot determine integration limits")
+                logger.error("   Run Step 2 first to load detector profile")
+                return False
+
+            min_int = self.detector_profile.min_integration_time_ms / MS_TO_SECONDS
+            max_int = self.detector_profile.max_integration_time_ms / MS_TO_SECONDS
+            detector_max = self.detector_profile.max_intensity_counts
+            spr_min_nm = self.detector_profile.spr_wavelength_min_nm
+            spr_max_nm = self.detector_profile.spr_wavelength_max_nm
+            logger.info(f"📊 Using detector profile: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms}ms")
+            logger.info(f"   SPR Range: {spr_min_nm}-{spr_max_nm}nm")
 
             # Get weakest channel from Step 3 ranking
             if not self.state.led_ranking or len(self.state.led_ranking) < 1:
@@ -2980,11 +2992,12 @@ class SPRCalibrator:
             target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
 
             # Get detector-specific max counts for target calculation
-            if self.detector_profile:
-                detector_max = self.detector_profile.max_intensity_counts
-            else:
-                detector_max = DETECTOR_MAX_COUNTS
+            if not self.detector_profile:
+                logger.error("❌ Detector profile not loaded - cannot determine target intensity")
+                logger.error("   Run Step 2 first to load detector profile")
+                return False
 
+            detector_max = self.detector_profile.max_intensity_counts
             # Target: 80% of detector-specific max
             S_COUNT_TARGET = int(TARGET_INTENSITY_PERCENT / 100 * detector_max)
 
@@ -3087,10 +3100,12 @@ class SPRCalibrator:
             logger.info(f"📊 Step 3.3: Validating weakest channel ({weakest_ch}) performance at {integration_ms:.1f}ms")
 
             # Get detector-specific max counts
-            if self.detector_profile:
-                detector_max = self.detector_profile.max_intensity_counts
-            else:
-                detector_max = DETECTOR_MAX_COUNTS
+            if not self.detector_profile:
+                logger.error("❌ Detector profile not loaded - cannot validate channel performance")
+                logger.error("   Run Step 2 first to load detector profile")
+                return False
+
+            detector_max = self.detector_profile.max_intensity_counts
 
             # Measure weakest channel one final time at LED=255
             logger.info(f"   Measuring weakest channel ({weakest_ch}) at LED=255...")
@@ -3215,14 +3230,14 @@ class SPRCalibrator:
             from settings import WEAKEST_TARGET_PERCENT, WEAKEST_MIN_PERCENT, WEAKEST_MAX_PERCENT
 
             # Get detector parameters
-            if self.detector_profile:
-                detector_max = self.detector_profile.max_intensity_counts
-                spr_min_nm = self.detector_profile.spr_wavelength_min_nm
-                spr_max_nm = self.detector_profile.spr_wavelength_max_nm
-            else:
-                detector_max = DETECTOR_MAX_COUNTS
-                spr_min_nm = 580.0
-                spr_max_nm = 720.0
+            if not self.detector_profile:
+                logger.error("❌ Detector profile not loaded - cannot determine intensity targets")
+                logger.error("   Run Step 2 first to load detector profile")
+                return False
+
+            detector_max = self.detector_profile.max_intensity_counts
+            spr_min_nm = self.detector_profile.spr_wavelength_min_nm
+            spr_max_nm = self.detector_profile.spr_wavelength_max_nm
 
             target_min = int(WEAKEST_MIN_PERCENT / 100 * detector_max)  # 50%
             target_max = int(WEAKEST_MAX_PERCENT / 100 * detector_max)  # 80%
@@ -4168,7 +4183,7 @@ class SPRCalibrator:
                         if integration_time_ms_by_ch and ch in integration_time_ms_by_ch:
                             int_time_ms = float(integration_time_ms_by_ch[ch])
                             self.usb.set_integration_time(int_time_ms / 1000.0)
-                        
+
                         intensities_dict = {ch: per_ch_led[ch]}
                         self._activate_channel_batch([ch], intensities_dict)
                         time.sleep(on_delay_s_by_ch.get(ch, float(LED_DELAY)))
@@ -4507,7 +4522,7 @@ class SPRCalibrator:
                     intensities_dict = {ch: MAX_LED_INTENSITY}  # LED=255 for per_channel mode
                 else:
                     intensities_dict = {ch: self.state.ref_intensity[ch]}  # Calibrated intensity
-                
+
                 self._activate_channel_batch([ch], intensities_dict)
                 time.sleep(LED_DELAY)
 

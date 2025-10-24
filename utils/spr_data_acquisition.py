@@ -1492,35 +1492,35 @@ class SPRDataAcquisition:
 
     def _apply_jitter_correction(self, spectra_stack: np.ndarray) -> np.ndarray:
         """Apply adaptive polynomial jitter correction to multiple spectra.
-        
+
         This removes systematic drift and thermal effects from P-pol live data.
         Uses polynomial fitting to capture slow trends and rolling median for noise reduction.
-        
+
         Args:
             spectra_stack: 2D array of spectra (n_spectra × n_wavelengths)
-        
+
         Returns:
             Array of corrected spectra (same shape as input)
-            
+
         Note:
             This is the same jitter correction applied to S-pol calibration data.
             Reduces spectral jitter by 60-65% based on empirical measurements.
         """
         n_spectra, n_wavelengths = spectra_stack.shape
-        
+
         if n_spectra < 3:
             # Not enough data for meaningful correction
             return spectra_stack
-        
+
         # Use sequential indices as time proxy
         times = np.arange(n_spectra, dtype=float)
-        
+
         # Correct each wavelength point independently
         corrected = np.zeros_like(spectra_stack)
-        
+
         for wl_idx in range(n_wavelengths):
             values = spectra_stack[:, wl_idx]
-            
+
             # Fit polynomial to capture slow drift (thermal/aging)
             poly_order = min(3, max(1, n_spectra // 20))  # Adaptive order: 1-3
             try:
@@ -1530,7 +1530,7 @@ class SPRDataAcquisition:
             except:
                 # Fallback to mean subtraction if polyfit fails
                 detrended = values - np.mean(values)
-            
+
             # Remove high-frequency noise with rolling median
             window = min(5, max(3, n_spectra // 10))
             if window >= 3 and n_spectra >= window:
@@ -1542,7 +1542,7 @@ class SPRDataAcquisition:
                 corrected[:, wl_idx] = smoothed
             else:
                 corrected[:, wl_idx] = detrended
-        
+
         return corrected
 
     def _acquire_averaged_spectrum(

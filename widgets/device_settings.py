@@ -129,6 +129,48 @@ class DeviceSettingsWidget(QWidget):
         led_group.setLayout(led_layout)
         main_layout.addWidget(led_group)
 
+        # === Calibration Mode Section ===
+        calib_mode_group = QGroupBox("Calibration Mode")
+        calib_mode_layout = QVBoxLayout()
+
+        # Info label
+        calib_mode_info = QLabel(
+            "Select calibration approach for optimal spectral performance:\n\n"
+            "• Global Mode (Default): Calibrates LED intensities per channel, "
+            "uses single integration time. Best for balanced signal levels.\n\n"
+            "• Per-Channel Mode (Advanced): All LEDs fixed at 255, "
+            "uses per-channel integration times. Optimal for widely varying responses."
+        )
+        calib_mode_info.setWordWrap(True)
+        calib_mode_info.setStyleSheet("color: gray; font-size: 9pt;")
+        calib_mode_layout.addWidget(calib_mode_info)
+
+        # Warning label
+        calib_mode_warning = QLabel(
+            "⚠️ Important: Changing calibration mode requires running a full "
+            "calibration before measurements."
+        )
+        calib_mode_warning.setWordWrap(True)
+        calib_mode_warning.setStyleSheet(
+            "color: #FF6B00; font-size: 9pt; font-weight: bold; "
+            "background-color: #FFF3E0; padding: 8px; border-radius: 3px;"
+        )
+        calib_mode_layout.addWidget(calib_mode_warning)
+
+        # Radio buttons for calibration mode
+        self.calib_mode_global = QRadioButton("Global Mode - Balanced LED intensities (Recommended)")
+        self.calib_mode_per_channel = QRadioButton("Per-Channel Mode - Individual integration times (Advanced)")
+
+        self.calib_mode_button_group = QButtonGroup(self)
+        self.calib_mode_button_group.addButton(self.calib_mode_global, 0)
+        self.calib_mode_button_group.addButton(self.calib_mode_per_channel, 1)
+
+        calib_mode_layout.addWidget(self.calib_mode_global)
+        calib_mode_layout.addWidget(self.calib_mode_per_channel)
+
+        calib_mode_group.setLayout(calib_mode_layout)
+        main_layout.addWidget(calib_mode_group)
+
         # === Hardware Detection Section ===
         hardware_group = QGroupBox("Hardware Detection")
         hardware_layout = QVBoxLayout()
@@ -240,6 +282,7 @@ class DeviceSettingsWidget(QWidget):
         # Connect signals
         self.fiber_button_group.buttonClicked.connect(self._on_settings_changed)
         self.led_button_group.buttonClicked.connect(self._on_settings_changed)
+        self.calib_mode_button_group.buttonClicked.connect(self._on_settings_changed)
 
     def _load_current_settings(self: Self) -> None:
         """Load current configuration and update UI."""
@@ -257,6 +300,13 @@ class DeviceSettingsWidget(QWidget):
         else:
             self.led_osram.setChecked(True)
 
+        # Calibration mode
+        calib_mode = self.config.get_calibration_mode()
+        if calib_mode == 'global':
+            self.calib_mode_global.setChecked(True)
+        else:
+            self.calib_mode_per_channel.setChecked(True)
+
         # Update display
         self._update_config_display()
 
@@ -269,6 +319,8 @@ class DeviceSettingsWidget(QWidget):
         # Get current selections
         fiber_diameter = self.fiber_button_group.checkedId()
         led_model = 'luminus_cool_white' if self.led_button_group.checkedId() == 0 else 'osram_warm_white'
+        calib_mode = 'global' if self.calib_mode_button_group.checkedId() == 0 else 'per_channel'
+        calib_mode_display = 'Global (Balanced LEDs)' if calib_mode == 'global' else 'Per-Channel (Individual Times)'
 
         # Get frequency limits
         limits_4led = self.config.get_frequency_limits(4)
@@ -280,6 +332,7 @@ class DeviceSettingsWidget(QWidget):
         <br>
         <b>Optical Fiber:</b> {fiber_diameter} µm<br>
         <b>LED PCB Model:</b> {led_model.replace('_', ' ').title()}<br>
+        <b>Calibration Mode:</b> {calib_mode_display}<br>
         <b>Spectrometer S/N:</b> {self.config.get_spectrometer_serial() or 'Not set'}<br>
         <br>
         <b>Frequency Limits:</b><br>
@@ -355,10 +408,33 @@ class DeviceSettingsWidget(QWidget):
             # Get selections
             fiber_diameter = self.fiber_button_group.checkedId()
             led_model = 'luminus_cool_white' if self.led_button_group.checkedId() == 0 else 'osram_warm_white'
+            calib_mode = 'global' if self.calib_mode_button_group.checkedId() == 0 else 'per_channel'
+
+            # Check if calibration mode is changing
+            current_mode = self.config.get_calibration_mode()
+            if calib_mode != current_mode:
+                # Warn user that calibration is required
+                from PySide6.QtWidgets import QMessageBox as MB
+                reply = MB.warning(
+                    self,
+                    "Calibration Mode Change",
+                    f"You are changing calibration mode from '{current_mode}' to '{calib_mode}'.\n\n"
+                    "⚠️ Important: You MUST run a full calibration before taking measurements.\n\n"
+                    "The two modes use different LED intensity and integration time strategies, "
+                    "so existing calibration data will not be valid.\n\n"
+                    "Do you want to proceed with this change?",
+                    MB.StandardButton.Yes | MB.StandardButton.No,
+                    MB.StandardButton.No
+                )
+
+                if reply != MB.StandardButton.Yes:
+                    logger.info("Calibration mode change cancelled by user")
+                    return
 
             # Update configuration
             self.config.set_optical_fiber_diameter(fiber_diameter)
             self.config.set_led_pcb_model(led_model)
+            self.config.set_calibration_mode(calib_mode)
 
             # Validate
             is_valid, errors = self.config.validate()
@@ -374,15 +450,17 @@ class DeviceSettingsWidget(QWidget):
             self.configuration_changed.emit()
 
             # Show success
+            calib_mode_display = 'Global (Balanced LEDs)' if calib_mode == 'global' else 'Per-Channel (Individual Times)'
             QMessageBox.information(
                 self,
                 "Success",
                 "Configuration saved successfully!\n\n"
                 f"Optical Fiber: {fiber_diameter} µm\n"
-                f"LED PCB: {led_model}"
+                f"LED PCB: {led_model}\n"
+                f"Calibration Mode: {calib_mode_display}"
             )
 
-            logger.info(f"Device configuration saved: fiber={fiber_diameter}µm, led={led_model}")
+            logger.info(f"Device configuration saved: fiber={fiber_diameter}µm, led={led_model}, mode={calib_mode}")
 
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")

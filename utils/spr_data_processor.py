@@ -201,33 +201,33 @@ class SPRDataProcessor:
 
     def _apply_dynamic_sg_filter(self, spectrum: np.ndarray, target_smoothness: Optional[float] = None) -> tuple[np.ndarray, int, int]:
         """Apply Savitzky-Golay filter with dynamically optimized parameters.
-        
+
         Finds optimal window size and polynomial order to achieve target smoothness level.
         This ensures uniform smoothing across channels with different noise characteristics.
-        
+
         Args:
             spectrum: Input spectrum to smooth
             target_smoothness: Target smoothness level (std of second derivative)
                              If None, uses median smoothness from quick parameter scan
-        
+
         Returns:
             tuple: (smoothed_spectrum, optimal_window, optimal_polyorder)
-            
+
         Note:
             This implements the same dynamic SG filtering used in centroid analysis,
             ensuring consistent spectral quality across all processing steps.
         """
         from scipy.signal import savgol_filter
-        
+
         spectrum_length = len(spectrum)
-        
+
         # Quick parameter scan to find optimal settings
         if target_smoothness is None:
             # Scan a few window/polyorder combinations to estimate median smoothness
             test_windows = [7, 11, 15]
             test_polyorders = [2, 3]
             smoothness_values = []
-            
+
             for window in test_windows:
                 if window >= spectrum_length:
                     continue
@@ -241,37 +241,37 @@ class SPRDataProcessor:
                         smoothness_values.append(smoothness)
                     except:
                         continue
-            
+
             if smoothness_values:
                 target_smoothness = np.median(smoothness_values)
             else:
                 # Fallback to default if scan fails
                 target_smoothness = 0.001
-        
+
         # Now find optimal parameters that achieve target smoothness
         window_lengths = range(5, min(51, spectrum_length // 2), 2)  # Must be odd
         polyorders = [2, 3, 4]
-        
+
         best_params = (11, 3)  # Default fallback
         best_diff = float('inf')
-        
+
         for window in window_lengths:
             for polyorder in polyorders:
                 if polyorder >= window:
                     continue
-                
+
                 try:
                     smoothed = savgol_filter(spectrum, window, polyorder, mode='nearest')
                     second_deriv = np.diff(smoothed, n=2)
                     smoothness = np.std(second_deriv)
-                    
+
                     diff = abs(smoothness - target_smoothness)
                     if diff < best_diff:
                         best_diff = diff
                         best_params = (window, polyorder)
                 except:
                     continue
-        
+
         # Apply optimal filter
         optimal_window, optimal_polyorder = best_params
         try:

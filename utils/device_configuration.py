@@ -86,6 +86,7 @@ class DeviceConfiguration:
             'p_mode_calibration_date': None,
             'factory_calibrated': False,
             'user_calibrated': False,
+            'preferred_calibration_mode': 'global',  # 'global' or 'per_channel'
         },
         'maintenance': {
             'last_maintenance_date': None,
@@ -407,6 +408,33 @@ class DeviceConfiguration:
             'max_hz': freq[f'{num_leds}_led_max_hz'],
             'recommended_hz': freq[f'{num_leds}_led_recommended_hz'],
         }
+
+    def get_calibration_mode(self) -> str:
+        """
+        Get preferred calibration mode.
+
+        Returns:
+            'global' (traditional LED calibration with global integration time)
+            or 'per_channel' (fixed LED=255, per-channel integration times)
+        """
+        return self.config['calibration'].get('preferred_calibration_mode', 'global')
+
+    def set_calibration_mode(self, mode: str):
+        """
+        Set preferred calibration mode.
+
+        Args:
+            mode: 'global' or 'per_channel'
+
+        Raises:
+            ValueError: If mode is not valid
+        """
+        if mode not in ['global', 'per_channel']:
+            raise ValueError(f"Invalid calibration mode: {mode}. Must be 'global' or 'per_channel'")
+
+        self.config['calibration']['preferred_calibration_mode'] = mode
+        self.save()
+        logger.info(f"Calibration mode set to: {mode}")
 
     def is_factory_calibrated(self) -> bool:
         """Check if device has factory calibration."""

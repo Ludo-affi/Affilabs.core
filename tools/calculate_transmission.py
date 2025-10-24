@@ -9,7 +9,7 @@ from settings.settings import ROOT_DIR
 
 # Load the two most recent NPZ files
 calib_dir = Path(ROOT_DIR) / "calibration_data"
-npz_files = sorted(calib_dir.glob("s_roi_stability_*_spectra.npz"), 
+npz_files = sorted(calib_dir.glob("s_roi_stability_*_spectra.npz"),
                    key=lambda p: p.stat().st_mtime, reverse=True)
 
 if len(npz_files) < 2:
@@ -70,43 +70,43 @@ for ch in channels:
     s_time_key = f'times_{ch}'
     p_spec_key = f'spectra_{ch}'
     p_time_key = f'times_{ch}'
-    
+
     if s_spec_key not in s_data or p_spec_key not in p_data:
         print(f"Channel {ch.upper()}: Missing data, skipping")
         continue
-    
+
     s_spectra = s_data[s_spec_key]
     s_times = s_data[s_time_key]
     p_spectra = p_data[p_spec_key]
     p_times = p_data[p_time_key]
-    
+
     # Match S and P measurements (use minimum count)
     n_pairs = min(len(s_spectra), len(p_spectra))
-    
+
     transmission_spectra = []
     transmission_times = []
-    
+
     for i in range(n_pairs):
         s_spec = s_spectra[i]
         p_spec = p_spectra[i]
-        
+
         # Subtract dark noise
         s_corrected = s_spec - s_dark
         p_corrected = p_spec - p_dark
-        
+
         # Calculate transmission: T = S / P
         # Add small epsilon to avoid division by zero
         epsilon = 1.0
         transmission = s_corrected / (p_corrected + epsilon)
-        
+
         transmission_spectra.append(transmission)
         transmission_times.append((s_times[i] + p_times[i]) / 2)  # Average time
-    
+
     transmission_by_channel[ch] = {
         'times': np.array(transmission_times),
         'spectra': np.array(transmission_spectra)
     }
-    
+
     print(f"Channel {ch.upper()}: {len(transmission_spectra)} transmission spectra")
 
 print()
@@ -142,16 +142,16 @@ fig.suptitle('Transmission Spectra (T = S/P with dark subtraction)', fontsize=14
 
 for idx, ch in enumerate(channels):
     ax = axes[idx // 2, idx % 2]
-    
+
     if ch not in transmission_by_channel:
-        ax.text(0.5, 0.5, f'Channel {ch.upper()}\nNo data', 
+        ax.text(0.5, 0.5, f'Channel {ch.upper()}\nNo data',
                 ha='center', va='center', transform=ax.transAxes)
         continue
-    
+
     trans_data = transmission_by_channel[ch]
     spectra = trans_data['spectra']
     times = trans_data['times']
-    
+
     # Plot first, middle, and last spectra
     if len(spectra) > 0:
         ax.plot(wavelengths, spectra[0], 'b-', alpha=0.7, linewidth=1.5, label=f't={times[0]:.1f}s')
@@ -159,14 +159,14 @@ for idx, ch in enumerate(channels):
             mid = len(spectra) // 2
             ax.plot(wavelengths, spectra[mid], 'g-', alpha=0.7, linewidth=1.5, label=f't={times[mid]:.1f}s')
         ax.plot(wavelengths, spectra[-1], 'r-', alpha=0.7, linewidth=1.5, label=f't={times[-1]:.1f}s')
-    
+
     ax.set_xlabel('Wavelength (nm)', fontsize=10)
     ax.set_ylabel('Transmission (S/P)', fontsize=10)
     ax.set_title(f'Channel {ch.upper()} - {len(spectra)} spectra', fontsize=11, fontweight='bold')
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
     ax.set_xlim(wavelengths[0], wavelengths[-1])
-    
+
     # Print transmission range
     t_min = spectra.min()
     t_max = spectra.max()
