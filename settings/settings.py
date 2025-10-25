@@ -98,10 +98,32 @@ MAX_WAVELENGTH = 720  # DEPRECATED: Use profile.spr_wavelength_max_nm
 POL_WAVELENGTH = 620  # index for auto polarization
 
 # ==========================================
+# WAVELENGTH CACHE POLICY
+# ==========================================
+# Controls for caching wavelength calibration arrays on disk
+# - WAVELENGTH_CACHE_ENABLED: master on/off for using cached wavelengths
+# - WAVELENGTH_CACHE_MAX_AGE_DAYS: maximum age for cache to be considered valid
+# You can also invalidate via env var EZ_WL_CACHE_INVALIDATE=1 or by creating
+# the flag file generated-files/calibration_data/invalidate_wavelength_cache.flag
+WAVELENGTH_CACHE_ENABLED: bool = True
+WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by default
+
+# ==========================================
 # TIMING PARAMETERS
 # ==========================================
 # LED Stabilization - time between LED turn-on and spectrum acquisition
-LED_DELAY = 0.050  # 50ms LED settling time (matching old software timing)
+# LED timing defaults (seconds or milliseconds as noted)
+# Deprecated single delay (kept for backward compatibility in older paths)
+LED_DELAY = 0.050  # 50ms LED settling time (deprecated; use PRE/POST below)
+
+# New default LED delays (ms)
+PRE_LED_DELAY_MS: float = 95.0   # Delay after LED ON before measurement
+POST_LED_DELAY_MS: float = 5.0   # Delay after LED OFF before switching channel
+
+# Optional: one-cycle LED verification at maximum brightness in live mode
+# When True, each channel will run the first live acquisition at LED=255 and log a clear message.
+# This helps visually confirm LED activation and avoids flat spectra during bring-up.
+LED_FORCE_255_TEST_CYCLE: bool = False
 
 # ==========================================
 # TIMING ARCHITECTURE - MATCHING OLD SOFTWARE
@@ -192,6 +214,16 @@ MED_FILT_WIN = 5  # ✨ OLD SOFTWARE: backward-looking mean window (np.nanmean, 
 DENOISE_TRANSMITTANCE = FILTERING_ON  # Controlled by master switch
 DENOISE_WINDOW = 11  # Window size for Savitzky-Golay filter (must be odd, ~3nm smoothing)
 DENOISE_POLYORDER = 3  # Polynomial order for Savitzky-Golay filter (cubic)
+
+# Dynamic Savitzky–Golay smoothing for uniform channel noise
+# When enabled, the processor will automatically choose SG parameters so
+# that the resulting spectrum has approximately the same smoothness
+# (measured as the std of the 2nd derivative) across channels.
+# Set target to None to auto-target the median smoothness from a quick scan.
+DYNAMIC_SG_ENABLED = True  # Use dynamic SG instead of a fixed window/polyorder
+# Recommended initial target range: 5e-4 .. 5e-3 (depends on scaling)
+# Leave as None to auto-calibrate per spectrum (uses median of a small grid scan)
+DYNAMIC_SG_TARGET_SMOOTHNESS = None  # e.g., 0.001 for slightly stronger smoothing
 
 # Kalman filtering for optimal time-series noise reduction (only active if FILTERING_ON=True)
 # Provides 2-3× better SNR than Savitzky-Golay alone for real-time peak tracking
@@ -298,7 +330,8 @@ CONSENSUS_PARABOLIC_WEIGHT = 0.40   # Parabolic weight (1 - centroid_weight)
 # At 100ms integration: 2 scans fit in budget → better SNR (√2 improvement)
 # At 130ms integration: only 1 scan fits → worse SNR despite more photons
 INTEGRATION_TIME_MS = 100.0     # ✨ 100ms allows 2 scans within 200ms budget
-NUM_SCANS_PER_ACQUISITION = 2  # ✨ Dynamically calculated: min(200ms/integration, 25) = 2 scans
+# Default placeholder; live/global now uses calculate_dynamic_scans based on 200ms budget
+NUM_SCANS_PER_ACQUISITION = 2
 # Total acquisition time = 100ms × 2 = 200ms per channel (matches old software exactly)
 TEMPORAL_SMOOTHING_METHOD = "kalman"   # "kalman" or "moving_average"
 TEMPORAL_WINDOW_SIZE = 5               # Moving average window (if not using Kalman)
@@ -318,14 +351,26 @@ GUI_UPDATE_EVERY_N_CYCLES = 1  # 1=every cycle (default), 2=every other, 3=every
 
 # ============================================================================
 
-# Live mode integration time BOOST (maximize signal while staying under 200ms)
-# Strategy: Calibration uses conservative 50% target to avoid saturation during optimization
-# Live mode can boost signal closer to 80% since we're only measuring, not iterating
-# ✨ Increased to 76% to target ~50,000 counts (was 60%)
-LIVE_MODE_MAX_INTEGRATION_MS = 200.0  # Maximum integration time for live mode (ms)
-LIVE_MODE_TARGET_INTENSITY_PERCENT = 76  # % - target 76% of detector max (~50,000 counts for 65535 max)
+# ============================================================================
+# LIVE MODE SMART BOOST (20-40% increase to offset P-pol dampening)
+# ============================================================================
+# Strategy:
+# 1. Step 6 LED intensities are FIXED and never change (baseline from S-pol calibration)
+# 2. Integration time can be boosted 20-40% to offset P-pol signal dampening
+# 3. Smart constraints enforce safety:
+#    - Stay below saturation: ~90% detector max (59,000 counts for 65535 max)
+#    - Stay within time budget: integration × scans ≤ 200ms per spectrum
+# 4. Boost is intelligent: reduces if signal would saturate, respects 200ms budget
+LIVE_MODE_MAX_INTEGRATION_MS = 200.0  # Maximum integration time per spectrum (ms) - hard budget limit
+LIVE_MODE_TARGET_INTENSITY_PERCENT = 90  # % - target 90% detector max (allows headroom for P-pol fluctuations)
+LIVE_MODE_SATURATION_THRESHOLD_PERCENT = 92  # % - if signal exceeds this, reduce boost to prevent saturation
 LIVE_MODE_MIN_BOOST_FACTOR = 1.0  # Never reduce integration time below calibrated value
-LIVE_MODE_MAX_BOOST_FACTOR = 2.5  # Maximum boost allowed (up to 2.5× calibrated time)
+LIVE_MODE_MAX_BOOST_FACTOR = 1.4  # Maximum boost: 1.4× = 40% increase (conservative, safe)
+
+# Display delay for multi-point processing stabilization
+# First N seconds of data are collected but not displayed to allow temporal filters,
+# Kalman filters, and multi-point peak tracking algorithms to reach steady state
+LIVE_MODE_DISPLAY_DELAY_SECONDS = 10.0  # Hide sensorgram for first 10 seconds after live start
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
@@ -337,6 +382,14 @@ FLUSH_RATE = 220  # rate in uL/min for flushing channels
 DEMO = False  # enable/disable demo mode
 STATIC_PLOT = False  # enable/disable static portion of plots
 POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
+
+# ==========================================
+# CALIBRATION QC GATING
+# ==========================================
+# When True, QC validation can short-circuit full calibration if it passes.
+# When False, QC is bypassed and the system will run the full calibration flow.
+# You can toggle this at runtime and restart calibration.
+FORCE_FULL_CALIBRATION: bool = True  # Suspend QC and run full calibration
 
 # =============================================================================
 # LOGGING CONFIGURATION
@@ -354,9 +407,9 @@ POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
 # Console logging uses CONSOLE_LOG_LEVEL (reduced for performance)
 
 import logging
-CONSOLE_LOG_LEVEL = logging.WARNING  # WARNING = production (fast, clean console)
-                                      # INFO = development (more details)
-                                      # DEBUG = troubleshooting (verbose)
+CONSOLE_LOG_LEVEL = logging.INFO  # WARNING = production (fast, clean console)
+                                   # INFO = development (more details)
+                                   # DEBUG = troubleshooting (verbose)
 
 # =============================================================================
 

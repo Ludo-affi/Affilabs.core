@@ -9,7 +9,7 @@ from typing import Any, Optional, Union
 from PySide6.QtCore import QObject, QTimer, Signal, QThread
 
 from utils.logger import logger
-from settings.settings import NUM_SCANS_PER_ACQUISITION, LED_DELAY
+from settings.settings import NUM_SCANS_PER_ACQUISITION, LED_DELAY, PRE_LED_DELAY_MS, POST_LED_DELAY_MS
 
 # Import real components first (preferred)
 try:
@@ -130,7 +130,14 @@ class DataAcquisitionWrapper:
         # Configuration defaults
         self.wave_data = np.array([])
         self.num_scans = NUM_SCANS_PER_ACQUISITION  # ✨ PHASE 2: 4 × 50ms scans = 200ms
-        self.led_delay = LED_DELAY  # Will be updated from afterglow correction if available
+        self.led_delay = LED_DELAY  # Back-compat single delay
+        # Separate pre/post LED delays (seconds)
+        try:
+            self.led_on_delay = float(PRE_LED_DELAY_MS) / 1000.0
+            self.led_off_delay = float(POST_LED_DELAY_MS) / 1000.0
+        except Exception:
+            self.led_on_delay = float(self.led_delay)
+            self.led_off_delay = float(self.led_delay)
         self.med_filt_win = 5
         self.dark_noise = np.zeros(3648)  # Match USB4000 pixel count (3648)
         self.base_integration_time_factor = 1.0  # Fiber-specific speed multiplier
@@ -156,6 +163,37 @@ class DataAcquisitionWrapper:
                 def __init__(self, hal_controller):
                     self.hal = hal_controller
 
+                def set_intensity(self, ch: str, raw_val: int) -> bool:
+                    """Set LED intensity using HAL's normalized API.
+
+                    Args:
+                        ch: Channel identifier ('a','b','c','d') - ignored by HAL (global intensity)
+                        raw_val: 0-255 intensity value
+
+                    Returns:
+                        True if set succeeded, False otherwise
+
+                    Note:
+                        HAL sets intensity for all channels; only the active channel emits light.
+                        This effectively behaves as per-channel intensity when called before activation.
+                    """
+                    try:
+                        logger.debug(f"ControllerAdapter.set_intensity -> ch={ch}, raw_val={raw_val}")
+                        # Prefer per-channel API when available (activates the channel too on Pico)
+                        if hasattr(self.hal, 'set_intensity'):
+                            ok = bool(self.hal.set_intensity(ch=ch, raw_val=raw_val))
+                            logger.warning(f"🔧 HAL.set_intensity(ch={ch}, raw={raw_val}) → {ok}")
+                            return ok
+                        # Fallback to global normalized intensity
+                        if hasattr(self.hal, 'set_led_intensity'):
+                            norm = max(0.0, min(1.0, float(raw_val) / 255.0))
+                            ok = bool(self.hal.set_led_intensity(norm))
+                            logger.warning(f"🔧 HAL.set_led_intensity(norm={norm:.2f}) → {ok}")
+                            return ok
+                    except Exception as e:
+                        logger.debug(f"ControllerAdapter.set_intensity error: {e}")
+                    return False
+
                 def turn_on_channel(self, ch: str) -> None:
                     """Turn on specific channel LED.
 
@@ -179,11 +217,35 @@ class DataAcquisitionWrapper:
 
                 def turn_off_channels(self) -> None:
                     """Turn off all channel LEDs."""
-                    if hasattr(self.hal, 'turn_off_all_leds'):
-                        self.hal.turn_off_all_leds()
+                    # Prefer dedicated HAL method that preserves configured intensities
+                    # and only turns emission off (firmware 'lx').
+                    if hasattr(self.hal, 'turn_off_channels'):
+                        try:
+                            self.hal.turn_off_channels()
+                        except Exception:
+                            # Fallbacks in case of legacy naming
+                            if hasattr(self.hal, 'turn_off_all_leds'):
+                                try:
+                                    self.hal.turn_off_all_leds()
+                                except Exception:
+                                    pass
+                            elif hasattr(self.hal, 'set_led_intensity'):
+                                # Last resort: dim to 0 (note this wipes configured intensity)
+                                try:
+                                    self.hal.set_led_intensity(0)
+                                except Exception:
+                                    pass
+                    elif hasattr(self.hal, 'turn_off_all_leds'):
+                        try:
+                            self.hal.turn_off_all_leds()
+                        except Exception:
+                            pass
                     elif hasattr(self.hal, 'set_led_intensity'):
-                        # Turn off LEDs by setting intensity to 0
-                        self.hal.set_led_intensity(0)
+                        # Last resort: dim to 0 (note this wipes configured intensity)
+                        try:
+                            self.hal.set_led_intensity(0)
+                        except Exception:
+                            pass
 
                 def get_temp(self) -> float:
                     """Get temperature if available."""
@@ -249,7 +311,9 @@ class DataAcquisitionWrapper:
                 # Configuration
                 device_config=device_config,
                 num_scans=self.num_scans,
-                led_delay=self.led_delay,
+                led_delay=self.led_on_delay + self.led_off_delay,
+                led_on_delay=self.led_on_delay,
+                led_off_delay=self.led_off_delay,
                 med_filt_win=self.med_filt_win,
                 dark_noise=self.dark_noise,
                 base_integration_time_factor=self.base_integration_time_factor,
@@ -270,6 +334,71 @@ class DataAcquisitionWrapper:
             # Set calibration state
             self.data_acquisition.set_configuration(calibrated=True)
 
+            # ✨ CRITICAL FIX: Load cached integration time and calculate smart boost
+            # When device is already calibrated, calib_state.integration may not be loaded
+            # Load it from device_config.json and calculate the boost
+            try:
+                from settings import (
+                    LIVE_MODE_MAX_BOOST_FACTOR,
+                    LIVE_MODE_TARGET_INTENSITY_PERCENT,
+                    TARGET_INTENSITY_PERCENT,
+                    MIN_INTEGRATION
+                )
+
+                # Try to load from device config first
+                integration_ms = None
+                try:
+                    cal_data = device_config.load_led_calibration()
+                    if cal_data and 'integration_time_ms' in cal_data:
+                        integration_ms = cal_data['integration_time_ms']
+                        logger.info(f"� Loaded cached integration time: {integration_ms}ms")
+                except Exception as e:
+                    logger.debug(f"Could not load from device_config: {e}")
+
+                # Fall back to calib_state if available
+                if not integration_ms and self.calib_state and self.calib_state.integration > 0:
+                    integration_ms = self.calib_state.integration * 1000  # Convert seconds to ms
+                    logger.info(f"📥 Using calib_state integration time: {integration_ms}ms")
+
+                # If we have an integration time, calculate and apply boost
+                if integration_ms and integration_ms > MIN_INTEGRATION:
+                    integration_seconds = integration_ms / 1000.0
+                    desired_boost = LIVE_MODE_TARGET_INTENSITY_PERCENT / TARGET_INTENSITY_PERCENT
+                    boost_factor = max(1.0, min(desired_boost, LIVE_MODE_MAX_BOOST_FACTOR))
+                    live_integration_seconds = integration_seconds * boost_factor
+
+                    # Store it on both objects
+                    self.live_integration_seconds = live_integration_seconds
+                    self.data_acquisition.live_integration_seconds = live_integration_seconds
+
+                    logger.info(f"")
+                    logger.info(f"🔋 SMART BOOST APPLIED (from cached calibration):")
+                    logger.info(f"   Calibrated integration: {integration_ms:.1f}ms")
+                    logger.info(f"   Boost factor: {boost_factor:.2f}×")
+                    logger.info(f"   Live integration: {live_integration_seconds*1000:.1f}ms")
+                    logger.info(f"✅ Passed smart boost integration time to DataAcquisitionWrapper: {live_integration_seconds*1000:.1f}ms")
+                else:
+                    logger.warning(f"⚠️ No cached integration time found or too low ({integration_ms}ms) - using fallback")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to apply smart boost from cache: {e}", exc_info=True)
+
+            # Provide per-channel dark noise if available (for per-channel mode parity)
+            try:
+                if self.calib_state is not None and hasattr(self.calib_state, 'per_channel_dark_noise') and self.calib_state.per_channel_dark_noise:
+                    self.data_acquisition.per_channel_dark_noise = self.calib_state.per_channel_dark_noise.copy()
+                    logger.debug("✅ Provided per-channel dark noise to data acquisition")
+            except Exception as _e:
+                logger.debug(f"Could not provide per-channel dark noise to DAQ: {_e}")
+
+            # Provide calibrated LED map for DAQ-side fallbacks if needed
+            try:
+                if hasattr(self.calib_state, 'ref_intensity') and isinstance(self.calib_state.ref_intensity, dict):
+                    self.data_acquisition.calibrated_leds = self.calib_state.ref_intensity.copy()
+                    logger.debug("✅ Provided calibrated_leds map to data acquisition")
+            except Exception as _e:
+                logger.debug(f"Could not provide calibrated_leds to DAQ: {_e}")
+
             # ✨ Pass adjusted LED intensities to data acquisition
             if hasattr(self, 'live_led_intensities') and self.live_led_intensities:
                 self.data_acquisition.live_led_intensities = self.live_led_intensities
@@ -289,7 +418,24 @@ class DataAcquisitionWrapper:
                 for ch, integration in self.calib_state.integration_per_channel.items():
                     logger.info(f"   Channel {ch.upper()}: {integration*1000:.1f}ms")
 
+            # 🚀 Live per-channel override: boosted per-channel integrations and scans=1
+            if hasattr(self, 'live_integration_per_channel') and self.live_integration_per_channel:
+                self.data_acquisition.integration_per_channel = self.live_integration_per_channel.copy()
+                # Force scans=1 per channel in live per-channel mode
+                self.data_acquisition.scans_per_channel = {ch: 1 for ch in self.live_integration_per_channel.keys()}
+                logger.info("✅ Applied live-mode per-channel overrides:")
+                for ch, integration in self.live_integration_per_channel.items():
+                    logger.info(f"   {ch.upper()}: {integration*1000:.1f}ms, scans=1")
+
             logger.info("SPRDataAcquisition created successfully")
+
+            # Prepare hardware + live policy via calibrator helper (optional, non-fatal)
+            try:
+                if hasattr(self, 'calibrator') and self.calibrator is not None and adapted_ctrl is not None and adapted_usb is not None:
+                    self.live_config = self.calibrator.prepare_live(ctrl=adapted_ctrl, usb=adapted_usb, ch_list=CH_LIST)
+                    logger.info("✅ Live preparation complete (mode-aware application and policy built)")
+            except Exception as _e:
+                logger.debug(f"prepare_live skipped: {_e}")
 
         except Exception as e:
             logger.exception(f"Failed to create SPRDataAcquisition: {e}")
@@ -383,7 +529,35 @@ class DataAcquisitionWrapper:
                 for ch in CH_LIST:
                     if self.calib_state.ref_sig.get(ch) is not None:
                         self.ref_sig[ch] = self.calib_state.ref_sig[ch]
-                        logger.info(f"✅ Synced ref_sig[{ch}]: {len(self.ref_sig[ch])} points")
+                        try:
+                            ref_obj = self.ref_sig[ch]
+                            if ref_obj is None:
+                                logger.debug(f"Ref_sig for {ch} is None; skipping normalization")
+                            else:
+                                import numpy as _np
+                                ref_arr = _np.asarray(ref_obj, dtype=float).reshape(-1)
+                                ref_len = ref_arr.shape[0]
+                                wave_len = len(self.wave_data) if hasattr(self, 'wave_data') and self.wave_data is not None else 0
+                                if wave_len > 0 and ref_len != wave_len:
+                                    # One-time normalization: resample S-ref to match filtered wavelength length
+                                    x_old = _np.linspace(0.0, 1.0, ref_len)
+                                    x_new = _np.linspace(0.0, 1.0, wave_len)
+                                    _resampled = _np.interp(x_new, x_old, ref_arr)
+                                    # Assign via cast to avoid overzealous type checkers
+                                    from typing import cast as _cast, Any as _Any
+                                    self.ref_sig[ch] = _cast(_Any, _resampled)
+                                    logger.warning(
+                                        f"🔧 Normalized ref_sig[{ch}] size: {ref_len} → {wave_len} to match filtered wavelengths"
+                                    )
+                        except Exception as _e:
+                            logger.debug(f"Ref_sig normalization skipped for {ch}: {_e}")
+                        try:
+                            import numpy as _np
+                            _obj = self.ref_sig[ch]
+                            _size = int(_np.size(_obj)) if _obj is not None else 0
+                        except Exception:
+                            _size = 0
+                        logger.info(f"✅ Synced ref_sig[{ch}]: {_size} points")
 
                 # Sync fiber-specific integration time factor
                 self.base_integration_time_factor = self.calib_state.base_integration_time_factor
@@ -392,103 +566,229 @@ class DataAcquisitionWrapper:
                     f"({'2x faster' if self.base_integration_time_factor == 0.5 else 'standard'})"
                 )
 
-                # Calculate dynamic scan count based on integration time
-                # Goal: Maximize signal (target 60% detector max) while staying under 200ms
-                # Strategy: Calibration uses conservative 50% target, live mode boosts to 60%
-                # ✨ SMART APPROACH: Boost integration time to max, then REDUCE LED intensity for bright channels
-                if self.calib_state.integration > 0:
+                # Calculate dynamic scan count / boost policy for live mode
+                # IMPORTANT: LED intensities from Step 6 are FIXED and never change
+                # We only boost integration time by 20-40% to offset P-pol dampening
+                # Global: stay within a 200ms window by adjusting scan count
+                # Per-channel: scans=1; adjust per-channel integration, capped at 200ms
+
+                # ✨ CRITICAL: Determine if we're ACTUALLY in per-channel mode
+                # Check if integration > 0 (GLOBAL mode) or if integration_per_channel is the PRIMARY mode
+                is_per_channel_mode = (
+                    hasattr(self.calib_state, 'integration_per_channel')
+                    and self.calib_state.integration_per_channel
+                    and not self.calib_state.integration  # GLOBAL mode has integration > 0
+                )
+
+                if self.calib_state.integration > 0 or is_per_channel_mode:
                     from settings import (
                         LIVE_MODE_MAX_INTEGRATION_MS,
                         LIVE_MODE_TARGET_INTENSITY_PERCENT,
+                        LIVE_MODE_SATURATION_THRESHOLD_PERCENT,
                         LIVE_MODE_MIN_BOOST_FACTOR,
                         LIVE_MODE_MAX_BOOST_FACTOR,
                         TARGET_INTENSITY_PERCENT,
                         DETECTOR_MAX_COUNTS
                     )
                     from utils.spr_calibrator import calculate_dynamic_scans
-                    import numpy as np
 
-                    integration_seconds = self.calib_state.integration
+                    integration_seconds = float(self.calib_state.integration) if self.calib_state.integration else 0.0
 
-                    # Calculate intelligent boost factor
-                    # Calibration reached TARGET_INTENSITY_PERCENT (50%)
-                    # We want LIVE_MODE_TARGET_INTENSITY_PERCENT (60%)
-                    # Boost factor = target / current
+                    # Calculate smart boost factor (20-40% increase for P-pol compensation)
+                    # Calibration reached TARGET_INTENSITY_PERCENT (50%) with S-pol
+                    # P-pol has ~30-40% lower signal, so we boost 20-40% to compensate
+                    # Conservative approach: use calibrated LED values, boost integration time only
                     desired_boost = LIVE_MODE_TARGET_INTENSITY_PERCENT / TARGET_INTENSITY_PERCENT
 
-                    # Apply constraints (no longer limited by saturation - we'll adjust LEDs instead)
+                    # Apply safety constraints
+                    # Min: 1.0× (never reduce below calibration)
+                    # Max: 1.4× (40% increase - conservative, safe)
                     boost_factor = max(LIVE_MODE_MIN_BOOST_FACTOR,
                                       min(desired_boost, LIVE_MODE_MAX_BOOST_FACTOR))
 
-                    # Calculate boosted integration time
-                    live_integration_seconds = integration_seconds * boost_factor
-
-                    # Enforce maximum integration time limit (200ms)
-                    max_integration_seconds = LIVE_MODE_MAX_INTEGRATION_MS / 1000.0
-                    if live_integration_seconds > max_integration_seconds:
-                        live_integration_seconds = max_integration_seconds
-                        actual_boost = live_integration_seconds / integration_seconds
-                        logger.info(
-                            f"⚠️ Integration time capped at {LIVE_MODE_MAX_INTEGRATION_MS}ms "
-                            f"(boost limited to {actual_boost:.2f}×)"
-                        )
-                    else:
-                        actual_boost = boost_factor
-
-                    # ✨ Store boost parameters for later use (S-ref recapture and device config save)
-                    self.live_integration_seconds = live_integration_seconds
-                    self.live_boost_factor = actual_boost
-
-                    # ✨ CRITICAL: Smart boost ONLY adjusts integration time, NEVER LED values
-                    # LED intensities are set by calibration (Step 6 balancing)
-                    # Use calibrated LED values directly
-                    self.live_led_intensities = self.calib_state.leds_calibrated.copy()
-
-                    logger.info("")
-                    logger.info("🔬 LED intensities for live mode (from calibration):")
-                    for ch, led_val in self.live_led_intensities.items():
-                        logger.info(f"   Channel {ch.upper()}: LED={led_val} (calibrated, no boost adjustment)")
-
-                    # Calculate expected signal level (for weakest channel)
-                    expected_intensity_percent = TARGET_INTENSITY_PERCENT * actual_boost
-                    expected_counts = int(DETECTOR_MAX_COUNTS * expected_intensity_percent / 100)
-
-                    # Use calculate_dynamic_scans() for consistent 200ms target
-                    self.num_scans = calculate_dynamic_scans(live_integration_seconds)
-
-                    logger.info("")
-                    logger.info("="*80)
-                    logger.info("🚀 LIVE MODE INTEGRATION TIME BOOST")
-                    logger.info("="*80)
-                    logger.info(f"📊 Calibration settings:")
-                    logger.info(f"   Integration time: {integration_seconds*1000:.1f}ms")
-                    logger.info(f"   Target signal: {TARGET_INTENSITY_PERCENT}% (~{int(DETECTOR_MAX_COUNTS*TARGET_INTENSITY_PERCENT/100)} counts)")
                     logger.info(f"")
-                    logger.info(f"🎯 Live mode optimization:")
-                    logger.info(f"   Target signal: {LIVE_MODE_TARGET_INTENSITY_PERCENT}% (~{int(DETECTOR_MAX_COUNTS*LIVE_MODE_TARGET_INTENSITY_PERCENT/100)} counts)")
-                    logger.info(f"   Boost factor: {boost_factor:.2f}× (max: {LIVE_MODE_MAX_BOOST_FACTOR}×)")
-                    logger.info(f"   Boosted integration: {integration_seconds*1000:.1f}ms → {live_integration_seconds*1000:.1f}ms")
-                    logger.info(f"   Expected signal: {expected_intensity_percent:.1f}% (~{expected_counts} counts)")
-                    logger.info(f"")
-                    logger.info(f"⚡ Acquisition performance:")
-                    logger.info(f"   Scans per channel: {self.num_scans}")
-                    logger.info(f"   Time per channel: ~{live_integration_seconds*self.num_scans*1000:.0f}ms")
-                    logger.info(f"   Update rate: ~{1.0/(live_integration_seconds*self.num_scans*4):.1f} Hz per channel")
-                    logger.info("="*80)
-                    logger.info("")
+                    logger.info(f"🔋 SMART BOOST CALCULATION:")
+                    logger.info(f"   Calibration target: {TARGET_INTENSITY_PERCENT}% (S-pol baseline)")
+                    logger.info(f"   Live mode target: {LIVE_MODE_TARGET_INTENSITY_PERCENT}% (P-pol compensated)")
+                    logger.info(f"   Desired boost: {desired_boost:.2f}× (= {LIVE_MODE_TARGET_INTENSITY_PERCENT}/{TARGET_INTENSITY_PERCENT})")
+                    logger.info(f"   Applied boost: {boost_factor:.2f}× (capped at {LIVE_MODE_MAX_BOOST_FACTOR}×)")
+                    logger.info(f"   🔒 LED intensities: FIXED from Step 6 (never change)")
 
-                    # ✨ CRITICAL: Apply the boosted integration time to the spectrometer
-                    if hasattr(self, 'usb_adapter') and self.usb_adapter is not None:
-                        if hasattr(self.usb_adapter, 'set_integration'):
-                            self.usb_adapter.set_integration(live_integration_seconds)
-                            logger.info(f"✅ Applied boosted integration time to spectrometer: {live_integration_seconds*1000:.1f}ms")
-                        elif hasattr(self.usb_adapter, 'set_integration_time'):
-                            self.usb_adapter.set_integration_time(live_integration_seconds)
-                            logger.info(f"✅ Applied boosted integration time to spectrometer: {live_integration_seconds*1000:.1f}ms")
+                    # LED policy: Use Step 6 calibrated values directly (NO adjustment)
+                    # Step 6 LEDs are optimized for S-pol and remain fixed for live P-pol measurements
+                    try:
+                        if hasattr(self, 'calibrator') and self.calibrator is not None:
+                            self.live_led_intensities = {ch: int(self.calibrator.get_led_for_live(ch)) for ch in CH_LIST}
                         else:
-                            logger.error(f"❌ Cannot set integration time - no suitable method found")
+                            # Conservative fallback if calibrator unavailable
+                            self.live_led_intensities = {ch: int(getattr(self.calib_state, 'leds_calibrated', {}).get(ch, 255)) for ch in CH_LIST}
+                    except Exception as _e:
+                        logger.debug(f"live_led_intensities from calibrator failed: {_e}")
+                        self.live_led_intensities = {ch: 255 for ch in CH_LIST}
+
+                    # Per-channel live mode: boost each channel's integration, cap at 200ms, force scans=1
+                    # ✨ CRITICAL FIX: Only use per-channel mode if integration is NOT set (i.e., true per-channel calibration)
+                    if is_per_channel_mode:
+                        max_integration_seconds = LIVE_MODE_MAX_INTEGRATION_MS / 1000.0
+                        self.live_integration_per_channel = {}
+                        for ch, base_int in self.calib_state.integration_per_channel.items():
+                            boosted = float(base_int) * boost_factor
+
+                            # Safety: Cap at 200ms budget
+                            if boosted > max_integration_seconds:
+                                boosted = max_integration_seconds
+                                logger.warning(
+                                    f"   ⚠️ Channel {ch.upper()}: Boost capped at {max_integration_seconds*1000:.1f}ms "
+                                    f"(200ms budget limit)"
+                                )
+
+                            self.live_integration_per_channel[ch] = boosted
+
+                        # Scans per spectrum fixed at 1 in per-channel mode
+                        self.num_scans = 1
+
+                        logger.info("")
+                        logger.info("="*80)
+                        logger.info("🚀 LIVE MODE (PER-CHANNEL) SMART BOOST")
+                        logger.info("="*80)
+                        logger.info(f"🎯 Strategy: Fixed LEDs + Boosted integration (20-40%)")
+                        logger.info(f"   Target signal: {LIVE_MODE_TARGET_INTENSITY_PERCENT}% (~{int(DETECTOR_MAX_COUNTS*LIVE_MODE_TARGET_INTENSITY_PERCENT/100)} counts)")
+                        logger.info(f"   Saturation threshold: {LIVE_MODE_SATURATION_THRESHOLD_PERCENT}% (~{int(DETECTOR_MAX_COUNTS*LIVE_MODE_SATURATION_THRESHOLD_PERCENT/100)} counts)")
+                        logger.info(f"")
+                        logger.info(f"Per-channel adjustments:")
+                        for ch, boosted_int in self.live_integration_per_channel.items():
+                            try:
+                                base_ms = float(self.calib_state.integration_per_channel.get(ch, 0.0)) * 1000.0
+                            except Exception:
+                                base_ms = 0.0
+                            logger.info(f"   {ch.upper()}: {base_ms:.1f}ms → {boosted_int*1000.0:.1f}ms (scans=1)")
+                        logger.info("="*80)
+
+                        # ✨ CRITICAL FIX: Apply boosted integration times to data acquisition wrapper
+                        if hasattr(self, 'data_acquisition') and self.data_acquisition:
+                            self.data_acquisition.integration_per_channel = self.live_integration_per_channel.copy()
+                            logger.info(f"✅ Applied boosted integration_per_channel to DataAcquisitionWrapper")
+                            logger.info(f"   Boosted values: {[(ch, f'{v*1000:.1f}ms') for ch, v in self.live_integration_per_channel.items()]}")
+                        else:
+                            logger.warning(f"⚠️ DataAcquisitionWrapper not available - boost will be applied when created")
+                            logger.warning(f"   Will apply these values when DAQ is created: {[(ch, f'{v*1000:.1f}ms') for ch, v in self.live_integration_per_channel.items()]}")
+
                     else:
-                        logger.warning(f"⚠️ USB adapter not available for integration time boost")
+                        # Global live mode: boost integration and select dynamic scans under 200ms
+                        live_integration_seconds = integration_seconds * boost_factor
+
+                        # Enforce maximum integration time limit (200ms)
+                        max_integration_seconds = LIVE_MODE_MAX_INTEGRATION_MS / 1000.0
+                        if live_integration_seconds > max_integration_seconds:
+                            live_integration_seconds = max_integration_seconds
+                            actual_boost = live_integration_seconds / max(integration_seconds, 1e-9)
+                            logger.info(
+                                f"⚠️ Integration time capped at {LIVE_MODE_MAX_INTEGRATION_MS}ms "
+                                f"(boost limited to {actual_boost:.2f}×)"
+                            )
+                        else:
+                            actual_boost = boost_factor
+
+                        # Store for later use
+                        self.live_integration_seconds = live_integration_seconds
+                        # Also expose to data acquisition wrapper (so the acquisition thread can see it)
+                        try:
+                            if hasattr(self, 'data_acquisition') and self.data_acquisition is not None:
+                                setattr(self.data_acquisition, 'live_integration_seconds', live_integration_seconds)
+                        except Exception as _e:
+                            logger.debug(f"Could not propagate live_integration_seconds to DAQ: {_e}")
+                        self.live_boost_factor = actual_boost
+
+                        # Calculate expected signal level (for weakest channel)
+                        expected_intensity_percent = TARGET_INTENSITY_PERCENT * actual_boost
+                        expected_counts = int(DETECTOR_MAX_COUNTS * expected_intensity_percent / 100)
+
+                        # Use calibrator helper for consistent 200ms target (policy parity)
+                        try:
+                            if hasattr(self, 'calibrator') and self.calibrator is not None:
+                                self.num_scans = int(self.calibrator.get_scans_for_live(live_integration_seconds))
+                            else:
+                                self.num_scans = calculate_dynamic_scans(live_integration_seconds)
+                        except Exception:
+                            self.num_scans = calculate_dynamic_scans(live_integration_seconds)
+
+                        logger.info("")
+                        logger.info("="*80)
+                        logger.info("🚀 LIVE MODE INTEGRATION TIME BOOST (GLOBAL)")
+                        logger.info("="*80)
+                        logger.info(f"📊 Calibration settings:")
+                        logger.info(f"   Integration time: {integration_seconds*1000:.1f}ms")
+                        logger.info(f"   Target signal: {TARGET_INTENSITY_PERCENT}% (~{int(DETECTOR_MAX_COUNTS*TARGET_INTENSITY_PERCENT/100)} counts)")
+                        logger.info(f"")
+                        logger.info(f"🎯 Live mode optimization:")
+                        logger.info(f"   Target signal: {LIVE_MODE_TARGET_INTENSITY_PERCENT}% (~{int(DETECTOR_MAX_COUNTS*LIVE_MODE_TARGET_INTENSITY_PERCENT/100)} counts)")
+                        logger.info(f"   Boost factor: {boost_factor:.2f}× (max: {LIVE_MODE_MAX_BOOST_FACTOR}×)")
+                        logger.info(f"   Boosted integration: {integration_seconds*1000:.1f}ms → {live_integration_seconds*1000:.1f}ms")
+                        logger.info(f"   Expected signal: {expected_intensity_percent:.1f}% (~{expected_counts} counts)")
+                        logger.info(f"")
+                        logger.info(f"⚡ Acquisition performance:")
+                        logger.info(f"   Scans per channel: {self.num_scans}")
+                        logger.info(f"   Time per channel: ~{live_integration_seconds*self.num_scans*1000:.0f}ms")
+                        logger.info(f"   Update rate: ~{1.0/(live_integration_seconds*self.num_scans*4):.1f} Hz per channel")
+                        logger.info("="*80)
+                        logger.info("")
+
+                        # Apply the boosted integration time to the spectrometer (global mode only)
+                        # ✨ CRITICAL FIX: Apply to BOTH usb_adapter AND data_acquisition.usb
+                        # The state machine and data acquisition may reference different wrapper objects
+                        integration_applied = False
+
+                        # Try state machine's usb_adapter first
+                        if hasattr(self, 'usb_adapter') and self.usb_adapter is not None:
+                            try:
+                                # Log BEFORE setting
+                                current_int = self.usb_adapter.integration_time if hasattr(self.usb_adapter, 'integration_time') else None
+                                logger.warning(f"⚠️ BOOST APPLICATION: BEFORE set_integration() on usb_adapter")
+                                logger.warning(f"   Current spectrometer integration: {current_int*1000 if current_int else 'unknown'}ms")
+                                logger.warning(f"   About to set to: {live_integration_seconds*1000:.1f}ms")
+                            except Exception as e:
+                                logger.debug(f"Could not read current integration: {e}")
+
+                            if hasattr(self.usb_adapter, 'set_integration'):
+                                self.usb_adapter.set_integration(live_integration_seconds)
+                                integration_applied = True
+                                logger.info(f"✅ Applied boosted integration time to usb_adapter: {live_integration_seconds*1000:.1f}ms")
+
+                                # Verify it was actually set
+                                try:
+                                    time.sleep(0.1)  # Give hardware time to update
+                                    new_int = self.usb_adapter.integration_time if hasattr(self.usb_adapter, 'integration_time') else None
+                                    logger.warning(f"⚠️ BOOST VERIFICATION: AFTER set_integration()")
+                                    logger.warning(f"   Spectrometer now reports: {new_int*1000 if new_int else 'unknown'}ms")
+                                    if new_int and abs(new_int - live_integration_seconds) > 0.001:
+                                        logger.error(f"❌ CRITICAL: Integration time did NOT stick! Expected {live_integration_seconds*1000:.1f}ms but got {new_int*1000:.1f}ms")
+                                except Exception as e:
+                                    logger.debug(f"Could not verify integration: {e}")
+                            elif hasattr(self.usb_adapter, 'set_integration_time'):
+                                self.usb_adapter.set_integration_time(live_integration_seconds)
+                                integration_applied = True
+                                logger.info(f"✅ Applied boosted integration time to usb_adapter: {live_integration_seconds*1000:.1f}ms")
+                            else:
+                                logger.error(f"❌ Cannot set integration time on usb_adapter - no suitable method found")
+
+                        # ✨ CRITICAL: Also apply to data_acquisition.usb (the object grab_data() actually uses!)
+                        if hasattr(self, 'data_acquisition') and self.data_acquisition is not None:
+                            if hasattr(self.data_acquisition, 'usb') and self.data_acquisition.usb is not None:
+                                try:
+                                    if hasattr(self.data_acquisition.usb, 'set_integration'):
+                                        self.data_acquisition.usb.set_integration(live_integration_seconds)
+                                        integration_applied = True
+                                        logger.info(f"✅ Applied boosted integration time to data_acquisition.usb: {live_integration_seconds*1000:.1f}ms")
+                                    elif hasattr(self.data_acquisition.usb, 'set_integration_time'):
+                                        self.data_acquisition.usb.set_integration_time(live_integration_seconds)
+                                        integration_applied = True
+                                        logger.info(f"✅ Applied boosted integration time to data_acquisition.usb: {live_integration_seconds*1000:.1f}ms")
+                                except Exception as e:
+                                    logger.error(f"❌ Failed to apply integration time to data_acquisition.usb: {e}")
+
+                        if not integration_applied:
+                            logger.error(f"❌ CRITICAL: Could not apply boosted integration time to ANY spectrometer object!")
+                            logger.error(f"   This will cause weak signal (5ms instead of {live_integration_seconds*1000:.1f}ms)")
 
             logger.info("✅ DataAcquisitionWrapper synced from shared state")
         except Exception as e:
@@ -1109,19 +1409,54 @@ class SPRStateMachine(QObject):
                 for ch in ch_list:
                     boosted_led = self.data_acquisition.live_led_intensities.get(ch, 255)
 
-                    # Set LED for this channel
-                    ctrl_device.set_led(ch, boosted_led)
+                    # Set LED for this channel (supports multiple HALs)
+                    try:
+                        if hasattr(ctrl_device, 'set_intensity'):
+                            # Preferred: per-channel raw intensity (0-255)
+                            ctrl_device.set_intensity(ch, int(boosted_led))
+                        elif hasattr(ctrl_device, 'set_led_intensity'):
+                            # Fallback: global normalized intensity [0.0, 1.0]
+                            norm = max(0.0, min(float(boosted_led) / 255.0, 1.0))
+                            ctrl_device.set_led_intensity(norm)
+                            # Try to activate the specific channel if supported
+                            if hasattr(ctrl_device, 'activate_channel'):
+                                try:
+                                    ctrl_device.activate_channel(ch)
+                                except Exception:
+                                    pass
+                        else:
+                            # Last resort: try to activate the channel only
+                            if hasattr(ctrl_device, 'activate_channel'):
+                                ctrl_device.activate_channel(ch)
+                    except Exception as e:
+                        logger.warning(f"Failed to set LED intensity for channel {ch.upper()}: {e}")
+
                     time.sleep(0.1)  # LED settling time
 
-                    # Measure spectrum
-                    spectrum = usb_device.get_spectrum()
+                    # Measure spectrum (support multiple spectrometer APIs)
+                    spectrum = None
+                    try:
+                        if hasattr(usb_device, 'get_spectrum'):
+                            spectrum = usb_device.get_spectrum()
+                        elif hasattr(usb_device, 'acquire_spectrum'):
+                            spectrum = usb_device.acquire_spectrum()
+                        elif hasattr(usb_device, 'read_intensity'):
+                            spectrum = usb_device.read_intensity()
+                    except Exception as e:
+                        logger.warning(f"Failed to acquire spectrum for boosted S-ref on channel {ch.upper()}: {e}")
                     boosted_s_ref[ch] = spectrum
 
                     avg_signal = np.mean(spectrum) if spectrum is not None else 0
                     logger.info(f"   Channel {ch.upper()}: LED={boosted_led}, avg signal={avg_signal:.0f}")
 
-                    # Turn off LED
-                    ctrl_device.set_led(ch, 0)
+                    # Turn off LED (best-effort)
+                    try:
+                        if hasattr(ctrl_device, 'set_intensity'):
+                            ctrl_device.set_intensity(ch, 0)
+                        elif hasattr(ctrl_device, 'turn_off_channels'):
+                            ctrl_device.turn_off_channels()
+                    except Exception:
+                        pass
 
                 logger.info("✅ S-ref re-captured with boosted settings")
 
@@ -1315,24 +1650,38 @@ class SPRStateMachine(QObject):
                     # Try to get controller HAL and shutdown LEDs
                     controller = getattr(self.hardware_manager, 'ctrl', None)
                     if controller and hasattr(controller, 'emergency_shutdown'):
-                        controller.emergency_shutdown()
-                        logger.info("✅ Emergency LED shutdown via HAL")
+                        if controller.emergency_shutdown():
+                            logger.info("✅ Emergency LED shutdown via HAL")
+                        else:
+                            # Try a lighter-weight fallback via HAL if available
+                            if hasattr(controller, 'turn_off_channels'):
+                                try:
+                                    if controller.turn_off_channels():
+                                        logger.info("✅ Emergency LED shutdown via HAL (turn_off_channels)")
+                                except Exception:
+                                    pass
                 except Exception as e:
                     logger.error(f"HAL emergency shutdown failed: {e}")
 
             # Direct serial emergency shutdown as backup
             try:
-                import serial
-                import time
-                with serial.Serial("COM4", 115200, timeout=1) as ser:
-                    time.sleep(0.1)
-                    # Primary: all LEDs off
-                    ser.write(b'lx\n')
-                    time.sleep(0.1)
-                    # Backup: set intensity to zero
-                    ser.write(b'i0\n')
-                    time.sleep(0.1)
-                    logger.info("✅ Direct emergency LED shutdown completed")
+                controller = getattr(self.hardware_manager, 'ctrl', None) if self.hardware_manager else None
+                # Avoid opening the port directly if HAL is connected to prevent Access Denied
+                hal_connected = bool(controller and hasattr(controller, 'is_connected') and controller.is_connected())
+                if not hal_connected:
+                    import serial
+                    import time
+                    with serial.Serial("COM4", 115200, timeout=1) as ser:
+                        time.sleep(0.1)
+                        # Primary: all LEDs off
+                        ser.write(b'lx\n')
+                        time.sleep(0.1)
+                        # Backup: set intensity to zero
+                        ser.write(b'i0\n')
+                        time.sleep(0.1)
+                        logger.info("✅ Direct emergency LED shutdown completed")
+                else:
+                    logger.debug("Skipping direct COM4 emergency command because HAL is connected")
             except Exception as e:
                 logger.error(f"Direct emergency shutdown failed: {e}")
 

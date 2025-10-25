@@ -178,22 +178,27 @@ class PicoP4SPRHAL(SPRControllerHAL):
                 return False
             channel = channel_id
 
-        # ✨ PHASE 1B: Fire-and-forget optimization
-        # Send command directly without response wait
-        # The 100ms LED settle delay gives hardware time to complete
+        # Use ACK-based activation for reliability (expect firmware to reply '1')
         if not self._ser:
             logger.warning("Serial port not connected")
             return False
 
         try:
             cmd = f"l{channel.value}\n"
-            self._ser.write(cmd.encode())
-            import time
-            time.sleep(0.002)  # 2ms for serial transmission
-
-            # Update status optimistically
-            self.status.active_channel = channel
-            return True
+            ok = self._send_command_with_response(cmd, b"1")
+            if not ok:
+                # Fallback: try fire-and-forget once
+                try:
+                    self._send_command(cmd)
+                    time.sleep(0.01)
+                    ok = True
+                except Exception:
+                    ok = False
+            if ok:
+                self.status.active_channel = channel
+            else:
+                logger.warning("Channel activation did not ACK; LED may be off")
+            return ok
         except Exception as e:
             logger.warning(f"activate_channel failed: {e}")
             return False
@@ -372,18 +377,40 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
             logger.debug(f"Setting LED {ch.upper()} intensity to {raw_val}")
 
-            # Send command and check response
+            # Send command and check response (prefer ACK, but be tolerant)
             success = self._send_command_with_response(cmd, b"1")
 
             if success:
-                # Turn on the channel after setting intensity
+                # Turn on the channel after setting intensity (ACK path)
                 turn_on_cmd = f"l{ch}\n"
                 self._send_command_with_response(turn_on_cmd, b"1")
-                logger.debug(f"✅ LED {ch.upper()} set to intensity {raw_val}")
-            else:
-                logger.error(f"❌ Failed to set LED {ch.upper()} intensity")
+                logger.debug(f"LED {ch.upper()} set to intensity {raw_val} (ACK)")
+                return True
 
-            return success
+            # If ACK not received, fall back to fire-and-forget to improve robustness
+            logger.warning(
+                f"⚠️ No ACK for intensity set on {ch.upper()} (val={raw_val}). "
+                f"Attempting fire-and-forget fallback."
+            )
+            try:
+                # Best-effort: send raw command without expecting response
+                if self._ser and self._ser.is_open:
+                    self._ser.write(cmd.encode())
+                    # Small delay for transmission
+                    time.sleep(0.002)
+                    # Attempt to turn on the channel regardless of prior ACK
+                    turn_on_cmd = f"l{ch}\n"
+                    self._ser.write(turn_on_cmd.encode())
+                    time.sleep(0.002)
+                    logger.debug(
+                        f"LED {ch.upper()} set to intensity {raw_val} (fallback, no ACK)"
+                    )
+                    return True
+            except Exception as fe:
+                logger.debug(f"Fallback intensity set failed: {fe}")
+
+            logger.error(f"❌ Failed to set LED {ch.upper()} intensity")
+            return False
 
         except ValueError as e:
             logger.error(f"❌ Invalid parameters: {e}")

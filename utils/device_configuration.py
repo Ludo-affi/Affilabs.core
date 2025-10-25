@@ -531,6 +531,62 @@ class DeviceConfiguration:
     # LED CALIBRATION STORAGE (SINGLE SOURCE OF TRUTH)
     # ========================================================================
 
+    def save_dark_snapshot(self, dark_spectrum: np.ndarray) -> None:
+        """Save a pre-QC dark snapshot to device_config.json.
+
+        Stores a dark spectrum captured prior to QC validation so that QC and
+        subsequent sessions can reuse a known-good dark reference.
+
+        Adds the following fields under 'led_calibration':
+        - pre_qc_dark_snapshot: list[float]
+        - pre_qc_dark_date: ISO timestamp
+        - pre_qc_dark_min: float
+        - pre_qc_dark_max: float
+
+        Also updates 'calibration.dark_calibration_date'.
+        """
+        try:
+            if dark_spectrum is None or len(dark_spectrum) == 0:
+                logger.warning("Attempted to save empty dark snapshot; skipping")
+                return
+
+            # Ensure container exists
+            if 'led_calibration' not in self.config:
+                self.config['led_calibration'] = {}
+
+            dark_min = float(np.min(dark_spectrum))
+            dark_max = float(np.max(dark_spectrum))
+            now = datetime.now().isoformat()
+
+            # Persist snapshot and stats
+            self.config['led_calibration']['pre_qc_dark_snapshot'] = dark_spectrum.tolist()
+            self.config['led_calibration']['pre_qc_dark_date'] = now
+            self.config['led_calibration']['pre_qc_dark_min'] = dark_min
+            self.config['led_calibration']['pre_qc_dark_max'] = dark_max
+
+            # Update top-level calibration date for dark
+            if 'calibration' not in self.config:
+                self.config['calibration'] = {}
+            self.config['calibration']['dark_calibration_date'] = now
+
+            # Persist to disk
+            self.save()
+
+            # Log and flag if any negatives
+            if dark_min < 0:
+                logger.error(
+                    f"⚠️ Dark snapshot contains negative values (min={dark_min:.2f}). "
+                    f"This indicates possible offset or subtraction error."
+                )
+            logger.info(
+                f"💾 Pre-QC dark snapshot saved: len={len(dark_spectrum)}, "
+                f"min={dark_min:.1f}, max={dark_max:.1f}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to save dark snapshot: {e}")
+            raise
+
     def save_led_calibration(
         self,
         integration_time_ms: int,
@@ -652,6 +708,14 @@ class DeviceConfiguration:
 
             if 's_ref_wavelengths' in cal:
                 cal['s_ref_wavelengths'] = np.array(cal['s_ref_wavelengths'])
+
+            # Optional: pre-QC dark snapshot
+            if 'pre_qc_dark_snapshot' in cal and isinstance(cal['pre_qc_dark_snapshot'], list):
+                try:
+                    cal['pre_qc_dark_snapshot'] = np.array(cal['pre_qc_dark_snapshot'])
+                except Exception:
+                    # Leave as-is if conversion fails
+                    pass
 
             logger.debug(f"Loaded LED calibration from {cal['calibration_date']}")
             return cal

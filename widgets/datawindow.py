@@ -249,6 +249,14 @@ class DataWindow(QWidget):
         self.live_mode = True
         self.progress_bar_timer = QTimer()
 
+        # 🕐 Display delay for multi-point processing stabilization
+        # First N seconds of live data are collected but not displayed
+        # This allows temporal filters, Kalman filters, and peak tracking to reach steady state
+        from settings import LIVE_MODE_DISPLAY_DELAY_SECONDS
+        self.display_delay_seconds = LIVE_MODE_DISPLAY_DELAY_SECONDS
+        self.display_enabled = False  # Will be enabled after delay
+        self.live_start_time = None  # Set when first data arrives
+
         # display data processing or sensorgram page depending on source
 
         if self.data_source == "dynamic":
@@ -581,6 +589,53 @@ class DataWindow(QWidget):
                 return
 
             if self.data_source == "dynamic":
+                # 🕐 Check display delay for live mode
+                # Track start time from first data arrival
+                if self.live_start_time is None and "start" in app_data:
+                    self.live_start_time = app_data["start"]
+                    logger.info(f"")
+                    logger.info(f"🕐 LIVE MODE DISPLAY DELAY: {self.display_delay_seconds}s")
+                    logger.info(f"   Data collection started, display delayed for multi-point processing stabilization")
+                    logger.info(f"   Temporal filters, Kalman filters, and peak tracking need time to converge")
+                    logger.info(f"")
+
+                # Calculate elapsed time since live start
+                elapsed_time = 0.0
+                if self.live_start_time is not None and "start" in app_data:
+                    elapsed_time = time.time() - self.live_start_time
+
+                # Enable display after delay period
+                if not self.display_enabled and elapsed_time >= self.display_delay_seconds:
+                    self.display_enabled = True
+                    logger.info(f"")
+                    logger.info(f"✅ DISPLAY ENABLED - {self.display_delay_seconds}s stabilization period complete")
+                    logger.info(f"   Multi-point processing algorithms have converged")
+                    logger.info(f"   Sensorgram display is now active")
+                    logger.info(f"")
+
+                # Skip display updates during delay period (but still collect data)
+                if not self.display_enabled:
+                    # Silently collect data but don't update plots
+                    self.data = app_data
+                    # Update only the clock to show progress
+                    self.exp_clock_raw = time.time() - self.data["start"]
+                    if self.exp_clock_raw == 0:
+                        self.ui.exp_clock.setText("00h 00m 00s")
+                    else:
+                        self.ui.exp_clock.setText(
+                            f"{int(self.exp_clock_raw / 3600):02d}h "
+                            f"{int((self.exp_clock_raw % 3600) / 60):02d}m "
+                            f"{int(self.exp_clock_raw % 60):02d}s",
+                        )
+                    # Show remaining delay time in status
+                    remaining = max(0, self.display_delay_seconds - elapsed_time)
+                    if hasattr(self, 'ui') and hasattr(self.ui, 'status'):
+                        self.ui.status.setText(
+                            f"Stabilizing... Display in {remaining:.0f}s "
+                            f"(multi-point processing converging)"
+                        )
+                    return  # Don't update plots yet
+
                 self.busy = True
                 self.data = app_data
                 y_data = self.data["lambda_values"]

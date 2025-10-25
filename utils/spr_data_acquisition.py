@@ -277,13 +277,15 @@ class SPRDataAcquisition:
         buffered_lambda: dict[str, np.ndarray],
         buffered_times: dict[str, np.ndarray],
         int_data: dict[str, np.ndarray],
-        trans_data: dict[str, np.Optional[ndarray]],
-        ref_sig: dict[str, np.Optional[ndarray]],
+    trans_data: dict[str, Optional[np.ndarray]],
+    ref_sig: dict[str, Optional[np.ndarray]],
         wave_data: np.ndarray,
         # Configuration
         device_config: dict[str, Any],
         num_scans: int,
         led_delay: float,
+        led_on_delay: Optional[float] = None,
+        led_off_delay: Optional[float] = None,
         med_filt_win: int,
         dark_noise: np.ndarray,
         base_integration_time_factor: float = 1.0,
@@ -321,10 +323,16 @@ class SPRDataAcquisition:
         self.num_scans = num_scans
         self.scans_per_channel: dict[str, int] = {}  # ✨ NEW: Per-channel scan counts (200ms budget optimization)
         self.integration_per_channel: dict[str, float] = {}  # ✨ NEW: Per-channel integration times (per_channel mode)
-        self.led_delay = led_delay
+        # LED delays
+        self.led_on_delay = led_on_delay if led_on_delay is not None else led_delay
+        self.led_off_delay = led_off_delay if led_off_delay is not None else led_delay
+        # Back-compat: single led_delay approximated as total inter-channel delay
+        self.led_delay = (self.led_on_delay + self.led_off_delay)
         self.med_filt_win = med_filt_win
         self.dark_noise = dark_noise
         self.base_integration_time_factor = base_integration_time_factor
+        # Optional per-channel dark noise (per-channel calibration mode)
+        self.per_channel_dark_noise: dict[str, np.ndarray] = {}
 
         # State management
         self._b_kill = _b_kill
@@ -368,6 +376,13 @@ class SPRDataAcquisition:
         self.afterglow_correction = None
         self.afterglow_correction_enabled = False
         self._batch_led_available = hasattr(ctrl, 'set_batch_intensities') if ctrl else False
+        # Optional one-cycle force-255 verification
+        try:
+            from settings import LED_FORCE_255_TEST_CYCLE as _LED_FORCE_255_TEST_CYCLE
+            self._force_255_enabled: bool = bool(_LED_FORCE_255_TEST_CYCLE)
+        except Exception:
+            self._force_255_enabled = False
+        self._force_255_done: dict[str, bool] = {ch: False for ch in CH_LIST}
 
         # Load optical calibration for afterglow correction
         logger.info(f"🔍 device_config type: {type(device_config)}, is None: {device_config is None}")
@@ -453,8 +468,11 @@ class SPRDataAcquisition:
 
         # ✨ PHASE 3A OPTIMIZATION: Cache wavelength mask (saves ~48ms per cycle)
         # Wavelengths never change during a session, so create mask once and reuse
-        self._wavelength_mask: np.Optional[ndarray] = None
+        self._wavelength_mask: Optional[np.ndarray] = None
         self._wavelength_mask_initialized = False
+
+        # One-time LED activation sanity check per channel
+        self._led_verified = {ch: False for ch in CH_LIST}
 
     def _initialize_wavelength_mask(self) -> bool:
         """Initialize and cache the wavelength mask once.
@@ -506,6 +524,184 @@ class SPRDataAcquisition:
         except Exception as e:
             logger.error(f"❌ Failed to initialize wavelength mask: {e}")
             return False
+
+    def create_ppol_diagnostic_plot(
+        self,
+        channels: list[str] = ['a', 'b', 'c', 'd']
+    ) -> None:
+        """Create diagnostic plot showing first P-pol scans in live mode.
+
+        This shows the complete data pipeline:
+        - Raw P-pol spectra (with calibrated LEDs)
+        - Dark-corrected P-pol
+        - S-reference (from calibration)
+        - Final transmittance (P/S ratio)
+        - ROI means for count measurements
+
+        Args:
+            channels: List of channels to plot (default: all channels)
+        """
+        try:
+            import matplotlib.pyplot as plt
+            from datetime import datetime
+
+            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+            fig.suptitle('Live Mode P-pol Diagnostic: First Scan After Calibration\nData Pipeline: Raw → Dark-Corrected → P/S Ratio → Count',
+                        fontsize=14, fontweight='bold')
+
+            colors = {'a': '#FF6B6B', 'b': '#4ECDC4', 'c': '#45B7D1', 'd': '#FFA07A'}
+
+            # Get wavelength array
+            wavelengths = self.wave_data
+
+            # Get integration time
+            integration_time_ms = 100.0  # Default
+            if hasattr(self.usb, 'integration_time'):
+                integration_time_ms = self.usb.integration_time * 1000.0
+            elif hasattr(self.usb, '_integration_time'):
+                integration_time_ms = self.usb._integration_time * 1000.0
+
+            # Plot 1: Raw P-pol + Dark-corrected overlay
+            ax1 = axes[0, 0]
+            for ch in channels:
+                if ch not in self.int_data or self.int_data[ch] is None:
+                    continue
+
+                # Get LED value
+                led_val = 255
+                if hasattr(self, 'live_led_intensities') and ch in self.live_led_intensities:
+                    led_val = self.live_led_intensities[ch]
+                elif hasattr(self, 'calibrated_leds') and ch in self.calibrated_leds:
+                    led_val = self.calibrated_leds[ch]
+
+                # Plot dark-corrected P-pol (this is what goes into P/S calculation)
+                p_corrected = self.int_data[ch]
+                if len(p_corrected) == len(wavelengths):
+                    ax1.plot(wavelengths, p_corrected, label=f'{ch.upper()} P-pol (LED={led_val})',
+                            color=colors.get(ch, 'gray'), alpha=0.7, linewidth=1.5)
+
+            ax1.set_xlabel('Wavelength (nm)', fontsize=11)
+            ax1.set_ylabel('Intensity (counts)', fontsize=11)
+            ax1.set_title('P-pol Spectra (Dark-Corrected)', fontsize=12, fontweight='bold')
+            ax1.legend(fontsize=10)
+            ax1.grid(True, alpha=0.3)
+
+            # Plot 2: S-reference overlay
+            ax2 = axes[0, 1]
+            for ch in channels:
+                if ch not in self.ref_sig or self.ref_sig[ch] is None:
+                    continue
+
+                s_ref = self.ref_sig[ch]
+                if len(s_ref) == len(wavelengths):
+                    ax2.plot(wavelengths, s_ref, label=f'{ch.upper()} S-ref',
+                            color=colors.get(ch, 'gray'), alpha=0.7, linewidth=1.5)
+
+            ax2.set_xlabel('Wavelength (nm)', fontsize=11)
+            ax2.set_ylabel('Intensity (counts)', fontsize=11)
+            ax2.set_title('S-reference Spectra (from Calibration Step 6)', fontsize=12, fontweight='bold')
+            ax2.legend(fontsize=10)
+            ax2.grid(True, alpha=0.3)
+
+            # Plot 3: Transmittance (P/S ratio) overlay
+            ax3 = axes[1, 0]
+            for ch in channels:
+                if ch not in self.trans_data or self.trans_data[ch] is None:
+                    continue
+
+                trans = self.trans_data[ch]
+                if len(trans) == len(wavelengths):
+                    ax3.plot(wavelengths, trans, label=f'{ch.upper()} P/S',
+                            color=colors.get(ch, 'gray'), alpha=0.7, linewidth=1.5)
+
+            ax3.set_xlabel('Wavelength (nm)', fontsize=11)
+            ax3.set_ylabel('Transmittance (P/S)', fontsize=11)
+            ax3.set_title('Final Transmittance (P/S Ratio for Count Measurement)', fontsize=12, fontweight='bold')
+            ax3.legend(fontsize=10)
+            ax3.grid(True, alpha=0.3)
+
+            # Plot 4: ROI statistics summary
+            ax4 = axes[1, 1]
+            ax4.axis('off')
+
+            # Calculate ROI means (580-610nm)
+            roi_mask = (wavelengths >= 580) & (wavelengths <= 610)
+
+            summary_text = f"""
+LIVE MODE P-POL DIAGNOSTIC
+═══════════════════════════════════════════
+
+Integration Time: {integration_time_ms:.1f} ms
+
+ROI Statistics (580-610nm):
+"""
+
+            for ch in channels:
+                if ch not in self.int_data or self.int_data[ch] is None:
+                    continue
+
+                # Get LED value
+                led_val = 255
+                if hasattr(self, 'live_led_intensities') and ch in self.live_led_intensities:
+                    led_val = self.live_led_intensities[ch]
+                elif hasattr(self, 'calibrated_leds') and ch in self.calibrated_leds:
+                    led_val = self.calibrated_leds[ch]
+
+                # Calculate ROI means
+                p_corrected = self.int_data[ch]
+                s_ref = self.ref_sig.get(ch)
+                trans = self.trans_data.get(ch)
+
+                if len(p_corrected) == len(wavelengths):
+                    p_roi_mean = float(np.mean(p_corrected[roi_mask]))
+
+                    s_roi_mean = 0.0
+                    if s_ref is not None and len(s_ref) == len(wavelengths):
+                        s_roi_mean = float(np.mean(s_ref[roi_mask]))
+
+                    trans_roi_mean = 0.0
+                    if trans is not None and len(trans) == len(wavelengths):
+                        trans_roi_mean = float(np.mean(trans[roi_mask]))
+
+                    summary_text += f"""
+   Channel {ch.upper()} (LED={led_val}):
+      P-pol:        {p_roi_mean:7,.0f} counts
+      S-ref:        {s_roi_mean:7,.0f} counts
+      P/S ratio:    {trans_roi_mean:7.4f}
+"""
+
+            summary_text += f"""
+═══════════════════════════════════════════
+Data Flow:
+1. Calibration Step 4: Balance LEDs → LED values
+2. Calibration Step 6: Measure S-ref → S-reference
+3. Live Mode: Measure P-pol with calibrated LEDs
+4. Calculate P/S ratio → Transmittance
+5. Extract peak/centroid → Resonance shift (RU)
+6. Update sensorgram with time-series RU values
+"""
+
+            ax4.text(0.05, 0.95, summary_text, transform=ax4.transAxes,
+                    fontsize=10, verticalalignment='top', family='monospace',
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.4))
+
+            plt.tight_layout()
+
+            # Save figure
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = Path("generated-files/diagnostics")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / f"ppol_live_diagnostic_{timestamp}.png"
+
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            logger.info(f"📊 P-pol live mode diagnostic plot saved: {output_file}")
+
+            plt.close(fig)
+
+        except Exception as e:
+            logger.warning(f"Failed to create P-pol diagnostic plot: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
 
     def _save_debug_step(self, channel: str, step_name: str, data: np.ndarray, wavelengths: np.ndarray) -> None:
         """Save intermediate processing step data for debugging.
@@ -689,8 +885,33 @@ class SPRDataAcquisition:
                                 logger.error("❌ LIVE MODE: Cannot set integration time - no suitable method")
                         except Exception as e:
                             logger.error(f"❌ LIVE MODE: Failed to apply scaled integration time: {e}")
-                    elif not integration_time_applied and first_run:
+                    elif not integration_time_applied:
                         logger.info("ℹ️ LIVE MODE: Using calibrated integration time (no scaling)")
+                        # Verify actual integration time
+                        try:
+                            if hasattr(self.usb, 'integration_time'):
+                                actual_int = self.usb.integration_time
+                                logger.warning(f"⚠️ GLOBAL MODE: Spectrometer integration time at start of live mode: {actual_int*1000:.1f}ms")
+                                logger.warning(f"   Expected: 47.3ms (33.8ms × 1.4 boost) for GLOBAL mode")
+                                if actual_int < 0.015:  # Less than 15ms
+                                    logger.error(f"❌ CRITICAL: Integration time is WAY TOO LOW! This will cause weak signal!")
+                                    logger.error(f"   Boost may not have been applied properly.")
+                                    # Try to apply boosted integration if provided by state machine
+                                    try:
+                                        desired_live = getattr(self, 'live_integration_seconds', None)
+                                        if desired_live and desired_live > 0:
+                                            if hasattr(self.usb, 'set_integration'):
+                                                self.usb.set_integration(float(desired_live))
+                                            elif hasattr(self.usb, 'set_integration_time'):
+                                                self.usb.set_integration_time(float(desired_live))
+                                            integration_time_applied = True
+                                            logger.info(f"🔧 LIVE MODE: Applied fallback boosted integration: {desired_live*1000:.1f}ms")
+                                        else:
+                                            logger.warning("⚠️ No boosted integration available to apply as fallback")
+                                    except Exception as ee:
+                                        logger.error(f"❌ Failed to apply fallback boosted integration: {ee}")
+                        except Exception as e:
+                            logger.debug(f"Could not read integration time: {e}")
 
                 # Increment buffer index at start of each cycle
                 self.filt_buffer_index += 1
@@ -826,7 +1047,7 @@ class SPRDataAcquisition:
         )
         return should_read
 
-    def _acquire_raw_spectrum(self, ch: str) -> tuple[np.ndarray, float, np.ndarray, np.Optional[ndarray]]:
+    def _acquire_raw_spectrum(self, ch: str) -> tuple[np.ndarray, float, np.ndarray, Optional[np.ndarray]]:
         """FAST acquisition-only method for pipelined architecture.
 
         ✨ PIPELINE OPTIMIZATION: Only acquires raw spectrum and prepares data for processing.
@@ -840,28 +1061,97 @@ class SPRDataAcquisition:
                 - ref_sig_ch: S-mode reference signal for this channel (or None)
         """
         # ✨ PER-CHANNEL MODE: Set integration time per channel if available
-        if hasattr(self, 'integration_per_channel') and ch in self.integration_per_channel:
-            ch_integration = self.integration_per_channel[ch]
+        applied_integration_s = None
+        if hasattr(self, 'integration_per_channel') and ch in getattr(self, 'integration_per_channel', {}):
+            ch_integration = float(self.integration_per_channel[ch])
             if hasattr(self.usb, 'set_integration'):
                 self.usb.set_integration(ch_integration)
+                applied_integration_s = ch_integration
                 # Small delay to ensure integration time is applied
                 time.sleep(0.05)
+                # Verify integration time was actually applied
+                try:
+                    actual_integration = self.usb.integration_time if hasattr(self.usb, 'integration_time') else None
+                    if actual_integration is not None:
+                        logger.info(f"🔧 Channel {ch.upper()}: Set integration {ch_integration*1000:.1f}ms → Actual {actual_integration*1000:.1f}ms")
+                    else:
+                        logger.info(f"🔧 Channel {ch.upper()}: Set integration {ch_integration*1000:.1f}ms (verification unavailable)")
+                except Exception as e:
+                    logger.debug(f"Could not verify integration time for channel {ch}: {e}")
             elif hasattr(self.usb, 'set_integration_time'):
                 self.usb.set_integration_time(ch_integration)
+                applied_integration_s = ch_integration
                 time.sleep(0.05)
+                # Verify integration time was actually applied
+                try:
+                    actual_integration = self.usb.integration_time if hasattr(self.usb, 'integration_time') else None
+                    if actual_integration is not None:
+                        logger.info(f"🔧 Channel {ch.upper()}: Set integration {ch_integration*1000:.1f}ms → Actual {actual_integration*1000:.1f}ms")
+                    else:
+                        logger.info(f"🔧 Channel {ch.upper()}: Set integration {ch_integration*1000:.1f}ms (verification unavailable)")
+                except Exception as e:
+                    logger.debug(f"Could not verify integration time for channel {ch}: {e}")
+        else:
+            logger.warning(f"⚠️ Channel {ch.upper()}: No per-channel integration found in integration_per_channel dict")
 
         # LED control and settling
         # ✨ SMART BOOST: Use live_led_intensities if available (per-channel LED adjustment)
         led_intensity = None
         if hasattr(self, 'live_led_intensities') and ch in self.live_led_intensities:
-            led_intensity = self.live_led_intensities[ch]
+            led_intensity = int(self.live_led_intensities[ch])
+            # Treat zero/None as missing and fallback to calibrated or 255
+            if led_intensity <= 0:
+                try:
+                    if hasattr(self, 'calibrated_leds') and isinstance(self.calibrated_leds, dict):
+                        fallback = int(self.calibrated_leds.get(ch, 0) or 0)
+                        if fallback > 0:
+                            led_intensity = fallback
+                            logger.warning(f"🔁 LIVE MODE: ch{ch} had LED=0 → fallback to calibrated {fallback}")
+                except Exception:
+                    pass
             logger.warning(f"🔆 LIVE MODE: Channel {ch} using LED intensity: {led_intensity}")
         else:
-            logger.warning(f"⚠️ LIVE MODE: Channel {ch} has NO LED intensity (will use 255)")
+            led_intensity = 255
+            logger.warning(f"⚠️ LIVE MODE: Channel {ch} has NO LED intensity (defaulting to 255)")
 
-        self._activate_channel_batch(ch, intensity=led_intensity)
-        if self.led_delay > 0:
-            time.sleep(self.led_delay)
+        # Optional one-cycle force-255 test to visually confirm LED activation
+        if self._force_255_enabled and not self._force_255_done.get(ch, False):
+            logger.warning(f"🧪 FORCE-255 TEST: Overriding ch{ch} intensity → 255 for first live cycle")
+            led_intensity = 255
+            self._force_255_done[ch] = True
+
+        # Always pass an explicit intensity to avoid relying on previous state
+        self._activate_channel_batch(ch, intensity=int(led_intensity))
+        if self.led_on_delay > 0:
+            time.sleep(self.led_on_delay)
+
+        # One-time LED sanity check: verify non-flat counts after LED ON
+        if not self._led_verified.get(ch, False):
+            try:
+                test_read = self.usb.read_intensity() if hasattr(self.usb, 'read_intensity') else None
+                if test_read is not None and isinstance(test_read, np.ndarray) and test_read.size > 0:
+                    # Prefer masked mean if mask size matches, else full mean
+                    if self._wavelength_mask is not None and len(test_read) == len(self._wavelength_mask):
+                        test_mean = float(np.mean(test_read[self._wavelength_mask]))
+                    else:
+                        test_mean = float(np.mean(test_read))
+                    if test_mean < 10.0:
+                        logger.warning(
+                            f"🔎 LED SANITY: ch{ch} low counts after activation (mean~{test_mean:.1f}). Retrying at 255 and short settle…"
+                        )
+                        # Retry activation at max intensity and short settle
+                        try:
+                            self._activate_channel_batch(ch, intensity=255)
+                        except Exception as _e:
+                            logger.debug(f"LED re-activation error ch{ch}: {_e}")
+                        time.sleep(max(0.05, self.led_on_delay))
+                    else:
+                        self._led_verified[ch] = True
+                        logger.info(f"✅ LED SANITY: ch{ch} verified (mean~{test_mean:.1f})")
+                else:
+                    logger.debug(f"LED sanity check skipped for ch{ch}: no test_read available")
+            except Exception as _e:
+                logger.debug(f"LED sanity check error ch{ch}: {_e}")
 
         # Wavelength mask check
         if self._wavelength_mask is None:
@@ -871,6 +1161,24 @@ class SPRDataAcquisition:
 
         # ✨ Use per-channel scan count if available, otherwise fall back to default
         scans_for_channel = self.scans_per_channel.get(ch, self.num_scans)
+
+        # Diagnostic: log timing policy actually applied
+        try:
+            # Determine current integration time (prefer the value we set)
+            if applied_integration_s is None:
+                # Fallback to spectrometer attribute if available
+                if hasattr(self.usb, 'integration_time'):
+                    applied_integration_s = float(self.usb.integration_time)
+                elif hasattr(self.usb, '_integration_time'):
+                    applied_integration_s = float(self.usb._integration_time)
+            integ_ms = applied_integration_s * 1000.0 if applied_integration_s is not None else None
+            logger.info(
+                f"⏱️ DAQ ch{ch.upper()}: integration={integ_ms:.1f}ms, scans={scans_for_channel}, "
+                f"preLED={self.led_on_delay*1000:.0f}ms, postLED={self.led_off_delay*1000:.0f}ms"
+            )
+        except Exception:
+            # Non-fatal if timing log formatting fails
+            pass
 
         # ACQUIRE SPECTRUM (this is the slow part - 200ms budget per channel)
         averaged_intensity = self._acquire_averaged_spectrum(
@@ -886,32 +1194,61 @@ class SPRDataAcquisition:
         if averaged_intensity is None:
             raise RuntimeError(f"Failed to acquire spectrum for channel {ch}")
 
-        # Prepare dark correction (resize if needed)
-        if self.dark_noise.shape == averaged_intensity.shape:
-            dark_correction = self.dark_noise
+        # 🔍 DIAGNOSTIC: Log RAW spectrum intensity in ROI (580-610nm)
+        try:
+            if hasattr(self, 'wave_data') and self.wave_data is not None and len(self.wave_data) >= len(averaged_intensity):
+                # Find indices for 580-610nm ROI
+                wave_subset = self.wave_data[:len(averaged_intensity)]
+                roi_mask = (wave_subset >= 580) & (wave_subset <= 610)
+                if np.any(roi_mask):
+                    roi_intensity = averaged_intensity[roi_mask]
+                    roi_mean = float(np.mean(roi_intensity))
+                    roi_max = float(np.max(roi_intensity))
+                    logger.info(
+                        f"📊 RAW ch{ch.upper()}: ROI(580-610nm) mean={roi_mean:.0f}, max={roi_max:.0f} counts "
+                        f"(integration={applied_integration_s*1000 if applied_integration_s else '?'}ms)"
+                    )
+        except Exception as e:
+            logger.debug(f"Could not log ROI diagnostic for ch{ch}: {e}")
+
+        # Prepare dark correction (choose per-channel if available, then resize if needed)
+        base_dark = None
+        try:
+            if hasattr(self, 'per_channel_dark_noise') and isinstance(self.per_channel_dark_noise, dict):
+                base_dark = self.per_channel_dark_noise.get(ch)
+        except Exception:
+            base_dark = None
+        if base_dark is None:
+            base_dark = self.dark_noise
+
+        if base_dark.shape == averaged_intensity.shape:
+            dark_correction = base_dark
         else:
             target_size = len(averaged_intensity)
-            source_size = len(self.dark_noise)
+            source_size = len(base_dark)
 
-            if source_size == 1:
-                dark_correction = np.full_like(averaged_intensity, self.dark_noise[0])
+            if source_size == 0:
+                logger.warning("No dark noise available; using zero correction")
+                dark_correction = np.zeros_like(averaged_intensity)
+            elif source_size == 1:
+                dark_correction = np.full_like(averaged_intensity, base_dark[0])
             elif source_size == target_size:
                 try:
-                    dark_correction = self.dark_noise.reshape(averaged_intensity.shape)
+                    dark_correction = base_dark.reshape(averaged_intensity.shape)
                 except ValueError:
                     dark_correction = np.zeros_like(averaged_intensity)
             else:
                 if HAS_SCIPY:
                     source_indices = np.linspace(0, 1, source_size)
                     target_indices = np.linspace(0, 1, target_size)
-                    interpolator = interp1d(source_indices, self.dark_noise,
+                    interpolator = interp1d(source_indices, base_dark,
                                           kind='linear', bounds_error=False, fill_value='extrapolate')
                     dark_correction = interpolator(target_indices)
                 else:
                     step = source_size / target_size
                     indices = np.arange(target_size) * step
                     indices = np.clip(indices.astype(int), 0, source_size - 1)
-                    dark_correction = self.dark_noise[indices]
+                    dark_correction = base_dark[indices]
 
         # Get reference signal for this channel
         ref_sig_ch = self.ref_sig[ch] if self.ref_sig[ch] is not None else None
@@ -919,6 +1256,8 @@ class SPRDataAcquisition:
         # Turn off LEDs
         if self.device_config["ctrl"] in DEVICES:
             self.ctrl.turn_off_channels()
+            if self.led_off_delay > 0:
+                time.sleep(self.led_off_delay)
 
         return averaged_intensity, acquisition_timestamp, dark_correction, ref_sig_ch
 
@@ -942,8 +1281,8 @@ class SPRDataAcquisition:
             self._activate_channel_batch(ch)
             t_led_on = perf_counter()
 
-            if self.led_delay > 0:
-                time.sleep(self.led_delay)
+            if self.led_on_delay > 0:
+                time.sleep(self.led_on_delay)
             t_led_settle = perf_counter()
 
             # ⏱️ TIMESTAMP FIX: Capture timestamp RIGHT BEFORE spectrum acquisition
@@ -1067,7 +1406,7 @@ class SPRDataAcquisition:
 
                             # Update channel history for next prediction
                             # (use signal before afterglow correction for history)
-                            signal_for_history = np.mean(raw_spectrum)  # Simplified
+                            signal_for_history = np.mean(averaged_intensity)  # Simplified
                             self.ml_afterglow.update_channel_history(ch, signal_for_history)
 
                         # ✨ LOG: Verify channel A gets afterglow correction
@@ -1108,6 +1447,21 @@ class SPRDataAcquisition:
                 # Apply dark noise correction
                 self.int_data[ch] = averaged_intensity - dark_correction
 
+                # 🔍 DIAGNOSTIC: Log dark-corrected intensity in ROI
+                try:
+                    if hasattr(self, 'wave_data') and self.wave_data is not None and len(self.wave_data) >= len(self.int_data[ch]):
+                        wave_subset = self.wave_data[:len(self.int_data[ch])]
+                        roi_mask = (wave_subset >= 580) & (wave_subset <= 610)
+                        if np.any(roi_mask):
+                            roi_intensity = self.int_data[ch][roi_mask]
+                            roi_mean = float(np.mean(roi_intensity))
+                            roi_max = float(np.max(roi_intensity))
+                            logger.info(
+                                f"📊 DARK-CORRECTED ch{ch.upper()}: ROI(580-610nm) mean={roi_mean:.0f}, max={roi_max:.0f} counts"
+                            )
+                except Exception as e:
+                    logger.debug(f"Could not log dark-corrected ROI for ch{ch}: {e}")
+
                 # ✨ NEW: Track this channel for next afterglow correction
                 self._last_active_channel = ch
 
@@ -1119,33 +1473,61 @@ class SPRDataAcquisition:
                 t_trans_complete = t_dark_ready  # Default if not calculated
                 if self.ref_sig[ch] is not None and self.data_processor is not None:
                     try:
-                        # Handle size mismatch between ref_sig and current data
-                        # ref_sig is from calibration (may be 1591 pixels)
-                        # current data is from acquisition (may be 1590 pixels)
+                        # Pass original ref_sig; downstream will resample if needed
+                        # calculate_transmission() will resize S-ref to match P automatically
                         ref_sig_adjusted = self.ref_sig[ch]
-                        if len(self.ref_sig[ch]) != len(dark_correction):
+                        if ref_sig_adjusted is not None and len(ref_sig_adjusted) != len(dark_correction):
                             logger.debug(
-                                f"Adjusting ref_sig from {len(self.ref_sig[ch])} to {len(dark_correction)} pixels"
+                                f"S-ref size mismatch: ref={len(ref_sig_adjusted)} vs data={len(dark_correction)} (will resample in processor)"
                             )
-                            ref_sig_adjusted = self.ref_sig[ch][:len(dark_correction)]
 
                         # STEP 3: Save S-mode reference (for comparison)
                         if SAVE_DEBUG_DATA:
                             # Log sizes for debugging (debug level - only when saving files)
-                            logger.debug(
-                                f"🔍 Debug sizes ch{ch}: "
-                                f"ref_sig={len(self.ref_sig[ch])}, "
-                                f"dark_correction={len(dark_correction)}, "
-                                f"wave_data={len(self.wave_data)}, "
-                                f"averaged_intensity={len(averaged_intensity)}"
-                            )
+                            if ref_sig_adjusted is not None:
+                                logger.debug(
+                                    f"🔍 Debug sizes ch{ch}: "
+                                    f"ref_sig={len(ref_sig_adjusted)}, "
+                                    f"dark_correction={len(dark_correction)}, "
+                                    f"wave_data={len(self.wave_data)}, "
+                                    f"averaged_intensity={len(averaged_intensity)}"
+                                )
                             # S-ref already has dark subtracted during calibration
-                            self._save_debug_step(ch, "3_s_reference_corrected", ref_sig_adjusted, self.wave_data)
+                            if ref_sig_adjusted is not None:
+                                self._save_debug_step(ch, "3_s_reference_corrected", ref_sig_adjusted, self.wave_data)
 
                         # Calculate transmittance (P/S ratio)
                         # CRITICAL: ref_sig already has dark subtracted during calibration!
                         # Only subtract dark from P-mode data here
                         p_corrected = averaged_intensity - dark_correction
+
+                        # 🔍 DIAGNOSTIC: Log S-reference intensity in ROI
+                        try:
+                            if ref_sig_adjusted is not None and len(ref_sig_adjusted) > 0:
+                                # Find ROI in S-reference
+                                if hasattr(self, 'wave_data') and self.wave_data is not None:
+                                    wave_subset = self.wave_data[:len(ref_sig_adjusted)]
+                                    roi_mask = (wave_subset >= 580) & (wave_subset <= 610)
+                                    if np.any(roi_mask):
+                                        roi_s_ref = ref_sig_adjusted[roi_mask]
+                                        s_mean = float(np.mean(roi_s_ref))
+                                        s_max = float(np.max(roi_s_ref))
+
+                                        # Also check P-corrected
+                                        roi_p_corrected = p_corrected[roi_mask]
+                                        p_mean = float(np.mean(roi_p_corrected))
+                                        p_max = float(np.max(roi_p_corrected))
+
+                                        # Calculate expected transmittance
+                                        trans_mean = (p_mean / s_mean * 100) if s_mean > 0 else 0
+
+                                        logger.info(
+                                            f"📊 P/S RATIO ch{ch.upper()}: "
+                                            f"P_mean={p_mean:.0f}, S_mean={s_mean:.0f}, "
+                                            f"Trans={trans_mean:.1f}%"
+                                        )
+                        except Exception as e:
+                            logger.debug(f"Could not log P/S diagnostic for ch{ch}: {e}")
 
                         # ✨ O2 OPTIMIZATION: Skip denoising for sensorgram (15-20ms faster)
                         # Sensorgram only needs peak wavelength, not full denoised spectrum
@@ -1162,7 +1544,8 @@ class SPRDataAcquisition:
 
                         # STEP 4: Save final transmittance spectrum (after P/S calibration + denoising)
                         if SAVE_DEBUG_DATA and self.trans_data[ch] is not None:
-                            self._save_debug_step(ch, "4_final_transmittance", self.trans_data[ch], self.wave_data)
+                            trans_arr = cast(np.ndarray, self.trans_data[ch])
+                            self._save_debug_step(ch, "4_final_transmittance", trans_arr, self.wave_data)
                             self.debug_data_counter += 1  # Increment counter after complete cycle
 
                         # ✨ MICRO-OPT: Conditional diagnostic emission (saves 12-20ms when disabled)
@@ -1208,6 +1591,8 @@ class SPRDataAcquisition:
             # Turn off channels after reading
             if self.device_config["ctrl"] in DEVICES:
                 self.ctrl.turn_off_channels()
+                if self.led_off_delay > 0:
+                    time.sleep(self.led_off_delay)
 
             # Find resonance wavelength
             fit_lambda = np.nan
@@ -1647,11 +2032,18 @@ class SPRDataAcquisition:
             bool: Success status
         """
         if not self._batch_led_available or not self.ctrl:
-            # Fallback to sequential
-            if intensity is not None:
-                self.ctrl.set_intensity(ch=channel, raw_val=intensity)
-            else:
+            # Fallback to sequential: set intensity (if provided) THEN ensure channel is ON
+            try:
+                if intensity is not None:
+                    try:
+                        self.ctrl.set_intensity(ch=channel, raw_val=intensity)
+                    except Exception as e:
+                        logger.debug(f"Fallback set_intensity failed for {channel}: {e}")
+                # Always activate the channel so LED actually turns on
                 self.ctrl.turn_on_channel(ch=channel)
+            except Exception as e:
+                logger.warning(f"❌ LED fallback activation failed for {channel}: {e}")
+                return False
             return True
 
         try:

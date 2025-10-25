@@ -364,12 +364,27 @@ class SPRDataProcessor:
                     KALMAN_PROCESS_NOISE,
                     KALMAN_MEASUREMENT_NOISE,
                 )
+                # Optional dynamic SG controls (backward compatible if missing)
+                try:
+                    from settings.settings import (
+                        DYNAMIC_SG_ENABLED,
+                        DYNAMIC_SG_TARGET_SMOOTHNESS,
+                    )
+                except Exception:
+                    DYNAMIC_SG_ENABLED = True
+                    DYNAMIC_SG_TARGET_SMOOTHNESS = None
 
-                if DENOISE_TRANSMITTANCE and len(transmission) > 11:
+                if DENOISE_TRANSMITTANCE and len(transmission) > 11 and DYNAMIC_SG_ENABLED:
                     # ✨ Use dynamic SG filter for uniform smoothness across channels
-                    # This replaces the static window/polyorder approach
-                    transmission, sg_window, sg_polyorder = self._apply_dynamic_sg_filter(transmission)
-                    logger.debug(f"Dynamic SG filter applied: window={sg_window}, polyorder={sg_polyorder}")
+                    # If a global target smoothness is provided, use it; otherwise auto-calibrate per spectrum
+                    transmission, sg_window, sg_polyorder = self._apply_dynamic_sg_filter(
+                        transmission,
+                        target_smoothness=DYNAMIC_SG_TARGET_SMOOTHNESS,
+                    )
+                    logger.debug(
+                        f"Dynamic SG filter applied: window={sg_window}, polyorder={sg_polyorder}, "
+                        f"target={DYNAMIC_SG_TARGET_SMOOTHNESS if DYNAMIC_SG_TARGET_SMOOTHNESS is not None else 'auto'}"
+                    )
 
                 # Apply Kalman filtering if enabled (adds ~0.5ms, provides 2-3× better SNR)
                 # Kalman filter is optimal for time-series data with Gaussian noise
@@ -539,6 +554,109 @@ class SPRDataProcessor:
     # ZERO-CROSSING DETECTION
     # ========================================================================
 
+    def _estimate_centroid_with_optional_width_bias(self, spectrum: np.ndarray, apply_width_bias: bool = True) -> float:
+        """Estimate peak using centroid with optional width-bias correction.
+
+        - Finds a discrete minimum in the expected wavelength range (if enabled)
+        - Computes a weighted centroid within CENTROID_WINDOW_NM around that min
+        - Optionally applies width-bias correction using left/right edge asymmetry
+
+        Returns np.nan if it cannot produce a valid estimate.
+        """
+        try:
+            from settings.settings import (
+                ADAPTIVE_PEAK_DETECTION,
+                SPR_PEAK_EXPECTED_MIN,
+                SPR_PEAK_EXPECTED_MAX,
+                CENTROID_WINDOW_NM,
+                RIGHT_DECAY_GAMMA,
+                EDGE_DEPTH_FRACTION,
+                WIDTH_BIAS_K,
+            )
+
+            wl = self.wave_data
+            if wl is None or len(wl) != len(spectrum) or len(spectrum) < 5:
+                return np.nan
+
+            # Initial minimum search (optionally constrained)
+            if ADAPTIVE_PEAK_DETECTION:
+                try:
+                    min_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MIN, side='left'))
+                    max_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MAX, side='right'))
+                    min_idx = max(0, min_idx)
+                    max_idx = min(len(wl), max_idx)
+                except Exception:
+                    min_idx, max_idx = 0, len(wl)
+
+                if 0 <= min_idx < max_idx <= len(wl):
+                    local_spec = spectrum[min_idx:max_idx]
+                    local_argmin = int(np.argmin(local_spec))
+                    i0 = int(min_idx + local_argmin)
+                else:
+                    i0 = int(np.argmin(spectrum))
+            else:
+                i0 = int(np.argmin(spectrum))
+
+            x0 = float(wl[i0])
+            half = float(CENTROID_WINDOW_NM) / 2.0
+            mask = (wl >= x0 - half) & (wl <= x0 + half)
+            xw = wl[mask]
+            yw = spectrum[mask]
+
+            # Weighted centroid in window
+            if len(xw) >= 3:
+                w = np.maximum(np.max(yw) - yw, 1e-9)
+                if RIGHT_DECAY_GAMMA and RIGHT_DECAY_GAMMA > 0:
+                    decay = np.exp(-np.clip(xw - x0, 0, None) * RIGHT_DECAY_GAMMA)
+                    w = w * decay
+                num = float(np.sum(w * xw))
+                den = float(np.sum(w))
+                centroid = num / den if den > 0 else x0
+            else:
+                centroid = x0
+
+            if not apply_width_bias:
+                return float(centroid) if wl[0] <= centroid <= wl[-1] else np.nan
+
+            # Width-bias correction via left/right edge asymmetry at a depth fraction
+            ymin = float(np.min(spectrum))
+            ymax = float(np.max(spectrum))
+            level = ymax - float(EDGE_DEPTH_FRACTION) * (ymax - ymin)
+
+            # Left crossing near i0
+            left_idx = i0
+            for j in range(i0 - 1, 0, -1):
+                if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
+                    left_idx = j
+                    break
+            if left_idx < i0 and spectrum[left_idx+1] != spectrum[left_idx]:
+                t = (level - spectrum[left_idx]) / (spectrum[left_idx+1] - spectrum[left_idx])
+                left50 = float(wl[left_idx] + t * (wl[left_idx+1] - wl[left_idx]))
+            else:
+                left50 = float(wl[i0])
+
+            # Right crossing near i0
+            right_idx = i0
+            for j in range(i0, len(spectrum) - 1):
+                if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
+                    right_idx = j
+                    break
+            if right_idx < len(spectrum) - 1 and spectrum[right_idx+1] != spectrum[right_idx]:
+                t = (level - spectrum[right_idx]) / (spectrum[right_idx+1] - spectrum[right_idx])
+                right50 = float(wl[right_idx] + t * (wl[right_idx+1] - wl[right_idx]))
+            else:
+                right50 = float(wl[i0])
+
+            # Asymmetry and correction
+            asym50 = (right50 - centroid) - (centroid - left50)
+            mu_corr = centroid - float(WIDTH_BIAS_K) * asym50
+
+            return float(mu_corr) if wl[0] <= mu_corr <= wl[-1] else np.nan
+
+        except Exception as e:
+            logger.debug(f"Centroid width-bias helper failed: {e}")
+            return np.nan
+
     def find_resonance_wavelength(
         self,
         spectrum: np.ndarray,
@@ -598,90 +716,11 @@ class SPRDataProcessor:
 
             # Optional: width-bias-corrected centroid (fast) — return early if enabled
             if WIDTH_BIAS_CORRECTION_ENABLED:
-                try:
-                    wl = self.wave_data
-
-                    # Physics-aware centroid around discrete minimum
-                    # Respect adaptive expected range for the initial minimum search to avoid wrong features
-                    if ADAPTIVE_PEAK_DETECTION:
-                        # Determine indices that fall within the expected wavelength band
-                        try:
-                            min_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MIN, side='left'))
-                            max_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MAX, side='right'))
-                            # Clamp and validate
-                            min_idx = max(0, min_idx)
-                            max_idx = min(len(wl), max_idx)
-                        except Exception:
-                            min_idx, max_idx = 0, len(wl)
-
-                        if 0 <= min_idx < max_idx <= len(wl):
-                            local_spec = spectrum[min_idx:max_idx]
-                            local_argmin = int(np.argmin(local_spec))
-                            imin = int(min_idx + local_argmin)
-                        else:
-                            imin = int(np.argmin(spectrum))
-                    else:
-                        imin = int(np.argmin(spectrum))
-                    x0 = float(wl[imin])
-                    half = float(CENTROID_WINDOW_NM) / 2.0
-                    mask = (wl >= x0 - half) & (wl <= x0 + half)
-                    xw = wl[mask]
-                    yw = spectrum[mask]
-                    if len(xw) >= 3:
-                        # Invert for weighting (lower transmission -> higher weight)
-                        w = np.maximum(np.max(yw) - yw, 1e-9)
-                        if RIGHT_DECAY_GAMMA and RIGHT_DECAY_GAMMA > 0:
-                            decay = np.exp(-np.clip(xw - x0, 0, None) * RIGHT_DECAY_GAMMA)
-                            w = w * decay
-                        num = float(np.sum(w * xw))
-                        den = float(np.sum(w))
-                        centroid = num / den if den > 0 else x0
-                    else:
-                        centroid = x0
-
-                    # Edge at fraction of depth (left/right at EDGE_DEPTH_FRACTION)
-                    ymin = float(np.min(spectrum))
-                    ymax = float(np.max(spectrum))
-                    level = ymax - float(EDGE_DEPTH_FRACTION) * (ymax - ymin)
-
-                    # Find min index globally for segmentation
-                    i0 = imin
-
-                    # Left crossing
-                    left_idx = i0
-                    for j in range(i0 - 1, 0, -1):
-                        if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
-                            left_idx = j
-                            break
-                    if left_idx < i0 and spectrum[left_idx+1] != spectrum[left_idx]:
-                        t = (level - spectrum[left_idx]) / (spectrum[left_idx+1] - spectrum[left_idx])
-                        left50 = float(wl[left_idx] + t * (wl[left_idx+1] - wl[left_idx]))
-                    else:
-                        left50 = float(wl[i0])
-
-                    # Right crossing
-                    right_idx = i0
-                    for j in range(i0, len(spectrum) - 1):
-                        if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
-                            right_idx = j
-                            break
-                    if right_idx < len(spectrum) - 1 and spectrum[right_idx+1] != spectrum[right_idx]:
-                        t = (level - spectrum[right_idx]) / (spectrum[right_idx+1] - spectrum[right_idx])
-                        right50 = float(wl[right_idx] + t * (wl[right_idx+1] - wl[right_idx]))
-                    else:
-                        right50 = float(wl[i0])
-
-                    # Asymmetry around centroid (positive if right side is longer)
-                    asym50 = (right50 - centroid) - (centroid - left50)
-
-                    # Correct centroid using calibrated slope
-                    mu_corr = centroid - float(WIDTH_BIAS_K) * asym50
-
-                    # Validate result in bounds
-                    if wl[0] <= mu_corr <= wl[-1]:
-                        return float(mu_corr)
-                except Exception as e:
-                    logger.debug(f"Width-bias correction path failed: {e}; falling back to configured method")
+                mu = self._estimate_centroid_with_optional_width_bias(spectrum, apply_width_bias=True)
+                if not np.isnan(mu):
+                    return float(mu)
+                else:
+                    logger.debug("Width-bias centroid failed; falling back to configured method")
 
             # Try numerical derivative method (original from old software)
             if PEAK_TRACKING_METHOD == 'numerical_derivative':
@@ -704,6 +743,17 @@ class SPRDataProcessor:
 
                 except Exception as e:
                     logger.warning(f"Numerical derivative method failed: {e}, using fallback")
+
+            # CENTROID method with optional width-bias correction
+            if PEAK_TRACKING_METHOD == 'centroid':
+                mu = self._estimate_centroid_with_optional_width_bias(
+                    spectrum,
+                    apply_width_bias=WIDTH_BIAS_CORRECTION_ENABLED,
+                )
+                if not np.isnan(mu):
+                    return float(mu)
+                else:
+                    logger.warning("Centroid method returned NaN, using fallback")
 
             # Try consensus method first if enabled (Phase 1 - v0.2.0)
             if PEAK_TRACKING_METHOD == 'consensus' and self.consensus_tracker is not None:

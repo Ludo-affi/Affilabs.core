@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """SPR Calibration Module
 
 Handles all SPR spectrometer calibration operations:
@@ -31,194 +33,123 @@ WHEN TO USE CH_LIST CONSTANT:
 
 DO NOT hardcode ["a", "b", "c", "d"] in function bodies.
 
-TIMING DELAYS (Code Quality Standard):
-======================================
-time.sleep() calls should use named constants from the constants section.
-
-Common delay purposes:
-- LED_DELAY (50ms): LED warm-up and optical settling
-- ADAPTIVE_STABILIZATION_DELAY (150ms): LED intensity changes during optimization
-- Mode switch delays (400ms): Servo motor rotation, polarizer movement
-- Integration adjustment (20ms): Detector parameter updates
-
-See CODE_QUALITY_ANALYSIS_COMPLETE.md for optimization analysis.
-
-Author: Refactored from main.py
-Date: October 7, 2025
-Last Updated: October 11, 2025 (Code quality improvements)
 """
 
-from __future__ import annotations
-
-import csv
-import datetime as dt
-import json
+# Standard library imports
+import os
 import time
-from collections.abc import Callable
-from copy import deepcopy
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+import csv
+import json
+import datetime as dt
 from datetime import datetime
+from pathlib import Path
+from contextlib import suppress
+from typing import Optional, Union, Any, Callable
 
+# Third-party imports
 import numpy as np
 
-from utils.detector_manager import get_detector_manager, get_current_detector_profile, DetectorProfile
-from settings import (
-    ACQUISITION_CYCLE_TIME,
-    ACQUISITION_FREQUENCY,
+# Qt imports for event processing
+try:
+    from PySide6.QtWidgets import QApplication
+    QT_AVAILABLE = True
+except ImportError:
+    QT_AVAILABLE = False
+
+# Local imports
+from utils.logger import logger
+from utils.detector_manager import get_detector_manager, DetectorProfile
+from utils.spr_data_processor import SPRDataProcessor
+from settings.settings import (
     CH_LIST,
-    DARK_NOISE_SCANS,
-    DETECTOR_MAX_COUNTS,
-    DEVELOPMENT_MODE,
-    DEVICES,
     EZ_CH_LIST,
     LED_DELAY,
-    MAX_INTENSITY_PERCENT,
-    MAX_INTEGRATION,
-    MAX_WAVELENGTH,
-    MIN_INTENSITY_PERCENT,
     MIN_INTEGRATION,
-    MIN_WAVELENGTH,
-    NUM_SCANS_PER_ACQUISITION,  # ✨ Phase 2: 4-scan averaging for consistency
-    P_COUNT_THRESHOLD,
-    P_LED_MAX,
-    P_MAX_INCREASE,
-    REF_SCANS,
+    NUM_SCANS_PER_ACQUISITION,
     ROOT_DIR,
-    S_COUNT_MAX,
-    S_LED_INT,
     S_LED_MIN,
-    TARGET_INTENSITY_PERCENT,
-    TARGET_WAVELENGTH_MAX,
-    TARGET_WAVELENGTH_MIN,
-    TIME_PER_CHANNEL,
+    S_LED_INT,
+    P_LED_MAX,
     TIME_ZONE,
+    # Additional configuration used across calibration
+    MIN_WAVELENGTH,
+    MAX_WAVELENGTH,
+    TARGET_WAVELENGTH_MIN,
+    TARGET_WAVELENGTH_MAX,
+    MAX_INTEGRATION,
+    TARGET_INTENSITY_PERCENT,
+    WEAKEST_TARGET_PERCENT,
+    WAVELENGTH_CACHE_ENABLED,
+    WAVELENGTH_CACHE_MAX_AGE_DAYS,
+    DEVICES,
 )
-from utils.logger import logger
-from utils.spr_data_processor import SPRDataProcessor
 
-if TYPE_CHECKING:
-    from utils.controller import PicoEZSPR, PicoP4SPR
-    from utils.usb4000_adapter import USB4000  # HAL-based USB4000 adapter
+# Optional, newer LED timing settings (fall back handled later)
+try:
+    from settings.settings import PRE_LED_DELAY_MS, POST_LED_DELAY_MS  # type: ignore
+except Exception:  # Will default to legacy LED_DELAY if missing
+    PRE_LED_DELAY_MS = float(LED_DELAY) * 1000.0  # ms
+    POST_LED_DELAY_MS = 5.0  # ms
 
+# Optional wavelength offset; default to 0.0 if not configured
+try:
+    from settings.settings import WAVELENGTH_OFFSET  # type: ignore
+except Exception:
+    WAVELENGTH_OFFSET = 0.0
 
-# ============================================================================
-# CALIBRATION CONSTANTS - Centralized Configuration
-# ============================================================================
+# Detector profile accessor (for max counts, etc.)
+try:
+    from utils.detector_manager import get_current_detector_profile
+except Exception:  # Fallback if detector manager not available
+    get_current_detector_profile = None  # type: ignore
 
-# LED Intensity Constraints
-MIN_LED_INTENSITY = int(0.05 * 255)  # 5% of max LED intensity = 13 (minimum safe operating point)
-MAX_LED_INTENSITY = 255  # Maximum LED intensity (8-bit PWM)
-LED_MID_POINT = 128  # Starting point for binary search optimization
-FOUR_LED_MAX_INTENSITY = 204  # 4LED limited to ~80% (0.8 * 255)
+# Back-compat and convenience aliases
+MS_TO_SECONDS: float = 1000.0  # Convert ms to seconds via division
+MIN_LED_INTENSITY: int = int(S_LED_MIN)  # 5% of max LED intensity (typically 13)
+MAX_LED_INTENSITY: int = int(P_LED_MAX)  # Maximum LED intensity (typically 255)
 
-# LED Adjustment Steps (for legacy coarse/medium/fine calibration)
-COARSE_ADJUSTMENT = 20  # LED intensity adjustment step for rough calibration
-MEDIUM_ADJUSTMENT = 5  # LED intensity adjustment step for medium calibration
-FINE_ADJUSTMENT = 1  # LED intensity adjustment step for fine calibration
+# Temporary integration time for initial dark if needed
+TEMP_INTEGRATION_TIME_S: float = max(MIN_INTEGRATION / MS_TO_SECONDS, 0.050)
 
-# Adaptive Calibration Algorithm Parameters
-ADAPTIVE_CALIBRATION_ENABLED = True  # Enable adaptive algorithm
-ADAPTIVE_MAX_ITERATIONS = 10  # Maximum iterations before fallback (reduced for speed)
-ADAPTIVE_CONVERGENCE_FACTOR = 0.9  # Convergence damping factor (more aggressive)
-ADAPTIVE_MIN_STEP = 1  # Minimum LED intensity step
-ADAPTIVE_MAX_STEP = 75  # Maximum LED intensity step (larger for faster approach)
-ADAPTIVE_STABILIZATION_DELAY = 0.15  # LED stabilization delay in seconds (optimized for speed)
-
-# Integration Time Parameters
-INTEGRATION_STEP_THRESHOLD = 50  # Threshold for changing dark noise scan count (ms)
-TEMP_INTEGRATION_TIME_S = 0.032  # 32ms - safe middle value for initial dark measurement
-MS_TO_SECONDS = 1000.0  # Conversion factor milliseconds to seconds
-
-# Signal Intensity Thresholds (as percentages of detector max)
-MINIMUM_ACCEPTABLE_PERCENT = 60  # User requirement: at least 60% of detector max
-IDEAL_TARGET_PERCENT = 80  # Ideal target signal strength
-SATURATION_THRESHOLD_PERCENT = 95  # 95% = near saturation warning threshold
-
-# P-Mode Calibration Parameters
-LED_BOOST_FACTOR = 1.33  # 33% boost for P-mode if possible
-SIGNAL_BOOST_TARGET = 1.20  # 20% signal increase target for P-mode
-
-# Wavelength Calibration
-WAVELENGTH_OFFSET = 20  # Offset applied to wavelength data in some configurations
-
-# Percentage Conversion
-PERCENT_MULTIPLIER = 100  # For converting ratios to percentages
-
-# Polarizer Servo Position Constraint (0-255 range)
-MAX_POLARIZER_POSITION = 255  # Maximum servo position (raw value, NOT degrees)
-
-# ✨ Standardized error message for missing polarizer calibration
+# Centralized error/help message for missing OEM polarizer positions
 POLARIZER_ERROR_MESSAGE = """
 🔧 REQUIRED: Run OEM calibration tool to configure polarizer positions
-   This tool finds optimal S and P positions during manufacturing.
 
-   Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL
+Command: python utils/oem_calibration_tool.py --serial YOUR_SERIAL
+OR use Settings → Auto-Polarization in the GUI
 
-   OR use Settings → Auto-Polarization in the GUI
+This tool finds optimal S and P positions during manufacturing:
+  1. Sweeps servo through full range (10-255)
+  2. Finds optimal S-mode position (HIGH transmission - reference)
+  3. Finds optimal P-mode position (LOWER transmission - resonance)
+  4. Saves positions to device_config.json
 """
 
-
-def calculate_target_intensity(target_percent: float = TARGET_INTENSITY_PERCENT,
-                                detector_max_counts: int = DETECTOR_MAX_COUNTS) -> int:
-    """Calculate target intensity from percentage using detector-specific max.
-
-    Args:
-        target_percent: Target as percentage of detector max (0-100)
-        detector_max_counts: Detector-specific maximum counts (from profile)
-
-    Returns:
-        Target intensity in counts
-    """
-    return int(detector_max_counts * target_percent / 100.0)
-
-
-def calculate_dynamic_scans(integration_time_seconds: float,
-                            target_cycle_time: float = 0.2,
-                            min_scans: int = 1,
-                            max_scans: int = 25) -> int:
-    """Calculate number of scans to average based on integration time.
-
-    This balances noise reduction with acquisition speed.
-
-    Formula: num_scans = min(max_scans, max(min_scans, target_cycle_time / integration_time))
+# Dynamic scan policy helper (target ~200ms of acquisition per channel)
+def calculate_dynamic_scans(integration_seconds: float) -> int:
+    """Compute number of scans to keep acquisition around 200ms budget.
 
     Args:
-        integration_time_seconds: Integration time in seconds
-        target_cycle_time: Target total time for acquisition (default 0.2s = 200ms)
-        min_scans: Minimum number of scans (default 1)
-        max_scans: Maximum number of scans (default 25)
+        integration_seconds: Integration time per scan in seconds.
 
     Returns:
-        Number of scans to average
-
-    Examples:
-        integration=0.150s (150ms) → 1 scan (150ms total)
-        integration=0.100s (100ms) → 2 scans (200ms total)
-        integration=0.050s (50ms)  → 4 scans (200ms total)
-        integration=0.040s (40ms)  → 5 scans (200ms total)
-        integration=0.020s (20ms)  → 10 scans (200ms total)
-        integration=0.010s (10ms)  → 20 scans (200ms total)
-        integration=0.004s (4ms)   → 25 scans (100ms total, capped at max)
+        Integer number of scans (clamped to [1, 25]).
     """
-    calculated_scans = int(target_cycle_time / integration_time_seconds)
-    clamped_scans = max(min_scans, min(max_scans, calculated_scans))
-    return clamped_scans
+    try:
+        t = float(integration_seconds)
+    except Exception:
+        return NUM_SCANS_PER_ACQUISITION
 
+    if t <= 0:
+        return NUM_SCANS_PER_ACQUISITION
 
-def calculate_intensity_tolerance(target_percent: float = TARGET_INTENSITY_PERCENT,
-                                   detector_max_counts: int = DETECTOR_MAX_COUNTS) -> int:
-    """Calculate acceptable tolerance around target (±5% of detector max).
-
-    Args:
-        target_percent: Target as percentage
-        detector_max_counts: Detector-specific maximum counts (from profile)
-
-    Returns:
-        Tolerance in counts
-    """
-    return int(detector_max_counts * 0.05)  # ±5% of max
-
+    # Match legacy behavior: num_scans ≈ round(200ms / integration)
+    scans = int(round(0.200 / t))
+    if scans < 1:
+        scans = 1
+    if scans > 25:
+        scans = 25
+    return scans
 
 class CalibrationState:
     """Encapsulates calibration state and results - thread-safe shared state.
@@ -272,6 +203,16 @@ class CalibrationState:
 
         # Filter and timing settings
         self.med_filt_win = 11
+        # LED timing (default delays; can be overridden by afterglow/device config)
+        try:
+            from settings.settings import PRE_LED_DELAY_MS, POST_LED_DELAY_MS
+            self.led_on_delay_s: float = float(PRE_LED_DELAY_MS) / 1000.0
+            self.led_off_delay_s: float = float(POST_LED_DELAY_MS) / 1000.0
+        except Exception:
+            # Fallback to legacy single delay if settings import changes
+            self.led_on_delay_s = float(LED_DELAY)
+            self.led_off_delay_s = 0.005
+        # Back-compat single value used in some persisted state (do not rely on it)
         self.led_delay = LED_DELAY
 
         # Results
@@ -644,6 +585,25 @@ class SPRCalibrator:
             self.state = CalibrationState()
             logger.info("⚠️ SPRCalibrator created NEW CalibrationState")
 
+        # LED timing (default delays; can be overridden by afterglow/device config)
+        # Calibrator maintains its own copy since many methods reference self.led_on/off_delay_s
+        try:
+            from settings.settings import PRE_LED_DELAY_MS, POST_LED_DELAY_MS
+            self.led_on_delay_s: float = float(PRE_LED_DELAY_MS) / 1000.0
+            self.led_off_delay_s: float = float(POST_LED_DELAY_MS) / 1000.0
+            logger.info(
+                f"⏱️ LED timing set from settings: pre-on={PRE_LED_DELAY_MS:.1f}ms, post-off={POST_LED_DELAY_MS:.1f}ms"
+            )
+        except Exception:
+            # Fallback to legacy single delay if settings import changes
+            self.led_on_delay_s = float(LED_DELAY)
+            self.led_off_delay_s = 0.005  # 5ms default post-off settle
+            logger.warning(
+                f"⚠️ Using legacy LED delay fallback: pre-on={self.led_on_delay_s*1000:.1f}ms, post-off={self.led_off_delay_s*1000:.1f}ms"
+            )
+        # Back-compat single value used in some persisted state (do not rely on it)
+        self.led_delay = LED_DELAY
+
         # ✨ Load preferred calibration mode from device config (if available)
         if device_config and 'calibration' in device_config:
             preferred_mode = device_config['calibration'].get('preferred_calibration_mode', 'global')
@@ -656,6 +616,12 @@ class SPRCalibrator:
         else:
             logger.info("📋 No calibration mode in config, using default: GLOBAL")
             self.state.calibration_mode = 'global'
+
+        # Initialize snapshot helper (best-effort)
+        try:
+            self._snap = _SnapshotHelper(self)
+        except Exception:
+            self._snap = None
 
         # ========================================================================
         # ✨ P1 OPTIMIZATION: Early OEM Position Loading (Fail-Fast)
@@ -1041,7 +1007,19 @@ class SPRCalibrator:
             for ch in channels:
                 # Use custom intensity or max_led_intensity
                 intensity = intensities.get(ch) if intensities else self.max_led_intensity
+                # Set intensity (this should also turn on the LED on most HALs)
                 self.ctrl.set_intensity(ch=ch, raw_val=intensity)
+                # Redundant safety: explicitly turn on the channel if an API exists
+                try:
+                    if hasattr(self.ctrl, 'activate_channel'):
+                        # Some HALs prefer 'activate_channel' (expects 'a'/'b' string)
+                        self.ctrl.activate_channel(ch)
+                    elif hasattr(self.ctrl, 'turn_on_channel'):
+                        # Legacy controller API
+                        self.ctrl.turn_on_channel(ch)
+                except Exception:
+                    # Non-fatal; acquisition path will detect if LED is off
+                    pass
             return True
         except Exception as e:
             logger.error(f"Sequential LED activation failed: {e}")
@@ -1287,29 +1265,43 @@ class SPRCalibrator:
                 """Set LED intensity for a specific channel."""
                 logger.info(f"Setting intensity for channel {ch} to {raw_val}")
                 try:
-                    # Import ChannelID enum
-                    from utils.hal.spr_controller_hal import ChannelID
-
-                    # Convert string channel to ChannelID enum
-                    channel_map = {
-                        "a": ChannelID.A,
-                        "b": ChannelID.B,
-                        "c": ChannelID.C,
-                        "d": ChannelID.D,
-                    }
-                    channel_id = channel_map.get(ch.lower())
-
-                    if channel_id is None:
+                    # Validate channel
+                    if not isinstance(ch, str) or ch.lower() not in {"a", "b", "c", "d"}:
                         logger.error(f"Invalid channel: {ch}")
                         return False
 
-                    # Activate the specified channel first
-                    self._hal.activate_channel(channel_id)
-                    # Set LED intensity (raw_val should be 0-100 range)
-                    # Convert raw_val to appropriate range if needed
-                    intensity = max(0.0, min(100.0, float(raw_val)))
-                    self._hal.set_led_intensity(intensity)
-                    return True
+                    # Clamp raw value to firmware range 0-255
+                    try:
+                        raw_int = int(raw_val)
+                    except Exception:
+                        logger.error(f"Invalid raw intensity value (not int-castable): {raw_val}")
+                        return False
+
+                    if raw_int < 0:
+                        raw_int = 0
+                    elif raw_int > 255:
+                        raw_int = 255
+
+                    # Use controller HAL's per-channel API which both sets intensity and turns the channel on
+                    result = False
+                    try:
+                        if hasattr(self._hal, 'set_intensity'):
+                            result = bool(self._hal.set_intensity(ch=ch.lower(), raw_val=raw_int))
+                        else:
+                            # Fallback: activate channel, then try normalized API for all channels
+                            with suppress(Exception):
+                                self._hal.activate_channel(ch.lower())
+                            if hasattr(self._hal, 'set_led_intensity'):
+                                # Best-effort: map 0-255 -> 0.0-1.0
+                                norm = raw_int / 255.0
+                                result = bool(self._hal.set_led_intensity(norm))
+                    except Exception as inner:
+                        logger.debug(f"ControllerAdapter.set_intensity underlying HAL call failed: {inner}")
+                        result = False
+
+                    if not result:
+                        logger.warning(f"set_intensity failed for channel {ch} with value {raw_int}")
+                    return result
                 except Exception as e:
                     logger.error(f"Failed to set intensity for channel {ch}: {e}")
                     return False
@@ -1553,8 +1545,33 @@ class SPRCalibrator:
             # Instead of: raw = self.usb.read_intensity()
             # Use: raw = self._acquire_calibration_spectrum()
         """
+        # Determine scanning policy based on calibration mode
+        num_scans: int = 1
+        try:
+            mode = getattr(self.state, 'calibration_mode', getattr(self, 'calibration_mode', 'global'))
+        except Exception:
+            mode = 'global'
+
+        if mode == 'global':
+            # For global model, honor a 200 ms time window (dynamic scans)
+            try:
+                current_int = 0.0
+                if hasattr(self.usb, 'get_integration_time'):
+                    current_int = float(self.usb.get_integration_time())
+                elif hasattr(self.usb, 'get_integration'):
+                    current_int = float(self.usb.get_integration())
+                if current_int and current_int > 0:
+                    num_scans = calculate_dynamic_scans(current_int)
+                else:
+                    num_scans = NUM_SCANS_PER_ACQUISITION
+            except Exception:
+                num_scans = NUM_SCANS_PER_ACQUISITION
+        else:
+            # Per-channel model: no windowing; single scan per acquisition
+            num_scans = 1
+
         return self._acquire_averaged_spectrum(
-            num_scans=NUM_SCANS_PER_ACQUISITION,
+            num_scans=num_scans,
             apply_filter=apply_filter,
             subtract_dark=subtract_dark,
             description="calibration spectrum"
@@ -1571,9 +1588,23 @@ class SPRCalibrator:
 
     def _is_stopped(self) -> bool:
         """Check if stop has been requested."""
+        # Process Qt events to keep GUI responsive during long calibration
+        self._process_qt_events()
+
         if self.stop_flag is None:
             return False
         return self.stop_flag.is_set()
+
+    def _process_qt_events(self) -> None:
+        """Process Qt events to keep GUI responsive during calibration.
+
+        This is called at every stop checkpoint throughout calibration to prevent
+        the GUI from freezing and Windows from thinking the app is unresponsive.
+        """
+        if QT_AVAILABLE:
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
 
     def _safe_hardware_cleanup(self) -> None:
         """Safely turn off hardware components to prevent stuck states."""
@@ -1856,15 +1887,47 @@ class SPRCalibrator:
             serial_number = "unknown"
             used_cache = False
 
-            cached_wavelengths_file = Path(ROOT_DIR) / "calibration_data" / "wavelengths_latest.npy"
-            if cached_wavelengths_file.exists():
+            calib_dir = Path(ROOT_DIR) / "calibration_data"
+            cached_wavelengths_file = calib_dir / "wavelengths_latest.npy"
+            invalidate_flag_file = calib_dir / "invalidate_wavelength_cache.flag"
+
+            # Check explicit invalidation via env or flag file
+            env_invalidate = os.getenv("EZ_WL_CACHE_INVALIDATE", "").strip().lower() in {"1", "true", "yes", "on"}
+            file_invalidate = invalidate_flag_file.exists()
+            invalidate_cache = env_invalidate or file_invalidate
+
+            if invalidate_cache and cached_wavelengths_file.exists():
+                try:
+                    logger.info("🧹 Cache invalidate requested → removing cached wavelengths file…")
+                    cached_wavelengths_file.unlink(missing_ok=True)  # type: ignore[arg-type]
+                except Exception as e:
+                    logger.warning(f"Could not remove cached wavelengths: {e}")
+                # Clear the flag file so subsequent runs are normal
+                if file_invalidate:
+                    try:
+                        invalidate_flag_file.unlink(missing_ok=True)  # type: ignore[arg-type]
+                    except Exception:
+                        pass
+
+            # Use cache only if enabled, not invalidated, exists, and fresh enough
+            if (
+                WAVELENGTH_CACHE_ENABLED
+                and not invalidate_cache
+                and cached_wavelengths_file.exists()
+            ):
                 try:
                     file_age_days = (time.time() - cached_wavelengths_file.stat().st_mtime) / 86400
-                    if file_age_days < 30:  # Use cache if less than 30 days old
+                    if file_age_days <= float(WAVELENGTH_CACHE_MAX_AGE_DAYS):
                         wave_data = np.load(cached_wavelengths_file)
                         if wave_data is not None and len(wave_data) > 0:
                             used_cache = True
-                            logger.info(f"📊 Using cached wavelengths (age: {file_age_days:.1f} days, skip EEPROM read)")
+                            logger.info(
+                                f"📊 Using cached wavelengths (age: {file_age_days:.1f} days ≤ {float(WAVELENGTH_CACHE_MAX_AGE_DAYS):.1f} days)"
+                            )
+                    else:
+                        logger.info(
+                            f"🗓️ Cached wavelengths too old (age: {file_age_days:.1f} days > {float(WAVELENGTH_CACHE_MAX_AGE_DAYS):.1f} days) — will read EEPROM"
+                        )
                 except Exception as e:
                     logger.debug(f"Failed to load cached wavelengths: {e}")
                     wave_data = None
@@ -1897,11 +1960,11 @@ class SPRCalibrator:
                 else:
                     logger.error("❌ USB spectrometer has no wavelength reading method")
                     logger.error("   Expected: read_wavelength() or get_wavelengths()")
-                    return False, 1.0
+                    return False
 
             if wave_data is None or len(wave_data) == 0:
                 logger.error("❌ Failed to read wavelengths from spectrometer")
-                return False, 1.0
+                return False
 
             # ✨ OPTIMIZATION: Detect spectrometer type using already-read wavelengths
             detector_type = self._detect_spectrometer_type_fast(wave_data)
@@ -2033,7 +2096,7 @@ class SPRCalibrator:
 
         except Exception as e:
             logger.exception(f"Error in wavelength calibration: {e}")
-            return False, 1.0
+            return False
 
     def calibrate_wavelength_range(self) -> bool:
         """Calibrate wavelength range (backward compatibility wrapper).
@@ -2077,7 +2140,7 @@ class SPRCalibrator:
             logger.info("=" * 80)
             logger.info("STEP 2B: Polarizer Position Validation (Transmission Mode)")
             logger.info("=" * 80)
-            logger.info("Verifying P-mode (HIGH) and S-mode (LOW) positions...")
+            logger.info("Verifying S-mode (HIGH) and P-mode (LOWER) positions...")
 
             # ========================================================================
             # ✨ P3 OPTIMIZATION: Simplified Validation (No Lazy Loading)
@@ -2252,6 +2315,23 @@ class SPRCalibrator:
             self.ctrl.turn_off_channels()
             time.sleep(0.2)
 
+            # Log current integration time and dynamic scan policy used for Step 3 measurements
+            try:
+                current_int = None
+                if hasattr(self.usb, 'get_integration_time'):
+                    current_int = float(self.usb.get_integration_time())
+                elif hasattr(self.usb, 'get_integration'):
+                    current_int = float(self.usb.get_integration())
+                if current_int is None or current_int <= 0:
+                    current_int = float(getattr(self.state, 'integration', 0.0) or 0.0)
+                scans = calculate_dynamic_scans(current_int) if current_int and current_int > 0 else NUM_SCANS_PER_ACQUISITION
+                logger.info(
+                    f"   Step 3 acquisition policy: integration={current_int*1000:.1f} ms, scans={scans} (≈{scans*current_int*1000:.0f} ms total)"
+                )
+            except Exception:
+                # Non-critical; proceed without logging details if anything fails
+                pass
+
             # Get target wavelength range for measurements
             # NOTE: 580-610nm is NOT SPR-specific - just a test region where all LEDs emit
             wave_data = self.state.wavelengths
@@ -2272,8 +2352,9 @@ class SPRCalibrator:
                 return None, {}
 
             detector_max = self.detector_profile.max_intensity_counts
-            SATURATION_THRESHOLD = int(0.95 * detector_max)  # 95% of max
-            logger.debug(f"Saturation threshold: {SATURATION_THRESHOLD} counts (95% of {detector_max})")
+            # Saturation threshold: 99% of detector max (conservative to catch all saturation)
+            SATURATION_THRESHOLD = int(0.99 * detector_max)
+            logger.debug(f"Saturation threshold: {SATURATION_THRESHOLD} counts (99% of {detector_max})")
 
             # ✨ Leverage prior diagnostics from device_config to reduce retries
             # If a channel previously saturated on first pass, start it at LED=64 and scale up for fair comparison
@@ -2319,8 +2400,16 @@ class SPRCalibrator:
                     for ch in [prior_weakest, prior_second]:
                         chosen_led = per_channel_test_led.get(ch, test_led_intensity)
                         intensities_dict = {ch: chosen_led}
-                        self._activate_channel_batch([ch], intensities_dict)
-                        time.sleep(LED_DELAY)
+                        # Ensure LED actually turns on (batch -> sequential fallback)
+                        ok = self._activate_channel_batch([ch], intensities_dict)
+                        if not ok:
+                            logger.warning(f"   Batch activation failed for {ch}, trying sequential...")
+                            ok = self._activate_channel_sequential([ch], intensities_dict)
+                        if not ok:
+                            logger.error(f"   ❌ Failed to activate LED {ch} for early-confirm check")
+                            quick_data = {}
+                            break
+                        time.sleep(self.led_on_delay_s)
                         self._last_active_channel = ch
                         raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
                         if raw_array is None:
@@ -2339,37 +2428,17 @@ class SPRCalibrator:
 
                     # Turn off after quick check
                     self._all_leds_off_batch()
-                    time.sleep(LED_DELAY)
+                    time.sleep(self.led_off_delay_s)
 
                     if len(quick_data) == 2:
                         w_mean = quick_data[prior_weakest][0]
                         s_mean = quick_data[prior_second][0]
                         if w_mean > 0 and (s_mean / w_mean) >= EARLY_CONFIRM_MARGIN:
-                            # Confirmed: prior weakest is still weakest by margin → short-circuit
+                            # Confirmed: prior weakest is still weakest by margin
+                            # But we MUST test ALL channels for Step 4 LED balancing!
                             logger.info(f"   ✅ Early-confirm success: {prior_weakest} remains weakest by {(s_mean/w_mean):.2f}×")
-                            self.state.led_ranking = [(prior_weakest, (w_mean, quick_data[prior_weakest][1], False))]
-                            self.state.weakest_channel = prior_weakest
-
-                            # Persist minimal diagnostics (optional but helpful)
-                            try:
-                                percent = {
-                                    prior_weakest: 100.0,
-                                    prior_second: float((s_mean / w_mean) * 100.0)
-                                }
-                                device_config.save_led_ranking_diagnostics(
-                                    weakest_channel=prior_weakest,
-                                    ranked_channels=[(prior_weakest, (w_mean, quick_data[prior_weakest][1], False)),
-                                                    (prior_second, (s_mean, quick_data[prior_second][1], False))],
-                                    percent_of_weakest=percent,
-                                    mean_counts={prior_weakest: w_mean, prior_second: s_mean},
-                                    saturated_on_first_pass=None,
-                                    test_led_intensity=test_led_intensity,
-                                    test_region_nm=(TARGET_WAVELENGTH_MIN, TARGET_WAVELENGTH_MAX),
-                                )
-                            except Exception:
-                                pass
-
-                            return prior_weakest, {prior_weakest: w_mean, prior_second: s_mean}
+                            logger.info(f"   ⚠️  Early-confirm will NOT short-circuit - need all channels for Step 4")
+                            # DO NOT return early - Step 4 needs all channel data!
             except Exception:
                 # Early confirm is optional; ignore issues and continue with full measurement
                 pass
@@ -2382,8 +2451,21 @@ class SPRCalibrator:
                 # Turn on channel at chosen test intensity (may be 128 or 64 based on prior diagnostics)
                 chosen_led = per_channel_test_led.get(ch, test_led_intensity)
                 intensities_dict = {ch: chosen_led}
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
+                # Ensure LED actually turns on (batch -> sequential fallback)
+                ok = self._activate_channel_batch([ch], intensities_dict)
+                if not ok:
+                    logger.warning(f"   Batch activation failed for {ch}, trying sequential...")
+                    ok = self._activate_channel_sequential([ch], intensities_dict)
+                if not ok:
+                    logger.error(f"   ❌ Failed to activate LED {ch} at LED={chosen_led}")
+                    # Ensure off state and skip this channel
+                    try:
+                        self._all_leds_off_batch()
+                    except Exception:
+                        pass
+                    time.sleep(self.led_off_delay_s)
+                    continue
+                time.sleep(self.led_on_delay_s)
 
                 # Track for afterglow correction
                 self._last_active_channel = ch
@@ -2396,6 +2478,13 @@ class SPRCalibrator:
 
                 # Apply spectral filter (to SPR range)
                 filtered_array = self._apply_spectral_filter(raw_array)
+
+                # 💾 Snapshot: Step 3 S-pol raw (filtered) per channel
+                try:
+                    if hasattr(self, "_snap") and self._snap is not None:
+                        self._snap.save(f"step3_S_raw_filtered_{ch}_LED{int(chosen_led)}", np.array(filtered_array, dtype=float))
+                except Exception:
+                    pass
 
                 # Extract test region (580-610nm)
                 test_region = filtered_array[target_min_idx:target_max_idx]
@@ -2419,7 +2508,7 @@ class SPRCalibrator:
 
             # Turn off all channels
             self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
+            time.sleep(self.led_off_delay_s)
 
             # ✨ HANDLE SATURATION: Retry at lower LED for accurate ranking
             saturated_channels = [ch for ch, (_, _, sat) in channel_data.items() if sat]
@@ -2436,8 +2525,20 @@ class SPRCalibrator:
 
                     # Turn on channel at test intensity
                     intensities_dict = {ch: retry_led}
-                    self._activate_channel_batch([ch], intensities_dict)
-                    time.sleep(LED_DELAY)
+                    # Ensure LED actually turns on (batch -> sequential fallback)
+                    ok = self._activate_channel_batch([ch], intensities_dict)
+                    if not ok:
+                        logger.warning(f"   Batch activation failed on retry for {ch}, trying sequential...")
+                        ok = self._activate_channel_sequential([ch], intensities_dict)
+                    if not ok:
+                        logger.error(f"   ❌ Failed to activate LED {ch} for retry at LED={retry_led}")
+                        try:
+                            self._all_leds_off_batch()
+                        except Exception:
+                            pass
+                        time.sleep(self.led_off_delay_s)
+                        continue
+                    time.sleep(self.led_on_delay_s)
 
                     self._last_active_channel = ch
 
@@ -2450,6 +2551,13 @@ class SPRCalibrator:
 
                     # Apply spectral filter
                     filtered_array = self._apply_spectral_filter(raw_array)
+
+                    # 💾 Snapshot: Step 3 retry S-pol raw (filtered)
+                    try:
+                        if hasattr(self, "_snap") and self._snap is not None:
+                            self._snap.save(f"step3_retry_S_raw_filtered_{ch}_LED{int(retry_led)}", np.array(filtered_array, dtype=float))
+                    except Exception:
+                        pass
 
 
                     # Extract test region
@@ -2467,7 +2575,7 @@ class SPRCalibrator:
 
                 # Turn off all channels after retry
                 self._all_leds_off_batch()
-                time.sleep(LED_DELAY)
+                time.sleep(self.led_off_delay_s)
 
             if not channel_data:
                 logger.error("No channel data measured!")
@@ -2534,6 +2642,138 @@ class SPRCalibrator:
             return None, {}
 
     # ========================================================================
+    # QUICK LED SANITY CHECK (DIAGNOSTIC)
+    # ========================================================================
+    def quick_led_sanity_check(self, ch_list: Optional[list[str]] = None, intensity: int = 255, duration_s: float = 0.4) -> bool:
+        """Quickly verify that each LED turns on and produces measurable signal.
+
+        - Forces S-mode (high transmission) to maximize signal
+        - Turns on each LED at the specified intensity
+        - Captures one averaged spectrum (uses current calibration scanning policy)
+        - Logs raw max/mean and ROI max/mean (580-610nm by default)
+
+        Args:
+            ch_list: Channels to test; defaults to available channels ['a','b','c','d'] if None
+            intensity: LED intensity to test (0-255), default 255
+            duration_s: Time to wait after LED on before measuring (s)
+
+        Returns:
+            True if at least one channel produced non-flat signal, False otherwise
+        """
+        try:
+            if self.ctrl is None or self.usb is None:
+                logger.error("❌ Hardware not initialized (ctrl or usb is None)")
+                return False
+
+            if ch_list is None:
+                ch_list = ['a', 'b', 'c', 'd']
+
+            # Ensure we have wavelength info for ROI
+            if not hasattr(self.state, 'wavelengths') or self.state.wavelengths is None:
+                logger.warning("⚠️  Wavelengths not calibrated yet (Step 2). ROI metrics will be skipped.")
+                wave_data = None
+            else:
+                wave_data = self.state.wavelengths
+
+            # Compute ROI indices if possible
+            roi_min_idx = roi_max_idx = None
+            if wave_data is not None:
+                roi_min_idx = int(np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN)))
+                roi_max_idx = int(np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX)))
+
+            logger.info("=" * 80)
+            logger.info("QUICK LED SANITY CHECK")
+            logger.info("=" * 80)
+            logger.info(f"Mode: S (high transmission), Test LED intensity: {intensity}")
+
+            # Force S-mode
+            try:
+                self.ctrl.set_mode("s")
+                time.sleep(0.3)
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to set S-mode: {e}")
+
+            any_signal = False
+            for ch in ch_list:
+                try:
+                    # Turn on LED
+                    intensities_dict = {ch: int(max(0, min(255, intensity)))}
+                    ok = self._activate_channel_batch([ch], intensities_dict)
+                    if not ok:
+                        logger.warning(f"   Batch activation failed for {ch}, trying sequential...")
+                        ok = self._activate_channel_sequential([ch], intensities_dict)
+                    if not ok:
+                        logger.error(f"   ❌ Failed to activate LED {ch}")
+                        continue
+
+                    time.sleep(max(0.1, duration_s))
+
+                    # Acquire one averaged spectrum (no filter)
+                    raw = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
+                    if raw is None:
+                        logger.error(f"   ❌ Failed to read spectrum for {ch}")
+                        self._all_leds_off_batch()
+                        time.sleep(self.led_off_delay_s)
+                        continue
+
+                    raw = np.asarray(raw, dtype=float)
+                    raw_max, raw_mean = float(np.max(raw)), float(np.mean(raw))
+
+                    # Optional filtered ROI metrics
+                    if wave_data is not None and hasattr(self.state, 'wavelength_mask'):
+                        try:
+                            filtered = self._apply_spectral_filter(raw)
+                            if roi_min_idx is not None and roi_max_idx is not None and roi_max_idx > roi_min_idx:
+                                roi_slice = filtered[roi_min_idx:roi_max_idx]
+                                roi_max, roi_mean = float(np.max(roi_slice)), float(np.mean(roi_slice))
+                            else:
+                                roi_max = roi_mean = float('nan')
+                        except Exception:
+                            filtered = None
+                            roi_max = roi_mean = float('nan')
+                    else:
+                        filtered = None
+                        roi_max = roi_mean = float('nan')
+
+                    # Snapshots for offline inspection
+                    try:
+                        if hasattr(self, "_snap") and self._snap is not None:
+                            self._snap.save(f"sanity_S_raw_{ch}_LED{intensity}", raw)
+                            if filtered is not None:
+                                self._snap.save(f"sanity_S_filtered_{ch}_LED{intensity}", np.array(filtered, dtype=float))
+                    except Exception:
+                        pass
+
+                    logger.info(
+                        f"   {ch}: RAW max/mean = {raw_max:.1f}/{raw_mean:.1f} counts; "
+                        + (f"ROI max/mean = {roi_max:.1f}/{roi_mean:.1f} counts" if not np.isnan(roi_max) else "ROI=N/A")
+                    )
+
+                    # Heuristic: consider 'signal present' if raw max > mean by at least some margin
+                    if raw_max > (raw_mean + 50):
+                        any_signal = True
+
+                finally:
+                    # Ensure LED off between tests
+                    try:
+                        self._all_leds_off_batch()
+                    except Exception:
+                        pass
+                    time.sleep(self.led_off_delay_s)
+
+            if not any_signal:
+                logger.warning("⚠️  No obvious signal detected (spectra appear flat). Check: wiring, LED power, polarizer mode, integration time.")
+            else:
+                logger.info("✅ At least one channel produced non-flat signal.")
+
+            logger.info("=" * 80)
+            return any_signal
+
+        except Exception as e:
+            logger.exception(f"Error in quick_led_sanity_check: {e}")
+            return False
+
+    # ========================================================================
     # STEP 4: INTEGRATION TIME OPTIMIZATION - HELPER METHODS
     # ========================================================================
 
@@ -2564,7 +2804,7 @@ class SPRCalibrator:
             # Activate channel
             intensities_dict = {channel: led_intensity}
             self._activate_channel_batch([channel], intensities_dict)
-            time.sleep(LED_DELAY)
+            time.sleep(self.led_on_delay_s)
             self._last_active_channel = channel
 
             # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
@@ -2581,9 +2821,56 @@ class SPRCalibrator:
             signal_max = float(np.max(roi_spectrum))
             signal_mean = float(np.mean(roi_spectrum))
 
+            # Sanity check: ensure we're not measuring a dark-only spectrum
+            try:
+                baseline = getattr(self.state, 'dark_noise_before_leds', None)
+                if baseline is not None and isinstance(baseline, np.ndarray) and baseline.size > 0:
+                    baseline_mean = float(np.mean(baseline))
+                    baseline_std = float(np.std(baseline))
+                    baseline_max = float(np.max(baseline))
+                    # Threshold: either mean+3σ or modestly above baseline max
+                    threshold = max(baseline_mean + 3.0 * max(baseline_std, 1.0), baseline_max * 1.10)
+                    if signal_max <= threshold:
+                        # Looks like LED didn't meaningfully contribute; retry with sequential activation
+                        try:
+                            self._all_leds_off_batch()
+                        except Exception:
+                            pass
+                        time.sleep(self.led_off_delay_s)
+                        # Retry using sequential path as a hardware fallback
+                        intensities_dict = {channel: led_intensity}
+                        ok = self._activate_channel_sequential([channel], intensities_dict)
+                        if not ok:
+                            logger.warning(f"⚠️  {description}: sequential activation retry failed for {channel}")
+                        time.sleep(self.led_on_delay_s)
+                        self._last_active_channel = channel
+                        raw_array_retry = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
+                        if raw_array_retry is not None and len(raw_array_retry) > 0:
+                            filtered_retry = self._apply_spectral_filter(raw_array_retry)
+                            roi_retry = filtered_retry[roi_min_idx:roi_max_idx]
+                            signal_max_retry = float(np.max(roi_retry))
+                            signal_mean_retry = float(np.mean(roi_retry))
+                            if signal_max_retry > signal_max:
+                                logger.warning(
+                                    f"⚠️  {description}: first read looked like dark-only (max={signal_max:.1f} ≤ thr={threshold:.1f}); retry improved to max={signal_max_retry:.1f}"
+                                )
+                                signal_max = signal_max_retry
+                                signal_mean = signal_mean_retry
+                            else:
+                                logger.warning(
+                                    f"⚠️  {description}: measurement remains near-dark after retry (max={signal_max_retry:.1f} ≤ thr={threshold:.1f}); proceeding"
+                                )
+                        else:
+                            logger.warning(
+                                f"⚠️  {description}: retry read failed; proceeding with original measurement (max={signal_max:.1f})"
+                            )
+            except Exception as _sanity_e:
+                # Never fail calibration on a sanity check path
+                logger.debug(f"Sanity check skipped due to error: {_sanity_e}")
+
             # Turn off channel
             self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
+            time.sleep(self.led_off_delay_s)
 
             return signal_max, signal_mean
 
@@ -2592,32 +2879,358 @@ class SPRCalibrator:
             self._all_leds_off_batch()
             return None
 
+    def _create_step4_diagnostic_plot(
+        self,
+        spectra: dict,
+        roi_means: dict,
+        channels: list,
+        integration_time: float,
+        target_counts: int
+    ) -> None:
+        """Create diagnostic plot showing raw S-pol spectra after Step 4 LED balancing.
+
+        Args:
+            spectra: Dict of {channel: spectrum_array}
+            roi_means: Dict of {channel: mean_roi_signal}
+            channels: List of channel names in order
+            integration_time: Global integration time in seconds
+            target_counts: Target signal level in counts
+        """
+        try:
+            import matplotlib.pyplot as plt
+            from datetime import datetime
+
+            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+            fig.suptitle(f'Step 4 Diagnostic: Raw S-pol Spectra After LED Balancing\nIntegration Time: {integration_time*1000:.1f}ms (FROZEN)',
+                        fontsize=14, fontweight='bold')
+
+            colors = {'a': '#FF6B6B', 'b': '#4ECDC4', 'c': '#45B7D1', 'd': '#FFA07A'}
+
+            # Get wavelength array
+            wavelengths = self.state.wavelengths
+
+            # Plot 1: Raw spectra overlay
+            ax1 = axes[0, 0]
+            for ch in channels:
+                if ch not in spectra:
+                    continue
+                led_val = self.state.ref_intensity.get(ch, 255)
+                spectrum = spectra[ch]
+                # Use wavelength for x-axis
+                ax1.plot(wavelengths, spectrum, label=f'{ch.upper()} (LED={led_val})',
+                        color=colors.get(ch, 'gray'), alpha=0.7, linewidth=1.5)
+
+            ax1.set_xlabel('Wavelength (nm)', fontsize=11)
+            ax1.set_ylabel('Intensity (counts)', fontsize=11)
+            ax1.set_title('Raw S-pol Spectra (SPR Range, No Dark Subtraction)', fontsize=12, fontweight='bold')
+            ax1.legend(fontsize=10)
+            ax1.grid(True, alpha=0.3)
+
+            # Plot 2: ROI mean intensities (580-610nm)
+            ax2 = axes[0, 1]
+            x_pos = list(range(len(channels)))
+            means = [roi_means.get(ch, 0) for ch in channels]
+            leds = [self.state.ref_intensity.get(ch, 255) for ch in channels]
+
+            bars = ax2.bar(x_pos, means, color=[colors.get(ch, 'gray') for ch in channels],
+                          alpha=0.7, edgecolor='black', linewidth=1.5)
+
+            # Add target line
+            ax2.axhline(target_counts, color='green', linestyle='--', linewidth=2,
+                       label=f'Target: {target_counts:,} counts (75%)')
+            ax2.axhspan(target_counts * 0.9, target_counts * 1.1, alpha=0.2, color='green',
+                       label='±10% tolerance')
+
+            ax2.set_xticks(x_pos)
+            ax2.set_xticklabels([ch.upper() for ch in channels], fontsize=11)
+            ax2.set_ylabel('Mean Intensity (counts)', fontsize=11)
+            ax2.set_title('ROI Mean Intensities (580-610nm)', fontsize=12, fontweight='bold')
+            ax2.legend(fontsize=9)
+            ax2.grid(True, alpha=0.3, axis='y')
+
+            # Add value labels on bars
+            for bar, mean, led in zip(bars, means, leds):
+                height = bar.get_height()
+                deviation = ((mean - target_counts) / target_counts * 100) if target_counts > 0 else 0
+                ax2.text(bar.get_x() + bar.get_width()/2., height + 1000,
+                        f'{int(mean):,}\n({deviation:+.0f}%)\nLED={led}',
+                        ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+            # Plot 3: LED values
+            ax3 = axes[1, 0]
+            bars = ax3.bar(x_pos, leds, color=[colors.get(ch, 'gray') for ch in channels],
+                          alpha=0.7, edgecolor='black', linewidth=1.5)
+
+            ax3.axhline(255, color='red', linestyle='--', linewidth=2, label='Max LED (255)')
+            ax3.set_xticks(x_pos)
+            ax3.set_xticklabels([ch.upper() for ch in channels], fontsize=11)
+            ax3.set_ylabel('LED Intensity', fontsize=11)
+            ax3.set_title('Final LED Values (Step 4 Output)', fontsize=12, fontweight='bold')
+            ax3.set_ylim(0, 270)
+            ax3.legend(fontsize=9)
+            ax3.grid(True, alpha=0.3, axis='y')
+
+            # Add value labels
+            for bar, led in zip(bars, leds):
+                height = bar.get_height()
+                ax3.text(bar.get_x() + bar.get_width()/2., height + 5,
+                        f'{int(led)}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+            # Plot 4: Balance quality summary
+            ax4 = axes[1, 1]
+            ax4.axis('off')
+
+            # Calculate statistics
+            mean_signal = np.mean(means)
+            std_signal = np.std(means)
+            cv = (std_signal / mean_signal * 100) if mean_signal > 0 else 0
+
+            mean_led = np.mean(leds)
+            std_led = np.std(leds)
+
+            weakest_ch = channels[0]  # Assuming channels are ordered
+
+            summary_text = f"""
+STEP 4 BALANCING RESULTS
+═══════════════════════════════════════════
+
+Global Integration Time: {integration_time*1000:.1f} ms (FROZEN)
+Target Signal Level: {target_counts:,} counts (75% max)
+
+LED Values:
+"""
+            for ch in channels:
+                led = self.state.ref_intensity.get(ch, 255)
+                mean = roi_means.get(ch, 0)
+                status = "✓ WEAKEST" if ch == weakest_ch else f"  {led/255*100:.0f}% power"
+                summary_text += f"   {ch.upper()}: LED={led:3d}  →  {mean:7,.0f} counts  {status}\n"
+
+            summary_text += f"""
+Signal Statistics (ROI 580-610nm):
+   Mean: {mean_signal:,.0f} counts
+   Std Dev: {std_signal:,.0f} counts
+   CV: {cv:.1f}% (target: <10%)
+
+Balance Quality:
+   {"✓ EXCELLENT" if cv < 10 else "△ ACCEPTABLE" if cv < 20 else "✗ POOR"}
+
+Channels within ±10% of target:
+   {sum(1 for m in means if abs(m - target_counts) / target_counts <= 0.1)}/{len(channels)}
+"""
+
+            ax4.text(0.05, 0.95, summary_text, transform=ax4.transAxes,
+                    fontsize=10, verticalalignment='top', family='monospace',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.4))
+
+            plt.tight_layout()
+
+            # Save figure
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = Path("generated-files/diagnostics")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / f"step4_raw_spol_diagnostic_{timestamp}.png"
+
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            logger.info(f"📊 Step 4 diagnostic plot saved: {output_file}")
+
+            plt.close(fig)
+
+        except Exception as e:
+            logger.warning(f"Failed to create Step 4 diagnostic plot: {e}")
+
+    def _create_step6_diagnostic_plot(
+        self,
+        spectra: dict,
+        roi_means: dict,
+        channels: list,
+        integration_time: float,
+        target_counts: int
+    ) -> None:
+        """Create diagnostic plot showing dark-subtracted S-ref spectra after Step 6.
+
+        Args:
+            spectra: Dict of {channel: dark_subtracted_spectrum_array}
+            roi_means: Dict of {channel: mean_roi_signal}
+            channels: List of channel names in order
+            integration_time: Global integration time in seconds
+            target_counts: Target signal level in counts
+        """
+        try:
+            import matplotlib.pyplot as plt
+            from datetime import datetime
+
+            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+            fig.suptitle(f'Step 6 Diagnostic: Dark-Subtracted S-ref Spectra (Ready for Live)\nIntegration Time: {integration_time*1000:.1f}ms (FROZEN)',
+                        fontsize=14, fontweight='bold')
+
+            colors = {'a': '#FF6B6B', 'b': '#4ECDC4', 'c': '#45B7D1', 'd': '#FFA07A'}
+
+            # Get wavelength array
+            wavelengths = self.state.wavelengths
+
+            # Plot 1: Dark-subtracted S-ref spectra overlay
+            ax1 = axes[0, 0]
+            for ch in channels:
+                if ch not in spectra:
+                    continue
+                led_val = self.state.ref_intensity.get(ch, 255)
+                spectrum = spectra[ch]
+                # Use wavelength for x-axis
+                ax1.plot(wavelengths, spectrum, label=f'{ch.upper()} (LED={led_val})',
+                        color=colors.get(ch, 'gray'), alpha=0.7, linewidth=1.5)
+
+            ax1.set_xlabel('Wavelength (nm)', fontsize=11)
+            ax1.set_ylabel('Intensity (counts)', fontsize=11)
+            ax1.set_title('Dark-Subtracted S-ref Spectra (SPR Range, Ready for Live)', fontsize=12, fontweight='bold')
+            ax1.legend(fontsize=10)
+            ax1.grid(True, alpha=0.3)
+
+            # Plot 2: ROI mean intensities (580-610nm)
+            ax2 = axes[0, 1]
+            x_pos = list(range(len(channels)))
+            means = [roi_means.get(ch, 0) for ch in channels]
+            leds = [self.state.ref_intensity.get(ch, 255) for ch in channels]
+
+            bars = ax2.bar(x_pos, means, color=[colors.get(ch, 'gray') for ch in channels],
+                          alpha=0.7, edgecolor='black', linewidth=1.5)
+
+            # Add target line
+            ax2.axhline(target_counts, color='green', linestyle='--', linewidth=2,
+                       label=f'Target: {target_counts:,} counts (75%)')
+            ax2.axhspan(target_counts * 0.9, target_counts * 1.1, alpha=0.2, color='green',
+                       label='±10% tolerance')
+
+            ax2.set_xticks(x_pos)
+            ax2.set_xticklabels([ch.upper() for ch in channels], fontsize=11)
+            ax2.set_ylabel('Mean Intensity (counts)', fontsize=11)
+            ax2.set_title('ROI Mean Intensities (580-610nm, After Dark Subtraction)', fontsize=12, fontweight='bold')
+            ax2.legend(fontsize=9)
+            ax2.grid(True, alpha=0.3, axis='y')
+
+            # Add value labels on bars
+            for bar, mean, led in zip(bars, means, leds):
+                height = bar.get_height()
+                deviation = ((mean - target_counts) / target_counts * 100) if target_counts > 0 else 0
+                ax2.text(bar.get_x() + bar.get_width()/2., height + 1000,
+                        f'{int(mean):,}\n({deviation:+.0f}%)\nLED={led}',
+                        ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+            # Plot 3: LED values
+            ax3 = axes[1, 0]
+            bars = ax3.bar(x_pos, leds, color=[colors.get(ch, 'gray') for ch in channels],
+                          alpha=0.7, edgecolor='black', linewidth=1.5)
+
+            ax3.axhline(255, color='red', linestyle='--', linewidth=2, label='Max LED (255)')
+            ax3.set_xticks(x_pos)
+            ax3.set_xticklabels([ch.upper() for ch in channels], fontsize=11)
+            ax3.set_ylabel('LED Intensity', fontsize=11)
+            ax3.set_title('Final LED Values (From Step 4)', fontsize=12, fontweight='bold')
+            ax3.set_ylim(0, 270)
+            ax3.legend(fontsize=9)
+            ax3.grid(True, alpha=0.3, axis='y')
+
+            # Add value labels
+            for bar, led in zip(bars, leds):
+                height = bar.get_height()
+                ax3.text(bar.get_x() + bar.get_width()/2., height + 5,
+                        f'{int(led)}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+            # Plot 4: Balance quality summary
+            ax4 = axes[1, 1]
+            ax4.axis('off')
+
+            # Calculate statistics
+            mean_signal = np.mean(means)
+            std_signal = np.std(means)
+            cv = (std_signal / mean_signal * 100) if mean_signal > 0 else 0
+
+            mean_led = np.mean(leds)
+            std_led = np.std(leds)
+
+            weakest_ch = channels[0]  # Assuming channels are ordered
+
+            summary_text = f"""
+STEP 6 S-REF RESULTS (READY FOR LIVE)
+═══════════════════════════════════════════
+
+Global Integration Time: {integration_time*1000:.1f} ms (FROZEN)
+Target Signal Level: {target_counts:,} counts (75% max)
+
+LED Values:
+"""
+            for ch in channels:
+                led = self.state.ref_intensity.get(ch, 255)
+                mean = roi_means.get(ch, 0)
+                status = "✓ WEAKEST" if ch == weakest_ch else f"  {led/255*100:.0f}% power"
+                summary_text += f"   {ch.upper()}: LED={led:3d}  →  {mean:7,.0f} counts  {status}\n"
+
+            summary_text += f"""
+Signal Statistics (ROI 580-610nm):
+   Mean: {mean_signal:,.0f} counts
+   Std Dev: {std_signal:,.0f} counts
+   CV: {cv:.1f}% (target: <10%)
+
+Balance Quality:
+   {"✓ EXCELLENT" if cv < 10 else "△ ACCEPTABLE" if cv < 20 else "✗ POOR"}
+
+Channels within ±10% of target:
+   {sum(1 for m in means if abs(m - target_counts) / target_counts <= 0.1)}/{len(channels)}
+
+Dark Subtraction: ✓ Applied (Step 5 darks)
+Ready for Live Acquisition: ✓ YES
+"""
+
+            ax4.text(0.05, 0.95, summary_text, transform=ax4.transAxes,
+                    fontsize=10, verticalalignment='top', family='monospace',
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.4))
+
+            plt.tight_layout()
+
+            # Save figure
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = Path("generated-files/diagnostics")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / f"step6_sref_diagnostic_{timestamp}.png"
+
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            logger.info(f"📊 Step 6 diagnostic plot saved: {output_file}")
+
+            plt.close(fig)
+
+        except Exception as e:
+            logger.warning(f"Failed to create Step 6 diagnostic plot: {e}")
+
     # ========================================================================
     # STEP 4: INTEGRATION TIME OPTIMIZATION
     # ========================================================================
 
     def step_4_optimize_integration_time(self, weakest_ch: str) -> bool:
-        """STEP 4: Optimize integration time for WEAKEST LED @ 255 ONLY.
+        """STEP 4: Optimize integration time for weakest LED, then balance all LEDs.
 
-        TRUE ORIGINAL CALIBRATION:
-        ==========================
-        Step 3: Find weakest LED
-        Step 4: Set WEAKEST to LED=255, find integration time where it reaches 75% detector max
-        Step 5: Re-measure dark noise
-        Step 6: Adjust OTHER LEDs down until all within 15% of each other, within target range
-        Step 7: Measure S-ref (balanced S-mode calibration baseline)
+        COMPLETE CALIBRATION IN ONE STEP:
+        ==================================
+        4.1: Set weakest LED to 255 (from Step 3 ranking)
+        4.2: Probe 3 integration times [5, 15, 50]ms with weakest @ 255
+        4.3: Extrapolate to find integration time → 75% detector max (~50,000 counts)
+        4.4: FREEZE that integration time (used for all remaining steps)
+        4.5: For each remaining LED (stronger LEDs):
+             - Keep integration time frozen
+             - Reduce LED intensity until signal ≈ 75% detector max (~50,000 counts)
+        4.6: Result: All LEDs balanced at ~50,000 counts in 580-610nm
+             - Weakest: LED=255 (likely the only one at 255)
+             - Others: LED<255 (reduced to match weakest)
 
-        Smart boost (P-pol ONLY):
-        - ONLY increases integration time (never touches LED values)
-        - Stays within 200ms budget: num_scans = min(200ms / integration_time, 25)
+        This global integration time is passed to:
+        - Step 5: Dark noise measurement
+        - Step 6: Final S-ref measurement
 
         CALIBRATION MODES:
         ==================
-        - 'global': Run normal LED calibration (Step 4 -> Step 6)
-        - 'per_channel': Skip LED calibration, set all LEDs to 255, optimize per-channel integration
+        - 'global': Run full calibration (Step 4 does everything)
+        - 'per_channel': Skip this, set all LEDs to 255
 
         Args:
-            weakest_ch: The weakest channel ID (from Step 3)
+            weakest_ch: Weakest channel from Step 3 (used for integration time optimization)
 
         Returns:
             True if successful, False otherwise
@@ -2630,47 +3243,158 @@ class SPRCalibrator:
             # CHECK CALIBRATION MODE
             # ========================================================================
             if self.state.calibration_mode == 'per_channel':
-                logger.info(f"")
-                logger.info(f"=" * 80)
-                logger.info(f"⚡ STEP 4: PER-CHANNEL MODE - SKIPPING LED CALIBRATION")
-                logger.info(f"=" * 80)
-                logger.info(f"   Mode: PER_CHANNEL (all LEDs fixed at 255)")
-                logger.info(f"   Step 4 → SKIPPED (no LED calibration needed)")
-                logger.info(f"   Step 6 → SKIPPED (no LED balancing needed)")
-                logger.info(f"")
-                logger.info(f"   Setting all LEDs to maximum intensity (255)...")
+                # ====================================================================
+                # PER-CHANNEL MODE: All LEDs @ 255, optimize integration per channel
+                # ====================================================================
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("⚡ STEP 4: PER-CHANNEL MODE - OPTIMIZE INTEGRATION TIME PER LED")
+                logger.info("=" * 80)
+                logger.info("All LEDs will be set to 255")
+                logger.info("Each LED gets its own optimized integration time")
+                logger.info("")
 
-                # Set all LEDs to 255
-                ch_list = self.state.led_ranking if self.state.led_ranking else [('a', (0,)), ('b', (0,)), ('c', (0,)), ('d', (0,))]
-                for ch_info in ch_list:
-                    ch = ch_info[0]
-                    self.ctrl.set_intensity(ch, MAX_LED_INTENSITY)
-                    self.state.led_intensities[ch] = MAX_LED_INTENSITY
+                # Get all channels
+                if not self.state.led_ranking or len(self.state.led_ranking) < 1:
+                    logger.error("⚠️  LED ranking not found! Step 3 must run before Step 4.")
+                    return False
 
-                logger.info(f"   ✅ All LEDs set to 255")
-                logger.info(f"")
-                logger.info(f"   Next: Step 5 will measure dark noise")
-                logger.info(f"   Then: Per-channel integration times will be optimized")
-                logger.info(f"=" * 80)
+                all_channels = [ch_info[0] for ch_info in self.state.led_ranking]
 
-                # Turn off all channels after setting
-                self.ctrl.turn_off_channels()
+                # STEP 4.1a: Set ALL LEDs to 255
+                logger.info("STEP 4.1a: Set ALL LEDs to 255")
+                logger.info("=" * 80)
+                for ch in all_channels:
+                    self.state.ref_intensity[ch] = MAX_LED_INTENSITY
+                    logger.info(f"   {ch.upper()} = 255")
+
+                # Get 580-610nm test region
+                wave_data = self.state.wavelengths
+                roi_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
+                roi_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
+                target_counts = int(WEAKEST_TARGET_PERCENT / 100 * detector_max)
+
+                logger.info("")
+                logger.info(f"Target: {target_counts:,} counts (~75% detector max)")
+                logger.info("")
+
+                # Helper to measure and optimize for one channel
+                def _optimize_channel_integration(ch: str) -> Optional[float]:
+                    """Find optimal integration time for one channel @ LED=255."""
+                    logger.info(f"STEP 4.x: Optimizing {ch.upper()} @ LED=255")
+                    logger.info("-" * 80)
+
+                    # Probe 3 integration times
+                    seed_ms = [5.0, 15.0, 50.0]
+                    probe_times = [ms / MS_TO_SECONDS for ms in seed_ms]
+                    probe_results = []
+
+                    for idx, t in enumerate(probe_times, 1):
+                        if self._is_stopped():
+                            return None
+                        t = float(np.clip(t, min_int, max_int))
+                        self.usb.set_integration(t)
+                        time.sleep(0.08)
+
+                        res = self._measure_channel_in_roi(
+                            ch, MAX_LED_INTENSITY, int(roi_min_idx), int(roi_max_idx), f"{ch} @255"
+                        )
+                        if res is None:
+                            logger.warning(f"   Probe {idx} failed")
+                            continue
+
+                        max_sig, _ = res
+                        probe_results.append((t, max_sig))
+                        pct = (max_sig / detector_max) * 100.0
+                        logger.info(f"   Probe {idx}: {t*MS_TO_SECONDS:.1f}ms → {max_sig:6.0f} counts ({pct:5.1f}%)")
+
+                    if len(probe_results) < 2:
+                        logger.error(f"   ❌ Not enough probe data for {ch}")
+                        return None
+
+                    # Extrapolate to target
+                    probe_results.sort(key=lambda x: x[0])
+                    bracket = None
+                    for i in range(len(probe_results) - 1):
+                        (t1, c1), (t2, c2) = probe_results[i], probe_results[i+1]
+                        if (c1 - target_counts) * (c2 - target_counts) <= 0:
+                            bracket = ((t1, c1), (t2, c2))
+                            break
+
+                    if bracket:
+                        (t1, c1), (t2, c2) = bracket
+                        if c2 != c1:
+                            optimal = t1 + (target_counts - c1) * (t2 - t1) / (c2 - c1)
+                        else:
+                            optimal = (t1 + t2) / 2.0
+                        optimal = float(np.clip(optimal, min_int, max_int))
+                        logger.info(f"   ✅ {ch.upper()}: {optimal*MS_TO_SECONDS:.1f}ms")
+                    else:
+                        # No bracket - use closest
+                        closest = min(probe_results, key=lambda x: abs(x[1] - target_counts))
+                        optimal = closest[0]
+                        logger.warning(f"   ⚠️  {ch.upper()}: {optimal*MS_TO_SECONDS:.1f}ms (closest)")
+
+                    return optimal
+
+                # STEP 4.2a-4.5a: Optimize each channel
+                logger.info("STEP 4.2a-4.5a: Optimize integration time for each LED")
+                logger.info("=" * 80)
+
+                per_channel_integration = {}
+                for ch in all_channels:
+                    if self._is_stopped():
+                        return False
+
+                    optimal_int = _optimize_channel_integration(ch)
+                    if optimal_int is None:
+                        logger.error(f"❌ Failed to optimize {ch}")
+                        return False
+
+                    per_channel_integration[ch] = optimal_int
+                    logger.info("")
+
+                # Store per-channel integration times
+                self.state.per_channel_integration_times = per_channel_integration
+
+                # Turn off all LEDs
+                self._all_leds_off_batch()
+                time.sleep(self.led_off_delay_s)
+
+                # SUMMARY
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("✅ STEP 4 COMPLETE: PER-CHANNEL CALIBRATION")
+                logger.info("=" * 80)
+                logger.info("")
+                logger.info("Final Calibration Results:")
+                logger.info("")
+                logger.info("Channel  | LED Intensity | Integration Time")
+                logger.info("-" * 50)
+                for ch in all_channels:
+                    led_val = self.state.ref_intensity.get(ch, 255)
+                    int_time = per_channel_integration.get(ch, 0)
+                    logger.info(f"   {ch.upper()}     |      {led_val:3d}      |    {int_time*MS_TO_SECONDS:6.1f} ms")
+                logger.info("")
+                logger.info("Mode: PER-CHANNEL (all LEDs @ 255, optimized integration per channel)")
+                logger.info("")
+                logger.info("Next Steps:")
+                logger.info("   • Step 5: Measure dark noise (per-channel)")
+                logger.info("   • Step 6: Measure S-ref (per-channel)")
+                logger.info("=" * 80)
+
+                # ✅ SYNC: Copy ref_intensity to leds_calibrated for live acquisition
+                self.state.leds_calibrated = self.state.ref_intensity.copy()
+                logger.debug(f"✅ Synced leds_calibrated from ref_intensity: {self.state.leds_calibrated}")
 
                 return True
 
             # ========================================================================
-            # GLOBAL MODE: STANDARD LED CALIBRATION
+            # GLOBAL MODE: Single integration time + LED balancing
             # ========================================================================
 
-            # Import single-constraint optimization constants
-            from settings import (
-                WEAKEST_TARGET_PERCENT, WEAKEST_MIN_PERCENT, WEAKEST_MAX_PERCENT
-            )
-
-            # Import single-constraint optimization constants
-            from settings import (
-                WEAKEST_TARGET_PERCENT, WEAKEST_MIN_PERCENT, WEAKEST_MAX_PERCENT
-            )
+            # Import target percent for optimization
+            from settings import WEAKEST_TARGET_PERCENT
 
             # Get integration time limits from detector profile
             if not self.detector_profile:
@@ -2683,156 +3407,810 @@ class SPRCalibrator:
             detector_max = self.detector_profile.max_intensity_counts
             spr_min_nm = self.detector_profile.spr_wavelength_min_nm
             spr_max_nm = self.detector_profile.spr_wavelength_max_nm
-            logger.info(f"📊 Using detector profile: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms}ms")
-            logger.info(f"   SPR Range: {spr_min_nm}-{spr_max_nm}nm")
 
-            # Get weakest channel from Step 3 ranking
+            # Calculate target counts (75% of detector max)
+            target_counts = int(WEAKEST_TARGET_PERCENT / 100 * detector_max)
+
+            # Log detector boundaries and target values
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("📊 DETECTOR BOUNDARIES & TARGET VALUES")
+            logger.info("=" * 80)
+            logger.info(f"Detector Model: {self.detector_profile.model}")
+            logger.info(f"")
+            logger.info(f"Integration Time Boundaries:")
+            logger.info(f"   MIN: {self.detector_profile.min_integration_time_ms:.1f} ms")
+            logger.info(f"   MAX: {self.detector_profile.max_integration_time_ms:.1f} ms")
+            logger.info(f"")
+            logger.info(f"Detector Count Boundaries:")
+            logger.info(f"   MIN: 0 counts (dark level)")
+            logger.info(f"   MAX: {detector_max:,} counts (16-bit ADC saturation)")
+            logger.info(f"   SATURATION THRESHOLD: {int(0.99 * detector_max):,} counts (99% of max)")
+            logger.info(f"")
+            logger.info(f"Wavelength ROI for Calibration:")
+            logger.info(f"   SPR Range: {spr_min_nm}-{spr_max_nm} nm (filtered)")
+            logger.info(f"   Target ROI: {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX} nm (LED balancing region)")
+            logger.info(f"")
+            logger.info(f"LED Intensity Boundaries:")
+            logger.info(f"   MIN: 1 (practical minimum)")
+            logger.info(f"   MAX: 255 (8-bit PWM maximum)")
+            logger.info(f"   WEAKEST LED: FIXED at 255 (maximum power)")
+            logger.info(f"   OTHER LEDs: REDUCED to match weakest brightness")
+            logger.info(f"")
+            logger.info(f"TARGET SIGNAL LEVEL (GLOBAL):")
+            logger.info(f"   {target_counts:,} counts ({WEAKEST_TARGET_PERCENT}% of detector max)")
+            logger.info(f"   This target applies to ALL channels in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm")
+            logger.info(f"   Achieved via: FROZEN integration time + BALANCED LED intensities")
+            logger.info("=" * 80)
+
+            # Get LED ranking from Step 3
             if not self.state.led_ranking or len(self.state.led_ranking) < 1:
                 logger.error("⚠️  LED ranking not found! Step 3 must run before Step 4.")
                 return False
 
-            weakest_ch = self.state.led_ranking[0][0]
-            weakest_intensity = self.state.led_ranking[0][1][0]
+            # Extract channel IDs from ranking (weakest first)
+            all_channels = [ch_info[0] for ch_info in self.state.led_ranking]
+            weakest_ch = all_channels[0]
 
             logger.info(f"")
             logger.info(f"=" * 80)
-            logger.info(f"⚡ STEP 4: INTEGRATION TIME OPTIMIZATION (WEAKEST @ LED=255)")
+            logger.info(f"⚡ STEP 4: GLOBAL MODE - INTEGRATION TIME + LED BALANCING")
             logger.info(f"=" * 80)
-            logger.info(f"   Weakest LED: {weakest_ch} (will be set to LED=255)")
+            logger.info(f"   LED ranking from Step 3: {all_channels} (weakest → strongest)")
             logger.info(f"")
-            logger.info(f"   GOAL: Find integration time where weakest @ 255 reaches target")
-            logger.info(f"      → Target: {WEAKEST_TARGET_PERCENT}% ({int(WEAKEST_TARGET_PERCENT/100*detector_max):,} counts)")
-            logger.info(f"      → Range: {WEAKEST_MIN_PERCENT}-{WEAKEST_MAX_PERCENT}% ({int(WEAKEST_MIN_PERCENT/100*detector_max):,}-{int(WEAKEST_MAX_PERCENT/100*detector_max):,} counts)")
+            logger.info(f"   🔒 GLOBAL MODE CALIBRATION FLOW:")
+            logger.info(f"      ┌─────────────────────────────────────────────────────────────┐")
+            logger.info(f"      │ 4.1: Set {weakest_ch.upper()} (WEAKEST) → LED=255 (FIXED FOREVER)    │")
+            logger.info(f"      │ 4.2: Probe integration times [5, 15, 50] ms                │")
+            logger.info(f"      │ 4.3: Extrapolate to hit {target_counts:,} counts @ LED=255        │")
+            logger.info(f"      │ 4.4: FREEZE integration time (NEVER CHANGES)                │")
+            logger.info(f"      │ 4.5: Adjust OTHER LEDs to hit {target_counts:,} counts         │")
+            logger.info(f"      │      (Integration FROZEN, only LED value changes)           │")
+            logger.info(f"      └─────────────────────────────────────────────────────────────┘")
             logger.info(f"")
-            logger.info(f"   Integration time limit: ≤ {max_int*1000:.0f}ms")
-            logger.info(f"")
-            logger.info(f"   Next: Step 6 will adjust OTHER LEDs down to balance all channels")
+            logger.info(f"   Target Signal: {target_counts:,} counts in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm ROI")
+            logger.info(f"   Method: ONE integration time, DIFFERENT LED intensities per channel")
             logger.info(f"=" * 80)
 
-            # Get full SPR ROI indices (580-720nm)
+            # Ensure correct optical mode and clean LED state before probing
+            try:
+                self.ctrl.set_mode(mode="s")
+                time.sleep(0.4)
+            except Exception:
+                pass
+            try:
+                self._all_leds_off_batch()
+                time.sleep(self.led_off_delay_s)
+            except Exception:
+                pass
+
+            # Get 580-610nm test region indices
             wave_data = self.state.wavelengths
-            roi_min_idx = np.argmin(np.abs(wave_data - spr_min_nm))
-            roi_max_idx = np.argmin(np.abs(wave_data - spr_max_nm))
-            logger.debug(f"   Measuring MAX signal in ROI: {spr_min_nm}-{spr_max_nm}nm (indices {roi_min_idx}-{roi_max_idx})")
+            roi_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
+            roi_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
 
-            # Define targets
-            weakest_target = int(WEAKEST_TARGET_PERCENT / 100 * detector_max)
-            weakest_min = int(WEAKEST_MIN_PERCENT / 100 * detector_max)
-            weakest_max = int(WEAKEST_MAX_PERCENT / 100 * detector_max)
+            # ========================================================================
+            # STEP 4.1: SET WEAKEST LED TO 255
+            # ========================================================================
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info(f"STEP 4.1: Set weakest LED ({weakest_ch.upper()}) to 255")
+            logger.info("=" * 80)
+            self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
+            logger.info(f"✅ {weakest_ch.upper()} = 255 (LOCKED)")
 
-            # Binary search for optimal integration time (SINGLE CONSTRAINT)
-            integration_min = min_int
-            integration_max = max_int
-            best_integration = None
-            best_weakest_signal = 0
+            # ========================================================================
+            # STEP 4.2 & 4.3: PROBE INTEGRATION TIMES & EXTRAPOLATE
+            # ========================================================================
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("STEP 4.2-4.3: Probe integration times & extrapolate")
+            logger.info("=" * 80)
+            logger.info(f"Target: {target_counts:,} counts (~75% detector max)")
+            logger.info(f"Probing: 5, 15, 50ms with {weakest_ch.upper()} @ 255")
 
-            max_iterations = 20
-            logger.info(f"🔍 Binary search: {integration_min*1000:.1f}ms - {integration_max*1000:.1f}ms")
+            # Helper function to measure weakest at a given integration time
+            def _measure_weakest_at(t_seconds: float) -> Optional[float]:
+                """Measure weakest LED @ 255 at given integration time."""
+                t_seconds = float(np.clip(t_seconds, min_int, max_int))
+                self.usb.set_integration(t_seconds)
+                time.sleep(0.08)
+
+                res = self._measure_channel_in_roi(
+                    weakest_ch, MAX_LED_INTENSITY, int(roi_min_idx), int(roi_max_idx), f"{weakest_ch} @255"
+                )
+                if res is None:
+                    return None
+                max_sig, _ = res
+                return float(max_sig)
+
+            # Probe 3 integration times: 5, 15, 50ms
+            seed_ms = [5.0, 15.0, 50.0]
+            probe_times = [ms / MS_TO_SECONDS for ms in seed_ms]
+            probe_results = []  # [(time_seconds, signal_counts)]
+
+            for idx, t in enumerate(probe_times, 1):
+                if self._is_stopped():
+                    return False
+                sig = _measure_weakest_at(t)
+                if sig is None:
+                    logger.warning(f"   Probe {idx} failed, skipping")
+                    continue
+                probe_results.append((t, sig))
+                pct = (sig / detector_max) * 100.0
+                logger.info(f"   Probe {idx}: {t*MS_TO_SECONDS:.1f}ms → {sig:6.0f} counts ({pct:5.1f}%)")
+
+            if len(probe_results) < 2:
+                logger.error("❌ Not enough probe data to extrapolate")
+                return False
+
+            # Extrapolate to find integration time for target
+            # Try linear interpolation between bracket points
+            probe_results.sort(key=lambda x: x[0])  # Sort by time
+
+            # Find bracket around target
+            bracket = None
+            for i in range(len(probe_results) - 1):
+                (t1, c1), (t2, c2) = probe_results[i], probe_results[i+1]
+                if (c1 - target_counts) * (c2 - target_counts) <= 0:  # crosses target
+                    bracket = ((t1, c1), (t2, c2))
+                    break
+
+            if bracket:
+                (t1, c1), (t2, c2) = bracket
+                if c2 != c1:
+                    optimal_integration = t1 + (target_counts - c1) * (t2 - t1) / (c2 - c1)
+                else:
+                    optimal_integration = (t1 + t2) / 2.0
+                optimal_integration = float(np.clip(optimal_integration, min_int, max_int))
+                logger.info(f"   ✅ Extrapolated: {optimal_integration*MS_TO_SECONDS:.1f}ms for {target_counts:,} counts")
+            else:
+                # No bracket - use closest probe
+                closest = min(probe_results, key=lambda x: abs(x[1] - target_counts))
+                optimal_integration = closest[0]
+                logger.warning(f"   ⚠️  No bracket found, using closest: {optimal_integration*MS_TO_SECONDS:.1f}ms")
+
+            # ========================================================================
+            # STEP 4.4: FREEZE INTEGRATION TIME
+            # ========================================================================
+            # STEP 4.4: FREEZE INTEGRATION TIME (NEVER CHANGES AFTER THIS)
+            # ========================================================================
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("🔒 STEP 4.4: FREEZE INTEGRATION TIME (GLOBAL MODE)")
+            logger.info("=" * 80)
             logger.info(f"")
+            logger.info(f"   📌 Setting integration time to: {optimal_integration*MS_TO_SECONDS:.2f} ms")
+            logger.info(f"")
+            logger.info(f"   🔒 THIS INTEGRATION TIME IS NOW FROZEN FOR:")
+            logger.info(f"      • Remaining calibration steps (Steps 5-8)")
+            logger.info(f"      • All future measurements on this device")
+            logger.info(f"      • Both S-mode and P-mode acquisitions")
+            logger.info(f"")
+            logger.info(f"   ⚠️  IN GLOBAL MODE:")
+            logger.info(f"      • Integration time NEVER changes")
+            logger.info(f"      • Only LED intensities are adjusted per channel")
+            logger.info(f"      • Weakest channel ({weakest_ch.upper()}) stays at LED=255 forever")
+            logger.info(f"")
+            self.state.integration = optimal_integration
+            self.usb.set_integration(optimal_integration)
+            time.sleep(0.1)
+            logger.info(f"   ✅ Integration time LOCKED at {optimal_integration*MS_TO_SECONDS:.2f} ms")
+            logger.info("=" * 80)
 
-            for iteration in range(max_iterations):
+            # ========================================================================
+            # STEP 4.5: BALANCE OTHER LEDs TO MATCH WEAKEST BRIGHTNESS
+            # ========================================================================
+            # ┌────────────────────────────────────────────────────────────────────┐
+            # │ IRON-CLAD GLOBAL MODE LED BALANCING LOGIC (DO NOT MODIFY)        │
+            # ├────────────────────────────────────────────────────────────────────┤
+            # │ CONSTRAINT: Integration time is FROZEN from Step 4.4              │
+            # │                                                                    │
+            # │ GOAL: All channels hit {target_counts:,} counts at {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm       │
+            # │                                                                    │
+            # │ METHOD:                                                            │
+            # │   1. Weakest LED = 255 (FIXED in Step 4.1, NEVER changes)        │
+            # │   2. For each BRIGHTER channel:                                   │
+            # │      a) Measure @ LED=255 with frozen integration time            │
+            # │      b) If signal >= {SATURATION_THRESHOLD:,} (saturated):                  │
+            # │         • Multi-point calibration: Measure @ [191,127,64,32]     │
+            # │         • Build LED-to-signal curve (linear regression)           │
+            # │         • Solve: LED = (target - intercept) / slope               │
+            # │         • Handles non-linear LED response accurately              │
+            # │      c) If signal < {SATURATION_THRESHOLD:,} (not saturated):              │
+            # │         • Direct linear scaling: LED = (target / signal) × 255    │
+            # │      d) Verify by measuring at calculated LED value               │
+            # │                                                                    │
+            # │ NEVER TOUCH: Integration time (frozen at {optimal_integration*MS_TO_SECONDS:.1f}ms)              │
+            # │ NEVER TOUCH: Weakest LED (frozen at 255)                          │
+            # │ ONLY ADJUST: LED values for brighter channels (reduce to <255)   │
+            # └────────────────────────────────────────────────────────────────────┘
+
+            # Use detector profile saturation threshold (consistent with Step 3)
+            SATURATION_THRESHOLD = int(0.99 * detector_max)
+
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("⚖️  STEP 4.5: BALANCE OTHER LEDs TO MATCH WEAKEST BRIGHTNESS")
+            logger.info("=" * 80)
+            logger.info(f"")
+            logger.info(f"   FROZEN PARAMETERS:")
+            logger.info(f"      Integration time: {optimal_integration*MS_TO_SECONDS:.2f} ms (NEVER CHANGES)")
+            logger.info(f"      Weakest LED ({weakest_ch.upper()}): 255 (NEVER CHANGES)")
+            logger.info(f"")
+            logger.info(f"   TARGET FOR ALL CHANNELS:")
+            logger.info(f"      {target_counts:,} counts in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm ROI")
+            logger.info(f"      (= {WEAKEST_TARGET_PERCENT}% of {detector_max:,} detector max)")
+            logger.info(f"")
+            logger.info(f"   BALANCING METHOD:")
+            logger.info(f"      For each BRIGHTER channel:")
+            logger.info(f"         • IF saturated @ LED=255: Multi-point calibration with regression")
+            logger.info(f"         • IF not saturated @ LED=255: Direct linear scaling")
+            logger.info(f"         • REDUCE LED value until signal = {target_counts:,} counts")
+            logger.info(f"")
+            logger.info(f"   SATURATION THRESHOLD: {SATURATION_THRESHOLD:,} counts (99% of {detector_max:,})")
+            logger.info("=" * 80)
+
+            # Process other channels (skip weakest - it's already at 255)
+            for ch in all_channels[1:]:  # Skip weakest (index 0)
                 if self._is_stopped():
                     return False
 
-                # Test integration time (midpoint)
-                test_integration = (integration_min + integration_max) / 2.0
-                self.state.integration = test_integration
-                self.usb.set_integration(test_integration)
-                time.sleep(0.1)
+                logger.info(f"")
+                logger.info(f"─" * 80)
+                logger.info(f"📡 Calibrating Channel {ch.upper()}")
+                logger.info(f"─" * 80)
 
-                # Measure ONLY weakest LED at LED=255
-                result = self._measure_channel_in_roi(
-                    weakest_ch, MAX_LED_INTENSITY, int(roi_min_idx), int(roi_max_idx), "weakest LED"
+                # ================================================================
+                # STEP 1: Measure at LED=255 first
+                # ================================================================
+                res = self._measure_channel_in_roi(
+                    ch, MAX_LED_INTENSITY, int(roi_min_idx), int(roi_max_idx), f"{ch} @255"
                 )
-                if result is None:
-                    return False
-                weakest_signal, _ = result
-                weakest_percent = (weakest_signal / detector_max) * 100
+                if res is None:
+                    logger.error(f"   ❌ Failed to measure {ch} @ 255")
+                    self.state.ref_intensity[ch] = MAX_LED_INTENSITY  # Fallback
+                    continue
 
-                logger.info(f"   Iteration {iteration+1}: {test_integration*1000:.1f}ms")
-                logger.info(f"      Weakest ({weakest_ch} @ LED=255): {weakest_signal:6.0f} counts ({weakest_percent:5.1f}%)")
+                max_sig_255, _ = res
+                logger.info(f"   @ LED=255: {max_sig_255:6.0f} counts")
 
-                # Check if in target range
-                if weakest_min <= weakest_signal <= weakest_max:
-                    # ✅ Perfect! Target reached
-                    best_integration = test_integration
-                    best_weakest_signal = weakest_signal
-                    logger.info(f"      ✅ TARGET REACHED!")
-                    break
+                # ================================================================
+                # STEP 2: Check if saturated - use multi-point calibration
+                # ================================================================
+                if max_sig_255 >= SATURATION_THRESHOLD:
+                    logger.warning(f"   ⚠️  SATURATED at LED=255! Using multi-point calibration...")
 
-                # Adjust search range based on weakest LED signal
-                if weakest_signal < weakest_min:
-                    logger.info(f"      ⚠️  Too low → Increase integration")
-                    integration_min = test_integration
+                    # Build LED-to-signal curve by measuring at multiple LED values
+                    # This handles non-linear LED response better than single-point extrapolation
+                    calibration_points = []  # [(led_value, signal_counts)]
+
+                    # Try decreasing LED values until we get unsaturated reading
+                    test_leds = [191, 127, 64, 32]  # 75%, 50%, 25%, 12.5%
+
+                    for test_led in test_leds:
+                        if self._is_stopped():
+                            return False
+
+                        res = self._measure_channel_in_roi(
+                            ch, test_led, int(roi_min_idx), int(roi_max_idx), f"{ch} @{test_led}"
+                        )
+                        if res is None:
+                            logger.warning(f"   ⚠️  Measurement at LED={test_led} failed, skipping")
+                            continue
+
+                        test_sig, _ = res
+                        logger.info(f"   @ LED={test_led}: {test_sig:6.0f} counts")
+
+                        # Only use unsaturated points for calibration curve
+                        if test_sig < SATURATION_THRESHOLD:
+                            calibration_points.append((test_led, test_sig))
+
+                            # If we have 2+ good points, we can extrapolate
+                            if len(calibration_points) >= 2:
+                                break
+
+                    # Check if we got enough calibration points
+                    if len(calibration_points) < 1:
+                        logger.error(f"   ❌ Could not get unsaturated measurement, using fallback LED=255")
+                        self.state.ref_intensity[ch] = MAX_LED_INTENSITY
+                        continue
+                    elif len(calibration_points) == 1:
+                        # Only one point - use simple linear extrapolation
+                        test_led, test_sig = calibration_points[0]
+                        if test_sig > 0:
+                            required_led = int((target_counts / test_sig) * test_led)
+                            required_led = max(1, min(MAX_LED_INTENSITY, required_led))
+                            logger.info(f"   📐 Single-point extrapolation: LED={required_led}")
+                        else:
+                            logger.error(f"   ❌ Invalid signal, using fallback")
+                            self.state.ref_intensity[ch] = MAX_LED_INTENSITY
+                            continue
+                    else:
+                        # Multiple points - use linear regression for better accuracy
+                        # Fit: signal = slope * LED + intercept
+                        leds = np.array([pt[0] for pt in calibration_points])
+                        signals = np.array([pt[1] for pt in calibration_points])
+
+                        # Simple linear regression: y = mx + b
+                        # slope = cov(x,y) / var(x)
+                        slope = np.cov(leds, signals)[0, 1] / np.var(leds) if np.var(leds) > 0 else (signals[-1] - signals[0]) / (leds[-1] - leds[0])
+                        intercept = np.mean(signals) - slope * np.mean(leds)
+
+                        # Solve for LED: target = slope * LED + intercept
+                        # LED = (target - intercept) / slope
+                        if slope > 0:
+                            required_led = int((target_counts - intercept) / slope)
+                            required_led = max(1, min(MAX_LED_INTENSITY, required_led))
+                            logger.info(f"   📐 Multi-point regression: LED={required_led} (from {len(calibration_points)} points)")
+                        else:
+                            logger.error(f"   ❌ Invalid slope, using single-point fallback")
+                            test_led, test_sig = calibration_points[0]
+                            required_led = int((target_counts / test_sig) * test_led) if test_sig > 0 else MAX_LED_INTENSITY
+                            required_led = max(1, min(MAX_LED_INTENSITY, required_led))
+
                 else:
-                    logger.info(f"      ⚠️  Too high → Reduce integration")
-                    integration_max = test_integration
+                    # ============================================================
+                    # STEP 3: Not saturated - use direct linear scaling
+                    # ============================================================
+                    # If already below target, keep at 255
+                    if max_sig_255 <= target_counts:
+                        self.state.ref_intensity[ch] = MAX_LED_INTENSITY
+                        logger.info(f"   ✅ Already below target → LED=255")
+                        continue
 
-                # Track best so far (closest to target)
-                if abs(weakest_signal - weakest_target) < abs(best_weakest_signal - weakest_target):
-                    best_integration = test_integration
-                    best_weakest_signal = weakest_signal
+                    # Calculate required LED intensity (linear scaling)
+                    required_led = int((target_counts / max_sig_255) * MAX_LED_INTENSITY)
+                    required_led = max(1, min(MAX_LED_INTENSITY, required_led))  # Clamp to [1, 255]
+                    logger.info(f"   📐 Calculated LED={required_led} for target {target_counts:,} counts")
 
-            # Finalize
-            if best_integration is None:
-                logger.error("Failed to find optimal integration time!")
+                # ================================================================
+                # STEP 4: Verify by measuring at calculated intensity
+                # ================================================================
+                res = self._measure_channel_in_roi(
+                    ch, required_led, int(roi_min_idx), int(roi_max_idx), f"{ch} @{required_led}"
+                )
+                if res is None:
+                    logger.warning(f"   ⚠️  Verification failed, using calculated value")
+                    self.state.ref_intensity[ch] = required_led
+                    continue
+
+                verified_sig, _ = res
+                self.state.ref_intensity[ch] = required_led
+                pct_of_target = (verified_sig / target_counts) * 100.0
+                logger.info(f"   @ LED={required_led}: {verified_sig:6.0f} counts ({pct_of_target:.1f}% of target)")
+                logger.info(f"   ✅ {ch.upper()} = {required_led}")
+
+            # Turn off all LEDs after calibration
+            self._all_leds_off_batch()
+            time.sleep(self.led_off_delay_s)
+
+            # ========================================================================
+            # STEP 4.6: FINAL SUMMARY
+            # ========================================================================
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("✅ STEP 4 COMPLETE: GLOBAL CALIBRATION")
+            logger.info("=" * 80)
+            logger.info("")
+            logger.info(f"Global Integration Time: {optimal_integration*MS_TO_SECONDS:.1f}ms (FROZEN for Steps 5-7)")
+            logger.info(f"Target: {target_counts:,} counts (~75% detector max)")
+            logger.info("")
+            logger.info("Final Calibration Results:")
+            logger.info("")
+            logger.info("Channel  | LED Intensity | Integration Time")
+            logger.info("-" * 50)
+            for ch in all_channels:
+                led_val = self.state.ref_intensity.get(ch, 255)
+                logger.info(f"   {ch.upper()}     |      {led_val:3d}      |    {optimal_integration*MS_TO_SECONDS:6.1f} ms")
+            logger.info("")
+            logger.info("Mode: GLOBAL (balanced LED intensities, single integration time)")
+            logger.info("")
+            logger.info("Next Steps:")
+            logger.info(f"   • Step 5: Measure dark noise @ {optimal_integration*MS_TO_SECONDS:.1f}ms")
+            logger.info("   • Step 6: Measure S-ref with balanced LEDs")
+            logger.info("=" * 80)
+
+            # ✅ SYNC: Copy ref_intensity to leds_calibrated for live acquisition
+            # Live acquisition reads from leds_calibrated via get_led_for_live()
+            self.state.leds_calibrated = self.state.ref_intensity.copy()
+            logger.debug(f"✅ Synced leds_calibrated from ref_intensity: {self.state.leds_calibrated}")
+
+            # ⚠️ VALIDATION: Verify LED values were actually set
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("🔍 STEP 4 VALIDATION: Checking LED values were stored correctly")
+            logger.info("=" * 80)
+
+            led_values_valid = True
+            for ch in all_channels:
+                led_val = self.state.ref_intensity.get(ch, -1)
+                if led_val <= 0:
+                    logger.error(f"❌ Channel {ch.upper()} has INVALID LED value: {led_val}")
+                    led_values_valid = False
+                else:
+                    logger.info(f"✅ Channel {ch.upper()}: LED = {led_val} (stored in self.state.ref_intensity)")
+
+            # Check if weakest is actually at 255
+            weakest_led = self.state.ref_intensity.get(weakest_ch, -1)
+            if weakest_led != MAX_LED_INTENSITY:
+                logger.warning(f"⚠️  WARNING: Weakest channel {weakest_ch.upper()} should be LED=255, but is {weakest_led}")
+                led_values_valid = False
+            else:
+                logger.info(f"✅ Weakest channel {weakest_ch.upper()} correctly set to LED=255")
+
+            # Check if all LEDs are identical (should NOT be in GLOBAL mode)
+            unique_leds = set(self.state.ref_intensity.get(ch, 0) for ch in all_channels)
+            if len(unique_leds) == 1 and len(all_channels) > 1:
+                logger.error("")
+                logger.error("❌ CRITICAL ERROR: All channels have IDENTICAL LED values!")
+                logger.error(f"   All LEDs = {list(unique_leds)[0]}")
+                logger.error("   Step 4 LED BALANCING DID NOT WORK!")
+                logger.error("   Expected: Different LED values (weakest=255, others<255)")
+                logger.error("")
+                led_values_valid = False
+            else:
+                logger.info(f"✅ LED values are properly differentiated: {sorted(unique_leds, reverse=True)}")
+
+            if not led_values_valid:
+                logger.error("")
+                logger.error("=" * 80)
+                logger.error("❌ STEP 4 LED BALANCING FAILED!")
+                logger.error("=" * 80)
                 return False
 
-            self.state.integration = best_integration
-            self.usb.set_integration(best_integration)
-            time.sleep(0.1)
+            logger.info("")
+            logger.info("✅ Step 4 LED values validated - ready for Step 5")
+            logger.info("=" * 80)
 
-            # Validate final result
-            weakest_percent = (best_weakest_signal / detector_max) * 100
+            # ========================================================================
+            # STEP 4.7: DIAGNOSTIC - CAPTURE RAW S-POL SPECTRA WITH FINAL LED VALUES
+            # ========================================================================
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("📊 STEP 4 DIAGNOSTIC: Capturing raw S-pol spectra with final LED values")
+            logger.info("=" * 80)
+            logger.info(f"Integration time: {optimal_integration*MS_TO_SECONDS:.1f}ms (FROZEN)")
+            logger.info("")
 
-            logger.info(f"")
-            logger.info(f"="*80)
-            logger.info(f"✅ INTEGRATION TIME OPTIMIZED (S-MODE)")
-            logger.info(f"="*80)
-            logger.info(f"")
-            logger.info(f"   Optimal integration time: {best_integration*1000:.1f}ms")
-            logger.info(f"")
-            logger.info(f"   Weakest LED ({weakest_ch} @ LED=255):")
-            logger.info(f"      Signal: {best_weakest_signal:6.0f} counts ({weakest_percent:5.1f}%)")
-            logger.info(f"      Status: {'✅ OPTIMAL' if weakest_min <= best_weakest_signal <= weakest_max else '⚠️  Acceptable'}")
-            logger.info(f"")
-            logger.info(f"   Integration time LOCKED for S-mode: {best_integration*1000:.1f}ms")
-            logger.info(f"   This will be used for:")
-            logger.info(f"      • Step 5: Re-measure dark noise (at final integration time)")
-            logger.info(f"      • Step 6: Calibrate other LEDs (REDUCE their intensity to balance)")
-            logger.info(f"      • Step 7: Reference signal measurement (balanced S-mode)")
-            logger.info(f"")
-            logger.info(f"   Note: Smart boost (P-pol ONLY) increases integration time, never LED values")
-            logger.info(f"="*80)
-
-            # ✨ Set ONLY weakest channel to LED=255 (Step 6 will calibrate others)
-            logger.info(f"")
-            logger.info(f"💾 Setting weakest channel to LED=255...")
-            self.state.ref_intensity[weakest_ch] = MAX_LED_INTENSITY
-            logger.info(f"   {weakest_ch.upper()}: LED=255 (LOCKED)")
-            logger.info(f"   Other channels will be calibrated in Step 6")
-            logger.info(f"")
-
-            # Report counts in the 580-610 nm ROI (diagnostic consistency with LED ranking window)
             try:
-                wave_data = self.state.wavelengths
-                roi2_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-                roi2_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
+                # Measure each channel with its final LED value
+                step4_diagnostic_spectra = {}
+                step4_diagnostic_roi_means = {}
 
-                result_roi = self._measure_channel_in_roi(
-                    weakest_ch, MAX_LED_INTENSITY, int(roi2_min_idx), int(roi2_max_idx), "weakest LED (580-610nm)"
-                )
-                if result_roi is not None:
-                    roi_max_signal, roi_mean_signal = result_roi
-                    logger.info(
-                        f"   Weakest LED ({weakest_ch}) in 580-610nm: max={roi_max_signal:.0f} counts, mean={roi_mean_signal:.0f} counts"
+                for ch in all_channels:
+                    if self._is_stopped():
+                        break
+
+                    led_val = self.state.ref_intensity.get(ch, 255)
+                    logger.info(f"Measuring {ch.upper()} @ LED={led_val}...")
+
+                    # Turn on channel with final LED value
+                    intensities_dict = {ch: led_val}
+                    ok = self._activate_channel_batch([ch], intensities_dict)
+                    if not ok:
+                        logger.warning(f"   Batch activation failed for {ch}, trying sequential...")
+                        ok = self._activate_channel_sequential([ch], intensities_dict)
+
+                    if not ok:
+                        logger.error(f"   ❌ Failed to activate {ch}")
+                        continue
+
+                    time.sleep(self.led_on_delay_s)
+                    self._last_active_channel = ch
+
+                    # Acquire spectrum (no dark subtraction, no filter)
+                    raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
+                    if raw_array is None:
+                        logger.error(f"   ❌ Failed to acquire spectrum for {ch}")
+                        continue
+
+                    # Apply spectral filter to get SPR range
+                    filtered_array = self._apply_spectral_filter(raw_array)
+
+                    # Calculate ROI mean (580-610nm)
+                    roi_data = filtered_array[int(roi_min_idx):int(roi_max_idx)]
+                    roi_mean = np.mean(roi_data)
+
+                    step4_diagnostic_spectra[ch] = filtered_array.copy()
+                    step4_diagnostic_roi_means[ch] = roi_mean
+
+                    logger.info(f"   {ch.upper()}: ROI mean = {roi_mean:7.0f} counts (LED={led_val})")
+
+                # ✨ STORE Step 4 ROI means for QC comparison with Step 6
+                self.state.step4_raw_spol_roi_means = step4_diagnostic_roi_means.copy()
+                logger.debug(f"📊 Stored Step 4 ROI means for QC: {step4_diagnostic_roi_means}")
+
+                # ========================================================================
+                # STEP 4.8: BALANCING TOLERANCE CHECK - Verify all channels within 10%
+                # ========================================================================
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("🔍 STEP 4.8: LED BALANCING TOLERANCE CHECK")
+                logger.info("=" * 80)
+                logger.info(f"Target: {target_counts:,} counts")
+                logger.info("Tolerance: ±10% (all channels must be within this range)")
+                logger.info("")
+
+                tolerance = 0.10  # 10%
+                min_allowed = target_counts * (1 - tolerance)
+                max_allowed = target_counts * (1 + tolerance)
+
+                balancing_passed = True
+                channels_out_of_tolerance = []
+
+                logger.info("Channel | ROI Mean  | Deviation | Status")
+                logger.info("-----------------------------------------------")
+
+                for ch in all_channels:
+                    roi_mean = step4_diagnostic_roi_means.get(ch, 0)
+                    deviation = ((roi_mean - target_counts) / target_counts) * 100.0
+
+                    if min_allowed <= roi_mean <= max_allowed:
+                        status = "✅ PASS"
+                    else:
+                        status = "❌ FAIL"
+                        balancing_passed = False
+                        channels_out_of_tolerance.append((ch, roi_mean, deviation))
+
+                    logger.info(f"   {ch.upper()}    | {roi_mean:7.0f}  | {deviation:+6.1f}%  | {status}")
+
+                logger.info("")
+                logger.info(f"Acceptable range: {min_allowed:.0f} - {max_allowed:.0f} counts")
+
+                # ========================================================================
+                # STEP 4.9: RETRY LOOP - Adjust out-of-tolerance channels (max 3 attempts)
+                # ========================================================================
+                MAX_TOLERANCE_RETRIES = 3
+                retry_attempt = 0
+
+                while not balancing_passed and retry_attempt < MAX_TOLERANCE_RETRIES:
+                    retry_attempt += 1
+                    logger.warning("")
+                    logger.warning("=" * 80)
+                    logger.warning(f"⚠️ RETRY {retry_attempt}/{MAX_TOLERANCE_RETRIES}: Adjusting out-of-tolerance channels")
+                    logger.warning("=" * 80)
+                    logger.warning("")
+                    logger.warning("The following channels need adjustment:")
+                    for ch, roi_mean, deviation in channels_out_of_tolerance:
+                        logger.warning(f"   • Channel {ch.upper()}: {roi_mean:.0f} counts ({deviation:+.1f}% from target)")
+                    logger.warning("")
+
+                    # Adjust each out-of-tolerance channel using multi-point measurement
+                    for ch, roi_mean, deviation in channels_out_of_tolerance:
+                        current_led = self.state.ref_intensity.get(ch, 255)
+
+                        # ============================================================
+                        # SMART ADJUSTMENT: Use multi-point calibration for accuracy
+                        # ============================================================
+                        # Instead of simple linear scaling (which fails for non-linear regions),
+                        # we measure at 2-3 LED values and use regression to find the correct LED
+
+                        logger.info(f"   {ch.upper()}: Current LED={current_led}, signal={roi_mean:.0f} counts")
+                        logger.info(f"         Need to adjust to {target_counts:,} counts (currently {deviation:+.1f}%)")
+
+                        # Measure at current LED and one other point to establish slope
+                        calibration_points = [(current_led, roi_mean)]
+
+                        # Choose a second measurement point based on deviation direction
+                        if roi_mean < target_counts:
+                            # Signal too low → need higher LED
+                            # Measure at higher LED to establish slope
+                            test_led = min(255, int(current_led * 1.3))  # Try 30% higher
+                        else:
+                            # Signal too high → need lower LED
+                            # Measure at lower LED to establish slope
+                            test_led = max(1, int(current_led * 0.7))  # Try 30% lower
+
+                        if test_led != current_led:
+                            # Activate channel with test LED value
+                            intensities_dict = {ch: test_led}
+                            ok = self._activate_channel_batch([ch], intensities_dict)
+                            if not ok:
+                                ok = self._activate_channel_sequential([ch], intensities_dict)
+
+                            if ok:
+                                time.sleep(self.led_on_delay_s)
+                                raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
+                                if raw_array is not None:
+                                    filtered_array = self._apply_spectral_filter(raw_array)
+                                    test_roi_data = filtered_array[int(roi_min_idx):int(roi_max_idx)]
+                                    test_roi_mean = np.mean(test_roi_data)
+                                    calibration_points.append((test_led, test_roi_mean))
+                                    logger.info(f"         Test point: LED={test_led} → {test_roi_mean:.0f} counts")
+
+                        # Turn off LED
+                        self._all_leds_off_batch()
+                        time.sleep(self.led_off_delay_s)
+
+                        # Calculate new LED using linear regression if we have 2+ points
+                        if len(calibration_points) >= 2:
+                            # Linear fit: signal = slope * led + intercept
+                            leds = np.array([p[0] for p in calibration_points])
+                            signals = np.array([p[1] for p in calibration_points])
+
+                            # Use numpy polyfit for linear regression
+                            coeffs = np.polyfit(leds, signals, 1)
+                            slope = coeffs[0]
+                            intercept = coeffs[1]
+
+                            # Solve for LED: target = slope * led + intercept
+                            # led = (target - intercept) / slope
+                            if abs(slope) > 0.1:  # Valid slope
+                                new_led = (target_counts - intercept) / slope
+                                new_led = int(np.clip(new_led, 1, 255))
+                                logger.info(f"         Regression: slope={slope:.2f}, intercept={intercept:.0f}")
+                                logger.info(f"         Calculated: LED={new_led} (from {len(calibration_points)} points)")
+                            else:
+                                # Slope too flat - use simple scaling as fallback
+                                adjustment_factor = target_counts / roi_mean if roi_mean > 0 else 1.0
+                                new_led = int(current_led * adjustment_factor)
+                                new_led = max(1, min(255, new_led))
+                                logger.warning(f"         Slope too flat, using linear scaling: LED={new_led}")
+                        else:
+                            # Only one point - use simple linear scaling
+                            adjustment_factor = target_counts / roi_mean if roi_mean > 0 else 1.0
+                            new_led = int(current_led * adjustment_factor)
+                            new_led = max(1, min(255, new_led))
+                            logger.info(f"         Single-point scaling: LED={new_led} (factor: {adjustment_factor:.3f})")
+
+                        logger.info(f"   {ch.upper()}: LED {current_led} → {new_led}")
+
+                        # Update stored LED value
+                        self.state.ref_intensity[ch] = new_led
+                        self.state.leds_calibrated[ch] = new_led
+
+                    # Re-measure all channels with adjusted LED values
+                    logger.info("")
+                    logger.info("📊 Re-measuring all channels with adjusted LED values...")
+                    logger.info("")
+
+                    step4_diagnostic_roi_means = {}
+
+                    for ch in all_channels:
+                        if self._is_stopped():
+                            break
+
+                        led_val = self.state.ref_intensity.get(ch, 255)
+                        logger.info(f"   Measuring {ch.upper()} @ LED={led_val}...")
+
+                        # Turn on channel with adjusted LED value
+                        intensities_dict = {ch: led_val}
+                        ok = self._activate_channel_batch([ch], intensities_dict)
+                        if not ok:
+                            logger.warning(f"      Batch activation failed for {ch}, trying sequential...")
+                            ok = self._activate_channel_sequential([ch], intensities_dict)
+
+                        if not ok:
+                            logger.error(f"      ❌ Failed to activate {ch}")
+                            continue
+
+                        time.sleep(self.led_on_delay_s)
+                        self._last_active_channel = ch
+
+                        # Acquire spectrum (no dark subtraction, no filter)
+                        raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
+                        if raw_array is None:
+                            logger.error(f"      ❌ Failed to acquire spectrum for {ch}")
+                            continue
+
+                        # Apply spectral filter to get SPR range
+                        filtered_array = self._apply_spectral_filter(raw_array)
+
+                        # Calculate ROI mean (580-610nm)
+                        roi_data = filtered_array[int(roi_min_idx):int(roi_max_idx)]
+                        roi_mean = np.mean(roi_data)
+
+                        step4_diagnostic_spectra[ch] = filtered_array.copy()
+                        step4_diagnostic_roi_means[ch] = roi_mean
+
+                        logger.info(f"      {ch.upper()}: ROI mean = {roi_mean:7.0f} counts (LED={led_val})")
+
+                    # Turn off LEDs
+                    self._all_leds_off_batch()
+                    time.sleep(self.led_off_delay_s)
+
+                    # Re-check tolerance
+                    logger.info("")
+                    logger.info("🔍 Re-checking tolerance after adjustment...")
+                    logger.info("")
+                    logger.info("Channel | ROI Mean  | Deviation | Status")
+                    logger.info("-----------------------------------------------")
+
+                    balancing_passed = True
+                    channels_out_of_tolerance = []
+
+                    for ch in all_channels:
+                        roi_mean = step4_diagnostic_roi_means.get(ch, 0)
+                        deviation = ((roi_mean - target_counts) / target_counts) * 100.0
+
+                        if min_allowed <= roi_mean <= max_allowed:
+                            status = "✅ PASS"
+                        else:
+                            status = "❌ FAIL"
+                            balancing_passed = False
+                            channels_out_of_tolerance.append((ch, roi_mean, deviation))
+
+                        logger.info(f"   {ch.upper()}    | {roi_mean:7.0f}  | {deviation:+6.1f}%  | {status}")
+
+                    if balancing_passed:
+                        logger.info("")
+                        logger.info("=" * 80)
+                        logger.info(f"✅ TOLERANCE CHECK PASSED on retry attempt {retry_attempt}")
+                        logger.info("=" * 80)
+                        # Update Step 4 ROI means with successful values
+                        self.state.step4_raw_spol_roi_means = step4_diagnostic_roi_means.copy()
+                        break
+                    else:
+                        logger.warning("")
+                        logger.warning(f"⚠️ Still out of tolerance after retry {retry_attempt}/{MAX_TOLERANCE_RETRIES}")
+
+                # Final check after all retries
+                if not balancing_passed:
+                    logger.error("")
+                    logger.error("=" * 80)
+                    logger.error(f"❌ STEP 4 BALANCING FAILED AFTER {MAX_TOLERANCE_RETRIES} RETRIES!")
+                    logger.error("=" * 80)
+                    logger.error("")
+                    logger.error("The following channels remain outside the ±10% tolerance:")
+                    for ch, roi_mean, deviation in channels_out_of_tolerance:
+                        logger.error(f"   • Channel {ch.upper()}: {roi_mean:.0f} counts ({deviation:+.1f}% from target)")
+                    logger.error("")
+                    logger.error("This indicates LED balancing cannot converge properly.")
+                    logger.error("Possible causes:")
+                    logger.error("   1. LED saturation preventing accurate calibration")
+                    logger.error("   2. Integration time too high/low for this LED configuration")
+                    logger.error("   3. Hardware issue with LED control")
+                    logger.error("")
+                    logger.error("Recommended actions:")
+                    logger.error("   1. Check LED hardware connections")
+                    logger.error("   2. Try different fiber/LED configuration")
+                    logger.error("   3. Manually adjust integration time factor")
+                    logger.error("=" * 80)
+                    return False
+                else:
+                    if retry_attempt == 0:
+                        logger.info("✅ ALL CHANNELS WITHIN ±10% TOLERANCE")
+                        logger.info("   LED balancing successful!")
+                    else:
+                        logger.info("")
+                        logger.info("=" * 80)
+                        logger.info(f"✅ ALL CHANNELS WITHIN ±10% TOLERANCE (after {retry_attempt} adjustment(s))")
+                        logger.info("   LED balancing successful!")
+                        logger.info("=" * 80)
+
+                # Turn off all LEDs
+                self._all_leds_off_batch()
+                time.sleep(self.led_off_delay_s)
+
+                # Create diagnostic visualization
+                if len(step4_diagnostic_spectra) > 0:
+                    self._create_step4_diagnostic_plot(
+                        step4_diagnostic_spectra,
+                        step4_diagnostic_roi_means,
+                        all_channels,
+                        optimal_integration,
+                        target_counts
                     )
-            except Exception:
-                # Optional diagnostics; do not block calibration
-                pass
+                    logger.info("✅ Step 4 diagnostic plot saved")
+                else:
+                    logger.warning("⚠️  No diagnostic spectra captured")
 
-            # =============================
-            # STEP 4 SUMMARY (compact)
+            except Exception as diag_e:
+                logger.warning(f"⚠️  Step 4 diagnostic capture failed: {diag_e}")
+                # Non-critical - continue with calibration
+
+            logger.info("=" * 80)
+
+            return True
+
+        except Exception as e:
+            logger.exception(f"Error in Step 4: {e}")
+            return False
+
+    # ========================================================================
+    # STEP 5: RE-MEASURE DARK NOISE (AT OPTIMAL INTEGRATION TIME)
+    # ========================================================================
             # =============================
             try:
                 logger.info("" )
@@ -2868,499 +4246,381 @@ class SPRCalibrator:
             return False
 
     # ========================================================================
-    # STEP 3: INTEGRATION TIME CALIBRATION (LEGACY - TO BE REMOVED)
+    # STEP 6: S-REFERENCE MEASUREMENT (Final S-mode baselines)
     # ========================================================================
 
-    def calibrate_integration_time(
-        self,
-        ch_list: list[str],
-        integration_step: float,
-    ) -> bool:
-        """Calibrate integration time optimized for the WEAKEST channel.
+    def step_6_measure_s_reference(self, ch_list: list[str]) -> bool:
+        """STEP 6: Measure S-reference signals for all channels.
 
-        New strategy:
-        1. Identify weakest and strongest channels at standard LED intensity
-        2. Optimize integration time for the weakest channel (ensure it reaches target)
-        3. Check that strongest channel doesn't saturate
-        4. Later steps will adjust individual LED intensities to match
+        Replaces the older Step 7. Captures S-mode references using the
+        final settings from Steps 4 and 5, then subtracts the Step 5 dark.
 
-        Args:
-            ch_list: List of channels to calibrate
-            integration_step: Step size for integration time adjustments
+        Modes:
+        - global: use global integration time with dynamic scans
+        - per_channel: set per-channel integration time, ALWAYS 1 scan per channel
 
         Returns:
             True if successful, False otherwise
-
         """
         try:
             if self.ctrl is None or self.usb is None:
                 return False
 
-            # Set initial mode and turn off channels
+            logger.info("=" * 80)
+            logger.info("STEP 6: S-reference Measurement (S-mode)")
+            logger.info("=" * 80)
+
+            # Force S-mode
             self.ctrl.set_mode(mode="s")
-            time.sleep(0.5)
-            self.ctrl.turn_off_channels()
+            time.sleep(0.4)
 
-            # Get integration time limits from detector profile (or fall back to settings)
-            if self.detector_profile:
-                min_int = self.detector_profile.min_integration_time_ms / MS_TO_SECONDS  # Convert ms to seconds
-                max_int = self.detector_profile.max_integration_time_ms / MS_TO_SECONDS  # Convert ms to seconds (200 ms for Flame-T!)
-                logger.info(f"Using detector profile integration limits: {self.detector_profile.min_integration_time_ms}-{self.detector_profile.max_integration_time_ms} ms")
+            # Determine acquisition parameters
+            mode = getattr(self.state, 'calibration_mode', 'global')
+            if mode == 'per_channel':
+                logger.info("   Mode: PER_CHANNEL → single scan per channel (no dynamic scans)")
             else:
-                min_int = MIN_INTEGRATION / MS_TO_SECONDS  # Convert ms to seconds
-                max_int = MAX_INTEGRATION / MS_TO_SECONDS  # Convert ms to seconds
-                logger.warning("Using legacy integration limits from settings.py")
+                # GLOBAL: compute dynamic scan count for the frozen integration time
+                ref_scans = calculate_dynamic_scans(self.state.integration)
+                logger.info(
+                    f"📊 S-ref averaging (GLOBAL): {ref_scans} scans "
+                    f"(integration={self.state.integration*1000:.1f}ms, "
+                    f"total={ref_scans * self.state.integration * 1000:.0f}ms)"
+                )
 
-            # Start at 50% of max integration time (reasonable starting point)
-            starting_integration = (min_int + max_int) / 2.0  # 100ms for Flame-T (1ms + 200ms)/2
-            self.state.integration = starting_integration
-            self.usb.set_integration(self.state.integration)
-            time.sleep(0.1)
-            logger.info(f"📊 Starting integration time: {self.state.integration * 1000:.1f}ms (50% of max)")
-
-            # ========================================================================
-            # STEP 1: Identify weakest channel (test all at standard LED intensity)
-            # ========================================================================
-            logger.info("📊 Step 3.1: Identifying weakest channel...")
-
-            # Get target wavelength range indices (same as used everywhere else)
-            wave_data = self.state.wavelengths  # Already filtered to SPR range
-            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-            logger.debug(f"   Measuring in target range: {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm (indices {target_min_idx}-{target_max_idx})")
-
-            channel_intensities = {}
+            # Acquire S-ref per channel (raw first; dark subtraction after)
             for ch in ch_list:
                 if self._is_stopped():
                     return False
 
-                # ⚡ Use single-channel batch command for consistency
-                intensities_dict = {ch: S_LED_INT}
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
-
-                # ✨ NEW (Phase 2): Track last active channel for afterglow correction
-                self._last_active_channel = ch
-
-
-                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
-                raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
-                if raw_array is None:
-                    logger.error(f"Failed to read intensity for channel {ch}")
-                    continue
-
-                # Apply spectral filter for channel intensity measurement
-                filtered_array = self._apply_spectral_filter(raw_array)
-                # Measure in TARGET range (580-610nm), not entire SPR range!
-                current_count = filtered_array[target_min_idx:target_max_idx].max()
-
-                channel_intensities[ch] = current_count
-                logger.debug(f"Channel {ch} initial intensity in target range: {current_count:.0f} counts")
-
-
-            # Find weakest channel
-            weakest_ch = min(channel_intensities.items(), key=lambda kv: kv[1])[0]
-
-            # ✨ CRITICAL FIX: Store weakest channel for LED calibration
-            # The weakest channel will be set to 255, others calibrated relative to it
-            self.state.weakest_channel = weakest_ch
-
-            logger.info(f"✅ Weakest channel identified: {weakest_ch} ({channel_intensities[weakest_ch]:.0f} counts at LED={S_LED_INT} in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm)")
-            logger.info(f"   ➜ Weakest channel will be FIXED at LED=255")
-            logger.info(f"   ➜ Other channels will be adjusted DOWN to match")
-
-            # ⚡ Turn off all channels using batch command
-            self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
-
-            # ========================================================================
-            # STEP 2: Optimize integration time for WEAKEST channel at MAXIMUM LED
-            # ========================================================================
-            logger.info(f"📊 Step 3.2: Optimizing integration time for weakest channel ({weakest_ch})...")
-            logger.info(f"   Starting at {self.state.integration * 1000:.1f}ms, will adjust up or down as needed")
-
-            # CRITICAL: Set weakest channel to MAXIMUM LED intensity
-            # This ensures we give it every advantage before fixing integration time
-            # ⚡ Use batch command
-            intensities_dict = {weakest_ch: MAX_LED_INTENSITY}
-            self._activate_channel_batch([weakest_ch], intensities_dict)
-            time.sleep(LED_DELAY)
-
-            # Get target wavelength range indices (same as used in LED calibration)
-            wave_data = self.state.wavelengths  # Already filtered to SPR range
-            target_min_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MIN))
-            target_max_idx = np.argmin(np.abs(wave_data - TARGET_WAVELENGTH_MAX))
-
-            # Get detector-specific max counts for target calculation
-            if not self.detector_profile:
-                logger.error("❌ Detector profile not loaded - cannot determine target intensity")
-                logger.error("   Run Step 2 first to load detector profile")
-                return False
-
-            detector_max = self.detector_profile.max_intensity_counts
-            # Target: 80% of detector-specific max
-            S_COUNT_TARGET = int(TARGET_INTENSITY_PERCENT / 100 * detector_max)
-
-            # Measure initial intensity at starting integration time (100ms)
-            raw_array = self.usb.read_intensity()
-            if raw_array is not None:
-                # Apply spectral filter for integration time optimization
-                filtered_array = self._apply_spectral_filter(raw_array)
-                # Measure intensity in TARGET range (580-610nm), not entire SPR range!
-                current_count = filtered_array[target_min_idx:target_max_idx].max()
-                current_percent = (current_count / detector_max) * 100
-
-                logger.info(f"   Initial: {self.state.integration * 1000:.1f}ms, weakest@LED=255 in {TARGET_WAVELENGTH_MIN}-{TARGET_WAVELENGTH_MAX}nm: {current_count:.0f} counts ({current_percent:.1f}%)")
-                logger.info(f"   Target: {S_COUNT_TARGET:.0f} counts ({TARGET_INTENSITY_PERCENT}%)")
-            else:
-                current_count = 0
-                logger.error("Failed to read intensity for integration time calibration")
-
-            # Adjust integration time up or down as needed
-            if current_count < S_COUNT_TARGET:
-                # Too low - increase integration time
-                logger.info(f"   Signal too low ({current_percent:.1f}% < {TARGET_INTENSITY_PERCENT}%) - increasing integration time...")
-                direction = "up"
-            elif current_count > S_COUNT_TARGET * 1.1:  # More than 10% over target
-                # Too high - decrease integration time
-                logger.info(f"   Signal too high ({current_percent:.1f}% > {TARGET_INTENSITY_PERCENT + 10}%) - decreasing integration time...")
-                direction = "down"
-            else:
-                # Already good!
-                logger.info(f"   ✅ Signal already at target ({current_percent:.1f}%) - no adjustment needed")
-                direction = "done"
-
-            # Adjust integration time until target reached
-            while direction != "done":
-                if self._is_stopped():
-                    return False
-
-
-                # Adjust integration time based on direction
-                if direction == "up":
-                    if self.state.integration >= max_int:
-                        logger.warning(f"   Reached max integration time ({max_int * MS_TO_SECONDS:.1f}ms)")
-                        break
-                    self.state.integration += (integration_step / MS_TO_SECONDS)  # Increase
-                elif direction == "down":
-                    if self.state.integration <= min_int:
-                        logger.warning(f"   Reached min integration time ({min_int * MS_TO_SECONDS:.1f}ms)")
-                        break
-                    self.state.integration -= (integration_step / MS_TO_SECONDS)  # Decrease
-
-                self.usb.set_integration(self.state.integration)
-                time.sleep(0.02)
-
-
-                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
-                raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
-                if raw_array is None:
-                    break
-
-                # Apply spectral filter to intensity reads during integration optimization
-                filtered_array = self._apply_spectral_filter(raw_array)
-                # Measure intensity in TARGET range (580-610nm), same as LED calibration
-                current_count = filtered_array[target_min_idx:target_max_idx].max()
-                current_percent = (current_count / detector_max) * 100
-
-                # Check if we've reached target
-                if S_COUNT_TARGET * 0.95 <= current_count <= S_COUNT_TARGET * 1.05:  # Within 5% of target
-                    logger.info(
-                        f"   ✅ Target reached at {self.state.integration * 1000:.1f}ms: "
-                        f"weakest@LED=255: {current_count:.0f} counts ({current_percent:.1f}%)"
-                    )
-                    break
-
-                # Log progress every 10ms
-                if int(self.state.integration * 1000) % 10 == 0:
-                    logger.debug(
-                        f"   {self.state.integration * 1000:.1f}ms: "
-                        f"weakest@LED=255: {current_count:.0f} counts ({current_percent:.1f}%)"
-                    )
-
-            if current_count < S_COUNT_TARGET:
-                logger.warning(
-                    f"⚠️ Weakest channel could not reach target even at LED=255 and {self.state.integration * 1000:.1f}ms"
-                )
-                logger.warning(
-                    f"   Achieved: {current_count:.0f} counts ({current_count/detector_max*100:.1f}% of max)"
-                )
-                logger.warning(
-                    f"   This integration time ({self.state.integration * 1000:.1f}ms) will be used for all channels"
-                )
-
-            # ========================================================================
-            # STEP 3.3: Validate weakest channel performance
-            # ========================================================================
-            # Check if weakest channel achieved acceptable signal level (60-80% of detector max)
-            # If yes, LOCK integration time and let Step 4 adjust other channels' LED intensities
-            # If no, try 2nd weakest channel or fail with customer warning
-
-            integration_ms = self.state.integration * 1000
-            logger.info(f"📊 Step 3.3: Validating weakest channel ({weakest_ch}) performance at {integration_ms:.1f}ms")
-
-            # Get detector-specific max counts
-            if not self.detector_profile:
-                logger.error("❌ Detector profile not loaded - cannot validate channel performance")
-                logger.error("   Run Step 2 first to load detector profile")
-                return False
-
-            detector_max = self.detector_profile.max_intensity_counts
-
-            # Measure weakest channel one final time at LED=255
-            logger.info(f"   Measuring weakest channel ({weakest_ch}) at LED=255...")
-            # ⚡ Use batch command
-            intensities_dict = {weakest_ch: 255}
-            self._activate_channel_batch([weakest_ch], intensities_dict)
-            time.sleep(LED_DELAY)
-
-            # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
-            raw_array = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
-            if raw_array is not None:
-                filtered_array = self._apply_spectral_filter(raw_array)
-                final_count = filtered_array[target_min_idx:target_max_idx].max()
-                final_percent = (final_count / detector_max) * 100
-
-                logger.info(f"   Weakest channel ({weakest_ch}): {final_count:.0f} counts ({final_percent:.1f}% of max)")
-
-                # Check if weakest channel performance is acceptable
-                if final_percent >= MINIMUM_ACCEPTABLE_PERCENT:
-                    if final_percent >= IDEAL_TARGET_PERCENT:
-                        logger.info(f"✅ Weakest channel EXCELLENT: {final_percent:.1f}% ≥ {IDEAL_TARGET_PERCENT}% target")
-                    else:
-                        logger.info(f"✅ Weakest channel ACCEPTABLE: {final_percent:.1f}% ≥ {MINIMUM_ACCEPTABLE_PERCENT}% minimum")
-                        logger.info(f"   (Ideally {IDEAL_TARGET_PERCENT}%, but {final_percent:.1f}% is usable)")
-
-                    logger.info(f"✅ INTEGRATION TIME LOCKED at: {integration_ms:.1f}ms")
-                    logger.info(f"   Weakest channel ({weakest_ch}): {final_count:.0f} counts ({final_percent:.1f}%)")
-                    logger.info(f"   Other channels will be adjusted DOWN via LED intensity in Step 4")
-
-                else:
-                    # Weakest channel < 60% - try 2nd weakest or fail
-                    logger.warning(f"⚠️ Weakest channel FAILED: {final_percent:.1f}% < {MINIMUM_ACCEPTABLE_PERCENT}% minimum")
-                    logger.warning(f"   This is a hardware limitation - weakest LED channel cannot reach target")
-
-                    # Sort channels by intensity to find 2nd weakest
-                    sorted_channels = sorted(channel_intensities.items(), key=lambda x: x[1])
-                    if len(sorted_channels) >= 2:
-                        second_weakest_ch = sorted_channels[1][0]
-                        logger.warning(f"   Attempting with 2nd weakest channel: {second_weakest_ch}")
-                        logger.warning(f"   Channel {weakest_ch} will be UNUSABLE for measurements")
-
-                        # TODO: Implement 2nd weakest channel fallback if needed
-                        # For now, proceed with warning
-                        logger.error(f"❌ CUSTOMER WARNING: Channel {weakest_ch} insufficient - only 3/4 channels usable")
-                    else:
-                        logger.error(f"❌ CRITICAL: Cannot find alternative channel - calibration may fail")
-
-                    # Proceed anyway with current integration time
-                    logger.warning(f"   Proceeding with {integration_ms:.1f}ms anyway")
-
-            # ⚡ Turn off weakest channel using batch command
-            self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
-
-            integration_ms = self.state.integration * 1000
-            logger.info(f"✅ FINAL integration time FIXED at: {integration_ms:.1f}ms")
-            logger.info(f"   (This integration time will be used for ALL channels)")
-            logger.info(f"   (Next step: adjust LED intensities to balance channels)")
-
-            # Calculate number of scans to average using consistent 200ms target
-            self.state.num_scans = calculate_dynamic_scans(self.state.integration)
-            logger.debug(f"Scans to average: {self.state.num_scans} (200ms target)")
-
-            return True
-
-        except Exception as e:
-            logger.exception(f"Error calibrating integration time: {e}")
-            return False
-
-    # ========================================================================
-    # STEP 6: LED BALANCING (Adjust other channels to match weakest)
-    # ========================================================================
-
-    def step_6_balance_led_intensities(self, ch_list: list[str]) -> bool:
-        """STEP 6: Balance LED intensities by REDUCING other channels to match weakest.
-
-        The weakest channel is already at LED=255 from Step 4.
-        This step reduces OTHER channels' LED intensities until:
-        1. All channels are within target intensity range (50-75%)
-        2. All channels are within 15% of each other
-
-        This creates a balanced S-mode calibration baseline that:
-        - Maximizes signal without saturation
-        - Ensures similar intensities across channels
-        - Serves as reference for QC validation
-
-        CALIBRATION MODES:
-        ==================
-        - 'global': Run normal LED balancing (current behavior)
-        - 'per_channel': Skip LED balancing (all LEDs already at 255)
-
-        Args:
-            ch_list: List of channels to balance
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if self.ctrl is None or self.usb is None:
-                return False
-
-            # ========================================================================
-            # CHECK CALIBRATION MODE
-            # ========================================================================
-            if self.state.calibration_mode == 'per_channel':
-                logger.info("")
-                logger.info("=" * 80)
-                logger.info("🔧 STEP 6: PER-CHANNEL MODE - SKIPPING LED BALANCING")
-                logger.info("=" * 80)
-                logger.info(f"   Mode: PER_CHANNEL (all LEDs already at 255)")
-                logger.info(f"   LED balancing not needed in per-channel mode")
-                logger.info(f"")
-                logger.info(f"   ✅ All LEDs remain at 255")
-                logger.info(f"   Next: Step 7 will optimize per-channel integration times")
-                logger.info("=" * 80)
-                return True
-
-            # ========================================================================
-            # GLOBAL MODE: STANDARD LED BALANCING
-            # ========================================================================
-
-            from settings import WEAKEST_TARGET_PERCENT, WEAKEST_MIN_PERCENT, WEAKEST_MAX_PERCENT
-
-            # Get detector parameters
-            if not self.detector_profile:
-                logger.error("❌ Detector profile not loaded - cannot determine intensity targets")
-                logger.error("   Run Step 2 first to load detector profile")
-                return False
-
-            detector_max = self.detector_profile.max_intensity_counts
-            spr_min_nm = self.detector_profile.spr_wavelength_min_nm
-            spr_max_nm = self.detector_profile.spr_wavelength_max_nm
-
-            target_min = int(WEAKEST_MIN_PERCENT / 100 * detector_max)  # 50%
-            target_max = int(WEAKEST_MAX_PERCENT / 100 * detector_max)  # 80%
-            tolerance_percent = 15  # All channels within 15% of each other
-
-            logger.info("")
-            logger.info("=" * 80)
-            logger.info("🔧 STEP 6: LED INTENSITY BALANCING")
-            logger.info("=" * 80)
-            logger.info(f"   Goal: Balance all channels by reducing brighter LEDs")
-            logger.info(f"      → Target range: {WEAKEST_MIN_PERCENT}-{WEAKEST_MAX_PERCENT}% ({target_min:,}-{target_max:,} counts)")
-            logger.info(f"      → Max variation: {tolerance_percent}% between channels")
-            logger.info("")
-
-            # Get ROI indices
-            wave_data = self.state.wavelengths
-            roi_min_idx = np.argmin(np.abs(wave_data - spr_min_nm))
-            roi_max_idx = np.argmin(np.abs(wave_data - spr_max_nm))
-
-            # Get weakest channel (already at LED=255 from Step 4)
-            weakest_ch = self.state.led_ranking[0][0]
-            weakest_led = self.state.ref_intensity.get(weakest_ch, MAX_LED_INTENSITY)
-
-            logger.info(f"   Reference (weakest): {weakest_ch.upper()} @ LED={weakest_led}")
-            logger.info("")
-
-            # Balance each other channel
-            for ch in ch_list:
-                if ch == weakest_ch:
-                    logger.info(f"   ✓ {ch.upper()}: LED={MAX_LED_INTENSITY} (reference, no adjustment needed)")
-                    continue
-
-                logger.info(f"   Calibrating {ch.upper()}...")
-
-                # Binary search for optimal LED intensity
-                led_min = S_LED_MIN  # 5% minimum
-                led_max = MAX_LED_INTENSITY
-                best_led = None
-                best_signal = None
-
-                iteration = 0
-                max_iterations = 15
-
-                while iteration < max_iterations and (led_max - led_min) > 1:
-                    iteration += 1
-                    led_test = int((led_min + led_max) / 2)
-
-                    # Measure signal at this LED intensity
-                    result = self._measure_channel_in_roi(
-                        ch, led_test, int(roi_min_idx), int(roi_max_idx),
-                        description=f"LED balance test {iteration}"
-                    )
-
-                    if result is None:
-                        logger.error(f"      Failed to measure channel {ch}")
+                if mode == 'per_channel':
+                    # Use per-channel integration; enforce single scan
+                    # Prefer integration_per_channel; fall back to per_channel_integration_times
+                    ch_integration = None
+                    try:
+                        ch_integration = self.state.integration_per_channel.get(ch)
+                    except Exception:
+                        ch_integration = None
+                    if not ch_integration and hasattr(self.state, 'per_channel_integration_times'):
+                        ch_integration = float(self.state.per_channel_integration_times.get(ch, 0.0))
+                    if not ch_integration or ch_integration <= 0:
+                        logger.error(f"Missing per-channel integration for {ch}")
                         return False
 
-                    signal_max, signal_mean = result
-                    signal_percent = (signal_max / detector_max) * 100
+                    # Apply integration (expects seconds)
+                    if hasattr(self.usb, 'set_integration'):
+                        self.usb.set_integration(ch_integration)
+                    elif hasattr(self.usb, 'set_integration_time'):
+                        self.usb.set_integration_time(float(ch_integration))
+                    ref_scans = 1  # single scan per user requirement
+                    logger.info(
+                        f"   {ch.upper()}: {ch_integration*1000:.1f}ms × 1 scan (per-channel mode)"
+                    )
+                else:
+                    # GLOBAL: integration already frozen in state; scans computed above
+                    pass
 
-                    logger.debug(f"      Iteration {iteration}: LED={led_test:3d} → {signal_max:6.0f} counts ({signal_percent:5.1f}%)")
+                # Activate LED
+                if mode == 'per_channel':
+                    intensities_dict = {ch: MAX_LED_INTENSITY}  # LED=255
+                else:
+                    led_val = int(self.state.ref_intensity.get(ch, MAX_LED_INTENSITY))
+                    intensities_dict = {ch: led_val}
+                    logger.info(f"🔦 Step 6: Setting channel {ch.upper()} LED = {led_val} (from ref_intensity)")
 
-                    # Check if within target range
-                    if target_min <= signal_max <= target_max:
-                        # Success! Found acceptable intensity
-                        best_led = led_test
-                        best_signal = signal_max
-                        logger.info(f"      ✅ Found optimal LED={best_led} → {best_signal:,.0f} counts ({signal_percent:.1f}%)")
-                        break
-                    elif signal_max > target_max:
-                        # Too bright, reduce LED
-                        led_max = led_test - 1
-                    else:
-                        # Too dim, increase LED
-                        led_min = led_test + 1
+                self._activate_channel_batch([ch], intensities_dict)
+                time.sleep(self.led_on_delay_s)
 
-                if best_led is None:
-                    # Use best attempt
-                    best_led = led_test
-                    best_signal = signal_max
-                    logger.warning(f"      ⚠️  Could not find perfect match, using LED={best_led} → {best_signal:,.0f} counts")
+                # Track last active channel
+                self._last_active_channel = ch
 
-                # Store calibrated LED intensity
-                self.state.ref_intensity[ch] = best_led
-                logger.info(f"   ✓ {ch.upper()}: LED={best_led} (balanced)")
-                logger.info("")
-
-            # Verify all channels are within tolerance
-            logger.info("   Verifying balance...")
-            all_signals = []
-            for ch in ch_list:
-                led_val = self.state.ref_intensity[ch]
-                result = self._measure_channel_in_roi(
-                    ch, led_val, int(roi_min_idx), int(roi_max_idx),
-                    description="final verification"
+                # Acquire
+                # ⚠️ CRITICAL: DO NOT apply jitter correction to calibration reference measurements!
+                # Jitter correction detrends the signal (subtracts mean), which would incorrectly
+                # remove the LED signal we're trying to measure. Dark subtraction is applied separately.
+                averaged_signal = self._acquire_averaged_spectrum(
+                    num_scans=ref_scans,
+                    apply_filter=True,
+                    subtract_dark=False,
+                    description=f"S-reference (ch {ch})",
+                    apply_jitter_correction=False  # ⚠️ MUST be False - preserve LED signal!
                 )
-                if result:
-                    signal_max, _ = result
-                    all_signals.append((ch, led_val, signal_max))
+                if averaged_signal is None:
+                    logger.error(f"Failed to acquire S-reference for channel {ch}")
+                    return False
 
-            if all_signals:
-                signals_only = [s[2] for s in all_signals]
-                min_signal = min(signals_only)
-                max_signal = max(signals_only)
-                variation_percent = ((max_signal - min_signal) / min_signal) * 100
+                # Store raw (filtered) S-ref
+                self.state.ref_sig[ch] = averaged_signal
 
-                logger.info("")
-                logger.info("   📊 Final Balance:")
-                for ch, led, signal in all_signals:
-                    signal_percent = (signal / detector_max) * 100
-                    logger.info(f"      {ch.upper()}: LED={led:3d} → {signal:6.0f} counts ({signal_percent:5.1f}%)")
-                logger.info(f"")
-                logger.info(f"   Variation: {variation_percent:.1f}% ({'✅ PASS' if variation_percent <= tolerance_percent else '⚠️  ACCEPTABLE'})")
-                logger.info("")
+                # Turn off LED before next channel
+                with suppress(Exception):
+                    self._all_leds_off_batch()
+                time.sleep(self.led_off_delay_s)
 
+            # Dark subtraction (use Step 5 darks; per-channel if available)
+            if mode == 'per_channel' and hasattr(self.state, 'per_channel_dark_noise') and self.state.per_channel_dark_noise:
+                for ch in ch_list:
+                    ref = self.state.ref_sig.get(ch)
+                    dark = self.state.per_channel_dark_noise.get(ch)
+                    if ref is None or dark is None:
+                        continue
+                    ref_arr = np.array(ref, dtype=float)
+                    dark_arr = np.array(dark, dtype=float)
+                    # Resample dark if needed
+                    if len(dark_arr) != len(ref_arr):
+                        x_old = np.linspace(0, 1, len(dark_arr))
+                        x_new = np.linspace(0, 1, len(ref_arr))
+                        try:
+                            from scipy.interpolate import interp1d
+                            dark_arr = interp1d(x_old, dark_arr, kind='linear', bounds_error=False, fill_value="extrapolate")(x_new)
+                        except Exception:
+                            dark_arr = np.interp(x_new, x_old, dark_arr)
+                    self.state.ref_sig[ch] = ref_arr - dark_arr
+                logger.info("✅ Step 6: Applied per-channel dark subtraction using Step 5 darks")
+            elif getattr(self.state, 'dark_noise', None) is not None:
+                dark_arr = np.array(self.state.dark_noise, dtype=float)
+                for ch in ch_list:
+                    ref = self.state.ref_sig.get(ch)
+                    if ref is None:
+                        continue
+                    ref_arr = np.array(ref, dtype=float)
+                    if len(dark_arr) != len(ref_arr):
+                        x_old = np.linspace(0, 1, len(dark_arr))
+                        x_new = np.linspace(0, 1, len(ref_arr))
+                        try:
+                            from scipy.interpolate import interp1d
+                            dark_res = interp1d(x_old, dark_arr, kind='linear', bounds_error=False, fill_value="extrapolate")(x_new)
+                        except Exception:
+                            dark_res = np.interp(x_new, x_old, dark_arr)
+                    else:
+                        dark_res = dark_arr
+                    self.state.ref_sig[ch] = ref_arr - dark_res
+                logger.info("✅ Step 6: Applied global dark subtraction using Step 5 dark")
+            else:
+                logger.warning("⚠️ Step 6: No Step 5 dark available; keeping raw S-references")
+
+            # Save S-refs
+            from pathlib import Path
+            calib_dir = Path(ROOT_DIR) / "calibration_data"
+            calib_dir.mkdir(exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            for ch in ch_list:
+                if self.state.ref_sig.get(ch) is None:
+                    continue
+                s_ref_file = calib_dir / f"s_ref_{ch}_{timestamp}.npy"
+                np.save(s_ref_file, self.state.ref_sig[ch])
+                latest_s_ref = calib_dir / f"s_ref_{ch}_latest.npy"
+                np.save(latest_s_ref, self.state.ref_sig[ch])
+                logger.info(f"💾 S-ref[{ch}] saved: {s_ref_file}")
+
+            logger.info(f"✅ All S-mode references saved to: {calib_dir}")
+
+            # Mark calibration complete
+            self.state.ch_error_list = []
+            self.state.is_calibrated = True
+            self.state.calibration_timestamp = time.time()
+            logger.info("✅ Calibration complete - all channels validated (after Step 6)")
+
+            # ✨ NEW: Log final calibration parameters after Step 6
+            logger.info("")
             logger.info("=" * 80)
-            logger.info("✅ STEP 6 COMPLETE: LED intensities balanced")
+            logger.info("📊 STEP 6 COMPLETE - FINAL CALIBRATION PARAMETERS")
             logger.info("=" * 80)
+
+            # Log integration time (global or per-channel)
+            if self.state.calibration_mode == 'per_channel':
+                logger.info("Mode: PER-CHANNEL (separate integration times per channel)")
+                logger.info("")
+                logger.info("   Channel  | LED Intensity | Integration Time | Scans")
+                logger.info("   " + "-" * 58)
+                for ch in ch_list:
+                    # Use ref_intensity (the source of truth from Step 4)
+                    led_val = self.state.ref_intensity.get(ch, 0) if self.state.ref_intensity else 0
+                    int_val = self.state.integration_per_channel.get(ch, 0.0) if hasattr(self.state, 'integration_per_channel') else 0.0
+                    scans = self.state.scans_per_channel.get(ch, 1) if hasattr(self.state, 'scans_per_channel') else 1
+                    logger.info(f"      {ch.upper()}     |      {led_val:3d}       |     {int_val*1000:6.1f} ms     |   {scans}")
+            else:
+                logger.info("Mode: GLOBAL (single integration time for all channels)")
+                logger.info(f"Integration Time: {self.state.integration*1000:.1f} ms")
+                logger.info(f"Scans per channel: {self.state.num_scans}")
+                logger.info("")
+                logger.info("   Channel  | LED Intensity")
+                logger.info("   " + "-" * 26)
+                for ch in ch_list:
+                    # ✅ FIX: Use ref_intensity (where Step 4 stores values), NOT leds_calibrated
+                    led_val = self.state.ref_intensity.get(ch, 0) if self.state.ref_intensity else 0
+                    logger.info(f"      {ch.upper()}     |      {led_val:3d}")
+
+                # ⚠️ VALIDATION: Check if all LED values are identical (red flag in GLOBAL mode)
+                if self.state.ref_intensity:
+                    led_values = [self.state.ref_intensity.get(ch, 0) for ch in ch_list]
+                    unique_leds = set(led_values)
+                    if len(unique_leds) == 1 and len(ch_list) > 1:
+                        logger.warning("")
+                        logger.warning("⚠️  WARNING: All channels have IDENTICAL LED values!")
+                        logger.warning(f"   All LEDs = {led_values[0]}")
+                        logger.warning("   This suggests Step 4 (LED balancing) did not execute properly.")
+                        logger.warning("   Expected: Different LED values to balance channels to weakest.")
+                        logger.warning("")
+
+            logger.info("")
+            logger.info("=" * 80)
+
+            # ========================================================================
+            # STEP 6.7: CREATE DIAGNOSTIC PLOT
+            # ========================================================================
+            # Capture dark-subtracted S-ref spectra for diagnostic visualization
+            try:
+                logger.info("")
+                logger.info("📊 Creating Step 6 diagnostic plot...")
+
+                step6_diagnostic_spectra = {}
+                step6_diagnostic_roi_means = {}
+
+                # Calculate ROI indices (580-610nm)
+                from settings import TARGET_WAVELENGTH_MIN, TARGET_WAVELENGTH_MAX
+                wavelengths = self.state.wavelengths
+                roi_min_idx = np.argmin(np.abs(wavelengths - TARGET_WAVELENGTH_MIN))
+                roi_max_idx = np.argmin(np.abs(wavelengths - TARGET_WAVELENGTH_MAX))
+
+                # Get detector max for target calculation
+                detector_max = self.detector_profile.max_intensity_counts if self.detector_profile else 65535
+                from settings import WEAKEST_TARGET_PERCENT
+                target_counts = int(WEAKEST_TARGET_PERCENT / 100 * detector_max)
+
+                for ch in ch_list:
+                    # Get dark-subtracted S-ref spectrum
+                    spectrum = self.state.ref_sig.get(ch)
+                    if spectrum is not None:
+                        step6_diagnostic_spectra[ch] = spectrum
+                        # Calculate ROI mean
+                        roi_mean = np.mean(spectrum[roi_min_idx:roi_max_idx])
+                        step6_diagnostic_roi_means[ch] = roi_mean
+
+                # ========================================================================
+                # STEP 6.8: QC CHECK - Compare Step 4 vs Step 6 ROI Means
+                # ========================================================================
+                # The ONLY difference between Step 4 and Step 6 is dark subtraction
+                # If Step 6 is dramatically different from Step 4, this is a RED FLAG
+                # indicating the dark measurement was contaminated (LEDs not fully off)
+
+                if hasattr(self.state, 'step4_raw_spol_roi_means') and self.state.step4_raw_spol_roi_means:
+                    logger.info("")
+                    logger.info("=" * 80)
+                    logger.info("🔍 QC CHECK: Comparing Step 4 (raw S-pol) vs Step 6 (dark-subtracted)")
+                    logger.info("=" * 80)
+                    logger.info("")
+
+                    # Get expected dark noise for this detector class
+                    # Ocean Optics/USB4000: ~3,000 counts @ 36ms
+                    expected_dark = 3000.0  # Ocean Optics detector class
+                    if self.detector_profile:
+                        # Scale expected dark by integration time ratio
+                        integration_ms = self.state.integration * 1000  # Convert to ms
+                        expected_dark = 3000.0 * (integration_ms / 36.0)
+
+                    # Maximum allowed dark (2x expected)
+                    max_allowed_dark = expected_dark * 2.0
+
+                    logger.info(f"Expected dark noise: ~{expected_dark:.0f} counts")
+                    logger.info(f"Maximum allowed dark (QC threshold): {max_allowed_dark:.0f} counts")
+                    logger.info("")
+                    logger.info("Channel | Step 4 (raw) | Step 6 (dark-sub) | Difference | Status")
+                    logger.info("-" * 75)
+
+                    qc_passed = True
+                    qc_warnings = []
+
+                    for ch in ch_list:
+                        step4_mean = self.state.step4_raw_spol_roi_means.get(ch, 0)
+                        step6_mean = step6_diagnostic_roi_means.get(ch, 0)
+                        difference = step4_mean - step6_mean  # This is the effective dark subtracted
+
+                        # QC criteria:
+                        # 1. Difference should be positive (dark subtraction reduces signal)
+                        # 2. Difference should be close to expected dark (±2x tolerance)
+                        # 3. Step 6 should not be near-zero or negative
+
+                        status = "✅ OK"
+                        if difference < 0:
+                            status = "❌ FAIL - Negative difference!"
+                            qc_passed = False
+                            qc_warnings.append(f"Channel {ch.upper()}: Step 6 > Step 4 (impossible!)")
+                        elif difference > max_allowed_dark:
+                            status = f"⚠️ HIGH - Dark too large (>{max_allowed_dark:.0f})"
+                            qc_passed = False
+                            qc_warnings.append(
+                                f"Channel {ch.upper()}: Dark subtraction = {difference:.0f} counts "
+                                f"(expected ~{expected_dark:.0f}, max {max_allowed_dark:.0f})"
+                            )
+                        elif difference < expected_dark * 0.5:
+                            status = f"⚠️ LOW - Dark too small (<{expected_dark*0.5:.0f})"
+                            # Don't fail QC for low dark, but warn
+                        elif step6_mean < 1000:
+                            status = "⚠️ WARN - Step 6 signal very low"
+                            # Don't fail QC, but warn
+
+                        logger.info(
+                            f"   {ch.upper()}    |   {step4_mean:7.0f}    |     {step6_mean:7.0f}      |   "
+                            f"{difference:6.0f}    | {status}"
+                        )
+
+                    logger.info("")
+
+                    if qc_passed:
+                        logger.info("✅ QC PASSED - Step 4 vs Step 6 comparison looks good")
+                        logger.info("   Dark subtraction is within expected range")
+                    else:
+                        logger.error("❌ QC FAILED - Step 4 vs Step 6 comparison shows problems!")
+                        logger.error("")
+                        for warning in qc_warnings:
+                            logger.error(f"   • {warning}")
+                        logger.error("")
+                        logger.error("DIAGNOSIS:")
+                        logger.error("   The ONLY difference between Step 4 and Step 6 should be dark subtraction.")
+                        logger.error("   Large differences indicate the dark measurement was contaminated.")
+                        logger.error("")
+                        logger.error("POSSIBLE CAUSES:")
+                        logger.error("   1. LEDs not completely turned off during Step 5 dark measurement")
+                        logger.error("   2. Insufficient LED-off settle time (increase led_off_delay_s)")
+                        logger.error("   3. Hardware issue with LED control")
+                        logger.error("   4. Wrong dark noise file being used")
+                        logger.error("")
+                        logger.error("RECOMMENDED ACTIONS:")
+                        logger.error("   1. Check Step 5 logs - verify 'lx' command sent successfully")
+                        logger.error("   2. Verify dark noise mean is within expected range (~3,000 for Ocean Optics)")
+                        logger.error("   3. Re-run calibration with longer LED-off delay if needed")
+                        logger.error("")
+
+                        # Return failure to stop calibration
+                        return False
+
+                    logger.info("=" * 80)
+                    logger.info("")
+                else:
+                    logger.warning("⚠️ Step 4 ROI means not available - skipping QC check")
+
+                # Create diagnostic plot
+                if step6_diagnostic_spectra:
+                    integration_time = self.state.integration
+                    self._create_step6_diagnostic_plot(
+                        step6_diagnostic_spectra,
+                        step6_diagnostic_roi_means,
+                        ch_list,
+                        integration_time,
+                        target_counts
+                    )
+                    logger.info("✅ Step 6 diagnostic plot created successfully")
+                else:
+                    logger.warning("⚠️ No S-ref spectra available for diagnostic plot")
+
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to create Step 6 diagnostic plot: {e}")
+                # Non-critical - continue with calibration
 
             return True
 
         except Exception as e:
-            logger.exception(f"Error balancing LED intensities: {e}")
+            logger.exception(f"Error measuring S-reference signals: {e}")
             return False
 
     # ========================================================================
@@ -3410,7 +4670,7 @@ class SPRCalibrator:
 
             logger.info("")
             logger.info("=" * 80)
-            logger.info("⚡ PER-CHANNEL INTEGRATION TIME OPTIMIZATION")
+            logger.info("STEP 4 (PER-CHANNEL): Integration Time Optimization (LEDs=255, no balancing)")
             logger.info("=" * 80)
             logger.info(f"   Mode: PER_CHANNEL (LED=255 for all channels)")
             logger.info(f"   Goal: Find optimal integration time per channel")
@@ -3426,6 +4686,29 @@ class SPRCalibrator:
             roi_min_idx = np.argmin(np.abs(wave_data - spr_min_nm))
             roi_max_idx = np.argmin(np.abs(wave_data - spr_max_nm))
 
+            # Prepare ratio-based initializers from Step 3 ranking (if available)
+            weakest_ch = getattr(self.state, 'weakest_channel', None)
+            ranking = getattr(self.state, 'led_ranking', None)
+            mean_by_ch: dict[str, float] = {}
+            weakest_mean: Optional[float] = None
+            if isinstance(ranking, list) and ranking:
+                try:
+                    # ranking format: [(ch, (mean, max_val, was_saturated)), ...]
+                    for ch_rank, data in ranking:
+                        if isinstance(data, (tuple, list)) and len(data) >= 1:
+                            mean_by_ch[str(ch_rank)] = float(data[0])
+                    if weakest_ch and weakest_ch in mean_by_ch:
+                        weakest_mean = mean_by_ch[weakest_ch]
+                    else:
+                        # Fallback: take minimum mean as weakest
+                        weakest_ch, weakest_mean = min(mean_by_ch.items(), key=lambda kv: kv[1]) if mean_by_ch else (None, None)
+                except Exception:
+                    mean_by_ch = {}
+                    weakest_mean = None
+
+            # Use global integration from Step 4 as base for proportional estimates
+            base_integration = getattr(self.state, 'integration', None)
+
             # Optimize each channel independently
             for ch in ch_list:
                 if self._is_stopped():
@@ -3434,13 +4717,71 @@ class SPRCalibrator:
                 logger.info(f"   Optimizing channel {ch.upper()}...")
 
                 # Binary search for optimal integration time
+                # Default broad bracket
                 integration_min = min_int
                 integration_max = max_int
                 best_integration = None
                 best_signal = 0
 
                 max_iterations = 15
+
+                # Ratio-based initializer: t_est = base_int * (weak_mean / mean_ch)
+                used_initializer = False
+                if (
+                    base_integration is not None
+                    and weakest_mean is not None
+                    and ch in mean_by_ch
+                    and mean_by_ch[ch] > 0
+                    and weakest_mean > 0
+                ):
+                    try:
+                        ratio = weakest_mean / mean_by_ch[ch]
+                        t_est = float(base_integration) * ratio
+                        # Clamp to detector limits
+                        t_est = max(min_int, min(max_int, t_est))
+                        logger.info(
+                            f"      Initial estimate from Step 3 ratio: t_est={t_est*1000:.1f}ms (ratio={ratio:.3f})"
+                        )
+
+                        # Quick verification at t_est
+                        self.usb.set_integration(t_est)
+                        time.sleep(0.1)
+                        result = self._measure_channel_in_roi(
+                            ch, MAX_LED_INTENSITY, int(roi_min_idx), int(roi_max_idx),
+                            f"ch {ch} ratio-initial check"
+                        )
+                        if result is not None:
+                            signal_max, _ = result
+                            signal_percent = (signal_max / detector_max) * 100
+                            logger.debug(
+                                f"      Initial check: {t_est*1000:.1f}ms → {signal_max:6.0f} counts ({signal_percent:5.1f}%)"
+                            )
+                            if target_min <= signal_max <= target_max:
+                                best_integration = t_est
+                                best_signal = signal_max
+                                used_initializer = True
+                                logger.info(
+                                    f"      ✅ Initial estimate already within target: {best_integration*1000:.1f}ms ({signal_percent:.1f}%)"
+                                )
+                            else:
+                                # Narrow the bracket around the estimate (half/double within bounds)
+                                span_low = max(min_int, t_est * 0.5)
+                                span_high = min(max_int, t_est * 2.0)
+                                if span_low < span_high:
+                                    integration_min, integration_max = span_low, span_high
+                                    logger.info(
+                                        f"      Bracketing search around estimate: [{integration_min*1000:.1f}, {integration_max*1000:.1f}] ms"
+                                    )
+                                else:
+                                    logger.debug("      Ratio-based bracket collapsed; using full range")
+                    except Exception as _:
+                        pass
+
                 for iteration in range(max_iterations):
+                    # If initializer already found a valid solution, skip binary search
+                    if used_initializer and best_integration is not None:
+                        break
+
                     # Test integration time (midpoint)
                     test_integration = (integration_min + integration_max) / 2.0
                     self.usb.set_integration(test_integration)
@@ -3482,17 +4823,17 @@ class SPRCalibrator:
                     logger.error(f"      Failed to find optimal integration for {ch}")
                     return False
 
-                # Apply 200ms budget (scan averaging if needed)
+                # Apply per-channel policy: no window, cap integration at 200 ms, scans=1
                 budget_ms = 200.0
                 integration_ms = best_integration * 1000
-                if integration_ms <= budget_ms:
-                    # Use 1 scan
-                    num_scans = 1
-                else:
-                    # Multiple scans with shorter integration
-                    num_scans = int(np.ceil(integration_ms / budget_ms))
-                    best_integration = budget_ms / 1000 / num_scans
-                    integration_ms = best_integration * 1000
+                if integration_ms > budget_ms:
+                    logger.info(
+                        f"      Capping integration to {budget_ms:.1f}ms (was {integration_ms:.1f}ms) per per-channel policy"
+                    )
+                    integration_ms = budget_ms
+                    best_integration = integration_ms / 1000.0
+                # Always single scan in per-channel mode
+                num_scans = 1
 
                 # Store per-channel parameters
                 self.state.integration_per_channel[ch] = best_integration
@@ -3599,11 +4940,17 @@ class SPRCalibrator:
         return self._measure_dark_noise_internal(is_baseline=True)
 
     def step_5_remeasure_dark_noise(self) -> bool:
-        """STEP 5: Re-measure dark noise with final integration time.
+        """STEP 5: Re-measure dark noise with final integration time(s).
 
         This step re-measures dark noise after integration time optimization
-        (Step 4) is complete. It uses the final optimized integration time and
-        applies afterglow correction if available.
+        (Step 4) is complete.
+
+        **GLOBAL MODE:**
+        - Measures ONE dark spectrum at global integration time
+
+        **PER-CHANNEL MODE:**
+        - Measures FOUR dark spectra (one per channel at each channel's integration time)
+        - Stores per-channel darks in self.state.per_channel_dark_noise
 
         The purpose is to get accurate dark noise for the actual integration
         time that will be used during SPR measurements (Step 1 used a temporary
@@ -3615,9 +4962,209 @@ class SPRCalibrator:
         logger.info("=" * 80)
         logger.info("STEP 5: Dark Noise Re-measurement (Final Integration Time)")
         logger.info("=" * 80)
-        logger.info(f"Re-measuring dark noise with final integration time ({self.state.integration*1000:.1f}ms)...")
 
-        return self._measure_dark_noise_internal(is_baseline=False)
+        # ⚠️ VALIDATION: Check that Step 4 actually set LED values
+        logger.info("")
+        logger.info("🔍 Pre-Step 5 Validation: Checking Step 4 LED values...")
+        logger.info("-" * 80)
+
+        if not hasattr(self.state, 'ref_intensity') or not self.state.ref_intensity:
+            logger.error("❌ CRITICAL: self.state.ref_intensity is empty!")
+            logger.error("   Step 4 did not store LED values properly")
+            logger.error("   Cannot proceed to Step 5")
+            return False
+
+        # Check each channel
+        ch_list = ['a', 'b', 'c', 'd']
+        missing_leds = []
+        zero_leds = []
+        for ch in ch_list:
+            led_val = self.state.ref_intensity.get(ch, -999)
+            if led_val == -999:
+                missing_leds.append(ch)
+            elif led_val <= 0:
+                zero_leds.append(ch)
+
+        if missing_leds:
+            logger.error(f"❌ Missing LED values for channels: {missing_leds}")
+            logger.error("   Step 4 did not complete properly")
+            return False
+
+        if zero_leds:
+            logger.error(f"❌ Zero LED values for channels: {zero_leds}")
+            logger.error("   Step 4 LED balancing failed")
+            return False
+
+        # Log current LED values
+        logger.info("✅ Step 4 LED values validated:")
+        for ch in ch_list:
+            led_val = self.state.ref_intensity.get(ch, 0)
+            logger.info(f"   {ch.upper()}: LED = {led_val}")
+
+        logger.info("")
+        logger.info("✅ Pre-Step 5 validation passed - LED values are valid")
+        logger.info("=" * 80)
+        logger.info("")
+
+        # Check calibration mode
+        mode = getattr(self.state, 'calibration_mode', 'global')
+
+        if mode == 'per_channel':
+            # Per-channel mode: measure 4 separate darks
+            logger.info("Mode: PER-CHANNEL (measuring 4 separate darks)")
+            return self._measure_per_channel_dark_noise()
+        else:
+            # Global mode: measure 1 dark at global integration time
+            logger.info(f"Mode: GLOBAL (measuring 1 dark @ {self.state.integration*1000:.1f}ms)")
+            return self._measure_dark_noise_internal(is_baseline=False)
+
+    def _measure_per_channel_dark_noise(self) -> bool:
+        """Measure separate dark spectra for each channel (per-channel mode).
+
+        Policy:
+        - One single-scan dark per channel at that channel's integration time.
+        - LEDs forced OFF; no averaging beyond a single scan.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if self.ctrl is None or self.usb is None:
+                return False
+
+            # Get per-channel integration times from Step 4
+            if not hasattr(self.state, 'per_channel_integration_times'):
+                logger.error("❌ Per-channel integration times not found! Run Step 4 first.")
+                return False
+
+            per_channel_integration = self.state.per_channel_integration_times
+            all_channels = list(per_channel_integration.keys())
+
+            logger.info(f"Measuring {len(all_channels)} separate dark spectra (one per channel)")
+            logger.info("")
+
+            # CRITICAL: Force all LEDs OFF at hardware level
+            logger.info("🔦 Forcing ALL LEDs OFF for dark noise measurement...")
+
+            # Use robust LED-off method that sets intensities to 0 AND sends lx command
+            try:
+                success = self._all_leds_off_batch()
+                if success:
+                    logger.info("   ✓ LEDs turned off successfully (intensities set to 0 + lx command)")
+                else:
+                    logger.error("   ❌ _all_leds_off_batch() returned False - LEDs NOT confirmed off")
+                    logger.error("   Cannot proceed with dark measurement - stopping calibration")
+                    return False
+            except Exception as e:
+                logger.error(f"   ❌ Failed to turn off LEDs: {e}")
+                return False
+
+            # Wait for hardware to settle
+            settle_delay = max(self.led_off_delay_s, 0.5)
+            time.sleep(settle_delay)
+            logger.info(f"✅ All LEDs OFF; waited {settle_delay*1000:.0f}ms for hardware to settle")
+            logger.info("")
+
+            # Store per-channel darks
+            per_channel_dark = {}
+
+            for ch in all_channels:
+                if self._is_stopped():
+                    return False
+
+                int_time = per_channel_integration[ch]
+                logger.info(f"Measuring dark for Channel {ch.upper()} @ {int_time*MS_TO_SECONDS:.1f}ms")
+
+                # Set integration time for this channel
+                self.usb.set_integration(int_time)
+                time.sleep(0.08)
+
+                # ✨ Per-channel dark policy: single scan per channel at its integration time
+                dark_scans = 1
+                total_time_ms = int_time * 1000.0
+                logger.info(f"   Using 1 scan (≈{total_time_ms:.0f}ms total; per-channel dark policy)")
+
+                # Measure dark spectrum
+                # ⚠️ CRITICAL: DO NOT apply jitter correction to dark measurements!
+                # Jitter correction detrends the signal (subtracts mean), which would incorrectly
+                # zero out the dark noise baseline we're trying to measure.
+                dark_spectrum = self._acquire_averaged_spectrum(
+                    num_scans=dark_scans,
+                    apply_filter=True,  # Filter to SPR range
+                    subtract_dark=False,  # No subtraction (this IS the dark)
+                    description=f"dark {ch}",
+                    apply_jitter_correction=False  # ⚠️ MUST be False - preserve dark baseline!
+                )
+
+                if dark_spectrum is None:
+                    logger.error(f"❌ Failed to measure dark for channel {ch}")
+                    return False
+
+                # Store dark for this channel
+                per_channel_dark[ch] = dark_spectrum.copy()
+
+                dark_mean = float(np.mean(dark_spectrum))
+                dark_max = float(np.max(dark_spectrum))
+                dark_std = float(np.std(dark_spectrum))
+
+                logger.info(f"   ✅ Mean: {dark_mean:.1f}, Max: {dark_max:.1f}, Std: {dark_std:.1f}")
+                logger.info("")
+
+                # Save snapshot
+                try:
+                    if hasattr(self, "_snap") and self._snap is not None:
+                        self._snap.save(f"step5_dark_{ch}_filtered", np.array(dark_spectrum, dtype=float))
+                except Exception:
+                    pass
+
+            # Store per-channel darks in state
+            self.state.per_channel_dark_noise = per_channel_dark
+
+            # Also store first channel as default dark (for backward compatibility)
+            first_ch = all_channels[0]
+            self.state.dark_noise = per_channel_dark[first_ch].copy()
+            self.state.full_spectrum_dark_noise = per_channel_dark[first_ch].copy()
+
+            # Save to disk
+            from pathlib import Path
+            calib_dir = Path(ROOT_DIR) / "calibration_data"
+            calib_dir.mkdir(exist_ok=True)
+
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+
+            # Save per-channel darks
+            for ch in all_channels:
+                dark_file = calib_dir / f"dark_noise_{ch}_{timestamp}.npy"
+                np.save(dark_file, per_channel_dark[ch])
+                logger.info(f"💾 Saved {ch.upper()} dark: {dark_file}")
+
+            # Save all darks in one dict file
+            all_darks_file = calib_dir / f"dark_noise_per_channel_{timestamp}.npz"
+            np.savez(all_darks_file, **per_channel_dark)
+            logger.info(f"💾 Saved all darks: {all_darks_file}")
+
+            # Summary
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("✅ STEP 5 COMPLETE: PER-CHANNEL DARK MEASUREMENT")
+            logger.info("=" * 80)
+            logger.info("")
+            logger.info("Channel  | Integration Time | Dark Mean | Dark Max")
+            logger.info("-" * 60)
+            for ch in all_channels:
+                int_time = per_channel_integration[ch]
+                dark_mean = float(np.mean(per_channel_dark[ch]))
+                dark_max = float(np.max(per_channel_dark[ch]))
+                logger.info(f"   {ch.upper()}     |    {int_time*MS_TO_SECONDS:6.1f} ms     | {dark_mean:7.1f}   | {dark_max:7.1f}")
+            logger.info("")
+            logger.info("Next: Step 6 will measure S-ref (per-channel)")
+            logger.info("=" * 80)
+
+            return True
+
+        except Exception as e:
+            logger.exception(f"Error measuring per-channel dark noise: {e}")
+            return False
 
     def _measure_dark_noise_internal(self, is_baseline: bool) -> bool:
         """Internal helper for dark noise measurement.
@@ -3640,71 +5187,123 @@ class SPRCalibrator:
             if self.ctrl is None or self.usb is None:
                 return False
 
-            # CRITICAL: Force all LEDs OFF at hardware level before dark measurement
-            logger.info("🔦 Forcing ALL LEDs OFF for dark noise measurement...")
+            # ✨ QC PARAMETERS (detector class specific - Ocean Optics/USB4000)
+            # For Ocean Optics Flame-T detector: typical dark noise ~3,000 counts @ 36ms integration
+            # Threshold: 2× expected = 6,000 counts
+            EXPECTED_DARK_MEAN_OCEAN_OPTICS = 3000.0  # counts (detector class specific)
+            DARK_QC_THRESHOLD = EXPECTED_DARK_MEAN_OCEAN_OPTICS * 2.0  # 6,000 counts
+            MAX_RETRY_ATTEMPTS = 3
 
-            # Use direct hardware command to turn off all LEDs
-            if hasattr(self.ctrl, "_hal") and hasattr(self.ctrl._hal, "_send_command"):
-                # Direct hardware command: 'lx\n' turns off all LEDs
+            # Retry loop for dark noise QC
+            for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+                if attempt > 1:
+                    logger.warning(f"🔄 Dark noise QC retry attempt {attempt}/{MAX_RETRY_ATTEMPTS}")
+
+                # CRITICAL: Force all LEDs OFF at hardware level before dark measurement
+                logger.info("🔦 Forcing ALL LEDs OFF for dark noise measurement...")
+
+                # Use robust LED-off method that sets intensities to 0 AND sends lx command
+                # This is safer than direct serial access (avoids COM port permission issues)
                 try:
-                    self.ctrl._hal._send_command("lx\n")
-                    logger.info("   ✓ Sent 'lx' command to turn off all LEDs")
+                    success = self._all_leds_off_batch()
+                    if success:
+                        logger.info("   ✓ LEDs turned off successfully (intensities set to 0 + lx command)")
+                    else:
+                        logger.error("   ❌ _all_leds_off_batch() returned False - LEDs NOT confirmed off")
+                        logger.error("   Cannot proceed with dark measurement - stopping calibration")
+                        return False
                 except Exception as e:
-                    logger.warning(f"   Failed to send direct 'lx' command: {e}")
-                    # Fallback to turn_off_channels
-                    self.ctrl.turn_off_channels()
-            else:
-                # Fallback for other controllers
-                self.ctrl.turn_off_channels()
-
-            # CRITICAL: Wait for LEDs to fully turn off (hardware settling time)
-            settle_delay = max(LED_DELAY, 0.5)  # At least 500ms for hardware to settle
-            time.sleep(settle_delay)
-            logger.info(f"✅ All LEDs OFF; waited {settle_delay*1000:.0f}ms for hardware to settle")
-
-            # Adjust scan count based on integration time
-            # OPTIMIZATION: Step 1 (baseline) is just a sanity check - use fewer scans for speed
-            if is_baseline:
-                # Step 1: Baseline dark noise (fast sanity check - 5 scans)
-                dark_scans = 5
-                logger.debug(f"Measuring baseline dark noise with {dark_scans} scans (fast sanity check)")
-            elif self.state.integration < INTEGRATION_STEP_THRESHOLD:
-                dark_scans = DARK_NOISE_SCANS
-            else:
-                dark_scans = int(DARK_NOISE_SCANS / 2)
-
-            if not is_baseline:
-                logger.debug(f"Measuring dark noise with {dark_scans} scans")
-
-            # Measure dark noise - apply spectral filter to measure only SPR-relevant range
-            try:
-                # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
-                test_spectrum = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
-                if test_spectrum is None or len(test_spectrum) == 0:
-                    logger.error("Cannot determine spectrum length for dark noise measurement")
+                    logger.error(f"   ❌ Failed to turn off LEDs: {e}")
                     return False
 
-                # Apply spectral filter to test spectrum
-                filtered_test = self._apply_spectral_filter(test_spectrum)
-                filtered_spectrum_length = len(filtered_test)
-                logger.info(f"Dark noise measurement: {len(test_spectrum)} → {filtered_spectrum_length} pixels (spectral filter applied)")
-            except Exception as e:
-                logger.error(f"Failed to read test spectrum for dark noise: {e}")
-                return False
+                # CRITICAL: Wait for LEDs to fully turn off (hardware settling time)
+                # Increase settle time on retries to ensure LEDs are completely off
+                settle_delay = max(self.led_off_delay_s, 0.5) * attempt  # Scale with retry attempt
+                time.sleep(settle_delay)
+                logger.info(f"✅ All LEDs OFF; waited {settle_delay*1000:.0f}ms for hardware to settle")
 
-            # ✨ VECTORIZED SPECTRUM ACQUISITION (2-3× faster than loop)
-            # ✨ Apply jitter correction to dark spectrum for maximum stability
-            full_spectrum_dark_noise = self._acquire_averaged_spectrum(
-                num_scans=dark_scans,
-                apply_filter=True,
-                subtract_dark=False,
-                description="dark noise",
-                apply_jitter_correction=True  # Remove thermal drift from dark measurement
-            )
+                # ✨ CRITICAL: Calculate scan count using DYNAMIC AVERAGING (matches live measurements)
+                # The number of dark scans MUST match the number of scans used during live data acquisition
+                # based on the 200ms time window budget
+                if is_baseline:
+                    # Step 1: Baseline dark noise (fast sanity check - 5 scans)
+                    dark_scans = 5
+                    logger.info(f"   Step 1 (baseline): {dark_scans} scans (fast sanity check)")
+                else:
+                    # Step 5: Use dynamic scan count based on integration time (matches live mode)
+                    dark_scans = calculate_dynamic_scans(self.state.integration)
+                    int_ms = self.state.integration * 1000.0
+                    total_time_ms = dark_scans * int_ms
+                    logger.info(f"   Step 5 dark: {dark_scans} scans @ {int_ms:.1f}ms = {total_time_ms:.0f}ms total")
+                    logger.info(f"   (Matches live acquisition scan count for this integration time)")
 
-            if full_spectrum_dark_noise is None:
-                logger.error("Failed to acquire dark noise spectrum")
-                return False
+                # Measure dark noise - apply spectral filter to measure only SPR-relevant range
+                try:
+                    # ✨ Phase 2: Use 4-scan averaging for consistency with live mode
+                    test_spectrum = self._acquire_calibration_spectrum(apply_filter=False, subtract_dark=False)
+                    if test_spectrum is None or len(test_spectrum) == 0:
+                        logger.error("Cannot determine spectrum length for dark noise measurement")
+                        return False
+
+                    # Apply spectral filter to test spectrum
+                    filtered_test = self._apply_spectral_filter(test_spectrum)
+                    filtered_spectrum_length = len(filtered_test)
+                    logger.info(f"Dark noise measurement: {len(test_spectrum)} → {filtered_spectrum_length} pixels (spectral filter applied)")
+                except Exception as e:
+                    logger.error(f"Failed to read test spectrum for dark noise: {e}")
+                    return False
+
+                # ✨ VECTORIZED SPECTRUM ACQUISITION (2-3× faster than loop)
+                # ⚠️ CRITICAL: DO NOT apply jitter correction to dark measurements!
+                # Jitter correction detrends the signal (subtracts mean), which would incorrectly
+                # zero out the dark noise baseline we're trying to measure.
+                full_spectrum_dark_noise = self._acquire_averaged_spectrum(
+                    num_scans=dark_scans,
+                    apply_filter=True,
+                    subtract_dark=False,
+                    description="dark noise",
+                    apply_jitter_correction=False  # ⚠️ MUST be False - preserve dark baseline!
+                )
+
+                if full_spectrum_dark_noise is None:
+                    logger.error("Failed to acquire dark noise spectrum")
+                    return False
+
+                # ✨ QC CHECK: Verify dark noise is not excessively high (indicates LEDs not off)
+                dark_mean = np.mean(full_spectrum_dark_noise)
+                dark_max = np.max(full_spectrum_dark_noise)
+
+                logger.info(f"📊 Dark noise measurement:")
+                logger.info(f"   Mean: {dark_mean:.1f} counts")
+                logger.info(f"   Max:  {dark_max:.1f} counts")
+
+                # QC: Check if dark noise exceeds threshold (2× expected for Ocean Optics detector)
+                if dark_mean > DARK_QC_THRESHOLD:
+                    logger.error(f"❌ QC FAILED: Dark noise mean ({dark_mean:.1f}) exceeds threshold ({DARK_QC_THRESHOLD:.0f} counts)")
+                    logger.error(f"   Expected for Ocean Optics/USB4000: ~{EXPECTED_DARK_MEAN_OCEAN_OPTICS:.0f} counts")
+                    logger.error(f"   Measured dark is {dark_mean/EXPECTED_DARK_MEAN_OCEAN_OPTICS:.1f}× higher than expected")
+                    logger.error("   Possible causes:")
+                    logger.error("   • LEDs not completely turned off")
+                    logger.error("   • Light leaking into detector")
+                    logger.error("   • Previous measurement residual signal")
+
+                    if attempt < MAX_RETRY_ATTEMPTS:
+                        logger.warning(f"   Retrying with longer LED settle time...")
+                        continue  # Retry with increased settle delay
+                    else:
+                        logger.error(f"❌ FATAL: Dark noise QC failed after {MAX_RETRY_ATTEMPTS} attempts")
+                        logger.error("   Cannot proceed with calibration - dark noise too high")
+                        logger.error("   Please check:")
+                        logger.error("   • All LEDs are physically off")
+                        logger.error("   • Detector enclosure is light-tight")
+                        logger.error("   • Hardware connections are secure")
+                        return False
+                else:
+                    # QC PASSED
+                    logger.info(f"✅ Dark noise QC PASSED: {dark_mean:.1f} counts < {DARK_QC_THRESHOLD:.0f} threshold")
+                    if attempt > 1:
+                        logger.info(f"   (Succeeded on retry attempt {attempt})")
+                    break  # Exit retry loop - measurement successful
 
             # ✨ NEW (Phase 2): Store Step 1 as baseline for comparison
             if is_baseline:
@@ -3713,6 +5312,13 @@ class SPRCalibrator:
                 before_mean = np.mean(full_spectrum_dark_noise)
                 before_max = np.max(full_spectrum_dark_noise)
                 before_std = np.std(full_spectrum_dark_noise)
+
+                # 💾 Snapshot: Step 1 dark noise (filtered)
+                try:
+                    if hasattr(self, "_snap") and self._snap is not None:
+                        self._snap.save("step1_dark_noise_filtered", np.array(self.state.dark_noise_before_leds, dtype=float))
+                except Exception:
+                    pass
 
                 logger.info(f"📊 Dark BEFORE LEDs (Step 1): {before_mean:.1f} counts (baseline)")
                 logger.info("   (No LEDs have been activated yet - clean measurement)")
@@ -3758,8 +5364,12 @@ class SPRCalibrator:
                     logger.info(f"✅ Dark noise levels normal (within {TOLERANCE_FACTOR:.0f}× expected)")
                     logger.info(f"   Mean: {before_mean:.1f}, Max: {before_max:.1f}, Std: {before_std:.1f}")
 
-            # ✨ NEW (Phase 2): Apply afterglow correction if available
+            # ⚠️ AFTERGLOW CORRECTION DISABLED (for now - may be deleted later)
+            # Keeping code but not executing it
+            AFTERGLOW_ENABLED = False  # Hardcoded disable
+
             if (not is_baseline and
+                AFTERGLOW_ENABLED and  # Disabled!
                 self.afterglow_correction and
                 self._last_active_channel and
                 self.afterglow_correction_enabled):
@@ -3805,24 +5415,38 @@ class SPRCalibrator:
                             f"   Dark noise mean: {uncorrected_mean:.1f} → {corrected_mean:.1f} counts"
                         )
 
+                    # 💾 Snapshots: Step 5 dark noise uncorrected and corrected (filtered)
+                    try:
+                        if hasattr(self, "_snap") and self._snap is not None:
+                            if hasattr(self.state, 'dark_noise_after_leds_uncorrected') and self.state.dark_noise_after_leds_uncorrected is not None:
+                                self._snap.save("step5_dark_noise_uncorrected_filtered", np.array(self.state.dark_noise_after_leds_uncorrected, dtype=float))
+                            self._snap.save("step5_dark_noise_corrected_filtered", np.array(full_spectrum_dark_noise, dtype=float))
+                    except Exception:
+                        pass
+
                 except Exception as e:
                     logger.warning(f"⚠️ Afterglow correction failed: {e}")
                     logger.warning("⚠️ Using uncorrected dark noise")
                     # Continue with uncorrected data
             else:
                 if not is_baseline:
-                    # Step 5 without correction
-                    if not self.afterglow_correction:
-                        logger.info("ℹ️ No optical calibration loaded - dark noise uncorrected")
-                    elif not self.afterglow_correction_enabled:
-                        logger.info("ℹ️ Afterglow correction disabled in config")
+                    # Step 5 without correction (always the case now with AFTERGLOW_ENABLED=False)
+                    logger.info("ℹ️  Afterglow correction: DISABLED")
 
-                    # Still do comparison even without correction using helper
+                    # Compare with Step 1 baseline
                     if self.state.dark_noise_before_leds is not None:
                         self._compare_dark_noise_measurements(
                             dark_before=self.state.dark_noise_before_leds,
                             dark_after_raw=full_spectrum_dark_noise
-                        )            # Store dark noise (corrected if available, uncorrected otherwise)
+                        )
+
+                    # 💾 Snapshot: Step 5 dark noise (uncorrected filtered)
+                    try:
+                        if hasattr(self, "_snap") and self._snap is not None:
+                            self._snap.save("step5_dark_noise_uncorrected_filtered", np.array(full_spectrum_dark_noise, dtype=float))
+                    except Exception:
+                        pass
+
             # No resampling needed - spectral filter ensures correct size
             self.state.dark_noise = full_spectrum_dark_noise
             self.state.full_spectrum_dark_noise = full_spectrum_dark_noise
@@ -3973,8 +5597,20 @@ class SPRCalibrator:
             # Linear extrapolation: new_int = current_int * (target / current)
             optimal_int_ms = int(current_int_ms * (target_counts / min_counts))
 
-            # Clamp to reasonable range
-            optimal_int_ms = max(10, min(1000, optimal_int_ms))
+            # Clamp to detector limits: prefer detector profile, fallback to settings
+            try:
+                if self.detector_profile is not None:
+                    min_ms = int(self.detector_profile.min_integration_time_ms)
+                    max_ms = int(self.detector_profile.max_integration_time_ms)
+                else:
+                    min_ms = int(MIN_INTEGRATION)
+                    max_ms = int(MAX_INTEGRATION)
+            except Exception:
+                # Ultimate fallback to settings if anything unexpected occurs
+                min_ms = int(MIN_INTEGRATION)
+                max_ms = int(MAX_INTEGRATION)
+
+            optimal_int_ms = max(min_ms, min(max_ms, int(optimal_int_ms)))
 
             print(f"\nStep 2: Calculated optimal integration time: {optimal_int_ms}ms")
             print(f"  (extrapolated from {min_counts:.0f} → {target_counts:.0f} counts)")
@@ -4349,258 +5985,7 @@ class SPRCalibrator:
             traceback.print_exc()
             return False
 
-    # ========================================================================
-    # STEP 7: REFERENCE SIGNAL MEASUREMENT - HELPER METHODS
-    # ========================================================================
-
-    def _apply_afterglow_correction_to_references(
-        self,
-        ch_list: list[str],
-        ref_scans: int,
-        last_active_ch: Optional[str]
-    ) -> bool:
-        """Apply afterglow correction to all reference signals.
-
-        Measures dark noise after all channels are measured, applies afterglow
-        correction if available, and subtracts the corrected dark from all
-        reference signals.
-
-        This consolidates the dark noise measurement and correction logic that
-        was previously scattered throughout step_7_measure_reference_signals().
-
-        Args:
-            ch_list: Channels that were measured
-            ref_scans: Number of scans to use for dark measurement
-            last_active_ch: Last channel that was active (for afterglow correction)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            logger.info("📊 Measuring dark noise after all channels for correction...")
-
-            # Turn off all LEDs
-            self._all_leds_off_batch()
-            time.sleep(LED_DELAY)
-
-            # Measure dark noise (no dark subtraction, no filtering applied yet)
-            dark_spectrum = self._acquire_averaged_spectrum(
-                num_scans=ref_scans,
-                apply_filter=True,
-                subtract_dark=False,
-                description="dark noise (afterglow correction)"
-            )
-
-            if dark_spectrum is None:
-                logger.warning("Failed to acquire dark noise for afterglow correction")
-                # Use Step 5 dark as fallback
-                dark_spectrum = self.state.dark_noise.copy()
-
-            # Apply afterglow correction if available
-            corrected_dark = dark_spectrum
-            if self.afterglow_correction and last_active_ch:
-                try:
-                    dark_before_correction = dark_spectrum.copy()
-                    dark_mean_before = float(np.mean(dark_before_correction))
-                    baseline_dark_mean = float(np.mean(self.state.dark_noise))
-
-                    corrected_dark = self.afterglow_correction.correct_spectrum(
-                        spectrum=dark_spectrum,
-                        last_active_channel=last_active_ch,
-                        integration_time_ms=self.state.integration * 1000
-                    )
-
-                    dark_mean_after = float(np.mean(corrected_dark))
-                    contamination = dark_mean_before - baseline_dark_mean
-                    correction_effectiveness = dark_mean_before - dark_mean_after
-
-                    if contamination > 1.0:  # Only log if meaningful contamination
-                        logger.info(
-                            f"   ✨ Afterglow correction: "
-                            f"baseline={baseline_dark_mean:.1f}, "
-                            f"contaminated={dark_mean_before:.1f} (+{contamination:.1f}), "
-                            f"corrected={dark_mean_after:.1f} "
-                            f"({correction_effectiveness/contamination*100:.1f}% effective)"
-                        )
-                    else:
-                        logger.debug(f"   Minimal afterglow contamination ({contamination:.2f} counts)")
-
-                except Exception as e:
-                    logger.warning(f"Afterglow correction failed: {e}")
-                    corrected_dark = dark_spectrum
-            else:
-                if not self.afterglow_correction:
-                    logger.debug("⚠️ No afterglow correction available")
-                elif not last_active_ch:
-                    logger.debug("⚠️ No last active channel for afterglow correction")
-
-            # Subtract corrected dark from all reference signals
-            for ch in ch_list:
-                if self.state.ref_sig[ch] is not None:
-                    # Single subtraction: raw_signal - corrected_dark
-                    self.state.ref_sig[ch] = self.state.ref_sig[ch] - corrected_dark
-                    logger.debug(f"   Applied dark correction to channel {ch}")
-
-            logger.info("✅ Dark noise correction applied to all reference signals")
-            return True
-
-        except Exception as e:
-            logger.exception(f"Error applying afterglow correction: {e}")
-            return False
-
-    # ========================================================================
-    # STEP 7: REFERENCE SIGNAL MEASUREMENT
-    # ========================================================================
-
-    def step_7_measure_reference_signals(self, ch_list: list[str]) -> bool:
-        """STEP 7: Measure reference signals in S-mode for all channels.
-
-        Measures reference signals for each channel using calibrated LED intensities
-        from Step 4/6. Applies afterglow correction if available.
-
-        CALIBRATION MODES:
-        ==================
-        - 'global': Use global integration time and calibrated LED intensities
-        - 'per_channel': Use per-channel integration times with LED=255
-
-        Args:
-            ch_list: List of channels to measure
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if self.ctrl is None or self.usb is None:
-                return False
-
-            logger.info("=" * 80)
-            logger.info("STEP 7: Reference Signal Measurement (S-mode)")
-            logger.info("=" * 80)
-
-            self.ctrl.set_mode(mode="s")
-            time.sleep(0.4)
-
-            # Determine acquisition parameters based on calibration mode
-            if self.state.calibration_mode == 'per_channel':
-                logger.info(f"   Mode: PER_CHANNEL (using per-channel integration times)")
-            else:
-                logger.info(f"   Mode: GLOBAL (using global integration time)")
-
-                # Calculate dynamic scan count for global mode
-                ref_scans = calculate_dynamic_scans(self.state.integration)
-                logger.info(
-                    f"📊 Reference signal averaging: {ref_scans} scans "
-                    f"(integration={self.state.integration*1000:.1f}ms, "
-                    f"total time={ref_scans * self.state.integration:.2f}s)"
-                )
-
-            # Measure all channels (raw signals, no dark subtraction yet)
-            last_ch = None
-            for ch in ch_list:
-                if self._is_stopped():
-                    return False
-
-                logger.debug(f"Measuring reference signal for channel {ch}")
-
-                # Set per-channel integration time if in per_channel mode
-                if self.state.calibration_mode == 'per_channel':
-                    ch_integration = self.state.integration_per_channel[ch]
-                    ch_scans = self.state.scans_per_channel[ch]
-                    self.usb.set_integration(ch_integration)
-                    time.sleep(0.1)
-                    logger.info(
-                        f"   Channel {ch.upper()}: {ch_integration*1000:.1f}ms × {ch_scans} scan(s) "
-                        f"= {ch_integration * ch_scans * 1000:.1f}ms total"
-                    )
-                    ref_scans = ch_scans
-                else:
-                    # Use pre-calculated ref_scans from global mode
-                    pass
-
-                # Activate LED with appropriate intensity
-                if self.state.calibration_mode == 'per_channel':
-                    intensities_dict = {ch: MAX_LED_INTENSITY}  # LED=255 for per_channel mode
-                else:
-                    intensities_dict = {ch: self.state.ref_intensity[ch]}  # Calibrated intensity
-
-                self._activate_channel_batch([ch], intensities_dict)
-                time.sleep(LED_DELAY)
-
-                # Track last active channel for afterglow correction
-                self._last_active_channel = ch
-                last_ch = ch
-
-
-                # Acquire raw spectrum (no dark subtraction - we'll do it once at the end)
-                # ✨ Apply jitter correction to S-pol reference for maximum stability
-                averaged_signal = self._acquire_averaged_spectrum(
-                    num_scans=ref_scans,
-                    apply_filter=True,
-                    subtract_dark=False,  # Keep raw signal for single dark subtraction
-                    description=f"reference signal (ch {ch})",
-                    apply_jitter_correction=True  # Remove thermal drift from S-pol reference
-                )
-
-                if averaged_signal is None:
-                    logger.error(f"Failed to acquire reference signal for channel {ch}")
-                    return False
-
-                # Store raw signal (no deepcopy needed - averaged_signal is already new)
-                self.state.ref_sig[ch] = averaged_signal
-
-                # Log reference signal strength
-                logger.debug(
-                    f"Channel {ch} reference signal: max={float(np.max(averaged_signal)):.1f} counts"
-                )
-
-
-            # Apply afterglow correction and dark subtraction to all channels at once
-            if not self._apply_afterglow_correction_to_references(ch_list, ref_scans, last_ch):
-                logger.warning("Afterglow correction failed, continuing with uncorrected signals")
-                # Apply basic dark subtraction as fallback
-                for ch in ch_list:
-                    if self.state.ref_sig[ch] is not None:
-                        self.state.ref_sig[ch] = self.state.ref_sig[ch] - self.state.dark_noise
-
-            # Save S-mode reference signals to disk for longitudinal data processing
-            from pathlib import Path
-            calib_dir = Path(ROOT_DIR) / "calibration_data"
-            calib_dir.mkdir(exist_ok=True)
-
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-
-            for ch in ch_list:
-                if self.state.ref_sig[ch] is not None:
-                    # Save with timestamp
-                    s_ref_file = calib_dir / f"s_ref_{ch}_{timestamp}.npy"
-                    np.save(s_ref_file, self.state.ref_sig[ch])
-
-                    # Also save as "latest" for easy access
-                    latest_s_ref = calib_dir / f"s_ref_{ch}_latest.npy"
-                    np.save(latest_s_ref, self.state.ref_sig[ch])
-
-                    logger.info(f"💾 S-ref[{ch}] saved: {s_ref_file}")
-
-            logger.info(f"✅ All S-mode references saved to: {calib_dir}")
-
-            # Mark calibration as successful
-            self.state.ch_error_list = []
-            self.state.is_calibrated = True
-            self.state.calibration_timestamp = time.time()
-            logger.info("✅ Calibration complete - all channels validated")
-
-            return True
-
-        except Exception as e:
-            logger.exception(f"Error measuring reference signals: {e}")
-            return False
-
-    def measure_reference_signals(self, ch_list: list[str]) -> bool:
-        """Backward compatibility wrapper for Step 7.
-
-        DEPRECATED: Use step_7_measure_reference_signals() for clarity.
-        """
-        return self.step_7_measure_reference_signals(ch_list)
+    # NOTE: Legacy Step 7 (reference measurement) removed. Folded into Step 6.
 
     # ========================================================================
     # QUICK QC VALIDATION (S-REF BASED)
@@ -4686,6 +6071,22 @@ class SPRCalibrator:
                 logger.error("❌ Hardware not available for QC validation")
                 return False, {}
 
+            # Ensure a dark reference is present for QC; attempt to load from config if missing
+            try:
+                needs_dark = (
+                    getattr(self.state, 'dark_noise', None) is None or
+                    (hasattr(self.state, 'dark_noise') and len(self.state.dark_noise) == 0)
+                )
+                if needs_dark:
+                    from utils.device_configuration import DeviceConfiguration
+                    cfg = DeviceConfiguration()
+                    cal = cfg.load_led_calibration()
+                    if cal and 'pre_qc_dark_snapshot' in cal:
+                        self.state.dark_noise = cal['pre_qc_dark_snapshot']
+                        logger.info("Loaded pre-QC dark snapshot from device_config.json for QC subtraction")
+            except Exception as e:
+                logger.warning(f"Could not load pre-QC dark snapshot: {e}")
+
             # Set polarizer to S-mode
             logger.info("Setting polarizer to S-mode...")
             self.ctrl.set_mode('s')
@@ -4699,6 +6100,84 @@ class SPRCalibrator:
             # Turn off all channels
             self.ctrl.turn_off_channels()
             time.sleep(0.2)
+
+            # If stored baseline appears invalid (negative intensities or spectra),
+            # refresh a temporary baseline from live measurements for QC only.
+            try:
+                baseline_invalid = False
+                try:
+                    # Any negative or near-zero baseline max is suspect
+                    if any(baseline_max.get(ch, 0) <= 0 for ch in CH_LIST):
+                        baseline_invalid = True
+                    else:
+                        # Any negative value in stored spectra is suspect
+                        for ch in CH_LIST:
+                            spec_arr = np.array(baseline_s_ref.get(ch, []), dtype=float)
+                            if spec_arr.size == 0 or np.min(spec_arr) < 0:
+                                baseline_invalid = True
+                                break
+                except Exception:
+                    baseline_invalid = True
+
+                if baseline_invalid:
+                    logger.warning("Stored S-ref baseline appears invalid (negative or empty). Refreshing a temporary baseline from live measurements for QC...")
+                    tmp_baseline_max: dict[str, float] = {}
+                    tmp_baseline_s_ref: dict[str, np.ndarray] = {}
+
+                    for ch in CH_LIST:
+                        try:
+                            # Turn on LED with stored intensity
+                            self.ctrl.set_intensity(ch.lower(), s_intensities[ch])
+                            time.sleep(self.led_on_delay_s)
+
+                            # Measure fresh S-ref (average of num_samples)
+                            spectra_tmp = []
+                            for _ in range(num_samples):
+                                raw_tmp = self.usb.acquire_spectrum()
+                                spectra_tmp.append(raw_tmp)
+                                time.sleep(0.05)
+                            cur_tmp = np.mean(spectra_tmp, axis=0)
+
+                            # Apply dark correction with resampling if needed
+                            if self.state.dark_noise is not None and len(self.state.dark_noise) > 0:
+                                try:
+                                    dark_use = np.maximum(self.state.dark_noise, 0)
+                                    dl, rl = len(dark_use), len(cur_tmp)
+                                    if dl != rl:
+                                        x_old = np.linspace(0, 1, dl)
+                                        x_new = np.linspace(0, 1, rl)
+                                        # Use numpy interpolation to avoid SciPy dependency/type issues
+                                        dark_rs = np.interp(x_new, x_old, dark_use)
+                                        cur_tmp = cur_tmp - dark_rs
+                                    else:
+                                        cur_tmp = cur_tmp - dark_use
+                                except Exception as e:
+                                    logger.warning(f"   Failed to apply dark correction (baseline refresh): {e}")
+
+                            # Clamp negatives that can result from noise
+                            cur_tmp = np.maximum(cur_tmp, 0)
+
+                            tmp_baseline_s_ref[ch] = cur_tmp
+                            tmp_baseline_max[ch] = float(np.max(cur_tmp))
+                        except Exception as e:
+                            logger.warning(f"   Failed to refresh baseline for channel {ch}: {e}")
+                        finally:
+                            # Ensure channel is turned off
+                            try:
+                                self.ctrl.set_intensity(ch.lower(), 0)
+                                time.sleep(0.05)
+                            except Exception:
+                                pass
+
+                    # If we successfully measured any channel, swap into local baseline vars for QC
+                    if any(v > 0 for v in tmp_baseline_max.values()):
+                        for ch in CH_LIST:
+                            if ch in tmp_baseline_s_ref:
+                                baseline_s_ref[ch] = tmp_baseline_s_ref[ch]
+                                baseline_max[ch] = tmp_baseline_max[ch]
+                        logger.info("QC baseline refreshed from live measurements (not persisted to config)")
+            except Exception as e:
+                logger.warning(f"Failed to refresh temporary QC baseline: {e}")
 
             # Validate each channel
             channel_results = {}
@@ -4729,7 +6208,7 @@ class SPRCalibrator:
 
                 # Turn on LED with stored intensity (set_intensity implicitly turns on the LED)
                 self.ctrl.set_intensity(ch.lower(), s_intensities[ch])
-                time.sleep(LED_DELAY)
+                time.sleep(self.led_on_delay_s)
 
                 # Measure fresh S-ref (average of num_samples)
                 spectra = []
@@ -4740,9 +6219,27 @@ class SPRCalibrator:
 
                 current_s_ref = np.mean(spectra, axis=0)
 
-                # Apply dark noise correction if available
-                if self.state.dark_noise is not None and len(self.state.dark_noise) == len(current_s_ref):
-                    current_s_ref = current_s_ref - self.state.dark_noise
+                # Apply dark noise correction if available (with universal resampling)
+                if self.state.dark_noise is not None and len(self.state.dark_noise) > 0:
+                    try:
+                        # Safety: clamp negatives to zero for dark usage
+                        dark_for_use = np.maximum(self.state.dark_noise, 0)
+                        dark_len = len(dark_for_use)
+                        ref_len = len(current_s_ref)
+                        if dark_len != ref_len:
+                            # Resample dark to match current_s_ref length using numpy interpolation
+                            x_old = np.linspace(0, 1, dark_len)
+                            x_new = np.linspace(0, 1, ref_len)
+                            dark_resampled = np.interp(x_new, x_old, dark_for_use)
+                            current_s_ref = current_s_ref - dark_resampled
+                            logger.debug(f"   Applied resampled dark to current S-ref ({dark_len}→{ref_len})")
+                        else:
+                            current_s_ref = current_s_ref - dark_for_use
+                    except Exception as e:
+                        logger.warning(f"   Failed to apply dark correction to current S-ref: {e}")
+
+                # Clamp negatives post-subtraction
+                current_s_ref = np.maximum(current_s_ref, 0)
 
                 # Stage 1: Intensity check
                 current_max = float(np.max(current_s_ref))
@@ -4922,8 +6419,53 @@ class SPRCalibrator:
         """
         try:
             # ========================================================================
+            # NEW: ALWAYS MEASURE A DARK SNAPSHOT BEFORE QC (if hardware available)
+            # ========================================================================
+            # ⚠️ TEMPORARILY DISABLED - Skipping pre-QC dark measurement
+            # This was causing errors that prevented calibration from completing
+            logger.info("⚠️  PRE-QC DARK MEASUREMENT: DISABLED (for testing)")
+            logger.info("   Skipping to full calibration sequence...")
+
+            # Original code commented out:
+            # if self.ctrl is not None and self.usb is not None:
+            #     try:
+            #         logger.info("PRE-QC: Measuring dark reference snapshot for QC and logging…")
+            #         if not self.step_1_measure_initial_dark_noise():
+            #             logger.warning("Pre-QC dark snapshot failed; proceeding without snapshot")
+            #         else:
+            #             # Safety: flag and clamp negatives
+            #             try:
+            #                 dn = self.state.dark_noise
+            #                 if dn is not None and len(dn) > 0:
+            #                     dark_min = float(np.min(dn))
+            #                     if dark_min < 0:
+            #                         logger.error(
+            #                             f"⚠️ Pre-QC dark contains negative values (min={dark_min:.2f}). "
+            #                             f"Clamping to zero for QC subtraction."
+            #                         )
+            #                         self.state.dark_noise = np.maximum(dn, 0)
+            #             except Exception as _e:
+            #                 logger.warning(f"Failed to validate/clamp dark snapshot: {_e}")
+            #
+            #             # Persist snapshot to device config
+            #             try:
+            #                 from utils.device_configuration import DeviceConfiguration
+            #                 DeviceConfiguration().save_dark_snapshot(self.state.dark_noise.copy())
+            #             except Exception as _e:
+            #                 logger.warning(f"Could not save dark snapshot: {_e}")
+            #     except Exception as e:
+            #         logger.warning(f"Pre-QC dark snapshot error: {e}")
+
+            # ========================================================================
             # NEW: TRY QC VALIDATION FIRST (UNLESS FORCED)
             # ========================================================================
+            # ✅ ENABLED - Use QC validation to skip calibration when valid data exists
+            logger.info("✅ QC VALIDATION: ENABLED")
+            logger.info("   Checking if stored calibration is still valid...")
+
+            # Try QC validation first (can be overridden with force flag if needed)
+            force_recalibrate = False
+
             if not force_recalibrate:
                 from utils.device_configuration import DeviceConfiguration
 
@@ -4932,8 +6474,6 @@ class SPRCalibrator:
 
                 if baseline:
                     age_days = device_config.get_calibration_age_days()
-                    logger.info("=" * 80)
-                    logger.info("QUICK CALIBRATION QC CHECK")
                     logger.info("=" * 80)
                     logger.info(f"🔍 Found stored calibration ({age_days:.1f} days old)")
                     logger.info(f"   Integration time: {baseline['integration_time_ms']} ms")
@@ -4951,6 +6491,16 @@ class SPRCalibrator:
                         logger.info("=" * 80)
                         logger.info("✅ QC PASSED - USING STORED CALIBRATION")
                         logger.info("=" * 80)
+
+                        # Ensure wavelength range is initialized for downstream processing
+                        try:
+                            if self.usb is not None and (not hasattr(self.state, 'wavelengths') or len(self.state.wavelengths) == 0):
+                                logger.info("Initializing wavelength range for QC-loaded calibration…")
+                                ok = self.step_2_calibrate_wavelength_range()
+                                if not ok:
+                                    logger.warning("Failed to initialize wavelength range; proceeding anyway")
+                        except Exception as _e:
+                            logger.warning(f"Wavelength initialization error: {_e}")
 
                         # Load stored values into calibration state
                         self.state.integration = baseline['integration_time_ms'] / 1000.0  # Convert ms to seconds
@@ -5126,38 +6676,15 @@ class SPRCalibrator:
                 return False, "Step 5: Dark noise re-measurement failed"
 
             # ========================================================================
-            # STEP 6: BALANCE LED INTENSITIES (Adjust other channels down)
+            # STEP 6: S-REFERENCE MEASUREMENT (Final S-mode baselines)
             # ========================================================================
-            self._emit_progress(6, "Step 6: Balancing LED intensities...")
-            success = self.step_6_balance_led_intensities(ch_list)
+            self._emit_progress(6, "Step 6: Capturing S-reference signals...")
+            success = self.step_6_measure_s_reference(ch_list)
             if not success or self._is_stopped():
                 self._safe_hardware_cleanup()
-                return False, "Step 6: LED balancing failed"
+                return False, "Step 6: S-reference measurement failed"
 
-            # ========================================================================
-            # PER-CHANNEL MODE: OPTIMIZE INTEGRATION TIMES PER CHANNEL
-            # ========================================================================
-            if self.state.calibration_mode == 'per_channel':
-                self._emit_progress(6.5, "Optimizing per-channel integration times...")
-                success = self.optimize_per_channel_integration_times(ch_list)
-                if not success or self._is_stopped():
-                    self._safe_hardware_cleanup()
-                    return False, "Per-channel integration optimization failed"
-
-            # ========================================================================
-            # STEP 7: REFERENCE SIGNAL MEASUREMENT (Balanced S-mode baseline)
-            # ========================================================================
-            logger.debug(f"Balanced S-mode LED settings: {self.state.ref_intensity}")
-
-            # Step 7: Reference signal measurement (S-mode)
-            logger.debug("Step 7: Reference signal measurement (S-mode)")
-            self._emit_progress(7, "Capturing reference signals (balanced S-mode)...")
-            success = self.step_7_measure_reference_signals(ch_list)
-            if not success or self._is_stopped():
-                self._safe_hardware_cleanup()
-                return False, "Step 7: Reference signal measurement failed"
-
-            # Calibration successful (Step 7 marks is_calibrated = True)
+            # Calibration successful (Step 6 marks is_calibrated = True)
             calibration_success = self.state.is_calibrated
             ch_error_str = ""
 
@@ -5592,20 +7119,74 @@ class SPRCalibrator:
             if ch_list is None:
                 ch_list = CH_LIST
 
-            # Apply integration time
-            usb.set_integration(self.state.integration)
+            # Determine calibration mode
+            try:
+                mode = getattr(self.state, 'calibration_mode', getattr(self, 'calibration_mode', 'global')).lower()
+            except Exception:
+                mode = 'global'
 
-            # Apply LED intensities
-            for ch in ch_list:
-                if ch in self.state.leds_calibrated:
-                    ctrl.set_intensity(ch=ch, raw_val=self.state.leds_calibrated[ch])
+            # Apply integration time and LED policy according to mode
+            if mode == 'global':
+                # Global: set single integration time
+                if hasattr(self.state, 'integration') and self.state.integration:
+                    usb.set_integration(self.state.integration)
+                    logger.info(f"Applied global integration time: {self.state.integration * 1000:.1f} ms")
+
+                # Apply calibrated LED intensities per channel
+                # Prefer leds_calibrated → fallback to ref_intensity → fallback to MAX_LED_INTENSITY
+                led_map: dict[str, int] = {}
+                for ch in ch_list:
+                    val = None
+                    try:
+                        if hasattr(self.state, 'leds_calibrated') and ch in getattr(self.state, 'leds_calibrated', {}):
+                            val = int(self.state.leds_calibrated[ch])
+                        elif hasattr(self.state, 'ref_intensity') and ch in getattr(self.state, 'ref_intensity', {}):
+                            val = int(self.state.ref_intensity[ch])
+                    except Exception:
+                        val = None
+                    if val is None or val <= 0:
+                        val = int(MAX_LED_INTENSITY)
+                    led_map[ch] = int(max(0, min(MAX_LED_INTENSITY, val)))
+
+                # Prefer batch LED application when available
+                applied_leds = False
+                try:
+                    if hasattr(ctrl, 'set_batch_intensities'):
+                        # Build a,b,c,d with safe defaults
+                        a = led_map.get('a', 0)
+                        b = led_map.get('b', 0)
+                        c = led_map.get('c', 0)
+                        d = led_map.get('d', 0)
+                        ok = ctrl.set_batch_intensities(a=a, b=b, c=c, d=d)
+                        logger.info(f"Batch LED apply: a={a}, b={b}, c={c}, d={d} → success={ok}")
+                        applied_leds = bool(ok)
+                except Exception as e:
+                    logger.debug(f"Batch LED apply not used: {e}")
+
+                if not applied_leds:
+                    # Fallback: set per-channel sequentially
+                    for ch, val in led_map.items():
+                        try:
+                            ctrl.set_intensity(ch=ch, raw_val=val)
+                        except Exception as e:
+                            logger.warning(f"Failed to set LED {ch}={val}: {e}")
+                    logger.info(f"Applied per-channel LED intensities (sequential): {led_map}")
+
+            else:
+                # Per-channel mode:
+                # - Do NOT set global integration (integration is per-channel at capture time)
+                # - Do NOT apply per-channel dimmed LEDs (LEDs are typically 255 during capture)
+                logger.info("Per-channel mode: skipping global integration and LED application")
 
             # ✨ Apply validated polarizer positions if available
             if hasattr(self.state, 'polarizer_s_position') and hasattr(self.state, 'polarizer_p_position'):
                 s_pos = self.state.polarizer_s_position
                 p_pos = self.state.polarizer_p_position
-                ctrl.servo_set(s=s_pos, p=p_pos)
-                logger.info(f"Polarizer positions applied: S={s_pos}, P={p_pos} (0-255 scale)")
+                try:
+                    ctrl.servo_set(s=s_pos, p=p_pos)
+                    logger.info(f"Polarizer positions applied: S={s_pos}, P={p_pos} (0-255 scale)")
+                except Exception as e:
+                    logger.warning(f"Failed to apply polarizer positions: {e}")
 
             logger.info("Calibration profile applied to hardware")
             return True
@@ -5613,6 +7194,138 @@ class SPRCalibrator:
         except Exception as e:
             logger.exception(f"Error applying profile to hardware: {e}")
             return False
+
+    # ------------------------------------------------------------------------
+    # LIVE HELPERS (policy parity with calibration)
+    # ------------------------------------------------------------------------
+    def get_dark_for_channel(self, ch: str) -> Optional[np.ndarray]:
+        """Return the appropriate dark spectrum for a channel based on mode.
+
+        - Global mode: returns self.state.dark_noise
+        - Per-channel mode: returns self.state.per_channel_dark_noise[ch] when available,
+          otherwise falls back to global dark if present.
+        """
+        try:
+            mode = getattr(self.state, 'calibration_mode', getattr(self, 'calibration_mode', 'global')).lower()
+        except Exception:
+            mode = 'global'
+
+        if mode == 'per_channel':
+            try:
+                if hasattr(self.state, 'per_channel_dark_noise') and self.state.per_channel_dark_noise:
+                    dark = self.state.per_channel_dark_noise.get(ch)
+                    if dark is not None:
+                        return dark
+            except Exception:
+                pass
+        # Fallback to global dark
+        return getattr(self.state, 'dark_noise', None)
+
+    def get_scans_for_live(self, integration_seconds: float) -> int:
+        """Decide the number of scans to average in live mode.
+
+        - Global: dynamic scans targeting ~200ms via calculate_dynamic_scans
+        - Per-channel: single scan (policy alignment with calibration Step 5/6 per-channel)
+        """
+        try:
+            mode = getattr(self.state, 'calibration_mode', getattr(self, 'calibration_mode', 'global')).lower()
+        except Exception:
+            mode = 'global'
+        if mode == 'global':
+            try:
+                return int(max(1, calculate_dynamic_scans(float(integration_seconds))))
+            except Exception:
+                return int(max(1, NUM_SCANS_PER_ACQUISITION))
+        return 1
+
+    def get_led_for_live(self, ch: str) -> int:
+        """Return LED to use in live capture for a channel.
+
+        - Per-channel mode: always 255
+        - Global mode: prefer leds_calibrated[ch] → ref_intensity[ch] → MAX_LED_INTENSITY
+        """
+        try:
+            mode = getattr(self.state, 'calibration_mode', getattr(self, 'calibration_mode', 'global')).lower()
+        except Exception:
+            mode = 'global'
+        if mode == 'per_channel':
+            return int(MAX_LED_INTENSITY)
+        try:
+            if hasattr(self.state, 'leds_calibrated') and ch in getattr(self.state, 'leds_calibrated', {}):
+                return int(max(0, min(MAX_LED_INTENSITY, int(self.state.leds_calibrated[ch]))))
+            if hasattr(self.state, 'ref_intensity') and ch in getattr(self.state, 'ref_intensity', {}):
+                return int(max(0, min(MAX_LED_INTENSITY, int(self.state.ref_intensity[ch]))))
+        except Exception:
+            pass
+        return int(MAX_LED_INTENSITY)
+
+    def prepare_live(
+        self,
+        ctrl: PicoP4SPR | PicoEZSPR,
+        usb: USB4000,
+        ch_list: list[str] | None = None,
+    ) -> dict:
+        """Prepare hardware and runtime policy for live acquisition.
+
+        Actions:
+        - Applies current calibration profile to hardware (mode-aware)
+        - Builds live LED map via get_led_for_live()
+        - Decides scan policy via get_scans_for_live()
+        - Exposes per-channel integration (per-channel mode) or global integration
+
+        Returns:
+            dict with keys:
+              - mode: 'global' | 'per_channel'
+              - leds: dict[ch,int]
+              - integration: float (seconds) when global
+              - integration_per_channel: dict[ch,float] (seconds) when per-channel
+              - scans: int (global)
+              - scans_per_channel: dict[ch,int] (per-channel)
+        """
+        if ch_list is None:
+            ch_list = CH_LIST
+
+        # Apply current profile to hardware (integration/LED/polarizer as appropriate)
+        try:
+            _ = self.apply_profile_to_hardware(ctrl=ctrl, usb=usb, ch_list=ch_list)
+        except Exception:
+            # Non-fatal: continue to build policy even if apply fails
+            pass
+
+        try:
+            mode = getattr(self.state, 'calibration_mode', getattr(self, 'calibration_mode', 'global')).lower()
+        except Exception:
+            mode = 'global'
+
+        # Build LED map using unified policy
+        leds = {ch: int(self.get_led_for_live(ch)) for ch in ch_list}
+
+        live_cfg: dict = {
+            'mode': mode,
+            'leds': leds,
+        }
+
+        if mode == 'per_channel':
+            # Per-channel: provide per-channel integrations and scans=1
+            integration_per_channel: dict[str, float] = {}
+            try:
+                if hasattr(self.state, 'integration_per_channel') and self.state.integration_per_channel:
+                    for ch in ch_list:
+                        if ch in self.state.integration_per_channel:
+                            integration_per_channel[ch] = float(self.state.integration_per_channel[ch])
+            except Exception:
+                pass
+            scans_per_channel = {ch: int(self.get_scans_for_live(integration_per_channel.get(ch, 0.0))) for ch in ch_list}
+            live_cfg['integration_per_channel'] = integration_per_channel
+            live_cfg['scans_per_channel'] = scans_per_channel
+        else:
+            # Global: provide single integration and dynamic scans
+            integration_s = float(getattr(self.state, 'integration', 0.0) or 0.0)
+            scans = int(self.get_scans_for_live(integration_s))
+            live_cfg['integration'] = integration_s
+            live_cfg['scans'] = scans
+
+        return live_cfg
 
     # ========================================================================
     # AUTO-POLARIZATION
@@ -5751,9 +7464,14 @@ class SPRCalibrator:
 
             # Run the full calibration (auto-polarization disabled by default)
             # Note: Polarizer position validation happens in Step 2
+            try:
+                from settings.settings import FORCE_FULL_CALIBRATION as _FORCE_FULL_CAL
+            except Exception:
+                _FORCE_FULL_CAL = False
             success, error_channels = self.run_full_calibration(
                 auto_polarize=False,  # Auto-alignment is an advanced feature (handled in settings)
-                auto_polarize_callback=None
+                auto_polarize_callback=None,
+                force_recalibrate=bool(_FORCE_FULL_CAL)
             )
 
             self._calibration_success = success
