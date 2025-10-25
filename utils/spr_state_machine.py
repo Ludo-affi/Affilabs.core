@@ -1475,8 +1475,13 @@ class SPRStateMachine(QObject):
                 # Create or get data processor
                 data_processor = getattr(self.app, 'data_processor', None)
                 if not data_processor:
-                    # Create a basic data processor with minimal configuration
-                    wave_data = np.linspace(441.1, 773.2, 3648)  # Default USB4000 wavelength range
+                    # Create a basic data processor using calibrated wavelengths if available
+                    if self.calib_state and len(self.calib_state.wavelengths) > 0:
+                        wave_data = self.calib_state.wavelengths
+                        logger.info(f"✅ Using calibrated wavelengths for data processor: {len(wave_data)} points")
+                    else:
+                        wave_data = np.linspace(441.1, 773.2, 3648)  # Default USB4000 wavelength range
+                        logger.warning("⚠️ No calibrated wavelengths - using default range")
                     fourier_weights = np.ones_like(wave_data)  # Default weights
                     data_processor = SPRDataProcessor(wave_data=wave_data, fourier_weights=fourier_weights)
                     logger.info("Created new SPRDataProcessor instance with default configuration")
