@@ -861,6 +861,10 @@ Data Flow:
                     # Always prefer the computed live_integration_seconds and scale by base_integration_time_factor if provided
                     try:
                         desired_live = getattr(self, 'live_integration_seconds', None)
+                        logger.warning(f"🔍 GRAB_DATA STARTUP: live_integration_seconds = {desired_live}")
+                        logger.warning(f"🔍 GRAB_DATA STARTUP: hasattr(self, 'live_integration_seconds') = {hasattr(self, 'live_integration_seconds')}")
+                        logger.warning(f"🔍 GRAB_DATA STARTUP: integration_per_channel = {getattr(self, 'integration_per_channel', {})}")
+                        
                         # If per-channel mode is active, skip global set here (handled per channel below)
                         per_channel = bool(getattr(self, 'integration_per_channel', {}))
 
