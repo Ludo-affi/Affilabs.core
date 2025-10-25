@@ -857,61 +857,54 @@ Data Flow:
                     if not self._initialize_wavelength_mask():
                         logger.error("❌ Failed to initialize wavelength mask - acquisition may fail")
 
-                    # ✨ CRITICAL FIX: Apply scaled integration time at start of live measurements
-                    if self.base_integration_time_factor < 1.0 and hasattr(self.usb, 'integration_time'):
-                        try:
-                            # Get calibrated integration time and scale it
-                            calibrated_integration = self.usb.integration_time  # Already in seconds
-                            scaled_integration = calibrated_integration * self.base_integration_time_factor
+                    # ✨ CRITICAL FIX: FORCE smart-boosted integration at start of live measurements
+                    # Always prefer the computed live_integration_seconds and scale by base_integration_time_factor if provided
+                    try:
+                        desired_live = getattr(self, 'live_integration_seconds', None)
+                        # If per-channel mode is active, skip global set here (handled per channel below)
+                        per_channel = bool(getattr(self, 'integration_per_channel', {}))
 
-                            # Apply the scaled value
-                            if hasattr(self.usb, 'set_integration'):
-                                self.usb.set_integration(scaled_integration)
-                                integration_time_applied = True
-                                logger.info(
-                                    f"🔧 LIVE MODE: Applied scaled integration time: "
-                                    f"{calibrated_integration*1000:.1f}ms → {scaled_integration*1000:.1f}ms "
-                                    f"(factor={self.base_integration_time_factor})"
-                                )
-                            elif hasattr(self.usb, 'set_integration_time'):
-                                self.usb.set_integration_time(scaled_integration)
-                                integration_time_applied = True
-                                logger.info(
-                                    f"🔧 LIVE MODE: Applied scaled integration time: "
-                                    f"{calibrated_integration*1000:.1f}ms → {scaled_integration*1000:.1f}ms "
-                                    f"(factor={self.base_integration_time_factor})"
-                                )
+                        if not per_channel and desired_live and desired_live > 0:
+                            desired = float(desired_live) * float(getattr(self, 'base_integration_time_factor', 1.0) or 1.0)
+                            applied = False
+                            if hasattr(self.usb, 'set_integration_time'):
+                                applied = bool(self.usb.set_integration_time(desired))
+                            elif hasattr(self.usb, 'set_integration'):
+                                # Back-compat if another driver exposes this name
+                                self.usb.set_integration(desired)
+                                applied = True
                             else:
                                 logger.error("❌ LIVE MODE: Cannot set integration time - no suitable method")
-                        except Exception as e:
-                            logger.error(f"❌ LIVE MODE: Failed to apply scaled integration time: {e}")
-                    elif not integration_time_applied:
-                        logger.info("ℹ️ LIVE MODE: Using calibrated integration time (no scaling)")
-                        # Verify actual integration time
-                        try:
-                            if hasattr(self.usb, 'integration_time'):
-                                actual_int = self.usb.integration_time
-                                logger.warning(f"⚠️ GLOBAL MODE: Spectrometer integration time at start of live mode: {actual_int*1000:.1f}ms")
-                                logger.warning(f"   Expected: 47.3ms (33.8ms × 1.4 boost) for GLOBAL mode")
-                                if actual_int < 0.015:  # Less than 15ms
-                                    logger.error(f"❌ CRITICAL: Integration time is WAY TOO LOW! This will cause weak signal!")
-                                    logger.error(f"   Boost may not have been applied properly.")
-                                    # Try to apply boosted integration if provided by state machine
-                                    try:
-                                        desired_live = getattr(self, 'live_integration_seconds', None)
-                                        if desired_live and desired_live > 0:
-                                            if hasattr(self.usb, 'set_integration'):
-                                                self.usb.set_integration(float(desired_live))
-                                            elif hasattr(self.usb, 'set_integration_time'):
-                                                self.usb.set_integration_time(float(desired_live))
-                                            integration_time_applied = True
-                                            logger.info(f"🔧 LIVE MODE: Applied fallback boosted integration: {desired_live*1000:.1f}ms")
-                                        else:
-                                            logger.warning("⚠️ No boosted integration available to apply as fallback")
-                                    except Exception as ee:
-                                        logger.error(f"❌ Failed to apply fallback boosted integration: {ee}")
-                        except Exception as e:
-                            logger.debug(f"Could not read integration time: {e}")
+
+                            if applied:
+                                integration_time_applied = True
+                                # Verify and retry once if mismatch or too low
+                                try:
+                                    time.sleep(0.05)
+                                    actual_int = None
+                                    if hasattr(self.usb, 'get_integration_time'):
+                                        actual_int = float(self.usb.get_integration_time())
+                                    elif hasattr(self.usb, 'integration_time'):
+                                        actual_int = float(self.usb.integration_time)
+                                    if actual_int is None:
+                                        logger.info(f"🔧 LIVE MODE: Set integration to {desired*1000:.1f}ms (verification unavailable)")
+                                    else:
+                                        if actual_int < 0.015 or abs(actual_int - desired) > 0.002:
+                                            logger.warning(
+                                                f"⚠️ LIVE MODE: Integration verify mismatch {actual_int*1000:.1f}ms vs desired {desired*1000:.1f}ms → retry"
+                                            )
+                                            # One retry
+                                            if hasattr(self.usb, 'set_integration_time'):
+                                                self.usb.set_integration_time(desired)
+                                            elif hasattr(self.usb, 'set_integration'):
+                                                self.usb.set_integration(desired)
+                                        logger.info(
+                                            f"🔧 LIVE MODE: Using integration {actual_int*1000 if actual_int is not None else desired*1000:.1f}ms"
+                                        )
+                                except Exception as _e:
+                                    logger.debug(f"Integration verification failed: {_e}")
+                    except Exception as e:
+                        logger.error(f"❌ LIVE MODE: Failed to force boosted integration time: {e}")
 
                 # Increment buffer index at start of each cycle
                 self.filt_buffer_index += 1
@@ -1071,7 +1064,11 @@ Data Flow:
                 time.sleep(0.05)
                 # Verify integration time was actually applied
                 try:
-                    actual_integration = self.usb.integration_time if hasattr(self.usb, 'integration_time') else None
+                    actual_integration = None
+                    if hasattr(self.usb, 'get_integration_time'):
+                        actual_integration = float(self.usb.get_integration_time())
+                    elif hasattr(self.usb, 'integration_time'):
+                        actual_integration = float(self.usb.integration_time)
                     if actual_integration is not None:
                         logger.info(f"🔧 Channel {ch.upper()}: Set integration {ch_integration*1000:.1f}ms → Actual {actual_integration*1000:.1f}ms")
                     else:
@@ -1084,7 +1081,11 @@ Data Flow:
                 time.sleep(0.05)
                 # Verify integration time was actually applied
                 try:
-                    actual_integration = self.usb.integration_time if hasattr(self.usb, 'integration_time') else None
+                    actual_integration = None
+                    if hasattr(self.usb, 'get_integration_time'):
+                        actual_integration = float(self.usb.get_integration_time())
+                    elif hasattr(self.usb, 'integration_time'):
+                        actual_integration = float(self.usb.integration_time)
                     if actual_integration is not None:
                         logger.info(f"🔧 Channel {ch.upper()}: Set integration {ch_integration*1000:.1f}ms → Actual {actual_integration*1000:.1f}ms")
                     else:
@@ -1092,7 +1093,21 @@ Data Flow:
                 except Exception as e:
                     logger.debug(f"Could not verify integration time for channel {ch}: {e}")
         else:
-            logger.warning(f"⚠️ Channel {ch.upper()}: No per-channel integration found in integration_per_channel dict")
+            # GLOBAL MODE: Force the global live integration time before each acquisition
+            try:
+                desired_live = getattr(self, 'live_integration_seconds', None)
+                if desired_live and desired_live > 0:
+                    desired = float(desired_live) * float(getattr(self, 'base_integration_time_factor', 1.0) or 1.0)
+                    if hasattr(self.usb, 'set_integration_time'):
+                        self.usb.set_integration_time(desired)
+                    elif hasattr(self.usb, 'set_integration'):
+                        self.usb.set_integration(desired)
+                    applied_integration_s = desired
+                    time.sleep(0.02)
+                else:
+                    logger.warning(f"⚠️ Channel {ch.upper()}: No per-channel integration; global live value missing")
+            except Exception as _e:
+                logger.error(f"❌ Channel {ch.upper()}: Failed to apply global live integration: {_e}")
 
         # LED control and settling
         # ✨ SMART BOOST: Use live_led_intensities if available (per-channel LED adjustment)
@@ -1166,11 +1181,11 @@ Data Flow:
         try:
             # Determine current integration time (prefer the value we set)
             if applied_integration_s is None:
-                # Fallback to spectrometer attribute if available
-                if hasattr(self.usb, 'integration_time'):
+                # Fallback to spectrometer getter if available
+                if hasattr(self.usb, 'get_integration_time'):
+                    applied_integration_s = float(self.usb.get_integration_time())
+                elif hasattr(self.usb, 'integration_time'):
                     applied_integration_s = float(self.usb.integration_time)
-                elif hasattr(self.usb, '_integration_time'):
-                    applied_integration_s = float(self.usb._integration_time)
             integ_ms = applied_integration_s * 1000.0 if applied_integration_s is not None else None
             logger.info(
                 f"⏱️ DAQ ch{ch.upper()}: integration={integ_ms:.1f}ms, scans={scans_for_channel}, "

@@ -742,9 +742,13 @@ class DataAcquisitionWrapper:
                         if hasattr(self, 'usb_adapter') and self.usb_adapter is not None:
                             try:
                                 # Log BEFORE setting
-                                current_int = self.usb_adapter.integration_time if hasattr(self.usb_adapter, 'integration_time') else None
-                                logger.warning(f"⚠️ BOOST APPLICATION: BEFORE set_integration() on usb_adapter")
-                                logger.warning(f"   Current spectrometer integration: {current_int*1000 if current_int else 'unknown'}ms")
+                                current_int = None
+                                if hasattr(self.usb_adapter, 'get_integration_time'):
+                                    current_int = float(self.usb_adapter.get_integration_time())
+                                elif hasattr(self.usb_adapter, 'integration_time'):
+                                    current_int = float(self.usb_adapter.integration_time)
+                                logger.warning(f"⚠️ BOOST APPLICATION: BEFORE applying integration on usb_adapter")
+                                logger.warning(f"   Current spectrometer integration: {current_int*1000 if current_int is not None else 'unknown'}ms")
                                 logger.warning(f"   About to set to: {live_integration_seconds*1000:.1f}ms")
                             except Exception as e:
                                 logger.debug(f"Could not read current integration: {e}")
@@ -757,10 +761,14 @@ class DataAcquisitionWrapper:
                                 # Verify it was actually set
                                 try:
                                     time.sleep(0.1)  # Give hardware time to update
-                                    new_int = self.usb_adapter.integration_time if hasattr(self.usb_adapter, 'integration_time') else None
-                                    logger.warning(f"⚠️ BOOST VERIFICATION: AFTER set_integration()")
-                                    logger.warning(f"   Spectrometer now reports: {new_int*1000 if new_int else 'unknown'}ms")
-                                    if new_int and abs(new_int - live_integration_seconds) > 0.001:
+                                    new_int = None
+                                    if hasattr(self.usb_adapter, 'get_integration_time'):
+                                        new_int = float(self.usb_adapter.get_integration_time())
+                                    elif hasattr(self.usb_adapter, 'integration_time'):
+                                        new_int = float(self.usb_adapter.integration_time)
+                                    logger.warning(f"⚠️ BOOST VERIFICATION: AFTER applying integration")
+                                    logger.warning(f"   Spectrometer now reports: {new_int*1000 if new_int is not None else 'unknown'}ms")
+                                    if new_int is not None and abs(new_int - live_integration_seconds) > 0.002:
                                         logger.error(f"❌ CRITICAL: Integration time did NOT stick! Expected {live_integration_seconds*1000:.1f}ms but got {new_int*1000:.1f}ms")
                                 except Exception as e:
                                     logger.debug(f"Could not verify integration: {e}")
