@@ -1186,6 +1186,55 @@ class SPRStateMachine(QObject):
             self._transition_to_state(SPRSystemState.CALIBRATED)
             return
 
+        # ✨ SMART VALIDATION: Reuse stored calibration if available to skip full calibration
+        try:
+            from utils.device_configuration import DeviceConfiguration
+            cfg = DeviceConfiguration()
+            cal = cfg.load_led_calibration()
+            if cal:
+                # Create shared calibration state if missing
+                if not hasattr(self, 'calib_state') or self.calib_state is None:
+                    from utils.spr_calibrator import CalibrationState
+                    self.calib_state = CalibrationState()
+
+                cs = self.calib_state
+                # Populate essential calibration fields
+                try:
+                    integ_ms = float(cal.get('integration_time_ms', 0))
+                    if integ_ms > 0:
+                        cs.integration = integ_ms / 1000.0
+                except Exception:
+                    pass
+                try:
+                    s_leds = cal.get('s_mode_intensities', {}) or {}
+                    if isinstance(s_leds, dict) and s_leds:
+                        cs.ref_intensity = {ch: int(v) for ch, v in s_leds.items()}
+                        cs.leds_calibrated = {ch: int(v) for ch, v in s_leds.items()}
+                except Exception:
+                    pass
+                try:
+                    s_ref = cal.get('s_ref_baseline', {}) or {}
+                    if isinstance(s_ref, dict) and s_ref:
+                        cs.ref_sig = {ch: spec for ch, spec in s_ref.items()}
+                except Exception:
+                    pass
+                try:
+                    wl = cal.get('s_ref_wavelengths')
+                    if wl is not None:
+                        cs.wavelengths = wl
+                except Exception:
+                    pass
+
+                cs.is_calibrated = True
+                self.app.calibrated = True
+                logger.info("✅ Smart validation passed - using stored calibration (skipping full calibration)")
+                self._transition_to_state(SPRSystemState.CALIBRATED)
+                return
+            else:
+                logger.info("No stored calibration found; proceeding with full calibration")
+        except Exception as e:
+            logger.warning(f"Smart validation failed ({e}); proceeding with full calibration")
+
         if not self.calibrator:
             logger.debug("Creating calibrator...")
             try:
