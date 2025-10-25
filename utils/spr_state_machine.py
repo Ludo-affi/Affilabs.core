@@ -1244,11 +1244,16 @@ class SPRStateMachine(QObject):
                     cs.dark_noise = np.zeros(3648)  # Fallback
 
                 # ✨ CRITICAL: Load per-channel integration times if present (per_channel mode)
+                # If NOT present, CLEAR the defaults to prevent per-channel mode activation
                 try:
                     per_ch_int = cal.get('integration_per_channel', {})
                     if isinstance(per_ch_int, dict) and per_ch_int:
                         cs.integration_per_channel = {ch: float(v) for ch, v in per_ch_int.items()}
                         logger.info(f"✅ Loaded per-channel integration times: {cs.integration_per_channel}")
+                    else:
+                        # NOT per-channel mode - clear defaults to use global integration
+                        cs.integration_per_channel = {}
+                        logger.info(f"✅ Using GLOBAL integration mode (per-channel cleared)")
                 except Exception:
                     pass
 
@@ -1258,6 +1263,9 @@ class SPRStateMachine(QObject):
                     if isinstance(per_ch_scans, dict) and per_ch_scans:
                         cs.scans_per_channel = {ch: int(v) for ch, v in per_ch_scans.items()}
                         logger.info(f"✅ Loaded per-channel scan counts: {cs.scans_per_channel}")
+                    else:
+                        # NOT per-channel mode - clear defaults
+                        cs.scans_per_channel = {}
                 except Exception:
                     pass
 
