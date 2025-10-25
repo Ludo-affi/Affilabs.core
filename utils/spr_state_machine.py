@@ -1410,24 +1410,40 @@ class SPRStateMachine(QObject):
     def _handle_calibrated(self) -> None:
         """Start data acquisition after validating calibration."""
         # ✅ Validate calibration state before proceeding
-        if not self.calibrator or not self.calibrator.state.is_valid():
-            logger.error("❌ Calibration state invalid - missing required data")
-            self._transition_to_error("Calibration data incomplete or invalid")
-            return
+        # Support both full calibration (calibrator exists) and smart validation (calibrator is None)
+        if self.calibrator:
+            # Full calibration path: validate through calibrator
+            if not self.calibrator.state.is_valid():
+                logger.error("❌ Calibration state invalid - missing required data")
+                self._transition_to_error("Calibration data incomplete or invalid")
+                return
+        else:
+            # Smart validation path: validate calib_state directly
+            if not hasattr(self, 'calib_state') or not self.calib_state or not self.calib_state.is_valid():
+                logger.error("❌ Calibration state invalid - missing required data (smart validation)")
+                self._transition_to_error("Calibration data incomplete or invalid")
+                return
+            logger.info("📋 Using calibration from smart validation (no full calibration needed)")
 
         # Log calibration summary for diagnostics
-        summary = self.calibrator.get_calibration_summary()
+        summary = self.calibrator.get_calibration_summary() if self.calibrator else None
         logger.info("=" * 80)
         logger.info("📊 CALIBRATION SUMMARY")
         logger.info("=" * 80)
-        logger.info(f"✅ Success: {summary['success']}")
-        logger.info(f"⏱️  Timestamp: {summary['timestamp_str']}")
-        logger.info(f"🔧 Integration Time: {summary['integration_time_ms']:.1f} ms")
-        logger.info(f"💡 LED Intensities: {summary['led_intensities']}")
-        logger.info(f"📉 Weakest Channel: {summary['weakest_channel']}")
-        logger.info(f"🔬 Detector: {summary['detector_model']}")
-        if summary['failed_channels']:
-            logger.warning(f"⚠️  Failed Channels: {summary['failed_channels']}")
+        if summary:
+            logger.info(f"✅ Success: {summary['success']}")
+            logger.info(f"⏱️  Timestamp: {summary['timestamp_str']}")
+            logger.info(f"🔧 Integration Time: {summary['integration_time_ms']:.1f} ms")
+            logger.info(f"💡 LED Intensities: {summary['led_intensities']}")
+            logger.info(f"📉 Weakest Channel: {summary['weakest_channel']}")
+            logger.info(f"🔬 Detector: {summary['detector_model']}")
+            if summary['failed_channels']:
+                logger.warning(f"⚠️  Failed Channels: {summary['failed_channels']}")
+        else:
+            # Smart validation path - log from calib_state
+            logger.info("✅ Success: True (loaded from device config)")
+            logger.info(f"🔧 Integration Time: {self.calib_state.integration * 1000:.1f} ms")
+            logger.info(f"💡 LED Intensities: {self.calib_state.leds_calibrated}")
         logger.info("=" * 80)
 
         if not self.data_acquisition:
