@@ -1198,11 +1198,12 @@ class SPRStateMachine(QObject):
                     self.calib_state = CalibrationState()
 
                 cs = self.calib_state
-                # Populate essential calibration fields
+                # Populate essential calibration fields (required by is_valid())
                 try:
                     integ_ms = float(cal.get('integration_time_ms', 0))
                     if integ_ms > 0:
                         cs.integration = integ_ms / 1000.0
+                        logger.info(f"✅ Loaded calibration integration: {integ_ms:.1f}ms")
                 except Exception:
                     pass
                 try:
@@ -1210,26 +1211,67 @@ class SPRStateMachine(QObject):
                     if isinstance(s_leds, dict) and s_leds:
                         cs.ref_intensity = {ch: int(v) for ch, v in s_leds.items()}
                         cs.leds_calibrated = {ch: int(v) for ch, v in s_leds.items()}
+                        logger.info(f"✅ Loaded S-mode LED intensities: {cs.ref_intensity}")
                 except Exception:
                     pass
                 try:
                     s_ref = cal.get('s_ref_baseline', {}) or {}
                     if isinstance(s_ref, dict) and s_ref:
-                        cs.ref_sig = {ch: spec for ch, spec in s_ref.items()}
-                except Exception:
-                    pass
+                        cs.ref_sig = {ch: np.array(spec) for ch, spec in s_ref.items()}
+                        logger.info(f"✅ Loaded S-ref baseline ({len(s_ref)} channels)")
+                except Exception as e:
+                    logger.debug(f"Failed to load s_ref: {e}")
                 try:
                     wl = cal.get('s_ref_wavelengths')
                     if wl is not None:
-                        cs.wavelengths = wl
+                        cs.wavelengths = np.array(wl)
+                        logger.info(f"✅ Loaded wavelengths ({len(wl)} points)")
+                except Exception as e:
+                    logger.debug(f"Failed to load wavelengths: {e}")
+
+                # ✨ CRITICAL: Load dark noise (required by is_valid())
+                try:
+                    dark = cal.get('dark_noise')
+                    if dark is not None:
+                        cs.dark_noise = np.array(dark)
+                        logger.info(f"✅ Loaded dark noise ({len(dark)} points)")
+                    else:
+                        # Fallback: create zero dark noise if missing
+                        logger.warning("⚠️ No dark noise in stored calibration - using zeros")
+                        cs.dark_noise = np.zeros(len(cs.wavelengths)) if len(cs.wavelengths) > 0 else np.zeros(3648)
+                except Exception as e:
+                    logger.warning(f"Failed to load dark noise: {e}")
+                    cs.dark_noise = np.zeros(3648)  # Fallback
+
+                # ✨ CRITICAL: Load per-channel integration times if present (per_channel mode)
+                try:
+                    per_ch_int = cal.get('integration_per_channel', {})
+                    if isinstance(per_ch_int, dict) and per_ch_int:
+                        cs.integration_per_channel = {ch: float(v) for ch, v in per_ch_int.items()}
+                        logger.info(f"✅ Loaded per-channel integration times: {cs.integration_per_channel}")
                 except Exception:
                     pass
 
-                cs.is_calibrated = True
-                self.app.calibrated = True
-                logger.info("✅ Smart validation passed - using stored calibration (skipping full calibration)")
-                self._transition_to_state(SPRSystemState.CALIBRATED)
-                return
+                # ✨ CRITICAL: Load per-channel scan counts if present
+                try:
+                    per_ch_scans = cal.get('scans_per_channel', {})
+                    if isinstance(per_ch_scans, dict) and per_ch_scans:
+                        cs.scans_per_channel = {ch: int(v) for ch, v in per_ch_scans.items()}
+                        logger.info(f"✅ Loaded per-channel scan counts: {cs.scans_per_channel}")
+                except Exception:
+                    pass
+
+                # Validate that we have minimum required fields
+                if not cs.is_valid():
+                    logger.warning(f"⚠️ Smart validation incomplete - missing required fields")
+                    logger.warning(f"   wavelengths: {len(cs.wavelengths) > 0}, dark_noise: {len(cs.dark_noise) > 0}, ref_sig: {cs.ref_sig is not None}, leds: {cs.leds_calibrated is not None}")
+                    logger.info("Proceeding with full calibration")
+                else:
+                    cs.is_calibrated = True
+                    self.app.calibrated = True
+                    logger.info("✅ Smart validation passed - using stored calibration (skipping full calibration)")
+                    self._transition_to_state(SPRSystemState.CALIBRATED)
+                    return
             else:
                 logger.info("No stored calibration found; proceeding with full calibration")
         except Exception as e:
