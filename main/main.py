@@ -183,7 +183,7 @@ class AffiniteApp(QApplication):
                 background-color: #D3D3D3;
             }
             QGroupBox {
-                background-color: #C8C8C8;
+                background-color: #D3D3D3;
                 border: 1px solid #A0A0A0;
                 border-radius: 4px;
                 margin-top: 0.5em;
@@ -231,12 +231,15 @@ class AffiniteApp(QApplication):
             }
             QLabel {
                 color: #000000;
+                background-color: transparent;
             }
             QCheckBox {
                 color: #000000;
+                background-color: transparent;
             }
             QRadioButton {
                 color: #000000;
+                background-color: transparent;
             }
             GraphicsLayoutWidget {
                 background-color: #FFFFFF;

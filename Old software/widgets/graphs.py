@@ -3,7 +3,8 @@ import pyqtgraph
 from PySide6.QtCore import Signal
 from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine
 from copy import deepcopy
-from settings import CH_LIST, GRAPH_COLORS, UNIT_LIST, STATIC_PLOT, DEV
+import settings
+from settings import CH_LIST, UNIT_LIST, STATIC_PLOT, DEV
 from utils.logger import logger
 
 
@@ -29,7 +30,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
         self.plot.titleLabel.setText(title_string, size='13pt')
-        self.plot.showGrid(x=True, y=True)
+        self.plot.showGrid(x=False, y=False)
         self.plot.setAxisItems()
         self.plot.setLabel('left', text=f'Lambda ({self.unit})')
         self.plot.setLabel('bottom', text='Time (s)')
@@ -44,8 +45,8 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.time_data = {}
         self.lambda_data = {}
         for ch in CH_LIST:
-            self.plots[ch] = self.plot.plot(pen=mkPen(GRAPH_COLORS[ch], width=2), connect='finite')
-            self.static[ch] = self.plot.plot(pen=mkPen(GRAPH_COLORS[ch], width=2), connect='finite')
+            self.plots[ch] = self.plot.plot(pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
+            self.static[ch] = self.plot.plot(pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
         self.latest_time = 0
 
         self.live = True
@@ -80,6 +81,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.right_cursor_pos = 1
         self.set_left(0, emit=False)
         self.set_right(1, emit=False)
+
+    def update_colors(self):
+        """Update plot colors when colorblind mode is toggled."""
+        for ch in CH_LIST:
+            self.plots[ch].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+            if hasattr(self, 'static') and ch in self.static:
+                self.static[ch].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2))
 
     def movable_cursors(self, state):
         self.left_cursor.setMovable(state)
@@ -257,7 +265,7 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.plot = self.addPlot(title=title_string)
         self.plot.titleLabel.setText(title_string, size='10pt')
         self.plot.setDownsampling(ds=False, mode='subsample')
-        self.plot.showGrid(x=True, y=True)
+        self.plot.showGrid(x=False, y=False)
         self.plot.setLabel("left", f"Shift ({unit_string})")
         self.plot.setLabel("bottom", "Time (s)")
         self.plot.setMenuEnabled(True)
@@ -266,13 +274,17 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.plot.setAutoVisible(x=True, y=True)
         self.plots = {}
 
+        # Set minimum Y-axis range (10 RU minimum)
+        self.min_y_range = 10.0
+        self.plot.getViewBox().sigRangeChanged.connect(self._enforce_min_range)
+
         self.wait_to_update = False
         self.dissoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
         self.dissoc_cursor_en = False
         self.assoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
         self.assoc_cursor_en = False
         for ch in CH_LIST:
-            self.plots[ch] = self.plot.plot(pen=mkPen(GRAPH_COLORS[ch], width=2), connect='finite')
+            self.plots[ch] = self.plot.plot(pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
             if has_cursors:
                 for cursor in ['Start', 'End']:
                     for cursor_dict in [self.dissoc_cursors, self.assoc_cursors]:
@@ -282,14 +294,14 @@ class SegmentGraph(GraphicsLayoutWidget):
                             label=f"{cursor}",
                             labelOpts={'rotateAxis': (1, 0)},
                             angle=90,
-                            pen=mkPen(GRAPH_COLORS[ch], width=3),
+                            pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=3),
                             movable=True)
                         cursor_dict[ch][cursor].setHoverPen('y')
                         self.plot.addItem(cursor_dict[ch][cursor])
                         cursor_dict[ch][cursor].setVisible(False)
                     self.dissoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.dissoc_update)
                     self.assoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.assoc_update)
-    
+
     def en_dissoc_cursors(self, en):
         self.dissoc_cursor_en = bool(en)
         for ch in CH_LIST:
@@ -344,7 +356,7 @@ class SegmentGraph(GraphicsLayoutWidget):
                 if ch == seg.ref_ch:
                     self.set_plot_pen(ch, 'purple')
                 else:
-                    self.set_plot_pen(ch, GRAPH_COLORS[ch])
+                    self.set_plot_pen(ch, settings.ACTIVE_GRAPH_COLORS[ch])
             if x_data is not None and y_data is not None:
                 for ch in CH_LIST:
                     y = y_data[ch]
@@ -361,6 +373,22 @@ class SegmentGraph(GraphicsLayoutWidget):
     def auto_range(self):
         yrange = self.plot.viewRange()[1]
         self.plot.setRange(yRange=(yrange[0], yrange[1]), update=True, disableAutoRange=False)
+
+    def _enforce_min_range(self):
+        """Enforce minimum Y-axis range of 10 RU."""
+        try:
+            viewbox = self.plot.getViewBox()
+            yrange = viewbox.viewRange()[1]
+            y_span = yrange[1] - yrange[0]
+
+            if y_span < self.min_y_range:
+                # Expand range to minimum, centered on current view
+                center = (yrange[0] + yrange[1]) / 2
+                new_min = center - self.min_y_range / 2
+                new_max = center + self.min_y_range / 2
+                viewbox.setYRange(new_min, new_max, padding=0)
+        except Exception as e:
+            logger.debug(f"Error enforcing min range: {e}")
 
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))

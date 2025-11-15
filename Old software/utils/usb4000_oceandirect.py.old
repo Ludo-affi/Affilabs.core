@@ -28,17 +28,17 @@ import numpy as np
 from .logger import logger
 
 try:
-    # Use pyseabreeze backend (requires libusb-1.0.dll on Windows)
-    # This is the ONLY supported backend - robust and reliable
+    # Try SeaBreeze first (modern Ocean Optics Python library)
+    # CRITICAL: Use cseabreeze (C backend) for performance
+    # Without this, pyseabreeze adds ~10ms overhead per spectrum acquisition
     import seabreeze
-    seabreeze.use('pyseabreeze')
+    seabreeze.use('cseabreeze')
 
     from seabreeze.spectrometers import Spectrometer, list_devices
 
     OCEANDIRECT_AVAILABLE = True
     BACKEND_TYPE = "seabreeze"
-    logger.info("Using SeaBreeze (pyseabreeze backend) for Ocean Optics devices")
-    logger.info("Requirements: WinUSB driver via Zadig, libusb-1.0.dll in System32")
+    logger.info("Using SeaBreeze (cseabreeze C backend) for Ocean Optics devices")
 
     # Verify backend selection
     try:
@@ -47,14 +47,23 @@ try:
         logger.info(f"SeaBreeze backend confirmed: {actual_backend}")
     except Exception:
         pass  # Backend verification is optional
-except ImportError as e:
-    OCEANDIRECT_AVAILABLE = False
-    BACKEND_TYPE = None
-    Spectrometer = None
-    list_devices = None
-    logger.error(f"SeaBreeze not available: {e}")
-    logger.error("Install with: pip install seabreeze")
-    logger.error("Ensure libusb-1.0.dll is in C:\\Windows\\System32\\")
+except ImportError:
+    try:
+        # Fallback to legacy OceanDirect if available
+        from oceandirect.OceanDirectAPI import OceanDirectAPI
+
+        OCEANDIRECT_AVAILABLE = True
+        BACKEND_TYPE = "oceandirect"
+        logger.info("Using OceanDirect backend for Ocean Optics devices")
+    except ImportError:
+        OCEANDIRECT_AVAILABLE = False
+        BACKEND_TYPE = None
+        Spectrometer = None
+        list_devices = None
+        OceanDirectAPI = None
+        logger.warning(
+            "No Ocean Optics library available - install seabreeze or oceandirect"
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -116,14 +125,16 @@ class USB4000OceanDirect:
         def connection_worker():
             """Worker thread for connection attempt."""
             try:
-                # SeaBreeze is the ONLY supported backend
-                if BACKEND_TYPE != "seabreeze":
-                    raise RuntimeError("Only SeaBreeze backend is supported")
-
-                # Create Spectrometer directly from serial number
-                logger.debug(f"SeaBreeze: Creating spectrometer for device {target_device_id}")
-                device = Spectrometer.from_serial_number(str(target_device_id))
-                result["device"] = device
+                if BACKEND_TYPE == "seabreeze":
+                    # For SeaBreeze, create Spectrometer directly from serial
+                    logger.debug(f"SeaBreeze: Creating spectrometer for device {target_device_id}")
+                    device = Spectrometer.from_serial_number(str(target_device_id))
+                    result["device"] = device
+                else:
+                    # For OceanDirect API
+                    logger.debug(f"OceanDirect: Opening device {target_device_id}")
+                    device = self._api.open_device(target_device_id)
+                    result["device"] = device
                 result["completed"] = True
             except Exception as e:
                 logger.error(f"Connection worker error: {e}")
@@ -164,21 +175,26 @@ class USB4000OceanDirect:
         try:
             logger.debug("Scanning for Ocean Optics devices...")
 
-            # SeaBreeze is the ONLY supported backend
-            if BACKEND_TYPE != "seabreeze":
-                raise RuntimeError("Only SeaBreeze backend is supported. Install with: pip install seabreeze")
+            if BACKEND_TYPE == "seabreeze":
+                # Use SeaBreeze device discovery
+                devices = list_devices()
+                logger.debug(f"SeaBreeze found {len(devices)} device(s)")
 
-            # Use SeaBreeze device discovery
-            devices = list_devices()
-            logger.debug(f"SeaBreeze found {len(devices)} device(s)")
+                # Extract device serial numbers as IDs
+                self._device_ids = []
+                for device in devices:
+                    # SeaBreeze devices have serial numbers
+                    serial = device.serial_number
+                    self._device_ids.append(serial)
+                    logger.debug(f"Found device: {device.model} (Serial: {serial})")
 
-            # Extract device serial numbers as IDs
-            self._device_ids = []
-            for device in devices:
-                # SeaBreeze devices have serial numbers
-                serial = device.serial_number
-                self._device_ids.append(serial)
-                logger.debug(f"Found device: {device.model} (Serial: {serial})")
+            else:
+                # Use OceanDirect API discovery
+                if self._api is None:
+                    self._api = OceanDirectAPI()
+
+                self._api.find_usb_devices()
+                self._device_ids = self._api.get_device_ids()
 
             logger.info(
                 f"Found {len(self._device_ids)} Ocean Optics device(s): {self._device_ids}",
@@ -381,12 +397,13 @@ class USB4000OceanDirect:
             # Measure acquisition timing to detect slow backend (pyseabreeze vs cseabreeze)
             t_start = time.perf_counter()
 
-            # Acquire spectrum using SeaBreeze (ONLY supported backend)
-            if BACKEND_TYPE != "seabreeze":
-                raise RuntimeError("Only SeaBreeze backend is supported")
-
-            # SeaBreeze uses intensities() method
-            intensity_data = np.array(self._device.intensities())
+            # Acquire spectrum - different methods for different backends
+            if BACKEND_TYPE == "seabreeze":
+                # SeaBreeze uses intensities() method
+                intensity_data = np.array(self._device.intensities())
+            else:
+                # OceanDirect uses get_formatted_spectrum() method
+                intensity_data = np.array(self._device.get_formatted_spectrum())
 
             t_end = time.perf_counter()
             elapsed_ms = (t_end - t_start) * 1000

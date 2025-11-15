@@ -23,6 +23,7 @@ class Spectroscopy(QWidget):
         self.advanced_mode = False
         self.ui = Ui_Spectroscopy()
         self.ui.setupUi(self)
+        self._fix_checkbox_styles()
         self.led_mode = 'auto'
 
         # setup plots
@@ -75,6 +76,24 @@ class Spectroscopy(QWidget):
     def display_channel_changed(self, ch, flag):
         self.intensity_plot_view.display_channel_changed(ch, flag)
         self.trans_plot_view.display_channel_changed(ch, flag)
+
+    def _fix_checkbox_styles(self):
+        """Fix checkbox styling to use global theme.
+        
+        Clears inline styles that override the global theme.
+        """
+        import re
+        for checkbox_name in ['segment_A', 'segment_B', 'segment_C', 'segment_D']:
+            if hasattr(self.ui, checkbox_name):
+                checkbox = getattr(self.ui, checkbox_name)
+                current_style = checkbox.styleSheet()
+                if 'color:' in current_style:
+                    color_match = re.search(r'color:\s*([^;]+);', current_style)
+                    if color_match:
+                        color_value = color_match.group(1).strip()
+                        checkbox.setStyleSheet(f"QCheckBox {{ color: {color_value}; background-color: transparent; }}")
+                else:
+                    checkbox.setStyleSheet("QCheckBox { background-color: transparent; }")
 
     def full_calibration(self):
         self.full_cal_sig.emit()

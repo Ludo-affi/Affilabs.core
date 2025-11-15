@@ -33,7 +33,21 @@ elif TARGET == "mac":
 CH_LIST = ["a", "b", "c", "d"]
 EZ_CH_LIST = ["a", "b"]
 UNIT_LIST = {"nm": 1, "RU": 355}
+
+# Standard color palette
 GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 230, 65)}
+
+# Colorblind-friendly palette (Okabe-Ito)
+# Designed to be distinguishable for all types of colorblindness
+GRAPH_COLORS_COLORBLIND = {
+    "a": (1, 115, 178),    # Blue
+    "b": (222, 143, 5),    # Orange
+    "c": (2, 158, 115),    # Green
+    "d": (204, 120, 188),  # Magenta
+}
+
+# Current active palette (can be toggled by user)
+ACTIVE_GRAPH_COLORS = GRAPH_COLORS.copy()
 
 ARDUINO_VID = 0x2341
 ARDUINO_PID = 0x8036
@@ -59,16 +73,16 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.1  # led-stabilization delay
+LED_DELAY = 0.100  # led-stabilization delay (100ms - default, adjustable in Advanced Settings)
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
-S_COUNT_MAX = 2500  # maximum value for peak intensity in counts
+S_COUNT_MAX = 49152  # target signal level: 75% of 16-bit detector max (65535) - optimized for SPR
 P_COUNT_THRESHOLD = 300  # minimum p-polarized count for successful calibration
-MIN_INTEGRATION = 0.1  # minimum detector integration time in ms
-INTEGRATION_STEP = 0.1
-MAX_INTEGRATION = 25  # maximum detector integration time in ms
+MIN_INTEGRATION = 100  # minimum detector integration time in milliseconds (was 0.1 "ms" but actually used as seconds)
+INTEGRATION_STEP = 100  # integration time step in milliseconds
+MAX_INTEGRATION = 25000  # maximum detector integration time in milliseconds (25 seconds)
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
 MAX_NUM_SCANS = 25
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0

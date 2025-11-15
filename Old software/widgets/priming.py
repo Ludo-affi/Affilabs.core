@@ -1,9 +1,15 @@
 """Widgets and function dealing with priming the system."""
 
+from __future__ import annotations
+
 from asyncio import Task, create_task, sleep
 from typing import Self
 
-from pump_controller import PumpController, PumpException
+try:
+    from pump_controller import PumpController, PumpException
+except ModuleNotFoundError:
+    PumpController = None  # type: ignore
+    PumpException = Exception
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (

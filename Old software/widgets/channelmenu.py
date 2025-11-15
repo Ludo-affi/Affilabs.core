@@ -19,6 +19,7 @@ class ChannelMenu(QWidget):
     unit_to_nm_signal = Signal()
     live_filt_sig = Signal(bool, int)
     proc_filt_sig = Signal(bool, int)
+    colorblind_mode_signal = Signal(bool)
 
     def __init__(
         self: Self,
@@ -46,6 +47,7 @@ class ChannelMenu(QWidget):
         self.ui.unit_ru.clicked.connect(self.unit_change_ru)
         self.ui.filt_en.toggled.connect(self.filtering_change)
         self.ui.filt_win.returnPressed.connect(self.filtering_change)
+        self.ui.colorblind_mode.toggled.connect(self.colorblind_mode_change)
         self.ref_ch = "no ref"
         self.datawindow_type = datawindow_type
 
@@ -117,6 +119,10 @@ class ChannelMenu(QWidget):
     def filter_off(self: Self) -> None:
         """Trun off data filtering."""
         self.ui.filt_off.setChecked(True)  # noqa: FBT003
+
+    def colorblind_mode_change(self: Self) -> None:
+        """Toggle colorblind-friendly color palette."""
+        self.colorblind_mode_signal.emit(self.ui.colorblind_mode.isChecked())
 
     def show(self: Self) -> None:
         """Re-adds the metadata menu to this menu."""

@@ -5,6 +5,8 @@
 
 """Defines and launches the application."""
 
+from __future__ import annotations
+
 import asyncio
 import csv
 import ctypes
@@ -25,10 +27,15 @@ from typing import Self
 import numpy as np
 import pyqtgraph
 import serial
-from pump_controller import FTDIError, PumpController
+try:
+    from pump_controller import FTDIError, PumpController
+except ImportError:
+    # pump_controller is optional - only needed for hardware control
+    FTDIError = Exception
+    PumpController = None
 from PySide6.QtAsyncio import QAsyncioEventLoopPolicy
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
+from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMainWindow
 from scipy.fft import dst, idct
 from scipy.signal import find_peaks, peak_prominences, peak_widths
 from scipy.stats import linregress
@@ -64,6 +71,10 @@ from settings import (
     TRANS_SEG_H_REQ,
 )
 from utils.common import get_config
+from utils.hardware_state import HardwareStateManager
+from utils.led_calibration import perform_full_led_calibration
+from utils.spectrum_acquisition import SpectrumAcquisition
+from utils.ui_styles import UIStyleManager
 from utils.controller import (
     ArduinoController,
     KineticController,
@@ -74,7 +85,7 @@ from utils.controller import (
 )
 from utils.logger import logger
 from utils.SpectrometerAPI import SENSOR_FRAME_T
-from utils.usb4000 import USB4000
+from utils.usb4000_wrapper import USB4000
 from widgets.datawindow import Segment
 from widgets.mainwindow import MainWindow
 from widgets.message import show_message
@@ -138,15 +149,17 @@ class AffiniteApp(QMainWindow):
         self.main_window = MainWindow(self)
         self.device_config = {"ctrl": "", "knx": ""}
         self.conf = get_config()
-        self.usb = USB4000(self)
+        try:
+            self.usb = USB4000(self)
+        except (FileNotFoundError, OSError, RuntimeError) as e:
+            logger.warning(f"Could not initialize USB4000 spectrometer: {e}")
+            self.usb = None
         self.recording = False
         self.rec_dir = ""
         self.adv_connected = False
 
-        # Final LED intensities placeholder
-        self.leds_calibrated = {"a": 170, "b": 170, "c": 170, "d": 170}
-        # LED ref intensities placeholder
-        self.ref_intensity = {"a": 170, "b": 170, "c": 170, "d": 170}
+        # Hardware state manager
+        self.hw_state = HardwareStateManager()
 
         # reference data
         self.ref_sig = {ch: np.array([]) for ch in CH_LIST}
@@ -169,6 +182,9 @@ class AffiniteApp(QMainWindow):
         # start with no fixed filtered data
         self.filt_buffer_index = 0
         self.new_filtered_data = np.array([])
+
+        # Spectrum acquisition helper (for vectorized acquisition)
+        self.spectrum_acq = None  # Initialized after USB device is opened
 
         # User settable advanced parameters
         # enable/disable filtering
@@ -252,10 +268,6 @@ class AffiniteApp(QMainWindow):
             "dev": [],
         }
 
-        self.pump_states = {"CH1": "Off", "CH2": "Off"}
-        self.valve_states = {"CH1": "Waste", "CH2": "Waste"}
-        self.synced = False
-
         self.exp_start = time.time()
         self.reconnect_count = 2
         self.closing = False
@@ -264,6 +276,18 @@ class AffiniteApp(QMainWindow):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, on=True)
 
+        # Connect all UI and internal signals
+        self._connect_all_signals()
+
+        self.kinetic_tasks = set()
+
+    def _connect_all_signals(self: Self) -> None:
+        """Centralized signal connection management.
+
+        All UI widget signals and internal signals are connected here for easy
+        maintenance and modification. Organized by category for clarity.
+        """
+        # === Internal Application Signals ===
         self.calibration_status.connect(self._on_calibration_status)
         self.calibration_started.connect(self._on_calibration_started)
         self.connected.connect(self.open_device)
@@ -271,51 +295,38 @@ class AffiniteApp(QMainWindow):
         self.new_ref_done_sig.connect(self.new_ref_done)
         self.temp_sig.connect(self.update_internal_temp)
 
-        #  replacement flag
+        # === Data Update Signals (App -> UI) ===
         self.update_spec_signal.connect(self.main_window.spectroscopy.update_data)
-        #  replacement flag
         self.update_live_signal.connect(self.main_window.sensorgram.update_data)
-        #  replacement flag
         self.update_temp_display.connect(
             self.main_window.sidebar.device_widget.update_temp,
         )
-        #  replacement flag
         self.update_sensor_display.connect(
             self.main_window.sidebar.kinetic_widget.update_readings,
         )
-        #  replacement flag
         self.update_pump_display.connect(
             self.main_window.sidebar.kinetic_widget.update_pump_ui,
         )
-        #  replacement flag
         self.update_valve_display.connect(
             self.main_window.sidebar.kinetic_widget.update_valve_ui,
         )
-        #  replacement flag
         self.sync_speed_sig.connect(self.main_window.sidebar.kinetic_widget.sync_speeds)
-        #  replacement flag
         self.knx_reset_ui.connect(self.main_window.sidebar.kinetic_widget.reset_ui)
 
-        # Main Window Signals
+        # === Main Window Control Signals ===
         self.main_window.set_start_sig.connect(self.set_start)
         self.main_window.clear_flow_buf_sig.connect(self.clear_sensor_reading_buffers)
         self.main_window.record_sig.connect(self.recording_on)
 
-        # Data Window Signals
+        # === Sensorgram Window Signals ===
         self.main_window.sensorgram.reset_graphs_sig.connect(self.clear_data)
         self.main_window.sensorgram.reference_channel_dlg.live_filt_sig.connect(
             self.set_live_filt,
         )
+        self.main_window.sensorgram.reference_channel_dlg.colorblind_mode_signal.connect(
+            self.toggle_colorblind_mode,
+        )
         self.main_window.sensorgram.save_sig.connect(self.manual_export_raw_data)
-        self.main_window.data_processing.send_to_analysis_sig.connect(
-            self.send_to_analysis,
-        )
-        self.main_window.data_processing.reference_channel_dlg.proc_filt_sig.connect(
-            self.set_proc_filt,
-        )
-        self.main_window.data_processing.pull_sensorgram_sig.connect(
-            self.transfer_sens_data,
-        )
         self.main_window.sensorgram.ui.inject_button.clicked.connect(
             self.handle_inject_button,
         )
@@ -327,7 +338,21 @@ class AffiniteApp(QMainWindow):
             self.change_flow_rate,
         )
 
-        # Device Signals
+        # === Data Processing Window Signals ===
+        self.main_window.data_processing.send_to_analysis_sig.connect(
+            self.send_to_analysis,
+        )
+        self.main_window.data_processing.reference_channel_dlg.proc_filt_sig.connect(
+            self.set_proc_filt,
+        )
+        self.main_window.data_processing.reference_channel_dlg.colorblind_mode_signal.connect(
+            self.toggle_colorblind_mode,
+        )
+        self.main_window.data_processing.pull_sensorgram_sig.connect(
+            self.transfer_sens_data,
+        )
+
+        # === Device Control Signals (Sidebar) ===
         self.main_window.sidebar.device_widget.connect_dev_sig.connect(self.connect_dev)
         self.main_window.sidebar.device_widget.disconnect_dev_sig.connect(
             self.disconnect_handler,
@@ -344,7 +369,7 @@ class AffiniteApp(QMainWindow):
         )
         self.main_window.sidebar.device_widget.init_pumps.connect(self.initialize_pumps)
 
-        # Kinetic Signals
+        # === Kinetic Control Signals (Sidebar) ===
         self.main_window.sidebar.kinetic_widget.sensor_read_en.connect(
             self.enable_sensor_reading,
         )
@@ -362,21 +387,28 @@ class AffiniteApp(QMainWindow):
             self.six_port_handler,
         )
         self.main_window.sidebar.kinetic_widget.sync_sig.connect(self.sync_handler)
+        self.main_window.sidebar.kinetic_widget.channel_visibility_sig.connect(
+            self.update_channel_visibility,
+        )
 
+        # === Spectroscopy Window Signals ===
         self.main_window.spectroscopy.ui.prime_btn.clicked.connect(self.prime)
-
-        if DEV:
-            self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
-
         self.main_window.spectroscopy.full_cal_sig.connect(self.full_recalibration)
         self.main_window.spectroscopy.new_ref_sig.connect(self.start_new_ref)
         self.main_window.spectroscopy.single_led_sig.connect(self.single_led)
         self.main_window.spectroscopy.polarizer_sig.connect(self.set_polarizer)
 
-        self.kinetic_tasks = set()
+        # === Advanced Menu (Development Mode) ===
+        if DEV:
+            self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
 
     def connection_thread(self: Self) -> None:
         """Attempt to connect to different controlers."""
+        # Skip connection if USB spectrometer not available
+        if self.usb is None:
+            logger.warning("USB4000 spectrometer not available, skipping hardware connection")
+            return
+
         qspr = QSPRController()
         arduino = ArduinoController()
         knx2 = KineticController()
@@ -415,7 +447,7 @@ class AffiniteApp(QMainWindow):
                     if self.usb.open():
                         self.ctrl = pico_ezspr
                         self.knx = pico_ezspr
-                        if (
+                    if self.ctrl == pico_ezspr and (
                             pico_ezspr.version in pico_ezspr.UPDATABLE_VERSIONS
                             and show_message(
                                 "Would you like to update the firmware on your device?",
@@ -461,7 +493,11 @@ class AffiniteApp(QMainWindow):
             if self.knx is not None:
                 self.main_window.sensorgram.ui.inject_box.setEnabled(True)
 
-            self.connected.emit()
+            # Only emit connected signal if at least one device was found
+            if self.ctrl is not None or self.knx is not None:
+                self.connected.emit()
+            else:
+                logger.info("No SPR or Kinetics hardware detected")
         except Exception as e:
             logger.exception(f"Error in connection thread: {e}")
 
@@ -549,9 +585,13 @@ class AffiniteApp(QMainWindow):
         """Do the regenerate sequence."""
         if self.pump and self.knx:
             try:
-                contact_time = float(
-                    self.main_window.advanced_menu.ui.contact_time.text(),
-                )
+                # ✨ MODIFIED: Calculate contact time as 20% of injection time
+                # Injection time = 80 µL / flow_rate (mL/min converted to µL/min)
+                # Contact time = 20% of injection time
+                injection_time_minutes = 80 / (self.flow_rate * 1000)  # 80 µL / (flow_rate in µL/min)
+                contact_time = injection_time_minutes * 0.20 * 60  # 20% converted to seconds
+                logger.debug(f"Regeneration contact time: {contact_time:.1f}s (20% of {injection_time_minutes*60:.1f}s injection)")
+
                 self.pump.send_command(0x41, b"T")
                 cmd = (
                     "IS15A181490"
@@ -561,13 +601,13 @@ class AffiniteApp(QMainWindow):
                 ).encode()
                 self.pump.send_command(0x41, cmd)
                 self.main_window.sensorgram.start_progress_bar(
-                    int(67_000 + 1125 * contact_time),
+                    int(48_000 + 1125 * contact_time),  # ✨ MODIFIED: Adjusted for 3s delay (was 67s + 1.125*contact)
                 )
-                await asyncio.sleep(22)
+                await asyncio.sleep(3)  # ✨ MODIFIED: Reduced from 22 to 3 seconds
                 self.knx.knx_six(state=1, ch=3)
                 await asyncio.sleep(contact_time)
                 self.knx.knx_six(state=0, ch=3)
-                self.pump.send_command(0x41, b"V83.333,1R")
+                self.pump.send_command(0x41, b"V6,1R")  # ✨ MODIFIED: Changed from 83.333 to 6 mL/min
                 await asyncio.sleep(0.8)
                 self.pump.send_command(0x41, b"V6000R")
             except FTDIError as e:
@@ -629,7 +669,7 @@ class AffiniteApp(QMainWindow):
                 )
 
                 self.main_window.sensorgram.ui.inject_box.setEnabled(False)
-                await asyncio.sleep(50)
+                await asyncio.sleep(15)  # ✨ MODIFIED: Reduced from 50 to 15 seconds
                 self.main_window.sensorgram.ui.inject_box.setEnabled(True)
             except FTDIError as e:
                 logger.exception(f"Error communicating with pump: {e}")
@@ -720,6 +760,11 @@ class AffiniteApp(QMainWindow):
     def startup(self: Self) -> None:
         """Start device calibration, I think."""
         if self.ctrl is not None and self.device_config["ctrl"] in DEVICES:
+            # Initialize spectrum acquisition helper
+            if self.usb is not None and self.spectrum_acq is None:
+                self.spectrum_acq = SpectrumAcquisition(self.usb)
+                logger.debug("Initialized spectrum acquisition helper")
+                
             if DEV:
                 for _ in range(10):
                     if not self.adv_connected:
@@ -785,345 +830,54 @@ class AffiniteApp(QMainWindow):
                             self.auto_polarize = False
                             self.auto_polarization()
 
-                        # Start calibration in S position with all channels off
+                        # Perform LED calibration using refactored module
                         if not (self._c_stop.is_set() or (self.ctrl is None)):
-                            self.ctrl.set_mode(mode="s")
-                            time.sleep(0.5)
-                            self.ctrl.turn_off_channels()
-                            # Set the integration time to the minimum
                             if self.device_config["ctrl"] in DEVICES:
-                                self.integration = deepcopy(MIN_INTEGRATION)
-                                self.usb.set_integration(self.integration)
+                                logger.info("Starting LED calibration...")
+
+                                # Perform full LED calibration
+                                cal_result = perform_full_led_calibration(
+                                    usb=self.usb,
+                                    ctrl=self.ctrl,
+                                    device_type=self.device_config["ctrl"],
+                                    single_mode=self.single_mode,
+                                    single_ch=self.single_ch,
+                                    integration_step=INTEGRATION_STEP,
+                                    stop_flag=self._c_stop,
+                                )
+
+                                if not self._c_stop.is_set():
+                                    # Update application state with calibration results
+                                    self.integration = cal_result.integration_time
+                                    self.num_scans = cal_result.num_scans
+                                    self.hw_state.ref_intensity = cal_result.ref_intensity
+                                    self.hw_state.leds_calibrated = cal_result.leds_calibrated
+                                    self.dark_noise = cal_result.dark_noise
+                                    self.ref_sig = cal_result.ref_sig
+                                    self.wave_data = cal_result.wave_data
+                                    self.wave_min_index = cal_result.wave_min_index
+                                    self.wave_max_index = cal_result.wave_max_index
+                                    self.fourier_weights = cal_result.fourier_weights
+                                    self.ch_error_list = cal_result.ch_error_list
+
+                                    # Format error message for UI
+                                    ch_str = ""
+                                    if len(self.ch_error_list) > 0:
+                                        for ch in self.ch_error_list:
+                                            if ch_str == "":
+                                                ch_str += f"{ch} "
+                                            else:
+                                                ch_str += f", {ch} "
+                                        calibration_success = False
+                                    else:
+                                        calibration_success = True
+
+                                    # Update calibration status
+                                    self.calibration_status.emit(calibration_success, ch_str)
+
                             else:
                                 logger.debug("controller does not match in config")
                                 self._c_stop.set()
-                            time.sleep(0.1)
-
-                        # Set the integration time to compensate for the weakest channel
-                        # in use
-                        ch_list = CH_LIST
-                        if self.single_mode:
-                            ch_list = [self.single_ch]
-                        elif self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]:
-                            ch_list = EZ_CH_LIST
-                        max_int = deepcopy(MAX_INTEGRATION)
-                        for ch in ch_list:
-                            if self._c_stop.is_set():
-                                break
-                            if self.device_config["ctrl"] in DEVICES:
-                                # Check the intensity is enough and raise integration
-                                # time if needed
-                                self.ctrl.set_intensity(ch=ch, raw_val=S_LED_INT)
-                                time.sleep(LED_DELAY)
-                                int_array = self.usb.read_intensity()
-                                time.sleep(LED_DELAY)
-                                current_count = int_array.max()
-                                # If max intensity is not sufficient
-                                while (
-                                    current_count < S_COUNT_MAX
-                                    and self.integration < max_int
-                                ):
-                                    self.integration += integration_step
-                                    logger.debug(
-                                        "increasing integration time - "
-                                        f"{self.integration}",
-                                    )
-                                    # Change detector setting
-                                    self.usb.set_integration(self.integration)
-                                    time.sleep(0.02)
-                                    int_array = self.usb.read_intensity()
-                                    current_count = int_array.max()
-
-                        # Check if low intensity is saturating and if so lower the the
-                        # max integration allowed
-                        for ch in ch_list:
-                            if self._c_stop.is_set():
-                                break
-                            if self.device_config["ctrl"] in DEVICES:
-                                self.ctrl.set_intensity(ch=ch, raw_val=S_LED_MIN)
-                                time.sleep(LED_DELAY)
-                                int_array = self.usb.read_intensity()
-                                current_count = int_array.max()
-                                logger.debug(
-                                    f"saturation check: {current_count}, "
-                                    f"limit: {S_COUNT_MAX}",
-                                )
-                                while (
-                                    current_count > S_COUNT_MAX
-                                    and self.integration > MIN_INTEGRATION
-                                ):
-                                    self.integration -= integration_step
-                                    if self.integration < max_int:
-                                        max_int = deepcopy(self.integration)
-                                    logger.debug(
-                                        "decreasing integration time - %i",
-                                        f"{self.integration}",
-                                    )
-                                    # Change detector setting
-                                    self.usb.set_integration(self.integration)
-                                    time.sleep(0.02)
-                                    int_array = self.usb.read_intensity()
-                                    current_count = int_array.max()
-
-                        logger.debug(f"final integration time: {self.integration}")
-                        # Set the number of scans to average based on intensity and
-                        # 225ms read time
-                        self.num_scans = min(
-                            int(MAX_READ_TIME / self.integration),
-                            MAX_NUM_SCANS,
-                        )
-                        logger.debug(f"scans to average: {self.num_scans}")
-
-                        # Calibrate LED intensity values in S
-                        for ch in ch_list:
-                            if self._c_stop.is_set():
-                                break
-
-                            logger.debug(f"Calibrating LED {ch}...")
-
-                            # Start at maximum for the S-polarized light
-                            intensity = deepcopy(P_LED_MAX)
-                            self.ctrl.set_intensity(ch=ch, raw_val=intensity)
-                            time.sleep(LED_DELAY)
-                            if self.device_config["ctrl"] in DEVICES:
-                                calibration_max = self.usb.read_intensity().max()
-                            else:
-                                calibration_max = 0
-                                self._c_stop.set()
-
-                            logger.debug(
-                                f"initial intensity: {intensity} "
-                                f"= {calibration_max} counts",
-                            )
-                            # Quick adjust by 20
-                            quick_adjustment = 20
-                            while (
-                                calibration_max > S_COUNT_MAX
-                                and intensity > quick_adjustment
-                                and not self._c_stop.is_set()
-                            ):
-                                intensity -= quick_adjustment
-                                self.ctrl.set_intensity(ch=ch, raw_val=intensity)
-                                time.sleep(LED_DELAY)
-                                if self.device_config["ctrl"] in DEVICES:
-                                    calibration_max = self.usb.read_intensity().max()
-                            logger.debug(
-                                f"coarse adjust: {intensity} = "
-                                f"{calibration_max} counts",
-                            )
-
-                            # Med adjust by 5
-                            medium_adjustment = 5
-                            while (
-                                calibration_max < S_COUNT_MAX
-                                and intensity < P_LED_MAX
-                                and not self._c_stop.is_set()
-                            ):
-                                intensity += medium_adjustment
-                                self.ctrl.set_intensity(ch=ch, raw_val=intensity)
-                                time.sleep(LED_DELAY)
-                                if self.device_config["ctrl"] in DEVICES:
-                                    calibration_max = self.usb.read_intensity().max()
-                            logger.debug(
-                                f"med adjust: {intensity} = {calibration_max} counts",
-                            )
-
-                            # Fine adjust by 1
-                            fine_adjustment = 1
-                            while (
-                                calibration_max > S_COUNT_MAX
-                                and intensity > fine_adjustment + 1
-                            ):
-                                intensity -= fine_adjustment
-                                self.ctrl.set_intensity(ch=ch, raw_val=intensity)
-                                time.sleep(LED_DELAY)
-                                calibration_max = self.usb.read_intensity().max()
-                            logger.debug(
-                                f"fine adjust: {intensity} = {calibration_max} counts",
-                            )
-
-                            # append the value to the list of calibrated LEDs
-                            self.ref_intensity[ch] = deepcopy(intensity)
-                        # Review calibrated LED intensities
-                        logger.debug(
-                            f"Finished reference calibration: {self.ref_intensity}",
-                        )
-
-                        # Dark noise intensity when all LEDs off
-                        self.ctrl.turn_off_channels()
-                        time.sleep(LED_DELAY)
-                        # No idea why 50
-                        fifty = 50
-                        if self.integration < fifty:
-                            dark_scans = DARK_NOISE_SCANS
-                        else:
-                            dark_scans = int(DARK_NOISE_SCANS / 2)
-                        if (
-                            not self._c_stop.is_set()
-                            and self.device_config["ctrl"] in DEVICES
-                        ):
-                            dark_noise_sum = np.zeros(
-                                self.wave_max_index - self.wave_min_index,
-                            )
-                            for _scan in range(dark_scans):
-                                dark_noise_single = self.usb.read_intensity()[
-                                    self.wave_min_index : self.wave_max_index
-                                ]
-                                dark_noise_sum += dark_noise_single
-                                self.dark_noise = dark_noise_sum / dark_scans
-                            logger.debug("Finished dark noise scans")
-                            logger.debug(
-                                f"Maximum counts in dark noise: "
-                                f"{max(self.dark_noise)}",
-                            )
-                        else:
-                            self._c_stop.set()
-                            break
-
-                        # Reference Signal - S-position intensity reading on each
-                        # channel
-                        self.ctrl.set_mode(mode="s")
-                        time.sleep(0.4)
-                        for ch in ch_list:
-                            if (
-                                not self._c_stop.is_set()
-                                and self.device_config["ctrl"] in DEVICES
-                            ):
-                                self.ctrl.set_intensity(
-                                    ch=ch,
-                                    raw_val=self.ref_intensity[ch],
-                                )
-                                time.sleep(LED_DELAY)
-                                if self.integration < fifty:
-                                    ref_scans = REF_SCANS
-                                else:
-                                    ref_scans = int(REF_SCANS / 2)
-                                ref_data_sum = np.zeros_like(self.dark_noise)
-                                for _scan in range(ref_scans):
-                                    int_val = self.usb.read_intensity()[
-                                        self.wave_min_index : self.wave_max_index
-                                    ]
-                                    ref_data_single = int_val - self.dark_noise
-                                    ref_data_sum += ref_data_single
-                                self.ref_sig[ch] = deepcopy(ref_data_sum / ref_scans)
-                                logger.debug(
-                                    f"Finished {ch} reference signal measurement",
-                                )
-                                logger.debug(
-                                    f"Reference max counts: {max(self.ref_sig[ch])}",
-                                )
-                            else:
-                                self._c_stop.set()
-                                break
-
-                        # At end of calibration sequence move to position p
-                        self.ctrl.set_mode(mode="p")
-                        time.sleep(0.4)
-
-                        # Fine tune LED intensities after switch to P
-                        if (
-                            not self._c_stop.is_set()
-                            and self.device_config["ctrl"] in DEVICES
-                        ):
-                            for ch in ch_list:
-                                logger.debug(f"Finishing calibration LED {ch}...")
-                                p_intensity = deepcopy(self.ref_intensity[ch])
-                                self.ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                                time.sleep(LED_DELAY)
-                                calibration_max = self.usb.read_intensity().max()
-                                initial_counts = deepcopy(calibration_max)
-                                logger.debug(f"initial counts: {initial_counts}")
-                                # Rough calibration, adjust by 20
-                                while (
-                                    calibration_max < initial_counts * P_MAX_INCREASE
-                                    and calibration_max < S_COUNT_MAX
-                                    and p_intensity < (P_LED_MAX - 20)
-                                ):
-                                    p_intensity += quick_adjustment
-                                    self.ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                                    time.sleep(LED_DELAY)
-                                    calibration_max = self.usb.read_intensity().max()
-                                logger.debug(
-                                    f"coarse adjust: {p_intensity} = "
-                                    f"{calibration_max} counts",
-                                )
-
-                                # Medium adjust by 5
-                                while (
-                                    calibration_max > initial_counts * P_MAX_INCREASE
-                                    and p_intensity > medium_adjustment
-                                ):
-                                    p_intensity -= medium_adjustment
-                                    self.ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                                    time.sleep(LED_DELAY)
-                                    calibration_max = self.usb.read_intensity().max()
-                                logger.debug(
-                                    f"medium adjust: {p_intensity} = "
-                                    f"{calibration_max} counts",
-                                )
-
-                                # Fine adjust by 1
-                                while (
-                                    calibration_max < initial_counts * P_MAX_INCREASE
-                                    and calibration_max < S_COUNT_MAX
-                                    and p_intensity < P_LED_MAX
-                                ):
-                                    p_intensity += fine_adjustment
-                                    self.ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                                    time.sleep(LED_DELAY)
-                                    calibration_max = self.usb.read_intensity().max()
-                                logger.debug(
-                                    f"fine adjust: {p_intensity} = "
-                                    f"{calibration_max} counts",
-                                )
-
-                                # keep calibrated LED values
-                                self.leds_calibrated[ch] = deepcopy(p_intensity)
-
-                            # Review calibrated LED intensities
-                            logger.debug(
-                                f"Finished LED calibration: {self.leds_calibrated}",
-                            )
-
-                        else:
-                            self._c_stop.set()
-                            break
-
-                        # Check that all channels pass calibration requirements
-                        self.ch_error_list = []
-
-                        for ch in CH_LIST:
-                            if (
-                                not self._c_stop.is_set()
-                                and self.device_config["ctrl"] in DEVICES
-                            ):
-                                intensity = self.leds_calibrated[ch]
-                                self.ctrl.set_intensity(ch=ch, raw_val=intensity)
-                                time.sleep(LED_DELAY)
-                                calibration_max = self.usb.read_intensity().max()
-                                if calibration_max < P_COUNT_THRESHOLD:
-                                    self.ch_error_list.append(ch)
-                                    logger.debug(
-                                        f"calibration failed on ch {ch}: "
-                                        f"intensity {calibration_max} at {intensity}",
-                                    )
-                            else:
-                                self._c_stop.set()
-                                break
-
-                        ch_str = ""
-                        if len(self.ch_error_list) > 0:
-                            for ch in self.ch_error_list:
-                                if ch_str == "":
-                                    ch_str += f"{ch} "
-                                else:
-                                    ch_str += f", {ch} "
-                            calibration_success = False
-                        else:
-                            calibration_success = True
-                        # Update calibration status
-                        if not self._c_stop.is_set():
-                            self.calibration_status.emit(calibration_success, ch_str)
 
                         self._c_stop.set()
 
@@ -1203,8 +957,8 @@ class AffiniteApp(QMainWindow):
                 self.ctrl.turn_off_channels()
                 time.sleep(0.4)
                 for ch in CH_LIST:
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.ref_intensity[ch])
-                    time.sleep(LED_DELAY)
+                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.ref_intensity[ch])
+                    time.sleep(self.led_delay)
                     ref_data_sum = np.zeros_like(self.dark_noise)
                     ref_scans = REF_SCANS
                     # No idea why 75
@@ -1218,7 +972,7 @@ class AffiniteApp(QMainWindow):
                         )
                         ref_data_sum += ref_data_single
                     self.ref_sig[ch] = deepcopy(ref_data_sum / REF_SCANS)
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.leds_calibrated[ch])
+                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.leds_calibrated[ch])
                     self.ctrl.turn_off_channels()
                 self.ctrl.set_mode(mode="p")
                 self.new_ref_done_sig.emit()
@@ -1246,13 +1000,13 @@ class AffiniteApp(QMainWindow):
             time.sleep(0.5)
             if "s" in pos or "S" in pos:
                 for ch in CH_LIST:
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.ref_intensity[ch])
-                logger.debug(f"set to S intensities: {self.ref_intensity}")
+                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.ref_intensity[ch])
+                logger.debug(f"set to S intensities: {self.hw_state.ref_intensity}")
                 set_pos = "s"
             else:
                 for ch in CH_LIST:
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.leds_calibrated[ch])
-                logger.debug(f"set to P intensities: {self.leds_calibrated}")
+                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.leds_calibrated[ch])
+                logger.debug(f"set to P intensities: {self.hw_state.leds_calibrated}")
                 set_pos = "p"
             self.ctrl.set_mode(mode=set_pos)
             logger.debug(f"set polarizer: {set_pos}")
@@ -1309,11 +1063,12 @@ class AffiniteApp(QMainWindow):
         if state:
             logger.debug("passed calibration")
         else:
-            logger.debug("manually passing calibration")
+            logger.debug("manually passing calibration - allowing live data anyway")
             self.calibrated = True
         self.main_window.spectroscopy.enable_controls(True)  # noqa: FBT003
         self.main_window.sidebar.device_widget.allow_commands(True)  # noqa: FBT003
-        if not self._b_kill.is_set() and state:
+        # ✨ MODIFIED: Allow live data even if calibration fails (removed "and state" condition)
+        if not self._b_kill.is_set():
             self._b_no_read.clear()
             if self._b_stop.is_set():
                 self._b_stop.clear()
@@ -1437,7 +1192,6 @@ class AffiniteApp(QMainWindow):
 
         while not self._b_kill.is_set():
             ch = CH_LIST[0]
-            time.sleep(0.01)
             try:
                 if self._b_stop.is_set() or self.device_config["ctrl"] not in DEVICES:
                     time.sleep(0.2)
@@ -1470,36 +1224,23 @@ class AffiniteApp(QMainWindow):
                         and self.calibrated
                         and self.ctrl is not None
                     ):
-                        int_data_sum = np.zeros_like(self.wave_data, "u4")
                         self.ctrl.turn_on_channel(ch=ch)
                         if self.led_delay > 0:
                             time.sleep(self.led_delay)
 
-                        offset = self.wave_min_index * 2
-                        num = self.wave_max_index - self.wave_min_index
-                        usb_read_image = self.usb.api.sensor_t_dll.usb_read_image
-                        usb_read_image.argtypes = [
-                            ctypes.c_void_p,
-                            ctypes.POINTER(SENSOR_FRAME_T),
-                        ]
-                        usb_read_image.restype = ctypes.c_int32
-                        sensor_frame_t = SENSOR_FRAME_T()
-                        sensor_frame_t_ref = ctypes.byref(sensor_frame_t)
-                        spec = self.usb.spec
-
-                        for _scan in range(self.num_scans):
-                            usb_read_image(spec, sensor_frame_t_ref)
-                            int_data_sum += np.frombuffer(
-                                sensor_frame_t.pixels,
-                                "u2",
-                                num,
-                                offset,
+                        # Acquire spectrum using helper class (vectorized averaging)
+                        if self.spectrum_acq is not None:
+                            int_data_sum = self.spectrum_acq.acquire_averaged_spectrum(
+                                self.wave_min_index,
+                                self.wave_max_index,
+                                self.num_scans
                             )
+                        else:
+                            logger.error("Spectrum acquisition helper not initialized")
+                            int_data_sum = None
 
                         if int_data_sum is not None:
-                            self.int_data[ch] = (
-                                int_data_sum / self.num_scans
-                            ) - self.dark_noise
+                            self.int_data[ch] = int_data_sum - self.dark_noise
                             if self.ref_sig[ch] is not None:
                                 # Get percentage transmission p intensity
                                 # over s reference
@@ -1541,7 +1282,7 @@ class AffiniteApp(QMainWindow):
                             fit_lambda = -line.intercept / line.slope
                     else:
                         fit_lambda = np.nan
-                        time.sleep(0.1)
+                        time.sleep(0.01)  # Reduced from 0.1s to 0.01s
 
                     # update lambda values
                     self.lambda_values[ch] = np.append(
@@ -1558,16 +1299,16 @@ class AffiniteApp(QMainWindow):
                             if np.isnan(self.lambda_values[ch][self.filt_buffer_index]):
                                 filtered_value = np.nan
                             elif len(self.lambda_values[ch]) > self.med_filt_win:
-                                unfiltered = self.lambda_values[ch][
-                                    self.filt_buffer_index
-                                    - self.med_filt_win : self.filt_buffer_index
-                                ]
-                                filtered_value = np.nanmean(unfiltered)
+                                # FIX: Use MEDIAN (not mean) and CENTER the window on current point
+                                half_win = self.med_filt_win // 2
+                                start_idx = max(0, self.filt_buffer_index - half_win)
+                                end_idx = min(len(self.lambda_values[ch]), self.filt_buffer_index + half_win + 1)
+                                unfiltered = self.lambda_values[ch][start_idx:end_idx]
+                                filtered_value = np.nanmedian(unfiltered)
                             else:
+                                # For initial values, use all available data
                                 unfiltered = self.lambda_values[ch]
-                                if (len(unfiltered) % 2) == 0:
-                                    unfiltered = unfiltered[1:]
-                                filtered_value = np.nanmean(unfiltered)
+                                filtered_value = np.nanmedian(unfiltered)
                         else:
                             filtered_value = fit_lambda
 
@@ -1641,25 +1382,13 @@ class AffiniteApp(QMainWindow):
                     and len(self.lambda_times[ch]) > 0
                     and len(self.buffered_times[ch]) > 0
                 ):
-                    first_filt_index = self.med_filt_win
-                    last_filt_index = len(self.lambda_values[ch]) - 1
-                    for i in range(first_filt_index):
-                        filt_val = np.nanmean(self.lambda_values[ch][0:i])
-                        new_filtered_lambda[ch] = np.append(
-                            new_filtered_lambda[ch],
-                            filt_val,
-                        )
-                    for i in range(first_filt_index, last_filt_index):
-                        filt_val = np.nanmean(
-                            self.lambda_values[ch][(i - self.med_filt_win) : i],
-                        )
-                        new_filtered_lambda[ch] = np.append(
-                            new_filtered_lambda[ch],
-                            filt_val,
-                        )
-                    for i in range(last_filt_index, len(self.lambda_values[ch])):
-                        filt_val = np.nanmean(
-                            self.lambda_values[ch][(i - self.med_filt_win) : i],
+                    # FIX: Use MEDIAN filter with centered window, not mean with backward window
+                    half_win = self.med_filt_win // 2
+                    for i in range(len(self.lambda_values[ch])):
+                        start_idx = max(0, i - half_win)
+                        end_idx = min(len(self.lambda_values[ch]), i + half_win + 1)
+                        filt_val = np.nanmedian(
+                            self.lambda_values[ch][start_idx:end_idx],
                         )
                         new_filtered_lambda[ch] = np.append(
                             new_filtered_lambda[ch],
@@ -1744,45 +1473,344 @@ class AffiniteApp(QMainWindow):
             "trans_data": self.trans_data,
         }
 
-    def auto_polarization(self: Self) -> None:
-        """Find polarizer positions."""
+    def validate_existing_polarizer_positions(self) -> tuple[bool, float, int, int]:
+        """Quickly validate existing polarizer positions stored in device.
+
+        Returns:
+            Tuple of (is_valid, sp_ratio, s_pos, p_pos)
+        """
         try:
-            if self.device_config["ctrl"] in DEVICES and self.ctrl is not None:
-                self.ctrl.set_intensity("a", 255)
-                self.usb.set_integration(max(MIN_INTEGRATION, self.usb.min_integration))
-                min_angle = 10
-                max_angle = 170
-                half_range = (max_angle - min_angle) // 2
-                angle_step = 5
-                steps = half_range // angle_step
-                max_intensities = np.zeros(2 * steps + 1)
-                self.ctrl.servo_set(half_range + min_angle, max_angle)
-                self.ctrl.set_mode("p")
-                self.ctrl.set_mode("s")
-                max_intensities[steps] = self.usb.read_intensity().max()
-                for i in range(steps):
-                    x = min_angle + angle_step * i
-                    self.ctrl.servo_set(s=x, p=x + half_range + angle_step)
-                    self.ctrl.set_mode("s")
-                    max_intensities[i] = self.usb.read_intensity().max()
-                    self.ctrl.set_mode("p")
-                    max_intensities[i + steps + 1] = self.usb.read_intensity().max()
-                peaks = find_peaks(max_intensities)[0]
-                prominences = peak_prominences(max_intensities, peaks)
-                # Index of two most prominent peaks
-                i = prominences[0].argsort()[-2:]
-                # Edges of peaks at 5% from max, essentially full width 95% max
-                # This is to find the middle of the range the P4Pro let light through
-                edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
-                edges = np.array(edges)[:,i]
-                # Midpoint of peaks by averaging and converting from indexes to angles
-                # S is most prominent peak, P is second most prominent
-                p_pos, s_pos = (min_angle + angle_step * edges.mean(0)).astype(int)
-                self.ctrl.servo_set(s_pos, p_pos)
-                logger.debug(f"final positions: s = {s_pos}, p = {p_pos}")
-                self.new_default_values = True
+            logger.info("=== Quick Polarizer Validation ===")
+
+            # Read current positions from device
+            polarizer_pos = self.ctrl.servo_get()
+            s_bytes = polarizer_pos["s"]
+            p_bytes = polarizer_pos["p"]
+
+            # Decode positions
+            if isinstance(s_bytes, bytes):
+                s_pos = int(s_bytes.decode('utf-8').strip())
+            else:
+                s_pos = int(str(s_bytes).strip())
+            if isinstance(p_bytes, bytes):
+                p_pos = int(p_bytes.decode('utf-8').strip())
+            else:
+                p_pos = int(str(p_bytes).strip())
+
+            logger.info(f"   Current stored positions: S={s_pos}, P={p_pos}")
+
+            # Check if positions are reasonable (not defaults like 0,0 or 255,255)
+            if s_pos == 0 or p_pos == 0 or s_pos == p_pos:
+                logger.warning(f"   ⚠️ Invalid stored positions detected")
+                return False, 0.0, s_pos, p_pos
+
+            # Quick validation: measure S and P intensities
+            self.ctrl.set_intensity("a", 255)
+            self.usb.set_integration(max(MIN_INTEGRATION / 1000.0, self.usb.min_integration))
+
+            # Measure S-mode (should be HIGH)
+            self.ctrl.set_mode("s")
+            time.sleep(0.5)
+            s_intensity = self.usb.read_intensity().max()
+
+            # Measure P-mode (should be LOWER)
+            self.ctrl.set_mode("p")
+            time.sleep(0.5)
+            p_intensity = self.usb.read_intensity().max()
+
+            # Calculate ratio
+            if p_intensity == 0:
+                logger.warning(f"   ⚠️ P-mode intensity is zero")
+                return False, 0.0, s_pos, p_pos
+
+            sp_ratio = s_intensity / p_intensity
+
+            logger.info(f"   S-mode intensity: {s_intensity:.0f} counts")
+            logger.info(f"   P-mode intensity: {p_intensity:.0f} counts")
+            logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
+
+            # Validate ratio
+            MIN_RATIO = 1.3
+            IDEAL_RATIO = 1.5
+
+            if sp_ratio >= MIN_RATIO:
+                status = "✅ VALID" if sp_ratio >= IDEAL_RATIO else "✅ ACCEPTABLE"
+                logger.info(f"   {status} - Stored positions are good")
+                return True, sp_ratio, s_pos, p_pos
+            else:
+                logger.warning(f"   ❌ INVALID - Ratio too low (minimum: {MIN_RATIO:.2f}×)")
+                return False, sp_ratio, s_pos, p_pos
+
         except Exception as e:
-            logger.exception(f"Error aligning polarizer servo: {e}")
+            logger.warning(f"   ⚠️ Validation failed: {e}")
+            return False, 0.0, 0, 0
+
+    def auto_polarization(self: Self, force_full_calibration: bool = False) -> None:
+        """Find polarizer positions with comprehensive validation.
+
+        Uses efficient quadrant search (13 measurements) with fallback to full sweep (33 measurements).
+
+        Args:
+            force_full_calibration: If True, skip validation and always do full sweep
+        """
+        from utils.servo_calibration import (
+            perform_quadrant_search,
+            analyze_peaks,
+            verify_and_correct_positions
+        )
+
+        # Try quick validation first unless forced to do full calibration
+        if not force_full_calibration:
+            is_valid, sp_ratio, s_pos, p_pos = self.validate_existing_polarizer_positions()
+
+            if is_valid:
+                logger.info(f"✅ POLARIZER VALIDATION SUCCESSFUL (fast mode)")
+                logger.info(f"   Using stored positions: S={s_pos}, P={p_pos}")
+                logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
+                logger.info(f"   Skipping full calibration sweep")
+                self.ctrl.servo_set(s_pos, p_pos)
+                return
+            else:
+                logger.info(f"⚠️ Validation failed - proceeding with full calibration sweep")
+        else:
+            logger.info(f"🔧 Full calibration requested - skipping validation")
+
+        # Full calibration with retry logic
+        max_retries = 2
+        retry_count = 0
+        calibration_channel = "b"  # Default LED channel for servo calibration (can be changed in config)
+        # Use calibrated LED intensity if available, otherwise start lower than max to avoid saturation
+        if self.hw_state.leds_calibrated and calibration_channel in self.hw_state.leds_calibrated:
+            led_intensity = self.hw_state.leds_calibrated[calibration_channel]
+            logger.info(f"📊 Using calibrated LED intensity: {led_intensity}")
+        else:
+            led_intensity = 180  # Start at 70% to avoid immediate saturation
+            logger.info(f"⚠️ No calibrated LED intensity - starting at {led_intensity}")
+
+        while retry_count < max_retries:
+            try:
+                if self.device_config["ctrl"] in DEVICES and self.ctrl is not None:
+                    logger.info(f"=== Auto-Polarization Attempt {retry_count + 1}/{max_retries} ===")
+
+                    # Setup hardware - LED only (integration time already set by LED calibration)
+                    self.ctrl.set_intensity(calibration_channel, led_intensity)
+
+                    # Try quadrant search first (faster - 13 measurements)
+                    try:
+                        logger.info("🔍 Attempting QUADRANT SEARCH (fast method)")
+                        positions, intensities, p_pos, s_pos = perform_quadrant_search(
+                            self.usb,
+                            self.ctrl
+                        )
+
+                        # Analyze results with pre-determined positions
+                        results = analyze_peaks(positions, intensities, self.usb, self.ctrl, p_pos, s_pos)
+
+                        if results is not None:
+                            # Verify and correct for inversion + saturation check
+                            verification = verify_and_correct_positions(
+                                self.usb,
+                                self.ctrl,
+                                results["s_pos"],
+                                results["p_pos"]
+                            )
+
+                            if verification is None:
+                                logger.warning("⚠️ SATURATION DETECTED - Reducing LED intensity")
+                                # Reduce LED intensity by 20% and retry
+                                led_intensity = int(led_intensity * 0.8)
+                                logger.info(f"   Reducing LED intensity to {led_intensity}")
+                                retry_count += 1
+                                continue  # Retry with lower LED intensity
+
+                            s_pos, p_pos, was_inverted = verification
+                            sp_ratio = results["sp_ratio"]
+
+                            logger.info(f"✅ AUTO-POLARIZATION SUCCESSFUL (quadrant search)")
+                            logger.info(f"   S position: {s_pos}°")
+                            logger.info(f"   P position: {p_pos}°")
+                            logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
+                            logger.info(f"   Separation: {results['separation']:.0f}°")
+                            if was_inverted:
+                                logger.info(f"   ⚠️  Inversion corrected")
+
+                            self.ctrl.servo_set(s_pos, p_pos)
+                            time.sleep(0.2)  # Wait for servo to settle
+                            self.ctrl.flash()  # Save to EEPROM
+                            self.new_default_values = True
+                            self.get_device_parameters()  # Update UI with new S/P positions
+                            return  # Success - exit
+                        else:
+                            logger.warning("⚠️ Quadrant search validation failed - falling back to full sweep")
+
+                    except Exception as e:
+                        logger.warning(f"⚠️ Quadrant search failed: {e} - falling back to full sweep")
+
+                    # Fallback to OLD FULL SWEEP method
+                    logger.info("🔄 Starting FULL SWEEP (exhaustive method - fallback)")
+
+                    # Note: Integration time already set by LED calibration
+                    min_angle = 10
+                    max_angle = 170
+                    half_range = (max_angle - min_angle) // 2
+                    angle_step = 5
+                    steps = half_range // angle_step
+                    max_intensities = np.zeros(2 * steps + 1)
+
+                    # Perform sweep
+                    logger.debug("Starting servo position sweep...")
+                    self.ctrl.servo_set(half_range + min_angle, max_angle)
+                    self.ctrl.set_mode("p")
+                    self.ctrl.set_mode("s")
+                    time.sleep(0.5)  # Extra settling time for first position
+                    max_intensities[steps] = self.usb.read_intensity().max()
+
+                    for i in range(steps):
+                        x = min_angle + angle_step * i
+                        self.ctrl.servo_set(s=x, p=x + half_range + angle_step)
+                        time.sleep(0.2)  # Allow servo to settle
+                        self.ctrl.set_mode("s")
+                        time.sleep(0.1)
+                        max_intensities[i] = self.usb.read_intensity().max()
+                        self.ctrl.set_mode("p")
+                        time.sleep(0.1)
+                        max_intensities[i + steps + 1] = self.usb.read_intensity().max()
+
+                    # ✅ VALIDATION 1: Check if peaks were found
+                    peaks = find_peaks(max_intensities)[0]
+                    if len(peaks) < 2:
+                        logger.warning(f"❌ VALIDATION FAILED: Only {len(peaks)} peaks found (need 2)")
+                        logger.warning(f"   Intensity range: {max_intensities.min():.0f} - {max_intensities.max():.0f} counts")
+                        retry_count += 1
+                        continue
+
+                    prominences = peak_prominences(max_intensities, peaks)
+
+                    # ✅ VALIDATION 2: Check if we have at least 2 prominent peaks
+                    if len(prominences[0]) < 2:
+                        logger.warning(f"❌ VALIDATION FAILED: Less than 2 prominent peaks detected")
+                        retry_count += 1
+                        continue
+
+                    # Get indices of two most prominent peaks
+                    peak_indices = prominences[0].argsort()[-2:]
+
+                    # Calculate positions
+                    edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
+                    edges = np.array(edges)[:, peak_indices]
+                    pos1, pos2 = (min_angle + angle_step * edges.mean(0)).astype(int)
+
+                    # ✅ VALIDATION 3: Verify peaks are approximately half_range apart (80° ± 15°)
+                    separation = abs(pos2 - pos1)
+                    expected_separation = half_range
+                    tolerance = 15  # degrees
+
+                    if abs(separation - expected_separation) > tolerance:
+                        logger.warning(f"❌ VALIDATION FAILED: Peak separation incorrect")
+                        logger.warning(f"   Found: {separation}° apart")
+                        logger.warning(f"   Expected: {expected_separation}° ± {tolerance}°")
+                        logger.warning(f"   Positions: pos1={pos1}, pos2={pos2}")
+                        retry_count += 1
+                        continue
+
+                    logger.debug(f"✅ Peak separation valid: {separation}° (expected ~{expected_separation}°)")
+                    logger.debug(f"Candidate positions: pos1={pos1}, pos2={pos2}")
+
+                    # ✅ VALIDATION 4: Measure actual intensities to determine S vs P
+                    # Allow longer settling time for accurate measurement
+                    self.ctrl.servo_set(s=pos1, p=pos2)
+                    time.sleep(0.8)  # Increased from 0.5s for better settling
+
+                    self.ctrl.set_mode("s")
+                    time.sleep(0.5)  # Increased from 0.3s
+                    spectrum_pos1 = self.usb.read_intensity()
+                    intensity_pos1 = spectrum_pos1.max()
+
+                    self.ctrl.set_mode("p")
+                    time.sleep(0.5)  # Increased from 0.3s
+                    spectrum_pos2 = self.usb.read_intensity()
+                    intensity_pos2 = spectrum_pos2.max()
+
+                    # ✅ SATURATION CHECK: Verify no wavelength exceeds detector limits
+                    MAX_DETECTOR_COUNTS = 62000
+                    SATURATION_THRESHOLD = 0.95
+                    saturation_limit = int(MAX_DETECTOR_COUNTS * SATURATION_THRESHOLD)
+
+                    if intensity_pos1 >= saturation_limit:
+                        logger.error(f"❌ SATURATION DETECTED at position {pos1}")
+                        logger.error(f"   Peak intensity: {intensity_pos1:.0f} counts (limit: {saturation_limit})")
+                        logger.error(f"   LED intensity is too high - reduce LED power before continuing")
+                        return  # Exit - cannot continue with saturated signal
+
+                    if intensity_pos2 >= saturation_limit:
+                        logger.error(f"❌ SATURATION DETECTED at position {pos2}")
+                        logger.error(f"   Peak intensity: {intensity_pos2:.0f} counts (limit: {saturation_limit})")
+                        logger.error(f"   LED intensity is too high - reduce LED power before continuing")
+                        return  # Exit - cannot continue with saturated signal
+
+                    # Determine S vs P based on physics
+                    if intensity_pos1 > intensity_pos2:
+                        s_pos = pos1
+                        p_pos = pos2
+                        s_intensity = intensity_pos1
+                        p_intensity = intensity_pos2
+                        logger.debug(f"Labels correct: S={s_pos} ({s_intensity:.0f} counts), P={p_pos} ({p_intensity:.0f} counts)")
+                    else:
+                        s_pos = pos2
+                        p_pos = pos1
+                        s_intensity = intensity_pos2
+                        p_intensity = intensity_pos1
+                        logger.debug(f"Labels inverted: S={s_pos} ({s_intensity:.0f} counts), P={p_pos} ({p_intensity:.0f} counts)")
+
+                    # ✅ VALIDATION 5: Verify S/P ratio is reasonable
+                    MIN_RATIO = 1.3  # Minimum acceptable ratio
+                    IDEAL_MIN_RATIO = 1.5
+
+                    if p_intensity == 0:
+                        logger.warning(f"❌ VALIDATION FAILED: P-mode intensity is zero")
+                        retry_count += 1
+                        continue
+
+                    sp_ratio = s_intensity / p_intensity
+
+                    if sp_ratio < MIN_RATIO:
+                        logger.warning(f"❌ VALIDATION FAILED: S/P ratio too low")
+                        logger.warning(f"   Measured: {sp_ratio:.2f}×")
+                        logger.warning(f"   Minimum: {MIN_RATIO:.2f}×")
+                        logger.warning(f"   S intensity: {s_intensity:.0f} counts")
+                        logger.warning(f"   P intensity: {p_intensity:.0f} counts")
+                        retry_count += 1
+                        continue
+
+                    # Success!
+                    logger.info(f"✅ AUTO-POLARIZATION SUCCESSFUL (full sweep fallback)")
+                    logger.info(f"   S position: {s_pos}° ({s_intensity:.0f} counts)")
+                    logger.info(f"   P position: {p_pos}° ({p_intensity:.0f} counts)")
+                    logger.info(f"   S/P ratio: {sp_ratio:.2f}× {'✅' if sp_ratio >= IDEAL_MIN_RATIO else '⚠️ acceptable'}")
+                    logger.info(f"   Peak separation: {separation}°")
+
+                    self.ctrl.servo_set(s_pos, p_pos)
+                    time.sleep(0.2)  # Wait for servo to settle
+                    self.ctrl.flash()  # Save to EEPROM
+                    self.new_default_values = True
+                    self.get_device_parameters()  # Update UI with new S/P positions
+                    return  # Success - exit retry loop
+
+            except Exception as e:
+                logger.exception(f"Error during auto-polarization attempt {retry_count + 1}: {e}")
+                retry_count += 1
+
+        # All retries failed
+        logger.error(f"❌ AUTO-POLARIZATION FAILED after {max_retries} attempts")
+        logger.error(f"   Please check:")
+        logger.error(f"   1. Polarizer is properly installed")
+        logger.error(f"   2. Servo is responding correctly")
+        logger.error(f"   3. LED intensity is sufficient")
+        logger.error(f"   4. Spectrometer is working properly")
+        show_message(
+            "Auto-polarization failed. Please check hardware and try again.",
+            msg_type="Critical"
+        )
 
     def stop_pump(self: Self, stop_ch: str) -> None:
         """Stop a pump."""
@@ -1793,10 +1821,10 @@ class AffiniteApp(QMainWindow):
                 self._s_stop.set()
                 if stop_ch == "CH1":
                     log1 = True
-                    if self.synced:
+                    if self.hw_state.synced:
                         log2 = True
                         self.knx.knx_stop(3)
-                        self.pump_states["CH2"] = "Off"
+                        self.hw_state.pump_states["CH2"] = "Off"
                         if self.knx.version == "1.1":
                             self.knx.knx_led("x", 3)
                     else:
@@ -1808,7 +1836,7 @@ class AffiniteApp(QMainWindow):
                     self.knx.knx_stop(2)
                     if self.knx.version == "1.1":
                         self.knx.knx_led("x", 2)
-                self.pump_states[stop_ch] = "Off"
+                self.hw_state.pump_states[stop_ch] = "Off"
                 logger.debug("pump stopped")
                 log_time = f"{(time.time() - self.exp_start):.2f}"
                 time_now = dt.datetime.now(TIME_ZONE)
@@ -1830,7 +1858,7 @@ class AffiniteApp(QMainWindow):
                     self.log_ch2["temp"].append("-")
                     self.log_ch2["dev"].append("-")
                 self._s_stop.clear()
-                self.update_pump_display.emit(self.pump_states, self.synced)
+                self.update_pump_display.emit(self.hw_state.pump_states, self.hw_state.synced)
             except Exception as e:
                 logger.exception(f"Error stopping pump: {e}")
 
@@ -1844,10 +1872,10 @@ class AffiniteApp(QMainWindow):
                 state = "Running" if run_rate < FLUSH_RATE else "Flushing"
                 if run_ch == "CH1":
                     log1 = True
-                    if self.synced:
+                    if self.hw_state.synced:
                         log2 = True
                         self.knx.knx_start(run_rate, 3)
-                        self.pump_states["CH2"] = deepcopy(state)
+                        self.hw_state.pump_states["CH2"] = deepcopy(state)
                         if self.knx.version == "1.1":
                             self.knx.knx_led("g", 3)
                     else:
@@ -1859,7 +1887,7 @@ class AffiniteApp(QMainWindow):
                     self.knx.knx_start(run_rate, 2)
                     if self.knx.version == "1.1":
                         self.knx.knx_led("g", 2)
-                self.pump_states[run_ch] = state
+                self.hw_state.pump_states[run_ch] = state
                 log_time = f"{(time.time() - self.exp_start):.2f}"
                 time_now = dt.datetime.now(TIME_ZONE)
                 log_timestamp = (
@@ -1880,7 +1908,7 @@ class AffiniteApp(QMainWindow):
                     self.log_ch2["temp"].append("-")
                     self.log_ch2["dev"].append("-")
                 self._s_stop.clear()
-                self.update_pump_display.emit(self.pump_states, self.synced)
+                self.update_pump_display.emit(self.hw_state.pump_states, self.hw_state.synced)
             except Exception as e:
                 logger.exception(f"Error running pump: {e}")
 
@@ -1890,7 +1918,7 @@ class AffiniteApp(QMainWindow):
             try:
                 self._s_stop.set()
                 if ch == "CH1":
-                    if self.synced:
+                    if self.hw_state.synced:
                         self.knx.knx_three(state, 3)
                     else:
                         self.knx.knx_three(state, 1)
@@ -1906,7 +1934,7 @@ class AffiniteApp(QMainWindow):
             try:
                 self._s_stop.set()
                 if ch == "CH1":
-                    if self.synced:
+                    if self.hw_state.synced:
                         self.knx.knx_six(state, 3)
                     else:
                         self.knx.knx_six(state, 1)
@@ -1919,7 +1947,7 @@ class AffiniteApp(QMainWindow):
     @Slot(str, int)
     def speed_change_handler(self: Self, ch: str, rate: int) -> None:
         """Change a pump speed."""
-        if self.pump_states[ch] == "Running":
+        if self.hw_state.pump_states[ch] == "Running":
             self.run_pump(ch, rate)
             if not self.pump:
                 self.flow_rate = rate / 60
@@ -1928,17 +1956,17 @@ class AffiniteApp(QMainWindow):
     @Slot(str, int)
     def run_button_handler(self: Self, ch: str, rate: int) -> None:
         """Run a pump."""
-        if self.pump_states[ch] == "Off":
+        if self.hw_state.pump_states[ch] == "Off":
             self.run_pump(ch, rate)
-        elif self.pump_states[ch] == "Running":
+        elif self.hw_state.pump_states[ch] == "Running":
             self.stop_pump(ch)
 
     @Slot(str)
     def flush_button_handler(self: Self, ch: str) -> None:
         """Flush a tube."""
-        if self.pump_states[ch] == "Off":
+        if self.hw_state.pump_states[ch] == "Off":
             self.run_pump(ch, FLUSH_RATE)
-        elif self.pump_states[ch] == "Flushing":
+        elif self.hw_state.pump_states[ch] == "Flushing":
             self.stop_pump(ch)
 
     def valve_state_check(self: Self, curr_status: dict[str, float], ch: int) -> None:
@@ -1953,30 +1981,30 @@ class AffiniteApp(QMainWindow):
                 fw_state = "Dispose"
             else:
                 fw_state = "Waste"
-            if self.valve_states[ch_name] != fw_state:
-                self.valve_states[ch_name] = fw_state
+            if self.hw_state.valve_states[ch_name] != fw_state:
+                self.hw_state.valve_states[ch_name] = fw_state
                 logger.debug(f"correcting valve state error on ch {ch}")
-                self.update_valve_display.emit(self.valve_states, self.synced)
+                self.update_valve_display.emit(self.hw_state.valve_states, self.hw_state.synced)
 
     @Slot(str)
     def three_way_handler(self: Self, ch: str) -> None:
         """Switch three wayy valve."""
         self.update_timer.start(5000)
-        if self.valve_states[ch] == "Waste":
+        if self.hw_state.valve_states[ch] == "Waste":
             self.three_way(ch, 1)
-            self.valve_states[ch] = "Load"
-        elif self.valve_states[ch] == "Dispose":
+            self.hw_state.valve_states[ch] = "Load"
+        elif self.hw_state.valve_states[ch] == "Dispose":
             self.three_way(ch, 1)
-            self.valve_states[ch] = "Inject"
-        elif self.valve_states[ch] == "Inject":
+            self.hw_state.valve_states[ch] = "Inject"
+        elif self.hw_state.valve_states[ch] == "Inject":
             self.three_way(ch, 0)
-            self.valve_states[ch] = "Dispose"
+            self.hw_state.valve_states[ch] = "Dispose"
         else:
             self.three_way(ch, 0)
-            self.valve_states[ch] = "Waste"
-        if self.synced:
-            self.valve_states["CH2"] = deepcopy(self.valve_states["CH1"])
-        self.update_valve_display.emit(self.valve_states, self.synced)
+            self.hw_state.valve_states[ch] = "Waste"
+        if self.hw_state.synced:
+            self.hw_state.valve_states["CH2"] = deepcopy(self.hw_state.valve_states["CH1"])
+        self.update_valve_display.emit(self.hw_state.valve_states, self.hw_state.synced)
 
     @Slot(str)
     def six_port_handler(self: Self, ch: str) -> None:
@@ -1984,12 +2012,12 @@ class AffiniteApp(QMainWindow):
         self.update_timer.start(5000)
         inject_time: int | str = 0
         timeout_mins = 0
-        if self.valve_states[ch] in ["Load", "Waste"]:
+        if self.hw_state.valve_states[ch] in ["Load", "Waste"]:
             self.six_port(ch, 1)
-            if self.valve_states[ch] == "Load":
-                self.valve_states[ch] = "Inject"
-            elif self.valve_states[ch] == "Waste":
-                self.valve_states[ch] = "Dispose"
+            if self.hw_state.valve_states[ch] == "Load":
+                self.hw_state.valve_states[ch] = "Inject"
+            elif self.hw_state.valve_states[ch] == "Waste":
+                self.hw_state.valve_states[ch] = "Dispose"
             inject_time = f"{(time.time() - self.exp_start):.2f}"
             time_now = dt.datetime.now(TIME_ZONE)
             inject_timestamp = (
@@ -2015,7 +2043,7 @@ class AffiniteApp(QMainWindow):
                     + 2
                 )
                 self.timer1.start(int(1000 * 60 * timeout_mins))
-            if (ch == "CH2") or self.synced:
+            if (ch == "CH2") or self.hw_state.synced:
                 self.log_ch2["timestamps"].append(inject_timestamp)
                 self.log_ch2["times"].append(inject_time)
                 self.log_ch2["events"].append("Inject sample")
@@ -2034,8 +2062,8 @@ class AffiniteApp(QMainWindow):
                     )
                     + 2
                 )
-                if self.synced:
-                    self.valve_states["CH2"] = deepcopy(self.valve_states["CH1"])
+                if self.hw_state.synced:
+                    self.hw_state.valve_states["CH2"] = deepcopy(self.hw_state.valve_states["CH1"])
                 else:
                     self.timer2.start(int(1000 * 60 * timeout_mins))
                 self.main_window.sidebar.kinetic_widget.ui.inject_time_ch2.setText(
@@ -2043,66 +2071,77 @@ class AffiniteApp(QMainWindow):
                 )
             logger.debug(f"starting timer on {ch} for {timeout_mins} min")
         else:
-            if self.valve_states[ch] == "Inject":
-                self.valve_states[ch] = "Load"
-            elif self.valve_states[ch] == "Dispose":
-                self.valve_states[ch] = "Waste"
+            if self.hw_state.valve_states[ch] == "Inject":
+                self.hw_state.valve_states[ch] = "Load"
+            elif self.hw_state.valve_states[ch] == "Dispose":
+                self.hw_state.valve_states[ch] = "Waste"
             self.six_port(ch, 0)
             if ch == "CH1":
                 self.timer1.stop()
-            if (ch == "CH2") or self.synced:
+            if (ch == "CH2") or self.hw_state.synced:
                 self.timer2.stop()
-            if self.synced:
-                self.valve_states["CH2"] = deepcopy(self.valve_states["CH1"])
-        self.update_valve_display.emit(self.valve_states, self.synced)
+            if self.hw_state.synced:
+                self.hw_state.valve_states["CH2"] = deepcopy(self.hw_state.valve_states["CH1"])
+        self.update_valve_display.emit(self.hw_state.valve_states, self.hw_state.synced)
 
     def turn_off_six_ch1(self: Self) -> None:
         """Turn off six way valve channnel 1."""
-        if self.valve_states["CH1"] in ["Inject", "Dispose"]:
+        if self.hw_state.valve_states["CH1"] in ["Inject", "Dispose"]:
             self.six_port_handler("CH1")
             logger.debug("Auto shutoff 6P1")
 
     def turn_off_six_ch2(self: Self) -> None:
         """Turn off six way valve channel 2."""
-        if self.valve_states["CH2"] in ["Inject", "Dispose"]:
+        if self.hw_state.valve_states["CH2"] in ["Inject", "Dispose"]:
             self.six_port_handler("CH2")
             logger.debug("Auto shutoff 6P2")
 
     def sync_handler(self: Self, sync: bool) -> None:  # noqa: FBT001
         """Handle sync."""
-        self.synced = sync
+        self.hw_state.synced = sync
         if sync:
             self.timer2.stop()
             self.sync_speed_sig.emit()
-            if self.pump_states["CH1"] == "Running":
+            if self.hw_state.pump_states["CH1"] == "Running":
                 self.run_pump(
                     "CH2",
                     int(
                         self.main_window.sidebar.kinetic_widget.ui.run_rate_ch1.currentText(),
                     ),
                 )
-            elif self.pump_states["CH1"] == "Flushing":
+            elif self.hw_state.pump_states["CH1"] == "Flushing":
                 self.run_pump("CH2", FLUSH_RATE)
             else:
                 self.stop_pump("CH2")
             if (
-                (self.valve_states["CH2"] in ["Waste", "Dispose"])
-                and (self.valve_states["CH1"] in ["Load", "Inject"])
+                (self.hw_state.valve_states["CH2"] in ["Waste", "Dispose"])
+                and (self.hw_state.valve_states["CH1"] in ["Load", "Inject"])
             ) or (
-                (self.valve_states["CH2"] in ["Load", "Inject"])
-                and (self.valve_states["CH1"] in ["Waste", "Dispose"])
+                (self.hw_state.valve_states["CH2"] in ["Load", "Inject"])
+                and (self.hw_state.valve_states["CH1"] in ["Waste", "Dispose"])
             ):
                 self.three_way_handler("CH2")
             if (
-                (self.valve_states["CH2"] in ["Waste", "Load"])
-                and (self.valve_states["CH1"] in ["Dispose", "Inject"])
+                (self.hw_state.valve_states["CH2"] in ["Waste", "Load"])
+                and (self.hw_state.valve_states["CH1"] in ["Dispose", "Inject"])
             ) or (
-                (self.valve_states["CH2"] in ["Dispose", "Inject"])
-                and (self.valve_states["CH1"] in ["Waste", "Load"])
+                (self.hw_state.valve_states["CH2"] in ["Dispose", "Inject"])
+                and (self.hw_state.valve_states["CH1"] in ["Waste", "Load"])
             ):
                 self.six_port_handler("CH2")
         elif self.timer1.isActive():
             self.timer2.start(self.timer1.remainingTime())
+
+    @Slot(list)
+    def update_channel_visibility(self: Self, visible_channels: list) -> None:
+        """Update which channels are visible in sensorgram based on valve position."""
+        # Update checkboxes in sensorgram
+        for ch in ['a', 'b', 'c', 'd']:
+            checkbox = getattr(self.main_window.sensorgram.ui, f"segment_{ch.upper()}", None)
+            if checkbox:
+                should_be_checked = ch in visible_channels
+                if checkbox.isChecked() != should_be_checked:
+                    checkbox.setChecked(should_be_checked)
 
     def enable_sensor_reading(self: Self) -> None:
         """Enable sensor reading."""
@@ -2519,6 +2558,25 @@ class AffiniteApp(QMainWindow):
         if self.main_window.active_page == "sensorgram":
             self.main_window.sensorgram.quick_segment_update()
 
+    def toggle_colorblind_mode(self: Self, enabled: bool) -> None:  # noqa: FBT001
+        """Toggle between standard and colorblind-friendly color palettes."""
+        import settings
+
+        if enabled:
+            settings.ACTIVE_GRAPH_COLORS = settings.GRAPH_COLORS_COLORBLIND.copy()
+            logger.info("Switched to colorblind-friendly palette")
+        else:
+            settings.ACTIVE_GRAPH_COLORS = settings.GRAPH_COLORS.copy()
+            logger.info("Switched to standard palette")
+
+        # Update all graph colors
+        if hasattr(self.main_window, 'sensorgram'):
+            self.main_window.sensorgram.full_segment_view.update_colors()
+            self.main_window.sensorgram.SOI_view.update_colors()
+        if hasattr(self.main_window, 'data_processing'):
+            self.main_window.data_processing.full_segment_view.update_colors()
+            self.main_window.data_processing.SOI_view.update_colors()
+
     def connect_advanced_menu(self: Self) -> None:
         """Connect advanced menu."""
         if self.device_config["ctrl"] in DEVICES:
@@ -2532,50 +2590,79 @@ class AffiniteApp(QMainWindow):
 
     def get_device_parameters(self: Self) -> None:
         """Get device parameters."""
-        if self.adv_connected:
-            if self.device_config["ctrl"] == "QSPR" and isinstance(
-                self.ctrl,
-                QSPRController,
-            ):
-                params = self.ctrl.get_parameters()
-                self.main_window.advanced_menu.display_settings(params)
-            elif self.ctrl is not None and not isinstance(self.ctrl, QSPRController):
-                s_pos = 0
-                p_pos = 0
-                if self.device_config["ctrl"] in [
-                    "P4SPR",
-                    "PicoP4SPR",
-                    "EZSPR",
-                    "PicoEZSPR",
-                ]:
-                    try:
-                        polarizer_pos = self.ctrl.servo_get()
-                        s_pos = int(polarizer_pos["s"][0:3])
-                        p_pos = int(polarizer_pos["p"][0:3])
-                    except Exception as e:
-                        logger.exception(f"error reading s & p from device: {e}")
-                    logger.debug(f"curr s = {s_pos}, curr p = {p_pos}")
-                params = {
-                    "led_del": self.led_delay,
-                    "ht_req": self.ht_req,
-                    "sens_interval": self.sensor_interval,
-                    "intg_time": self.integration,
-                    "num_scans": self.num_scans,
-                    "led_int_a": self.leds_calibrated["a"],
-                    "led_int_b": self.leds_calibrated["b"],
-                    "led_int_c": self.leds_calibrated["c"],
-                    "led_int_d": self.leds_calibrated["d"],
-                    "s_pos": s_pos,
-                    "p_pos": p_pos,
-                    "pump_1_correction": 1,
-                    "pump_2_correction": 1,
-                }
-                if isinstance(self.knx, PicoEZSPR):
-                    corrections = self.knx.get_pump_corrections()
-                    if corrections is not None:
-                        params["pump_1_correction"] = corrections[0]
-                        params["pump_2_correction"] = corrections[1]
-                self.main_window.advanced_menu.display_settings(params)
+        # Only update if advanced menu exists and is connected
+        if not self.adv_connected or self.main_window.advanced_menu is None:
+            return
+            
+        if self.device_config["ctrl"] == "QSPR" and isinstance(
+            self.ctrl,
+            QSPRController,
+        ):
+            params = self.ctrl.get_parameters()
+            self.main_window.advanced_menu.display_settings(params)
+        elif self.ctrl is not None and not isinstance(self.ctrl, QSPRController):
+            s_pos = 0
+            p_pos = 0
+            if self.device_config["ctrl"] in [
+                "P4SPR",
+                "PicoP4SPR",
+                "EZSPR",
+                "PicoEZSPR",
+            ]:
+                try:
+                    polarizer_pos = self.ctrl.servo_get()
+                    # ✨ FIX: Decode bytes to string before converting to int
+                    s_bytes = polarizer_pos["s"]
+                    p_bytes = polarizer_pos["p"]
+                    
+                    # Check if we got valid data (not the default b'0000')
+                    if s_bytes == b'0000' and p_bytes == b'0000':
+                        logger.warning("Servo positions returned default values - may not be calibrated")
+                    
+                    # Handle both bytes and string responses
+                    if isinstance(s_bytes, bytes):
+                        s_str = s_bytes.decode('utf-8').strip()
+                        if s_str and s_str != '0000':
+                            s_pos = int(s_str)
+                    else:
+                        s_str = str(s_bytes).strip()
+                        if s_str and s_str != '0000':
+                            s_pos = int(s_str)
+                            
+                    if isinstance(p_bytes, bytes):
+                        p_str = p_bytes.decode('utf-8').strip()
+                        if p_str and p_str != '0000':
+                            p_pos = int(p_str)
+                    else:
+                        p_str = str(p_bytes).strip()
+                        if p_str and p_str != '0000':
+                            p_pos = int(p_str)
+                            
+                except Exception as e:
+                    logger.error(f"error reading s & p from device: {e}")
+                    logger.debug("Servo positions will display as 0 - try re-calibrating servo")
+                logger.debug(f"curr s = {s_pos}, curr p = {p_pos}")
+            params = {
+                "led_del": self.led_delay,
+                "ht_req": self.ht_req,
+                "sens_interval": self.sensor_interval,
+                "intg_time": self.integration,
+                "num_scans": self.num_scans,
+                "led_int_a": self.hw_state.leds_calibrated["a"],
+                "led_int_b": self.hw_state.leds_calibrated["b"],
+                "led_int_c": self.hw_state.leds_calibrated["c"],
+                "led_int_d": self.hw_state.leds_calibrated["d"],
+                "s_pos": s_pos,
+                "p_pos": p_pos,
+                "pump_1_correction": 1,
+                "pump_2_correction": 1,
+            }
+            if isinstance(self.knx, PicoEZSPR):
+                corrections = self.knx.get_pump_corrections()
+                if corrections is not None:
+                    params["pump_1_correction"] = corrections[0]
+                    params["pump_2_correction"] = corrections[1]
+            self.main_window.advanced_menu.display_settings(params)
 
     def update_advanced_params(self: Self, params: dict[str, str]) -> None:
         """Update advanced paramerters."""
@@ -2621,21 +2708,42 @@ class AffiniteApp(QMainWindow):
                             new_led_ints[ch] = max_intensity
                         elif new_led_ints[ch] < min_intensity:
                             new_led_ints[ch] = min_intensity
-                        self.leds_calibrated[ch] = new_led_ints[ch]
+                        if self.hw_state.leds_calibrated[ch] != new_led_ints[ch]:
+                            logger.info(f"Updating LED {ch.upper()}: {self.hw_state.leds_calibrated[ch]}→{new_led_ints[ch]}")
+                        self.hw_state.leds_calibrated[ch] = new_led_ints[ch]
                         self.ctrl.set_intensity(ch=ch, raw_val=new_led_ints[ch])
                         time.sleep(0.1)
                         self.ctrl.turn_off_channels()
                         time.sleep(0.1)
 
                     # Update polarizer servo position if needed
-                    current_servo_positions = self.ctrl.servo_get()
-                    old_s = int(current_servo_positions["s"])
-                    old_p = int(current_servo_positions["p"])
+                    # ✨ FIX: Wrap servo_get in try-except to prevent freeze on timeout
+                    try:
+                        current_servo_positions = self.ctrl.servo_get()
+                        # ✨ FIX: Decode bytes to string before converting to int
+                        s_bytes = current_servo_positions["s"]
+                        p_bytes = current_servo_positions["p"]
+                        if isinstance(s_bytes, bytes):
+                            old_s = int(s_bytes.decode('utf-8').strip())
+                        else:
+                            old_s = int(str(s_bytes).strip())
+                        if isinstance(p_bytes, bytes):
+                            old_p = int(p_bytes.decode('utf-8').strip())
+                        else:
+                            old_p = int(str(p_bytes).strip())
+                    except Exception as e:
+                        logger.warning(f"Could not read current servo positions: {e}, using defaults")
+                        old_s = 0
+                        old_p = 0
+
                     new_s = int(params["s_pos"])
                     new_p = int(params["p_pos"])
                     if old_s != new_s or old_p != new_p:
+                        logger.info(f"Updating servo positions: S {old_s}→{new_s}, P {old_p}→{new_p}")
                         self.ctrl.servo_set(s=new_s, p=new_p)
                         self.ctrl.flash()
+                        time.sleep(0.2)  # Wait for flash to complete
+                        self.get_device_parameters()  # Refresh UI after saving
 
                     # Update pump corrections if needed
                     if isinstance(self.knx, PicoEZSPR):
@@ -2690,6 +2798,8 @@ class AffiniteApp(QMainWindow):
         if self.ctrl is None or self.knx is None or self.pump is None:
             self.main_window.ui.status.setText("Scanning for devices...")
             self.connection_thread()
+            # Update device config even if no devices found to show "No Connection"
+            self.get_current_device_config()
         else:
             logger.debug("Already connected!")
 
@@ -2699,8 +2809,8 @@ class AffiniteApp(QMainWindow):
         self._b_stop.set()
         if (self.knx is not None) and knx:
             self.knx.stop_kinetic()
-            self.pump_states["CH1"] = "Off"
-            self.pump_states["CH2"] = "Off"
+            self.hw_state.pump_states["CH1"] = "Off"
+            self.hw_state.pump_states["CH2"] = "Off"
         self._s_stop.set()
         if self.recording:
             self.rec_timer.stop()
@@ -2868,6 +2978,10 @@ class AffiniteApp(QMainWindow):
 
 def main() -> None:
     """Run the application."""
+    # Suppress Qt warning messages BEFORE QApplication init
+    os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.*=false"
+    os.environ["QT_ASSUME_STDERR_HAS_CONSOLE"] = "1"
+
     dtnow = dt.datetime.now(TIME_ZONE)
     logger.info("========== Starting Affinite Instruments Application ==========")
     logger.info(
@@ -2876,6 +2990,9 @@ def main() -> None:
     )
 
     _affinite_app = QApplication(sys.argv)
+
+    # Apply centralized UI theme
+    UIStyleManager.apply_app_theme(_affinite_app)
 
     app = AffiniteApp()
 

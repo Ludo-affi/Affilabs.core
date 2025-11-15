@@ -319,7 +319,7 @@ class Ui_Kinetic(object):
 
     def retranslateUi(self, Kinetic):
         Kinetic.setWindowTitle(QCoreApplication.translate("Kinetic", u"Form", None))
-        self.CH1.setTitle(QCoreApplication.translate("Kinetic", u"Kinetic Channel 1", None))
+        self.CH1.setTitle(QCoreApplication.translate("Kinetic", u"Valve Control", None))
         self.run1.setText(QCoreApplication.translate("Kinetic", u"Run", None))
         self.flush1.setText(QCoreApplication.translate("Kinetic", u"Flush", None))
         self.run_rate_ch1.setItemText(0, QCoreApplication.translate("Kinetic", u"25", None))
@@ -336,8 +336,8 @@ class Ui_Kinetic(object):
         self.sync_1.setText(QCoreApplication.translate("Kinetic", u"Sync\n"
 "Channels", None))
         self.pump_flow_ch1.setTitle(QCoreApplication.translate("Kinetic", u"Buffer Flow ", None))
-        self.spr_ch1.setText(QCoreApplication.translate("Kinetic", u"Channel B", None))
-        self.waste_ch1.setText(QCoreApplication.translate("Kinetic", u"Channel A", None))
+        self.spr_ch1.setText(QCoreApplication.translate("Kinetic", u"Ch B & D", None))
+        self.waste_ch1.setText(QCoreApplication.translate("Kinetic", u"Ch A & C", None))
         self.sample_flow_ch1.setTitle(QCoreApplication.translate("Kinetic", u"Sample Loop", None))
         self.inject_ch1.setText(QCoreApplication.translate("Kinetic", u"Inject", None))
         self.load_ch1.setText(QCoreApplication.translate("Kinetic", u"Load", None))

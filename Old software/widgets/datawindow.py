@@ -54,10 +54,10 @@ PROGRESS_BAR_UPDATE_TIME = 100
 class DataDict(TypedDict, total=False):
     """Dictionary for holding data."""
 
-    lambda_times: dict[str, np.ndarray[int, np.dtype[np.float_]]]
-    lambda_values: dict[str, np.ndarray[int, np.dtype[np.float_]]]
-    buffered_lambda_times: dict[str, np.ndarray[int, np.dtype[np.float_]]]
-    filtered_lambda_values: dict[str, np.ndarray[int, np.dtype[np.float_]]]
+    lambda_times: dict[str, np.ndarray[int, np.dtype[np.float64]]]
+    lambda_values: dict[str, np.ndarray[int, np.dtype[np.float64]]]
+    buffered_lambda_times: dict[str, np.ndarray[int, np.dtype[np.float64]]]
+    filtered_lambda_values: dict[str, np.ndarray[int, np.dtype[np.float64]]]
     filt: bool
     start: float
     rec: object
@@ -78,8 +78,8 @@ class Segment:
         self.start_index = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.end_index = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.shift = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
-        self.seg_x: dict[str, np.ndarray[int, np.dtype[np.float_]]] = {}
-        self.seg_y: dict[str, np.ndarray[int, np.dtype[np.float_]]] = {}
+        self.seg_x: dict[str, np.ndarray[int, np.dtype[np.float64]]] = {}
+        self.seg_y: dict[str, np.ndarray[int, np.dtype[np.float64]]] = {}
         self.name = str(seg_id + 1)
         self.note = ""
 
@@ -226,10 +226,12 @@ class DataWindow(QWidget):
         if self.data_source == "dynamic":
             self.ui = Ui_Sensorgram()
             self.ui.setupUi(self)
+            self._fix_checkbox_styles()
 
         elif self.data_source == "static":
             self.ui = Ui_Processing()
             self.ui.setupUi(self)
+            self._fix_checkbox_styles()
             self.ui.align_seg_btn.clicked.connect(self.send_segments_to_analysis)
 
         self.original_style = self.ui.save_segment_btn.styleSheet()
@@ -469,6 +471,37 @@ class DataWindow(QWidget):
         else:
             self.circles[0].setBrush(OFF_BRUSH)
             self.circles[1].setBrush(ON_BRUSH)
+
+    def _fix_checkbox_styles(self: Self) -> None:
+        """Fix checkbox and label styling to use global theme.
+        
+        The UI files have inline styles that override the global theme,
+        causing gray shades and invisible checkmarks. This method clears
+        those problematic inline styles while preserving text colors.
+        """
+        # Fix channel checkboxes - clear background but keep text color
+        for checkbox_name in ['segment_A', 'segment_B', 'segment_C', 'segment_D']:
+            if hasattr(self.ui, checkbox_name):
+                checkbox = getattr(self.ui, checkbox_name)
+                # Get current text color from stylesheet
+                current_style = checkbox.styleSheet()
+                if 'color:' in current_style:
+                    # Extract just the color line
+                    import re
+                    color_match = re.search(r'color:\s*([^;]+);', current_style)
+                    if color_match:
+                        color_value = color_match.group(1).strip()
+                        # Set only text color, let global theme handle the rest
+                        checkbox.setStyleSheet(f"QCheckBox {{ color: {color_value}; background-color: transparent; }}")
+                else:
+                    checkbox.setStyleSheet("QCheckBox { background-color: transparent; }")
+        
+        # Fix shift value labels - make background transparent
+        for label_name in ['shift_A', 'shift_B', 'shift_C', 'shift_D']:
+            if hasattr(self.ui, label_name):
+                label = getattr(self.ui, label_name)
+                # Use a light background that's visible but consistent with theme
+                label.setStyleSheet("QLabel { background-color: #F5F5F5; border: 1px solid #AAAAAA; padding: 3px; border-radius: 2px; }")
 
     @Slot()
     def toggle_table_style(self: Self) -> None:
@@ -838,6 +871,8 @@ class DataWindow(QWidget):
                         self.ui.current_note.setText("")
 
                 if (seg is not None) and (row is not None):
+                    # Block signals to prevent cascading updates
+                    self.ui.data_table.blockSignals(True)
                     self.ui.data_table.insertRow(row)
 
                     self.ui.data_table.setItem(row, 0, QTableWidgetItem(f"{seg.name}"))
@@ -878,6 +913,9 @@ class DataWindow(QWidget):
                     )
                     self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.note}"))
 
+                    # Re-enable signals after all items are set
+                    self.ui.data_table.blockSignals(False)
+
                 self.saved_segments.insert(row, self.current_segment)
                 self.saving = False
                 self.ui.data_table.clearSelection()
@@ -886,8 +924,13 @@ class DataWindow(QWidget):
 
             except Exception as e:
                 logger.exception(f"error while saving row {e}")
+                # Ensure signals are re-enabled even if error occurs
+                self.ui.data_table.blockSignals(False)
         else:
             logger.error("error while saveing row no current_segment")
+
+        # Final safety check to ensure signals are always enabled
+        self.ui.data_table.blockSignals(False)
 
     def restore_deleted(self: Self) -> None:
         """Restore a deleted segment."""
@@ -900,6 +943,8 @@ class DataWindow(QWidget):
     def reassert_row(self: Self, row: int) -> None:
         """Reassert a row in the data cycle table."""
         seg = self.saved_segments[row]
+        # Block signals to prevent cascading updates
+        self.ui.data_table.blockSignals(True)
         self.ui.data_table.setItem(row, 0, QTableWidgetItem(f"{seg.name}"))
         self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
         self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
@@ -909,6 +954,7 @@ class DataWindow(QWidget):
         self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
         self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
         self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.note}"))
+        self.ui.data_table.blockSignals(False)
 
     def delete_row(self: Self, *, first_available: bool = False) -> None:
         """Delete a row in the data cycle table."""
@@ -1116,8 +1162,12 @@ class DataWindow(QWidget):
         name = ""
         note = ""
         if self.ui.data_table.rowCount() > row:
-            name = self.ui.data_table.item(row, 0).text()
-            note = self.ui.data_table.item(row, 8).text()
+            name_item = self.ui.data_table.item(row, 0)
+            note_item = self.ui.data_table.item(row, 8)
+            if name_item is not None:
+                name = name_item.text()
+            if note_item is not None:
+                note = note_item.text()
         return {"name": name, "note": note}
 
     def enter_view_mode(self: Self) -> None:
@@ -1163,7 +1213,12 @@ class DataWindow(QWidget):
             self.ui.new_segment_btn.setStyleSheet(self.view_style)
 
             # Show notes in edit box
-            self.ui.current_note.setText(self.current_segment.note)
+            try:
+                note_text = self.current_segment.note if self.current_segment.note else ""
+                self.ui.current_note.setText(note_text)
+            except Exception as e:
+                logger.warning(f"Could not set note text: {e}")
+                self.ui.current_note.setText("")
 
     def enter_edit_mode(self: Self) -> None:
         """Enter edit mode."""
@@ -1992,7 +2047,7 @@ if __name__ == "__main__":
 
     widget = DataWindow("static")
     for key in widget.data["lambda_times"]:
-        widget.data["lambda_times"][key] = np.arange(500, dtype=np.float_)
+        widget.data["lambda_times"][key] = np.arange(500, dtype=np.float64)
         widget.data["lambda_values"][key] = np.random.default_rng().random(500)
 
     widget.export_raw_data(preset=True, preset_dir=Path("data_export") / Path("Test"))

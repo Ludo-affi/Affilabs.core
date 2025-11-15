@@ -16,7 +16,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QDialog, QGroupBox, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QRadioButton,
+    QLabel, QLineEdit, QPushButton, QRadioButton, QCheckBox,
     QSizePolicy, QSpacerItem, QVBoxLayout, QWidget)
 import ui.ai_rc
 
@@ -214,6 +214,19 @@ class Ui_ChannelMenu(object):
 
         self.verticalLayout.addWidget(self.groupBox_2)
 
+        self.groupBox_4 = QGroupBox(ChannelMenu)
+        self.groupBox_4.setObjectName(u"groupBox_4")
+        self.horizontalLayout_8 = QHBoxLayout(self.groupBox_4)
+        self.horizontalLayout_8.setObjectName(u"horizontalLayout_8")
+        self.colorblind_mode = QCheckBox(self.groupBox_4)
+        self.colorblind_mode.setObjectName(u"colorblind_mode")
+        self.colorblind_mode.setChecked(False)
+
+        self.horizontalLayout_8.addWidget(self.colorblind_mode)
+
+
+        self.verticalLayout.addWidget(self.groupBox_4)
+
 
         self.retranslateUi(ChannelMenu)
 
@@ -240,5 +253,7 @@ class Ui_ChannelMenu(object):
         self.groupBox_2.setTitle(QCoreApplication.translate("ChannelMenu", u"Live Data", None))
         self.reset_data.setText(QCoreApplication.translate("ChannelMenu", u"Reset", None))
         self.export_data.setText(QCoreApplication.translate("ChannelMenu", u"Export", None))
+        self.groupBox_4.setTitle(QCoreApplication.translate("ChannelMenu", u"Accessibility", None))
+        self.colorblind_mode.setText(QCoreApplication.translate("ChannelMenu", u"Colorblind-Friendly Palette", None))
     # retranslateUi
 

@@ -19,6 +19,7 @@ class Kinetic(QWidget):
     three_way_sig = Signal(str)
     six_port_sig = Signal(str)
     sync_sig = Signal(bool)
+    channel_visibility_sig = Signal(list)  # Signal to control which channels are visible
 
     def __init__(self):
         super(Kinetic, self).__init__()
@@ -38,6 +39,29 @@ class Kinetic(QWidget):
 
         self.ui.status1.setText("Off")
         self.ui.status2.setText("Off")
+
+        # Disable Kinetic Channel 2
+        self.ui.CH2.setVisible(False)
+
+        # Hide Run, Flush buttons and flow rate dropdown in Channel 1
+        self.ui.run1.setVisible(False)
+        self.ui.flush1.setVisible(False)
+        self.ui.run_rate_ch1.setVisible(False)
+        self.ui.label.setVisible(False)  # Hide µL/min label next to dropdown
+
+        # Hide sensor readings (flow, temp, and their labels)
+        self.ui.sensor_frame_ch1.setVisible(False)
+
+        # Hide status and injection time labels
+        self.ui.label_15.setVisible(False)  # "Status:" label
+        self.ui.status1.setVisible(False)  # Status value
+        self.ui.label_17.setVisible(False)  # "Sample Injection Time:" label
+        self.ui.inject_time_ch1.setVisible(False)  # Injection time value
+        self.ui.label_18.setVisible(False)  # "s" (seconds) unit label
+
+        # Make sync permanent and hide the checkbox
+        self.sync = True
+        self.ui.sync_1.setVisible(False)
 
         self.ui.run1.clicked.connect(self.run_ch1)
         self.ui.run2.clicked.connect(self.run_ch2)
@@ -80,6 +104,8 @@ class Kinetic(QWidget):
                 self.ui.sync_1.setEnabled(True)
                 self.ui.sync_2.setEnabled(True)
             self.sensor_read_en.emit()
+            # Set initial channel visibility based on default valve position
+            self.update_channel_visibility()
 
     def update_readings(self, sensor_disp_vals):
         self.ui.flow1.setText(sensor_disp_vals['flow1'])
@@ -190,10 +216,12 @@ class Kinetic(QWidget):
     def three_way_ch1(self):
         if not self.updating:
             self.three_way_sig.emit('CH1')
+            self.update_channel_visibility()
 
     def three_way_ch2(self):
         if not self.updating:
             self.three_way_sig.emit('CH2')
+            self.update_channel_visibility()
 
     def six_port_ch1(self):
         if not self.updating:
@@ -256,3 +284,18 @@ class Kinetic(QWidget):
         self.ui.CH1.setEnabled(False)
         self.ui.CH2.setEnabled(False)
         self.updating = False
+
+    def update_channel_visibility(self):
+        """Update which channels should be visible based on valve position."""
+        if not hasattr(self, 'knx') or not self.knx and not self.knx2:
+            return  # No pump detected, don't control channels
+
+        # Check which buffer flow is active (Ch A & C or Ch B & D)
+        if self.ui.waste_ch1.isChecked():
+            # Ch A & C active (waste/Channel A selected)
+            visible_channels = ['a', 'c']
+        else:
+            # Ch B & D active (spr/Channel B selected)
+            visible_channels = ['b', 'd']
+
+        self.channel_visibility_sig.emit(visible_channels)
