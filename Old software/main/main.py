@@ -45,6 +45,8 @@ from utils.spr_signal_processing import (
     apply_centered_median_filter,
     calculate_fourier_weights,
 )
+from utils.spectrum_processor import SpectrumProcessor, TemporalFilter
+from utils.channel_manager import ChannelManager
 
 from settings import (
     CH_LIST,
@@ -104,6 +106,8 @@ from utils.controller import (
 from utils.logger import logger
 # from utils.SpectrometerAPI import SENSOR_FRAME_T
 from utils.usb4000_wrapper import USB4000
+# Initialize processing pipelines
+import utils.pipelines  # This auto-registers all pipelines
 from widgets.datawindow import Segment
 from widgets.mainwindow import MainWindow
 from widgets.message import show_message
@@ -184,6 +188,9 @@ class AffiniteApp(QMainWindow):
 
         # Hardware state manager
         self.hw_state = HardwareStateManager()
+        
+        # Channel manager (centralized buffer management)
+        self.channel_mgr = ChannelManager()
 
         # reference data
         self.ref_sig = {ch: np.array([]) for ch in CH_LIST}
@@ -195,17 +202,6 @@ class AffiniteApp(QMainWindow):
         # Post-delay placeholder; finalized after core init
         self.post_delay = LED_POST_DELAY
 
-        # sensorgram data for each channel
-        self.lambda_values = {ch: np.array([]) for ch in CH_LIST}
-        # sensorgram data timestamps
-        self.lambda_times = {ch: np.array([]) for ch in CH_LIST}
-        # sensorgram data with median filter on lambda values
-        self.filtered_lambda = {ch: np.array([]) for ch in CH_LIST}
-        # sensorgram data unfiltered buffered values
-        self.buffered_lambda = {ch: np.array([]) for ch in CH_LIST}
-        # sensorgram data time for filtered data
-        self.buffered_times = {ch: np.array([]) for ch in CH_LIST}
-
         # Initialize attributes set later to avoid type checker warnings
         self.wave_data: np.ndarray | None = np.array([])
         self.fourier_weights: np.ndarray | None = None
@@ -215,7 +211,6 @@ class AffiniteApp(QMainWindow):
         self.no_sig_count: dict[str, int] = {ch: 0 for ch in CH_LIST}
 
         # start with no fixed filtered data
-        self.filt_buffer_index = 0
         self.new_filtered_data = np.array([])
 
         # Wire advanced delay status updates to Advanced dialog if present
@@ -248,6 +243,10 @@ class AffiniteApp(QMainWindow):
 
         # Spectrum acquisition helper (for vectorized acquisition)
         self.spectrum_acq = None  # Initialized after USB device is opened
+        
+        # Spectrum processor (centralized processing logic)
+        self.spectrum_processor = None  # Initialized after calibration with fourier_weights
+        self.temporal_filter = None  # Initialized with median window settings
 
         # User settable advanced parameters
         # enable/disable filtering
@@ -473,6 +472,31 @@ class AffiniteApp(QMainWindow):
         # === Advanced Menu (Development Mode) ===
         if DEV:
             self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
+
+        # === Pipeline Selector Signal ===
+        if hasattr(self.main_window.sidebar, 'pipeline_widget') and self.main_window.sidebar.pipeline_widget:
+            self.main_window.sidebar.pipeline_widget.pipeline_changed.connect(self._on_pipeline_changed)
+            logger.info("Connected pipeline selector signal")
+
+    def _on_pipeline_changed(self: Self, pipeline_id: str) -> None:
+        """Handle pipeline selection change"""
+        try:
+            from utils.processing_pipeline import get_pipeline_registry
+            registry = get_pipeline_registry()
+            active = registry.get_active_pipeline()
+            metadata = active.get_metadata()
+
+            logger.info(f"🔄 Pipeline changed to: {metadata.name}")
+
+            # Show confirmation message to user
+            from widgets.message import show_message
+            show_message(
+                msg=f"Processing pipeline changed to:\n{metadata.name}\n\nNew pipeline will be used for all subsequent spectra.",
+                msg_type="Information",
+                auto_close_time=3
+            )
+        except Exception as e:
+            logger.exception(f"Error handling pipeline change: {e}")
 
     def connection_thread(self: Self) -> None:
         """Attempt to connect to different controlers."""
@@ -825,9 +849,12 @@ class AffiniteApp(QMainWindow):
         time_diff = start_perf - self.exp_start_perf
         self.exp_start = start_time
         self.exp_start_perf = start_perf
+        
+        # Update ChannelManager timestamps
         for ch in CH_LIST:
-            self.lambda_times[ch] -= time_diff
-            self.buffered_times[ch] -= time_diff
+            self.channel_mgr.lambda_times[ch] -= time_diff
+            self.channel_mgr.buffered_times[ch] -= time_diff
+        
         self.main_window.sensorgram.reload_segments(time_diff)
 
     def startup(self: Self) -> None:
@@ -1137,6 +1164,10 @@ class AffiniteApp(QMainWindow):
                         ref_scans = int(REF_SCANS / 2)
                     for _scan in range(ref_scans):
                         int_val = self.usb.read_intensity()
+                        if int_val is None:
+                            logger.error("USB disconnected during reference acquisition")
+                            self._on_spec_error()
+                            return
                         ref_data_single = (
                             int_val[self.wave_min_index : self.wave_max_index]
                             - self.dark_noise
@@ -1281,6 +1312,23 @@ class AffiniteApp(QMainWindow):
         else:
             logger.debug("manually passing calibration - allowing live data anyway")
             self.calibrated = True
+            
+        # Initialize SpectrumProcessor now that fourier_weights are available
+        if self.spectrum_processor is None and self.fourier_weights is not None:
+            self.spectrum_processor = SpectrumProcessor(
+                fourier_weights=self.fourier_weights,
+                fourier_window_size=165,
+            )
+            logger.info("SpectrumProcessor initialized with Fourier fallback")
+            
+        # Initialize TemporalFilter for time-series smoothing
+        if self.temporal_filter is None:
+            self.temporal_filter = TemporalFilter(
+                method='median',
+                window_size=self.med_filt_win,
+            )
+            logger.debug(f"TemporalFilter initialized (method=median, window={self.med_filt_win})")
+            
         self.main_window.spectroscopy.enable_controls(True)  # noqa: FBT003
         self.main_window.sidebar.device_widget.allow_commands(True)  # noqa: FBT003
         # ✨ MODIFIED: Allow live data even if calibration fails (removed "and state" condition)
@@ -1401,151 +1449,299 @@ class AffiniteApp(QMainWindow):
             logger.exception(f"error during manual export {e}")
 
     def _grab_data(self: Self) -> None:
-        # transmission segment of interest
-        # transmission segment wavelengths
-
+        """Main data acquisition loop - orchestrates spectrum acquisition and processing.
+        
+        This method has been refactored to pure orchestration:
+        1. Check if acquisition should run
+        2. Initialize on first run
+        3. For each channel: acquire → process → buffer
+        4. Update UI
+        5. Handle errors gracefully
+        
+        All complex logic has been extracted to:
+        - SpectrumProcessor (spectrum processing)
+        - ChannelManager (buffer management)
+        - AcquisitionService (spectrum acquisition)
+        """
         first_run = True
 
         while not self._b_kill.is_set():
-            ch = CH_LIST[0]
+            ch = CH_LIST[0]  # For error reporting
             try:
-                if self._b_stop.is_set() or self.device_config["ctrl"] not in DEVICES:
+                # Check if we should pause acquisition
+                if self._should_pause_acquisition():
                     time.sleep(0.2)
                     continue
 
+                # Initialize on first run
                 if first_run:
-                    self.exp_start = time.time()
-                    self.exp_start_perf = time.perf_counter()
+                    self._initialize_acquisition()
                     first_run = False
 
-                if not (
-                    len(self.buffered_times["a"])
-                    == len(self.buffered_times["b"])
-                    == len(self.buffered_times["c"])
-                    == len(self.buffered_times["d"])
-                ):
-                    self.pad_values()
+                # Ensure all channels are synchronized
+                self._ensure_channel_synchronization()
 
-                ch_list = CH_LIST
-                if self.single_mode:
-                    ch_list = [self.single_ch]
-                elif self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]:
-                    ch_list = EZ_CH_LIST
+                # Process all channels
+                active_channels = self.channel_mgr.get_active_channels()
                 for ch in CH_LIST:
-                    fit_lambda = np.nan
                     if self._b_stop.is_set():
                         break
-                    if (
-                        ch in ch_list
-                        and not self._b_no_read.is_set()
-                        and self.calibrated
-                        and self.ctrl is not None
-                    ):
-                        # Use AcquisitionService to acquire spectra and compute transmission
-                        if getattr(self, "acq_service", None) is None:
-                            logger.error("AcquisitionService not initialized")
-                            int_data_ch, trans_data_ch = None, None
-                        else:
-                            int_data_ch, trans_data_ch = self.acq_service.acquire_channel(
-                                ch=ch,
-                                wave_min_index=self.wave_min_index,
-                                wave_max_index=self.wave_max_index,
-                                num_scans=self.num_scans,
-                                led_delay=self.led_delay,
-                                post_delay=self.post_delay,
-                                dark_noise=self.dark_noise,
-                                ref_sig=self.ref_sig,
-                                wave_data=self.wave_data,
-                            )
+                    
+                    # Acquire and process channel data
+                    wavelength = self._process_channel(ch, active_channels)
+                    
+                    # Buffer the data point
+                    self._buffer_channel_data(ch, wavelength, active_channels)
 
-                        if int_data_ch is not None:
-                            self.int_data[ch] = int_data_ch
-                        if trans_data_ch is not None:
-                            self.trans_data[ch] = trans_data_ch
+                # Increment buffer index after all channels processed
+                self.channel_mgr.increment_buffer_index()
 
-                        if not (self._b_stop.is_set() or self.trans_data[ch] is None):
-                            fit_lambda = find_resonance_wavelength_fourier(
-                                transmission_spectrum=self.trans_data[ch],
-                                wavelengths=self.wave_data,
-                                fourier_weights=self.fourier_weights,
-                                window_size=165,
-                            )
-                    else:
-                        fit_lambda = np.nan
-                        time.sleep(0.01)  # Reduced from 0.1s to 0.01s
-
-                    # update lambda values
-                    self.lambda_values[ch] = np.append(
-                        self.lambda_values[ch],
-                        fit_lambda,
-                    )
-                    self.lambda_times[ch] = np.append(
-                        self.lambda_times[ch],
-                        round(time.perf_counter() - self.exp_start_perf, 3),
-                    )
-
-                    if ch in ch_list:
-                        if len(self.lambda_values[ch]) > self.filt_buffer_index:
-                            filtered_value = apply_centered_median_filter(
-                                values=self.lambda_values[ch],
-                                current_index=self.filt_buffer_index,
-                                window_size=self.med_filt_win,
-                            )
-                        else:
-                            filtered_value = fit_lambda
-
-                        self.filtered_lambda[ch] = np.append(
-                            self.filtered_lambda[ch],
-                            filtered_value,
-                        )
-                        self.buffered_lambda[ch] = np.append(
-                            self.buffered_lambda[ch],
-                            self.lambda_values[ch][self.filt_buffer_index],
-                        )
-
-                    else:
-                        self.filtered_lambda[ch] = np.append(
-                            self.filtered_lambda[ch],
-                            np.nan,
-                        )
-                        self.buffered_lambda[ch] = np.append(
-                            self.buffered_lambda[ch],
-                            np.nan,
-                        )
-
-                    self.buffered_times[ch] = np.append(
-                        self.buffered_times[ch],
-                        self.lambda_times[ch][self.filt_buffer_index],
-                    )
-
-                    if ch == CH_LIST[-1]:
-                        self.filt_buffer_index += 1
-
+                # Update UI with latest data
                 if not self._b_stop.is_set():
-                    self.update_live_signal.emit(self.sensorgram_data())
-                    self.update_spec_signal.emit(self.spectroscopy_data())
+                    self._update_ui_displays()
 
-                if self.device_config["ctrl"] == "PicoP4SPR" and isinstance(
-                    self.ctrl,
-                    PicoP4SPR,
-                ):
-                    self.temp_sig.emit(self.ctrl.get_temp())
+                # Update temperature if P4SPR device
+                self._update_temperature_display()
 
             except Exception as e:
-                logger.exception(
-                    f"Error while grabbing data:{type(e)}:{e}:channel {ch}",
+                self._handle_acquisition_error(e, ch)
+
+    def _should_pause_acquisition(self: Self) -> bool:
+        """Check if acquisition should be paused.
+        
+        Returns:
+            True if acquisition should pause, False otherwise
+        """
+        return (
+            self._b_stop.is_set() 
+            or self.device_config["ctrl"] not in DEVICES
+        )
+
+    def _initialize_acquisition(self: Self) -> None:
+        """Initialize acquisition on first run."""
+        self.exp_start = time.time()
+        self.exp_start_perf = time.perf_counter()
+        
+        # Initialize ChannelManager with experiment start time
+        self.channel_mgr.reset_experiment_time()
+        
+        # Configure channel manager with current device settings
+        self.channel_mgr.configure(
+            device_type=self.device_config["ctrl"],
+            single_mode=self.single_mode,
+            single_channel=self.single_ch,
+        )
+        
+        logger.info(
+            f"Acquisition initialized: device={self.device_config['ctrl']}, "
+            f"single_mode={self.single_mode}"
+        )
+
+    def _ensure_channel_synchronization(self: Self) -> None:
+        """Ensure all channel buffers are synchronized."""
+        if not self.channel_mgr.check_synchronization():
+            self.channel_mgr.pad_missing_values()
+
+    def _process_channel(
+        self: Self,
+        channel: str,
+        active_channels: list[str]
+    ) -> float:
+        """Acquire and process data for a single channel.
+        
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+            active_channels: List of currently active channels
+            
+        Returns:
+            Resonance wavelength (nm), or NaN if channel inactive/error
+        """
+        # Skip if channel is inactive or acquisition disabled
+        if not self._should_acquire_channel(channel, active_channels):
+            time.sleep(0.01)  # Brief sleep for inactive channels
+            return np.nan
+
+        # Acquire spectrum data
+        int_data, trans_data = self._acquire_spectrum(channel)
+        if trans_data is None:
+            return np.nan
+
+        # Store raw data
+        self.int_data[channel] = int_data
+        self.trans_data[channel] = trans_data
+
+        # Process transmission spectrum to find resonance wavelength
+        return self._find_resonance_wavelength(channel, trans_data)
+
+    def _should_acquire_channel(
+        self: Self,
+        channel: str,
+        active_channels: list[str]
+    ) -> bool:
+        """Check if channel should be acquired.
+        
+        Args:
+            channel: Channel to check
+            active_channels: List of active channels
+            
+        Returns:
+            True if channel should be acquired
+        """
+        return (
+            channel in active_channels
+            and not self._b_no_read.is_set()
+            and self.calibrated
+            and self.ctrl is not None
+        )
+
+    def _acquire_spectrum(self: Self, channel: str) -> tuple:
+        """Acquire spectrum for a channel.
+        
+        Args:
+            channel: Channel identifier
+            
+        Returns:
+            Tuple of (intensity_data, transmission_data)
+        """
+        if getattr(self, "acq_service", None) is None:
+            logger.error("AcquisitionService not initialized")
+            return None, None
+
+        return self.acq_service.acquire_channel(
+            ch=channel,
+            wave_min_index=self.wave_min_index,
+            wave_max_index=self.wave_max_index,
+            num_scans=self.num_scans,
+            led_delay=self.led_delay,
+            post_delay=self.post_delay,
+            dark_noise=self.dark_noise,
+            ref_sig=self.ref_sig,
+            wave_data=self.wave_data,
+        )
+
+    def _find_resonance_wavelength(
+        self: Self,
+        channel: str,
+        transmission: np.ndarray
+    ) -> float:
+        """Find resonance wavelength from transmission spectrum.
+        
+        Args:
+            channel: Channel identifier
+            transmission: Transmission spectrum
+            
+        Returns:
+            Resonance wavelength (nm), or NaN on error
+        """
+        if self._b_stop.is_set() or transmission is None:
+            return np.nan
+
+        # Use SpectrumProcessor for clean processing
+        if self.spectrum_processor is not None:
+            try:
+                result = self.spectrum_processor.process_transmission(
+                    transmission=transmission,
+                    wavelengths=self.wave_data,
+                    channel=channel,
                 )
-                self.pad_values()
-                self._b_stop.set()
-                self.main_window.ui.status.setText("Error while reading SPR data")
-                if e is IndexError:
-                    show_message(
-                        msg_type="Warning",
-                        msg="Data Error: the program has encountered an error, "
-                        "stopped data acquisition",
-                    )
-                else:
-                    self.raise_error.emit("ctrl")
+                return result.resonance_wavelength
+            except Exception as e:
+                logger.error(f"Spectrum processor error for channel {channel}: {e}")
+                return np.nan
+        else:
+            # Fallback if processor not initialized
+            logger.warning("SpectrumProcessor not initialized, using legacy Fourier method")
+            return find_resonance_wavelength_fourier(
+                transmission_spectrum=transmission,
+                wavelengths=self.wave_data,
+                fourier_weights=self.fourier_weights,
+                window_size=165,
+            )
+
+    def _buffer_channel_data(
+        self: Self,
+        channel: str,
+        wavelength: float,
+        active_channels: list[str]
+    ) -> None:
+        """Buffer channel data point with filtering.
+        
+        Args:
+            channel: Channel identifier
+            wavelength: Raw resonance wavelength (nm)
+            active_channels: List of currently active channels
+        """
+        current_time = self.channel_mgr.get_current_time()
+
+        # Apply temporal filtering for active channels
+        if channel in active_channels and self.temporal_filter is not None:
+            # Get current values from ChannelManager for filtering
+            channel_values = self.channel_mgr.lambda_values[channel]
+            buffer_index = self.channel_mgr.buffer_index
+            
+            # Apply filter
+            if len(channel_values) > buffer_index:
+                filtered_value = self.temporal_filter.apply(
+                    values=channel_values,
+                    current_index=buffer_index,
+                )
+            else:
+                filtered_value = wavelength
+        else:
+            # Inactive channel - no filtering
+            filtered_value = None
+
+        # Add to ChannelManager
+        self.channel_mgr.add_data_point(
+            channel=channel,
+            wavelength=wavelength,
+            timestamp=current_time,
+            filtered_value=filtered_value,
+        )
+
+
+
+    def _update_ui_displays(self: Self) -> None:
+        """Update UI with latest sensorgram and spectroscopy data."""
+        self.update_live_signal.emit(self.sensorgram_data())
+        self.update_spec_signal.emit(self.spectroscopy_data())
+
+    def _update_temperature_display(self: Self) -> None:
+        """Update temperature display if using P4SPR device."""
+        if (
+            self.device_config["ctrl"] == "PicoP4SPR"
+            and isinstance(self.ctrl, PicoP4SPR)
+        ):
+            self.temp_sig.emit(self.ctrl.get_temp())
+
+    def _handle_acquisition_error(self: Self, error: Exception, channel: str) -> None:
+        """Handle errors during data acquisition.
+        
+        Args:
+            error: Exception that occurred
+            channel: Channel being processed when error occurred
+        """
+        logger.exception(
+            f"Error while grabbing data: {type(error)}: {error}: channel {channel}"
+        )
+        
+        # Ensure buffers are synchronized after error
+        self.channel_mgr.pad_missing_values()
+        
+        # Stop acquisition
+        self._b_stop.set()
+        self.main_window.ui.status.setText("Error while reading SPR data")
+        
+        # Show appropriate error message
+        if isinstance(error, IndexError):
+            show_message(
+                msg_type="Warning",
+                msg="Data Error: the program has encountered an error, "
+                "stopped data acquisition",
+            )
+        else:
+            self.raise_error.emit("ctrl")
+
 
     @staticmethod
     def median_window(win_size: int) -> int:
@@ -1559,27 +1755,31 @@ class AffiniteApp(QMainWindow):
         try:
             new_filtered_lambda = {ch: np.array([]) for ch in CH_LIST}
             for ch in CH_LIST:
+                lambda_values = self.channel_mgr.lambda_values[ch]
+                lambda_times = self.channel_mgr.lambda_times[ch]
+                buffered_times = self.channel_mgr.buffered_times[ch]
+                
                 if (
-                    len(self.lambda_values[ch]) > 0
-                    and len(self.lambda_times[ch]) > 0
-                    and len(self.buffered_times[ch]) > 0
+                    len(lambda_values) > 0
+                    and len(lambda_times) > 0
+                    and len(buffered_times) > 0
                 ):
                     # FIX: Use MEDIAN filter with centered window, not mean with backward window
                     half_win = self.med_filt_win // 2
-                    for i in range(len(self.lambda_values[ch])):
+                    for i in range(len(lambda_values)):
                         start_idx = max(0, i - half_win)
-                        end_idx = min(len(self.lambda_values[ch]), i + half_win + 1)
+                        end_idx = min(len(lambda_values), i + half_win + 1)
                         filt_val = np.nanmedian(
-                            self.lambda_values[ch][start_idx:end_idx],
+                            lambda_values[start_idx:end_idx],
                         )
                         new_filtered_lambda[ch] = np.append(
                             new_filtered_lambda[ch],
                             filt_val,
                         )
                     offset = 0
-                    while self.lambda_times[ch][offset] != self.buffered_times[ch][0]:
+                    while lambda_times[offset] != buffered_times[0]:
                         offset += 1
-                    self.filtered_lambda[ch] = deepcopy(
+                    self.channel_mgr.filtered_lambda[ch] = deepcopy(
                         new_filtered_lambda[ch][offset:],
                     )
         except Exception as e:
@@ -1596,45 +1796,14 @@ class AffiniteApp(QMainWindow):
         self._b_stop.clear()
         self._s_stop.clear()
 
-    def pad_values(self: Self) -> None:
-        """Pad Values."""
-        try:
-            max_raw_len = 0
-            max_filt_len = 0
-            for ch in CH_LIST:
-                if len(self.lambda_times[ch]) > max_raw_len:
-                    max_raw_len = len(self.lambda_times[ch])
-                if len(self.buffered_times[ch]) > max_filt_len:
-                    max_filt_len = len(self.buffered_times[ch])
-            for ch in CH_LIST:
-                if len(self.lambda_times[ch]) < max_raw_len:
-                    self.lambda_values[ch] = np.append(self.lambda_values[ch], np.nan)
-                    self.lambda_times[ch] = np.append(
-                        self.lambda_times[ch],
-                        round(time.perf_counter() - self.exp_start_perf, 3),
-                    )
-                if len(self.buffered_times[ch]) < max_filt_len:
-                    self.filtered_lambda[ch] = np.append(
-                        self.filtered_lambda[ch],
-                        np.nan,
-                    )
-                    self.buffered_lambda[ch] = np.append(
-                        self.buffered_lambda[ch],
-                        np.nan,
-                    )
-                    self.buffered_times[ch] = np.append(self.buffered_times[ch], np.nan)
-            self.filt_buffer_index += 1
-        except Exception as e:
-            logger.exception(f"Error while padding missing values: {e}")
-
     def sensorgram_data(self: Self) -> object:
         """Return sensorgram data."""
         sens_data = {
-            "lambda_values": self.lambda_values,
-            "lambda_times": self.lambda_times,
-            "buffered_lambda_values": self.buffered_lambda,
-            "filtered_lambda_values": self.filtered_lambda,
-            "buffered_lambda_times": self.buffered_times,
+            "lambda_values": self.channel_mgr.lambda_values,
+            "lambda_times": self.channel_mgr.lambda_times,
+            "buffered_lambda_values": self.channel_mgr.buffered_lambda,
+            "filtered_lambda_values": self.channel_mgr.filtered_lambda,
+            "buffered_lambda_times": self.channel_mgr.buffered_times,
             "filt": self.filt_on,
             "start": self.exp_start,
             "start_perf": self.exp_start_perf,
@@ -1694,12 +1863,20 @@ class AffiniteApp(QMainWindow):
             # Measure S-mode (should be HIGH)
             self.ctrl.set_mode("s")
             time.sleep(0.5)
-            s_intensity = self.usb.read_intensity().max()
+            s_reading = self.usb.read_intensity()
+            if s_reading is None:
+                logger.error("USB disconnected during S-mode measurement")
+                return False, 0.0, s_pos, p_pos
+            s_intensity = s_reading.max()
 
             # Measure P-mode (should be LOWER)
             self.ctrl.set_mode("p")
             time.sleep(0.5)
-            p_intensity = self.usb.read_intensity().max()
+            p_reading = self.usb.read_intensity()
+            if p_reading is None:
+                logger.error("USB disconnected during P-mode measurement")
+                return False, 0.0, s_pos, p_pos
+            p_intensity = p_reading.max()
 
             # Calculate ratio
             if p_intensity == 0:
@@ -2934,7 +3111,11 @@ class AffiniteApp(QMainWindow):
                         new_p = max(0, min(180, new_p))
                         if old_s != new_s or old_p != new_p:
                             logger.info(f"Updating servo positions: S {old_s}→{new_s}, P {old_p}→{new_p}")
+                            
+                            # Set the servo positions
                             self.ctrl.servo_set(s=new_s, p=new_p)
+                            time.sleep(0.3)  # Allow servos to settle before verification
+                            
                             # Verify and correct inversion if detected (non-QSPR path)
                             try:
                                 from utils.servo_calibration import verify_and_correct_positions
@@ -2945,21 +3126,29 @@ class AffiniteApp(QMainWindow):
                                         logger.info(f"   Applied inversion correction → S={vs}, P={vp}")
                                         self.ctrl.servo_set(s=vs, p=vp)
                                         new_s, new_p = vs, vp
+                                        time.sleep(0.3)  # Allow servos to settle after correction
                             except Exception as _verr:
                                 logger.debug(f"Advanced S/P verify skipped: {_verr}")
 
                             # Flash EEPROM to persist servo positions
                             logger.info(f"💾 Flashing EEPROM to save S={new_s}, P={new_p}...")
+                            logger.info(f"   This will make the positions persist across power cycles")
                             try:
                                 flash_result = self.ctrl.flash()
                                 if flash_result:
                                     logger.info(f"✅ EEPROM flash successful - S/P persisted: {new_s}/{new_p}")
+                                    logger.info(f"   The device will now remember these positions even after power off/on")
                                 else:
                                     logger.error(f"❌ EEPROM flash FAILED - S/P may not persist across power cycles!")
+                                    logger.error(f"   The device will revert to old values (likely 30/120) when powered off")
+                                    logger.error(f"   Check serial connection and device firmware")
                             except Exception as flash_err:
                                 logger.error(f"❌ EEPROM flash error: {flash_err}")
-                            time.sleep(0.2)  # Wait for flash to complete
+                                logger.error(f"   Servo positions set temporarily but NOT saved to EEPROM")
+                            time.sleep(0.3)  # Wait for flash to complete
                             self.get_device_parameters()  # Refresh UI after saving
+                        else:
+                            logger.debug(f"Servo positions unchanged: S={new_s}, P={new_p}")
 
                     # Update pump corrections if needed
                     if isinstance(self.knx, PicoEZSPR):
@@ -3190,24 +3379,14 @@ class AffiniteApp(QMainWindow):
         """Clear data."""
         self.pause()
         time.sleep(0.5)
-        self.lambda_values = {
-            ch: np.array([]) for ch in CH_LIST
-        }  # sensorgram data for each channel
-        self.lambda_times = {
-            ch: np.array([]) for ch in CH_LIST
-        }  # sensorgram data timestamps
-        self.filtered_lambda = {
-            ch: np.array([]) for ch in CH_LIST
-        }  # sensorgram data with median filtering
-        self.buffered_lambda = {
-            ch: np.array([]) for ch in CH_LIST
-        }  # sensorgram data unfiltered buffered values
-        self.buffered_times = {
-            ch: np.array([]) for ch in CH_LIST
-        }  # sensorgram data filtered buffered times
+        
+        # Clear ChannelManager
+        self.channel_mgr.clear_data()
+        
+        # Clear other state variables
         self.ignore_warnings = {ch: False for ch in CH_LIST}
         self.no_sig_count = {ch: 0 for ch in CH_LIST}
-        self.filt_buffer_index = 0
+        
         self.set_start()
         self.clear_kin_log()
         if self.recording:
@@ -3215,12 +3394,28 @@ class AffiniteApp(QMainWindow):
         self.resume()
 
     def connect_dev(self: Self) -> None:
-        """Connect a device."""
+        """Connect a device - follows same path as autoconnect at startup."""
         if self.ctrl is None or self.knx is None or self.pump is None:
             self.main_window.ui.status.setText("Scanning for devices...")
-            self.connection_thread()
-            # Update device config even if no devices found to show "No Connection"
-            self.get_current_device_config()
+
+            # Use threaded connection like autoconnect does at startup
+            # This ensures the same connection path is followed
+            if self._con_tr.is_alive():
+                logger.warning("Connection thread already running, waiting for it to complete")
+                self._con_tr.join(timeout=5.0)
+
+            # Create and start connection thread (same as startup)
+            self._con_tr = threading.Thread(target=self.connection_thread)
+            self._con_tr.start()
+
+            # Wait for connection to complete
+            self._con_tr.join(timeout=10.0)
+
+            # Open/initialize the devices (same as startup via connected signal)
+            # But call directly since we're already in main thread
+            self.open_device()
+
+            logger.info("Manual device connection completed")
         else:
             logger.debug("Already connected!")
 

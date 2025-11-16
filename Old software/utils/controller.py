@@ -146,11 +146,30 @@ class ArduinoController(ControllerBase):
 
     def flash(self):
         """Flash EEPROM to persist settings. Returns True if successful."""
+        import time
         flash_cmd = 'f'
         try:
             if self._ser is not None or self.open():
+                # Flush any pending data in input buffer
+                try:
+                    self._ser.reset_input_buffer()
+                except Exception:
+                    pass
+                
+                # Send flash command
                 self._ser.write(flash_cmd.encode())
+                
+                # Wait for EEPROM write to complete
+                time.sleep(0.15)
+                
+                # Try to read response
                 response = self._ser.readline().strip()
+                
+                # If empty, try reading again
+                if not response:
+                    time.sleep(0.1)
+                    response = self._ser.readline().strip()
+                
                 success = (response == flash_cmd.encode())
                 if success:
                     logger.debug("EEPROM flash confirmed by controller")
@@ -749,12 +768,32 @@ class PicoP4SPR(ControllerBase):
 
     def flash(self):
         """Flash EEPROM to persist settings. Returns True if successful."""
+        import time
         try:
             flash_cmd = 'sf\n'
             if self._ser is not None or self.open():
                 with self._lock:
+                    # Flush any pending data in input buffer
+                    try:
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
+                    
+                    # Send flash command
                     self._ser.write(flash_cmd.encode())
+                    
+                    # Wait longer for EEPROM write to complete
+                    # EEPROM writes can take 5-10ms on AVR/RP2040
+                    time.sleep(0.15)
+                    
+                    # Try to read response with timeout
                     response = self._ser.readline().strip()
+                    
+                    # If empty, try reading again (response might be delayed)
+                    if not response:
+                        time.sleep(0.1)
+                        response = self._ser.readline().strip()
+                    
                     success = (response == b'1')
                     if success:
                         logger.debug("PicoP4SPR EEPROM flash confirmed")
