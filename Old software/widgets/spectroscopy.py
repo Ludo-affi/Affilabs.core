@@ -79,7 +79,7 @@ class Spectroscopy(QWidget):
 
     def _fix_checkbox_styles(self):
         """Fix checkbox styling to use global theme.
-        
+
         Clears inline styles that override the global theme.
         """
         import re

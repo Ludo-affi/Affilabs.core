@@ -434,6 +434,7 @@ class PicoP4SPR(ControllerBase):
         super().__init__(name='pico_p4spr')
         self._ser = None
         self.version = ''
+        self._lock = threading.Lock()
 
     def open(self):
         # Close existing connection if any
@@ -447,7 +448,7 @@ class PicoP4SPR(ControllerBase):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=1)
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=5)
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
@@ -484,8 +485,9 @@ class PicoP4SPR(ControllerBase):
                 raise ValueError("Invalid Channel!")
             cmd = f"l{ch}\n"
             if self._ser is not None or self.open():
-                self._ser.write(cmd.encode())
-                return self._ser.read() == b'1'
+                with self._lock:
+                    self._ser.write(cmd.encode())
+                    return self._ser.read() == b'1'
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False
@@ -494,9 +496,11 @@ class PicoP4SPR(ControllerBase):
         temp = 0
         try:
             if self._ser is not None or self.open():
-                cmd = f"it\n"
-                self._ser.write(cmd.encode())
-                temp = self._ser.readline().decode()
+                with self._lock:
+                    cmd = f"it\n"
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    temp = self._ser.readline().decode()
                 if len(temp) > 5:
                     temp = temp[0:5]
                 temp = float(temp)
@@ -508,9 +512,10 @@ class PicoP4SPR(ControllerBase):
     def turn_off_channels(self):
         try:
             if self._ser is not None or self.open():
-                cmd = f"lx\n"
-                self._ser.write(cmd.encode())
-                return self._ser.read() == b'1'
+                with self._lock:
+                    cmd = f"lx\n"
+                    self._ser.write(cmd.encode())
+                    return self._ser.read() == b'1'
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False
@@ -528,17 +533,38 @@ class PicoP4SPR(ControllerBase):
                 raw_val = 0
 
             cmd = f"b{ch}{int(raw_val):03d}\n"
-            if self._ser is not None or self.open():
-                self._ser.write(cmd.encode())
-                time.sleep(0.05)  # Delay for device to process (50ms)
-                reply = self._ser.read() == b'1'
-                self.turn_on_channel(ch=ch)
-                return reply
-            else:
-                logger.error(f"pico failed to turn LED {ch} ON")
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    if self._ser is None and not self.open():
+                        logger.error(f"pico failed to open port for LED {ch}")
+                        return False
+
+                    # Clear any pending I/O to reduce contention
+                    try:
+                        self._ser.reset_output_buffer()
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
+
+                    with self._lock:
+                        self._ser.write(cmd.encode())
+                        time.sleep(0.05)  # device processing
+                        ok = self._ser.read() == b'1'
+                    # Ensure LED channel is on (no-op if already on)
+                    self.turn_on_channel(ch=ch)
+                    return ok
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.debug(f"LED write timeout (ch {ch}, attempt {attempt+1}/{max_retries}): {e}")
+                        time.sleep(0.05)
+                        continue
+                    logger.error(f"error while setting led intensity {e}")
+                    return False
+            return False
         except Exception as e:
             logger.error(f"error while setting led intensity {e}")
-        return False
+            return False
 
     def set_batch_intensities(self, a=0, b=0, c=0, d=0):
         """Set all LED intensities in a single batch command.
@@ -595,12 +621,13 @@ class PicoP4SPR(ControllerBase):
     def set_mode(self, mode='s'):
         try:
             if self._ser is not None or self.open():
-                if mode == 's':
-                    cmd = f"ss\n"
-                else:
-                    cmd = f"sp\n"
-                self._ser.write(cmd.encode())
-                return self._ser.read() == b'1'
+                with self._lock:
+                    if mode == 's':
+                        cmd = f"ss\n"
+                    else:
+                        cmd = f"sp\n"
+                    self._ser.write(cmd.encode())
+                    return self._ser.read() == b'1'
         except Exception as e:
             logger.debug(f"error moving polarizer {e}")
             return False
@@ -608,65 +635,78 @@ class PicoP4SPR(ControllerBase):
     def servo_get(self):
         cmd = f"sr\n"
         curr_pos = {'s': b'0000', 'p': b'0000'}
-        try:
-            # Ensure connection is open
-            if self._ser is None:
-                if not self.open():
-                    logger.error("serial communication failed - servo get - cannot open port")
-                    return curr_pos
+        max_retries = 3
 
-            # Flush buffers before command
-            self._ser.reset_input_buffer()
-
-            # Send command and wait for response
-            self._ser.write(cmd.encode())
-            import time
-            time.sleep(0.1)  # Increased wait time for Pico to respond
-
-            # Read first response (might be acknowledgment)
-            servo_reading = self._ser.readline()
-            logger.debug(f"servo reading pico {servo_reading}")
-
-            # If response is just "1\r\n", read again for actual positions
-            if servo_reading.strip() == b'1':
-                time.sleep(0.05)
-                servo_reading = self._ser.readline()
-                logger.debug(f"servo reading pico (second read) {servo_reading}")
-
-            # Parse comma-separated format: "s,p\r\n"
+        for attempt in range(max_retries):
             try:
-                response_str = servo_reading.decode('utf-8').strip()
-                if not response_str:
-                    logger.warning(f"Empty servo response - servo may not be initialized")
-                    return curr_pos
-                    
-                if ',' in response_str:
-                    parts = response_str.split(',')
-                    if len(parts) == 2:
-                        # Validate that parts contain numeric values
+                # Ensure connection is open
+                if self._ser is None:
+                    if not self.open():
+                        logger.error("serial communication failed - servo get - cannot open port")
+                        return curr_pos
+
+                with self._lock:
+                    # Flush buffers before command
+                    try:
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
+
+                    # Send command and wait for response
+                    self._ser.write(cmd.encode())
+                    import time
+                    time.sleep(0.15)  # allow device to prepare reply
+
+                    # Read up to a few lines to skip temperature or ack noise
+                    for _ in range(3):
+                        servo_reading = self._ser.readline()
+                        logger.debug(f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})")
+                        if not servo_reading:
+                            break
+                        s = servo_reading.decode('utf-8', errors='ignore').strip()
+                        if s == '1' or s == '':
+                            # ack or empty, continue
+                            continue
+                        # If it's a float like temperature, ignore
                         try:
-                            s_val = int(parts[0])
-                            p_val = int(parts[1])
-                            curr_pos['s'] = parts[0].encode()
-                            curr_pos['p'] = parts[1].encode()
-                            logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
-                        except ValueError as ve:
-                            logger.warning(f"Non-numeric servo values: {parts} - {ve}")
-                    else:
-                        logger.warning(f"Invalid servo response format (expected 2 parts): {servo_reading}")
-                else:
-                    logger.warning(f"Invalid servo response (no comma): {servo_reading}")
-            except Exception as parse_error:
-                logger.warning(f"Error parsing servo response {servo_reading}: {parse_error}")
-        except Exception as e:
-            logger.debug(f"error getting servo pos {e}")
-            # Try to reopen connection on error
-            if self._ser is not None:
-                try:
-                    self._ser.close()
-                except:
-                    pass
-                self._ser = None
+                            float(s)
+                            # looks like temperature line; skip
+                            continue
+                        except ValueError:
+                            pass
+                        # Expect comma-separated s,p
+                        if ',' in s:
+                            parts = s.split(',')
+                            if len(parts) == 2:
+                                try:
+                                    s_val = int(parts[0])
+                                    p_val = int(parts[1])
+                                    curr_pos['s'] = parts[0].encode()
+                                    curr_pos['p'] = parts[1].encode()
+                                    logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
+                                    return curr_pos
+                                except ValueError:
+                                    # Not integers; ignore and keep reading
+                                    continue
+                        # Not a valid line, try next
+                    # If we got here, no valid line in this attempt
+                if attempt < max_retries - 1:
+                    time.sleep(0.2)
+                    continue
+                return curr_pos
+            except Exception as e:
+                logger.debug(f"error getting servo pos on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    # Try to reopen connection on error
+                    if self._ser is not None:
+                        try:
+                            self._ser.close()
+                        except:
+                            pass
+                        self._ser = None
+                    time.sleep(0.2)
+                    continue
+
         return curr_pos
 
     def servo_set(self, s=10, p=100):
@@ -678,8 +718,9 @@ class PicoP4SPR(ControllerBase):
                 else:
                     cmd = f"sv{s:03d}{p:03d}\n"
                     if self._ser is not None or self.open():
-                        self._ser.write(cmd.encode())
-                        return self._ser.read() == b'1'
+                        with self._lock:
+                            self._ser.write(cmd.encode())
+                            return self._ser.read() == b'1'
                     else:
                         logger.error("unable to update servo positions")
                         return False
@@ -696,8 +737,9 @@ class PicoP4SPR(ControllerBase):
         try:
             flash_cmd = 'sf\n'
             if self._ser is not None or self.open():
-                self._ser.write(flash_cmd.encode())
-                return self._ser.read() == b'1'
+                with self._lock:
+                    self._ser.write(flash_cmd.encode())
+                    return self._ser.read() == b'1'
             else:
                 return False
         except Exception as e:
@@ -722,7 +764,7 @@ class PicoKNX2(ControllerBase):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=1)
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=3)
                     cmd = f"id\n"
                     self._ser.write(cmd.encode())
                     reply = self._ser.readline()[0:4].decode()
@@ -879,7 +921,7 @@ class PicoEZSPR(ControllerBase):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=5, write_timeout=1)
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=5, write_timeout=5)
                     cmd = f"id\n"
                     self._ser.write(cmd.encode())
                     reply = self._ser.readline()[0:5].decode()
@@ -981,19 +1023,35 @@ class PicoEZSPR(ControllerBase):
                     raw_val = 0
 
                 cmd = f"b{ch}{int(raw_val):03d}\n"
-                if self._ser is not None or self.open():
-                    self._ser.write(cmd.encode())
-                    time.sleep(0.05)  # Delay for device to process (50ms)
-                    reply = self._ser.read() == b"1"
-                    self.turn_on_channel(ch=ch)
-                    return reply
-                else:
-                    logger.error(f"pico failed to turn LED {ch} ON")
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        if self._ser is None and not self.open():
+                            logger.error(f"pico failed to open port for LED {ch}")
+                            return False
+                        try:
+                            self._ser.reset_output_buffer()
+                            self._ser.reset_input_buffer()
+                        except Exception:
+                            pass
+                        self._ser.write(cmd.encode())
+                        time.sleep(0.05)
+                        reply = self._ser.read() == b"1"
+                        self.turn_on_channel(ch=ch)
+                        return reply
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.debug(f"LED write timeout (EZSPR ch {ch}, attempt {attempt+1}/{max_retries}): {e}")
+                            time.sleep(0.05)
+                            continue
+                        logger.error(f"error while setting led intensity {e}")
+                        return False
+                return False
             elif ch not in {'a', 'b', 'c', 'd'}:
                 raise ValueError(f"Invalid Channel - {ch}")
         except Exception as e:
             logger.error(f"error while setting led intensity {e}")
-        return False
+            return False
 
     def set_batch_intensities(self, a=0, b=0, c=0, d=0):
         """Set all LED intensities in a single batch command.
@@ -1063,51 +1121,77 @@ class PicoEZSPR(ControllerBase):
     def servo_get(self):
         cmd = f"sr\n"
         curr_pos = {'s': b'0000', 'p': b'0000'}
-        try:
-            if self._ser is not None or self.open():
-                import time
-                self._ser.reset_input_buffer()
-                self._ser.write(cmd.encode())
-                time.sleep(0.1)  # Wait for Pico to respond
-                
-                servo_reading = self._ser.readline()
-                logger.debug(f"servo reading pico {servo_reading}")
-                
-                # If response is just "1\r\n", read again for actual positions
-                if servo_reading.strip() == b'1':
-                    time.sleep(0.05)
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            try:
+                if self._ser is not None or self.open():
+                    import time
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.15)  # Increased wait time for Pico to respond
+
                     servo_reading = self._ser.readline()
-                    logger.debug(f"servo reading pico (second read) {servo_reading}")
-                
-                # Parse comma-separated format: "s,p\r\n"
-                try:
-                    response_str = servo_reading.decode('utf-8').strip()
-                    if not response_str:
-                        logger.warning(f"Empty servo response - servo may not be initialized")
-                        return curr_pos
-                        
-                    if ',' in response_str:
-                        parts = response_str.split(',')
-                        if len(parts) == 2:
-                            # Validate that parts contain numeric values
-                            try:
-                                s_val = int(parts[0])
-                                p_val = int(parts[1])
-                                curr_pos['s'] = parts[0].encode()
-                                curr_pos['p'] = parts[1].encode()
-                                logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
-                            except ValueError as ve:
-                                logger.warning(f"Non-numeric servo values: {parts} - {ve}")
+                    logger.debug(f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})")
+
+                    # If response is just "1\r\n", read again for actual positions
+                    if servo_reading.strip() == b'1':
+                        time.sleep(0.05)
+                        servo_reading = self._ser.readline()
+                        logger.debug(f"servo reading pico (second read) {servo_reading}")
+
+                    # Parse comma-separated format: "s,p\r\n"
+                    try:
+                        response_str = servo_reading.decode('utf-8').strip()
+                        if not response_str:
+                            logger.warning(f"Empty servo response on attempt {attempt + 1} - servo may not be initialized")
+                            if attempt < max_retries - 1:
+                                time.sleep(0.2)
+                                continue
+                            return curr_pos
+
+                        if ',' in response_str:
+                            parts = response_str.split(',')
+                            if len(parts) == 2:
+                                # Validate that parts contain numeric values
+                                try:
+                                    s_val = int(parts[0])
+                                    p_val = int(parts[1])
+                                    curr_pos['s'] = parts[0].encode()
+                                    curr_pos['p'] = parts[1].encode()
+                                    logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
+                                    return curr_pos  # Success - return immediately
+                                except ValueError as ve:
+                                    logger.warning(f"Non-numeric servo values: {parts} - {ve}")
+                                    if attempt < max_retries - 1:
+                                        time.sleep(0.2)
+                                        continue
+                            else:
+                                logger.warning(f"Invalid servo response format (expected 2 parts): {servo_reading}")
+                                if attempt < max_retries - 1:
+                                    time.sleep(0.2)
+                                    continue
                         else:
-                            logger.warning(f"Invalid servo response format (expected 2 parts): {servo_reading}")
-                    else:
-                        logger.warning(f"Invalid servo response (no comma): {servo_reading}")
-                except Exception as parse_error:
-                    logger.warning(f"Error parsing servo response {servo_reading}: {parse_error}")
-            else:
-                logger.error("serial communication failed - servo get")
-        except Exception as e:
-            logger.debug(f"error getting servo pos {e}")
+                            logger.warning(f"Invalid servo response (no comma): {servo_reading}")
+                            if attempt < max_retries - 1:
+                                time.sleep(0.2)
+                                continue
+                    except Exception as parse_error:
+                        logger.warning(f"Error parsing servo response {servo_reading}: {parse_error}")
+                        if attempt < max_retries - 1:
+                            time.sleep(0.2)
+                            continue
+                else:
+                    logger.error("serial communication failed - servo get")
+                    if attempt < max_retries - 1:
+                        time.sleep(0.2)
+                        continue
+            except Exception as e:
+                logger.debug(f"error getting servo pos on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.2)
+                    continue
+
         return curr_pos
 
     def servo_set(self, s=10, p=100):

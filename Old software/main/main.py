@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import csv
-import ctypes
 import datetime as dt
 import faulthandler
 import gc
@@ -35,14 +34,13 @@ except ImportError:
     PumpController = None
 from PySide6.QtAsyncio import QAsyncioEventLoopPolicy
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMainWindow
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
 from scipy.fft import dst, idct
-from scipy.signal import find_peaks, peak_prominences, peak_widths
 from scipy.stats import linregress
 
 from settings import (
     CH_LIST,
-    DARK_NOISE_SCANS,
+    # DARK_NOISE_SCANS,
     DEV,
     EZ_CH_LIST,
     FILTERING_ON,
@@ -50,21 +48,21 @@ from settings import (
     INTEGRATION_STEP,
     LED_DELAY,
     MAX_INTEGRATION,
-    MAX_NUM_SCANS,
-    MAX_READ_TIME,
+    # MAX_NUM_SCANS,
+    # MAX_READ_TIME,
     MAX_WAVELENGTH,
     MED_FILT_WIN,
     MIN_INTEGRATION,
     MIN_WAVELENGTH,
-    P_COUNT_THRESHOLD,
-    P_LED_MAX,
-    P_MAX_INCREASE,
+    # P_COUNT_THRESHOLD,
+    # P_LED_MAX,
+    # P_MAX_INCREASE,
     RECORDING_INTERVAL,
     REF_SCANS,
     ROOT_DIR,
-    S_COUNT_MAX,
-    S_LED_INT,
-    S_LED_MIN,
+    # S_COUNT_MAX,
+    # S_LED_INT,
+    # S_LED_MIN,
     SENSOR_AVG,
     SENSOR_POLL_INTERVAL,
     SW_VERSION,
@@ -84,7 +82,7 @@ from utils.controller import (
     QSPRController,
 )
 from utils.logger import logger
-from utils.SpectrometerAPI import SENSOR_FRAME_T
+# from utils.SpectrometerAPI import SENSOR_FRAME_T
 from utils.usb4000_wrapper import USB4000
 from widgets.datawindow import Segment
 from widgets.mainwindow import MainWindow
@@ -139,7 +137,7 @@ class AffiniteApp(QMainWindow):
 
     ctrl: Controller | None = None
     knx: KNX | None = None
-    pump: PumpController | None = None
+    pump: object | None = None
     auto_polarize = False
     flow_rate: float = 0.5
 
@@ -178,6 +176,14 @@ class AffiniteApp(QMainWindow):
         self.buffered_lambda = {ch: np.array([]) for ch in CH_LIST}
         # sensorgram data time for filtered data
         self.buffered_times = {ch: np.array([]) for ch in CH_LIST}
+
+        # Initialize attributes set later to avoid type checker warnings
+        self.wave_data: np.ndarray | None = np.array([])
+        self.fourier_weights: np.ndarray | None = None
+        self.dark_noise: np.ndarray = np.array([])
+        self.ch_error_list: list[str] = []
+        self.ignore_warnings: dict[str, bool] = {ch: False for ch in CH_LIST}
+        self.no_sig_count: dict[str, int] = {ch: 0 for ch in CH_LIST}
 
         # start with no fixed filtered data
         self.filt_buffer_index = 0
@@ -448,28 +454,26 @@ class AffiniteApp(QMainWindow):
                         self.ctrl = pico_ezspr
                         self.knx = pico_ezspr
                     if self.ctrl == pico_ezspr and (
-                            pico_ezspr.version in pico_ezspr.UPDATABLE_VERSIONS
-                            and show_message(
-                                "Would you like to update the firmware on your device?",
-                                "Question",
-                                yes_no=True,
+                        pico_ezspr.version in pico_ezspr.UPDATABLE_VERSIONS
+                        and show_message(
+                            "Would you like to update the firmware on your device?",
+                            "Question",
+                            yes_no=True,
+                        )
+                    ):
+                        if getattr(sys, "frozen", False) and getattr(sys, "_MEIPASS", None):
+                            base_dir = getattr(sys, "_MEIPASS")  # noqa: SLF001 - runtime attribute set by PyInstaller
+                            firmware = Path(base_dir) / "affinite_ezspr.uf2"
+                        else:
+                            firmware = Path("affinite_ezspr.uf2")
+                        if firmware.exists() and pico_ezspr.update_firmware(firmware):
+                            pico_ezspr.set_pump_corrections(1, 1)
+                            show_message("The firmware was successfully updated!")
+                        else:
+                            show_message(
+                                "The firmware could not be updated.",
+                                "Warning",
                             )
-                        ):
-                            if getattr(sys, "frozen", False) and hasattr(
-                                sys,
-                                "_MEIPASS",
-                            ):
-                                firmware = Path(sys._MEIPASS) / "affinite_ezspr.uf2"  # noqa: SLF001
-                            else:
-                                firmware = Path("affinite_ezspr.uf2")
-                            if firmware.exists and pico_ezspr.update_firmware(firmware):
-                                pico_ezspr.set_pump_corrections(1, 1)
-                                show_message("The firmware was successfully updated!")
-                            else:
-                                show_message(
-                                    "The firmware could not be updated.",
-                                    "Warning",
-                                )
                     else:
                         self.raise_error.emit("spec")
 
@@ -610,10 +614,10 @@ class AffiniteApp(QMainWindow):
                 self.pump.send_command(0x41, b"V6,1R")  # ✨ MODIFIED: Changed from 83.333 to 6 mL/min
                 await asyncio.sleep(0.8)
                 self.pump.send_command(0x41, b"V6000R")
-            except FTDIError as e:
-                logger.exception(f"Error communicating with pumps: {e}")
             except ValueError as e:
                 logger.exception(f"Invalid contact time: {e}")
+            except FTDIError as e:
+                logger.exception(f"Error communicating with pumps: {e}")
 
     @Slot()
     def handle_flush_button(self: Self) -> None:
@@ -764,7 +768,7 @@ class AffiniteApp(QMainWindow):
             if self.usb is not None and self.spectrum_acq is None:
                 self.spectrum_acq = SpectrumAcquisition(self.usb)
                 logger.debug("Initialized spectrum acquisition helper")
-                
+
             if DEV:
                 for _ in range(10):
                     if not self.adv_connected:
@@ -780,7 +784,7 @@ class AffiniteApp(QMainWindow):
 
     def calibrate(self: Self) -> None:
         """Calibrate the sensors."""
-        self._b_no_read.set()
+        self.pause_live_read()
         time.sleep(1)
         while not self._c_kill.is_set():
             time.sleep(0.01)
@@ -899,7 +903,7 @@ class AffiniteApp(QMainWindow):
     def quick_calibration(self: Self) -> None:
         """Calibrate quickly."""
         if self._c_stop.is_set():
-            self._b_no_read.set()
+            self.pause_live_read()
             time.sleep(1)
             self.calibrated = False
             self.main_window.ui.adv_btn.setEnabled(False)
@@ -908,7 +912,7 @@ class AffiniteApp(QMainWindow):
     def full_recalibration(self: Self) -> None:
         """Recalibrate."""
         if self._c_stop.is_set():
-            self._b_no_read.set()
+            self.pause_live_read()
             time.sleep(1)
             self.calibrated = False
             self.main_window.ui.adv_btn.setEnabled(False)
@@ -920,7 +924,7 @@ class AffiniteApp(QMainWindow):
         try:
             if self.device_config["ctrl"] in DEVICES and self._c_stop.is_set():
                 logger.debug("starting new reference")
-                self._b_no_read.set()
+                self.pause_live_read()
                 time.sleep(1)
                 self.main_window.ui.status.setText("New reference ...")
                 self.main_window.spectroscopy.ui.controls.setEnabled(False)
@@ -942,7 +946,7 @@ class AffiniteApp(QMainWindow):
             self.main_window.ui.status.setText("Connected")
             self.main_window.spectroscopy.ui.controls.setEnabled(True)
             self.main_window.sidebar.device_widget.allow_commands(state=True)
-            self._b_no_read.clear()
+            self.resume_live_read()
             show_message(msg="New reference completed", auto_close_time=5)
         except Exception as e:
             logger.exception(f"Error ending new reference thread: {e}")
@@ -996,7 +1000,7 @@ class AffiniteApp(QMainWindow):
     def set_polarizer(self: Self, pos: str) -> None:
         """Move polariizer."""
         if self.ctrl is not None:
-            self._b_no_read.set()
+            self.pause_live_read()
             time.sleep(0.5)
             if "s" in pos or "S" in pos:
                 for ch in CH_LIST:
@@ -1011,7 +1015,52 @@ class AffiniteApp(QMainWindow):
             self.ctrl.set_mode(mode=set_pos)
             logger.debug(f"set polarizer: {set_pos}")
             time.sleep(0.1)
+            self.resume_live_read()
+
+    # === Live Data Helpers ===
+    def pause_live_read(self: Self) -> None:
+        """Pause the live acquisition loop safely."""
+        self._b_no_read.set()
+
+    def resume_live_read(self: Self) -> None:
+        """Resume the live acquisition loop safely."""
+        if self._b_no_read.is_set():
             self._b_no_read.clear()
+        if self._b_stop.is_set():
+            self._b_stop.clear()
+
+    # === Device Helpers ===
+    def _read_servo_positions_decoded(self: Self) -> tuple[int, int]:
+        """Read S/P servo positions from controller and decode to integers.
+
+        Returns (s_pos, p_pos). Returns (0, 0) on failure or default values.
+        """
+        s_pos = 0
+        p_pos = 0
+        try:
+            if self.ctrl is None:
+                return s_pos, p_pos
+            polarizer_pos = self.ctrl.servo_get()
+            s_bytes = polarizer_pos.get("s", b"0000")
+            p_bytes = polarizer_pos.get("p", b"0000")
+
+            def _decode(val) -> int:
+                if isinstance(val, bytes):
+                    s = val.decode("utf-8", errors="ignore").strip()
+                else:
+                    s = str(val).strip()
+                if not s or s == "0000":
+                    return 0
+                try:
+                    return int(s)
+                except Exception:
+                    return 0
+
+            s_pos = _decode(s_bytes)
+            p_pos = _decode(p_bytes)
+        except Exception as e:
+            logger.error(f"error reading s & p from device: {e}")
+        return s_pos, p_pos
 
     def _on_calibration_started(self: Self) -> None:
         self.main_window.ui.status.setText("Calibrating")
@@ -1104,7 +1153,7 @@ class AffiniteApp(QMainWindow):
     @Slot(dict, list, str)
     def send_to_analysis(
         self: Self,
-        data_dict: dict[str, np.ndarray[int, np.dtype[np.float64]]],
+        data_dict: dict[str, np.ndarray],
         seg_list: list[Segment],
         unit: str,
     ) -> None:
@@ -1241,6 +1290,39 @@ class AffiniteApp(QMainWindow):
 
                         if int_data_sum is not None:
                             self.int_data[ch] = int_data_sum - self.dark_noise
+                            # Device-specific normalization for FLMT09788 channel B around 640 nm
+                            try:
+                                serial_number = getattr(self.usb, "serial_number", None)
+                                if (
+                                    serial_number == "FLMT09788"
+                                    and ch == "b"
+                                    and self.wave_data is not None
+                                    and len(self.wave_data) > 0
+                                ):
+                                    target_counts = 35000.0
+                                    # Use a small ROI around 640 nm to compute mean
+                                    wl = self.wave_data
+                                    # Determine indices for 635–645 nm window
+                                    left_idx = int(np.searchsorted(wl, 635, side="left"))
+                                    right_idx = int(np.searchsorted(wl, 645, side="right"))
+                                    left_idx = max(0, left_idx)
+                                    right_idx = min(len(wl), max(left_idx + 1, right_idx))
+                                    roi = self.int_data[ch][left_idx:right_idx]
+                                    if roi.size > 0:
+                                        roi_mean = float(np.mean(roi))
+                                        if roi_mean > 0 and roi_mean < target_counts:
+                                            scale = min(2.0, target_counts / roi_mean)
+                                            if scale > 1.0:
+                                                self.int_data[ch] = np.clip(
+                                                    self.int_data[ch] * scale,
+                                                    0,
+                                                    65535.0,
+                                                )
+                                                logger.debug(
+                                                    f"FLMT09788 chB scaling applied @640nm: mean {roi_mean:.0f} → target {target_counts:.0f} (x{scale:.2f})"
+                                                )
+                            except Exception as _norm_err:
+                                logger.debug(f"B-channel 640nm normalization skipped: {_norm_err}")
                             if self.ref_sig[ch] is not None:
                                 # Get percentage transmission p intensity
                                 # over s reference
@@ -1481,27 +1563,14 @@ class AffiniteApp(QMainWindow):
         """
         try:
             logger.info("=== Quick Polarizer Validation ===")
-
-            # Read current positions from device
-            polarizer_pos = self.ctrl.servo_get()
-            s_bytes = polarizer_pos["s"]
-            p_bytes = polarizer_pos["p"]
-
-            # Decode positions
-            if isinstance(s_bytes, bytes):
-                s_pos = int(s_bytes.decode('utf-8').strip())
-            else:
-                s_pos = int(str(s_bytes).strip())
-            if isinstance(p_bytes, bytes):
-                p_pos = int(p_bytes.decode('utf-8').strip())
-            else:
-                p_pos = int(str(p_bytes).strip())
+            # Read current positions from device (decoded safely)
+            s_pos, p_pos = self._read_servo_positions_decoded()
 
             logger.info(f"   Current stored positions: S={s_pos}, P={p_pos}")
 
             # Check if positions are reasonable (not defaults like 0,0 or 255,255)
             if s_pos == 0 or p_pos == 0 or s_pos == p_pos:
-                logger.warning(f"   ⚠️ Invalid stored positions detected")
+                logger.warning("   ⚠️ Invalid stored positions detected")
                 return False, 0.0, s_pos, p_pos
 
             # Quick validation: measure S and P intensities
@@ -1520,7 +1589,7 @@ class AffiniteApp(QMainWindow):
 
             # Calculate ratio
             if p_intensity == 0:
-                logger.warning(f"   ⚠️ P-mode intensity is zero")
+                logger.warning("   ⚠️ P-mode intensity is zero")
                 return False, 0.0, s_pos, p_pos
 
             sp_ratio = s_intensity / p_intensity
@@ -1556,7 +1625,9 @@ class AffiniteApp(QMainWindow):
         from utils.servo_calibration import (
             perform_quadrant_search,
             analyze_peaks,
-            verify_and_correct_positions
+            verify_and_correct_positions,
+            perform_full_sweep_fallback,
+            perform_barrel_window_search,
         )
 
         # Try quick validation first unless forced to do full calibration
@@ -1564,16 +1635,16 @@ class AffiniteApp(QMainWindow):
             is_valid, sp_ratio, s_pos, p_pos = self.validate_existing_polarizer_positions()
 
             if is_valid:
-                logger.info(f"✅ POLARIZER VALIDATION SUCCESSFUL (fast mode)")
+                logger.info("✅ POLARIZER VALIDATION SUCCESSFUL (fast mode)")
                 logger.info(f"   Using stored positions: S={s_pos}, P={p_pos}")
                 logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
-                logger.info(f"   Skipping full calibration sweep")
+                logger.info("   Skipping full calibration sweep")
                 self.ctrl.servo_set(s_pos, p_pos)
                 return
             else:
-                logger.info(f"⚠️ Validation failed - proceeding with full calibration sweep")
+                logger.info("⚠️ Validation failed - proceeding with full calibration sweep")
         else:
-            logger.info(f"🔧 Full calibration requested - skipping validation")
+            logger.info("🔧 Full calibration requested - skipping validation")
 
         # Full calibration with retry logic
         max_retries = 2
@@ -1587,6 +1658,15 @@ class AffiniteApp(QMainWindow):
             led_intensity = 180  # Start at 70% to avoid immediate saturation
             logger.info(f"⚠️ No calibrated LED intensity - starting at {led_intensity}")
 
+        # Determine polarizer type by serial number (legacy path)
+        serial_number = None
+        try:
+            serial_number = getattr(self.usb, 'serial_number', None)
+        except Exception:
+            serial_number = None
+        # Known barrel units (can expand or move to config later)
+        BARREL_SERIALS = {"FLMT09788"}
+
         while retry_count < max_retries:
             try:
                 if self.device_config["ctrl"] in DEVICES and self.ctrl is not None:
@@ -1595,206 +1675,109 @@ class AffiniteApp(QMainWindow):
                     # Setup hardware - LED only (integration time already set by LED calibration)
                     self.ctrl.set_intensity(calibration_channel, led_intensity)
 
-                    # Try quadrant search first (faster - 13 measurements)
-                    try:
-                        logger.info("🔍 Attempting QUADRANT SEARCH (fast method)")
-                        positions, intensities, p_pos, s_pos = perform_quadrant_search(
-                            self.usb,
-                            self.ctrl
-                        )
+                    # Choose calibration strategy based on polarizer type
+                    is_barrel = bool(serial_number in BARREL_SERIALS)
+                    if is_barrel:
+                        try:
+                            logger.info("🔍 Using BARREL WINDOW SEARCH (serial-based)")
+                            ws = perform_barrel_window_search(self.usb, self.ctrl)
+                            if ws is not None:
+                                # Verify and correct (handles inversion + saturation)
+                                verification = verify_and_correct_positions(
+                                    self.usb,
+                                    self.ctrl,
+                                    ws["s_pos"],
+                                    ws["p_pos"],
+                                )
+                                if verification is None:
+                                    logger.warning("⚠️ SATURATION DETECTED during barrel verify - reducing LED intensity")
+                                    led_intensity = int(led_intensity * 0.8)
+                                    logger.info(f"   Reducing LED intensity to {led_intensity}")
+                                    retry_count += 1
+                                    continue
 
-                        # Analyze results with pre-determined positions
-                        results = analyze_peaks(positions, intensities, self.usb, self.ctrl, p_pos, s_pos)
+                                s_pos, p_pos, was_inverted = verification
+                                logger.info("✅ AUTO-POLARIZATION SUCCESSFUL (barrel window)")
+                                logger.info(f"   S position: {s_pos}°")
+                                logger.info(f"   P position: {p_pos}°")
+                                if was_inverted:
+                                    logger.info("   ⚠️  Inversion corrected")
 
-                        if results is not None:
-                            # Verify and correct for inversion + saturation check
-                            verification = verify_and_correct_positions(
+                                self.ctrl.servo_set(s_pos, p_pos)
+                                time.sleep(0.2)
+                                self.ctrl.flash()
+                                self.new_default_values = True
+                                self.get_device_parameters()
+                                return
+                            else:
+                                logger.warning("⚠️ Barrel window search returned no result - falling back to full sweep")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Barrel window search failed: {e} - falling back to full sweep")
+                    else:
+                        # Try quadrant search first (faster - 13 measurements)
+                        try:
+                            logger.info("🔍 Attempting QUADRANT SEARCH (fast method)")
+                            positions, intensities, p_pos, s_pos = perform_quadrant_search(
                                 self.usb,
-                                self.ctrl,
-                                results["s_pos"],
-                                results["p_pos"]
+                                self.ctrl
                             )
 
-                            if verification is None:
-                                logger.warning("⚠️ SATURATION DETECTED - Reducing LED intensity")
-                                # Reduce LED intensity by 20% and retry
-                                led_intensity = int(led_intensity * 0.8)
-                                logger.info(f"   Reducing LED intensity to {led_intensity}")
-                                retry_count += 1
-                                continue  # Retry with lower LED intensity
+                            # Analyze results with pre-determined positions
+                            results = analyze_peaks(positions, intensities, self.usb, self.ctrl, p_pos, s_pos)
 
-                            s_pos, p_pos, was_inverted = verification
-                            sp_ratio = results["sp_ratio"]
+                            if results is not None:
+                                # Verify and correct for inversion + saturation check
+                                verification = verify_and_correct_positions(
+                                    self.usb,
+                                    self.ctrl,
+                                    results["s_pos"],
+                                    results["p_pos"]
+                                )
 
-                            logger.info(f"✅ AUTO-POLARIZATION SUCCESSFUL (quadrant search)")
-                            logger.info(f"   S position: {s_pos}°")
-                            logger.info(f"   P position: {p_pos}°")
-                            logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
-                            logger.info(f"   Separation: {results['separation']:.0f}°")
-                            if was_inverted:
-                                logger.info(f"   ⚠️  Inversion corrected")
+                                if verification is None:
+                                    logger.warning("⚠️ SATURATION DETECTED - Reducing LED intensity")
+                                    # Reduce LED intensity by 20% and retry
+                                    led_intensity = int(led_intensity * 0.8)
+                                    logger.info(f"   Reducing LED intensity to {led_intensity}")
+                                    retry_count += 1
+                                    continue  # Retry with lower LED intensity
 
-                            self.ctrl.servo_set(s_pos, p_pos)
-                            time.sleep(0.2)  # Wait for servo to settle
-                            self.ctrl.flash()  # Save to EEPROM
-                            self.new_default_values = True
-                            self.get_device_parameters()  # Update UI with new S/P positions
-                            return  # Success - exit
-                        else:
-                            logger.warning("⚠️ Quadrant search validation failed - falling back to full sweep")
+                                s_pos, p_pos, was_inverted = verification
+                                sp_ratio = results["sp_ratio"]
 
-                    except Exception as e:
-                        logger.warning(f"⚠️ Quadrant search failed: {e} - falling back to full sweep")
+                                logger.info("✅ AUTO-POLARIZATION SUCCESSFUL (quadrant search)")
+                                logger.info(f"   S position: {s_pos}°")
+                                logger.info(f"   P position: {p_pos}°")
+                                logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
+                                logger.info(f"   Separation: {results['separation']:.0f}°")
+                                if was_inverted:
+                                    logger.info("   ⚠️  Inversion corrected")
 
-                    # Fallback to OLD FULL SWEEP method
-                    logger.info("🔄 Starting FULL SWEEP (exhaustive method - fallback)")
+                                self.ctrl.servo_set(s_pos, p_pos)
+                                time.sleep(0.2)  # Wait for servo to settle
+                                self.ctrl.flash()  # Save to EEPROM
+                                self.new_default_values = True
+                                self.get_device_parameters()  # Update UI with new S/P positions
+                                return  # Success - exit
+                            else:
+                                logger.warning("⚠️ Quadrant search validation failed - falling back to full sweep")
 
-                    # Note: Integration time already set by LED calibration
-                    min_angle = 10
-                    max_angle = 170
-                    half_range = (max_angle - min_angle) // 2
-                    angle_step = 5
-                    steps = half_range // angle_step
-                    max_intensities = np.zeros(2 * steps + 1)
+                        except Exception as e:
+                            logger.warning(f"⚠️ Quadrant search failed: {e} - falling back to full sweep")
 
-                    # Perform sweep
-                    logger.debug("Starting servo position sweep...")
-                    self.ctrl.servo_set(half_range + min_angle, max_angle)
-                    self.ctrl.set_mode("p")
-                    self.ctrl.set_mode("s")
-                    time.sleep(0.5)  # Extra settling time for first position
-                    max_intensities[steps] = self.usb.read_intensity().max()
-
-                    for i in range(steps):
-                        x = min_angle + angle_step * i
-                        self.ctrl.servo_set(s=x, p=x + half_range + angle_step)
-                        time.sleep(0.2)  # Allow servo to settle
-                        self.ctrl.set_mode("s")
-                        time.sleep(0.1)
-                        max_intensities[i] = self.usb.read_intensity().max()
-                        self.ctrl.set_mode("p")
-                        time.sleep(0.1)
-                        max_intensities[i + steps + 1] = self.usb.read_intensity().max()
-
-                    # ✅ VALIDATION 1: Check if peaks were found
-                    peaks = find_peaks(max_intensities)[0]
-                    if len(peaks) < 2:
-                        logger.warning(f"❌ VALIDATION FAILED: Only {len(peaks)} peaks found (need 2)")
-                        logger.warning(f"   Intensity range: {max_intensities.min():.0f} - {max_intensities.max():.0f} counts")
+                    # Fallback to full sweep in utils
+                    fs_results = perform_full_sweep_fallback(self.usb, self.ctrl)
+                    if fs_results is None:
                         retry_count += 1
                         continue
 
-                    prominences = peak_prominences(max_intensities, peaks)
-
-                    # ✅ VALIDATION 2: Check if we have at least 2 prominent peaks
-                    if len(prominences[0]) < 2:
-                        logger.warning(f"❌ VALIDATION FAILED: Less than 2 prominent peaks detected")
-                        retry_count += 1
-                        continue
-
-                    # Get indices of two most prominent peaks
-                    peak_indices = prominences[0].argsort()[-2:]
-
-                    # Calculate positions
-                    edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
-                    edges = np.array(edges)[:, peak_indices]
-                    pos1, pos2 = (min_angle + angle_step * edges.mean(0)).astype(int)
-
-                    # ✅ VALIDATION 3: Verify peaks are approximately half_range apart (80° ± 15°)
-                    separation = abs(pos2 - pos1)
-                    expected_separation = half_range
-                    tolerance = 15  # degrees
-
-                    if abs(separation - expected_separation) > tolerance:
-                        logger.warning(f"❌ VALIDATION FAILED: Peak separation incorrect")
-                        logger.warning(f"   Found: {separation}° apart")
-                        logger.warning(f"   Expected: {expected_separation}° ± {tolerance}°")
-                        logger.warning(f"   Positions: pos1={pos1}, pos2={pos2}")
-                        retry_count += 1
-                        continue
-
-                    logger.debug(f"✅ Peak separation valid: {separation}° (expected ~{expected_separation}°)")
-                    logger.debug(f"Candidate positions: pos1={pos1}, pos2={pos2}")
-
-                    # ✅ VALIDATION 4: Measure actual intensities to determine S vs P
-                    # Allow longer settling time for accurate measurement
-                    self.ctrl.servo_set(s=pos1, p=pos2)
-                    time.sleep(0.8)  # Increased from 0.5s for better settling
-
-                    self.ctrl.set_mode("s")
-                    time.sleep(0.5)  # Increased from 0.3s
-                    spectrum_pos1 = self.usb.read_intensity()
-                    intensity_pos1 = spectrum_pos1.max()
-
-                    self.ctrl.set_mode("p")
-                    time.sleep(0.5)  # Increased from 0.3s
-                    spectrum_pos2 = self.usb.read_intensity()
-                    intensity_pos2 = spectrum_pos2.max()
-
-                    # ✅ SATURATION CHECK: Verify no wavelength exceeds detector limits
-                    MAX_DETECTOR_COUNTS = 62000
-                    SATURATION_THRESHOLD = 0.95
-                    saturation_limit = int(MAX_DETECTOR_COUNTS * SATURATION_THRESHOLD)
-
-                    if intensity_pos1 >= saturation_limit:
-                        logger.error(f"❌ SATURATION DETECTED at position {pos1}")
-                        logger.error(f"   Peak intensity: {intensity_pos1:.0f} counts (limit: {saturation_limit})")
-                        logger.error(f"   LED intensity is too high - reduce LED power before continuing")
-                        return  # Exit - cannot continue with saturated signal
-
-                    if intensity_pos2 >= saturation_limit:
-                        logger.error(f"❌ SATURATION DETECTED at position {pos2}")
-                        logger.error(f"   Peak intensity: {intensity_pos2:.0f} counts (limit: {saturation_limit})")
-                        logger.error(f"   LED intensity is too high - reduce LED power before continuing")
-                        return  # Exit - cannot continue with saturated signal
-
-                    # Determine S vs P based on physics
-                    if intensity_pos1 > intensity_pos2:
-                        s_pos = pos1
-                        p_pos = pos2
-                        s_intensity = intensity_pos1
-                        p_intensity = intensity_pos2
-                        logger.debug(f"Labels correct: S={s_pos} ({s_intensity:.0f} counts), P={p_pos} ({p_intensity:.0f} counts)")
-                    else:
-                        s_pos = pos2
-                        p_pos = pos1
-                        s_intensity = intensity_pos2
-                        p_intensity = intensity_pos1
-                        logger.debug(f"Labels inverted: S={s_pos} ({s_intensity:.0f} counts), P={p_pos} ({p_intensity:.0f} counts)")
-
-                    # ✅ VALIDATION 5: Verify S/P ratio is reasonable
-                    MIN_RATIO = 1.3  # Minimum acceptable ratio
-                    IDEAL_MIN_RATIO = 1.5
-
-                    if p_intensity == 0:
-                        logger.warning(f"❌ VALIDATION FAILED: P-mode intensity is zero")
-                        retry_count += 1
-                        continue
-
-                    sp_ratio = s_intensity / p_intensity
-
-                    if sp_ratio < MIN_RATIO:
-                        logger.warning(f"❌ VALIDATION FAILED: S/P ratio too low")
-                        logger.warning(f"   Measured: {sp_ratio:.2f}×")
-                        logger.warning(f"   Minimum: {MIN_RATIO:.2f}×")
-                        logger.warning(f"   S intensity: {s_intensity:.0f} counts")
-                        logger.warning(f"   P intensity: {p_intensity:.0f} counts")
-                        retry_count += 1
-                        continue
-
-                    # Success!
-                    logger.info(f"✅ AUTO-POLARIZATION SUCCESSFUL (full sweep fallback)")
-                    logger.info(f"   S position: {s_pos}° ({s_intensity:.0f} counts)")
-                    logger.info(f"   P position: {p_pos}° ({p_intensity:.0f} counts)")
-                    logger.info(f"   S/P ratio: {sp_ratio:.2f}× {'✅' if sp_ratio >= IDEAL_MIN_RATIO else '⚠️ acceptable'}")
-                    logger.info(f"   Peak separation: {separation}°")
-
+                    s_pos = fs_results["s_pos"]; p_pos = fs_results["p_pos"]
                     self.ctrl.servo_set(s_pos, p_pos)
-                    time.sleep(0.2)  # Wait for servo to settle
-                    self.ctrl.flash()  # Save to EEPROM
+                    time.sleep(0.2)
+                    self.ctrl.flash()
                     self.new_default_values = True
-                    self.get_device_parameters()  # Update UI with new S/P positions
-                    return  # Success - exit retry loop
+                    self.get_device_parameters()
+                    return
 
             except Exception as e:
                 logger.exception(f"Error during auto-polarization attempt {retry_count + 1}: {e}")
@@ -1802,11 +1785,11 @@ class AffiniteApp(QMainWindow):
 
         # All retries failed
         logger.error(f"❌ AUTO-POLARIZATION FAILED after {max_retries} attempts")
-        logger.error(f"   Please check:")
-        logger.error(f"   1. Polarizer is properly installed")
-        logger.error(f"   2. Servo is responding correctly")
-        logger.error(f"   3. LED intensity is sufficient")
-        logger.error(f"   4. Spectrometer is working properly")
+        logger.error("   Please check:")
+        logger.error("   1. Polarizer is properly installed")
+        logger.error("   2. Servo is responding correctly")
+        logger.error("   3. LED intensity is sufficient")
+        logger.error("   4. Spectrometer is working properly")
         show_message(
             "Auto-polarization failed. Please check hardware and try again.",
             msg_type="Critical"
@@ -2593,7 +2576,7 @@ class AffiniteApp(QMainWindow):
         # Only update if advanced menu exists and is connected
         if not self.adv_connected or self.main_window.advanced_menu is None:
             return
-            
+
         if self.device_config["ctrl"] == "QSPR" and isinstance(
             self.ctrl,
             QSPRController,
@@ -2609,37 +2592,8 @@ class AffiniteApp(QMainWindow):
                 "EZSPR",
                 "PicoEZSPR",
             ]:
-                try:
-                    polarizer_pos = self.ctrl.servo_get()
-                    # ✨ FIX: Decode bytes to string before converting to int
-                    s_bytes = polarizer_pos["s"]
-                    p_bytes = polarizer_pos["p"]
-                    
-                    # Check if we got valid data (not the default b'0000')
-                    if s_bytes == b'0000' and p_bytes == b'0000':
-                        logger.warning("Servo positions returned default values - may not be calibrated")
-                    
-                    # Handle both bytes and string responses
-                    if isinstance(s_bytes, bytes):
-                        s_str = s_bytes.decode('utf-8').strip()
-                        if s_str and s_str != '0000':
-                            s_pos = int(s_str)
-                    else:
-                        s_str = str(s_bytes).strip()
-                        if s_str and s_str != '0000':
-                            s_pos = int(s_str)
-                            
-                    if isinstance(p_bytes, bytes):
-                        p_str = p_bytes.decode('utf-8').strip()
-                        if p_str and p_str != '0000':
-                            p_pos = int(p_str)
-                    else:
-                        p_str = str(p_bytes).strip()
-                        if p_str and p_str != '0000':
-                            p_pos = int(p_str)
-                            
-                except Exception as e:
-                    logger.error(f"error reading s & p from device: {e}")
+                s_pos, p_pos = self._read_servo_positions_decoded()
+                if s_pos == 0 and p_pos == 0:
                     logger.debug("Servo positions will display as 0 - try re-calibrating servo")
                 logger.debug(f"curr s = {s_pos}, curr p = {p_pos}")
             params = {
@@ -2736,14 +2690,43 @@ class AffiniteApp(QMainWindow):
                         old_s = 0
                         old_p = 0
 
-                    new_s = int(params["s_pos"])
-                    new_p = int(params["p_pos"])
-                    if old_s != new_s or old_p != new_p:
-                        logger.info(f"Updating servo positions: S {old_s}→{new_s}, P {old_p}→{new_p}")
-                        self.ctrl.servo_set(s=new_s, p=new_p)
-                        self.ctrl.flash()
-                        time.sleep(0.2)  # Wait for flash to complete
-                        self.get_device_parameters()  # Refresh UI after saving
+                    # Robust parsing of manual S/P entries with clamping
+                    def _safe_int(val: object) -> int | None:
+                        try:
+                            s = str(val).strip()
+                            if s == "" or s.lower() == "none":
+                                return None
+                            return int(float(s))  # allow "45.0" or numeric strings
+                        except Exception:
+                            return None
+
+                    new_s = _safe_int(params.get("s_pos"))
+                    new_p = _safe_int(params.get("p_pos"))
+
+                    # Only attempt servo update when both values are valid
+                    if new_s is not None and new_p is not None:
+                        # Clamp to a safe mechanical range
+                        new_s = max(0, min(180, new_s))
+                        new_p = max(0, min(180, new_p))
+                        if old_s != new_s or old_p != new_p:
+                            logger.info(f"Updating servo positions: S {old_s}→{new_s}, P {old_p}→{new_p}")
+                            self.ctrl.servo_set(s=new_s, p=new_p)
+                            # Verify and correct inversion if detected (non-QSPR path)
+                            try:
+                                from utils.servo_calibration import verify_and_correct_positions
+                                verification = verify_and_correct_positions(self.usb, self.ctrl, new_s, new_p)
+                                if verification is not None:
+                                    vs, vp, was_inverted = verification
+                                    if was_inverted and (vs != new_s or vp != new_p):
+                                        logger.info(f"   Applied inversion correction → S={vs}, P={vp}")
+                                        self.ctrl.servo_set(s=vs, p=vp)
+                                        new_s, new_p = vs, vp
+                            except Exception as _verr:
+                                logger.debug(f"Advanced S/P verify skipped: {_verr}")
+
+                            self.ctrl.flash()
+                            time.sleep(0.2)  # Wait for flash to complete
+                            self.get_device_parameters()  # Refresh UI after saving
 
                     # Update pump corrections if needed
                     if isinstance(self.knx, PicoEZSPR):

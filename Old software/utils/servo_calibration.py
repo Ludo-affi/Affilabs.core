@@ -14,6 +14,7 @@ Key features:
 
 import time
 import numpy as np
+from scipy.signal import find_peaks, peak_prominences, peak_widths
 from utils.logger import logger
 
 # Calibration parameters
@@ -150,52 +151,37 @@ def perform_quadrant_search(usb, ctrl):
     p_intensity = p_intensities[p_pos]
     logger.info(f"✓ P position refined: {p_pos}° ({p_intensity:.0f} counts)")
 
-    # PHASE 3: Refine S position (maximum) - must be 90° from P
-    # For circular polarizer: S = P ± 90°
+    # PHASE 3: Set S position exactly 90° from P
+    # For circular polarizer: S = P ± 90° (EXACT)
     # Choose the option that's within servo range (0-180°)
     s_candidate_1 = p_pos - 90
     s_candidate_2 = p_pos + 90
 
     if MIN_ANGLE <= s_candidate_1 <= MAX_ANGLE:
-        approx_s = s_candidate_1
+        s_pos = s_candidate_1
+        logger.info(f"Phase 3: S position = P - 90° = {p_pos}° - 90° = {s_pos}°")
     elif MIN_ANGLE <= s_candidate_2 <= MAX_ANGLE:
-        approx_s = s_candidate_2
+        s_pos = s_candidate_2
+        logger.info(f"Phase 3: S position = P + 90° = {p_pos}° + 90° = {s_pos}°")
     else:
-        # Fallback: use coarse max if both candidates out of range
-        coarse_max_idx = np.argmax(coarse_intensities)
-        approx_s = coarse_positions[coarse_max_idx]
-        logger.warning(f"⚠️  Both S candidates out of range, using coarse max at {approx_s}°")
+        # This shouldn't happen if P is found correctly (P should be 10-170, so ±90 always gives valid range)
+        logger.error(f"❌ ERROR: Cannot place S position 90° from P={p_pos}°")
+        logger.error(f"   P - 90 = {s_candidate_1}° (out of range)")
+        logger.error(f"   P + 90 = {s_candidate_2}° (out of range)")
+        return None, None, None, None
 
-    logger.info(f"Phase 3: Refining S position around {approx_s}° (90° from P)...")
-    s_search_positions = [
-        max(MIN_ANGLE, approx_s - 20),
-        max(MIN_ANGLE, approx_s - 10),
-        approx_s,
-        min(MAX_ANGLE, approx_s + 10),
-        min(MAX_ANGLE, approx_s + 20)
-    ]
-    # Remove duplicates and already measured
-    s_search_positions = [s for s in s_search_positions if s not in all_positions]
+    # Measure S position to verify
+    ctrl.servo_set(s=s_pos, p=s_pos)
+    time.sleep(SETTLING_TIME)
+    ctrl.set_mode("s")
+    time.sleep(MODE_SWITCH_TIME)
+    spectrum = usb.read_intensity()
+    s_intensity = get_roi_intensity(spectrum, wavelengths) if use_roi else spectrum.max()
+    all_positions.append(s_pos)
+    all_intensities.append(s_intensity)
 
-    # Initialize with measured value if approx_s was in coarse positions
-    s_intensities = {}
-    if approx_s in coarse_positions:
-        idx = coarse_positions.index(approx_s)
-        s_intensities[approx_s] = coarse_intensities[idx]
-    elif approx_s not in all_positions:
-        # Need to measure it first
-        s_intensities[approx_s] = measure_position(approx_s)
-        logger.debug(f"   {approx_s}°: {s_intensities[approx_s]:.0f} counts")
-
-    for pos in s_search_positions:
-        intensity = measure_position(pos)
-        s_intensities[pos] = intensity
-        logger.debug(f"   {pos}°: {intensity:.0f} counts")
-
-    # Find refined S position
-    s_pos = max(s_intensities.keys(), key=lambda k: s_intensities[k])
-    s_intensity = s_intensities[s_pos]
-    logger.info(f"✓ S position refined: {s_pos}° ({s_intensity:.0f} counts)")
+    logger.info(f"✓ S position set: {s_pos}° ({s_intensity:.0f} counts)")
+    logger.info(f"✓ Separation enforced: |{s_pos}° - {p_pos}°| = {abs(s_pos - p_pos)}° (exactly 90°)")
 
     logger.info(f"✅ Quadrant search complete")
     logger.info(f"Total measurements: {len(all_positions)} (vs 33 for full sweep)")
@@ -523,3 +509,257 @@ def verify_and_correct_positions(usb, ctrl, s_pos, p_pos):
     else:
         logger.info(f"   ✓ NO INVERSION: S > P (correct)")
         return s_pos, p_pos, False
+
+
+def perform_barrel_window_search(usb, ctrl):
+    """Find S and P windows for barrel-style polarizer assemblies.
+
+    Barrel assemblies present transmission "windows" for S and P modes. We:
+    - Sweep the servo and measure P-mode ROI intensity to find the P window (max).
+    - Set S target exactly 90° from P, then refine S around that target by S-mode ROI max.
+    - Return positions and quick stats (separation, S/P ratio at ROI).
+
+    Assumptions:
+    - Valid servo range is 10-170°.
+    - Integration time already configured.
+    """
+    try:
+        logger.info("=" * 80)
+        logger.info("BARREL POLARIZER CALIBRATION (window-based)")
+        logger.info("=" * 80)
+
+        # Get wavelength array for ROI computations
+        wavelengths = getattr(usb, "_wavelengths", None)
+        use_roi = wavelengths is not None
+        if use_roi:
+            logger.info(f"ROI: {ROI_CENTER - ROI_WIDTH/2:.0f}-{ROI_CENTER + ROI_WIDTH/2:.0f}nm")
+        else:
+            logger.warning("Wavelengths unavailable; using full-spectrum max for window search")
+
+        def roi_value(spectrum):
+            return get_roi_intensity(spectrum, wavelengths) if use_roi else float(spectrum.max())
+
+        # Sweep to find P window (P-mode max transmission)
+        logger.info("Phase 1: P-window sweep (max ROI in P-mode)")
+        sweep_positions = list(range(MIN_ANGLE, MAX_ANGLE + 1, 5))
+        p_curve = []
+
+        for angle in sweep_positions:
+            ctrl.servo_set(s=angle, p=angle)
+            time.sleep(SETTLING_TIME)
+            ctrl.set_mode("p")
+            time.sleep(MODE_SWITCH_TIME)
+            spectrum = usb.read_intensity()
+            p_curve.append(roi_value(spectrum))
+
+        p_idx = int(np.argmax(p_curve))
+        p_pos_coarse = sweep_positions[p_idx]
+        p_val_coarse = p_curve[p_idx]
+        logger.info(f"   Coarse P window at {p_pos_coarse}° (ROI={p_val_coarse:.0f})")
+
+        # Refine P window around coarse maximum within ±20°
+        logger.info("Phase 2: P-window refinement (±20°)")
+        refine_P = []
+        refine_P_pos = []
+        for delta in (-20, -10, 0, 10, 20):
+            pos = int(np.clip(p_pos_coarse + delta, MIN_ANGLE, MAX_ANGLE))
+            if pos in refine_P_pos:
+                continue
+            ctrl.servo_set(s=pos, p=pos)
+            time.sleep(SETTLING_TIME)
+            ctrl.set_mode("p")
+            time.sleep(MODE_SWITCH_TIME)
+            spectrum = usb.read_intensity()
+            refine_P_pos.append(pos)
+            refine_P.append(roi_value(spectrum))
+            logger.debug(f"   P {pos}° -> {refine_P[-1]:.0f}")
+
+        p_pos = int(refine_P_pos[int(np.argmax(refine_P))])
+        p_val = float(max(refine_P))
+        logger.info(f"✓ P window refined: {p_pos}° (ROI={p_val:.0f})")
+
+        # Choose S target 90° from refined P
+        s_target1 = p_pos - 90
+        s_target2 = p_pos + 90
+        if MIN_ANGLE <= s_target1 <= MAX_ANGLE:
+            s_target = s_target1
+        elif MIN_ANGLE <= s_target2 <= MAX_ANGLE:
+            s_target = s_target2
+        else:
+            # Unlikely with our range; fallback to opposite extreme
+            s_target = int(np.clip(p_pos + 90, MIN_ANGLE, MAX_ANGLE))
+        logger.info(f"Phase 3: S-window refinement around {s_target}° (±20°)")
+
+        refine_S = []
+        refine_S_pos = []
+        for delta in (-20, -10, 0, 10, 20):
+            pos = int(np.clip(s_target + delta, MIN_ANGLE, MAX_ANGLE))
+            if pos in refine_S_pos:
+                continue
+            ctrl.servo_set(s=pos, p=pos)
+            time.sleep(SETTLING_TIME)
+            ctrl.set_mode("s")
+            time.sleep(MODE_SWITCH_TIME)
+            spectrum = usb.read_intensity()
+            refine_S_pos.append(pos)
+            refine_S.append(roi_value(spectrum))
+            logger.debug(f"   S {pos}° -> {refine_S[-1]:.0f}")
+
+        s_pos = int(refine_S_pos[int(np.argmax(refine_S))])
+        s_val = float(max(refine_S))
+        separation = abs(s_pos - p_pos)
+        logger.info(f"✓ S window refined: {s_pos}° (ROI={s_val:.0f})")
+        logger.info(f"✓ Separation ~ {separation}° (target 90°)")
+
+        # Quick measure S and P at final positions for ratio
+        ctrl.servo_set(s=s_pos, p=p_pos)
+        time.sleep(SETTLING_TIME)
+        ctrl.set_mode("s")
+        time.sleep(MODE_SWITCH_TIME)
+        s_meas = roi_value(usb.read_intensity())
+        ctrl.set_mode("p")
+        time.sleep(MODE_SWITCH_TIME)
+        p_meas = roi_value(usb.read_intensity())
+        sp_ratio = s_meas / p_meas if p_meas > 0 else 0.0
+        logger.info(f"Estimated S/P (ROI) at windows: {sp_ratio:.2f}× (S={s_meas:.0f}, P={p_meas:.0f})")
+
+        return {
+            "s_pos": int(s_pos),
+            "p_pos": int(p_pos),
+            "separation": float(separation),
+            "sp_ratio": float(sp_ratio),
+        }
+
+    except Exception as e:
+        logger.exception(f"Barrel window search failed: {e}")
+        return None
+
+
+def perform_full_sweep_fallback(usb, ctrl):
+    """Exhaustive full-sweep method to determine S/P positions.
+
+    Mirrors the legacy logic formerly embedded in main.py. Validates peaks,
+    separation, saturation, and S/P ratio. Returns a result dict or None.
+
+    Returns dict keys: s_pos, p_pos, sp_ratio, separation, s_intensity, p_intensity
+    """
+    try:
+        logger.info("\ud83d\udd04 Starting FULL SWEEP (exhaustive method - fallback)")
+
+        min_angle = MIN_ANGLE
+        max_angle = MAX_ANGLE
+        half_range = (max_angle - min_angle) // 2
+        angle_step = 5
+        steps = half_range // angle_step
+        max_intensities = np.zeros(2 * steps + 1)
+
+        # Perform sweep
+        logger.debug("Starting servo position sweep...")
+        ctrl.servo_set(half_range + min_angle, max_angle)
+        ctrl.set_mode("p")
+        ctrl.set_mode("s")
+        time.sleep(0.5)
+        max_intensities[steps] = usb.read_intensity().max()
+
+        for i in range(steps):
+            x = min_angle + angle_step * i
+            ctrl.servo_set(s=x, p=x + half_range + angle_step)
+            time.sleep(0.2)
+            ctrl.set_mode("s")
+            time.sleep(0.1)
+            max_intensities[i] = usb.read_intensity().max()
+            ctrl.set_mode("p")
+            time.sleep(0.1)
+            max_intensities[i + steps + 1] = usb.read_intensity().max()
+
+        # Validation 1: peaks
+        peaks = find_peaks(max_intensities)[0]
+        if len(peaks) < 2:
+            logger.warning(f"Validation failed: only {len(peaks)} peaks found (need 2)")
+            logger.warning(
+                f"Intensity range: {max_intensities.min():.0f}-{max_intensities.max():.0f} counts"
+            )
+            return None
+
+        prominences = peak_prominences(max_intensities, peaks)
+        if len(prominences[0]) < 2:
+            logger.warning("Validation failed: less than 2 prominent peaks detected")
+            return None
+
+        # Select two most prominent peaks
+        peak_indices = prominences[0].argsort()[-2:]
+
+        # Edge positions for width at 5% height to estimate centers
+        edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
+        edges = np.array(edges)[:, peak_indices]
+        pos1, pos2 = (min_angle + angle_step * edges.mean(0)).astype(int)
+
+        separation = abs(int(pos2) - int(pos1))
+        expected_separation = half_range
+        tolerance = 15
+        if abs(separation - expected_separation) > tolerance:
+            logger.warning("Validation failed: peak separation incorrect")
+            logger.warning(f"Found: {separation}\u00b0 apart; expected: {expected_separation}\u00b0 ")
+            return None
+
+        logger.debug(
+            f"Peak separation valid: {separation}\u00b0 (expected ~{expected_separation}\u00b0)"
+        )
+        logger.debug(f"Candidate positions: pos1={int(pos1)}, pos2={int(pos2)}")
+
+        # Determine S vs P based on intensity at the two positions
+        ctrl.servo_set(s=int(pos1), p=int(pos2))
+        time.sleep(0.8)
+
+        ctrl.set_mode("s"); time.sleep(0.5)
+        spectrum_pos1 = usb.read_intensity(); intensity_pos1 = spectrum_pos1.max()
+
+        ctrl.set_mode("p"); time.sleep(0.5)
+        spectrum_pos2 = usb.read_intensity(); intensity_pos2 = spectrum_pos2.max()
+
+        saturation_limit = int(MAX_DETECTOR_COUNTS * SATURATION_THRESHOLD)
+        if intensity_pos1 >= saturation_limit:
+            logger.error(f"Saturation at position {int(pos1)}; peak {intensity_pos1:.0f} >= {saturation_limit}")
+            return None
+        if intensity_pos2 >= saturation_limit:
+            logger.error(f"Saturation at position {int(pos2)}; peak {intensity_pos2:.0f} >= {saturation_limit}")
+            return None
+
+        if intensity_pos1 > intensity_pos2:
+            s_pos = int(pos1); p_pos = int(pos2)
+            s_intensity = float(intensity_pos1); p_intensity = float(intensity_pos2)
+        else:
+            s_pos = int(pos2); p_pos = int(pos1)
+            s_intensity = float(intensity_pos2); p_intensity = float(intensity_pos1)
+
+        if p_intensity == 0:
+            logger.warning("Validation failed: P-mode intensity is zero")
+            return None
+
+        sp_ratio = s_intensity / p_intensity
+        if sp_ratio < MIN_SP_RATIO:
+            logger.warning(
+                f"Validation failed: S/P ratio {sp_ratio:.2f}x < minimum {MIN_SP_RATIO:.2f}x"
+            )
+            return None
+
+        logger.info("\u2705 FULL SWEEP successful")
+        logger.info(f"S position: {s_pos}\u00b0 ({s_intensity:.0f} counts)")
+        logger.info(f"P position: {p_pos}\u00b0 ({p_intensity:.0f} counts)")
+        logger.info(
+            f"S/P ratio: {sp_ratio:.2f}x {'\u2705' if sp_ratio >= IDEAL_SP_RATIO else 'acceptable'}"
+        )
+        logger.info(f"Peak separation: {separation}\u00b0")
+
+        return {
+            "s_pos": s_pos,
+            "p_pos": p_pos,
+            "sp_ratio": float(sp_ratio),
+            "separation": int(separation),
+            "s_intensity": s_intensity,
+            "p_intensity": p_intensity,
+        }
+
+    except Exception as e:
+        logger.exception(f"Full sweep fallback error: {e}")
+        return None

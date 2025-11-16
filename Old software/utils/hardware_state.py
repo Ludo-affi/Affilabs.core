@@ -3,11 +3,18 @@
 This module provides a HardwareStateManager class that centralizes all
 hardware state information including LED calibration, pump/valve states,
 temperature readings, and synchronization status.
+
+Features:
+- Centralized state management
+- Validation on state updates
+- State change callbacks for UI synchronization
+- Thread-safe state access
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Callable, Dict, Any
+from threading import Lock
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -19,10 +26,23 @@ class HardwareStateManager:
     This class centralizes hardware state management, making it easier to
     track, update, and test hardware-related functionality independently
     from UI logic.
+
+    Thread-safe: All state updates are protected by locks.
     """
 
     def __init__(self: "HardwareStateManager") -> None:
         """Initialize hardware state manager with default values."""
+        # Thread safety
+        self._lock = Lock()
+
+        # State change callbacks
+        self._callbacks: Dict[str, list[Callable]] = {
+            "led_changed": [],
+            "pump_changed": [],
+            "valve_changed": [],
+            "temp_changed": [],
+        }
+
         # LED calibration states
         self.leds_calibrated: dict[str, int] = {
             "a": 170,
@@ -57,6 +77,33 @@ class HardwareStateManager:
         # Synchronization status
         self.synced: bool = False
 
+    def register_callback(
+        self: "HardwareStateManager",
+        event_type: str,
+        callback: Callable
+    ) -> None:
+        """Register a callback for state change events.
+
+        Args:
+            event_type: Type of event ('led_changed', 'pump_changed', etc.)
+            callback: Function to call when state changes
+        """
+        if event_type in self._callbacks:
+            self._callbacks[event_type].append(callback)
+
+    def _notify_callbacks(self: "HardwareStateManager", event_type: str, **kwargs) -> None:
+        """Notify all registered callbacks of a state change.
+
+        Args:
+            event_type: Type of event that occurred
+            **kwargs: Additional data to pass to callbacks
+        """
+        for callback in self._callbacks.get(event_type, []):
+            try:
+                callback(**kwargs)
+            except Exception:
+                pass  # Don't let callback errors propagate
+
     def update_led_calibration(
         self: "HardwareStateManager",
         channel: str,
@@ -66,13 +113,26 @@ class HardwareStateManager:
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
-            intensity: LED intensity value
+            intensity: LED intensity value (0-255)
+
+        Raises:
+            ValueError: If channel is invalid or intensity out of range
         """
-        if channel in self.leds_calibrated:
-            self.leds_calibrated[channel] = intensity
-        else:
+        if channel not in self.leds_calibrated:
             msg = f"Invalid channel: {channel}"
             raise ValueError(msg)
+
+        if not 0 <= intensity <= 255:
+            msg = f"Invalid intensity: {intensity} (must be 0-255)"
+            raise ValueError(msg)
+
+        with self._lock:
+            old_value = self.leds_calibrated[channel]
+            self.leds_calibrated[channel] = intensity
+
+        # Notify callbacks if value changed
+        if old_value != intensity:
+            self._notify_callbacks("led_changed", channel=channel, intensity=intensity)
 
     def update_ref_intensity(
         self: "HardwareStateManager",
@@ -83,13 +143,21 @@ class HardwareStateManager:
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
-            intensity: Reference intensity value
+            intensity: Reference intensity value (0-255)
+
+        Raises:
+            ValueError: If channel is invalid or intensity out of range
         """
-        if channel in self.ref_intensity:
-            self.ref_intensity[channel] = intensity
-        else:
+        if channel not in self.ref_intensity:
             msg = f"Invalid channel: {channel}"
             raise ValueError(msg)
+
+        if not 0 <= intensity <= 255:
+            msg = f"Invalid intensity: {intensity} (must be 0-255)"
+            raise ValueError(msg)
+
+        with self._lock:
+            self.ref_intensity[channel] = intensity
 
     def update_pump_state(
         self: "HardwareStateManager",

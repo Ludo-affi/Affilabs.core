@@ -302,6 +302,22 @@ class SegmentGraph(GraphicsLayoutWidget):
                     self.dissoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.dissoc_update)
                     self.assoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.assoc_update)
 
+    def update_colors(self):
+        """Update plot and cursor colors when colorblind mode is toggled."""
+        try:
+            for ch in CH_LIST:
+                # Update line colors for each channel
+                self.plots[ch].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+
+                # Update dissociation/association cursor colors if present
+                for cursor in ['Start', 'End']:
+                    if ch in self.dissoc_cursors and self.dissoc_cursors[ch][cursor] is not None:
+                        self.dissoc_cursors[ch][cursor].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=3))
+                    if ch in self.assoc_cursors and self.assoc_cursors[ch][cursor] is not None:
+                        self.assoc_cursors[ch][cursor].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=3))
+        except Exception as e:
+            logger.debug(f"Error updating SegmentGraph colors: {e}")
+
     def en_dissoc_cursors(self, en):
         self.dissoc_cursor_en = bool(en)
         for ch in CH_LIST:

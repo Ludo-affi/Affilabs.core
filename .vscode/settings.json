@@ -121,5 +121,6 @@
     // Git performance
     "git.ignoreLimitWarning": true,
     "git.autofetch": false,
-    "git.autorefresh": false
+    "git.autorefresh": false,
+    "python-envs.pythonProjects": []
 }

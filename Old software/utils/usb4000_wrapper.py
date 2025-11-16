@@ -79,6 +79,20 @@ class USB4000:
             except Exception as e:
                 logger.warning(f"Could not read wavelengths: {e}")
 
+            # Log detector capabilities
+            try:
+                min_int_us = self._device.minimum_integration_time_micros
+                min_max_limits = self._device.integration_time_micros_limits
+                max_intensity = getattr(self._device, "max_intensity", None)
+                logger.info(
+                    f"Detector integration time limits: {min_max_limits[0]}µs - {min_max_limits[1]}µs "
+                    f"({min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms)"
+                )
+                if max_intensity is not None:
+                    logger.info(f"Detector max_intensity (a.u.): {max_intensity}")
+            except Exception as e:
+                logger.warning(f"Could not read detector capabilities: {e}")
+
             logger.info(f"USB4000 connected: {self.serial_number}")
             return True
 
@@ -106,12 +120,16 @@ class USB4000:
         if not self._device or not self.opened:
             return False
         try:
-            # Convert milliseconds to seconds for SeaBreeze API
-            time_seconds = time_ms / 1000.0
-            time_us = int(time_seconds * 1_000_000)
+            # Convert milliseconds to microseconds for SeaBreeze API
+            time_us = int(time_ms * 1000)
+
+            # Set the integration time (this is a setter only, returns None)
             self._device.integration_time_micros(time_us)
-            self._integration_time = time_seconds  # Store in seconds for internal use
-            logger.debug(f"Set integration time: {time_ms:.2f}ms")
+
+            # Store in seconds for internal use
+            self._integration_time = time_ms / 1000.0
+
+            logger.debug(f"Set integration time: {time_ms:.2f}ms ({time_us}µs)")
             return True
         except Exception as e:
             logger.error(f"set_integration error: {e}")

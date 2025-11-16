@@ -474,7 +474,7 @@ class DataWindow(QWidget):
 
     def _fix_checkbox_styles(self: Self) -> None:
         """Fix checkbox and label styling to use global theme.
-        
+
         The UI files have inline styles that override the global theme,
         causing gray shades and invisible checkmarks. This method clears
         those problematic inline styles while preserving text colors.
@@ -495,7 +495,7 @@ class DataWindow(QWidget):
                         checkbox.setStyleSheet(f"QCheckBox {{ color: {color_value}; background-color: transparent; }}")
                 else:
                     checkbox.setStyleSheet("QCheckBox { background-color: transparent; }")
-        
+
         # Fix shift value labels - make background transparent
         for label_name in ['shift_A', 'shift_B', 'shift_C', 'shift_D']:
             if hasattr(self.ui, label_name):

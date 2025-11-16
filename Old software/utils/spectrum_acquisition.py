@@ -15,7 +15,7 @@ class SpectrumAcquisition:
 
     def __init__(self, usb_device):
         """Initialize spectrum acquisition helper.
-        
+
         Args:
             usb_device: USB4000 instance for spectrum reading
         """
@@ -28,26 +28,26 @@ class SpectrumAcquisition:
         num_scans: int = 1
     ) -> np.ndarray | None:
         """Acquire and average multiple spectrum scans.
-        
+
         Uses vectorized NumPy averaging for 2-3× speedup over sequential accumulation.
-        
+
         Args:
             wave_min_index: Start index of wavelength region of interest
             wave_max_index: End index of wavelength region of interest
             num_scans: Number of scans to average (default: 1)
-            
+
         Returns:
             Averaged spectrum as uint32 array, or None on error
         """
         try:
             wave_min = wave_min_index
             wave_max = wave_max_index
-            
+
             if self.usb.use_seabreeze:
                 return self._acquire_seabreeze(wave_min, wave_max, num_scans)
             else:
                 return self._acquire_dll(wave_min, wave_max, num_scans)
-                
+
         except Exception as e:
             logger.error(f"Error acquiring spectrum: {e}")
             return None
@@ -59,12 +59,12 @@ class SpectrumAcquisition:
         num_scans: int
     ) -> np.ndarray | None:
         """Acquire spectrum using SeaBreeze backend.
-        
+
         Args:
             wave_min: Start index of ROI
             wave_max: End index of ROI
             num_scans: Number of scans to average
-            
+
         Returns:
             Averaged spectrum as uint32 array
         """
@@ -79,7 +79,7 @@ class SpectrumAcquisition:
             spectrum_length = wave_max - wave_min
             # Pre-allocate array for all spectra
             spectra_stack = np.empty((num_scans, spectrum_length), dtype='u2')
-            
+
             for scan_idx in range(num_scans):
                 full_spectrum = self.usb.read_intensity()
                 if full_spectrum is not None:
@@ -87,7 +87,7 @@ class SpectrumAcquisition:
                 else:
                     logger.warning(f"Failed to read scan {scan_idx + 1}/{num_scans}")
                     return None
-            
+
             # Vectorized averaging using NumPy (uses SIMD instructions)
             return np.mean(spectra_stack, axis=0).astype('u4')
 
@@ -98,18 +98,18 @@ class SpectrumAcquisition:
         num_scans: int
     ) -> np.ndarray | None:
         """Acquire spectrum using DLL backend.
-        
+
         Args:
             wave_min: Start index of ROI
             wave_max: End index of ROI
             num_scans: Number of scans to average
-            
+
         Returns:
             Averaged spectrum as uint32 array
         """
         offset = wave_min * 2
         num = wave_max - wave_min
-        
+
         # Setup DLL function call
         usb_read_image = self.usb.api.sensor_t_dll.usb_read_image
         usb_read_image.argtypes = [
@@ -133,7 +133,7 @@ class SpectrumAcquisition:
         else:
             # Multiple scans - use vectorized averaging
             spectra_stack = np.empty((num_scans, num), dtype='u2')
-            
+
             for scan_idx in range(num_scans):
                 usb_read_image(spec, sensor_frame_t_ref)
                 spectra_stack[scan_idx] = np.frombuffer(
@@ -142,6 +142,6 @@ class SpectrumAcquisition:
                     num,
                     offset,
                 )
-            
+
             # Vectorized averaging using NumPy
             return np.mean(spectra_stack, axis=0).astype('u4')

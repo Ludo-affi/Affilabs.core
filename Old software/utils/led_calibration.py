@@ -98,6 +98,7 @@ def calibrate_integration_time(
         int_array = usb.read_intensity()
         time.sleep(LED_DELAY)
         current_count = int_array.max()
+        logger.debug(f"Ch {ch} initial reading at {integration}ms: {current_count:.0f} counts (target: {S_COUNT_MAX})")
 
         while current_count < S_COUNT_MAX and integration < max_int:
             integration += integration_step
@@ -105,7 +106,11 @@ def calibrate_integration_time(
             usb.set_integration(integration)
             time.sleep(0.02)
             int_array = usb.read_intensity()
-            current_count = int_array.max()
+            new_count = int_array.max()
+            logger.debug(
+                f"  After setting to {integration}ms: {new_count:.0f} counts (change: {new_count - current_count:+.0f})"
+            )
+            current_count = new_count
 
     # Check if low intensity saturates and reduce if needed
     for ch in ch_list:

@@ -769,15 +769,74 @@ Data Flow:
                 # ===== PROCESSING (happens in parallel with next acquisition) =====
 
                 # Apply dark noise correction
-                self.int_data[ch] = raw_spectrum - dark_correction
+                p_corrected = raw_spectrum - dark_correction
+
+                # Special handling for Flame-T serial FLMT09788, channel B
+                try:
+                    serial_ok = hasattr(self.usb, 'serial_number') and getattr(self.usb, 'serial_number', None) == "FLMT09788"
+                except Exception:
+                    serial_ok = False
+                if serial_ok and ch == 'b':
+                    try:
+                        # Wavelength subset aligned to current spectrum length
+                        if hasattr(self, 'wave_data') and self.wave_data is not None and len(self.wave_data) >= len(p_corrected):
+                            wave_subset = self.wave_data[:len(p_corrected)]
+                        else:
+                            wave_subset = None
+
+                        # 1) Normalize B intensity in ROI (605–635 nm) to match others
+                        if wave_subset is not None:
+                            roi_mask = (wave_subset >= 605) & (wave_subset <= 635)
+                            if np.any(roi_mask):
+                                b_roi_mean = float(np.mean(p_corrected[roi_mask]))
+                                other_means: list[float] = []
+                                # Compare against other channels' latest dark-corrected intensities
+                                for _och in CH_LIST:
+                                    if _och == ch:
+                                        continue
+                                    arr = self.int_data.get(_och)
+                                    if arr is None or not isinstance(arr, np.ndarray) or arr.size == 0:
+                                        continue
+                                    # Align length and compute ROI mean
+                                    _len = min(len(arr), len(roi_mask))
+                                    if _len == 0:
+                                        continue
+                                    _roi = roi_mask[:_len]
+                                    if np.any(_roi):
+                                        other_means.append(float(np.mean(arr[:_len][_roi])))
+
+                                if other_means and b_roi_mean > 0:
+                                    target_mean = float(np.median(other_means))
+                                    if target_mean > 0:
+                                        # Conservative bounds on scaling factor (allow near 2× boost)
+                                        scale = float(np.clip(target_mean / b_roi_mean, 0.5, 2.0))
+                                        p_corrected = p_corrected * scale
+                                        logger.info(
+                                            f"🔧 FLMT09788 chB ROI normalization: mean {b_roi_mean:.0f} → {target_mean:.0f} (×{scale:.3f})"
+                                        )
+
+                        # 2) Ignore saturation below 600 nm: flatten to anchor around 600–610 nm
+                        if wave_subset is not None:
+                            below_mask = wave_subset < 600
+                            if np.any(below_mask):
+                                anchor_mask = (wave_subset >= 600) & (wave_subset <= 610)
+                                if np.any(anchor_mask):
+                                    anchor_val = float(np.mean(p_corrected[anchor_mask]))
+                                    p_corrected[below_mask] = anchor_val
+                                    logger.debug("FLMT09788 chB: flattened <600 nm to anchor mean in 600–610 nm")
+                    except Exception as _e:
+                        logger.debug(f"FLMT09788 chB adjustment skipped due to error: {_e}")
+
+                # Store final corrected intensity
+                self.int_data[ch] = p_corrected
 
                 # Calculate transmission if reference available
                 if ref_sig_ch is not None and self.data_processor is not None:
                     try:
-                        # Calculate transmittance (P/S ratio)
+                        # Calculate transmittance (P/S ratio) using possibly adjusted P
                         self.trans_data[ch] = (
                             self.data_processor.calculate_transmission(
-                                p_pol_intensity=raw_spectrum - dark_correction,
+                                p_pol_intensity=p_corrected,
                                 s_ref_intensity=ref_sig_ch,
                                 dark_noise=None,  # Already corrected
                                 denoise=False,  # Skip denoising for sensorgram speed
