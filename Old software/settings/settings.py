@@ -20,6 +20,7 @@ def get_version() -> str:
 
 DEV = True
 SW_VERSION = f"Version {get_version()}"
+SW_APP_NAME = "ezControl"
 TARGET = "win"
 
 if TARGET == "win":
@@ -73,7 +74,11 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.100  # led-stabilization delay (100ms - default, adjustable in Advanced Settings)
+LED_DELAY = 0.080  # led-stabilization delay (80ms - default, adjustable in Advanced Settings)
+USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
+LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
+LED_POST_DELAY = 0.005  # additional dark time after LED off before switching channel (s)
+USE_DYNAMIC_POST_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity

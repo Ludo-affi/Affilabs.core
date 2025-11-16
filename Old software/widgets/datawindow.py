@@ -565,7 +565,11 @@ class DataWindow(QWidget):
                 else:
                     logger.debug("busy updating")
 
-                self.exp_clock_raw = time.time() - self.data["start"]
+                # Prefer monotonic start if available to avoid wall-clock jumps
+                if "start_perf" in self.data:
+                    self.exp_clock_raw = time.perf_counter() - self.data["start_perf"]
+                else:
+                    self.exp_clock_raw = time.time() - self.data["start"]
                 if self.exp_clock_raw == 0:
                     self.ui.exp_clock.setText("00h 00m 00s")
                 else:

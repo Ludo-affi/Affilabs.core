@@ -145,10 +145,24 @@ class ArduinoController(ControllerBase):
                 logger.error("serial communication failed - servo set")
 
     def flash(self):
+        """Flash EEPROM to persist settings. Returns True if successful."""
         flash_cmd = 'f'
-        if self._ser is not None or self.open():
-            self._ser.write(flash_cmd.encode())
-            return self._ser.read() == flash_cmd.encode()
+        try:
+            if self._ser is not None or self.open():
+                self._ser.write(flash_cmd.encode())
+                response = self._ser.readline().strip()
+                success = (response == flash_cmd.encode())
+                if success:
+                    logger.debug("EEPROM flash confirmed by controller")
+                else:
+                    logger.warning(f"EEPROM flash response mismatch: expected {flash_cmd.encode()}, got {response}")
+                return success
+            else:
+                logger.error("Cannot flash EEPROM - serial port not open")
+                return False
+        except Exception as e:
+            logger.error(f"EEPROM flash failed with exception: {e}")
+            return False
 
     def __str__(self):
         return "Arduino Board"
@@ -734,16 +748,24 @@ class PicoP4SPR(ControllerBase):
         return False
 
     def flash(self):
+        """Flash EEPROM to persist settings. Returns True if successful."""
         try:
             flash_cmd = 'sf\n'
             if self._ser is not None or self.open():
                 with self._lock:
                     self._ser.write(flash_cmd.encode())
-                    return self._ser.read() == b'1'
+                    response = self._ser.readline().strip()
+                    success = (response == b'1')
+                    if success:
+                        logger.debug("PicoP4SPR EEPROM flash confirmed")
+                    else:
+                        logger.warning(f"PicoP4SPR EEPROM flash response mismatch: expected b'1', got {response}")
+                    return success
             else:
+                logger.error("Cannot flash PicoP4SPR EEPROM - serial port not open")
                 return False
         except Exception as e:
-            logger.debug(f"error flashing pico {e}")
+            logger.error(f"PicoP4SPR EEPROM flash failed: {e}")
             return False
 
     def stop(self):

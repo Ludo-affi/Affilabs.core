@@ -298,8 +298,23 @@ class ParameterManager:
                 if hasattr(self.hardware.ctrl, "servo_set"):
                     self.hardware.ctrl.servo_set(s=new_s, p=new_p)
                     if hasattr(self.hardware.ctrl, "flash"):
-                        self.hardware.ctrl.flash()
-                    logger.info(f"Updated servo positions: s={new_s}, p={new_p}")
+                        try:
+                            ok = self.hardware.ctrl.flash()
+                        except Exception as e:
+                            ok = False
+                            logger.warning(f"EEPROM flash failed for S/P update: {e}")
+                        if ok:
+                            logger.info(
+                                f"Updated servo positions and saved to EEPROM: s={new_s}, p={new_p}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Updated servo positions but did NOT persist to EEPROM: s={new_s}, p={new_p}"
+                            )
+                    else:
+                        logger.info(
+                            f"Updated servo positions (no flash capability detected): s={new_s}, p={new_p}"
+                        )
 
             return True
         except (ValueError, KeyError) as e:

@@ -32,6 +32,7 @@ from settings import (
     S_LED_MIN,
 )
 from utils.logger import logger
+from utils.spr_signal_processing import calculate_fourier_weights
 
 if TYPE_CHECKING:
     from utils.controller import ControllerBase
@@ -489,12 +490,8 @@ def perform_full_led_calibration(
             f"Wavelength range: index {result.wave_min_index} to {result.wave_max_index}"
         )
 
-        # Calculate Fourier weights for denoising
-        alpha = 2e3
-        n = len(result.wave_data) - 1
-        phi = np.pi / n * np.arange(1, n)
-        phi2 = phi**2
-        result.fourier_weights = phi / (1 + alpha * phi2 * (1 + phi2))
+        # Calculate Fourier weights for denoising (centralized utility)
+        result.fourier_weights = calculate_fourier_weights(len(result.wave_data))
 
         # Determine channel list
         if single_mode:

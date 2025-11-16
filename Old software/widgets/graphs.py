@@ -45,8 +45,8 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.time_data = {}
         self.lambda_data = {}
         for ch in CH_LIST:
-            self.plots[ch] = self.plot.plot(pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
-            self.static[ch] = self.plot.plot(pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
+            self.plots[ch] = self.plot.plot(pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
+            self.static[ch] = self.plot.plot(pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
         self.latest_time = 0
 
         self.live = True
@@ -85,9 +85,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def update_colors(self):
         """Update plot colors when colorblind mode is toggled."""
         for ch in CH_LIST:
-            self.plots[ch].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+            self.plots[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
             if hasattr(self, 'static') and ch in self.static:
-                self.static[ch].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+                self.static[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
 
     def movable_cursors(self, state):
         self.left_cursor.setMovable(state)
@@ -150,9 +150,8 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 else:
                     logger.debug(f"sensorgram data not plottable, y = {y_data}, x = {x_data}")
             if self.live and not self.wait_for_reset:
-                if (len(self.time_data['d'] < 300)) \
-                        or (abs(self.right_cursor.value() - self.latest_time) > (len(self.time_data) * 0.01)):
-                    self.set_right(self.latest_time, True)
+                # Always follow the latest time while live is enabled
+                self.set_right(self.latest_time, True)
             self.wait_for_reset = False
             self.updating = False
         except Exception as e:
@@ -170,17 +169,19 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.set_right(self.right_cursor.value())
 
     def left_cursor_sig_dragged(self):
-        if len(self.time_data) < 300:
+        n_pts = len(self.time_data['d']) if 'd' in self.time_data else 0
+        if n_pts < 300:
             self.set_left(self.left_cursor.value())
         else:
-            if abs(self.left_cursor.value() - self.left_cursor_pos) > (len(self.time_data)*0.005):
+            if abs(self.left_cursor.value() - self.left_cursor_pos) > (n_pts * 0.005):
                 self.set_left(self.left_cursor.value())
 
     def right_cursor_sig_dragged(self):
-        if len(self.time_data) < 300:
+        n_pts = len(self.time_data['d']) if 'd' in self.time_data else 0
+        if n_pts < 300:
             self.set_right(self.right_cursor.value())
         else:
-            if abs(self.right_cursor.value() - self.right_cursor_pos) > (len(self.time_data)*0.005):
+            if abs(self.right_cursor.value() - self.right_cursor_pos) > (n_pts * 0.005):
                 self.set_right(self.right_cursor.value())
 
     def center_cursors(self):
@@ -284,7 +285,7 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.assoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
         self.assoc_cursor_en = False
         for ch in CH_LIST:
-            self.plots[ch] = self.plot.plot(pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
+            self.plots[ch] = self.plot.plot(pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
             if has_cursors:
                 for cursor in ['Start', 'End']:
                     for cursor_dict in [self.dissoc_cursors, self.assoc_cursors]:
@@ -294,7 +295,7 @@ class SegmentGraph(GraphicsLayoutWidget):
                             label=f"{cursor}",
                             labelOpts={'rotateAxis': (1, 0)},
                             angle=90,
-                            pen=mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=3),
+                            pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3),
                             movable=True)
                         cursor_dict[ch][cursor].setHoverPen('y')
                         self.plot.addItem(cursor_dict[ch][cursor])
@@ -307,14 +308,14 @@ class SegmentGraph(GraphicsLayoutWidget):
         try:
             for ch in CH_LIST:
                 # Update line colors for each channel
-                self.plots[ch].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+                self.plots[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
 
                 # Update dissociation/association cursor colors if present
                 for cursor in ['Start', 'End']:
                     if ch in self.dissoc_cursors and self.dissoc_cursors[ch][cursor] is not None:
-                        self.dissoc_cursors[ch][cursor].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=3))
+                        self.dissoc_cursors[ch][cursor].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3))
                     if ch in self.assoc_cursors and self.assoc_cursors[ch][cursor] is not None:
-                        self.assoc_cursors[ch][cursor].setPen(mkPen(settings.ACTIVE_GRAPH_COLORS[ch], width=3))
+                        self.assoc_cursors[ch][cursor].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3))
         except Exception as e:
             logger.debug(f"Error updating SegmentGraph colors: {e}")
 

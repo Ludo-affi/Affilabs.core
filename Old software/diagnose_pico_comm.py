@@ -69,6 +69,31 @@ try:
     print(f"   Decoded: '{line.decode('ascii', errors='replace')}'")
     print(f"   First 5 chars: '{line[0:5].decode('ascii', errors='replace')}'")
 
+    # Firmware version
+    ser.reset_input_buffer(); ser.reset_output_buffer(); time.sleep(0.1)
+    print("\nTest 4: Firmware version 'iv' ...")
+    ser.write(b"iv\n")
+    line = ser.readline()
+    print(f"   Version: '{line.decode('ascii', errors='replace').strip()}'")
+
+    # Temperature command(s)
+    ser.reset_input_buffer(); ser.reset_output_buffer(); time.sleep(0.1)
+    print("\nTest 5: Temperature 'it' ...")
+    ser.write(b"it\n")
+    line = ser.readline()
+    print(f"   'it' reply: '{line.decode('ascii', errors='replace').strip()}'")
+
+    # Optional LED-board temperature (if supported by FW)
+    ser.reset_input_buffer(); ser.reset_output_buffer(); time.sleep(0.1)
+    print("\nTest 6: LED-board temperature 'ilt' (if available) ...")
+    ser.write(b"ilt\n")
+    time.sleep(0.15)
+    line = ser.readline()
+    if line:
+        print(f"   'ilt' reply: '{line.decode('ascii', errors='replace').strip()}'")
+    else:
+        print("   No response to 'ilt' (likely unsupported)")
+
     ser.close()
     print("\n✓ Diagnostic complete")
 

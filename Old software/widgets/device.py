@@ -55,11 +55,10 @@ class Device(QWidget):
             self.p4spr = True
             self.ui.add_ctrl.hide()
             self.ctrl_widget = P4SPRWidget(self.ui.controller_frame)
+            # Keep temperature hidden until a valid reading arrives
+            self.ctrl_widget.ui.temp_display.setVisible(False)
             if ctrl_type == 'PicoP4SPR' and DEV:
-                self.ctrl_widget.ui.temp_display.setVisible(True)
                 self.sensor_read_sig.emit()
-            else:
-                self.ctrl_widget.ui.temp_display.setVisible(False)
             self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
             self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
         elif ctrl_type == 'QSPR':
@@ -206,7 +205,23 @@ class P4SPRWidget(ControlWidgetBase):
         self.calibrate_btn.emit()
 
     def update_temp(self, temp):
-        self.ui.temp1.setText(temp)
+        try:
+            # Show only when a non-empty reading is provided
+            if temp is None:
+                self.ui.temp_display.hide()
+                return
+            if isinstance(temp, (float, int)):
+                temp_str = f"{float(temp):.1f}"
+            else:
+                temp_str = str(temp).strip()
+            if temp_str == "" or temp_str.lower() in {"nan", "none", "-"}:
+                self.ui.temp_display.hide()
+                return
+            if not self.ui.temp_display.isVisible():
+                self.ui.temp_display.show()
+            self.ui.temp1.setText(temp_str)
+        except Exception:
+            self.ui.temp_display.hide()
 
 
 class QSPRWidget(ControlWidgetBase):
@@ -255,7 +270,22 @@ class QSPRWidget(ControlWidgetBase):
             self.setEnabled(True)
 
     def update_temp(self, temp):
-        self.ui.temp1.setText(temp)
+        try:
+            if temp is None:
+                self.ui.temp_display.hide()
+                return
+            if isinstance(temp, (float, int)):
+                temp_str = f"{float(temp):.1f}"
+            else:
+                temp_str = str(temp).strip()
+            if temp_str == "" or temp_str.lower() in {"nan", "none", "-"}:
+                self.ui.temp_display.hide()
+                return
+            if not self.ui.temp_display.isVisible():
+                self.ui.temp_display.show()
+            self.ui.temp1.setText(temp_str)
+        except Exception:
+            self.ui.temp_display.hide()
 
 
 class KNX2Widget(ControlWidgetBase):
@@ -277,7 +307,22 @@ class KNX2Widget(ControlWidgetBase):
         self.calibrate_btn.emit()
 
     def update_temp(self, temp):
-        self.ui.temp1.setText(temp)
+        try:
+            if temp is None:
+                self.ui.temp_display.hide()
+                return
+            if isinstance(temp, (float, int)):
+                temp_str = f"{float(temp):.1f}"
+            else:
+                temp_str = str(temp).strip()
+            if temp_str == "" or temp_str.lower() in {"nan", "none", "-"}:
+                self.ui.temp_display.hide()
+                return
+            if not self.ui.temp_display.isVisible():
+                self.ui.temp_display.show()
+            self.ui.temp1.setText(temp_str)
+        except Exception:
+            self.ui.temp_display.hide()
 
     def shutdown_device(self):
         self.setEnabled(False)
@@ -308,9 +353,22 @@ class EZSPRWidget(ControlWidgetBase):
         self.disconnect_btn.emit('both')
 
     def update_temp(self, temp):
-        if not self.ui.temp_display.isVisible():
-            self.ui.temp_display.setVisible(True)
-        self.ui.temp1.setText(temp)
+        try:
+            if temp is None:
+                self.ui.temp_display.hide()
+                return
+            if isinstance(temp, (float, int)):
+                temp_str = f"{float(temp):.1f}"
+            else:
+                temp_str = str(temp).strip()
+            if temp_str == "" or temp_str.lower() in {"nan", "none", "-"}:
+                self.ui.temp_display.hide()
+                return
+            if not self.ui.temp_display.isVisible():
+                self.ui.temp_display.show()
+            self.ui.temp1.setText(temp_str)
+        except Exception:
+            self.ui.temp_display.hide()
 
     def quick_calibration(self):
         self.calibrate_btn.emit()

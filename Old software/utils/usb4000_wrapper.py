@@ -1,11 +1,10 @@
 """USB4000 Spectrometer Driver - SINGLE CONNECTION METHOD ONLY
 
 This is the ONLY way to connect to the USB4000/FLAME-T spectrometer.
-Uses pyseabreeze backend (pure Python, requires WinUSB driver + libusb-1.0.dll).
+Uses pyseabreeze backend (pure Python, works on this system).
 
 Requirements:
-- WinUSB driver installed via Zadig for the spectrometer device
-- libusb-1.0.dll in C:\\Windows\\System32
+- pyusb Python package installed
 - seabreeze Python package installed
 """
 
@@ -14,14 +13,14 @@ from utils.logger import logger
 # SINGLE CONNECTION METHOD: pyseabreeze backend only
 try:
     import seabreeze
-    seabreeze.use('pyseabreeze')  # REQUIRED: Must use pyseabreeze, not cseabreeze
+    seabreeze.use('pyseabreeze')  # REQUIRED: pyseabreeze works on this system (cseabreeze doesn't detect device)
     from seabreeze.spectrometers import Spectrometer, list_devices
     SEABREEZE_AVAILABLE = True
-    logger.info("USB4000: Using pyseabreeze backend (WinUSB + libusb)")
+    logger.info("USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)")
 except ImportError as e:
     SEABREEZE_AVAILABLE = False
     logger.error(f"SeaBreeze not available: {e}")
-    logger.error("Install with: pip install seabreeze")
+    logger.error("Install with: pip install seabreeze pyusb")
 
 
 class USB4000:
