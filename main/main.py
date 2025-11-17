@@ -409,6 +409,13 @@ class AffiniteApp(QApplication):
             try:
                 self.usb = HALFactory.create_spectrometer(auto_detect=True)
                 logger.info("✅ Auto-detected spectrometer")
+                
+                # Initialize device-specific configuration
+                from utils.device_integration import initialize_device_on_connection
+                device_dir = initialize_device_on_connection(self.usb)
+                if device_dir:
+                    logger.info(f"✅ Device-specific config initialized: {device_dir.name}")
+                    
             except Exception as e:
                 logger.info(f"Spectrometer not found: {e}")
                 self.usb = None
@@ -487,6 +494,13 @@ class AffiniteApp(QApplication):
                         logger.info("Attempting to connect USB4000 spectrometer...")
                         self.usb = HALFactory.create_spectrometer(auto_detect=True)
                         logger.info(f"✅ Spectrometer connected")
+                        
+                        # Initialize device-specific configuration
+                        from utils.device_integration import initialize_device_on_connection
+                        device_dir = initialize_device_on_connection(self.usb)
+                        if device_dir:
+                            logger.info(f"✅ Device-specific config initialized: {device_dir.name}")
+                        
                     except Exception as e:
                         logger.error(f"Spectrometer connection failed: {e}")
                         self.usb = None

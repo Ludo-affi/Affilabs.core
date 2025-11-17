@@ -1294,6 +1294,16 @@ class SPRStateMachine(QObject):
                     logger.warning(f"   - Controller (PicoP4SPR): {'✅ Connected' if self.hardware_manager.ctrl else '❌ Failed'}")
                     logger.warning(f"   - Spectrometer (USB4000): {'✅ Connected' if self.hardware_manager.usb else '❌ Failed'}")
 
+                    # Initialize device-specific configuration if spectrometer connected
+                    if self.hardware_manager.usb:
+                        try:
+                            from utils.device_integration import initialize_device_on_connection
+                            device_dir = initialize_device_on_connection(self.hardware_manager.usb)
+                            if device_dir:
+                                logger.info(f"✅ Device-specific config initialized: {device_dir.name}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Device initialization failed: {e}")
+
                     # Get the actual device objects from HAL wrappers
                     ctrl_device = self._get_device_from_hal(self.hardware_manager.ctrl)
                     usb_device = self._get_device_from_hal(self.hardware_manager.usb)
