@@ -384,22 +384,21 @@ class SPRDataAcquisition:
             self._force_255_enabled = False
         self._force_255_done: dict[str, bool] = {ch: False for ch in CH_LIST}
 
-        # Load optical calibration for afterglow correction
+        # Load device-specific optical calibration for afterglow correction
         logger.info(f"🔍 device_config type: {type(device_config)}, is None: {device_config is None}")
-        if device_config:
-            # Check for optical_calibration section (nested) or direct key (backward compat)
-            optical_config = device_config.get('optical_calibration', {})
-            optical_cal_file = optical_config.get('optical_calibration_file') or device_config.get('optical_calibration_file')
-            afterglow_enabled = optical_config.get('afterglow_correction_enabled',
-                                                   device_config.get('afterglow_correction_enabled', True))
-
-            logger.info(f"🔍 optical_cal_file: {optical_cal_file}, afterglow_enabled: {afterglow_enabled}")
-            if optical_cal_file and afterglow_enabled:
-                logger.info(f"🔍 Attempting to load afterglow correction from: {optical_cal_file}")
+        
+        # ✨ NEW: Use device manager to get device-specific optical calibration
+        try:
+            from utils.device_integration import get_device_optical_calibration_path
+            
+            optical_cal_path = get_device_optical_calibration_path()
+            
+            if optical_cal_path and optical_cal_path.exists():
+                logger.info(f"🔍 Loading device-specific optical calibration: {optical_cal_path}")
                 try:
                     from afterglow_correction import AfterglowCorrection
                     logger.info(f"🔍 AfterglowCorrection class imported successfully")
-                    self.afterglow_correction = AfterglowCorrection(optical_cal_file)
+                    self.afterglow_correction = AfterglowCorrection(optical_cal_path)
 
                     # Initialize ML afterglow corrector (hybrid approach)
                     try:
@@ -409,30 +408,28 @@ class SPRDataAcquisition:
                     except Exception as e:
                         logger.warning(f"   ⚠️ ML correction initialization failed: {e}")
                         self.ml_afterglow = None
+                    
                     self.afterglow_correction_enabled = True
-                    logger.info(f"🔍 AfterglowCorrection object created successfully")
-
-                    # ✨ SINGLE SOURCE OF TRUTH: Use LED delay already set by calibrator
-                    # The calibrator calculated optimal delay during calibration and saved it to state
-                    # We just log it here for confirmation
-                    logger.info(
-                        f"✅ Optical calibration loaded for live mode afterglow correction\n"
-                        f"   Using LED delay from calibration: {self.led_delay*1000:.1f}ms"
-                    )
-                except FileNotFoundError as e:
-                    logger.warning(f"⚠️ Optical calibration file not found: {e}")
-                    logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
+                    logger.info(f"✅ Device-specific afterglow correction enabled")
+                    logger.info(f"   Calibration file: {optical_cal_path.name}")
+                    logger.info(f"   Using LED delay from calibration: {self.led_delay*1000:.1f}ms")
+                    
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to load optical calibration: {type(e).__name__}: {e}")
                     logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
                     import traceback
                     logger.debug(f"Full traceback:\n{traceback.format_exc()}")
+                    self.afterglow_correction_enabled = False
             else:
-                if not afterglow_enabled:
-                    logger.info("ℹ️ Afterglow correction disabled for live mode (device_config)")
-                else:
-                    logger.debug("ℹ️ No optical calibration file - afterglow correction disabled for live mode")
-                logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
+                logger.info("ℹ️ No device-specific optical calibration found")
+                logger.info("   Afterglow correction disabled for live mode")
+                logger.info(f"   Using default LED delay: {self.led_delay*1000:.1f}ms")
+                self.afterglow_correction_enabled = False
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Device-specific calibration check failed: {e}")
+            logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
+            self.afterglow_correction_enabled = False
 
         # Log optimization status
         if self._batch_led_available:
