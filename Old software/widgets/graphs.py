@@ -1,5 +1,6 @@
 import PySide6
 import pyqtgraph
+import numpy as np
 from PySide6.QtCore import Signal
 from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine
 from copy import deepcopy
@@ -375,11 +376,55 @@ class SegmentGraph(GraphicsLayoutWidget):
                 else:
                     self.set_plot_pen(ch, settings.ACTIVE_GRAPH_COLORS[ch])
             if x_data is not None and y_data is not None:
+                # Track min/max for visible channels to apply padding
+                y_min = float('inf')
+                y_max = float('-inf')
+                x_min = float('inf')
+                x_max = float('-inf')
+                has_visible_data = False
+                
                 for ch in CH_LIST:
                     y = y_data[ch]
                     x = x_data[ch]
-                    if len(x) == len(y):
+                    if len(x) == len(y) and len(x) > 0:
                         self.plots[ch].setData(y=y, x=x)
+                        # Only consider visible channels for padding calculation
+                        if self.plots[ch].isVisible():
+                            has_visible_data = True
+                            y_min = min(y_min, np.nanmin(y))
+                            y_max = max(y_max, np.nanmax(y))
+                            x_min = min(x_min, np.nanmin(x))
+                            x_max = max(x_max, np.nanmax(x))
+                
+                # Apply padding: +10 RU above max, -5 RU below min, minimum 10s time span
+                if has_visible_data:
+                    # Y-axis padding (convert to RU if needed)
+                    if self.unit == "nm":
+                        # Convert nm to RU for padding calculation (approximate: 1 RU ≈ 0.1 nm)
+                        y_padding_top = 10 * 0.1  # 10 RU ≈ 1 nm
+                        y_padding_bottom = 5 * 0.1  # 5 RU ≈ 0.5 nm
+                    else:
+                        y_padding_top = 10  # 10 RU
+                        y_padding_bottom = 5  # 5 RU
+                    
+                    padded_y_min = y_min - y_padding_bottom
+                    padded_y_max = y_max + y_padding_top
+                    
+                    # X-axis: rolling 10-second window starting from earliest data point
+                    x_span = x_max - x_min
+                    if x_span < 10:
+                        # Show 0-10 second window, moving forward with new data
+                        padded_x_min = x_min
+                        padded_x_max = x_min + 10
+                    else:
+                        # Data exceeds 10 seconds, show all data
+                        padded_x_min = x_min
+                        padded_x_max = x_max
+                    
+                    # Set the ranges with padding disabled to avoid auto-scaling
+                    self.plot.setRange(xRange=(padded_x_min, padded_x_max), 
+                                      yRange=(padded_y_min, padded_y_max), 
+                                      padding=0)
         except Exception as e:
             logger.debug(f"Error updating SOI display: {e}")
         self.updating = False

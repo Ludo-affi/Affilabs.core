@@ -50,12 +50,6 @@ class Ui_Sensorgram(object):
         font1.setPointSize(9)
         font1.setBold(True)
         self.segment_A.setFont(font1)
-        self.segment_A.setStyleSheet(u"QCheckBox{\n"
-"	color: black;\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_A.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_A)
@@ -63,12 +57,6 @@ class Ui_Sensorgram(object):
         self.segment_B = QCheckBox(self.groupBox)
         self.segment_B.setObjectName(u"segment_B")
         self.segment_B.setFont(font1)
-        self.segment_B.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(255, 0, 81);\n"
-"	background:white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_B.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_B)
@@ -76,12 +64,6 @@ class Ui_Sensorgram(object):
         self.segment_C = QCheckBox(self.groupBox)
         self.segment_C.setObjectName(u"segment_C")
         self.segment_C.setFont(font1)
-        self.segment_C.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 174, 255);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_C.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_C)
@@ -89,12 +71,6 @@ class Ui_Sensorgram(object):
         self.segment_D = QCheckBox(self.groupBox)
         self.segment_D.setObjectName(u"segment_D")
         self.segment_D.setFont(font1)
-        self.segment_D.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 230, 65);\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	background: white;\n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_D.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_D)

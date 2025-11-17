@@ -106,9 +106,20 @@ class USB4000:
         try:
             if self._device:
                 self._device.close()
-            self.opened = False
         except Exception as e:
-            logger.warning(f"Error closing: {e}")
+            logger.warning(f"Error closing USB4000: {e}")
+        finally:
+            self.opened = False
+            self._device = None
+            self.spec = None
+    
+    def __del__(self):
+        """Destructor to ensure spectrometer is closed."""
+        try:
+            if hasattr(self, '_device') and self._device is not None:
+                self.close()
+        except:
+            pass
 
     def set_integration(self, time_ms):
         """Set integration time.

@@ -102,6 +102,14 @@ class SpectrumProcessor:
         self._log_counter = {ch: 0 for ch in ['a', 'b', 'c', 'd']}
         self._log_interval = 100  # Log every N spectra
         
+        # Pipeline caching for performance (avoid registry lookup every call)
+        self._cached_pipeline = None
+        self._cached_pipeline_id = None
+        
+        # Stats update optimization - only calculate detailed stats periodically
+        self._stats_update_counter = {ch: 0 for ch in ['a', 'b', 'c', 'd']}
+        self._stats_update_interval = 10  # Update detailed stats every N cycles
+        
     def process_transmission(
         self,
         transmission: np.ndarray,
@@ -137,12 +145,18 @@ class SpectrumProcessor:
         if channel not in self.stats:
             raise ValueError(f"Invalid channel: {channel}")
             
-        # Try active pipeline first
+        # Try active pipeline first - use cached version if available
         try:
             registry = get_pipeline_registry()
-            active_pipeline = registry.get_active_pipeline()
+            pipeline_id = registry.active_pipeline_id
+            
+            # Check if we can reuse cached pipeline
+            if self._cached_pipeline is None or self._cached_pipeline_id != pipeline_id:
+                self._cached_pipeline = registry.get_active_pipeline()
+                self._cached_pipeline_id = pipeline_id
+            
+            active_pipeline = self._cached_pipeline
             pipeline_metadata = active_pipeline.get_metadata()
-            pipeline_id = registry.active_pipeline_id  # Get ID from registry
             
             # Execute pipeline
             resonance_wavelength = active_pipeline.find_resonance_wavelength(
@@ -154,8 +168,13 @@ class SpectrumProcessor:
             if resonance_wavelength is None or np.isnan(resonance_wavelength):
                 raise ValueError(f"Pipeline returned invalid result: {resonance_wavelength}")
             
-            # Success - create result
-            processing_time = (time.perf_counter() - start_time) * 1000
+            # Success - create result (only calculate timing every 10th cycle for efficiency)
+            self._stats_update_counter[channel] += 1
+            if self._stats_update_counter[channel] % self._stats_update_interval == 0:
+                processing_time = (time.perf_counter() - start_time) * 1000
+            else:
+                processing_time = self.stats[channel]['avg_processing_time_ms']  # Use cached value
+            
             result = ProcessingResult(
                 resonance_wavelength=resonance_wavelength,
                 pipeline_used=pipeline_metadata.name,
@@ -164,11 +183,14 @@ class SpectrumProcessor:
                 metadata={'pipeline_id': pipeline_id}
             )
             
-            # Update statistics
-            self._update_stats(channel, result)
+            # Update statistics (lightweight)
+            self.stats[channel]['total_processed'] += 1
+            self.stats[channel]['last_pipeline'] = result.pipeline_used
             
-            # Periodic logging
-            self._maybe_log_status(channel, result)
+            # Only do expensive stats updates periodically
+            if self._stats_update_counter[channel] % self._stats_update_interval == 0:
+                self._update_detailed_stats(channel, result)
+                self._maybe_log_status(channel, result)
             
             return result
             
@@ -255,7 +277,7 @@ class SpectrumProcessor:
             return result
     
     def _update_stats(self, channel: str, result: ProcessingResult) -> None:
-        """Update processing statistics for a channel.
+        """Update processing statistics for a channel (lightweight version for backward compatibility).
         
         Args:
             channel: Channel identifier
@@ -271,6 +293,22 @@ class SpectrumProcessor:
             stats['error_count'] += 1
             
         stats['last_pipeline'] = result.pipeline_used
+        
+        # Update moving average of processing time
+        n = stats['total_processed']
+        old_avg = stats['avg_processing_time_ms']
+        stats['avg_processing_time_ms'] = (
+            (old_avg * (n - 1) + result.processing_time_ms) / n
+        )
+    
+    def _update_detailed_stats(self, channel: str, result: ProcessingResult) -> None:
+        """Update detailed processing statistics (called periodically to reduce overhead).
+        
+        Args:
+            channel: Channel identifier
+            result: Processing result to record
+        """
+        stats = self.stats[channel]
         
         # Update moving average of processing time
         n = stats['total_processed']

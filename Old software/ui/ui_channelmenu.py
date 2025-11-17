@@ -46,7 +46,7 @@ class Ui_ChannelMenu(object):
         self.horizontalLayout.setSpacing(0)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.horizontalLayout.setContentsMargins(11, 0, 11, 0)
-        self.filt_en = QRadioButton(self.filter)
+        self.filt_en = QCheckBox(self.filter)
         self.filt_en.setObjectName(u"filt_en")
         sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
@@ -56,14 +56,6 @@ class Ui_ChannelMenu(object):
         self.filt_en.setChecked(True)
 
         self.horizontalLayout.addWidget(self.filt_en, 0, Qt.AlignHCenter)
-
-        self.filt_off = QRadioButton(self.filter)
-        self.filt_off.setObjectName(u"filt_off")
-        sizePolicy.setHeightForWidth(self.filt_off.sizePolicy().hasHeightForWidth())
-        self.filt_off.setSizePolicy(sizePolicy)
-        self.filt_off.setChecked(False)
-
-        self.horizontalLayout.addWidget(self.filt_off, 0, Qt.AlignHCenter)
 
 
         self.verticalLayout_2.addLayout(self.horizontalLayout)
@@ -236,10 +228,9 @@ class Ui_ChannelMenu(object):
     def retranslateUi(self, ChannelMenu):
         ChannelMenu.setWindowTitle(QCoreApplication.translate("ChannelMenu", u"SPR Settings", None))
         self.filter.setTitle(QCoreApplication.translate("ChannelMenu", u"Data Filtering", None))
-        self.filt_en.setText(QCoreApplication.translate("ChannelMenu", u"Enabled", None))
-        self.filt_off.setText(QCoreApplication.translate("ChannelMenu", u"Disabled", None))
+        self.filt_en.setText(QCoreApplication.translate("ChannelMenu", u"Enable Filter", None))
         self.label_5.setText(QCoreApplication.translate("ChannelMenu", u"Filter Window Size:", None))
-        self.filt_win.setText(QCoreApplication.translate("ChannelMenu", u"5", None))
+        self.filt_win.setText(QCoreApplication.translate("ChannelMenu", u"3", None))
         self.groupBox.setTitle(QCoreApplication.translate("ChannelMenu", u"Reference Channel", None))
         self.noRef.setText(QCoreApplication.translate("ChannelMenu", u"None", None))
         self.channelA.setText(QCoreApplication.translate("ChannelMenu", u" A", None))

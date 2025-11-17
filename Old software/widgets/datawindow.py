@@ -282,10 +282,11 @@ class DataWindow(QWidget):
         # dialogs: reference channel, average channel, units
         self.reference_channel_dlg = ChannelMenu(self.data_source, self.metadata)
         self.reference_channel_dlg.ref_ch_signal.connect(self.reference_change)
-        self.reference_channel_dlg.unit_to_ru_signal.connect(self.unit_to_ru)
+        self.reference_channel_dlg.unit_to_ru_signal.connect(self.unit_to_nm)
         self.reference_channel_dlg.unit_to_nm_signal.connect(self.unit_to_nm)
         if self.data_source == "static":
-            self.reference_channel_dlg.filter_off()
+            # Disable filter for static data by unchecking the filter checkbox
+            self.reference_channel_dlg.ui.filt_en.setChecked(False)
 
         # update segment data when cursor positions changed
         self.full_segment_view.segment_signal.connect(self.update_segment)

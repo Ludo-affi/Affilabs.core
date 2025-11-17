@@ -1,0 +1,160 @@
+{
+  "metadata": {
+    "created": "2025-11-17T19:22:40Z",
+    "device_serial": "FLMT09116",
+    "pre_on_duration_s": 0.2,
+    "acquisition_duration_ms": 250,
+    "integration_grid_ms": [
+      10.0,
+      25.0,
+      40.0,
+      55.0,
+      70.0,
+      85.0
+    ]
+  },
+  "channel_data": {
+    "a": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 17.003886739674147,
+          "amplitude": 1400.6225359242528,
+          "baseline": 3047.3450078649694,
+          "r_squared": 0.9807496435041141
+        },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 12.762097223544712,
+          "amplitude": 17638.81698382185,
+          "baseline": 3134.142040856934,
+          "r_squared": 0.9981417585136317
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 11.765331367576522,
+          "amplitude": 35246.214354858246,
+          "baseline": 3206.4731599482957,
+          "r_squared": 0.9997986201313497
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 19.144002347568367,
+          "amplitude": 62602.98950416932,
+          "baseline": 3260.2016940299695,
+          "r_squared": 0.9994815287303762
+        }
+      ]
+    },
+    "b": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 23.201554041374568,
+          "amplitude": 786.1347773888579,
+          "baseline": 3042.7428967801275,
+          "r_squared": 0.9843179877776446
+        },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 17.19270248770359,
+          "amplitude": 6728.35403483938,
+          "baseline": 3125.5918996657138,
+          "r_squared": 0.9962385288807036
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 25.591192179995627,
+          "amplitude": 14706.096286181088,
+          "baseline": 3177.911638292991,
+          "r_squared": 0.9994633761695769
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 14.610634919408717,
+          "amplitude": 78986.50428311089,
+          "baseline": 3243.370707548204,
+          "r_squared": 0.9999633490973344
+        },
+        {
+          "integration_time_ms": 70.0,
+          "tau_ms": 15.554737490173562,
+          "amplitude": 59708.183767134455,
+          "baseline": 3289.272528033236,
+          "r_squared": 0.9999819742967382
+        }
+      ]
+    },
+    "c": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 22.1505467690451,
+          "amplitude": 903.8209430624051,
+          "baseline": 3038.3974795357553,
+          "r_squared": 0.9885727077979896
+        },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 10.090782570361787,
+          "amplitude": 14063.349069747228,
+          "baseline": 3141.7256741686233,
+          "r_squared": 0.9990936457731533
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 12.48007009983359,
+          "amplitude": 335317.42827223317,
+          "baseline": 3202.2400097025898,
+          "r_squared": 0.9984218531426023
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 44.37320673788208,
+          "amplitude": 3805.016428925878,
+          "baseline": 3205.365780771251,
+          "r_squared": 0.9996446667621388
+        },
+        {
+          "integration_time_ms": 70.0,
+          "tau_ms": 16.698509192609578,
+          "amplitude": 60691.79360997826,
+          "baseline": 3286.3355132541733,
+          "r_squared": 0.9999888521142146
+        }
+      ]
+    },
+    "d": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 11.346589667632793,
+          "amplitude": 15801.384354405065,
+          "baseline": 3046.318826064227,
+          "r_squared": 0.99582989183952
+        },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 16.906556734929392,
+          "amplitude": 15597.314368633553,
+          "baseline": 3119.959114044729,
+          "r_squared": 0.9983793321370616
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 31.868445407644256,
+          "amplitude": 4744.5620606503335,
+          "baseline": 3171.207263099041,
+          "r_squared": 0.9976246846254881
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 21.809642659804055,
+          "amplitude": 30524.031420039053,
+          "baseline": 3254.695338342527,
+          "r_squared": 0.9994573859223359
+        }
+      ]
+    }
+  }
+}

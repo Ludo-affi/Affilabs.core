@@ -42,7 +42,7 @@ class Settings(QDialog):
         super().__init__(parent)
 
         # Set window properties
-        self.setWindowTitle("ezControl Settigns")
+        self.setWindowTitle("ezControl Settings")
 
         # Create sub-widgets
         self.spr_settings = spr_settings.data_settings

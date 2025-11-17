@@ -127,45 +127,21 @@ class Ui_Processing(object):
         font2.setPointSize(9)
         font2.setBold(True)
         self.segment_A.setFont(font2)
-        self.segment_A.setStyleSheet(u"QCheckBox{\n"
-"	color: black;\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_A.setChecked(True)
         self.segment_B = QCheckBox(self.groupBox)
         self.segment_B.setObjectName(u"segment_B")
         self.segment_B.setGeometry(QRect(15, 50, 38, 16))
         self.segment_B.setFont(font2)
-        self.segment_B.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(255, 0, 81);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_B.setChecked(True)
         self.segment_C = QCheckBox(self.groupBox)
         self.segment_C.setObjectName(u"segment_C")
         self.segment_C.setGeometry(QRect(15, 70, 38, 16))
         self.segment_C.setFont(font2)
-        self.segment_C.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 174, 255);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_C.setChecked(True)
         self.segment_D = QCheckBox(self.groupBox)
         self.segment_D.setObjectName(u"segment_D")
         self.segment_D.setGeometry(QRect(15, 90, 38, 16))
         self.segment_D.setFont(font2)
-        self.segment_D.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 230, 65);\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	background: white;\n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_D.setChecked(True)
         self.reference_channel_btn = QPushButton(self.sensorgram_controls)
         self.reference_channel_btn.setObjectName(u"reference_channel_btn")
@@ -427,45 +403,21 @@ class Ui_Processing(object):
         self.SOI_A.setObjectName(u"SOI_A")
         self.SOI_A.setGeometry(QRect(15, 30, 38, 16))
         self.SOI_A.setFont(font2)
-        self.SOI_A.setStyleSheet(u"QCheckBox{\n"
-"	color: black;\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.SOI_A.setChecked(True)
         self.SOI_B = QCheckBox(self.groupBox_2)
         self.SOI_B.setObjectName(u"SOI_B")
         self.SOI_B.setGeometry(QRect(15, 50, 38, 16))
         self.SOI_B.setFont(font2)
-        self.SOI_B.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(255, 0, 81);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.SOI_B.setChecked(True)
         self.SOI_C = QCheckBox(self.groupBox_2)
         self.SOI_C.setObjectName(u"SOI_C")
         self.SOI_C.setGeometry(QRect(15, 70, 38, 16))
         self.SOI_C.setFont(font2)
-        self.SOI_C.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 174, 255);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.SOI_C.setChecked(True)
         self.SOI_D = QCheckBox(self.groupBox_2)
         self.SOI_D.setObjectName(u"SOI_D")
         self.SOI_D.setGeometry(QRect(15, 90, 38, 16))
         self.SOI_D.setFont(font2)
-        self.SOI_D.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 230, 65);\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	background: white;\n"
-"	border-radius: 3px;\n"
-"}")
         self.SOI_D.setChecked(True)
         self.groupBox_3 = QGroupBox(self.curr_seg_box)
         self.groupBox_3.setObjectName(u"groupBox_3")

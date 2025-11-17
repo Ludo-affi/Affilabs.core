@@ -46,9 +46,24 @@ class ControllerBase:
         pass
 
     def close(self):
+        """Close serial port connection."""
         if self._ser is not None:
-            self._ser.close()
-            self._ser = None
+            try:
+                self._ser.close()
+            except Exception as e:
+                # Log but don't raise - we want cleanup to continue
+                import logging
+                logging.getLogger(__name__).error(f"Error closing serial port: {e}")
+            finally:
+                self._ser = None
+    
+    def __del__(self):
+        """Destructor to ensure serial port is closed."""
+        try:
+            if hasattr(self, '_ser') and self._ser is not None:
+                self.close()
+        except:
+            pass
 
 
 class ArduinoController(ControllerBase):
@@ -500,16 +515,21 @@ class PicoP4SPR(ControllerBase):
                         logger.debug(f" Pico P4SPR Fw: {self.version}")
                         return True
                     else:
-                        self._ser.close()
-                        self._ser = None
+                        try:
+                            self._ser.close()
+                        except Exception as close_err:
+                            logger.error(f"Error closing port after ID mismatch: {close_err}")
+                        finally:
+                            self._ser = None
                 except Exception as e:
                     logger.error(f"Failed to open Pico - {e}")
                     if self._ser is not None:
                         try:
                             self._ser.close()
-                        except:
-                            pass
-                        self._ser = None
+                        except Exception as close_err:
+                            logger.error(f"Error closing port after exception: {close_err}")
+                        finally:
+                            self._ser = None
         return False
 
     def turn_on_channel(self, ch='a'):
@@ -836,11 +856,21 @@ class PicoKNX2(ControllerBase):
                         self.version = self._ser.readline()[0:4].decode()
                         return True
                     else:
-                        self._ser.close()
+                        try:
+                            self._ser.close()
+                        except Exception as close_err:
+                            logger.error(f"Error closing port after ID mismatch: {close_err}")
+                        finally:
+                            self._ser = None
                 except Exception as e:
                     logger.error(f"Failed to open Pico - {e}")
                     if self._ser is not None:
-                        self._ser.close()
+                        try:
+                            self._ser.close()
+                        except Exception as close_err:
+                            logger.error(f"Error closing port after exception: {close_err}")
+                        finally:
+                            self._ser = None
         return False
 
     def get_status(self):
@@ -993,11 +1023,21 @@ class PicoEZSPR(ControllerBase):
                         self.version = self._ser.readline()[0:4].decode()
                         return True
                     else:
-                        self._ser.close()
+                        try:
+                            self._ser.close()
+                        except Exception as close_err:
+                            logger.error(f"Error closing port after ID mismatch: {close_err}")
+                        finally:
+                            self._ser = None
                 except Exception as e:
                     logger.error(f"Failed to open Pico - {e}")
                     if self._ser is not None:
-                        self._ser.close()
+                        try:
+                            self._ser.close()
+                        except Exception as close_err:
+                            logger.error(f"Error closing port after exception: {close_err}")
+                        finally:
+                            self._ser = None
                 return False
 
     def update_firmware(self, firmware):

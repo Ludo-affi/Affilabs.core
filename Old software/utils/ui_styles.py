@@ -161,23 +161,20 @@ class UIStyleManager:
             spacing: 5px;
         }}
         QCheckBox::indicator {{
-            width: 13px;
-            height: 13px;
-            border: 2px solid {cls.COLORS['border_primary']};
-            border-radius: 3px;
+            width: 8px;
+            height: 8px;
+            border: 1px solid {cls.COLORS['border_primary']};
+            border-radius: 2px;
             background-color: {cls.COLORS['widget_background']};
         }}
         QCheckBox::indicator:hover {{
-            border: 2px solid #808080;
+            border: 1px solid #707070;
+            background-color: #F8F8F8;
         }}
         QCheckBox::indicator:checked {{
-            background-color: {cls.COLORS['highlight']};
-            border: 2px solid {cls.COLORS['highlight']};
-            image: none;
-        }}
-        QCheckBox::indicator:checked {{
-            background-color: {cls.COLORS['highlight']};
-            border: 2px solid {cls.COLORS['highlight']};
+            background-color: #4A90E2;
+            border: 1px solid #4A90E2;
+            image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iOCIgaGVpZ2h0PSI4IiB2aWV3Qm94PSIwIDAgOCA4IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xIDQgTDMgNiBMNyAyIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);
         }}
         QRadioButton {{
             color: {cls.COLORS['text_primary']};
@@ -185,24 +182,20 @@ class UIStyleManager:
             spacing: 5px;
         }}
         QRadioButton::indicator {{
-            width: 18px;
-            height: 18px;
-            border: 2px solid {cls.COLORS['border_primary']};
-            border-radius: 9px;
+            width: 8px;
+            height: 8px;
+            border: 1px solid {cls.COLORS['border_primary']};
+            border-radius: 2px;
             background-color: {cls.COLORS['widget_background']};
         }}
         QRadioButton::indicator:hover {{
-            border: 2px solid #808080;
+            border: 1px solid #707070;
+            background-color: #F8F8F8;
         }}
         QRadioButton::indicator:checked {{
-            background-color: {cls.COLORS['widget_background']};
-            border: 2px solid {cls.COLORS['highlight']};
-        }}
-        QRadioButton::indicator:checked::after {{
-            width: 10px;
-            height: 10px;
-            border-radius: 5px;
-            background-color: {cls.COLORS['highlight']};
+            background-color: #4A90E2;
+            border: 1px solid #4A90E2;
+            image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iOCIgaGVpZ2h0PSI4IiB2aWV3Qm94PSIwIDAgOCA4IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xIDQgTDMgNiBMNyAyIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);
         }}
         QTabWidget::pane {{
             border: 1px solid {cls.COLORS['border_primary']};

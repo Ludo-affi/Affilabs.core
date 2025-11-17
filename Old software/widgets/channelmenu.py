@@ -105,20 +105,38 @@ class ChannelMenu(QWidget):
 
     def filtering_change(self: Self) -> None:
         """Change data filtering window."""
-        if self.datawindow_type == "dynamic":
-            self.live_filt_sig.emit(
-                self.ui.filt_en.isChecked(),
-                int(self.ui.filt_win.text()),
-            )
-        else:
-            self.proc_filt_sig.emit(
-                self.ui.filt_en.isChecked(),
-                int(self.ui.filt_win.text()),
-            )
-
-    def filter_off(self: Self) -> None:
-        """Trun off data filtering."""
-        self.ui.filt_off.setChecked(True)  # noqa: FBT003
+        try:
+            # Validate and sanitize input
+            filt_win_text = self.ui.filt_win.text().strip()
+            if not filt_win_text:
+                # If empty, reset to default
+                self.ui.filt_win.setText("3")
+                return
+            
+            filt_win = int(filt_win_text)
+            
+            # Clamp to valid range
+            if filt_win < 3:
+                filt_win = 3
+                self.ui.filt_win.setText("3")
+            elif filt_win > 51:
+                filt_win = 51
+                self.ui.filt_win.setText("51")
+            
+            # Emit signal with validated value
+            if self.datawindow_type == "dynamic":
+                self.live_filt_sig.emit(
+                    self.ui.filt_en.isChecked(),
+                    filt_win,
+                )
+            else:
+                self.proc_filt_sig.emit(
+                    self.ui.filt_en.isChecked(),
+                    filt_win,
+                )
+        except ValueError:
+            # If not a valid integer, reset to default
+            self.ui.filt_win.setText("3")
 
     def colorblind_mode_change(self: Self) -> None:
         """Toggle colorblind-friendly color palette."""

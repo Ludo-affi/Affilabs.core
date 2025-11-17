@@ -131,45 +131,21 @@ class Ui_Spectroscopy(object):
         font4.setPointSize(9)
         font4.setBold(True)
         self.segment_A.setFont(font4)
-        self.segment_A.setStyleSheet(u"QCheckBox{\n"
-"	color: black;\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_A.setChecked(True)
         self.segment_B = QCheckBox(self.groupBox_2)
         self.segment_B.setObjectName(u"segment_B")
         self.segment_B.setGeometry(QRect(30, 50, 38, 16))
         self.segment_B.setFont(font4)
-        self.segment_B.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(255, 0, 81);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_B.setChecked(True)
         self.segment_C = QCheckBox(self.groupBox_2)
         self.segment_C.setObjectName(u"segment_C")
         self.segment_C.setGeometry(QRect(30, 70, 38, 16))
         self.segment_C.setFont(font4)
-        self.segment_C.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 174, 255);\n"
-"	background:white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_C.setChecked(True)
         self.segment_D = QCheckBox(self.groupBox_2)
         self.segment_D.setObjectName(u"segment_D")
         self.segment_D.setGeometry(QRect(30, 90, 38, 16))
         self.segment_D.setFont(font4)
-        self.segment_D.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 230, 65);\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	background:white;\n"
-"	border-radius: 3px;\n"
-"}")
         self.segment_D.setChecked(True)
 
         self.verticalLayout_2.addWidget(self.groupBox_2, 0, Qt.AlignHCenter)
