@@ -1506,12 +1506,16 @@ class AffiniteApp(QMainWindow):
                         f"{self.rec_dir}/"
                         f"Recording {time_data.hour:02d}{time_data.minute:02d}"
                     )
-                    # Adjust timestamps FIRST to make recording start time zero
+                    # Clear sensor reading buffers FIRST to ensure fresh data
+                    self.clear_sensor_reading_buffers()
+                    
+                    # Clear spectral data buffers to prevent old data from appearing
+                    for ch in CH_LIST:
+                        self.channel_mgr._current_length[ch] = 0
+                    
+                    # Adjust timestamps to make recording start time zero
                     # This shifts existing data to have negative timestamps
                     self.set_start()
-
-                    # Clear sensor reading buffers to remove pre-recording sensor data
-                    self.clear_sensor_reading_buffers()
 
                     # Start recording - this will reset time reference and move yellow cursor to 0
                     if self.device_config["ctrl"] != "":
