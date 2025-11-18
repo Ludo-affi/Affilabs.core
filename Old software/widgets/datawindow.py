@@ -1050,7 +1050,11 @@ class DataWindow(QWidget):
                             
                             # Show the gray zone
                             logger.debug(f"Showing gray zone for {cycle_time_minutes} minutes")
-                            self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
+                            try:
+                                self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
+                                logger.debug("Gray zone function returned successfully")
+                            except Exception as e:
+                                logger.error(f"Failed to show gray zone: {e}", exc_info=True)
 
                             # Fix window to cycle_time + 10%
                             window_seconds = cycle_time_minutes * 60 * 1.1  # Add 10%
@@ -1430,8 +1434,13 @@ class DataWindow(QWidget):
             self.segment_edit = row
             self.set_row_properties()
             self.set_row_properties(row)
-            self.ui.save_segment_btn.setText("Start Edited\nCycle")
-            self.ui.save_segment_btn.setStyleSheet(self.edit_style)
+            
+            # Only change button text in static mode (data processing)
+            # In dynamic mode (sensorgram), keep "Start\nCycle" for new cycles
+            if self.data_source == "static":
+                self.ui.save_segment_btn.setText("Save Edited\nCycle")
+                self.ui.save_segment_btn.setStyleSheet(self.edit_style)
+            
             self.ui.new_segment_btn.setText("Leave\n Edit Mode")
             self.ui.new_segment_btn.setStyleSheet(self.edit_style)
             if self.live_segment_start is None and self.current_segment:
@@ -1829,7 +1838,12 @@ class DataWindow(QWidget):
                     # channel to use as a reference point
                     reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
                     # Clamp to valid range (bisect_left can return len(array))
-                    reference_index = min(reference_index, len(l_val_data[CH_LIST[0]]) - 1)
+                    array_len = len(l_val_data[CH_LIST[0]])
+                    if array_len == 0:
+                        logger.error("Cannot export: no data in lambda_values")
+                        return
+                    reference_index = min(reference_index, array_len - 1)
+                    logger.debug(f"Export reference index: {reference_index} (array length: {array_len})")
                     references = [l_val_data[ch][reference_index] for ch in CH_LIST]
 
                     row_count = min(len(x) for x in l_time_data.values())
