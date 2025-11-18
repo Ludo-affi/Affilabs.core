@@ -26,6 +26,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.live_range = 50
         self.static_index = 0
         self.wait_for_reset = False
+        self.fixed_window_active = False  # Flag to prevent auto-range when window is fixed
 
         setConfigOptions(antialias=True)
 
@@ -156,7 +157,8 @@ class SensorgramGraph(GraphicsLayoutWidget):
                     logger.debug(f"sensorgram data not plottable, y = {y_data}, x = {x_data}")
             if self.live and not self.wait_for_reset:
                 # Always follow the latest time while live is enabled
-                self.set_right(self.latest_time, True)
+                # But don't re-enable auto-range if it's disabled (for fixed window)
+                self.set_right(self.latest_time, update=True)
             self.wait_for_reset = False
             self.updating = False
         except Exception as e:

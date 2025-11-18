@@ -1046,7 +1046,8 @@ class DataWindow(QWidget):
                         if cycle_time_minutes is not None and cycle_time_minutes > 0:
                             # Disable live mode to prevent auto-following
                             self.full_segment_view.live = False
-                            logger.debug("Disabled live mode for fixed window")
+                            self.full_segment_view.fixed_window_active = True
+                            logger.debug("Disabled live mode and enabled fixed window")
                             
                             # Show the gray zone
                             logger.debug(f"Showing gray zone for {cycle_time_minutes} minutes")
@@ -1837,13 +1838,13 @@ class DataWindow(QWidget):
                     # Finds the first time greater than or equal to 0 on the first
                     # channel to use as a reference point
                     reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
-                    # Clamp to valid range (bisect_left can return len(array))
-                    array_len = len(l_val_data[CH_LIST[0]])
-                    if array_len == 0:
+                    # Clamp to valid range - check minimum length across ALL channels
+                    min_array_len = min(len(l_val_data[ch]) for ch in CH_LIST)
+                    if min_array_len == 0:
                         logger.error("Cannot export: no data in lambda_values")
                         return
-                    reference_index = min(reference_index, array_len - 1)
-                    logger.debug(f"Export reference index: {reference_index} (array length: {array_len})")
+                    reference_index = min(reference_index, min_array_len - 1)
+                    logger.debug(f"Export reference index: {reference_index} (min array length: {min_array_len})")
                     references = [l_val_data[ch][reference_index] for ch in CH_LIST]
 
                     row_count = min(len(x) for x in l_time_data.values())
@@ -2243,12 +2244,12 @@ class DataWindow(QWidget):
         # Reset time reference (but keep existing data - it will have negative timestamps)
         self.full_segment_view.reset_time()
         self.live_segment_start = None
-        # Move yellow cursor (right) slightly ahead to avoid timing gap on first point
-        # Use 0.5 seconds to account for data collection timing
-        self.full_segment_view.set_right(0.5, emit=False, update=False)
-        logger.debug("Recording started: yellow cursor set to 0.5s")
+        # Move yellow cursor (right) to 0 - let set_start() handle timestamp adjustment
+        self.full_segment_view.set_right(0, emit=False, update=False)
+        logger.debug("Recording started: yellow cursor set to 0")
         self.new_segment()
-        self.save_data(rec_dir)
+        # Don't save data yet - wait for set_start() to adjust timestamps
+        # self.save_data(rec_dir) will be called after timestamps are adjusted
 
 
 if __name__ == "__main__":

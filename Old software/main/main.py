@@ -1516,6 +1516,8 @@ class AffiniteApp(QMainWindow):
                     # Start recording - this will reset time reference and move yellow cursor to 0
                     if self.device_config["ctrl"] != "":
                         self.main_window.sensorgram.start_recording(self.rec_dir)
+                        # Save initial data after timestamps are adjusted
+                        self.main_window.sensorgram.save_data(self.rec_dir)
 
                     self.rec_timer.start(1000 * RECORDING_INTERVAL)
             except Exception as e:
