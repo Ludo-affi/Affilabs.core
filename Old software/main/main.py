@@ -1506,9 +1506,15 @@ class AffiniteApp(QMainWindow):
                         f"{self.rec_dir}/"
                         f"Recording {time_data.hour:02d}{time_data.minute:02d}"
                     )
+                    # Clear all data buffers BEFORE starting recording to prevent timing gaps
+                    self.clear_sensor_reading_buffers()
+                    # Clear spectral data buffers
+                    for ch in CH_LIST:
+                        self.channel_mgr._current_length[ch] = 0
+                    
                     if self.device_config["ctrl"] != "":
                         self.main_window.sensorgram.start_recording(self.rec_dir)
-                    self.clear_sensor_reading_buffers()
+                    
                     self.set_start()
                     self.rec_timer.start(1000 * RECORDING_INTERVAL)
             except Exception as e:
