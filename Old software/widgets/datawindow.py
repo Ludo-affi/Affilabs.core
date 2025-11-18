@@ -2207,12 +2207,12 @@ class DataWindow(QWidget):
 
     def start_recording(self: Self, rec_dir: str) -> None:
         """Start recording."""
-        # Fully reset the sensorgram display and timing
-        self.full_segment_view.reset_sensorgram()
+        # Reset time reference (but keep existing data - it will have negative timestamps)
+        self.full_segment_view.reset_time()
         self.live_segment_start = None
-        # Set cursors to starting position (time 0)
-        self.full_segment_view.set_left(0, emit=False, update=False)
-        self.full_segment_view.set_right(2, emit=False, update=False)
+        # Move yellow cursor (right) to position 0 (recording start)
+        # Keep existing data visible with negative times
+        self.full_segment_view.set_right(0, emit=False, update=False)
         self.new_segment()
         self.save_data(rec_dir)
 

@@ -1383,7 +1383,7 @@ class AffiniteApp(QMainWindow):
         ch_error_str: str,
     ) -> None:
         self.calibrated = state
-        if self.adv_connected and DEV:
+        if self.adv_connected:
             self.main_window.ui.adv_btn.setEnabled(True)
         current_text = self.main_window.ui.status.text()
         if current_text.endswith("Calibrating"):
@@ -1506,15 +1506,12 @@ class AffiniteApp(QMainWindow):
                         f"{self.rec_dir}/"
                         f"Recording {time_data.hour:02d}{time_data.minute:02d}"
                     )
-                    # Clear all data buffers BEFORE starting recording to prevent timing gaps
-                    self.clear_sensor_reading_buffers()
-                    # Clear spectral data buffers
-                    for ch in CH_LIST:
-                        self.channel_mgr._current_length[ch] = 0
-                    
+                    # Start recording - this will reset time reference
                     if self.device_config["ctrl"] != "":
                         self.main_window.sensorgram.start_recording(self.rec_dir)
-                    
+                    # Clear sensor reading buffers after starting recording
+                    self.clear_sensor_reading_buffers()
+                    # Adjust timestamps to make recording start time zero
                     self.set_start()
                     self.rec_timer.start(1000 * RECORDING_INTERVAL)
             except Exception as e:
