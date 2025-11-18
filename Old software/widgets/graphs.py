@@ -1,8 +1,9 @@
 import PySide6
 import pyqtgraph
 import numpy as np
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import Signal, Qt, QRectF
+from PySide6.QtGui import QBrush, QColor, QPen
+from PySide6.QtWidgets import QGraphicsRectItem
 from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine, LinearRegionItem
 from copy import deepcopy
 import settings
@@ -11,7 +12,22 @@ from utils.logger import logger
 
 
 class SensorgramGraph(GraphicsLayoutWidget):
+    """
+    Master/Overview graph for full experiment timeline.
+
+    Purpose:
+    - Shows complete timeline of all collected data
+    - Yellow/Red cursors mark region of interest for detailed view
+    - Gray zone/lines indicate active cycle being recorded
+    - Compact layout (20% height) for navigation/context
+
+    Architecture:
+    - Part of master-detail layout (paired with SegmentGraph/Cycle of Interest)
+    - When cycle starts: gray zone appears, fixed window applied
+    - Live data continues updating, cursor auto-follow disabled during cycle
+    """
     segment_signal = Signal(float, float, bool)
+    shift_values_signal = Signal(dict)  # Signal to emit shift values to display box
 
     def __init__(self, title_string):
         super(SensorgramGraph, self).__init__()
@@ -33,14 +49,30 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
         self.plot.titleLabel.setText(title_string, size='13pt')
-        self.plot.showGrid(x=False, y=False)
+        self.plot.showGrid(x=True, y=True, alpha=0.2)
         self.plot.setAxisItems()
-        self.plot.setLabel('left', text=f'Lambda ({self.unit})')
+        self.plot.setLabel('left', text=f'λ ({self.unit})')  # Lambda symbol
         self.plot.setLabel('bottom', text='Time (s)')
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.enableAutoRange()
         self.plot.setAutoVisible()
+
+        # Set default Y-axis range for detector (580-660 nm)
+        self.plot.setYRange(580, 660, padding=0)
+
+        # Reduce Y-axis tick density for cleaner compact view
+        self.plot.getAxis('left').setStyle(maxTickLevel=1)  # Show fewer tick levels
+
+        # Ensure bottom axis has space for label - explicit sizing for visibility
+        bottom_axis = self.plot.getAxis('bottom')
+        left_axis = self.plot.getAxis('left')
+        bottom_axis.setHeight(45)  # Increased space for 'Time (s)' label visibility
+        left_axis.setWidth(55)     # Space for Y-axis label
+
+        # Ensure label is visible
+        bottom_axis.label.show()
+        left_axis.label.show()
 
         # set up channel data and plots
         self.plots = {}
@@ -54,28 +86,51 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         self.live = True
 
-        # set vertical cursors: left and right
+        # set vertical cursors: left and right with labels
         self.left_cursor = InfiniteLine(
             pos=0,
             angle=90,
-            pen=mkPen('y', width=3),
-            movable=True)
+            pen=mkPen('#333333', width=2),
+            movable=True,
+            label='Start 0.00s',
+            labelOpts={
+                'position': 0.95,
+                'color': (51, 51, 51),
+                'movable': False,
+                'fill': (255, 255, 255, 220),
+                'anchor': (1.0, 0.5),
+                'rotateAxis': (0, 1)
+            })
 
         self.right_cursor = InfiniteLine(
             pos=0,
             angle=90,
-            pen=mkPen('r', width=3),
-            movable=True)
+            pen=mkPen('#333333', width=2),
+            movable=True,
+            label='Stop 0.00s',
+            labelOpts={
+                'position': 0.95,
+                'color': (51, 51, 51),
+                'movable': False,
+                'fill': (255, 255, 255, 220),
+                'anchor': (1.0, 0.5),
+                'rotateAxis': (0, 1)
+            })
 
-        # set cursor color
-        self.left_cursor.setHoverPen('k')
-        self.right_cursor.setHoverPen('k')
+        # set cursor hover color
+        self.left_cursor.setHoverPen(mkPen('#666666', width=3))
+        self.right_cursor.setHoverPen(mkPen('#666666', width=3))
+
+        self.left_cursor.label.setAngle(-90)
+        self.right_cursor.label.setAngle(-90)
 
         self.plot.addItem(self.left_cursor)
         self.plot.addItem(self.right_cursor)
 
-        # Cycle time shaded region
+        # Cycle time markers (can be either shaded region or vertical lines)
         self.cycle_time_region = None
+        self.cycle_start_line = None
+        self.cycle_end_line = None
 
         self.left_cursor.sigDragged.connect(self.left_cursor_sig_dragged)
         self.right_cursor.sigDragged.connect(self.right_cursor_sig_dragged)
@@ -155,10 +210,15 @@ class SensorgramGraph(GraphicsLayoutWidget):
                             self.latest_time = lambda_times[ch][-1] + 0.01
                 else:
                     logger.debug(f"sensorgram data not plottable, y = {y_data}, x = {x_data}")
-            if self.live and not self.wait_for_reset:
-                # Always follow the latest time while live is enabled
-                # But don't re-enable auto-range if it's disabled (for fixed window)
+            # Auto-follow the latest data when live mode is enabled AND fixed window is not active
+            if self.live and not self.wait_for_reset and not self.fixed_window_active:
                 self.set_right(self.latest_time, update=True)
+            elif self.fixed_window_active:
+                # Log that we're in fixed window mode - data still updates but cursor doesn't move
+                if not hasattr(self, '_logged_fixed_window'):
+                    logger.info(f"📊 Fixed window active - live data updating but cursor locked")
+                    self._logged_fixed_window = True
+
             self.wait_for_reset = False
             self.updating = False
         except Exception as e:
@@ -219,6 +279,8 @@ class SensorgramGraph(GraphicsLayoutWidget):
             self.right_cursor_pos = l_pos + 1
         self.left_cursor_pos = l_pos
         self.left_cursor.setPos(l_pos)
+        # Update label with time value - single line format
+        self.left_cursor.label.setText(f"Start {l_pos:.2f}s")
         if emit:
             self.segment_signal.emit(self.left_cursor_pos, self.right_cursor_pos, update)
 
@@ -230,6 +292,8 @@ class SensorgramGraph(GraphicsLayoutWidget):
         else:
             self.right_cursor_pos = r_pos
             self.right_cursor.setPos(r_pos)
+            # Update label with time value - single line format
+            self.right_cursor.label.setText(f"Stop {r_pos:.2f}s")
             if emit:
                 self.segment_signal.emit(self.left_cursor_pos, self.right_cursor_pos, update)
 
@@ -245,78 +309,138 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.lambda_data = {}
         self.unit_factor = UNIT_LIST[self.unit]
         self.latest_time = 0
-        self.plot.setLabel('left', text=f'Lambda ({self.unit})')
+        self.plot.setLabel('left', text=f'λ ({self.unit})')  # Lambda symbol
 
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.static[ch].setVisible(bool(flag))
 
     def show_cycle_time_region(self, cycle_time_minutes):
-        """Show a shaded region indicating the expected cycle duration."""
-        logger.debug(f"show_cycle_time_region called: cycle_time={cycle_time_minutes} min")
+        """Show cycle time markers - either as vertical lines or a shaded bar."""
         if cycle_time_minutes is None or cycle_time_minutes <= 0:
             self.hide_cycle_time_region()
             return
 
-        # Remove existing region if any
+        # Remove existing markers first
         self.hide_cycle_time_region()
 
-        # Create shaded region from left cursor to left cursor + cycle_time
+        # Calculate time window
         start_time = self.left_cursor_pos
-        end_time = start_time + (cycle_time_minutes * 60)  # Convert minutes to seconds
-        logger.debug(f"Creating gray zone: from {start_time:.2f}s to {end_time:.2f}s")
+        end_time = start_time + (cycle_time_minutes * 60)
 
-        # Use LinearRegionItem for a vertical shaded region
-        from pyqtgraph import LinearRegionItem
+        logger.debug(f"Cycle markers ({settings.CYCLE_MARKER_STYLE}): [{start_time:.1f}, {end_time:.1f}]s")
+
+        if settings.CYCLE_MARKER_STYLE == "lines":
+            self._create_line_markers(start_time, end_time)
+        else:
+            self._create_shaded_region(start_time, end_time)
+
+    def _create_line_markers(self, start_time: float, end_time: float) -> None:
+        """Create vertical line markers for cycle start/end."""
+        from PySide6.QtCore import Qt
+
+        self.cycle_start_line = InfiniteLine(
+            pos=start_time,
+            angle=90,
+            pen=mkPen('g', width=4, style=Qt.SolidLine),
+            movable=False,
+            label='Cycle Start',
+            labelOpts={'position': 0.95, 'color': (0, 255, 0), 'movable': False, 'fill': (0, 0, 0, 100)}
+        )
+
+        self.cycle_end_line = InfiniteLine(
+            pos=end_time,
+            angle=90,
+            pen=mkPen('r', width=4, style=Qt.SolidLine),
+            movable=False,
+            label='Cycle End',
+            labelOpts={'position': 0.95, 'color': (255, 0, 0), 'movable': False, 'fill': (0, 0, 0, 100)}
+        )
+
+        self.cycle_start_line.setZValue(100)
+        self.cycle_end_line.setZValue(100)
+        self.cycle_start_line.setVisible(True)
+        self.cycle_end_line.setVisible(True)
+
+        self.plot.addItem(self.cycle_start_line)
+        self.plot.addItem(self.cycle_end_line)
+        self.plot.getViewBox().update()
+
+    def _create_shaded_region(self, start_time: float, end_time: float) -> None:
+        """Create shaded region for cycle window."""
+        from PySide6.QtGui import QBrush, QColor
+
         self.cycle_time_region = LinearRegionItem(
             values=[start_time, end_time],
             orientation='vertical',
-            brush=(150, 150, 255, 100),  # Light blue with higher opacity
-            movable=False
+            brush=QBrush(QColor(100, 100, 255, 70)),
+            movable=False,
+            pen=None
         )
-        
-        # Set z-order to ensure it's visible but behind data plots
         self.cycle_time_region.setZValue(-10)
-        logger.debug(f"Gray zone created with brush opacity 100, z-value -10")
-        
-        # Add to plot
+        self.cycle_time_region.setVisible(True)
+
         self.plot.addItem(self.cycle_time_region)
-        logger.debug(f"Gray zone added to plot: region object = {self.cycle_time_region}")
-        
-        # Force update/redraw
-        self.cycle_time_region.update()
-        self.plot.update()
-        logger.debug("Plot update called to render gray zone")
+        self.plot.getViewBox().update()
 
     def hide_cycle_time_region(self):
-        """Hide the cycle time shaded region."""
-        if self.cycle_time_region is not None:
-            self.plot.removeItem(self.cycle_time_region)
-            self.cycle_time_region = None
+        """Hide all cycle time markers."""
+        markers = [
+            (self.cycle_time_region, 'cycle_time_region'),
+            (self.cycle_start_line, 'cycle_start_line'),
+            (self.cycle_end_line, 'cycle_end_line')
+        ]
+
+        for marker, attr_name in markers:
+            if marker is not None:
+                self.plot.removeItem(marker)
+                setattr(self, attr_name, None)
 
     def update_cycle_time_region(self, cycle_time_minutes):
-        """Update the cycle time region position based on left cursor."""
-        if cycle_time_minutes is not None and cycle_time_minutes > 0:
-            start_time = self.left_cursor_pos
-            end_time = start_time + (cycle_time_minutes * 60)
+        """Update cycle marker positions if cursor moves during cycle."""
+        if not (cycle_time_minutes and cycle_time_minutes > 0):
+            return
 
-            if self.cycle_time_region is not None:
-                self.cycle_time_region.setRegion([start_time, end_time])
-            else:
-                self.show_cycle_time_region(cycle_time_minutes)
-        yrange = self.plot.viewRange()[1]
-        self.plot.setRange(yRange=(yrange[0], yrange[1]), update=True, disableAutoRange=False)
+        start_time = self.left_cursor_pos
+        end_time = start_time + (cycle_time_minutes * 60)
+
+        # Update existing markers or create new ones
+        if self.cycle_time_region is not None:
+            self.cycle_time_region.setRegion([start_time, end_time])
+        elif self.cycle_start_line is not None and self.cycle_end_line is not None:
+            self.cycle_start_line.setPos(start_time)
+            self.cycle_end_line.setPos(end_time)
+        else:
+            # No markers exist, create them
+            self.show_cycle_time_region(cycle_time_minutes)
 
 
 class SegmentGraph(GraphicsLayoutWidget):
+    """
+    Detail/Cycle of Interest graph - shows zoomed view of selected data.
+
+    Purpose:
+    - Shows data between yellow/red cursors from sensorgram
+    - During active cycle: displays fixed window view (0 → cycle_duration × 1.1)
+    - Takes 80% of screen height for detailed analysis
+    - Shows processed shift data (nm or RU)
+
+    Architecture:
+    - Part of master-detail layout (paired with SensorgramGraph)
+    - Updates live as data flows during cycle recording
+    - Supports dissociation/association cursor analysis
+    - Fixed window during cycles, auto-range otherwise
+    """
     average_channel_flag = False
     average_channel_ids = []
     subsample_threshold = 501
     subsample_target = 250
     subsampling = False
     updating = False
+    fixed_window_active = False
     dissoc_cursor_sig = Signal(str, float, float)
     assoc_cursor_sig = Signal(str, float, float)
+    shift_values_signal = Signal(dict)  # Signal to emit shift values to display box
 
     def __init__(self, title_string, unit_string, parent=None, has_cursors=False):
         super(SegmentGraph, self).__init__(parent=parent)
@@ -327,8 +451,8 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.plot = self.addPlot(title=title_string)
         self.plot.titleLabel.setText(title_string, size='10pt')
         self.plot.setDownsampling(ds=False, mode='subsample')
-        self.plot.showGrid(x=False, y=False)
-        self.plot.setLabel("left", f"Shift ({unit_string})")
+        self.plot.showGrid(x=True, y=True, alpha=0.2)
+        self.plot.setLabel("left", f"Δ SPR ({unit_string})")
         self.plot.setLabel("bottom", "Time (s)")
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
@@ -336,15 +460,31 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.plot.setAutoVisible(x=True, y=True)
         self.plots = {}
 
+        # Ensure axes have space for labels - explicit sizing for visibility
+        bottom_axis = self.plot.getAxis('bottom')
+        left_axis = self.plot.getAxis('left')
+        bottom_axis.setHeight(45)  # Increased space for 'Time (s)' label visibility
+        left_axis.setWidth(55)     # Space for Y-axis label
+
+        # Ensure label is visible
+        bottom_axis.label.show()
+        left_axis.label.show()
+
         # Set minimum Y-axis range (10 RU minimum)
         self.min_y_range = 10.0
         self.plot.getViewBox().sigRangeChanged.connect(self._enforce_min_range)
+
+        # Set default Y-axis range for Cycle of Interest (-5 to 10 RU)
+        self.plot.setYRange(-5, 10, padding=0)
 
         self.wait_to_update = False
         self.dissoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
         self.dissoc_cursor_en = False
         self.assoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
         self.assoc_cursor_en = False
+
+        # Fixed annotation box for shift values (always visible in upper-left)
+        self.shift_annotation = None
         for ch in CH_LIST:
             self.plots[ch] = self.plot.plot(pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2), connect='finite')
             if has_cursors:
@@ -489,9 +629,17 @@ class SegmentGraph(GraphicsLayoutWidget):
                             padded_x_max = x_max
 
                     # Set the ranges with padding disabled to avoid auto-scaling
-                    self.plot.setRange(xRange=(padded_x_min, padded_x_max),
-                                      yRange=(padded_y_min, padded_y_max),
-                                      padding=0)
+                    # BUT only if fixed window is not active (from cycle start)
+                    if not self.fixed_window_active:
+                        self.plot.setRange(xRange=(padded_x_min, padded_x_max),
+                                          yRange=(padded_y_min, padded_y_max),
+                                          padding=0)
+                    else:
+                        # Fixed window active - only update Y range, keep X as-is
+                        self.plot.setYRange(padded_y_min, padded_y_max, padding=0)
+
+                # Add shift value labels on the signals
+                self._update_shift_labels(seg, x_data, y_data)
         except Exception as e:
             logger.debug(f"Error updating SOI display: {e}")
         self.updating = False
@@ -548,4 +696,40 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.plots[ch].clear()
         if unit is None:
             unit = self.unit
-        self.plot.setLabel('left', text=f'Shift ({unit})')
+        self.plot.setLabel('left', text=f'Δ SPR ({unit})')
+
+        # Clear shift annotation
+        self._clear_shift_annotation()
+
+    def _clear_shift_annotation(self):
+        """Remove the shift value annotation box from the graph."""
+        if self.shift_annotation is not None:
+            self.plot.removeItem(self.shift_annotation)
+            self.shift_annotation = None
+
+    def _update_shift_labels(self, seg, x_data, y_data):
+        """Emit shift values to display box instead of drawing on graph."""
+        try:
+            # Get shift values from the segment object (stored in seg.shift dict)
+            if not hasattr(seg, 'shift'):
+                return
+
+            # Build dictionary for visible channels only
+            shift_data = {}
+            for ch in CH_LIST:
+                if self.plots[ch].isVisible():
+                    shift_val = seg.shift.get(ch, 0.0)
+                    shift_data[ch] = shift_val
+
+            if shift_data:
+                # Emit signal with shift data
+                self.shift_values_signal.emit(shift_data)
+            else:
+                # Clear display if no channels visible
+                self.shift_values_signal.emit({})
+
+            # Clear any old annotation
+            self._clear_shift_annotation()
+
+        except Exception as e:
+            logger.debug(f"Error updating shift annotation: {e}")

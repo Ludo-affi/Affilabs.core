@@ -62,7 +62,7 @@
            <string notr="true">QCheckBox{
 	color: black;
 	background: white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -87,7 +87,7 @@
            <string notr="true">QCheckBox{
 	color: rgb(255, 0, 81);
 	background:white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -112,7 +112,7 @@
            <string notr="true">QCheckBox{
 	color: rgb(0, 174, 255);
 	background: white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -136,7 +136,7 @@
           <property name="styleSheet">
            <string notr="true">QCheckBox{
 	color: rgb(0, 230, 65);
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	background: white;
 	border-radius: 3px;
 }</string>
@@ -887,6 +887,65 @@ Live Time</string>
           </size>
          </property>
         </spacer>
+       </item>
+       <item>
+        <widget class="QPushButton" name="reset_segment_btn">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>30</width>
+           <height>30</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>30</width>
+           <height>30</height>
+          </size>
+         </property>
+         <property name="font">
+          <font>
+           <family>Segoe UI</family>
+           <pointsize>5</pointsize>
+          </font>
+         </property>
+         <property name="mouseTracking">
+          <bool>true</bool>
+         </property>
+         <property name="toolTip">
+          <string>Clear All Data</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QPushButton{
+	border: none;
+	background: none;
+}
+
+QPushButton::hover{
+	background: white;
+	border: 1px raised;
+	border-radius: 10px;
+}</string>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+         <property name="icon">
+          <iconset resource="ai.qrc">
+           <normaloff>:/img/img/reload.png</normaloff>:/img/img/reload.png</iconset>
+         </property>
+         <property name="iconSize">
+          <size>
+           <width>25</width>
+           <height>25</height>
+          </size>
+         </property>
+        </widget>
        </item>
       </layout>
      </item>

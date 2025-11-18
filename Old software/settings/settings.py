@@ -36,7 +36,7 @@ EZ_CH_LIST = ["a", "b"]
 UNIT_LIST = {"nm": 1, "RU": 355}
 
 # Standard color palette
-GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 230, 65)}
+GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 100, 0)}
 
 # Colorblind-friendly palette (Okabe-Ito)
 # Designed to be distinguishable for all types of colorblindness
@@ -49,6 +49,9 @@ GRAPH_COLORS_COLORBLIND = {
 
 # Current active palette (can be toggled by user)
 ACTIVE_GRAPH_COLORS = GRAPH_COLORS.copy()
+
+# Cycle marker style: "cursors" or "lines"
+CYCLE_MARKER_STYLE = "cursors"  # Can be changed to "lines" for vertical line markers
 
 ARDUINO_VID = 0x2341
 ARDUINO_PID = 0x8036

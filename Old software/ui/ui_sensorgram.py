@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'sensorgram.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.6.1
+## Created by: Qt User Interface Compiler version 6.10.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -15,12 +15,11 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QAbstractScrollArea, QAbstractItemView, QApplication, QCheckBox, QComboBox, QFrame,
-    QGraphicsView, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QProgressBar, QPushButton,
-    QSizePolicy, QSpacerItem, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget)
-import ui.ai_rc
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
+    QGraphicsView, QGroupBox, QHBoxLayout, QLabel,
+    QLineEdit, QProgressBar, QPushButton, QSizePolicy,
+    QSpacerItem, QVBoxLayout, QWidget)
+from . import ai_rc
 
 class Ui_Sensorgram(object):
     def setupUi(self, Sensorgram):
@@ -41,6 +40,12 @@ class Ui_Sensorgram(object):
         self.displays.setContentsMargins(11, 11, 11, 11)
         self.groupBox = QGroupBox(Sensorgram)
         self.groupBox.setObjectName(u"groupBox")
+        self.groupBox.setStyleSheet(u"QGroupBox#groupBox{\n"
+"	background-color: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 5px;\n"
+"	padding: 10px;\n"
+"}")
         self.horizontalLayout_12 = QHBoxLayout(self.groupBox)
         self.horizontalLayout_12.setObjectName(u"horizontalLayout_12")
         self.segment_A = QCheckBox(self.groupBox)
@@ -50,6 +55,12 @@ class Ui_Sensorgram(object):
         font1.setPointSize(9)
         font1.setBold(True)
         self.segment_A.setFont(font1)
+        self.segment_A.setStyleSheet(u"QCheckBox{\n"
+"	color: black;\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_A.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_A)
@@ -57,6 +68,12 @@ class Ui_Sensorgram(object):
         self.segment_B = QCheckBox(self.groupBox)
         self.segment_B.setObjectName(u"segment_B")
         self.segment_B.setFont(font1)
+        self.segment_B.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(255, 0, 81);\n"
+"	background:white;\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_B.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_B)
@@ -64,6 +81,12 @@ class Ui_Sensorgram(object):
         self.segment_C = QCheckBox(self.groupBox)
         self.segment_C.setObjectName(u"segment_C")
         self.segment_C.setFont(font1)
+        self.segment_C.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(0, 174, 255);\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_C.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_C)
@@ -71,12 +94,68 @@ class Ui_Sensorgram(object):
         self.segment_D = QCheckBox(self.groupBox)
         self.segment_D.setObjectName(u"segment_D")
         self.segment_D.setFont(font1)
+        self.segment_D.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(0, 100, 0);\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	background: white;\n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_D.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_D)
+        
+        self.clear_graph_btn_in_display = QPushButton(self.groupBox)
+        self.clear_graph_btn_in_display.setObjectName(u"clear_graph_btn_in_display")
+        self.clear_graph_btn_in_display.setText("Clear")
+        self.clear_graph_btn_in_display.setMinimumSize(QSize(60, 26))
+        self.clear_graph_btn_in_display.setMaximumSize(QSize(80, 26))
+
+        self.horizontalLayout_12.addWidget(self.clear_graph_btn_in_display)
 
 
         self.displays.addWidget(self.groupBox)
+
+        self.horizontalLayout_sensor_header = QHBoxLayout()
+        self.horizontalLayout_sensor_header.setSpacing(8)
+        self.horizontalLayout_sensor_header.setObjectName(u"horizontalLayout_sensor_header")
+        self.horizontalLayout_sensor_header.setContentsMargins(0, 0, 0, 0)
+        self.shift_display_box = QLabel(Sensorgram)
+        self.shift_display_box.setObjectName(u"shift_display_box")
+        self.shift_display_box.setMinimumSize(QSize(200, 40))
+        self.shift_display_box.setMaximumSize(QSize(400, 40))
+        self.shift_display_box.setStyleSheet(u"QLabel {\n"
+"	background-color: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 4px;\n"
+"	padding: 5px;\n"
+"	font-family: Segoe UI;\n"
+"	font-size: 9pt;\n"
+"}")
+        self.shift_display_box.setAlignment(Qt.AlignVCenter|Qt.AlignLeft)
+
+        self.horizontalLayout_sensor_header.addWidget(self.shift_display_box)
+
+        self.clear_graph_btn = QPushButton(Sensorgram)
+        self.clear_graph_btn.setObjectName(u"clear_graph_btn")
+        self.clear_graph_btn.setMinimumSize(QSize(20, 40))
+        self.clear_graph_btn.setMaximumSize(QSize(20, 40))
+
+        self.horizontalLayout_sensor_header.addWidget(self.clear_graph_btn)
+
+        self.adjust_rect_btn = QPushButton(Sensorgram)
+        self.adjust_rect_btn.setObjectName(u"adjust_rect_btn")
+        self.adjust_rect_btn.setText("Adjust Rect")
+        self.adjust_rect_btn.setMinimumSize(QSize(80, 30))
+
+        self.horizontalLayout_sensor_header.addWidget(self.adjust_rect_btn)
+
+        self.horizontalSpacer_header = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_sensor_header.addItem(self.horizontalSpacer_header)
+
+        self.horizontalLayout_sensor_header.setStretch(0, 1)
+
+        self.displays.addLayout(self.horizontalLayout_sensor_header)
 
         self.full_segment = QFrame(Sensorgram)
         self.full_segment.setObjectName(u"full_segment")
@@ -88,11 +167,11 @@ class Ui_Sensorgram(object):
         self.horizontalLayout_3 = QHBoxLayout(self.full_segment)
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
         self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.horizontalSpacer_4 = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer_4 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_4)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.horizontalLayout_3.addItem(self.verticalSpacer)
 
@@ -108,11 +187,11 @@ class Ui_Sensorgram(object):
         self.horizontalLayout_4 = QHBoxLayout(self.SOI)
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
         self.horizontalLayout_4.setContentsMargins(0, 0, 0, 0)
-        self.horizontalSpacer_5 = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer_5 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_4.addItem(self.horizontalSpacer_5)
 
-        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.horizontalLayout_4.addItem(self.verticalSpacer_2)
 
@@ -124,12 +203,78 @@ class Ui_Sensorgram(object):
 
         self.controls = QVBoxLayout()
         self.controls.setObjectName(u"controls")
+        self.groupBox_display_right = QGroupBox(Sensorgram)
+        self.groupBox_display_right.setObjectName(u"groupBox_display_right")
+        self.groupBox_display_right.setStyleSheet(u"QGroupBox#groupBox_display_right{\n"
+"	background-color: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 5px;\n"
+"	padding: 10px;\n"
+"}")
+        self.verticalLayout_display = QVBoxLayout(self.groupBox_display_right)
+        self.verticalLayout_display.setObjectName(u"verticalLayout_display")
+        self.segment_A_right = QCheckBox(self.groupBox_display_right)
+        self.segment_A_right.setObjectName(u"segment_A_right")
+        self.segment_A_right.setFont(font1)
+        self.segment_A_right.setStyleSheet(u"QCheckBox{\n"
+"	color: black;\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 3px;\n"
+"}")
+        self.segment_A_right.setChecked(True)
+
+        self.verticalLayout_display.addWidget(self.segment_A_right)
+
+        self.segment_B_right = QCheckBox(self.groupBox_display_right)
+        self.segment_B_right.setObjectName(u"segment_B_right")
+        self.segment_B_right.setFont(font1)
+        self.segment_B_right.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(255, 0, 81);\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 3px;\n"
+"}")
+        self.segment_B_right.setChecked(True)
+
+        self.verticalLayout_display.addWidget(self.segment_B_right)
+
+        self.segment_C_right = QCheckBox(self.groupBox_display_right)
+        self.segment_C_right.setObjectName(u"segment_C_right")
+        self.segment_C_right.setFont(font1)
+        self.segment_C_right.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(0, 174, 255);\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 3px;\n"
+"}")
+        self.segment_C_right.setChecked(True)
+
+        self.verticalLayout_display.addWidget(self.segment_C_right)
+
+        self.segment_D_right = QCheckBox(self.groupBox_display_right)
+        self.segment_D_right.setObjectName(u"segment_D_right")
+        self.segment_D_right.setFont(font1)
+        self.segment_D_right.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(0, 230, 65);\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171);\n"
+"	border-radius: 3px;\n"
+"}")
+        self.segment_D_right.setChecked(True)
+
+        self.verticalLayout_display.addWidget(self.segment_D_right)
+
+
+        self.controls.addWidget(self.groupBox_display_right)
+
         self.horizontalLayout_5 = QHBoxLayout()
         self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
         self.verticalLayout_2 = QVBoxLayout()
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.groupBox_6 = QGroupBox(Sensorgram)
         self.groupBox_6.setObjectName(u"groupBox_6")
+        self.groupBox_6.setVisible(False)
         self.verticalLayout_4 = QVBoxLayout(self.groupBox_6)
         self.verticalLayout_4.setObjectName(u"verticalLayout_4")
         self.live_btn = QCheckBox(self.groupBox_6)
@@ -233,140 +378,20 @@ class Ui_Sensorgram(object):
         self.horizontalLayout_14.setObjectName(u"horizontalLayout_14")
         self.label_3 = QLabel(Sensorgram)
         self.label_3.setObjectName(u"label_3")
+        self.label_3.setVisible(False)
         self.label_3.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
 
         self.horizontalLayout_14.addWidget(self.label_3)
 
         self.exp_clock = QLabel(Sensorgram)
         self.exp_clock.setObjectName(u"exp_clock")
+        self.exp_clock.setVisible(False)
         self.exp_clock.setStyleSheet(u"")
 
         self.horizontalLayout_14.addWidget(self.exp_clock)
 
 
         self.verticalLayout_2.addLayout(self.horizontalLayout_14)
-
-        self.groupBox_3 = QGroupBox(Sensorgram)
-        self.groupBox_3.setObjectName(u"groupBox_3")
-        self.verticalLayout_5 = QVBoxLayout(self.groupBox_3)
-        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
-        self.horizontalLayout_8 = QHBoxLayout()
-        self.horizontalLayout_8.setObjectName(u"horizontalLayout_8")
-        self.label_20 = QLabel(self.groupBox_3)
-        self.label_20.setObjectName(u"label_20")
-        self.label_20.setMargin(2)
-
-        self.horizontalLayout_8.addWidget(self.label_20)
-
-        self.shift_A = QLabel(self.groupBox_3)
-        self.shift_A.setObjectName(u"shift_A")
-        sizePolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.shift_A.sizePolicy().hasHeightForWidth())
-        self.shift_A.setSizePolicy(sizePolicy)
-        self.shift_A.setStyleSheet(u"background: white;\n"
-"border: 1px solid rgb(171, 171, 171);\n"
-"border-radius: 2px;")
-        self.shift_A.setAlignment(Qt.AlignCenter)
-
-        self.horizontalLayout_8.addWidget(self.shift_A)
-
-        self.unit_a = QLabel(self.groupBox_3)
-        self.unit_a.setObjectName(u"unit_a")
-        self.unit_a.setMargin(0)
-
-        self.horizontalLayout_8.addWidget(self.unit_a)
-
-
-        self.verticalLayout_5.addLayout(self.horizontalLayout_8)
-
-        self.horizontalLayout_9 = QHBoxLayout()
-        self.horizontalLayout_9.setObjectName(u"horizontalLayout_9")
-        self.label_21 = QLabel(self.groupBox_3)
-        self.label_21.setObjectName(u"label_21")
-        self.label_21.setMargin(2)
-
-        self.horizontalLayout_9.addWidget(self.label_21)
-
-        self.shift_B = QLabel(self.groupBox_3)
-        self.shift_B.setObjectName(u"shift_B")
-        sizePolicy.setHeightForWidth(self.shift_B.sizePolicy().hasHeightForWidth())
-        self.shift_B.setSizePolicy(sizePolicy)
-        self.shift_B.setStyleSheet(u"background: white;\n"
-"border: 1px solid rgb(171, 171, 171);\n"
-"border-radius: 2px;")
-        self.shift_B.setAlignment(Qt.AlignCenter)
-
-        self.horizontalLayout_9.addWidget(self.shift_B)
-
-        self.unit_b = QLabel(self.groupBox_3)
-        self.unit_b.setObjectName(u"unit_b")
-        self.unit_b.setMargin(0)
-
-        self.horizontalLayout_9.addWidget(self.unit_b)
-
-
-        self.verticalLayout_5.addLayout(self.horizontalLayout_9)
-
-        self.horizontalLayout_10 = QHBoxLayout()
-        self.horizontalLayout_10.setObjectName(u"horizontalLayout_10")
-        self.label_22 = QLabel(self.groupBox_3)
-        self.label_22.setObjectName(u"label_22")
-        self.label_22.setMargin(2)
-
-        self.horizontalLayout_10.addWidget(self.label_22)
-
-        self.shift_C = QLabel(self.groupBox_3)
-        self.shift_C.setObjectName(u"shift_C")
-        sizePolicy.setHeightForWidth(self.shift_C.sizePolicy().hasHeightForWidth())
-        self.shift_C.setSizePolicy(sizePolicy)
-        self.shift_C.setStyleSheet(u"background: white;\n"
-"border: 1px solid rgb(171, 171, 171);\n"
-"border-radius: 2px;")
-        self.shift_C.setAlignment(Qt.AlignCenter)
-
-        self.horizontalLayout_10.addWidget(self.shift_C)
-
-        self.unit_c = QLabel(self.groupBox_3)
-        self.unit_c.setObjectName(u"unit_c")
-        self.unit_c.setMargin(0)
-
-        self.horizontalLayout_10.addWidget(self.unit_c)
-
-
-        self.verticalLayout_5.addLayout(self.horizontalLayout_10)
-
-        self.horizontalLayout_11 = QHBoxLayout()
-        self.horizontalLayout_11.setObjectName(u"horizontalLayout_11")
-        self.label_23 = QLabel(self.groupBox_3)
-        self.label_23.setObjectName(u"label_23")
-        self.label_23.setMargin(2)
-
-        self.horizontalLayout_11.addWidget(self.label_23)
-
-        self.shift_D = QLabel(self.groupBox_3)
-        self.shift_D.setObjectName(u"shift_D")
-        sizePolicy.setHeightForWidth(self.shift_D.sizePolicy().hasHeightForWidth())
-        self.shift_D.setSizePolicy(sizePolicy)
-        self.shift_D.setStyleSheet(u"background: white;\n"
-"border: 1px solid rgb(171, 171, 171);\n"
-"border-radius: 2px;")
-        self.shift_D.setAlignment(Qt.AlignCenter)
-
-        self.horizontalLayout_11.addWidget(self.shift_D)
-
-        self.unit_d = QLabel(self.groupBox_3)
-        self.unit_d.setObjectName(u"unit_d")
-        self.unit_d.setMargin(0)
-
-        self.horizontalLayout_11.addWidget(self.unit_d)
-
-
-        self.verticalLayout_5.addLayout(self.horizontalLayout_11)
-
-
-        self.verticalLayout_2.addWidget(self.groupBox_3)
 
 
         self.horizontalLayout_5.addLayout(self.verticalLayout_2)
@@ -375,7 +400,7 @@ class Ui_Sensorgram(object):
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.loop_diagram = QGraphicsView(Sensorgram)
         self.loop_diagram.setObjectName(u"loop_diagram")
-        self.loop_diagram.setMaximumSize(QSize(16777215, 134))
+        self.loop_diagram.setMaximumSize(QSize(16777215, 200))
         self.loop_diagram.setStyleSheet(u"background:transparent")
         self.loop_diagram.setFrameShape(QFrame.NoFrame)
         self.loop_diagram.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -427,11 +452,11 @@ class Ui_Sensorgram(object):
 
         self.flow_rate_now = QLabel(self.flow_rate_box)
         self.flow_rate_now.setObjectName(u"flow_rate_now")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.flow_rate_now.sizePolicy().hasHeightForWidth())
-        self.flow_rate_now.setSizePolicy(sizePolicy1)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.flow_rate_now.sizePolicy().hasHeightForWidth())
+        self.flow_rate_now.setSizePolicy(sizePolicy)
         self.flow_rate_now.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
 
         self.horizontalLayout_15.addWidget(self.flow_rate_now)
@@ -468,90 +493,86 @@ class Ui_Sensorgram(object):
 
         self.verticalLayout.addWidget(self.flow_rate_box)
 
-        self.verticalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer_3)
 
         self.groupBox_4 = QGroupBox(Sensorgram)
         self.groupBox_4.setObjectName(u"groupBox_4")
-        self.horizontalLayout_cycle_controls = QHBoxLayout(self.groupBox_4)
-        self.horizontalLayout_cycle_controls.setObjectName(u"horizontalLayout_cycle_controls")
+        self.verticalLayout_3 = QVBoxLayout(self.groupBox_4)
+        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
+        self.horizontalLayout_exp_time = QHBoxLayout()
+        self.horizontalLayout_exp_time.setObjectName(u"horizontalLayout_exp_time")
+        self.label_exp_time = QLabel(self.groupBox_4)
+        self.label_exp_time.setObjectName(u"label_exp_time")
+        self.label_exp_time.setVisible(False)
 
-        # Cycle Type Dropdown
-        self.verticalLayout_cycle_type = QVBoxLayout()
-        self.verticalLayout_cycle_type.setObjectName(u"verticalLayout_cycle_type")
+        self.horizontalLayout_exp_time.addWidget(self.label_exp_time)
+
+        self.exp_clock_settings = QLabel(self.groupBox_4)
+        self.exp_clock_settings.setObjectName(u"exp_clock_settings")
+        self.exp_clock_settings.setVisible(False)
+
+        self.horizontalLayout_exp_time.addWidget(self.exp_clock_settings)
+
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_exp_time)
+
+        self.horizontalLayout_cycle_type = QHBoxLayout()
+        self.horizontalLayout_cycle_type.setObjectName(u"horizontalLayout_cycle_type")
         self.label_cycle_type = QLabel(self.groupBox_4)
         self.label_cycle_type.setObjectName(u"label_cycle_type")
-        self.label_cycle_type.setText("Type")
-        self.verticalLayout_cycle_type.addWidget(self.label_cycle_type)
+
+        self.horizontalLayout_cycle_type.addWidget(self.label_cycle_type)
 
         self.current_cycle_type = QComboBox(self.groupBox_4)
+        self.current_cycle_type.addItem("")
+        self.current_cycle_type.addItem("")
+        self.current_cycle_type.addItem("")
+        self.current_cycle_type.addItem("")
         self.current_cycle_type.setObjectName(u"current_cycle_type")
-        self.current_cycle_type.addItems(["Auto-read", "Baseline", "Flow", "Static"])
-        self.current_cycle_type.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                color: black;
-                border: 1px solid gray;
-                padding: 2px;
-            }
-            QComboBox:hover {
-                background-color: #f0f0f0;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                color: black;
-                selection-background-color: #0078d4;
-                selection-color: white;
-            }
-        """)
-        self.verticalLayout_cycle_type.addWidget(self.current_cycle_type)
-        self.horizontalLayout_cycle_controls.addLayout(self.verticalLayout_cycle_type)
+        self.current_cycle_type.setEditable(False)
 
-        # Cycle Time Dropdown
-        self.verticalLayout_cycle_time = QVBoxLayout()
-        self.verticalLayout_cycle_time.setObjectName(u"verticalLayout_cycle_time")
-        self.label_cycle_time = QLabel(self.groupBox_4)
-        self.label_cycle_time.setObjectName(u"label_cycle_time")
-        self.label_cycle_time.setText("Time")
-        self.verticalLayout_cycle_time.addWidget(self.label_cycle_time)
+        self.horizontalLayout_cycle_type.addWidget(self.current_cycle_type)
 
-        self.current_cycle_time = QComboBox(self.groupBox_4)
-        self.current_cycle_time.setObjectName(u"current_cycle_time")
-        self.current_cycle_time.addItems(["5 min", "15 min", "30 min", "60 min"])
-        self.current_cycle_time.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                color: black;
-                border: 1px solid gray;
-                padding: 2px;
-            }
-            QComboBox:hover {
-                background-color: #f0f0f0;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                color: black;
-                selection-background-color: #0078d4;
-                selection-color: white;
-            }
-        """)
-        self.current_cycle_time.setEnabled(False)  # Initially disabled
-        self.verticalLayout_cycle_time.addWidget(self.current_cycle_time)
-        self.horizontalLayout_cycle_controls.addLayout(self.verticalLayout_cycle_time)
 
-        # Add Start Cycle button to cycle controls
+        self.verticalLayout_3.addLayout(self.horizontalLayout_cycle_type)
+
+        self.horizontalLayout_cycle_duration = QHBoxLayout()
+        self.horizontalLayout_cycle_duration.setObjectName(u"horizontalLayout_cycle_duration")
+        self.label_cycle_duration = QLabel(self.groupBox_4)
+        self.label_cycle_duration.setObjectName(u"label_cycle_duration")
+
+        self.horizontalLayout_cycle_duration.addWidget(self.label_cycle_duration)
+
+        self.current_cycle_duration = QComboBox(self.groupBox_4)
+        self.current_cycle_duration.addItem("")
+        self.current_cycle_duration.addItem("")
+        self.current_cycle_duration.addItem("")
+        self.current_cycle_duration.addItem("")
+        self.current_cycle_duration.addItem("")
+        self.current_cycle_duration.setObjectName(u"current_cycle_duration")
+        self.current_cycle_duration.setEditable(False)
+
+        self.horizontalLayout_cycle_duration.addWidget(self.current_cycle_duration)
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_cycle_duration)
+
+        self.horizontalLayout_cycle_buttons = QHBoxLayout()
+        self.horizontalLayout_cycle_buttons.setObjectName(u"horizontalLayout_cycle_buttons")
         self.save_segment_btn = QPushButton(self.groupBox_4)
         self.save_segment_btn.setObjectName(u"save_segment_btn")
-        self.save_segment_btn.setFont(font)
-        self.save_segment_btn.setFocusPolicy(Qt.NoFocus)
-        self.horizontalLayout_cycle_controls.addWidget(self.save_segment_btn)
+
+        self.horizontalLayout_cycle_buttons.addWidget(self.save_segment_btn)
+
+        self.new_segment_btn = QPushButton(self.groupBox_4)
+        self.new_segment_btn.setObjectName(u"new_segment_btn")
+
+        self.horizontalLayout_cycle_buttons.addWidget(self.new_segment_btn)
+
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_cycle_buttons)
+
 
         self.verticalLayout.addWidget(self.groupBox_4)
 
@@ -565,52 +586,25 @@ class Ui_Sensorgram(object):
 
         self.horizontalLayout_13 = QHBoxLayout()
         self.horizontalLayout_13.setObjectName(u"horizontalLayout_13")
-        self.horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_13.addItem(self.horizontalSpacer_3)
 
-        self.new_segment_btn = QPushButton(Sensorgram)
-        self.new_segment_btn.setObjectName(u"new_segment_btn")
-        self.new_segment_btn.setFont(font)
-
-        self.horizontalLayout_13.addWidget(self.new_segment_btn)
-
-        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-        self.horizontalLayout_13.addItem(self.horizontalSpacer)
-
-        self.controls.addLayout(self.horizontalLayout_13)
-
-        self.seg_table = QFrame(Sensorgram)
-        self.seg_table.setObjectName(u"seg_table")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        sizePolicy2.setHorizontalStretch(41)
-        sizePolicy2.setVerticalStretch(0)
-        sizePolicy2.setHeightForWidth(self.seg_table.sizePolicy().hasHeightForWidth())
-        self.seg_table.setSizePolicy(sizePolicy2)
-        self.seg_table.setMinimumSize(QSize(510, 50))
-        self.seg_table.setMaximumSize(QSize(510, 50))
-        self.seg_table.setFont(font)
-        self.seg_table.setFrameShape(QFrame.StyledPanel)
-        self.seg_table.setFrameShadow(QFrame.Raised)
-        self.delete_row_btn = QPushButton(self.seg_table)
-        self.delete_row_btn.setObjectName(u"delete_row_btn")
-        self.delete_row_btn.setGeometry(QRect(30, 10, 30, 30))
-        sizePolicy3 = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.delete_row_btn.sizePolicy().hasHeightForWidth())
-        self.delete_row_btn.setSizePolicy(sizePolicy3)
-        self.delete_row_btn.setMinimumSize(QSize(30, 30))
-        self.delete_row_btn.setMaximumSize(QSize(30, 30))
+        self.reset_segment_btn = QPushButton(Sensorgram)
+        self.reset_segment_btn.setObjectName(u"reset_segment_btn")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.reset_segment_btn.sizePolicy().hasHeightForWidth())
+        self.reset_segment_btn.setSizePolicy(sizePolicy1)
+        self.reset_segment_btn.setMinimumSize(QSize(30, 30))
+        self.reset_segment_btn.setMaximumSize(QSize(30, 30))
         font2 = QFont()
         font2.setFamilies([u"Segoe UI"])
         font2.setPointSize(5)
-        self.delete_row_btn.setFont(font2)
-        self.delete_row_btn.setMouseTracking(True)
-        self.delete_row_btn.setLayoutDirection(Qt.LeftToRight)
-        self.delete_row_btn.setAutoFillBackground(False)
-        self.delete_row_btn.setStyleSheet(u"QPushButton{\n"
+        self.reset_segment_btn.setFont(font2)
+        self.reset_segment_btn.setMouseTracking(True)
+        self.reset_segment_btn.setStyleSheet(u"QPushButton{\n"
 "	border: none;\n"
 "	background: none;\n"
 "}\n"
@@ -621,139 +615,61 @@ class Ui_Sensorgram(object):
 "	border-radius: 10px;\n"
 "}")
         icon = QIcon()
-        icon.addFile(u":/img/img/trash.png", QSize(), QIcon.Normal, QIcon.Off)
-        self.delete_row_btn.setIcon(icon)
-        self.delete_row_btn.setIconSize(QSize(25, 25))
-        self.delete_row_btn.setAutoRepeat(False)
-        self.delete_row_btn.setAutoExclusive(False)
-        self.delete_row_btn.setAutoDefault(False)
-        self.delete_row_btn.setFlat(False)
-        self.add_row_btn = QPushButton(self.seg_table)
-        self.add_row_btn.setObjectName(u"add_row_btn")
-        self.add_row_btn.setGeometry(QRect(70, 10, 30, 30))
-        sizePolicy3.setHeightForWidth(self.add_row_btn.sizePolicy().hasHeightForWidth())
-        self.add_row_btn.setSizePolicy(sizePolicy3)
-        self.add_row_btn.setMinimumSize(QSize(30, 30))
-        self.add_row_btn.setMaximumSize(QSize(30, 30))
-        self.add_row_btn.setFont(font2)
-        self.add_row_btn.setMouseTracking(True)
-        self.add_row_btn.setLayoutDirection(Qt.LeftToRight)
-        self.add_row_btn.setAutoFillBackground(False)
-        self.add_row_btn.setStyleSheet(u"QPushButton{\n"
-"	border: none;\n"
-"	background: none;\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: white;\n"
-"	border: 1px raised;\n"
-"	border-radius: 10px;\n"
-"}")
-        icon1 = QIcon()
-        icon1.addFile(u":/img/img/undo.png", QSize(), QIcon.Normal, QIcon.Off)
-        self.add_row_btn.setIcon(icon1)
-        self.add_row_btn.setIconSize(QSize(22, 22))
-        self.add_row_btn.setAutoRepeat(False)
-        self.add_row_btn.setAutoExclusive(False)
-        self.add_row_btn.setAutoDefault(False)
-        self.add_row_btn.setFlat(False)
-        self.table_toggle = QPushButton(self.seg_table)
-        self.table_toggle.setObjectName(u"table_toggle")
-        self.table_toggle.setGeometry(QRect(140, 10, 251, 30))
-        sizePolicy4 = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        sizePolicy4.setHorizontalStretch(0)
-        sizePolicy4.setVerticalStretch(0)
-        sizePolicy4.setHeightForWidth(self.table_toggle.sizePolicy().hasHeightForWidth())
-        self.table_toggle.setSizePolicy(sizePolicy4)
-        self.table_toggle.setMinimumSize(QSize(0, 30))
+        icon.addFile(u":/img/img/reload.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
+        self.reset_segment_btn.setIcon(icon)
+        self.reset_segment_btn.setIconSize(QSize(25, 25))
+
+        self.horizontalLayout_13.addWidget(self.reset_segment_btn)
+
+        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_13.addItem(self.horizontalSpacer)
+
+        self.horizontalLayout_13.setStretch(0, 4)
+        self.horizontalLayout_13.setStretch(1, 1)
+        self.horizontalLayout_13.setStretch(2, 4)
+
+        self.controls.addLayout(self.horizontalLayout_13)
+
+        self.horizontalLayout_table_btn = QHBoxLayout()
+        self.horizontalLayout_table_btn.setObjectName(u"horizontalLayout_table_btn")
+        self.horizontalSpacer_table_left = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_table_btn.addItem(self.horizontalSpacer_table_left)
+
+        self.open_table_btn = QPushButton(Sensorgram)
+        self.open_table_btn.setObjectName(u"open_table_btn")
+        self.open_table_btn.setVisible(False)
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        sizePolicy2.setHorizontalStretch(0)
+        sizePolicy2.setVerticalStretch(0)
+        sizePolicy2.setHeightForWidth(self.open_table_btn.sizePolicy().hasHeightForWidth())
+        self.open_table_btn.setSizePolicy(sizePolicy2)
+        self.open_table_btn.setMinimumSize(QSize(200, 40))
         font3 = QFont()
         font3.setFamilies([u"Segoe UI"])
         font3.setPointSize(11)
-        self.table_toggle.setFont(font3)
-        self.page_indicator = QGraphicsView(self.seg_table)
-        self.page_indicator.setObjectName(u"page_indicator")
-        self.page_indicator.setGeometry(QRect(318, 21, 30, 10))
-        self.page_indicator.setStyleSheet(u"background: transparent")
-        self.page_indicator.setFrameShape(QFrame.NoFrame)
-        self.page_indicator.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.page_indicator.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.page_indicator.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.page_indicator.setInteractive(False)
+        self.open_table_btn.setFont(font3)
+        self.open_table_btn.setStyleSheet(u"QPushButton {\n"
+"	background-color: rgb(230, 230, 230);\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}\n"
+"\n"
+"QPushButton::hover{\n"
+"	background: rgb(253, 253, 253);\n"
+"	border: 1px raised;\n"
+"	border-radius: 5px;\n"
+"}")
 
-        self.controls.addWidget(self.seg_table)
+        self.horizontalLayout_table_btn.addWidget(self.open_table_btn)
 
-        self.data_table = QTableWidget(Sensorgram)
-        if (self.data_table.columnCount() < 10):
-            self.data_table.setColumnCount(10)
-        font4 = QFont()
-        font4.setFamilies([u"Segoe UI"])
-        font4.setPointSize(8)
-        __qtablewidgetitem = QTableWidgetItem()
-        __qtablewidgetitem.setText(u"ID");
-        __qtablewidgetitem.setFont(font4);
-        self.data_table.setHorizontalHeaderItem(0, __qtablewidgetitem)
-        __qtablewidgetitem1 = QTableWidgetItem()
-        __qtablewidgetitem1.setFont(font4);
-        self.data_table.setHorizontalHeaderItem(1, __qtablewidgetitem1)
-        font5 = QFont()
-        font5.setPointSize(8)
-        __qtablewidgetitem2 = QTableWidgetItem()
-        __qtablewidgetitem2.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(2, __qtablewidgetitem2)
-        __qtablewidgetitem3 = QTableWidgetItem()
-        __qtablewidgetitem3.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(3, __qtablewidgetitem3)
-        __qtablewidgetitem4 = QTableWidgetItem()
-        __qtablewidgetitem4.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(4, __qtablewidgetitem4)
-        __qtablewidgetitem5 = QTableWidgetItem()
-        __qtablewidgetitem5.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(5, __qtablewidgetitem5)
-        __qtablewidgetitem6 = QTableWidgetItem()
-        __qtablewidgetitem6.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(6, __qtablewidgetitem6)
-        __qtablewidgetitem7 = QTableWidgetItem()
-        __qtablewidgetitem7.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(7, __qtablewidgetitem7)
-        __qtablewidgetitem8 = QTableWidgetItem()
-        __qtablewidgetitem8.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(8, __qtablewidgetitem8)
-        __qtablewidgetitem9 = QTableWidgetItem()
-        __qtablewidgetitem9.setFont(font5);
-        self.data_table.setHorizontalHeaderItem(9, __qtablewidgetitem9)
-        self.data_table.setObjectName(u"data_table")
-        sizePolicy5 = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
-        sizePolicy5.setHorizontalStretch(0)
-        sizePolicy5.setVerticalStretch(0)
-        sizePolicy5.setHeightForWidth(self.data_table.sizePolicy().hasHeightForWidth())
-        self.data_table.setSizePolicy(sizePolicy5)
-        self.data_table.setFont(font)
-        self.data_table.setFocusPolicy(Qt.ClickFocus)
-        self.data_table.setFrameShape(QFrame.NoFrame)
-        self.data_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.data_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
-        self.data_table.setShowGrid(True)
-        self.data_table.setWordWrap(True)
-        self.data_table.setRowCount(0)
-        self.data_table.setColumnCount(10)
-        self.data_table.horizontalHeader().setVisible(True)
-        self.data_table.horizontalHeader().setCascadingSectionResizes(True)
-        self.data_table.horizontalHeader().setMinimumSectionSize(50)
-        self.data_table.horizontalHeader().setDefaultSectionSize(50)
-        self.data_table.horizontalHeader().setHighlightSections(True)
-        self.data_table.horizontalHeader().setProperty("showSortIndicator", False)
-        self.data_table.horizontalHeader().setStretchLastSection(True)
-        # Set wider column width for Cycle Type (column 8)
-        self.data_table.setColumnWidth(8, 100)
-        self.data_table.verticalHeader().setVisible(False)
-        self.data_table.verticalHeader().setCascadingSectionResizes(False)
-        self.data_table.verticalHeader().setMinimumSectionSize(40)
-        self.data_table.verticalHeader().setDefaultSectionSize(50)
-        self.data_table.verticalHeader().setHighlightSections(False)
-        self.data_table.verticalHeader().setProperty("showSortIndicator", False)
-        self.data_table.verticalHeader().setStretchLastSection(False)
+        self.horizontalSpacer_table_right = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.controls.addWidget(self.data_table)
+        self.horizontalLayout_table_btn.addItem(self.horizontalSpacer_table_right)
+
+
+        self.controls.addLayout(self.horizontalLayout_table_btn)
 
         self.controls.setStretch(0, 1)
         self.controls.setStretch(3, 2)
@@ -763,10 +679,6 @@ class Ui_Sensorgram(object):
         self.horizontalLayout.setStretch(0, 1)
 
         self.retranslateUi(Sensorgram)
-
-        self.delete_row_btn.setDefault(False)
-        self.add_row_btn.setDefault(False)
-
 
         QMetaObject.connectSlotsByName(Sensorgram)
     # setupUi
@@ -778,6 +690,13 @@ class Ui_Sensorgram(object):
         self.segment_B.setText(QCoreApplication.translate("Sensorgram", u"Channel B", None))
         self.segment_C.setText(QCoreApplication.translate("Sensorgram", u"Channel C", None))
         self.segment_D.setText(QCoreApplication.translate("Sensorgram", u"Channel D", None))
+        self.shift_display_box.setText(QCoreApplication.translate("Sensorgram", u"Ready", None))
+        self.clear_graph_btn.setText("")
+        self.groupBox_display_right.setTitle(QCoreApplication.translate("Sensorgram", u"Display", None))
+        self.segment_A_right.setText(QCoreApplication.translate("Sensorgram", u"A", None))
+        self.segment_B_right.setText(QCoreApplication.translate("Sensorgram", u"B", None))
+        self.segment_C_right.setText(QCoreApplication.translate("Sensorgram", u"C", None))
+        self.segment_D_right.setText(QCoreApplication.translate("Sensorgram", u"D", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Cursors", None))
         self.live_btn.setText(QCoreApplication.translate("Sensorgram", u"Live View Mode", None))
         self.label_14.setText(QCoreApplication.translate("Sensorgram", u"Start Cursor:", None))
@@ -788,19 +707,6 @@ class Ui_Sensorgram(object):
         self.label_9.setText(QCoreApplication.translate("Sensorgram", u"s", None))
         self.label_3.setText(QCoreApplication.translate("Sensorgram", u"Experiment time:", None))
         self.exp_clock.setText(QCoreApplication.translate("Sensorgram", u"HH:MM:SS", None))
-        self.groupBox_3.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Shift", None))
-        self.label_20.setText(QCoreApplication.translate("Sensorgram", u"Shift A:", None))
-        self.shift_A.setText(QCoreApplication.translate("Sensorgram", u"-", None))
-        self.unit_a.setText(QCoreApplication.translate("Sensorgram", u"RU", None))
-        self.label_21.setText(QCoreApplication.translate("Sensorgram", u"Shift B:", None))
-        self.shift_B.setText(QCoreApplication.translate("Sensorgram", u"-", None))
-        self.unit_b.setText(QCoreApplication.translate("Sensorgram", u"RU", None))
-        self.label_22.setText(QCoreApplication.translate("Sensorgram", u"Shift C:", None))
-        self.shift_C.setText(QCoreApplication.translate("Sensorgram", u"-", None))
-        self.unit_c.setText(QCoreApplication.translate("Sensorgram", u"RU", None))
-        self.label_23.setText(QCoreApplication.translate("Sensorgram", u"Shift D:", None))
-        self.shift_D.setText(QCoreApplication.translate("Sensorgram", u"-", None))
-        self.unit_d.setText(QCoreApplication.translate("Sensorgram", u"RU", None))
         self.inject_button.setText(QCoreApplication.translate("Sensorgram", u"Inject", None))
         self.regen_button.setText(QCoreApplication.translate("Sensorgram", u"Regenerate", None))
         self.flush_button.setText(QCoreApplication.translate("Sensorgram", u"Flush", None))
@@ -811,36 +717,26 @@ class Ui_Sensorgram(object):
         self.label.setText(QCoreApplication.translate("Sensorgram", u"New:", None))
         self.label_2.setText(QCoreApplication.translate("Sensorgram", u"\u03bcL/min", None))
         self.groupBox_4.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Settings", None))
-        self.save_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Start\n"
-"Cycle", None))
-        self.new_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Start at\n"
-"Live Time", None))
+        self.label_exp_time.setText(QCoreApplication.translate("Sensorgram", u"Experiment time:", None))
+        self.exp_clock_settings.setText(QCoreApplication.translate("Sensorgram", u"00h 02m 50s", None))
+        self.label_cycle_type.setText(QCoreApplication.translate("Sensorgram", u"Type:", None))
+        self.label_cycle_duration.setText(QCoreApplication.translate("Sensorgram", u"Duration (minutes):", None))
+        self.current_cycle_duration.setItemText(0, QCoreApplication.translate("Sensorgram", u"2", None))
+        self.current_cycle_duration.setItemText(1, QCoreApplication.translate("Sensorgram", u"5", None))
+        self.current_cycle_duration.setItemText(2, QCoreApplication.translate("Sensorgram", u"15", None))
+        self.current_cycle_duration.setItemText(3, QCoreApplication.translate("Sensorgram", u"30", None))
+        self.current_cycle_duration.setItemText(4, QCoreApplication.translate("Sensorgram", u"60", None))
+        self.current_cycle_type.setItemText(0, QCoreApplication.translate("Sensorgram", u"Auto-read", None))
+        self.current_cycle_type.setItemText(1, QCoreApplication.translate("Sensorgram", u"Baseline", None))
+        self.current_cycle_type.setItemText(2, QCoreApplication.translate("Sensorgram", u"Flow", None))
+        self.current_cycle_type.setItemText(3, QCoreApplication.translate("Sensorgram", u"Static", None))
+
+        self.save_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Start", None))
+        self.new_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Data Table", None))
 #if QT_CONFIG(tooltip)
-        self.delete_row_btn.setToolTip(QCoreApplication.translate("Sensorgram", u"Delete Cycle", None))
+        self.reset_segment_btn.setToolTip(QCoreApplication.translate("Sensorgram", u"Clear All Data", None))
 #endif // QT_CONFIG(tooltip)
-        self.delete_row_btn.setText("")
-#if QT_CONFIG(tooltip)
-        self.add_row_btn.setToolTip(QCoreApplication.translate("Sensorgram", u"Restore Last Deleted", None))
-#endif // QT_CONFIG(tooltip)
-        self.add_row_btn.setText("")
-        self.table_toggle.setText(QCoreApplication.translate("Sensorgram", u"Cycle Data Table", None))
-        ___qtablewidgetitem = self.data_table.horizontalHeaderItem(1)
-        ___qtablewidgetitem.setText(QCoreApplication.translate("Sensorgram", u"Start", None));
-        ___qtablewidgetitem1 = self.data_table.horizontalHeaderItem(2)
-        ___qtablewidgetitem1.setText(QCoreApplication.translate("Sensorgram", u"End", None));
-        ___qtablewidgetitem2 = self.data_table.horizontalHeaderItem(3)
-        ___qtablewidgetitem2.setText(QCoreApplication.translate("Sensorgram", u"Shift A", None));
-        ___qtablewidgetitem3 = self.data_table.horizontalHeaderItem(4)
-        ___qtablewidgetitem3.setText(QCoreApplication.translate("Sensorgram", u"Shift B", None));
-        ___qtablewidgetitem4 = self.data_table.horizontalHeaderItem(5)
-        ___qtablewidgetitem4.setText(QCoreApplication.translate("Sensorgram", u"Shift C", None));
-        ___qtablewidgetitem5 = self.data_table.horizontalHeaderItem(6)
-        ___qtablewidgetitem5.setText(QCoreApplication.translate("Sensorgram", u"Shift D", None));
-        ___qtablewidgetitem6 = self.data_table.horizontalHeaderItem(7)
-        ___qtablewidgetitem6.setText(QCoreApplication.translate("Sensorgram", u"Ref", None));
-        ___qtablewidgetitem7 = self.data_table.horizontalHeaderItem(8)
-        ___qtablewidgetitem7.setText(QCoreApplication.translate("Sensorgram", u"Cycle Type", None));
-        ___qtablewidgetitem8 = self.data_table.horizontalHeaderItem(9)
-        ___qtablewidgetitem8.setText(QCoreApplication.translate("Sensorgram", u"Note", None));
+        self.reset_segment_btn.setText("")
+        self.open_table_btn.setText(QCoreApplication.translate("Sensorgram", u"Open Cycle Data Table", None))
     # retranslateUi
 

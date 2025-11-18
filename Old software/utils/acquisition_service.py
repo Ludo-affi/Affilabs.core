@@ -94,9 +94,6 @@ class AcquisitionService:
                                 scale = min(2.0, target_counts / roi_mean)
                                 if scale > 1.0:
                                     int_data = np.clip(int_data * scale, 0, 65535.0)
-                                    logger.debug(
-                                        f"FLMT09788 chB scaling @640nm: mean {roi_mean:.0f} → target {target_counts:.0f} (x{scale:.2f})"
-                                    )
                 except Exception as _norm_err:
                     logger.debug(f"B-channel 640nm normalization skipped: {_norm_err}")
 

@@ -1502,11 +1502,11 @@ class AffiniteApp(QMainWindow):
                 )
                 warning.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
                 warning.setDefaultButton(QMessageBox.Cancel)
-                
+
                 if warning.exec() != QMessageBox.Yes:
                     logger.debug("Recording cancelled by user")
                     return None
-                
+
                 self.rec_dir = ""
                 self.rec_dir = QFileDialog.getExistingDirectory(
                     self,
@@ -1527,14 +1527,16 @@ class AffiniteApp(QMainWindow):
                     )
                     # Clear sensor reading buffers FIRST to ensure fresh data
                     self.clear_sensor_reading_buffers()
-                    
-                    # Clear spectral data buffers to prevent old data from appearing
-                    for ch in CH_LIST:
-                        self.channel_mgr._current_length[ch] = 0
-                    
+
+                    # Fully clear spectral data buffers including time arrays
+                    self.channel_mgr.clear_data()
+
                     # Reset experiment time so new data starts at time zero
                     self.exp_start = time.time()
                     self.exp_start_perf = time.perf_counter()
+                    # Also update channel manager's time references
+                    self.channel_mgr.exp_start_time = self.exp_start
+                    self.channel_mgr.exp_start_perf = self.exp_start_perf
                     logger.debug("Experiment time reset - recording will start at time zero")
 
                     # Start recording - this will reset time reference and move yellow cursor to 0
@@ -3044,6 +3046,8 @@ class AffiniteApp(QMainWindow):
         filter_state_changed = (filt_en != self.filt_on)
         self.filt_on = filt_en
 
+        logger.info(f"Filter {'enabled' if filt_en else 'disabled'} with window size {filt_win}")
+
         window_changed = False
         if filt_win != self.med_filt_win:
             # Validate filter window size
@@ -3069,18 +3073,21 @@ class AffiniteApp(QMainWindow):
 
         # Retroactively apply filter to all existing data when filter settings change
         if filter_state_changed or window_changed:
-            logger.debug(f"Filter settings changed - retroactively filtering data (enabled={filt_en}, window={self.med_filt_win})")
+            logger.info(f"Filter settings changed - reprocessing all data (enabled={filt_en}, window={self.med_filt_win})")
             self.update_filtered_lambda()
 
-            # Force display update
+            # Force immediate display update
             if self.main_window.active_page == "sensorgram":
-                # Get fresh data with updated filter
+                # Get fresh data with updated filter settings
                 fresh_data = self.sensorgram_data()
 
-                # Update the main sensorgram display
+                # Update the main sensorgram display immediately
                 self.update_live_signal.emit(fresh_data)
 
-                # Process Qt events to ensure the signal is handled before we update segment
+                # Process Qt events to ensure the signal is handled
+                QApplication.processEvents()
+
+                logger.debug("Display updated with new filter settings")
                 from PySide6.QtCore import QCoreApplication
                 QCoreApplication.processEvents()
 

@@ -62,7 +62,7 @@
            <string notr="true">QCheckBox{
 	color: black;
 	background: white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -87,7 +87,7 @@
            <string notr="true">QCheckBox{
 	color: rgb(255, 0, 81);
 	background:white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -112,7 +112,7 @@
            <string notr="true">QCheckBox{
 	color: rgb(0, 174, 255);
 	background: white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -136,7 +136,7 @@
           <property name="styleSheet">
            <string notr="true">QCheckBox{
 	color: rgb(0, 230, 65);
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	background: white;
 	border-radius: 3px;
 }</string>
@@ -151,6 +151,89 @@
         </item>
        </layout>
       </widget>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="horizontalLayout_sensor_header" stretch="1,0">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="shift_display_box">
+         <property name="minimumSize">
+          <size>
+           <width>200</width>
+           <height>40</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>400</width>
+           <height>40</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QLabel {
+	background-color: white;
+	border: 1px solid rgb(171, 171, 171);
+	border-radius: 4px;
+	padding: 5px;
+	font-family: Segoe UI;
+	font-size: 9pt;
+}</string>
+         </property>
+         <property name="text">
+          <string>Ready</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignVCenter|Qt::AlignLeft</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="clear_graph_btn">
+         <property name="minimumSize">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="horizontalSpacer_header">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
      </item>
      <item>
       <widget class="QFrame" name="full_segment">
@@ -284,11 +367,123 @@
    <item>
     <layout class="QVBoxLayout" name="controls" stretch="1,0,0,2">
      <item>
+      <widget class="QGroupBox" name="groupBox_display_right">
+       <property name="title">
+        <string>Display</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_display">
+        <item>
+         <widget class="QCheckBox" name="segment_A_right">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>9</pointsize>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QCheckBox{
+	color: black;
+	background: white;
+	border: 1px solid rgb(171, 171, 171);
+	border-radius: 3px;
+}</string>
+          </property>
+          <property name="text">
+           <string>A</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="segment_B_right">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>9</pointsize>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QCheckBox{
+	color: rgb(255, 0, 81);
+	background: white;
+	border: 1px solid rgb(171, 171, 171);
+	border-radius: 3px;
+}</string>
+          </property>
+          <property name="text">
+           <string>B</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="segment_C_right">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>9</pointsize>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QCheckBox{
+	color: rgb(0, 174, 255);
+	background: white;
+	border: 1px solid rgb(171, 171, 171);
+	border-radius: 3px;
+}</string>
+          </property>
+          <property name="text">
+           <string>C</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="segment_D_right">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>9</pointsize>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QCheckBox{
+	color: rgb(0, 230, 65);
+	background: white;
+	border: 1px solid rgb(171, 171, 171);
+	border-radius: 3px;
+}</string>
+          </property>
+          <property name="text">
+           <string>D</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
       <layout class="QHBoxLayout" name="horizontalLayout_5" stretch="1,2">
        <item>
         <layout class="QVBoxLayout" name="verticalLayout_2">
          <item>
           <widget class="QGroupBox" name="groupBox_6">
+           <property name="visible">
+            <bool>false</bool>
+           </property>
            <property name="title">
             <string>Cycle Cursors</string>
            </property>
@@ -432,6 +627,9 @@ QLineEdit:focus{
           <layout class="QHBoxLayout" name="horizontalLayout_14">
            <item>
             <widget class="QLabel" name="label_3">
+             <property name="visible">
+              <bool>false</bool>
+             </property>
              <property name="text">
               <string>Experiment time:</string>
              </property>
@@ -442,6 +640,9 @@ QLineEdit:focus{
            </item>
            <item>
             <widget class="QLabel" name="exp_clock">
+             <property name="visible">
+              <bool>false</bool>
+             </property>
              <property name="styleSheet">
               <string notr="true"/>
              </property>
@@ -452,195 +653,6 @@ QLineEdit:focus{
            </item>
           </layout>
          </item>
-         <item>
-          <widget class="QGroupBox" name="groupBox_3">
-           <property name="title">
-            <string>Cycle Shift</string>
-           </property>
-           <layout class="QVBoxLayout" name="verticalLayout_5">
-            <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_8">
-              <item>
-               <widget class="QLabel" name="label_20">
-                <property name="text">
-                 <string>Shift A:</string>
-                </property>
-                <property name="margin">
-                 <number>2</number>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="shift_A">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">background: white;
-border: 1px solid rgb(171, 171, 171);
-border-radius: 2px;</string>
-                </property>
-                <property name="text">
-                 <string>-</string>
-                </property>
-                <property name="alignment">
-                 <set>Qt::AlignCenter</set>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="unit_a">
-                <property name="text">
-                 <string>RU</string>
-                </property>
-                <property name="margin">
-                 <number>0</number>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_9">
-              <item>
-               <widget class="QLabel" name="label_21">
-                <property name="text">
-                 <string>Shift B:</string>
-                </property>
-                <property name="margin">
-                 <number>2</number>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="shift_B">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">background: white;
-border: 1px solid rgb(171, 171, 171);
-border-radius: 2px;</string>
-                </property>
-                <property name="text">
-                 <string>-</string>
-                </property>
-                <property name="alignment">
-                 <set>Qt::AlignCenter</set>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="unit_b">
-                <property name="text">
-                 <string>RU</string>
-                </property>
-                <property name="margin">
-                 <number>0</number>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_10">
-              <item>
-               <widget class="QLabel" name="label_22">
-                <property name="text">
-                 <string>Shift C:</string>
-                </property>
-                <property name="margin">
-                 <number>2</number>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="shift_C">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">background: white;
-border: 1px solid rgb(171, 171, 171);
-border-radius: 2px;</string>
-                </property>
-                <property name="text">
-                 <string>-</string>
-                </property>
-                <property name="alignment">
-                 <set>Qt::AlignCenter</set>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="unit_c">
-                <property name="text">
-                 <string>RU</string>
-                </property>
-                <property name="margin">
-                 <number>0</number>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_11">
-              <item>
-               <widget class="QLabel" name="label_23">
-                <property name="text">
-                 <string>Shift D:</string>
-                </property>
-                <property name="margin">
-                 <number>2</number>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="shift_D">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">background: white;
-border: 1px solid rgb(171, 171, 171);
-border-radius: 2px;</string>
-                </property>
-                <property name="text">
-                 <string>-</string>
-                </property>
-                <property name="alignment">
-                 <set>Qt::AlignCenter</set>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="unit_d">
-                <property name="text">
-                 <string>RU</string>
-                </property>
-                <property name="margin">
-                 <number>0</number>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-           </layout>
-          </widget>
-         </item>
         </layout>
        </item>
        <item>
@@ -650,7 +662,7 @@ border-radius: 2px;</string>
            <property name="maximumSize">
             <size>
              <width>16777215</width>
-             <height>134</height>
+             <height>200</height>
             </size>
            </property>
            <property name="styleSheet">
@@ -803,11 +815,95 @@ border-radius: 2px;</string>
          <item>
           <widget class="QGroupBox" name="groupBox_4">
            <property name="title">
-            <string>Cycle Notes</string>
+            <string>Cycle Settings</string>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout_3">
             <item>
-             <widget class="QLineEdit" name="current_note"/>
+             <layout class="QHBoxLayout" name="horizontalLayout_exp_time">
+              <item>
+               <widget class="QLabel" name="label_exp_time">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="text">
+                 <string>Experiment time:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="exp_clock_settings">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="text">
+                 <string>00h 02m 50s</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_cycle_type">
+              <item>
+               <widget class="QLabel" name="label_cycle_type">
+                <property name="text">
+                 <string>Cycle Type:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QComboBox" name="current_cycle_type">
+                <property name="editable">
+                 <bool>false</bool>
+                </property>
+                <item>
+                 <property name="text">
+                  <string>Auto-read</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Baseline</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Flow</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Static</string>
+                 </property>
+                </item>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="current_note">
+              <property name="placeholderText">
+               <string>Cycle duration (minutes)</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_cycle_buttons">
+              <item>
+               <widget class="QPushButton" name="save_segment_btn">
+                <property name="text">
+                 <string>Start Cycle</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="new_segment_btn">
+                <property name="text">
+                 <string>Start at Live Time</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
             </item>
            </layout>
           </widget>
@@ -817,7 +913,7 @@ border-radius: 2px;</string>
       </layout>
      </item>
      <item>
-      <layout class="QHBoxLayout" name="horizontalLayout_13" stretch="4,0,1,0,4">
+      <layout class="QHBoxLayout" name="horizontalLayout_13" stretch="4,1,4">
        <item>
         <spacer name="horizontalSpacer_3">
          <property name="orientation">
@@ -832,46 +928,61 @@ border-radius: 2px;</string>
         </spacer>
        </item>
        <item>
-        <widget class="QPushButton" name="save_segment_btn">
-         <property name="font">
-          <font>
-           <family>Segoe UI</family>
-           <pointsize>9</pointsize>
-          </font>
+        <widget class="QPushButton" name="reset_segment_btn">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
          </property>
-         <property name="focusPolicy">
-          <enum>Qt::NoFocus</enum>
-         </property>
-         <property name="text">
-          <string>Save
-Cycle</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <spacer name="horizontalSpacer_2">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
+         <property name="minimumSize">
           <size>
-           <width>0</width>
-           <height>0</height>
+           <width>30</width>
+           <height>30</height>
           </size>
          </property>
-        </spacer>
-       </item>
-       <item>
-        <widget class="QPushButton" name="new_segment_btn">
+         <property name="maximumSize">
+          <size>
+           <width>30</width>
+           <height>30</height>
+          </size>
+         </property>
          <property name="font">
           <font>
            <family>Segoe UI</family>
-           <pointsize>9</pointsize>
+           <pointsize>5</pointsize>
           </font>
          </property>
+         <property name="mouseTracking">
+          <bool>true</bool>
+         </property>
+         <property name="toolTip">
+          <string>Clear All Data</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QPushButton{
+	border: none;
+	background: none;
+}
+
+QPushButton::hover{
+	background: white;
+	border: 1px raised;
+	border-radius: 10px;
+}</string>
+         </property>
          <property name="text">
-          <string>Start at
-Live Time</string>
+          <string/>
+         </property>
+         <property name="icon">
+          <iconset resource="ai.qrc">
+           <normaloff>:/img/img/reload.png</normaloff>:/img/img/reload.png</iconset>
+         </property>
+         <property name="iconSize">
+          <size>
+           <width>25</width>
+           <height>25</height>
+          </size>
          </property>
         </widget>
        </item>
@@ -891,440 +1002,72 @@ Live Time</string>
       </layout>
      </item>
      <item>
-      <widget class="QFrame" name="seg_table">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-         <horstretch>41</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="minimumSize">
-        <size>
-         <width>510</width>
-         <height>50</height>
-        </size>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>510</width>
-         <height>50</height>
-        </size>
-       </property>
-       <property name="font">
-        <font>
-         <family>Segoe UI</family>
-         <pointsize>9</pointsize>
-        </font>
-       </property>
-       <property name="frameShape">
-        <enum>QFrame::StyledPanel</enum>
-       </property>
-       <property name="frameShadow">
-        <enum>QFrame::Raised</enum>
-       </property>
-       <widget class="QPushButton" name="delete_row_btn">
-        <property name="geometry">
-         <rect>
-          <x>30</x>
-          <y>10</y>
-          <width>30</width>
-          <height>30</height>
-         </rect>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <family>Segoe UI</family>
-          <pointsize>5</pointsize>
-         </font>
-        </property>
-        <property name="mouseTracking">
-         <bool>true</bool>
-        </property>
-        <property name="toolTip">
-         <string>Delete Cycle</string>
-        </property>
-        <property name="layoutDirection">
-         <enum>Qt::LeftToRight</enum>
-        </property>
-        <property name="autoFillBackground">
-         <bool>false</bool>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton{
-	border: none;
-	background: none;
+      <layout class="QHBoxLayout" name="horizontalLayout_table_btn">
+       <item>
+        <spacer name="horizontalSpacer_table_left">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QPushButton" name="open_table_btn">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>200</width>
+           <height>40</height>
+          </size>
+         </property>
+         <property name="font">
+          <font>
+           <family>Segoe UI</family>
+           <pointsize>11</pointsize>
+          </font>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QPushButton {
+	background-color: rgb(230, 230, 230);
+	border: 1px solid rgb(171, 171, 171);
+	border-radius: 3px;
 }
 
 QPushButton::hover{
-	background: white;
+	background: rgb(253, 253, 253);
 	border: 1px raised;
-	border-radius: 10px;
+	border-radius: 5px;
 }</string>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-        <property name="icon">
-         <iconset resource="ai.qrc">
-          <normaloff>:/img/img/trash.png</normaloff>:/img/img/trash.png</iconset>
-        </property>
-        <property name="iconSize">
-         <size>
-          <width>25</width>
-          <height>25</height>
-         </size>
-        </property>
-        <property name="autoRepeat">
-         <bool>false</bool>
-        </property>
-        <property name="autoExclusive">
-         <bool>false</bool>
-        </property>
-        <property name="autoDefault">
-         <bool>false</bool>
-        </property>
-        <property name="default">
-         <bool>false</bool>
-        </property>
-        <property name="flat">
-         <bool>false</bool>
-        </property>
-       </widget>
-       <widget class="QPushButton" name="add_row_btn">
-        <property name="geometry">
-         <rect>
-          <x>70</x>
-          <y>10</y>
-          <width>30</width>
-          <height>30</height>
-         </rect>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <family>Segoe UI</family>
-          <pointsize>5</pointsize>
-         </font>
-        </property>
-        <property name="mouseTracking">
-         <bool>true</bool>
-        </property>
-        <property name="toolTip">
-         <string>Restore Last Deleted</string>
-        </property>
-        <property name="layoutDirection">
-         <enum>Qt::LeftToRight</enum>
-        </property>
-        <property name="autoFillBackground">
-         <bool>false</bool>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton{
-	border: none;
-	background: none;
-}
-
-QPushButton::hover{
-	background: white;
-	border: 1px raised;
-	border-radius: 10px;
-}</string>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-        <property name="icon">
-         <iconset resource="ai.qrc">
-          <normaloff>:/img/img/undo.png</normaloff>:/img/img/undo.png</iconset>
-        </property>
-        <property name="iconSize">
-         <size>
-          <width>22</width>
-          <height>22</height>
-         </size>
-        </property>
-        <property name="autoRepeat">
-         <bool>false</bool>
-        </property>
-        <property name="autoExclusive">
-         <bool>false</bool>
-        </property>
-        <property name="autoDefault">
-         <bool>false</bool>
-        </property>
-        <property name="default">
-         <bool>false</bool>
-        </property>
-        <property name="flat">
-         <bool>false</bool>
-        </property>
-       </widget>
-       <widget class="QPushButton" name="table_toggle">
-        <property name="geometry">
-         <rect>
-          <x>140</x>
-          <y>10</y>
-          <width>251</width>
-          <height>30</height>
-         </rect>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <family>Segoe UI</family>
-          <pointsize>11</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>Cycle Data Table</string>
-        </property>
-       </widget>
-       <widget class="QGraphicsView" name="page_indicator">
-        <property name="geometry">
-         <rect>
-          <x>318</x>
-          <y>21</y>
-          <width>30</width>
-          <height>10</height>
-         </rect>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">background: transparent</string>
-        </property>
-        <property name="frameShape">
-         <enum>QFrame::NoFrame</enum>
-        </property>
-        <property name="verticalScrollBarPolicy">
-         <enum>Qt::ScrollBarAlwaysOff</enum>
-        </property>
-        <property name="horizontalScrollBarPolicy">
-         <enum>Qt::ScrollBarAlwaysOff</enum>
-        </property>
-        <property name="sizeAdjustPolicy">
-         <enum>QAbstractScrollArea::AdjustToContents</enum>
-        </property>
-        <property name="interactive">
-         <bool>false</bool>
-        </property>
-       </widget>
-      </widget>
-     </item>
-     <item>
-      <widget class="QTableWidget" name="data_table">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Ignored" vsizetype="Expanding">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="font">
-        <font>
-         <family>Segoe UI</family>
-         <pointsize>9</pointsize>
-        </font>
-       </property>
-       <property name="focusPolicy">
-        <enum>Qt::ClickFocus</enum>
-       </property>
-       <property name="frameShape">
-        <enum>QFrame::NoFrame</enum>
-       </property>
-       <property name="sizeAdjustPolicy">
-        <enum>QAbstractScrollArea::AdjustToContents</enum>
-       </property>
-       <property name="showGrid">
-        <bool>true</bool>
-       </property>
-       <property name="wordWrap">
-        <bool>true</bool>
-       </property>
-       <property name="rowCount">
-        <number>0</number>
-       </property>
-       <property name="columnCount">
-        <number>9</number>
-       </property>
-       <attribute name="horizontalHeaderVisible">
-        <bool>true</bool>
-       </attribute>
-       <attribute name="horizontalHeaderCascadingSectionResizes">
-        <bool>true</bool>
-       </attribute>
-       <attribute name="horizontalHeaderMinimumSectionSize">
-        <number>50</number>
-       </attribute>
-       <attribute name="horizontalHeaderDefaultSectionSize">
-        <number>50</number>
-       </attribute>
-       <attribute name="horizontalHeaderHighlightSections">
-        <bool>true</bool>
-       </attribute>
-       <attribute name="horizontalHeaderShowSortIndicator" stdset="0">
-        <bool>false</bool>
-       </attribute>
-       <attribute name="horizontalHeaderStretchLastSection">
-        <bool>true</bool>
-       </attribute>
-       <attribute name="verticalHeaderVisible">
-        <bool>false</bool>
-       </attribute>
-       <attribute name="verticalHeaderCascadingSectionResizes">
-        <bool>false</bool>
-       </attribute>
-       <attribute name="verticalHeaderMinimumSectionSize">
-        <number>40</number>
-       </attribute>
-       <attribute name="verticalHeaderDefaultSectionSize">
-        <number>50</number>
-       </attribute>
-       <attribute name="verticalHeaderHighlightSections">
-        <bool>false</bool>
-       </attribute>
-       <attribute name="verticalHeaderShowSortIndicator" stdset="0">
-        <bool>false</bool>
-       </attribute>
-       <attribute name="verticalHeaderStretchLastSection">
-        <bool>false</bool>
-       </attribute>
-       <column>
-        <property name="text">
-         <string notr="true">ID</string>
-        </property>
-        <property name="font">
-         <font>
-          <family>Segoe UI</family>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Start</string>
-        </property>
-        <property name="font">
-         <font>
-          <family>Segoe UI</family>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>End</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Shift A</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Shift B</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Shift C</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Shift D</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Ref</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Note</string>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>8</pointsize>
-         </font>
-        </property>
-       </column>
-      </widget>
+         </property>
+         <property name="text">
+          <string>Open Cycle Data Table</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="horizontalSpacer_table_right">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
      </item>
     </layout>
    </item>

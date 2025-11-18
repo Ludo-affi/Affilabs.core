@@ -68,6 +68,11 @@ except ImportError:
     TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
 COLUMNS_TO_TOGGLE = frozenset(range(2, 8))
 
+# Cycle window and padding constants
+CYCLE_WINDOW_PADDING_FACTOR = 1.1  # Add 10% to cycle time for fixed window
+CYCLE_Y_PADDING_TOP = 10  # RU to add above max Y value
+CYCLE_Y_PADDING_BOTTOM = 5  # RU to subtract below min Y value
+
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
 OFF_BRUSH = QBrush(Qt.GlobalColor.transparent)
 
@@ -356,10 +361,8 @@ class DataWindow(QWidget):
         # new segment button
         self.ui.new_segment_btn.clicked.connect(self.new_segment)
 
-        if isinstance(self.ui, Ui_Processing):
-            self.ui.reset_segment_btn.clicked.connect(self.reset_graphs)
-        elif isinstance(self.ui, Ui_Sensorgram):
-            self.reference_channel_dlg.ui.reset_data.clicked.connect(self.reset_graphs)
+        # reset button
+        self.ui.reset_segment_btn.clicked.connect(self.reset_graphs)
 
         # data table add/remove row
         self.ui.delete_row_btn.clicked.connect(self.delete_row)
@@ -971,12 +974,25 @@ class DataWindow(QWidget):
                     row = self.deleted_segment.seg_id
 
                 else:
+                    # Set cycle type and time (placeholder - cycle manager not yet restored)
+                    # self.current_segment.cycle_type = self.cycle_manager.get_current_type()
+                    # self.current_segment.cycle_time = self.cycle_manager.get_current_time_minutes()
+
                     self.current_segment.note = (
                         self.current_segment.note or self.ui.current_note.text()
                     )
                     seg = self.current_segment
                     row = len(self.saved_segments)
                     self.seg_count += 1
+
+                    # Apply fixed window and gray zone when cycle starts
+                    if self.data_source == "dynamic":
+                        # Get cycle time from CYCLE_TIME setting as fallback
+                        cycle_time_minutes = CYCLE_TIME  # Default from settings
+                        # cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
+                        self._apply_cycle_fixed_window(cycle_time_minutes)
+                        # self.cycle_manager.reset_to_default()
+
                     if self.data_source == "dynamic":
                         self.ui.current_note.setText("")
 
@@ -2156,6 +2172,65 @@ class DataWindow(QWidget):
         except Exception as e:
             logger.exception(f"export table error: {e}")
             self.export_error_signal.emit()
+
+    def _apply_cycle_fixed_window(self: Self, cycle_time_minutes: float | None) -> None:
+        """Apply fixed window and gray zone for cycle start.
+
+        Args:
+            cycle_time_minutes: Duration of the cycle in minutes
+        """
+        logger.info(f"Cycle started: {self.current_segment.cycle_type}, {cycle_time_minutes} min")
+
+        if cycle_time_minutes is None or cycle_time_minutes <= 0:
+            return
+
+        # Enable fixed window on both graphs (keep live data flowing)
+        self.full_segment_view.fixed_window_active = True
+        self.SOI_view.fixed_window_active = True
+
+        # Show gray zone
+        try:
+            self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
+        except Exception as e:
+            logger.error(f"Failed to show gray zone: {e}", exc_info=True)
+
+        # Calculate fixed window size with padding
+        window_seconds = cycle_time_minutes * 60 * CYCLE_WINDOW_PADDING_FACTOR
+        start_time = self.full_segment_view.left_cursor_pos
+        end_time = start_time + window_seconds
+
+        # Apply fixed X range to sensorgram
+        self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
+        self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
+
+        # Apply fixed X range to SOI (always 0 to window_seconds)
+        self.SOI_view.plot.setXRange(0, window_seconds, padding=0)
+        self.SOI_view.plot.enableAutoRange(axis='x', enable=False)
+
+        logger.info(f"Fixed window applied: {window_seconds:.0f}s")
+
+        # Apply Y padding to both graphs
+        self._apply_y_padding(self.full_segment_view.plot, "Sensorgram")
+        self._apply_y_padding(self.SOI_view.plot, "SOI")
+
+    def _apply_y_padding(self: Self, plot, graph_name: str) -> None:
+        """Apply Y-axis padding to a graph.
+
+        Args:
+            plot: The plot object to apply padding to
+            graph_name: Name for logging purposes
+        """
+        try:
+            y_min, y_max = plot.viewRange()[1]
+            plot.setYRange(
+                y_min - CYCLE_Y_PADDING_BOTTOM,
+                y_max + CYCLE_Y_PADDING_TOP,
+                padding=0
+            )
+            plot.enableAutoRange(axis='y', enable=False)
+        except Exception as e:
+            logger.debug(f"{graph_name} Y range not set (no data yet): {e}")
+            plot.enableAutoRange(axis='y', enable=False)
 
     def save_data(self: Self, rec_dir: str) -> None:
         """Save data."""

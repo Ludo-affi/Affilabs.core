@@ -56,10 +56,8 @@ class Spectroscopy(QWidget):
 
     def enable_controls(self, state):
         self.ui.controls.setEnabled(state)
-        if DEV:
-            self.ui.full_calibrate_btn.setEnabled(state)
-        else:
-            self.ui.full_calibrate_btn.setEnabled(False)
+        # Enable Auto-Align && Calibrate button
+        self.ui.full_calibrate_btn.setEnabled(state)
 
     def resizeEvent(self, event):
         self.intensity_plot_view.resize(self.ui.intensity_plot.width(), self.ui.intensity_plot.height())

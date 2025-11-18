@@ -5,10 +5,12 @@ from typing import Literal, Self
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QWidget
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QRadioButton, QVBoxLayout, QWidget
 
 from ui.ui_channelmenu import Ui_ChannelMenu
+from utils.logger import logger
 from widgets.metadata import Metadata
+import settings.settings as settings
 
 
 class ChannelMenu(QWidget):
@@ -20,6 +22,7 @@ class ChannelMenu(QWidget):
     live_filt_sig = Signal(bool, int)
     proc_filt_sig = Signal(bool, int)
     colorblind_mode_signal = Signal(bool)
+    cycle_marker_style_signal = Signal(str)  # "cursors" or "lines"
 
     def __init__(
         self: Self,
@@ -45,11 +48,34 @@ class ChannelMenu(QWidget):
         self.ui.noRef.toggled.connect(self.reference_ch_none)
         self.ui.unit_nm.clicked.connect(self.unit_change_nm)
         self.ui.unit_ru.clicked.connect(self.unit_change_ru)
-        self.ui.filt_en.toggled.connect(self.filtering_change)
-        self.ui.filt_win.returnPressed.connect(self.filtering_change)
+        self.ui.filt_en.toggled.connect(self.filter_enable_change)
+        self.ui.filt_win.returnPressed.connect(self.filtering_window_change)
+        self.ui.filt_win.editingFinished.connect(self.filtering_window_change)
         self.ui.colorblind_mode.toggled.connect(self.colorblind_mode_change)
         self.ref_ch = "no ref"
         self.datawindow_type = datawindow_type
+
+        # Add cycle marker style selection
+        self.cycle_marker_group = QGroupBox("Cycle Markers")
+        self.cycle_marker_layout = QVBoxLayout(self.cycle_marker_group)
+
+        self.marker_cursors = QRadioButton("Movable Cursors (Yellow/Red)")
+        self.marker_lines = QRadioButton("Vertical Line Markers with Labels")
+
+        # Set default based on settings
+        if settings.CYCLE_MARKER_STYLE == "lines":
+            self.marker_lines.setChecked(True)
+        else:
+            self.marker_cursors.setChecked(True)
+
+        self.marker_cursors.toggled.connect(self.cycle_marker_change)
+        self.marker_lines.toggled.connect(self.cycle_marker_change)
+
+        self.cycle_marker_layout.addWidget(self.marker_cursors)
+        self.cycle_marker_layout.addWidget(self.marker_lines)
+
+        # Add to data settings layout (after colorblind mode)
+        self.data_settings.layout().addWidget(self.cycle_marker_group)
 
         # Puts the metadata menu in a box, layout used to get proper spacing and sizing
         self.metadata_box = QGroupBox("TraceDrawer Metadata")
@@ -63,35 +89,32 @@ class ChannelMenu(QWidget):
         self.main_layout.addWidget(self.metadata_box)
         self.main_layout.setSizeConstraint(QHBoxLayout.SizeConstraint.SetFixedSize)
 
+    def _set_reference_channel(self: Self, channel: str, button_checked: bool) -> None:
+        """Set reference channel (DRY helper method)."""
+        if button_checked:
+            emit_value = "None" if channel == "no ref" else channel
+            self.ref_ch_signal.emit(emit_value)
+            self.ref_ch = channel
+
     def reference_ch_a(self: Self) -> None:
         """Set channel A as the reference channel."""
-        if self.ui.channelA.isChecked():
-            self.ref_ch_signal.emit("a")
-            self.ref_ch = "a"
+        self._set_reference_channel("a", self.ui.channelA.isChecked())
 
     def reference_ch_b(self: Self) -> None:
         """Set channel B as the reference channel."""
-        if self.ui.channelB.isChecked():
-            self.ref_ch_signal.emit("b")
-            self.ref_ch = "b"
+        self._set_reference_channel("b", self.ui.channelB.isChecked())
 
     def reference_ch_c(self: Self) -> None:
         """Set channel C as the reference channel."""
-        if self.ui.channelC.isChecked():
-            self.ref_ch_signal.emit("c")
-            self.ref_ch = "c"
+        self._set_reference_channel("c", self.ui.channelC.isChecked())
 
     def reference_ch_d(self: Self) -> None:
         """Set channel D as the reference channel."""
-        if self.ui.channelD.isChecked():
-            self.ref_ch_signal.emit("d")
-            self.ref_ch = "d"
+        self._set_reference_channel("d", self.ui.channelD.isChecked())
 
     def reference_ch_none(self: Self) -> None:
         """Remove any reference channel."""
-        if self.ui.noRef.isChecked():
-            self.ref_ch_signal.emit("None")
-            self.ref_ch = "no ref"
+        self._set_reference_channel("no ref", self.ui.noRef.isChecked())
 
     def unit_change_ru(self: Self) -> None:
         """Change units to RU."""
@@ -103,44 +126,54 @@ class ChannelMenu(QWidget):
         self.unit_to_nm_signal.emit()
         self.ui.noRef.setChecked(True)  # noqa: FBT003
 
-    def filtering_change(self: Self) -> None:
-        """Change data filtering window."""
+    def _validate_filter_window(self: Self) -> int:
+        """Validate and clamp filter window size to valid range [3, 51]."""
         try:
-            # Validate and sanitize input
             filt_win_text = self.ui.filt_win.text().strip()
             if not filt_win_text:
-                # If empty, reset to default
-                self.ui.filt_win.setText("3")
-                return
-
-            filt_win = int(filt_win_text)
-
-            # Clamp to valid range
-            if filt_win < 3:
                 filt_win = 3
-                self.ui.filt_win.setText("3")
-            elif filt_win > 51:
-                filt_win = 51
-                self.ui.filt_win.setText("51")
-
-            # Emit signal with validated value
-            if self.datawindow_type == "dynamic":
-                self.live_filt_sig.emit(
-                    self.ui.filt_en.isChecked(),
-                    filt_win,
-                )
             else:
-                self.proc_filt_sig.emit(
-                    self.ui.filt_en.isChecked(),
-                    filt_win,
-                )
+                filt_win = int(filt_win_text)
+                filt_win = max(3, min(51, filt_win))  # Clamp to [3, 51]
+
+            self.ui.filt_win.setText(str(filt_win))
+            return filt_win
         except ValueError:
-            # If not a valid integer, reset to default
             self.ui.filt_win.setText("3")
+            return 3
+
+    def _emit_filter_signal(self: Self, is_enabled: bool, window_size: int) -> None:
+        """Emit appropriate filter signal based on datawindow type."""
+        if self.datawindow_type == "dynamic":
+            self.live_filt_sig.emit(is_enabled, window_size)
+        else:
+            self.proc_filt_sig.emit(is_enabled, window_size)
+
+    def filter_enable_change(self: Self) -> None:
+        """Handle filter enable/disable toggle."""
+        is_enabled = self.ui.filt_en.isChecked()
+        filt_win = self._validate_filter_window()
+        self._emit_filter_signal(is_enabled, filt_win)
+
+    def filtering_window_change(self: Self) -> None:
+        """Handle filter window size change."""
+        is_enabled = self.ui.filt_en.isChecked()
+        filt_win = self._validate_filter_window()
+        self._emit_filter_signal(is_enabled, filt_win)
 
     def colorblind_mode_change(self: Self) -> None:
         """Toggle colorblind-friendly color palette."""
         self.colorblind_mode_signal.emit(self.ui.colorblind_mode.isChecked())
+
+    def cycle_marker_change(self: Self) -> None:
+        """Change cycle marker style."""
+        if self.marker_cursors.isChecked():
+            style = "cursors"
+        else:
+            style = "lines"
+        logger.info(f"📡 Emitting cycle marker style change signal: {style}")
+        settings.CYCLE_MARKER_STYLE = style
+        self.cycle_marker_style_signal.emit(style)
 
     def show(self: Self) -> None:
         """Re-adds the metadata menu to this menu."""

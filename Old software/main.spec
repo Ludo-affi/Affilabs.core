@@ -60,6 +60,6 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='ezControl v3.4',
+    name='ezControl v4.0',
     key='Aff1nit3$oftw@re',
 )

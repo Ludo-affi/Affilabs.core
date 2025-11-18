@@ -15,17 +15,31 @@ from pathlib import Path
 from typing import Literal, Self, TypedDict
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QBrush, QColor, QDoubleValidator, QFont, QPen
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QRect, QSize
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QDoubleValidator,
+    QFont,
+    QPen,
+    QPainter,
+    QResizeEvent,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QFrame,
     QGraphicsEllipseItem,
     QGraphicsLineItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
+    QHBoxLayout,
+    QLayout,
+    QSplitter,
     QStyledItemDelegate,
     QTableWidgetItem,
+    QSizePolicy,
+    QVBoxLayout,
     QWidget,
 )
 from scipy.signal import medfilt
@@ -36,6 +50,8 @@ from ui.ui_sensorgram import Ui_Sensorgram
 from utils.logger import logger
 from widgets.channelmenu import ChannelMenu
 from widgets.cycle_manager import CycleManager
+from widgets.cycle_table_dialog import CycleTableDialog
+from widgets.delegates import CycleTypeDelegate, TextInputDelegate
 from widgets.graphs import SegmentGraph, SensorgramGraph
 from widgets.message import show_message
 from widgets.metadata import Metadata, MetadataPrompt
@@ -53,103 +69,55 @@ OFF_BRUSH = QBrush(Qt.GlobalColor.transparent)
 LOOP_BRUSH = QBrush(Qt.GlobalColor.green)
 SENSOR_BRUSH = QBrush(Qt.GlobalColor.blue)
 LOOP_PEN = QPen(LOOP_BRUSH, 6)
+
+# Cycle display constants
+CYCLE_WINDOW_PADDING_FACTOR = 1.1  # Add 10% to cycle time for fixed window
+CYCLE_Y_PADDING_TOP = 10  # RU to add above max Y value
+CYCLE_Y_PADDING_BOTTOM = 5  # RU to subtract below min Y value
 SENSOR_PEN = QPen(SENSOR_BRUSH, 6)
 
 PROGRESS_BAR_UPDATE_TIME = 100
 
 
-class CycleTypeDelegate(QStyledItemDelegate):
-    """Delegate to provide a dropdown for cycle type selection."""
+class RoundedFrame(QWidget):
+    """A responsive widget with rounded corners that wraps another widget."""
 
-    def createEditor(self, parent, option, index):
-        """Create a QComboBox editor."""
-        combo = QComboBox(parent)
-        combo.addItems(CYCLE_TYPES)
-        # Style the combobox to ensure text is visible
-        combo.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                color: black;
-                border: 1px solid gray;
-                padding: 2px;
-            }
-            QComboBox:hover {
-                background-color: #f0f0f0;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                color: black;
-                selection-background-color: #0078d4;
-                selection-color: white;
-            }
-        """)
-        return combo
+    def __init__(self: Self, child_widget: QWidget, border_radius: int = 8) -> None:
+        """Initialize the rounded frame with a child widget."""
+        super().__init__()
+        self.border_radius = border_radius
+        self.child_widget = child_widget
 
-    def setEditorData(self, editor, index):
-        """Set the current value in the combo box."""
-        current_text = index.data()
-        if current_text in CYCLE_TYPES:
-            editor.setCurrentText(current_text)
-        else:
-            editor.setCurrentIndex(0)
+        # Set up layout with margin to account for border
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(child_widget)
+        self.setLayout(layout)
 
-    def setModelData(self, editor, model, index):
-        """Save the selected value back to the model."""
-        model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+        # Set background to transparent so custom painting works
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("RoundedFrame { background-color: white; }")
 
+    def paintEvent(self: Self, event) -> None:
+        """Paint the rounded rectangle background."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-class TextInputDelegate(QStyledItemDelegate):
-    """Delegate for text input with character limits and validation."""
+        # Create rounded rectangle path
+        rect = self.rect()
+        painter.fillRect(rect, QColor(255, 255, 255))
 
-    # Character limits for different column types
-    NAME_LIMIT = 50
-    NOTE_LIMIT = 500
+        # Draw rounded corners by drawing a path
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addRoundedRect(QRect(0, 0, self.width(), self.height()), self.border_radius, self.border_radius)
+        painter.setClipPath(path)
+        painter.fillPath(path, QColor(255, 255, 255))
 
-    def createEditor(self, parent, option, index):
-        """Create a line edit with character limit."""
-        from PySide6.QtWidgets import QLineEdit
-
-        editor = QLineEdit(parent)
-
-        # Set character limit based on column
-        column = index.column()
-        if column == 0:  # Name column
-            editor.setMaxLength(self.NAME_LIMIT)
-            editor.setPlaceholderText(f"Max {self.NAME_LIMIT} characters")
-        elif column == 9:  # Note column
-            editor.setMaxLength(self.NOTE_LIMIT)
-            editor.setPlaceholderText(f"Max {self.NOTE_LIMIT} characters")
-        else:
-            editor.setMaxLength(100)  # Default limit for other text columns
-
-        return editor
-
-    def setEditorData(self, editor, index):
-        """Set current value in editor with safety checks."""
-        try:
-            current_text = index.data()
-            if current_text is not None:
-                editor.setText(str(current_text))
-            else:
-                editor.setText("")
-        except Exception as e:
-            logger.warning(f"Error setting editor data: {e}")
-            editor.setText("")
-
-    def setModelData(self, editor, model, index):
-        """Save value back to model with validation."""
-        try:
-            text = editor.text().strip()
-            # Additional validation: remove any problematic characters
-            text = text.replace('\x00', '')  # Remove null bytes
-            text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')  # Keep printable chars
-            model.setData(index, text, Qt.ItemDataRole.EditRole)
-        except Exception as e:
-            logger.error(f"Error saving table cell data: {e}")
-            # Don't crash - just log the error
+        # Draw border
+        painter.setClipRect(self.rect())
+        painter.drawPath(path)
 
 
 class DataDict(TypedDict, total=False):
@@ -375,6 +343,23 @@ class DataWindow(QWidget):
             self.ui = Ui_Sensorgram()
             self.ui.setupUi(self)
             self._fix_checkbox_styles()
+            
+            # White opaque rectangle as a standalone widget on the main UI
+            from PySide6.QtWidgets import QFrame
+            from PySide6.QtCore import QSize
+            self.bg_rect_widget = QFrame(self)
+            self.bg_rect_widget.setStyleSheet(
+                "background-color: rgb(255, 255, 255);"
+                "border: 1px solid rgb(100, 100, 100);"
+                "border-radius: 6px;"
+            )
+            # Store margins from splitter edges (left, top, right, bottom)
+            self.bg_rect_margin_left = -8
+            self.bg_rect_margin_top = -73
+            self.bg_rect_margin_right = -9
+            self.bg_rect_margin_bottom = -12
+            self.bg_rect_radius = 6
+            # Will be sized and positioned in setup() based on splitter dimensions
 
         elif self.data_source == "static":
             self.ui = Ui_Processing()
@@ -427,17 +412,30 @@ class DataWindow(QWidget):
         # Create object to hold metadata and allow user input
         self.metadata = Metadata(CH_LIST)
 
-        # dialogs: reference channel, average channel, units
+        # dialogs: reference channel, average channel, units, cycle table
         self.reference_channel_dlg = ChannelMenu(self.data_source, self.metadata)
         self.reference_channel_dlg.ref_ch_signal.connect(self.reference_change)
         self.reference_channel_dlg.unit_to_ru_signal.connect(self.unit_to_nm)
         self.reference_channel_dlg.unit_to_nm_signal.connect(self.unit_to_nm)
+        self.reference_channel_dlg.cycle_marker_style_signal.connect(self.cycle_marker_style_changed)
         if self.data_source == "static":
             # Disable filter for static data by unchecking the filter checkbox
             self.reference_channel_dlg.ui.filt_en.setChecked(False)
 
+        # Create cycle table dialog (popup window)
+        self.table_dialog = CycleTableDialog(self)
+        self.table_dialog.set_segment_data(self.saved_segments, self.deleted_segment)
+        self.table_dialog.row_deleted_sig.connect(self.delete_row)
+        self.table_dialog.row_restored_sig.connect(self.restore_deleted)
+        self.table_dialog.cell_edited_sig.connect(self.enter_edit_mode)
+        self.table_dialog.table_toggled_sig.connect(self.toggle_table_style)
+
         # update segment data when cursor positions changed
         self.full_segment_view.segment_signal.connect(self.update_segment)
+
+        # Connect shift values signal to update display box
+        if hasattr(self.full_segment_view, 'shift_values_signal'):
+            self.full_segment_view.shift_values_signal.connect(self.update_shift_display_box)
 
         # channel display options changed in full segment plot
         for ch in CH_LIST:
@@ -447,6 +445,31 @@ class DataWindow(QWidget):
             getattr(self.ui, f"segment_{ch.upper()}").stateChanged.connect(
                 partial(self.SOI_view.display_channel_changed, ch),
             )
+
+            # Connect right-side display checkboxes (if they exist)
+            right_checkbox_name = f"segment_{ch.upper()}_right"
+            if hasattr(self.ui, right_checkbox_name):
+                getattr(self.ui, right_checkbox_name).stateChanged.connect(
+                    partial(self.full_segment_view.display_channel_changed, ch),
+                )
+                getattr(self.ui, right_checkbox_name).stateChanged.connect(
+                    partial(self.SOI_view.display_channel_changed, ch),
+                )
+                # Sync left and right checkboxes
+                getattr(self.ui, f"segment_{ch.upper()}").stateChanged.connect(
+                    lambda state, cb_name=right_checkbox_name: (
+                        getattr(self.ui, cb_name).blockSignals(True),
+                        getattr(self.ui, cb_name).setChecked(state == Qt.CheckState.Checked),
+                        getattr(self.ui, cb_name).blockSignals(False)
+                    )
+                )
+                getattr(self.ui, right_checkbox_name).stateChanged.connect(
+                    lambda state, ch_name=ch: (
+                        getattr(self.ui, f"segment_{ch_name.upper()}").blockSignals(True),
+                        getattr(self.ui, f"segment_{ch_name.upper()}").setChecked(state == Qt.CheckState.Checked),
+                        getattr(self.ui, f"segment_{ch_name.upper()}").blockSignals(False)
+                    )
+                )
 
         if isinstance(self.ui, Ui_Processing):
             for ch in CH_LIST:
@@ -460,27 +483,68 @@ class DataWindow(QWidget):
         # save segment button
         self.ui.save_segment_btn.clicked.connect(self.save_segment)
 
-        # new segment button
-        self.ui.new_segment_btn.clicked.connect(self.new_segment)
+        # new segment button - now opens cycle data table
+        if isinstance(self.ui, Ui_Sensorgram):
+            self.ui.new_segment_btn.clicked.connect(self.open_cycle_table)
+        else:
+            self.ui.new_segment_btn.clicked.connect(self.new_segment)
 
-        if isinstance(self.ui, Ui_Processing):
+        if isinstance(self.ui, Ui_Sensorgram) and hasattr(self.ui, 'reset_segment_btn'):
+            self.ui.reset_segment_btn.hide()
+        elif hasattr(self.ui, 'reset_segment_btn'):
             self.ui.reset_segment_btn.clicked.connect(self.reset_graphs)
-        elif isinstance(self.ui, Ui_Sensorgram):
-            self.reference_channel_dlg.ui.reset_data.clicked.connect(self.reset_graphs)
 
-        # data table add/remove row
-        self.ui.delete_row_btn.clicked.connect(self.delete_row)
-        self.ui.add_row_btn.clicked.connect(self.restore_deleted)
+        # clear graph button (only in sensorgram UI)
+        if isinstance(self.ui, Ui_Sensorgram):
+            self.ui.clear_graph_btn.clicked.connect(self.reset_graphs)
+            # Connect the new button inside Display group box
+            if hasattr(self.ui, 'clear_graph_btn_in_display'):
+                self.ui.clear_graph_btn_in_display.clicked.connect(self.reset_graphs)
 
-        # Set up cycle type dropdown for column 8
-        cycle_type_delegate = CycleTypeDelegate(self.ui.data_table)
-        self.ui.data_table.setItemDelegateForColumn(8, cycle_type_delegate)
+        # adjust rectangle button (only in sensorgram UI)
+        if isinstance(self.ui, Ui_Sensorgram) and hasattr(self.ui, 'adjust_rect_btn'):
+            self.ui.adjust_rect_btn.clicked.connect(self.open_adjust_rect_dialog)
+            self.bg_rect_dialog = None
 
-        # Set up text input delegates with character limits for name and note columns
-        text_delegate_name = TextInputDelegate(self.ui.data_table)
-        text_delegate_note = TextInputDelegate(self.ui.data_table)
-        self.ui.data_table.setItemDelegateForColumn(0, text_delegate_name)  # Name column
-        self.ui.data_table.setItemDelegateForColumn(9, text_delegate_note)  # Note column
+        # open cycle table dialog button (only in sensorgram UI)
+        if isinstance(self.ui, Ui_Sensorgram):
+            self.ui.open_table_btn.clicked.connect(self.open_cycle_table)
+
+        # For processing UI, keep old table setup
+        if isinstance(self.ui, Ui_Processing):
+            # data table add/remove row
+            self.ui.delete_row_btn.clicked.connect(self.delete_row)
+            self.ui.add_row_btn.clicked.connect(self.restore_deleted)
+
+            # Set up cycle type dropdown for column 8
+            cycle_type_delegate = CycleTypeDelegate(self.ui.data_table)
+            self.ui.data_table.setItemDelegateForColumn(8, cycle_type_delegate)
+
+            # Set up text input delegates with character limits for name and note columns
+            text_delegate_name = TextInputDelegate(self.ui.data_table)
+            text_delegate_note = TextInputDelegate(self.ui.data_table)
+            self.ui.data_table.setItemDelegateForColumn(0, text_delegate_name)  # Name column
+            self.ui.data_table.setItemDelegateForColumn(9, text_delegate_note)  # Note column
+
+            # data table
+            self.ui.data_table.cellDoubleClicked.connect(self.enter_edit_mode)
+            self.ui.data_table.cellClicked.connect(self.enter_view_mode)
+            self.ui.table_toggle.clicked.connect(self.toggle_table_style)
+
+            # Set up page indicator circles for table toggle
+            self.ui.page_indicator.setScene(QGraphicsScene())
+            self.circles = (
+                QGraphicsEllipseItem(-4, 0, 5, 5),
+                QGraphicsEllipseItem(4, 0, 5, 5),
+            )
+            for c in self.circles:
+                self.ui.page_indicator.scene().addItem(c)
+
+            # Initialize table manager (handles table operations)
+            self.table_manager = CycleTableManager(
+                table_widget=self.ui.data_table,
+                toggle_indicators=self.circles
+            )
 
         # open the average channel and reference channel dialog
         if isinstance(self.ui, Ui_Processing):
@@ -488,38 +552,23 @@ class DataWindow(QWidget):
                 self.open_reference_channel_dlg,
             )
 
-        # data table
-        self.ui.data_table.cellDoubleClicked.connect(self.enter_edit_mode)
-        self.ui.data_table.cellClicked.connect(self.enter_view_mode)
-        self.ui.table_toggle.clicked.connect(self.toggle_table_style)
-
         # text fields
         self.ui.left_cursor_time.returnPressed.connect(self.update_left)
         self.ui.right_cursor_time.returnPressed.connect(self.update_right)
 
-        # Set up page indicator circles for table toggle BEFORE initializing table_manager
-        self.ui.page_indicator.setScene(QGraphicsScene())
-        self.circles = (
-            QGraphicsEllipseItem(-4, 0, 5, 5),
-            QGraphicsEllipseItem(4, 0, 5, 5),
-        )
-        for c in self.circles:
-            self.ui.page_indicator.scene().addItem(c)
-
         # Initialize cycle manager (handles cycle type/time logic)
-        self.cycle_manager = CycleManager(
-            cycle_type_dropdown=self.ui.current_cycle_type,
-            cycle_time_dropdown=self.ui.current_cycle_time,
-            sensorgram_graph=self.full_segment_view
-        )
+        # Only Processing UI has cycle type/time dropdowns
+        if isinstance(self.ui, Ui_Processing):
+            self.cycle_manager = CycleManager(
+                cycle_type_dropdown=self.ui.current_cycle_type,
+                cycle_time_dropdown=self.ui.current_cycle_time,
+                sensorgram_graph=self.full_segment_view
+            )
+        else:
+            # Sensorgram doesn't have cycle controls in UI
+            self.cycle_manager = None
 
-        # Initialize table manager (handles table operations)
-        self.table_manager = CycleTableManager(
-            table_widget=self.ui.data_table,
-            toggle_indicators=self.circles
-        )
-
-        logger.debug(f"current row is {self.ui.data_table.currentRow()}")        # add ready flag
+        # Note: table_manager only exists for Ui_Processing, sensorgram uses table_dialog
         self.enable_controls(data_ready=False)
 
         # live view and reset segment button if dynamic window, imports if static window
@@ -633,7 +682,7 @@ class DataWindow(QWidget):
 
     def update_table_style(self: Self) -> None:
         """Update the style of the cycle table."""
-        self.table_manager.update_table_style()
+        self._get_table_manager().update_table_style()
 
     def _fix_checkbox_styles(self: Self) -> None:
         """Fix checkbox and label styling to use global theme.
@@ -659,25 +708,103 @@ class DataWindow(QWidget):
                 else:
                     checkbox.setStyleSheet("QCheckBox { background-color: transparent; }")
 
-        # Fix shift value labels - make background transparent
-        for label_name in ['shift_A', 'shift_B', 'shift_C', 'shift_D']:
-            if hasattr(self.ui, label_name):
-                label = getattr(self.ui, label_name)
-                # Use a light background that's visible but consistent with theme
-                label.setStyleSheet("QLabel { background-color: #F5F5F5; border: 1px solid #AAAAAA; padding: 3px; border-radius: 2px; }")
-
     @Slot()
     def toggle_table_style(self: Self) -> None:
         """Toggle the style of the table."""
-        self.table_manager.toggle_table_style()
+        self._get_table_manager().toggle_table_style()
 
     def resizeEvent(self: Self, _: object) -> None:  # noqa: N802
-        """Resize the widget."""
-        self.full_segment_view.resize(
-            self.ui.full_segment.width(),
-            self.ui.full_segment.height(),
-        )
-        self.SOI_view.resize(self.ui.SOI.width(), self.ui.SOI.height())
+        """Resize the widget - splitter handles graph resizing automatically."""
+        super().resizeEvent(_)
+        
+        # Reposition background rectangle when window resizes
+        self._position_bg_rect()
+    
+    def _position_bg_rect(self: Self) -> None:
+        """Position and size the background rectangle to match graph area with margins."""
+        if hasattr(self, 'bg_rect_widget') and hasattr(self, 'graph_splitter'):
+            # Get splitter's geometry in DataWindow's coordinate space
+            splitter_pos = self.graph_splitter.pos()
+            splitter_width = self.graph_splitter.width()
+            splitter_height = self.graph_splitter.height()
+            
+            # Calculate rectangle geometry based on splitter size minus margins
+            rect_x = splitter_pos.x() + self.bg_rect_margin_left
+            rect_y = splitter_pos.y() + self.bg_rect_margin_top
+            rect_width = splitter_width - self.bg_rect_margin_left - self.bg_rect_margin_right
+            rect_height = splitter_height - self.bg_rect_margin_top - self.bg_rect_margin_bottom
+            
+            # Set geometry (position and size) in DataWindow coordinate space
+            self.bg_rect_widget.setGeometry(rect_x, rect_y, rect_width, rect_height)
+            
+            # Show and ensure it's behind the splitter
+            if not self.bg_rect_widget.isVisible():
+                self.bg_rect_widget.lower()
+                self.bg_rect_widget.show()
+                self.graph_splitter.raise_()
+
+    def eventFilter(self, obj, event):
+        """Handle double-click on splitter handle to swap graph ratios and splitter resize."""
+        from PySide6.QtCore import QEvent
+        import time
+
+        # Check if double-click on splitter or its handle
+        if hasattr(self, 'graph_splitter'):
+            is_splitter = obj == self.graph_splitter
+            is_handle = obj == self.graph_splitter.handle(1)
+
+            if is_splitter or is_handle:
+                event_type = event.type()
+                
+                # Reposition background rectangle when splitter resizes
+                if event_type == QEvent.Type.Resize and is_splitter:
+                    self._position_bg_rect()
+
+                # Manual double-click detection using time tracking
+                if event_type == QEvent.Type.MouseButtonPress:
+                    current_time = time.time()
+
+                    # Initialize last_click_time if it doesn't exist
+                    if not hasattr(self, '_last_click_time'):
+                        self._last_click_time = 0
+
+                    # Check if this is a double-click (< 500ms between clicks)
+                    time_diff = current_time - self._last_click_time
+                    if time_diff < 0.5:
+                        logger.info("Double-click detected - swapping graph ratios")
+                        self._swap_graph_ratios()
+                        self._last_click_time = 0  # Reset to prevent triple-click
+                        return True
+                    else:
+                        self._last_click_time = current_time
+
+        return super().eventFilter(obj, event)
+
+    def _swap_graph_ratios(self):
+        """Swap graph size ratios: 30/70 ↔ 70/30."""
+        if not hasattr(self, 'graph_splitter'):
+            return
+
+        self._detail_focused = not self._detail_focused
+
+        if self._detail_focused:
+            # Detail view gets 70% (default)
+            self.graph_splitter.setStretchFactor(0, 3)  # Overview: 30%
+            self.graph_splitter.setStretchFactor(1, 7)  # Detail: 70%
+            logger.debug("Graph ratio: Overview 30% / Detail 70%")
+        else:
+            # Overview gets 70% (reversed)
+            self.graph_splitter.setStretchFactor(0, 7)  # Overview: 70%
+            self.graph_splitter.setStretchFactor(1, 3)  # Detail: 30%
+            logger.debug("Graph ratio: Overview 70% / Detail 30%")
+
+        # Force splitter to update sizes
+        total_height = self.graph_splitter.height()
+        if self._detail_focused:
+            sizes = [int(total_height * 0.3), int(total_height * 0.7)]
+        else:
+            sizes = [int(total_height * 0.7), int(total_height * 0.3)]
+        self.graph_splitter.setSizes(sizes)
 
     def is_busy(self: Self) -> bool:
         """Check if the widget is busy."""
@@ -734,12 +861,19 @@ class DataWindow(QWidget):
                     self.exp_clock_raw = time.time() - self.data["start"]
                 if self.exp_clock_raw == 0:
                     self.ui.exp_clock.setText("00h 00m 00s")
+                    # Also update the one in Cycle Settings
+                    if hasattr(self.ui, 'exp_clock_settings'):
+                        self.ui.exp_clock_settings.setText("00h 00m 00s")
                 else:
-                    self.ui.exp_clock.setText(
+                    time_str = (
                         f"{int(self.exp_clock_raw / 3600):02d}h "
                         f"{int((self.exp_clock_raw % 3600) / 60):02d}m "
-                        f"{int(self.exp_clock_raw % 60):02d}s",
+                        f"{int(self.exp_clock_raw % 60):02d}s"
                     )
+                    self.ui.exp_clock.setText(time_str)
+                    # Also update the one in Cycle Settings
+                    if hasattr(self.ui, 'exp_clock_settings'):
+                        self.ui.exp_clock_settings.setText(time_str)
                 if (self.segment_edit is not None or self.viewing) and isinstance(
                     self.ui,
                     Ui_Processing,
@@ -822,6 +956,24 @@ class DataWindow(QWidget):
             self.update_displayed_values()
             self.busy = False
 
+    def update_shift_display_box(self: Self, shift_data: dict) -> None:
+        """Update the shift display box with shift values."""
+        if not isinstance(self.ui, Ui_Sensorgram):
+            return
+
+        if hasattr(self.ui, 'shift_display_box'):
+            if shift_data:
+                # Format the shift values for display
+                display_lines = []
+                for ch in CH_LIST:
+                    if ch in shift_data:
+                        shift_val = shift_data[ch]
+                        display_lines.append(f"{ch.upper()}: {shift_val:.2f} {self.unit}")
+                display_text = "  |  ".join(display_lines)
+                self.ui.shift_display_box.setText(display_text)
+            else:
+                self.ui.shift_display_box.setText("Ready")
+
     def update_left(
         self: Self,
         *,
@@ -891,6 +1043,13 @@ class DataWindow(QWidget):
 
     def new_segment(self: Self) -> None:
         """Create a new segment."""
+        # Clear gray zone and re-enable auto-ranging
+        self.full_segment_view.hide_cycle_time_region()
+        self.full_segment_view.fixed_window_active = False
+        self.SOI_view.fixed_window_active = False
+        self.full_segment_view.plot.enableAutoRange(axis='x', enable=True)
+        self.SOI_view.plot.enableAutoRange(axis='x', enable=True)
+
         if self.segment_edit is not None:
             self.reassert_row(self.segment_edit)
         self.segment_edit = None
@@ -900,7 +1059,7 @@ class DataWindow(QWidget):
             self.ui.curr_seg_box.setEnabled(True)  # noqa: FBT003
         self.full_segment_view.movable_cursors(state=True)
         self.cursors_text_edit(state=True)
-        self.ui.data_table.clearSelection()
+        self._get_table_widget().clearSelection()
         self.set_row_properties()
         if self.data_source == "dynamic":
             self.ui.save_segment_btn.setText("Start\nCycle")
@@ -952,14 +1111,20 @@ class DataWindow(QWidget):
         self.return_ref = None
 
     def update_displayed_values(self: Self) -> None:
-        """Update displayed values."""
+        """Update displayed values and cursor labels."""
+        # Update cursor labels with time values
+        left_time = self.full_segment_view.left_cursor_pos
+        right_time = self.full_segment_view.right_cursor_pos
+        self.full_segment_view.left_cursor.label.setFormat(f'Start\n{left_time:.2f}s')
+        self.full_segment_view.right_cursor.label.setFormat(f'Stop\n{right_time:.2f}s')
+
         if not self.ui.left_cursor_time.hasFocus():
             self.ui.left_cursor_time.setText(
-                f"{self.full_segment_view.left_cursor_pos:.2f}",
+                f"{left_time:.2f}",
             )
         if not self.ui.right_cursor_time.hasFocus():
             self.ui.right_cursor_time.setText(
-                f"{self.full_segment_view.right_cursor_pos:.2f}",
+                f"{right_time:.2f}",
             )
 
         start = 0.0
@@ -980,30 +1145,51 @@ class DataWindow(QWidget):
                 else:
                     end = self.live_segment_start[1]
 
-            for ch in CH_LIST:
-                text = "0"
-                try:
-                    if np.isnan(self.current_segment.shift[ch]):
-                        text = "no signal"
-                    else:
-                        text = f"{self.current_segment.shift[ch]:.3f}"
-                except Exception as e:
-                    logger.exception(f"update display error: {e}")
-                getattr(self.ui, f"shift_{ch.upper()}").setText(text)
-
         if isinstance(self.ui, Ui_Processing):
             self.ui.start_time.setText(f"{start:.2f}")
             self.ui.end_time.setText(f"{end:.2f}")
 
+    def _insert_segment_into_table(self: Self, seg: Segment, row: int) -> None:
+        """Insert a segment into the data table at the specified row."""
+        table = self._get_table_widget()
+        table.blockSignals(True)
+        try:
+            table.insertRow(row)
+
+            # Sanitize data
+            name = str(seg.name)[:50] if seg.name else ""
+            note = str(seg.note)[:500] if seg.note else ""
+            cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
+
+            # Create table items
+            table.setItem(row, 0, QTableWidgetItem(name))
+            table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
+            table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
+            table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
+            table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
+            table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
+            table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
+            table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
+            table.setItem(row, 8, QTableWidgetItem(cycle_type))
+            table.setItem(row, 9, QTableWidgetItem(note))
+        except Exception as e:
+            logger.error(f"Error creating table items: {e}")
+            # Create minimal safe row if there's an error
+            for col in range(10):
+                if table.item(row, col) is None:
+                    table.setItem(row, col, QTableWidgetItem(""))
+        finally:
+            table.blockSignals(False)
+
     def save_segment(self: Self) -> None:
-        """Save a segment."""
-        logger.debug(f"=== save_segment called: data_source={self.data_source} ===")
+        """Save a segment and start a new cycle."""
         if (
             self.data_source == "dynamic"
             and not self.data["rec"]
             and not self.reloading
         ):
             show_message(msg="Data recording not started!", msg_type="Warning")
+            return
 
         self.saving = True
 
@@ -1028,121 +1214,81 @@ class DataWindow(QWidget):
                     row = self.deleted_segment.seg_id
 
                 else:
-                    logger.debug("Branch: normal save segment (creating new cycle)")
-                    # Set cycle type and time from cycle manager
+                    # Check if a cycle is already running (fixed window is active)
+                    cycle_already_running = (
+                        self.data_source == "dynamic"
+                        and hasattr(self, 'full_segment_view')
+                        and self.full_segment_view.fixed_window_active
+                    )
+
+                    if cycle_already_running:
+                        logger.info("⚠️ Cycle already running - completing and saving current cycle first")
+
+                        # Save the currently running cycle with its current end time
+                        current_time = self.full_segment_view.get_time()
+                        self.current_segment.end = current_time
+                        self.update_segment(
+                            self.current_segment.start,
+                            self.current_segment.end,
+                            update=True,
+                            force=True
+                        )
+
+                        # Save the old segment
+                        old_segment = self.current_segment
+                        old_row = len(self.saved_segments)
+
+                        # Insert old segment into table
+                        self._insert_segment_into_table(old_segment, old_row)
+                        self.saved_segments.insert(old_row, old_segment)
+                        logger.info(f"✓ Previous cycle saved: {old_segment.cycle_type} at row {old_row}")
+
+                        # Create new segment at current time for the new cycle
+                        self.seg_count += 1
+                        self.current_segment = Segment(
+                            self.seg_count,
+                            current_time,
+                            current_time + 2
+                        )
+                        self.full_segment_view.move_both_cursors(
+                            self.current_segment.start,
+                            self.current_segment.end,
+                        )
+                        logger.info(f"✓ New segment created for new cycle: ID {self.seg_count}")
+
+                    # Set cycle type and time from cycle manager for the current/new segment
                     self.current_segment.cycle_type = self.cycle_manager.get_current_type()
                     self.current_segment.cycle_time = self.cycle_manager.get_current_time_minutes()
 
                     seg = self.current_segment
                     row = len(self.saved_segments)
-                    self.seg_count += 1
 
-                    # Show gray zone and fix window when cycle starts
-                    logger.debug(f"save_segment: data_source={self.data_source}, cycle_time={self.cycle_manager.get_current_time_minutes()}")
+                    if not cycle_already_running:
+                        self.seg_count += 1
+
+                    # Apply fixed window and gray zone when cycle starts
                     if self.data_source == "dynamic":
                         cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
-                        logger.debug(f"Cycle start: type={self.current_segment.cycle_type}, time={cycle_time_minutes} min")
-
-                        if cycle_time_minutes is not None and cycle_time_minutes > 0:
-                            # Disable live mode to prevent auto-following
-                            self.full_segment_view.live = False
-                            self.full_segment_view.fixed_window_active = True
-                            logger.debug("Disabled live mode and enabled fixed window")
-                            
-                            # Show the gray zone
-                            logger.debug(f"Showing gray zone for {cycle_time_minutes} minutes")
-                            try:
-                                self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
-                                logger.debug("Gray zone function returned successfully")
-                            except Exception as e:
-                                logger.error(f"Failed to show gray zone: {e}", exc_info=True)
-
-                            # Fix window to cycle_time + 10%
-                            window_seconds = cycle_time_minutes * 60 * 1.1  # Add 10%
-                            start_time = self.full_segment_view.left_cursor_pos
-                            end_time = start_time + window_seconds
-                            logger.debug(f"Setting fixed window: X=[{start_time:.2f}s, {end_time:.2f}s] ({window_seconds:.1f}s total)")
-
-                            # Set X range with no padding on both graphs
-                            self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
-                            self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
-                            
-                            # Also fix the Cycle of Interest (SOI) graph window
-                            self.SOI_view.plot.setXRange(start_time, end_time, padding=0)
-                            self.SOI_view.plot.enableAutoRange(axis='x', enable=False)
-                            logger.debug("Fixed window applied to both sensorgram and Cycle of Interest graphs")
-
-                            # Set Y range with padding: +10 on top, -5 on bottom
-                            y_min, y_max = self.full_segment_view.plot.viewRange()[1]
-                            logger.debug(f"Sensorgram Y range: [{y_min:.2f}, {y_max:.2f}]")
-                            self.full_segment_view.plot.setYRange(y_min - 5, y_max + 10, padding=0)
-                            self.full_segment_view.plot.enableAutoRange(axis='y', enable=False)
-                            
-                            # Apply Y padding to SOI graph as well - get current data range
-                            try:
-                                soi_y_min, soi_y_max = self.SOI_view.plot.viewRange()[1]
-                                logger.debug(f"SOI Y range before: [{soi_y_min:.2f}, {soi_y_max:.2f}]")
-                                self.SOI_view.plot.setYRange(soi_y_min - 5, soi_y_max + 10, padding=0)
-                                self.SOI_view.plot.enableAutoRange(axis='y', enable=False)
-                                logger.debug(f"Fixed ranges applied: sensorgram=[{y_min-5:.2f}, {y_max+10:.2f}], SOI=[{soi_y_min-5:.2f}, {soi_y_max+10:.2f}]")
-                            except Exception as e:
-                                logger.error(f"Failed to set SOI Y range: {e}")
-                                # If SOI has no data yet, just disable auto-range
-                                self.SOI_view.plot.enableAutoRange(axis='y', enable=False)
-                        else:
-                            logger.debug(f"Not showing gray zone: cycle_time_minutes={cycle_time_minutes}")
-
-                        # Reset dropdown to default after save
+                        self._apply_cycle_fixed_window(cycle_time_minutes)
                         self.cycle_manager.reset_to_default()
 
                 if (seg is not None) and (row is not None):
-                    # Block signals to prevent cascading updates
-                    self.ui.data_table.blockSignals(True)
-                    self.ui.data_table.insertRow(row)
-
-                    # Safely create table items with sanitized data
-                    try:
-                        name = str(seg.name)[:50] if seg.name else ""
-                        note = str(seg.note)[:500] if seg.note else ""
-                        cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
-
-                        self.ui.data_table.setItem(row, 0, QTableWidgetItem(name))
-                        self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
-                        self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
-                        self.ui.data_table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
-                        self.ui.data_table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
-                        self.ui.data_table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
-                        self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
-                        self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
-                        self.ui.data_table.setItem(row, 8, QTableWidgetItem(cycle_type))
-                        self.ui.data_table.setItem(row, 9, QTableWidgetItem(note))
-                    except Exception as e:
-                        logger.error(f"Error creating table items: {e}")
-                        # Create minimal safe row if there's an error
-                        for col in range(10):
-                            if self.ui.data_table.item(row, col) is None:
-                                self.ui.data_table.setItem(row, col, QTableWidgetItem(""))
-
-                    # Re-enable signals after all items are set
-                    self.ui.data_table.blockSignals(False)
+                    # Insert segment into table
+                    self._insert_segment_into_table(seg, row)
 
                 self.saved_segments.insert(row, self.current_segment)
                 self.saving = False
-                self.ui.data_table.clearSelection()
-                if not self.reloading:
-                    # Hide the shaded region after saving
-                    self.full_segment_view.hide_cycle_time_region()
-                    self.new_segment()
+                self._get_table_widget().clearSelection()
 
             except Exception as e:
                 logger.exception(f"error while saving row {e}")
                 # Ensure signals are re-enabled even if error occurs
-                self.ui.data_table.blockSignals(False)
+                self._get_table_widget().blockSignals(False)
         else:
             logger.error("error while saveing row no current_segment")
 
         # Final safety check to ensure signals are always enabled
-        self.ui.data_table.blockSignals(False)
+        self._get_table_widget().blockSignals(False)
 
     def restore_deleted(self: Self) -> None:
         """Restore a deleted segment."""
@@ -1157,28 +1303,29 @@ class DataWindow(QWidget):
         try:
             seg = self.saved_segments[row]
             # Block signals to prevent cascading updates
-            self.ui.data_table.blockSignals(True)
+            table = self._get_table_widget()
+            table.blockSignals(True)
 
             # Safely create table items with sanitized data
             name = str(seg.name)[:50] if seg.name else ""
             note = str(seg.note)[:500] if seg.note else ""
             cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
 
-            self.ui.data_table.setItem(row, 0, QTableWidgetItem(name))
-            self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
-            self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
-            self.ui.data_table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
-            self.ui.data_table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
-            self.ui.data_table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
-            self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
-            self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
-            self.ui.data_table.setItem(row, 8, QTableWidgetItem(cycle_type))
-            self.ui.data_table.setItem(row, 9, QTableWidgetItem(note))
+            table.setItem(row, 0, QTableWidgetItem(name))
+            table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
+            table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
+            table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
+            table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
+            table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
+            table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
+            table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
+            table.setItem(row, 8, QTableWidgetItem(cycle_type))
+            table.setItem(row, 9, QTableWidgetItem(note))
 
-            self.ui.data_table.blockSignals(False)
+            table.blockSignals(False)
         except Exception as e:
             logger.error(f"Error reasserting table row {row}: {e}")
-            self.ui.data_table.blockSignals(False)  # Ensure signals are re-enabled
+            self._get_table_widget().blockSignals(False)  # Ensure signals are re-enabled
 
     def delete_row(self: Self, *, first_available: bool = False) -> None:
         """Delete a row in the data cycle table."""
@@ -1189,19 +1336,19 @@ class DataWindow(QWidget):
         new_seg_trigger = False
 
         if first_available:
-            self.deleted_segment = self.table_manager.delete_row(
+            self.deleted_segment = self._get_table_manager().delete_row(
                 saved_segments=self.saved_segments,
                 first_available=True
             )
         else:
             if self.viewing:
-                row = self.ui.data_table.currentRow()
+                row = self._get_table_widget().currentRow()
                 new_seg_trigger = True
             elif self.segment_edit is not None:
                 row = self.segment_edit
                 new_seg_trigger = True
 
-            self.deleted_segment = self.table_manager.delete_row(
+            self.deleted_segment = self._get_table_manager().delete_row(
                 row=row,
                 saved_segments=self.saved_segments
             )
@@ -1213,6 +1360,38 @@ class DataWindow(QWidget):
     def open_reference_channel_dlg(self: Self) -> None:
         """Open reference channel dialog."""
         self.reference_channel_dlg.show()
+
+    def open_cycle_table(self: Self) -> None:
+        """Open cycle data table dialog."""
+        self.table_dialog.show()
+        self.table_dialog.raise_()
+        self.table_dialog.activateWindow()
+
+    def open_adjust_rect_dialog(self: Self) -> None:
+        """Open background rectangle adjustment dialog."""
+        if self.bg_rect_dialog is None:
+            from widgets.bg_rect_dialog import BgRectDialog
+            self.bg_rect_dialog = BgRectDialog(
+                parent=self,
+                data_window=self
+            )
+        self.bg_rect_dialog.show()
+        self.bg_rect_dialog.raise_()
+        self.bg_rect_dialog.activateWindow()
+
+    def _get_table_widget(self):
+        """Get the appropriate table widget based on UI type."""
+        if isinstance(self.ui, Ui_Processing):
+            return self.ui.data_table
+        else:
+            return self.table_dialog.ui.data_table
+
+    def _get_table_manager(self):
+        """Get the appropriate table manager based on UI type."""
+        if isinstance(self.ui, Ui_Processing):
+            return self.table_manager
+        else:
+            return self.table_dialog.table_manager
 
     def reset_graphs(self: Self, *, no_msg: bool = False) -> None:
         """Reset the graphs."""
@@ -1239,7 +1418,7 @@ class DataWindow(QWidget):
                 }
             self.full_segment_view.reset_sensorgram()
             self.SOI_view.reset_segment_graph(self.unit)
-            for _i in range(self.ui.data_table.rowCount()):
+            for _i in range(self._get_table_widget().rowCount()):
                 self.delete_row(first_available=True)
             self.saved_segments = []
             self.current_segment = None
@@ -1278,19 +1457,164 @@ class DataWindow(QWidget):
             self.reference_channel_dlg.ui.noRef.setChecked(True)  # noqa: FBT003
 
     def setup(self: Self) -> None:
-        """Set up the widget."""
+        """Set up the widget with master-detail layout (20% overview / 80% detail)."""
         title = "Sensorgram" if self.data_source == "dynamic" else "Data Processing"
+
+        # Create graphs
         self.full_segment_view = SensorgramGraph(title)
-        # Match title font size
-        self.full_segment_view.plot.titleLabel.setText(title, size='12pt')
-        self.full_segment_view.setParent(self.ui.full_segment)
-        self.full_segment_view.show()
+        self.full_segment_view.plot.titleLabel.setText(title, size='11pt')  # Compact size
+        self.full_segment_view.setMinimumHeight(150)
+        self.full_segment_view.setMaximumHeight(350)
+        # Wrap graph in rounded frame
+        self.sensorgram_frame = RoundedFrame(self.full_segment_view, border_radius=8)
+        
+        # Create overlay for channel checkboxes on sensorgram
+        if hasattr(self.ui, 'segment_A'):
+            self.channel_overlay = QFrame(self.sensorgram_frame)
+            self.channel_overlay.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(255, 255, 255, 200);
+                    border: 1px solid rgb(171, 171, 171);
+                    border-radius: 5px;
+                    padding: 5px;
+                }
+            """)
+            overlay_layout = QHBoxLayout(self.channel_overlay)
+            overlay_layout.setContentsMargins(8, 8, 8, 8)
+            overlay_layout.setSpacing(8)
+            
+            # Move checkboxes from groupBox to overlay
+            overlay_layout.addWidget(self.ui.segment_A)
+            overlay_layout.addWidget(self.ui.segment_B)
+            overlay_layout.addWidget(self.ui.segment_C)
+            overlay_layout.addWidget(self.ui.segment_D)
+            if hasattr(self.ui, 'clear_graph_btn_in_display'):
+                overlay_layout.addWidget(self.ui.clear_graph_btn_in_display)
+            
+            # Position overlay at top-left of sensorgram frame
+            self.channel_overlay.move(15, 15)
+            self.channel_overlay.adjustSize()
+            self.channel_overlay.raise_()  # Ensure overlay is on top
 
         self.SOI_view = SegmentGraph("Cycle of Interest", self.unit)
-        # Match title font size
-        self.SOI_view.plot.titleLabel.setText("Cycle of Interest", size='12pt')
-        self.SOI_view.setParent(self.ui.SOI)
-        self.SOI_view.show()
+        self.SOI_view.plot.titleLabel.setText("Cycle of Interest", size='13pt')  # Larger for detail
+        self.SOI_view.setMinimumHeight(200)
+        # Wrap graph in rounded frame
+        self.soi_frame = RoundedFrame(self.SOI_view, border_radius=8)
+
+        # Create vertical splitter for master-detail layout with modern container styling
+        self.graph_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.graph_splitter.addWidget(self.sensorgram_frame)
+        self.graph_splitter.addWidget(self.soi_frame)
+
+        # Style the splitter (graphs now have their own rounded frames)
+        self.graph_splitter.setStyleSheet("""
+            QSplitter {
+                background-color: transparent;
+                margin: 0px;
+                padding: 0px;
+                spacing: 8px;
+            }
+            QSplitter::handle {
+                background-color: #c0c0c0;
+                border: none;
+                margin: 0px auto;
+                height: 4px;
+            }
+            QSplitter::handle:hover {
+                background-color: #4a90e2;
+            }
+            QSplitter::handle:pressed {
+                background-color: #2a70c2;
+            }
+        """)
+
+        # Track layout mode for ratio swapping
+        self._detail_focused = True  # True = 30/70 (detail gets 70%), False = 70/30 (overview gets 70%)
+
+        # Set proportions: 3 parts overview, 7 parts detail (30%/70%)
+        self.graph_splitter.setStretchFactor(0, 3)
+        self.graph_splitter.setStretchFactor(1, 7)
+
+        # Set handle width for visible appearance
+        self.graph_splitter.setHandleWidth(2)
+
+        # Make splitter more responsive
+        self.graph_splitter.setChildrenCollapsible(False)  # Prevent graphs from collapsing completely
+
+        # Configure the splitter handle to capture events
+        handle = self.graph_splitter.handle(1)
+        handle.setEnabled(True)
+        handle.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        handle.setToolTip(
+            "Drag to resize graphs\n"
+            "Double-click to swap sizes (20/80 ↔ 80/20)"
+        )
+
+        # Install event filter on BOTH handle and splitter to catch double-click
+        # (splitter handles consume events, so we need both levels)
+        handle.installEventFilter(self)
+        self.graph_splitter.installEventFilter(self)
+        
+        # Install resize event filter for splitter to reposition background rectangle
+        self.graph_splitter.installEventFilter(self)
+        
+        logger.debug("Event filter installed on splitter and handle")
+
+        # Add splitter to UI - handle both UI types (Sensorgram and Processing)
+        if hasattr(self.ui, 'displays'):
+            # Ui_Sensorgram uses 'displays' layout
+            target_layout = self.ui.displays
+        elif hasattr(self.ui, 'verticalLayout_5'):
+            # Ui_Processing uses 'verticalLayout_5'
+            target_layout = self.ui.verticalLayout_5
+        else:
+            logger.error("Cannot find target layout for graphs")
+            return
+
+        # Only clear layout if it has old widgets (optimization)
+        if target_layout.count() > 0:
+            self._clear_layout(target_layout)
+
+        # Rebuild the top-of-graph controls for the Sensorgram UI
+        is_sensorgram = isinstance(self.ui, Ui_Sensorgram)
+        if is_sensorgram and hasattr(self.ui, 'shift_display_box'):
+            self.ui.shift_display_box.hide()
+
+        if is_sensorgram and hasattr(self.ui, 'groupBox'):
+            # Hide the groupBox since checkboxes are now overlaid on graph
+            self.ui.groupBox.setVisible(False)
+            
+            display_layout = QHBoxLayout()
+            display_layout.setContentsMargins(0, 0, 0, 0)
+            display_layout.setSpacing(8)
+            
+            # Hide the standalone Clear Graph button since it's now in the overlay
+            if hasattr(self.ui, 'clear_graph_btn'):
+                self.ui.clear_graph_btn.hide()
+            if hasattr(self.ui, 'adjust_rect_btn'):
+                self.ui.adjust_rect_btn.setSizePolicy(
+                    QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                )
+                self.ui.adjust_rect_btn.setMinimumWidth(90)
+                self.ui.adjust_rect_btn.setMaximumWidth(120)
+                button_height = 34
+                self.ui.adjust_rect_btn.setFixedHeight(button_height)
+                display_layout.addWidget(self.ui.adjust_rect_btn)
+            display_layout.addStretch(1)
+            target_layout.addLayout(display_layout)
+            target_layout.addSpacing(12)
+
+            if hasattr(self.ui, 'groupBox_display_right'):
+                self.ui.groupBox_display_right.setVisible(False)
+        
+        target_layout.addWidget(self.graph_splitter)
+        
+        # Position background rectangle after splitter is in layout
+        if hasattr(self, 'bg_rect_widget'):
+            # Keep as child of DataWindow, position will be calculated relative to splitter
+            QTimer.singleShot(0, self._position_bg_rect)
+        self._update_display_group_width()
 
     def disable_channels(self: Self, error_channels: list[str]) -> None:
         """Disable some channels."""
@@ -1317,6 +1641,31 @@ class DataWindow(QWidget):
             getattr(self.ui, f"unit_{ch}").setText(self.unit)
         self.SOI_view.reset_segment_graph(self.unit)
         self.reload_segments()
+
+    def _clear_layout(self: Self, layout: QLayout) -> None:
+        """Recursively remove widgets/layouts while keeping objects alive."""
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            child_layout = item.layout()
+            if widget is not None:
+                widget.setParent(None)
+            elif child_layout is not None:
+                self._clear_layout(child_layout)
+
+    def _update_display_group_width(self: Self) -> None:
+        """Clamp the display checkbox group to at most half the graph width."""
+        if not isinstance(self.ui, Ui_Sensorgram):
+            return
+        if not hasattr(self, 'graph_splitter'):
+            return
+        max_width = max(250, int(self.graph_splitter.width() * 0.5))
+        self.ui.groupBox.setMaximumWidth(max_width)
+
+    def resizeEvent(self: Self, event: QResizeEvent) -> None:  # noqa: D401
+        """Ensure auxiliary widgets react to window resizes."""
+        super().resizeEvent(event)
+        self._update_display_group_width()
 
     def unit_to_ru(self: Self) -> None:
         """Change unit to RU."""
@@ -1363,7 +1712,7 @@ class DataWindow(QWidget):
                 deepcopy(self.current_segment.start),
                 deepcopy(self.current_segment.end),
             ]
-        for row in range(self.ui.data_table.rowCount()):
+        for row in range(self._get_table_widget().rowCount()):
             self.segment_edit = row
             self.current_segment = self.saved_segments[row]
             if time_shift is not None:
@@ -1383,21 +1732,21 @@ class DataWindow(QWidget):
 
     def get_info(self: Self, row: int) -> dict[str, str]:
         """Get info."""
-        return self.table_manager.get_row_info(row)
+        return self._get_table_manager().get_row_info(row)
 
     def enter_view_mode(self: Self) -> None:
         """Enter view mode."""
         if (
-            (self.ui.data_table.currentRow() > -1)
+            (self._get_table_widget().currentRow() > -1)
             and (self.segment_edit is None)
-            and (len(self.saved_segments) > self.ui.data_table.currentRow())
+            and (len(self.saved_segments) > self._get_table_widget().currentRow())
         ):
             self.viewing = True
             self.full_segment_view.block_updates = True
             if isinstance(self.ui, Ui_Processing):
                 self.ui.curr_seg_box.setEnabled(False)  # noqa: FBT003
                 self.ui.reference_channel_btn.setEnabled(False)  # noqa: FBT003
-            row: int = self.ui.data_table.currentRow()
+            row: int = self._get_table_widget().currentRow()
             logger.debug(f"row = {row}")
             if self.data_source == "dynamic":
                 self.set_live(on=False)
@@ -1441,7 +1790,7 @@ class DataWindow(QWidget):
 
     def enter_edit_mode(self: Self) -> None:
         """Enter edit mode."""
-        if self.ui.data_table.currentRow() > -1 and self.segment_edit is None:
+        if self._get_table_widget().currentRow() > -1 and self.segment_edit is None:
             if isinstance(self.ui, Ui_Processing):
                 self.ui.curr_seg_box.setEnabled(True)  # noqa: FBT003
                 self.ui.reference_channel_btn.setEnabled(True)  # noqa: FBT003
@@ -1451,17 +1800,17 @@ class DataWindow(QWidget):
             self.full_segment_view.block_updates = True
             self.full_segment_view.movable_cursors(state=True)
             self.cursors_text_edit(state=True)
-            row = self.ui.data_table.currentRow()
+            row = self._get_table_widget().currentRow()
             self.segment_edit = row
             self.set_row_properties()
             self.set_row_properties(row)
-            
+
             # Only change button text in static mode (data processing)
             # In dynamic mode (sensorgram), keep "Start\nCycle" for new cycles
             if self.data_source == "static":
                 self.ui.save_segment_btn.setText("Save Edited\nCycle")
                 self.ui.save_segment_btn.setStyleSheet(self.edit_style)
-            
+
             self.ui.new_segment_btn.setText("Leave\n Edit Mode")
             self.ui.new_segment_btn.setStyleSheet(self.edit_style)
             if self.live_segment_start is None and self.current_segment:
@@ -1482,14 +1831,14 @@ class DataWindow(QWidget):
     def set_row_properties(self: Self, edit_row: int | None = None) -> None:
         """Set row properties."""
         # Make Cycle Type (column 8) and Notes (column 9) editable, all others read-only
-        for row in range(self.ui.data_table.rowCount()):
-            for col in range(self.ui.data_table.columnCount()):
-                item = self.ui.data_table.item(row, col)
+        for row in range(self._get_table_widget().rowCount()):
+            for col in range(self._get_table_widget().columnCount()):
+                item = self._get_table_widget().item(row, col)
                 if item is not None:
                     # Highlight the current row if viewing or editing
                     if isinstance(edit_row, int) and row == edit_row:
                         item.setBackground(self.edit_color)
-                    elif self.viewing and row == self.ui.data_table.currentRow():
+                    elif self.viewing and row == self._get_table_widget().currentRow():
                         item.setBackground(self.view_color)
                     else:
                         item.setBackground(QColor("white"))
@@ -1743,7 +2092,7 @@ class DataWindow(QWidget):
                 if self.segment_edit is not None:
                     self.new_segment()
 
-                for _i in range(self.ui.data_table.rowCount()):
+                for _i in range(self._get_table_widget().rowCount()):
                     self.delete_row(first_available=True)
                 self.seg_count = 0
 
@@ -1982,17 +2331,18 @@ class DataWindow(QWidget):
         try:
             row_count = len(self.saved_segments)
             table_data = []
+            table = self._get_table_widget()
             for i in range(row_count):
-                name = self.ui.data_table.item(i, 0).text()
-                start = self.ui.data_table.item(i, 1).text()
-                end = self.ui.data_table.item(i, 2).text()
-                shift_a = self.ui.data_table.item(i, 3).text()
-                shift_b = self.ui.data_table.item(i, 4).text()
-                shift_c = self.ui.data_table.item(i, 5).text()
-                shift_d = self.ui.data_table.item(i, 6).text()
-                ref = self.ui.data_table.item(i, 7).text()
-                cycle_type = self.ui.data_table.item(i, 8).text()
-                note = self.ui.data_table.item(i, 9).text()
+                name = table.item(i, 0).text()
+                start = table.item(i, 1).text()
+                end = table.item(i, 2).text()
+                shift_a = table.item(i, 3).text()
+                shift_b = table.item(i, 4).text()
+                shift_c = table.item(i, 5).text()
+                shift_d = table.item(i, 6).text()
+                ref = table.item(i, 7).text()
+                cycle_type = table.item(i, 8).text()
+                note = table.item(i, 9).text()
                 table_data.append(
                     {
                         "Name": name,
@@ -2254,6 +2604,63 @@ class DataWindow(QWidget):
             logger.exception(f"export table error: {e}")
             self.export_error_signal.emit()
 
+    def _apply_cycle_fixed_window(self: Self, cycle_time_minutes: float | None) -> None:
+        """Apply fixed window and cycle markers for cycle start."""
+        if cycle_time_minutes is None or cycle_time_minutes <= 0:
+            logger.warning("Invalid cycle time, skipping fixed window")
+            return
+
+        logger.info(f"Cycle started: {self.current_segment.cycle_type}, {cycle_time_minutes} min")
+
+        # Calculate window parameters once
+        window_seconds = cycle_time_minutes * 60 * CYCLE_WINDOW_PADDING_FACTOR
+        start_time = self.full_segment_view.left_cursor_pos
+        end_time = start_time + window_seconds
+
+        # Apply fixed window to both graphs
+        self._set_fixed_x_range(self.full_segment_view, start_time, end_time, "Sensorgram")
+        self._set_fixed_x_range(self.SOI_view, 0, window_seconds, "SOI")
+
+        # Apply Y padding with auto-range enabled
+        for plot, name in [(self.full_segment_view.plot, "Sensorgram"), (self.SOI_view.plot, "SOI")]:
+            self._apply_y_padding(plot, name)
+
+        # Show cycle markers (after ranges are set)
+        self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
+
+        # Force immediate visual update
+        self.full_segment_view.plot.update()
+        self.SOI_view.plot.update()
+
+        logger.debug(f"Fixed window applied: {window_seconds:.0f}s")
+
+    def _set_fixed_x_range(self: Self, view, start: float, end: float, name: str) -> None:
+        """Set fixed X range on a view and disable X auto-range."""
+        view.fixed_window_active = True
+        view.plot.setRange(xRange=(start, end), padding=0, disableAutoRange=False)
+        view.plot.enableAutoRange(axis='x', enable=False)
+        view.plot.enableAutoRange(axis='y', enable=True)
+        logger.debug(f"{name}: X range [{start:.1f}, {end:.1f}]s")
+
+    def _apply_y_padding(self: Self, plot, graph_name: str) -> None:
+        """Ensure Y-axis auto-range is enabled for live data updates."""
+        plot.enableAutoRange(axis='y', enable=True)
+        logger.debug(f"{graph_name}: Y auto-range enabled")
+
+    def cycle_marker_style_changed(self: Self, style: str) -> None:
+        """Handle cycle marker style change - re-render if cycle is active."""
+        logger.info(f"Cycle marker style changed to: {style}")
+
+        # Only re-render if currently in an active cycle
+        if not (hasattr(self, 'full_segment_view') and self.full_segment_view.fixed_window_active):
+            return
+
+        cycle_time = self.cycle_manager.get_current_time_minutes() if hasattr(self, 'cycle_manager') else CYCLE_TIME
+        if cycle_time and cycle_time > 0:
+            self.full_segment_view.hide_cycle_time_region()
+            self.full_segment_view.show_cycle_time_region(cycle_time)
+            logger.info("✓ Cycle markers re-rendered")
+
     def save_data(self: Self, rec_dir: str) -> None:
         """Save data."""
         self.export_raw_data(preset=True, preset_dir=rec_dir)
@@ -2261,17 +2668,13 @@ class DataWindow(QWidget):
 
     def start_recording(self: Self, rec_dir: str) -> None:
         """Start recording."""
-        # Reset time reference (but keep existing data - it will have negative timestamps)
+        # Reset time reference so timestamps start at zero
         self.full_segment_view.reset_time()
         self.live_segment_start = None
-        
-        # Reset view to show time zero
-        self.full_segment_view.plot.setXRange(-5, 50, padding=0)  # Show -5 to 50 seconds initially
-        self.full_segment_view.plot.enableAutoRange(axis='x', enable=True)  # Re-enable auto-range
-        
+
         # Move yellow cursor (right) to 0
         self.full_segment_view.set_right(0, emit=False, update=False)
-        logger.debug("Recording started: view reset to time zero")
+        logger.debug("Recording started: time reset to zero")
         self.new_segment()
         # Don't save data yet - wait for set_start() to adjust timestamps
         # self.save_data(rec_dir) will be called after timestamps are adjusted

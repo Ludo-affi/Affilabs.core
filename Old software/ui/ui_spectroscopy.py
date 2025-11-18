@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'spectroscopy.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.6.1
+## Created by: Qt User Interface Compiler version 6.10.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -37,7 +37,7 @@ class Ui_Spectroscopy(object):
         self.Plots.setContentsMargins(2, 2, 2, 2)
         self.intensity_plot = QFrame(Spectroscopy)
         self.intensity_plot.setObjectName(u"intensity_plot")
-        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.intensity_plot.sizePolicy().hasHeightForWidth())
@@ -48,11 +48,11 @@ class Ui_Spectroscopy(object):
         self.intensity_plot.setFrameShadow(QFrame.Raised)
         self.horizontalLayout_2 = QHBoxLayout(self.intensity_plot)
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.horizontalSpacer = QSpacerItem(959, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer = QSpacerItem(959, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer)
 
-        self.verticalSpacer_2 = QSpacerItem(20, 378, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer_2 = QSpacerItem(20, 378, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.horizontalLayout_2.addItem(self.verticalSpacer_2)
 
@@ -69,11 +69,11 @@ class Ui_Spectroscopy(object):
         self.transmission_plot.setFrameShadow(QFrame.Raised)
         self.horizontalLayout_3 = QHBoxLayout(self.transmission_plot)
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-        self.horizontalSpacer_2 = QSpacerItem(959, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer_2 = QSpacerItem(959, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_2)
 
-        self.verticalSpacer_3 = QSpacerItem(20, 378, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer_3 = QSpacerItem(20, 378, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.horizontalLayout_3.addItem(self.verticalSpacer_3)
 
@@ -85,7 +85,7 @@ class Ui_Spectroscopy(object):
 
         self.controls = QFrame(Spectroscopy)
         self.controls.setObjectName(u"controls")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(self.controls.sizePolicy().hasHeightForWidth())
@@ -131,26 +131,50 @@ class Ui_Spectroscopy(object):
         font4.setPointSize(9)
         font4.setBold(True)
         self.segment_A.setFont(font4)
+        self.segment_A.setStyleSheet(u"QCheckBox{\n"
+"	color: black;\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_A.setChecked(True)
         self.segment_B = QCheckBox(self.groupBox_2)
         self.segment_B.setObjectName(u"segment_B")
         self.segment_B.setGeometry(QRect(30, 50, 38, 16))
         self.segment_B.setFont(font4)
+        self.segment_B.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(255, 0, 81);\n"
+"	background: white;\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_B.setChecked(True)
         self.segment_C = QCheckBox(self.groupBox_2)
         self.segment_C.setObjectName(u"segment_C")
         self.segment_C.setGeometry(QRect(30, 70, 38, 16))
         self.segment_C.setFont(font4)
+        self.segment_C.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(0, 174, 255);\n"
+"	background:white;\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_C.setChecked(True)
         self.segment_D = QCheckBox(self.groupBox_2)
         self.segment_D.setObjectName(u"segment_D")
         self.segment_D.setGeometry(QRect(30, 90, 38, 16))
         self.segment_D.setFont(font4)
+        self.segment_D.setStyleSheet(u"QCheckBox{\n"
+"	color: rgb(0, 230, 65);\n"
+"	border: 1px solid rgb(171, 171, 171); \n"
+"	background:white;\n"
+"	border-radius: 3px;\n"
+"}")
         self.segment_D.setChecked(True)
 
         self.verticalLayout_2.addWidget(self.groupBox_2, 0, Qt.AlignHCenter)
 
-        self.verticalSpacer_4 = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.verticalSpacer_4 = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         self.verticalLayout_2.addItem(self.verticalSpacer_4)
 
@@ -179,14 +203,14 @@ class Ui_Spectroscopy(object):
 
         self.verticalLayout_2.addWidget(self.new_ref_btn, 0, Qt.AlignHCenter)
 
-        self.verticalSpacer_6 = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.verticalSpacer_6 = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         self.verticalLayout_2.addItem(self.verticalSpacer_6)
 
         self.full_calibrate_btn = QPushButton(self.controls)
         self.full_calibrate_btn.setObjectName(u"full_calibrate_btn")
-        self.full_calibrate_btn.setMinimumSize(QSize(100, 35))
-        self.full_calibrate_btn.setMaximumSize(QSize(100, 40))
+        self.full_calibrate_btn.setMinimumSize(QSize(100, 45))
+        self.full_calibrate_btn.setMaximumSize(QSize(100, 50))
         self.full_calibrate_btn.setFont(font5)
         self.full_calibrate_btn.setStyleSheet(u"QPushButton {\n"
 "		\n"
@@ -204,7 +228,7 @@ class Ui_Spectroscopy(object):
 
         self.verticalLayout_2.addWidget(self.full_calibrate_btn, 0, Qt.AlignHCenter)
 
-        self.verticalSpacer_5 = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.verticalSpacer_5 = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         self.verticalLayout_2.addItem(self.verticalSpacer_5)
 
@@ -229,7 +253,7 @@ class Ui_Spectroscopy(object):
 
         self.verticalLayout_2.addWidget(self.prime_btn, 0, Qt.AlignHCenter)
 
-        self.verticalSpacer_7 = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.verticalSpacer_7 = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         self.verticalLayout_2.addItem(self.verticalSpacer_7)
 
@@ -255,7 +279,7 @@ class Ui_Spectroscopy(object):
         self.polarization.addItem("")
         self.polarization.addItem("")
         self.polarization.setObjectName(u"polarization")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         sizePolicy2.setHorizontalStretch(0)
         sizePolicy2.setVerticalStretch(0)
         sizePolicy2.setHeightForWidth(self.polarization.sizePolicy().hasHeightForWidth())
@@ -333,7 +357,7 @@ class Ui_Spectroscopy(object):
 
         self.verticalLayout_2.addWidget(self.advanced, 0, Qt.AlignHCenter)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout_2.addItem(self.verticalSpacer)
 

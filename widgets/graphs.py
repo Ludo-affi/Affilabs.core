@@ -1,8 +1,9 @@
 from copy import deepcopy
 
 import numpy as np
-from pyqtgraph import GraphicsLayoutWidget, InfiniteLine, mkPen, setConfigOptions
+from pyqtgraph import GraphicsLayoutWidget, InfiniteLine, LinearRegionItem, mkPen, setConfigOptions
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QBrush, QColor
 
 from settings import CH_LIST, GRAPH_COLORS, STATIC_PLOT, UNIT_LIST
 from utils.logger import logger
@@ -20,6 +21,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.block_updates = False
         self.unit = "nm"
         self.unit_factor = UNIT_LIST[self.unit]
+        self.detector_range = (560.0, 720.0)
         self.updating = False
         self.live_range = 20  # ✨ G7: Reduced from 50 → 20 (earlier static plot mode)
         self.static_index = 0
@@ -39,8 +41,11 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.plot.setLabel("bottom", text="Time (s)", color='k')
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
-        self.plot.enableAutoRange()
-        self.plot.setAutoVisible()
+        self.view_box = self.plot.getViewBox()
+        self.view_box.enableAutoRange(self.view_box.XAxis, True)
+        self.view_box.enableAutoRange(self.view_box.YAxis, False)
+        self.plot.setAutoVisible(x=True, y=False)
+        self._apply_detector_range()
 
         # Set axis colors to black
         self.plot.getAxis('left').setPen('k')
@@ -80,6 +85,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.plot.addItem(self.left_cursor)
         self.plot.addItem(self.right_cursor)
 
+        # Cycle time shaded region
+        self.cycle_time_region = None
+        self.fixed_window_active = False
+
         self.left_cursor.sigDragged.connect(self.left_cursor_sig_dragged)
         self.right_cursor.sigDragged.connect(self.right_cursor_sig_dragged)
         self.left_cursor.sigPositionChangeFinished.connect(self.left_cursor_moved)
@@ -90,6 +99,11 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.right_cursor_pos = 1
         self.set_left(0, emit=False)
         self.set_right(1, emit=False)
+
+    def _apply_detector_range(self):
+        """Force the sensorgram to show the detector's wavelength window by default."""
+        ymin, ymax = self.detector_range
+        self.plot.setRange(yRange=(ymin, ymax), padding=0)
 
     def movable_cursors(self, state):
         self.left_cursor.setMovable(state)
@@ -182,11 +196,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
                     )
             if self.live and not self.wait_for_reset:
                 # Auto-scroll right cursor to latest time while live
-                if (len(self.time_data.get("d", [])) < 300) or (
-                    abs(self.right_cursor.value() - self.latest_time)
-                    > (len(self.time_data.get("d", [])) * 0.01)
-                ):
-                    self.set_right(self.latest_time, True)
+                # But ONLY if we're not in fixed window mode
+                if not self.fixed_window_active:
+                    if (len(self.time_data.get("d", [])) < 300) or (
+                        abs(self.right_cursor.value() - self.latest_time)
+                        > (len(self.time_data.get("d", [])) * 0.01)
+                    ):
+                        self.set_right(self.latest_time, True)
             self.wait_for_reset = False
             self.updating = False
         except Exception as e:
@@ -262,6 +278,69 @@ class SensorgramGraph(GraphicsLayoutWidget):
                     self.left_cursor_pos, self.right_cursor_pos, update
                 )
 
+    def show_cycle_time_region(self, cycle_time_minutes):
+        """Show a shaded region indicating the expected cycle duration."""
+        logger.debug(f"show_cycle_time_region called: cycle_time={cycle_time_minutes} min")
+        if cycle_time_minutes is None or cycle_time_minutes <= 0:
+            self.hide_cycle_time_region()
+            return
+
+        # Remove existing region if any
+        self.hide_cycle_time_region()
+
+        # Create shaded region from left cursor to left cursor + cycle_time
+        start_time = self.left_cursor_pos
+        end_time = start_time + (cycle_time_minutes * 60)  # Convert minutes to seconds
+        logger.debug(f"Creating gray zone: from {start_time:.2f}s to {end_time:.2f}s")
+
+        # Create brush with explicit QColor for better compatibility
+        gray_brush = QBrush(QColor(150, 150, 255, 100))  # Light blue with alpha
+
+        self.cycle_time_region = LinearRegionItem(
+            values=[start_time, end_time],
+            orientation='vertical',
+            brush=gray_brush,
+            movable=False
+        )
+
+        # Set z-order: positive value to put it above the grid but below data
+        # Grid is at 0, data plots are at higher values
+        self.cycle_time_region.setZValue(5)
+        logger.debug(f"Gray zone created with QBrush color (150,150,255,100), z-value 5")
+
+        # Add to plot
+        self.plot.addItem(self.cycle_time_region)
+        logger.debug(f"Gray zone added to plot: region object = {self.cycle_time_region}")
+
+        # Make sure it's visible
+        self.cycle_time_region.setVisible(True)
+
+        # Force update/redraw
+        self.cycle_time_region.update()
+        self.plot.update()
+        self.plot.getViewBox().update()
+        logger.debug("Plot and ViewBox update called to render gray zone")
+
+        # Set flag to prevent auto-follow during fixed window
+        self.fixed_window_active = True
+
+    def hide_cycle_time_region(self):
+        """Hide the cycle time shaded region."""
+        if self.cycle_time_region is not None:
+            self.plot.removeItem(self.cycle_time_region)
+            self.cycle_time_region = None
+        self.fixed_window_active = False
+
+    def update_cycle_time_region(self, cycle_time_minutes):
+        """Update the cycle time region position when left cursor moves."""
+        start_time = self.left_cursor_pos
+        end_time = start_time + (cycle_time_minutes * 60)
+
+        if self.cycle_time_region is not None:
+            self.cycle_time_region.setRegion([start_time, end_time])
+        else:
+            self.show_cycle_time_region(cycle_time_minutes)
+
     def set_live(self, state):
         self.live = state
 
@@ -275,6 +354,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.unit_factor = UNIT_LIST[self.unit]
         self.latest_time = 0
         self.plot.setLabel("left", text=f"Lambda ({self.unit})")
+        self._apply_detector_range()
 
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
@@ -301,6 +381,7 @@ class SegmentGraph(GraphicsLayoutWidget):
         setConfigOptions(antialias=True)
         self.setBackground('w')
         self.unit = unit_string
+        self.fixed_window_active = False  # For cycle fixed window mode
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
