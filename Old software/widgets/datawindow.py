@@ -1035,6 +1035,7 @@ class DataWindow(QWidget):
                     self.seg_count += 1
                     
                     # Show gray zone and fix window when cycle starts
+                    logger.debug(f"save_segment: data_source={self.data_source}, cycle_time={self.cycle_manager.get_current_time_minutes()}")
                     if self.data_source == "dynamic":
                         cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
                         logger.debug(f"Cycle start: type={self.current_segment.cycle_type}, time={cycle_time_minutes} min")
@@ -1048,9 +1049,18 @@ class DataWindow(QWidget):
                             window_seconds = cycle_time_minutes * 60 * 1.1  # Add 10%
                             start_time = self.full_segment_view.left_cursor_pos
                             end_time = start_time + window_seconds
-                            logger.debug(f"Setting fixed window: {start_time:.2f}s to {end_time:.2f}s ({window_seconds:.1f}s total)")
+                            logger.debug(f"Setting fixed window: X=[{start_time:.2f}s, {end_time:.2f}s] ({window_seconds:.1f}s total)")
+                            
+                            # Set X range with no padding
                             self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
                             self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
+                            
+                            # Set Y range with padding: +10 on top, -5 on bottom
+                            y_min, y_max = self.full_segment_view.plot.viewRange()[1]
+                            logger.debug(f"Current Y range: [{y_min:.2f}, {y_max:.2f}]")
+                            self.full_segment_view.plot.setYRange(y_min - 5, y_max + 10, padding=0)
+                            self.full_segment_view.plot.enableAutoRange(axis='y', enable=False)
+                            logger.debug(f"Fixed Y range: [{y_min-5:.2f}, {y_max+10:.2f}]")
                         else:
                             logger.debug(f"Not showing gray zone: cycle_time_minutes={cycle_time_minutes}")
                         
