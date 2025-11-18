@@ -30,7 +30,7 @@ if self.device_config["ctrl"] in ["P4SPR", "PicoP4SPR"]:
 
 if self.device_config["ctrl"] in ["PicoP4SPR"]:
     self.ctrl.set_batch_intensities(...)  # batch command
-    
+
 if self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]:
     self.ctrl.get_pump_corrections()  # pump control
 ```
@@ -42,10 +42,10 @@ hal = create_controller_hal(self.ctrl)
 
 if hal.supports_polarizer:
     hal.set_mode('s')
-    
+
 if hal.supports_batch_leds:
     hal.set_batch_intensities(a=255, b=128, c=64, d=0)
-    
+
 if hal.supports_pump:
     corrections = hal.get_pump_corrections()
 ```
@@ -73,15 +73,15 @@ ctrl = PicoP4SPR()
 if ctrl.open():
     # Wrap with HAL for type-safe access
     hal = create_controller_hal(ctrl)
-    
+
     # Use type-safe capability checks
     if hal.supports_polarizer:
         hal.set_mode('s')
-    
+
     # LED control works the same
     hal.turn_on_channel('a')
     hal.set_intensity('a', 255)
-    
+
     # Batch commands if available
     if hal.supports_batch_leds:
         hal.set_batch_intensities(a=255, b=128, c=64, d=0)
@@ -141,7 +141,7 @@ Each adapter wraps an existing controller instance:
 ```python
 def create_controller_hal(controller) -> ControllerHAL:
     """Factory function for creating HAL adapter.
-    
+
     Supports all controller types:
     - PicoP4SPR / pico_p4spr
     - PicoEZSPR / pico_ezspr / EZSPR
@@ -243,7 +243,7 @@ The HAL is complete and ready to use. Here are **optional** next steps:
 Old software/utils/hal/controller_hal.py  (650 lines)
 ├── ControllerHAL Protocol
 ├── PicoP4SPRAdapter
-├── PicoEZSPRAdapter  
+├── PicoEZSPRAdapter
 ├── QSPRAdapter
 ├── ArduinoAdapter
 ├── KineticAdapter

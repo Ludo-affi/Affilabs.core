@@ -8,7 +8,7 @@ Found several safe cleanup opportunities now that Controller HAL is in place:
 
 #### 1. **Remove Duplicate LED HAL (`utils/led_hal.py`)**
 - **Status**: UNUSED - dead code
-- **Reason**: 
+- **Reason**:
   - `led_hal.py` defines `LEDControllerHAL`, `PicoP4SPRLEDController`, `create_led_hal()`
   - These are **never imported or used** anywhere in the codebase
   - The codebase uses `CtrlLEDAdapter` from `utils/hal/adapters.py` instead

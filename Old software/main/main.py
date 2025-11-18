@@ -1509,14 +1509,14 @@ class AffiniteApp(QMainWindow):
                     # Adjust timestamps FIRST to make recording start time zero
                     # This shifts existing data to have negative timestamps
                     self.set_start()
-                    
+
                     # Clear sensor reading buffers to remove pre-recording sensor data
                     self.clear_sensor_reading_buffers()
-                    
+
                     # Start recording - this will reset time reference and move yellow cursor to 0
                     if self.device_config["ctrl"] != "":
                         self.main_window.sensorgram.start_recording(self.rec_dir)
-                    
+
                     self.rec_timer.start(1000 * RECORDING_INTERVAL)
             except Exception as e:
                 logger.exception(f"Error while starting recording: {e}")

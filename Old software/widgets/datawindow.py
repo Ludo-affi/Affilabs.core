@@ -103,17 +103,17 @@ class CycleTypeDelegate(QStyledItemDelegate):
 
 class TextInputDelegate(QStyledItemDelegate):
     """Delegate for text input with character limits and validation."""
-    
+
     # Character limits for different column types
     NAME_LIMIT = 50
     NOTE_LIMIT = 500
-    
+
     def createEditor(self, parent, option, index):
         """Create a line edit with character limit."""
         from PySide6.QtWidgets import QLineEdit
-        
+
         editor = QLineEdit(parent)
-        
+
         # Set character limit based on column
         column = index.column()
         if column == 0:  # Name column
@@ -124,9 +124,9 @@ class TextInputDelegate(QStyledItemDelegate):
             editor.setPlaceholderText(f"Max {self.NOTE_LIMIT} characters")
         else:
             editor.setMaxLength(100)  # Default limit for other text columns
-        
+
         return editor
-    
+
     def setEditorData(self, editor, index):
         """Set current value in editor with safety checks."""
         try:
@@ -138,7 +138,7 @@ class TextInputDelegate(QStyledItemDelegate):
         except Exception as e:
             logger.warning(f"Error setting editor data: {e}")
             editor.setText("")
-    
+
     def setModelData(self, editor, model, index):
         """Save value back to model with validation."""
         try:
@@ -314,7 +314,7 @@ class Segment:
         except Exception as e:
             logger.warning(f"Error sanitizing segment name: {e}")
             self.name = str(self.seg_id + 1)
-        
+
         # Sanitize note - limit to 500 characters, remove problematic characters
         try:
             note_text = str(info.get("note", "")).strip()
@@ -324,7 +324,7 @@ class Segment:
         except Exception as e:
             logger.warning(f"Error sanitizing segment note: {e}")
             self.note = ""
-        
+
         # Handle cycle type
         if "cycle_type" in info:
             try:
@@ -332,7 +332,7 @@ class Segment:
                 self.cycle_type = cycle_type_text if cycle_type_text else "Auto-read"
             except Exception:
                 self.cycle_type = "Auto-read"
-        
+
         # Handle cycle time
         if "cycle_time" in info and info["cycle_time"]:
             try:
@@ -475,7 +475,7 @@ class DataWindow(QWidget):
         # Set up cycle type dropdown for column 8
         cycle_type_delegate = CycleTypeDelegate(self.ui.data_table)
         self.ui.data_table.setItemDelegateForColumn(8, cycle_type_delegate)
-        
+
         # Set up text input delegates with character limits for name and note columns
         text_delegate_name = TextInputDelegate(self.ui.data_table)
         text_delegate_note = TextInputDelegate(self.ui.data_table)
@@ -1036,28 +1036,32 @@ class DataWindow(QWidget):
                     seg = self.current_segment
                     row = len(self.saved_segments)
                     self.seg_count += 1
-                    
+
                     # Show gray zone and fix window when cycle starts
                     logger.debug(f"save_segment: data_source={self.data_source}, cycle_time={self.cycle_manager.get_current_time_minutes()}")
                     if self.data_source == "dynamic":
                         cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
                         logger.debug(f"Cycle start: type={self.current_segment.cycle_type}, time={cycle_time_minutes} min")
-                        
+
                         if cycle_time_minutes is not None and cycle_time_minutes > 0:
+                            # Disable live mode to prevent auto-following
+                            self.full_segment_view.live = False
+                            logger.debug("Disabled live mode for fixed window")
+                            
                             # Show the gray zone
                             logger.debug(f"Showing gray zone for {cycle_time_minutes} minutes")
                             self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
-                            
+
                             # Fix window to cycle_time + 10%
                             window_seconds = cycle_time_minutes * 60 * 1.1  # Add 10%
                             start_time = self.full_segment_view.left_cursor_pos
                             end_time = start_time + window_seconds
                             logger.debug(f"Setting fixed window: X=[{start_time:.2f}s, {end_time:.2f}s] ({window_seconds:.1f}s total)")
-                            
+
                             # Set X range with no padding
                             self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
                             self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
-                            
+
                             # Set Y range with padding: +10 on top, -5 on bottom
                             y_min, y_max = self.full_segment_view.plot.viewRange()[1]
                             logger.debug(f"Current Y range: [{y_min:.2f}, {y_max:.2f}]")
@@ -1066,7 +1070,7 @@ class DataWindow(QWidget):
                             logger.debug(f"Fixed Y range: [{y_min-5:.2f}, {y_max+10:.2f}]")
                         else:
                             logger.debug(f"Not showing gray zone: cycle_time_minutes={cycle_time_minutes}")
-                        
+
                         # Reset dropdown to default after save
                         self.cycle_manager.reset_to_default()
 
@@ -1080,7 +1084,7 @@ class DataWindow(QWidget):
                         name = str(seg.name)[:50] if seg.name else ""
                         note = str(seg.note)[:500] if seg.note else ""
                         cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
-                        
+
                         self.ui.data_table.setItem(row, 0, QTableWidgetItem(name))
                         self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
                         self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
@@ -1133,12 +1137,12 @@ class DataWindow(QWidget):
             seg = self.saved_segments[row]
             # Block signals to prevent cascading updates
             self.ui.data_table.blockSignals(True)
-            
+
             # Safely create table items with sanitized data
             name = str(seg.name)[:50] if seg.name else ""
             note = str(seg.note)[:500] if seg.note else ""
             cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
-            
+
             self.ui.data_table.setItem(row, 0, QTableWidgetItem(name))
             self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
             self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
@@ -1149,7 +1153,7 @@ class DataWindow(QWidget):
             self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
             self.ui.data_table.setItem(row, 8, QTableWidgetItem(cycle_type))
             self.ui.data_table.setItem(row, 9, QTableWidgetItem(note))
-            
+
             self.ui.data_table.blockSignals(False)
         except Exception as e:
             logger.error(f"Error reasserting table row {row}: {e}")
@@ -1821,9 +1825,11 @@ class DataWindow(QWidget):
                     l_val_data = deepcopy(self.data["lambda_values"])
                     l_time_data = deepcopy(self.data["lambda_times"])
 
-                    # Finds the first time greater than or equal to 0 on the frist
+                    # Finds the first time greater than or equal to 0 on the first
                     # channel to use as a reference point
                     reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
+                    # Clamp to valid range (bisect_left can return len(array))
+                    reference_index = min(reference_index, len(l_val_data[CH_LIST[0]]) - 1)
                     references = [l_val_data[ch][reference_index] for ch in CH_LIST]
 
                     row_count = min(len(x) for x in l_time_data.values())
@@ -2223,9 +2229,9 @@ class DataWindow(QWidget):
         # Reset time reference (but keep existing data - it will have negative timestamps)
         self.full_segment_view.reset_time()
         self.live_segment_start = None
-        # Move yellow cursor (right) to position 0 (recording start)
+        # Move yellow cursor (right) to position 1 to avoid timing gap on first point
         # Keep existing data visible with negative times
-        self.full_segment_view.set_right(0, emit=False, update=False)
+        self.full_segment_view.set_right(1, emit=False, update=False)
         self.new_segment()
         self.save_data(rec_dir)
 
