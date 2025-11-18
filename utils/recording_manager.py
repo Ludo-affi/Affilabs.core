@@ -181,7 +181,7 @@ class RecordingManager:
             # Save kinetic logs for KNX devices
             if device_config["knx"] != "" or device_config["ctrl"] in [
                 "PicoEZSPR"
-            ]:  # EZSPR disabled (obsolete)
+            ]:
                 logger.debug("saving kinetic log")
                 self._save_kinetic_logs(log_ch1, log_ch2, device_config, knx)
 
@@ -253,7 +253,7 @@ class RecordingManager:
 
                 # Save Channel B log for dual-channel devices
                 if (
-                    device_config["ctrl"] in ["PicoEZSPR"]  # EZSPR disabled (obsolete)
+                    device_config["ctrl"] in ["PicoEZSPR"]
                     or device_config["knx"] in ["KNX2"]
                 ):  # PicoKNX2 disabled (obsolete)
                     self.data_io.save_kinetic_log(

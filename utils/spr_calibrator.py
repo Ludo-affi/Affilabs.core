@@ -6713,7 +6713,7 @@ Ready for Live Acquisition: ✓ YES
 
             # Determine which channels to calibrate
             ch_list = CH_LIST
-            if self.device_type in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
+            if self.device_type in ["PicoEZSPR"]:
                 ch_list = EZ_CH_LIST
 
             # ========================================================================

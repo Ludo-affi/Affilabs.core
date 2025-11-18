@@ -1082,7 +1082,7 @@ Data Flow:
         """Get list of active channels based on current mode."""
         if self.single_mode:
             return [self.single_ch]
-        if self.device_config["ctrl"] in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
+        if self.device_config["ctrl"] in ["PicoEZSPR"]:
             return EZ_CH_LIST
         return CH_LIST
 

@@ -103,7 +103,7 @@ class HardwareManager:
                     elif (
                         model == "PicoEZSPR" or "PicoEZSPR" in type(self.ctrl).__name__
                     ):
-                        config["ctrl"] = "PicoEZSPR"  # EZSPR disabled (obsolete)
+                        config["ctrl"] = "PicoEZSPR"
                     else:
                         config["ctrl"] = model or type(self.ctrl).__name__
                 except Exception as e:

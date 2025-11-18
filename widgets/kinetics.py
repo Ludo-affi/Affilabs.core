@@ -61,7 +61,7 @@ class Kinetic(QWidget):
             self.ui.sensor_frame_ch2.setVisible(False)
         if knx_type == "" and ctrl_type not in [
             "PicoEZSPR"
-        ]:  # EZSPR disabled (obsolete)
+        ]:
             logger.debug("no kinetic")
             self.no_kinetic = True
         else:

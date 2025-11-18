@@ -60,7 +60,7 @@ class Device(QWidget):
                 self.ctrl_widget.ui.temp_display.setVisible(False)
             self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
             self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
-        elif ctrl_type in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
+        elif ctrl_type in ["PicoEZSPR"]:
             if ctrl_type == "PicoEZSPR":
                 self.ctrl_pico = True
             self.ui.add_ctrl.hide()
