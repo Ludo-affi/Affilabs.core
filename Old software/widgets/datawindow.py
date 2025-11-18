@@ -902,7 +902,7 @@ class DataWindow(QWidget):
         self.ui.data_table.clearSelection()
         self.set_row_properties()
         if self.data_source == "dynamic":
-            self.ui.save_segment_btn.setText("Save\nCycle")
+            self.ui.save_segment_btn.setText("Start\nCycle")
             self.ui.save_segment_btn.setStyleSheet(self.original_style)
             self.ui.new_segment_btn.setText("Start at\nLive Time")
             self.ui.new_segment_btn.setStyleSheet(self.original_style)
@@ -938,7 +938,7 @@ class DataWindow(QWidget):
                 self.full_segment_view.get_right(),
                 update=False,
             )
-            self.ui.save_segment_btn.setText("Save\nCycle")
+            self.ui.save_segment_btn.setText("Start\nCycle")
             self.ui.save_segment_btn.setStyleSheet(self.original_style)
             self.ui.new_segment_btn.setText("Start from\nLast Cycle")
             self.ui.new_segment_btn.setStyleSheet(self.original_style)
@@ -1392,7 +1392,7 @@ class DataWindow(QWidget):
             self.segment_edit = row
             self.set_row_properties()
             self.set_row_properties(row)
-            self.ui.save_segment_btn.setText("Save Edited\nCycle")
+            self.ui.save_segment_btn.setText("Start Edited\nCycle")
             self.ui.save_segment_btn.setStyleSheet(self.edit_style)
             self.ui.new_segment_btn.setText("Leave\n Edit Mode")
             self.ui.new_segment_btn.setStyleSheet(self.edit_style)

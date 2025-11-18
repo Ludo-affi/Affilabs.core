@@ -546,6 +546,13 @@ class Ui_Sensorgram(object):
         self.verticalLayout_cycle_time.addWidget(self.current_cycle_time)
         self.horizontalLayout_cycle_controls.addLayout(self.verticalLayout_cycle_time)
 
+        # Add Start Cycle button to cycle controls
+        self.save_segment_btn = QPushButton(self.groupBox_4)
+        self.save_segment_btn.setObjectName(u"save_segment_btn")
+        self.save_segment_btn.setFont(font)
+        self.save_segment_btn.setFocusPolicy(Qt.NoFocus)
+        self.horizontalLayout_cycle_controls.addWidget(self.save_segment_btn)
+
         self.verticalLayout.addWidget(self.groupBox_4)
 
 
@@ -562,17 +569,6 @@ class Ui_Sensorgram(object):
 
         self.horizontalLayout_13.addItem(self.horizontalSpacer_3)
 
-        self.save_segment_btn = QPushButton(Sensorgram)
-        self.save_segment_btn.setObjectName(u"save_segment_btn")
-        self.save_segment_btn.setFont(font)
-        self.save_segment_btn.setFocusPolicy(Qt.NoFocus)
-
-        self.horizontalLayout_13.addWidget(self.save_segment_btn)
-
-        self.horizontalSpacer_2 = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-        self.horizontalLayout_13.addItem(self.horizontalSpacer_2)
-
         self.new_segment_btn = QPushButton(Sensorgram)
         self.new_segment_btn.setObjectName(u"new_segment_btn")
         self.new_segment_btn.setFont(font)
@@ -582,10 +578,6 @@ class Ui_Sensorgram(object):
         self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         self.horizontalLayout_13.addItem(self.horizontalSpacer)
-
-        self.horizontalLayout_13.setStretch(0, 4)
-        self.horizontalLayout_13.setStretch(2, 1)
-        self.horizontalLayout_13.setStretch(4, 4)
 
         self.controls.addLayout(self.horizontalLayout_13)
 
@@ -819,7 +811,7 @@ class Ui_Sensorgram(object):
         self.label.setText(QCoreApplication.translate("Sensorgram", u"New:", None))
         self.label_2.setText(QCoreApplication.translate("Sensorgram", u"\u03bcL/min", None))
         self.groupBox_4.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Settings", None))
-        self.save_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Save\n"
+        self.save_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Start\n"
 "Cycle", None))
         self.new_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Start at\n"
 "Live Time", None))
