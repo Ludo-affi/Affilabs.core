@@ -997,6 +997,7 @@ class DataWindow(QWidget):
 
     def save_segment(self: Self) -> None:
         """Save a segment."""
+        logger.debug(f"=== save_segment called: data_source={self.data_source} ===")
         if (
             self.data_source == "dynamic"
             and not self.data["rec"]
@@ -1022,10 +1023,12 @@ class DataWindow(QWidget):
                     self.delete_row()
 
                 elif self.restoring and self.deleted_segment:
+                    logger.debug("Branch: restoring deleted segment")
                     seg = self.deleted_segment
                     row = self.deleted_segment.seg_id
 
                 else:
+                    logger.debug("Branch: normal save segment (creating new cycle)")
                     # Set cycle type and time from cycle manager
                     self.current_segment.cycle_type = self.cycle_manager.get_current_type()
                     self.current_segment.cycle_time = self.cycle_manager.get_current_time_minutes()
