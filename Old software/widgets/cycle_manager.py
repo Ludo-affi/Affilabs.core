@@ -59,17 +59,13 @@ class CycleManager:
             self.sensorgram_graph.hide_cycle_time_region()
 
         elif cycle_type == "Baseline":
-            # Baseline: set to 5 min and disable, show shaded region
+            # Baseline: set to 5 min and disable (no auto-show gray zone)
             self.cycle_time_dropdown.setCurrentText("5 min")
             self.cycle_time_dropdown.setEnabled(False)
-            self.sensorgram_graph.show_cycle_time_region(5)
 
         elif cycle_type in ["Flow", "Static"]:
-            # Flow/Static: enable user selection and show shaded region
+            # Flow/Static: enable user selection (no auto-show gray zone)
             self.cycle_time_dropdown.setEnabled(True)
-            cycle_time_minutes = self.get_current_time_minutes()
-            if cycle_time_minutes is not None:
-                self.sensorgram_graph.show_cycle_time_region(cycle_time_minutes)
 
     def _on_time_changed(self, time_text: str) -> None:
         """Handle cycle time changes.
@@ -77,11 +73,8 @@ class CycleManager:
         Args:
             time_text: The selected time text (e.g., "15 min")
         """
-        cycle_type = self.cycle_type_dropdown.currentText()
-        if cycle_type in ["Flow", "Static"]:
-            cycle_time_minutes = self.parse_time_text(time_text)
-            if cycle_time_minutes is not None:
-                self.sensorgram_graph.show_cycle_time_region(cycle_time_minutes)
+        # Do nothing - gray zone only appears when Start button is pressed
+        pass
 
     def get_current_type(self) -> str:
         """Get currently selected cycle type.

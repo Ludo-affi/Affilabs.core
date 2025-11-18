@@ -482,7 +482,7 @@ class Ui_Sensorgram(object):
         self.verticalLayout_cycle_type.setObjectName(u"verticalLayout_cycle_type")
         self.label_cycle_type = QLabel(self.groupBox_4)
         self.label_cycle_type.setObjectName(u"label_cycle_type")
-        self.label_cycle_type.setText("Cycle Type")
+        self.label_cycle_type.setText("Type")
         self.verticalLayout_cycle_type.addWidget(self.label_cycle_type)
 
         self.current_cycle_type = QComboBox(self.groupBox_4)
@@ -516,7 +516,7 @@ class Ui_Sensorgram(object):
         self.verticalLayout_cycle_time.setObjectName(u"verticalLayout_cycle_time")
         self.label_cycle_time = QLabel(self.groupBox_4)
         self.label_cycle_time.setObjectName(u"label_cycle_time")
-        self.label_cycle_time.setText("Cycle Time")
+        self.label_cycle_time.setText("Time")
         self.verticalLayout_cycle_time.addWidget(self.label_cycle_time)
 
         self.current_cycle_time = QComboBox(self.groupBox_4)

@@ -811,10 +811,11 @@ class DataWindow(QWidget):
                 if self.current_segment.error is None:
                     self.SOI_view.update_display(self.current_segment)
 
-                    # Update cycle time shaded region if applicable
-                    cycle_time = self.cycle_manager.get_current_time_minutes()
-                    if cycle_time is not None:
-                        self.full_segment_view.update_cycle_time_region(cycle_time)
+                    # Update cycle time shaded region position as time advances
+                    if self.full_segment_view.cycle_time_region is not None:
+                        cycle_time = self.cycle_manager.get_current_time_minutes()
+                        if cycle_time is not None:
+                            self.full_segment_view.update_cycle_time_region(cycle_time)
                 else:
                     logger.debug(f"{self.current_segment.error}")
 
@@ -1032,7 +1033,21 @@ class DataWindow(QWidget):
                     seg = self.current_segment
                     row = len(self.saved_segments)
                     self.seg_count += 1
+                    
+                    # Show gray zone and fix window when cycle starts
                     if self.data_source == "dynamic":
+                        cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
+                        if cycle_time_minutes is not None and cycle_time_minutes > 0:
+                            # Show the gray zone
+                            self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
+                            
+                            # Fix window to cycle_time + 10%
+                            window_seconds = cycle_time_minutes * 60 * 1.1  # Add 10%
+                            start_time = self.full_segment_view.left_cursor_pos
+                            end_time = start_time + window_seconds
+                            self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
+                            self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
+                        
                         # Reset dropdown to default after save
                         self.cycle_manager.reset_to_default()
 
@@ -1962,6 +1977,7 @@ class DataWindow(QWidget):
                         "ShiftC",
                         "ShiftD",
                         "Reference",
+                        "CycleType",
                         "UserNote",
                     ]
                     writer = csv.DictWriter(
@@ -2187,6 +2203,9 @@ class DataWindow(QWidget):
         """Start recording."""
         self.full_segment_view.reset_time()
         self.live_segment_start = None
+        # Move cursors to starting position (0) before creating new segment
+        self.full_segment_view.set_left(0, emit=False)
+        self.full_segment_view.set_right(2, emit=False)
         self.new_segment()
         self.save_data(rec_dir)
 
