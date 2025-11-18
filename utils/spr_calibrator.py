@@ -844,33 +844,33 @@ class SPRCalibrator:
             from utils.device_integration import get_device_manager, save_optical_calibration_result
             from pathlib import Path
             import json
-            
+
             device_manager = get_device_manager()
-            
+
             if device_manager.current_device_serial is None:
                 logger.error("❌ No device set - cannot run optical calibration")
                 return False
-            
+
             logger.info("=" * 80)
             logger.info(f"🔬 OPTICAL CALIBRATION FOR DEVICE: {device_manager.current_device_serial}")
             logger.info("=" * 80)
-            
+
             # Integration time grid (balance coverage vs acquisition time)
             integration_grid = [10.0, 25.0, 40.0, 55.0, 70.0, 85.0]
-            
+
             # Ensure within configured limits
             integration_grid = [
-                float(max(MIN_INTEGRATION, min(MAX_INTEGRATION, x))) 
+                float(max(MIN_INTEGRATION, min(MAX_INTEGRATION, x)))
                 for x in integration_grid
             ]
-            
+
             # Use calibrated LED intensities (P-mode if available)
             led_intensities = self.state.ref_intensity.copy()
-            
+
             logger.info(f"   Integration times: {integration_grid} ms")
             logger.info(f"   LED intensities: {led_intensities}")
             logger.info(f"   Channels: {CH_LIST}")
-            
+
             # Run afterglow calibration
             calibration_data = run_afterglow_calibration(
                 ctrl=self.ctrl,
@@ -884,21 +884,21 @@ class SPRCalibrator:
                 settle_delay_s=0.10,
                 led_intensities=led_intensities,
             )
-            
+
             # Save to device-specific directory
             device_dir = device_manager.current_device_dir
             calibration_path = device_dir / "optical_calibration.json"
-            
+
             with open(calibration_path, 'w') as f:
                 json.dump(calibration_data, f, indent=2)
-            
+
             logger.info(f"✅ Optical calibration saved: {calibration_path}")
-            
+
             # Update device configuration
             save_optical_calibration_result(calibration_path)
-            
+
             return True
-            
+
         except Exception as e:
             logger.exception(f"❌ Optical calibration failed: {e}")
             return False
@@ -6813,7 +6813,7 @@ Ready for Live Acquisition: ✓ YES
                         check_and_request_optical_calibration,
                         get_device_manager
                     )
-                    
+
                     if check_and_request_optical_calibration():
                         device_manager = get_device_manager()
                         logger.warning("=" * 80)
@@ -6822,10 +6822,10 @@ Ready for Live Acquisition: ✓ YES
                         logger.info("🔬 Starting automatic optical (afterglow) calibration...")
                         logger.info("   This measures LED phosphor decay across integration times")
                         logger.info("   Process takes ~5-10 minutes")
-                        
+
                         # Run optical calibration
                         optical_success = self._run_optical_calibration()
-                        
+
                         if optical_success:
                             logger.info("=" * 80)
                             logger.info("✅ OPTICAL CALIBRATION COMPLETED SUCCESSFULLY")
@@ -6838,7 +6838,7 @@ Ready for Live Acquisition: ✓ YES
                             logger.warning("=" * 80)
                     else:
                         logger.info("✅ Optical calibration already exists - skipping")
-                        
+
                 except Exception as e:
                     logger.warning(f"⚠️ Optical calibration check/trigger failed: {e}")
                     logger.info("   Continuing without afterglow correction")

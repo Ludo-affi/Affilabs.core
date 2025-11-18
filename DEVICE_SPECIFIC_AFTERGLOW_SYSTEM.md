@@ -153,10 +153,10 @@ optical_cal_path = get_device_optical_calibration_path()
 
 if optical_cal_path and optical_cal_path.exists():
     from afterglow_correction import AfterglowCorrection
-    
+
     self.afterglow_correction = AfterglowCorrection(optical_cal_path)
     self.afterglow_correction_enabled = True
-    
+
     logger.info(f"✅ Afterglow correction enabled for device")
     logger.info(f"   Calibration file: {optical_cal_path.name}")
 else:
@@ -181,11 +181,11 @@ self.recalibrate_afterglow_btn.clicked.connect(self.on_recalibrate_afterglow)
 def on_recalibrate_afterglow(self):
     """Handle manual afterglow recalibration request."""
     device_manager = get_device_manager()
-    
+
     if device_manager.current_device_serial is None:
         QMessageBox.warning(self, "Error", "No device connected")
         return
-    
+
     reply = QMessageBox.question(
         self,
         "Recalibrate Afterglow",
@@ -194,7 +194,7 @@ def on_recalibrate_afterglow(self):
         f"This process takes ~5-10 minutes.\n\nContinue?",
         QMessageBox.Yes | QMessageBox.No
     )
-    
+
     if reply == QMessageBox.Yes:
         # Trigger optical calibration
         # This will overwrite existing optical_calibration.json

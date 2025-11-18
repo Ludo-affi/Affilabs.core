@@ -386,13 +386,13 @@ class SPRDataAcquisition:
 
         # Load device-specific optical calibration for afterglow correction
         logger.info(f"🔍 device_config type: {type(device_config)}, is None: {device_config is None}")
-        
+
         # ✨ NEW: Use device manager to get device-specific optical calibration
         try:
             from utils.device_integration import get_device_optical_calibration_path
-            
+
             optical_cal_path = get_device_optical_calibration_path()
-            
+
             if optical_cal_path and optical_cal_path.exists():
                 logger.info(f"🔍 Loading device-specific optical calibration: {optical_cal_path}")
                 try:
@@ -408,12 +408,12 @@ class SPRDataAcquisition:
                     except Exception as e:
                         logger.warning(f"   ⚠️ ML correction initialization failed: {e}")
                         self.ml_afterglow = None
-                    
+
                     self.afterglow_correction_enabled = True
                     logger.info(f"✅ Device-specific afterglow correction enabled")
                     logger.info(f"   Calibration file: {optical_cal_path.name}")
                     logger.info(f"   Using LED delay from calibration: {self.led_delay*1000:.1f}ms")
-                    
+
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to load optical calibration: {type(e).__name__}: {e}")
                     logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")
@@ -425,7 +425,7 @@ class SPRDataAcquisition:
                 logger.info("   Afterglow correction disabled for live mode")
                 logger.info(f"   Using default LED delay: {self.led_delay*1000:.1f}ms")
                 self.afterglow_correction_enabled = False
-                
+
         except Exception as e:
             logger.warning(f"⚠️ Device-specific calibration check failed: {e}")
             logger.info(f"ℹ️ Using default LED delay: {self.led_delay*1000:.1f}ms")

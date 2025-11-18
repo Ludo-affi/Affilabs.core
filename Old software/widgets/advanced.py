@@ -97,10 +97,16 @@ class P4SPRAdvMenu(QDialog):
         except Exception:
             self.ui.verticalLayout.addWidget(self.delay_status)
         self.set_delay_status(led_delay_s=None, post_delay_s=None, dyn_led=False, dyn_post=False, cal_path=None)
+        # Hide delay status by default (shown only in DEV mode)
+        self.delay_status.setVisible(False)
 
     def enable_afterglow_button(self: Self, visible: bool) -> None:
         """Show or hide the afterglow measurement button."""
         self.measure_afterglow_btn.setVisible(bool(visible))
+    
+    def enable_delay_status(self: Self, visible: bool) -> None:
+        """Show or hide the delay status label."""
+        self.delay_status.setVisible(bool(visible))
 
     def _emit_measure_afterglow(self: Self) -> None:
         # Give immediate local feedback in the dialog

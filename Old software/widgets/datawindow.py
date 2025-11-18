@@ -18,11 +18,13 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QDoubleValidator, QFont, QPen
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QGraphicsEllipseItem,
     QGraphicsLineItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
+    QStyledItemDelegate,
     QTableWidgetItem,
     QWidget,
 )
@@ -38,7 +40,9 @@ from widgets.message import show_message
 from widgets.metadata import Metadata, MetadataPrompt
 
 TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
-COLUMNS_TO_TOGGLE = frozenset(range(2, 8))
+# Tab 1 (default): Shows ID, Start, Cycle Type, Note (columns 0, 1, 8, 9)
+# Tab 2: Shows ID, Start, Shift A-D (columns 0, 1, 3, 4, 5, 6)
+COLUMNS_TO_TOGGLE = frozenset([2, 3, 4, 5, 6, 7])
 
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
 OFF_BRUSH = QBrush(Qt.GlobalColor.transparent)
@@ -49,6 +53,52 @@ LOOP_PEN = QPen(LOOP_BRUSH, 6)
 SENSOR_PEN = QPen(SENSOR_BRUSH, 6)
 
 PROGRESS_BAR_UPDATE_TIME = 100
+
+# Cycle types available for selection
+CYCLE_TYPES = ["Auto-read", "Baseline", "Flow", "Static"]
+
+
+class CycleTypeDelegate(QStyledItemDelegate):
+    """Delegate to provide a dropdown for cycle type selection."""
+    
+    def createEditor(self, parent, option, index):
+        """Create a QComboBox editor."""
+        combo = QComboBox(parent)
+        combo.addItems(CYCLE_TYPES)
+        # Style the combobox to ensure text is visible
+        combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                color: black;
+                border: 1px solid gray;
+                padding: 2px;
+            }
+            QComboBox:hover {
+                background-color: #f0f0f0;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: black;
+                selection-background-color: #0078d4;
+                selection-color: white;
+            }
+        """)
+        return combo
+    
+    def setEditorData(self, editor, index):
+        """Set the current value in the combo box."""
+        current_text = index.data()
+        if current_text in CYCLE_TYPES:
+            editor.setCurrentText(current_text)
+        else:
+            editor.setCurrentIndex(0)
+    
+    def setModelData(self, editor, model, index):
+        """Save the selected value back to the model."""
+        model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 
 class DataDict(TypedDict, total=False):
@@ -82,6 +132,8 @@ class Segment:
         self.seg_y: dict[str, np.ndarray[int, np.dtype[np.float64]]] = {}
         self.name = str(seg_id + 1)
         self.note = ""
+        self.cycle_type = "Auto-read"  # Default cycle type
+        self.cycle_time: int | None = None  # Cycle time in minutes (None for Auto-read)
 
         if seg_end > seg_start:
             self.error = None
@@ -148,22 +200,35 @@ class Segment:
                             self.seg_y[ch] = self.seg_y[ch][
                                 self.start_index[ch] : self.end_index[ch]
                             ]
-                            if (len(self.seg_x[ch]) > 0) and (len(self.seg_y) > 0):
-                                ref_index = 0
-                                while (np.isnan(self.seg_y[ch][ref_index])) and (
-                                    ref_index < (len(self.seg_y[ch]) - 1)
-                                ):
-                                    ref_index += 1
-                                self.seg_x[ch] = self.seg_x[ch] - self.seg_x[ch][0]
-                                self.seg_y[ch] = (
-                                    self.seg_y[ch] - self.seg_y[ch][ref_index]
-                                )
-                                self.shift[ch] = self.seg_y[ch][-1]
-                                self.error = None
-                            else:
-                                self.error = "seg x and y data empty"
                         else:
                             self.error = "segment length = 0"
+                
+                # Find the earliest timestamp across all channels for proper normalization
+                min_time = None
+                for ch in CH_LIST:
+                    if len(self.seg_x[ch]) > 0:
+                        if min_time is None or self.seg_x[ch][0] < min_time:
+                            min_time = self.seg_x[ch][0]
+                
+                # Now normalize all channels relative to the earliest timestamp
+                for ch in CH_LIST:
+                    if (len(self.seg_x[ch]) > 0) and (len(self.seg_y[ch]) > 0):
+                        ref_index = 0
+                        while (np.isnan(self.seg_y[ch][ref_index])) and (
+                            ref_index < (len(self.seg_y[ch]) - 1)
+                        ):
+                            ref_index += 1
+                        # Normalize to the earliest time across all channels
+                        if min_time is not None:
+                            self.seg_x[ch] = self.seg_x[ch] - min_time
+                        self.seg_y[ch] = (
+                            self.seg_y[ch] - self.seg_y[ch][ref_index]
+                        )
+                        self.shift[ch] = self.seg_y[ch][-1]
+                        self.error = None
+                    else:
+                        self.error = "seg x and y data empty"
+                        
                 if self.ref_ch is not None:
                     try:
                         for ch in CH_LIST:
@@ -191,6 +256,13 @@ class Segment:
         """Add info to segment."""
         self.name = info["name"]
         self.note = info["note"]
+        if "cycle_type" in info:
+            self.cycle_type = info["cycle_type"]
+        if "cycle_time" in info and info["cycle_time"]:
+            try:
+                self.cycle_time = int(info["cycle_time"])
+            except (ValueError, TypeError):
+                self.cycle_time = None
 
 
 class DataWindow(QWidget):
@@ -323,6 +395,10 @@ class DataWindow(QWidget):
         # data table add/remove row
         self.ui.delete_row_btn.clicked.connect(self.delete_row)
         self.ui.add_row_btn.clicked.connect(self.restore_deleted)
+        
+        # Set up cycle type dropdown for column 8
+        cycle_type_delegate = CycleTypeDelegate(self.ui.data_table)
+        self.ui.data_table.setItemDelegateForColumn(8, cycle_type_delegate)
 
         # open the average channel and reference channel dialog
         if isinstance(self.ui, Ui_Processing):
@@ -338,7 +414,12 @@ class DataWindow(QWidget):
         # text fields
         self.ui.left_cursor_time.returnPressed.connect(self.update_left)
         self.ui.right_cursor_time.returnPressed.connect(self.update_right)
-        self.ui.current_note.returnPressed.connect(self.update_note)
+        
+        # cycle type dropdown signal
+        self.ui.current_cycle_type.currentTextChanged.connect(self.on_cycle_type_changed)
+        
+        # cycle time dropdown signal
+        self.ui.current_cycle_time.currentTextChanged.connect(self.on_cycle_time_changed)
 
         logger.debug(f"current row is {self.ui.data_table.currentRow()}")
 
@@ -409,7 +490,7 @@ class DataWindow(QWidget):
             self.ui.loop_diagram.scene().addItem(self.sensor_label)
 
         # Set startup table style
-        self.hide_columns = True
+        self.hide_columns = True  # Start with Tab 1 (simplified view) as default
         self.update_table_style()
 
         # Hide progress bar until injection
@@ -649,6 +730,16 @@ class DataWindow(QWidget):
                 )
                 if self.current_segment.error is None:
                     self.SOI_view.update_display(self.current_segment)
+                    
+                    # Update cycle time shaded region if applicable
+                    cycle_type = self.ui.current_cycle_type.currentText()
+                    if cycle_type in ["Baseline", "Flow", "Static"]:
+                        if cycle_type == "Baseline":
+                            cycle_time = 5
+                        else:
+                            time_text = self.ui.current_cycle_time.currentText()
+                            cycle_time = int(time_text.split()[0])
+                        self.full_segment_view.update_cycle_time_region(cycle_time)
                 else:
                     logger.debug(f"{self.current_segment.error}")
 
@@ -764,7 +855,6 @@ class DataWindow(QWidget):
                     self.current_segment.end,
                 )
                 logger.debug(f"new segment {self.current_segment.seg_id}")
-            self.update_note()
             self.set_live(on=self.live_mode)
         else:
             self.current_segment = Segment(self.seg_count, 0, 1)
@@ -851,13 +941,7 @@ class DataWindow(QWidget):
                     row = self.segment_edit
                     seg = self.current_segment
 
-                    # Set table note if note text box was edited
-                    text = self.ui.current_note.text()
-                    if text != seg.note:
-                        item = self.ui.data_table.item(row, 8)
-                        if item is not None:
-                            item.setText(text)
-
+                    # Update segment info from table
                     seg.add_info(self.get_info(row))
                     self.delete_row()
 
@@ -866,14 +950,26 @@ class DataWindow(QWidget):
                     row = self.deleted_segment.seg_id
 
                 else:
-                    self.current_segment.note = (
-                        self.current_segment.note or self.ui.current_note.text()
-                    )
+                    # Set cycle type from dropdown
+                    self.current_segment.cycle_type = self.ui.current_cycle_type.currentText()
+                    
+                    # Set cycle time based on cycle type
+                    cycle_type = self.ui.current_cycle_type.currentText()
+                    if cycle_type == "Auto-read":
+                        self.current_segment.cycle_time = None
+                    elif cycle_type == "Baseline":
+                        self.current_segment.cycle_time = 5
+                    elif cycle_type in ["Flow", "Static"]:
+                        # Parse cycle time from dropdown (e.g., "5 min" -> 5)
+                        time_text = self.ui.current_cycle_time.currentText()
+                        self.current_segment.cycle_time = int(time_text.split()[0])
+                    
                     seg = self.current_segment
                     row = len(self.saved_segments)
                     self.seg_count += 1
                     if self.data_source == "dynamic":
-                        self.ui.current_note.setText("")
+                        # Reset dropdown to default after save
+                        self.ui.current_cycle_type.setCurrentText("Auto-read")
 
                 if (seg is not None) and (row is not None):
                     # Block signals to prevent cascading updates
@@ -916,7 +1012,8 @@ class DataWindow(QWidget):
                         7,
                         QTableWidgetItem(f"{seg.ref_ch}"),
                     )
-                    self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.note}"))
+                    self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.cycle_type}"))
+                    self.ui.data_table.setItem(row, 9, QTableWidgetItem(f"{seg.note}"))
 
                     # Re-enable signals after all items are set
                     self.ui.data_table.blockSignals(False)
@@ -925,6 +1022,8 @@ class DataWindow(QWidget):
                 self.saving = False
                 self.ui.data_table.clearSelection()
                 if not self.reloading:
+                    # Hide the shaded region after saving
+                    self.full_segment_view.hide_cycle_time_region()
                     self.new_segment()
 
             except Exception as e:
@@ -958,7 +1057,8 @@ class DataWindow(QWidget):
         self.ui.data_table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
         self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
         self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
-        self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.note}"))
+        self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.cycle_type}"))
+        self.ui.data_table.setItem(row, 9, QTableWidgetItem(f"{seg.note}"))
         self.ui.data_table.blockSignals(False)
 
     def delete_row(self: Self, *, first_available: bool = False) -> None:
@@ -1120,16 +1220,36 @@ class DataWindow(QWidget):
         """Set text edit cursors."""
         self.ui.left_cursor_time.setEnabled(state)
         self.ui.right_cursor_time.setEnabled(state)
-
-    def update_note(self: Self) -> None:
-        """Update notes."""
-        if (
-            (self.current_segment is not None)
-            and (self.segment_edit is None)
-            and (not self.viewing)
-        ):
-            self.current_segment.note = self.ui.current_note.text()
-            self.ui.current_note.clearFocus()
+    
+    def on_cycle_type_changed(self: Self, cycle_type: str) -> None:
+        """Handle cycle type dropdown changes."""
+        if cycle_type == "Auto-read":
+            # Auto-read: disable cycle time dropdown and hide shaded region
+            self.ui.current_cycle_time.setEnabled(False)
+            self.ui.current_cycle_time.setCurrentText("5 min")
+            self.full_segment_view.hide_cycle_time_region()
+        elif cycle_type == "Baseline":
+            # Baseline: set to 5 min and disable, show shaded region
+            self.ui.current_cycle_time.setCurrentText("5 min")
+            self.ui.current_cycle_time.setEnabled(False)
+            if self.current_segment is not None:
+                self.full_segment_view.show_cycle_time_region(5)
+        elif cycle_type in ["Flow", "Static"]:
+            # Flow/Static: enable user selection and show shaded region
+            self.ui.current_cycle_time.setEnabled(True)
+            if self.current_segment is not None:
+                # Get current cycle time from dropdown
+                time_text = self.ui.current_cycle_time.currentText()
+                cycle_time_minutes = int(time_text.split()[0])
+                self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
+    
+    def on_cycle_time_changed(self: Self, time_text: str) -> None:
+        """Handle cycle time dropdown changes."""
+        cycle_type = self.ui.current_cycle_type.currentText()
+        if cycle_type in ["Flow", "Static"] and self.current_segment is not None:
+            # Update shaded region when time changes
+            cycle_time_minutes = int(time_text.split()[0])
+            self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
 
     def reload_segments(self: Self, time_shift: float | None = None) -> None:
         """Reload segments."""
@@ -1165,15 +1285,19 @@ class DataWindow(QWidget):
     def get_info(self: Self, row: int) -> dict[str, str]:
         """Get info."""
         name = ""
+        cycle_type = "Auto-read"
         note = ""
         if self.ui.data_table.rowCount() > row:
             name_item = self.ui.data_table.item(row, 0)
-            note_item = self.ui.data_table.item(row, 8)
+            cycle_type_item = self.ui.data_table.item(row, 8)
+            note_item = self.ui.data_table.item(row, 9)
             if name_item is not None:
                 name = name_item.text()
+            if cycle_type_item is not None:
+                cycle_type = cycle_type_item.text()
             if note_item is not None:
                 note = note_item.text()
-        return {"name": name, "note": note}
+        return {"name": name, "cycle_type": cycle_type, "note": note}
 
     def enter_view_mode(self: Self) -> None:
         """Enter view mode."""
@@ -1216,14 +1340,24 @@ class DataWindow(QWidget):
             self.cursors_text_edit(state=False)
             self.ui.new_segment_btn.setText("Leave\nView Mode")
             self.ui.new_segment_btn.setStyleSheet(self.view_style)
+            
+            # Hide cycle time shaded region in view mode
+            self.full_segment_view.hide_cycle_time_region()
 
-            # Show notes in edit box
+            # Show cycle type in dropdown
             try:
-                note_text = self.current_segment.note if self.current_segment.note else ""
-                self.ui.current_note.setText(note_text)
+                cycle_type_text = self.current_segment.cycle_type if self.current_segment.cycle_type else "Auto-read"
+                self.ui.current_cycle_type.setCurrentText(cycle_type_text)
+                
+                # Show cycle time in dropdown if available
+                if self.current_segment.cycle_time is not None:
+                    time_text = f"{self.current_segment.cycle_time} min"
+                    self.ui.current_cycle_time.setCurrentText(time_text)
+                else:
+                    self.ui.current_cycle_time.setCurrentText("5 min")
             except Exception as e:
-                logger.warning(f"Could not set note text: {e}")
-                self.ui.current_note.setText("")
+                logger.warning(f"Could not set cycle type: {e}")
+                self.ui.current_cycle_type.setCurrentText("Auto-read")
 
     def enter_edit_mode(self: Self) -> None:
         """Enter edit mode."""
@@ -1262,34 +1396,27 @@ class DataWindow(QWidget):
 
     def set_row_properties(self: Self, edit_row: int | None = None) -> None:
         """Set row properties."""
-        if isinstance(edit_row, int):
-            for row in range(self.ui.data_table.rowCount()):
-                for col in range(self.ui.data_table.columnCount()):
-                    item = self.ui.data_table.item(row, col)
-                    if item is not None:
-                        if row == edit_row:
-                            item.setBackground(self.edit_color)
-                            item.setFlags(Qt.ItemFlag.NoItemFlags)
-                            note_column = 8
-                            name_column = 0
-                            if col in {name_column, note_column}:
-                                item.setFlags(
-                                    Qt.ItemFlag.ItemIsEnabled
-                                    | Qt.ItemFlag.ItemIsSelectable
-                                    | Qt.ItemFlag.ItemIsEditable,
-                                )
-                        else:
-                            item.setFlags(Qt.ItemFlag.NoItemFlags)
-        else:
-            for row in range(self.ui.data_table.rowCount()):
-                for col in range(self.ui.data_table.columnCount()):
-                    item = self.ui.data_table.item(row, col)
-                    if item is not None:
-                        if self.viewing and (row == self.ui.data_table.currentRow()):
-                            item.setBackground(self.view_color)
-                        else:
-                            item.setBackground(QColor("white"))
-                        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        # Make Cycle Type (column 8) and Notes (column 9) editable, all others read-only
+        for row in range(self.ui.data_table.rowCount()):
+            for col in range(self.ui.data_table.columnCount()):
+                item = self.ui.data_table.item(row, col)
+                if item is not None:
+                    # Highlight the current row if viewing or editing
+                    if isinstance(edit_row, int) and row == edit_row:
+                        item.setBackground(self.edit_color)
+                    elif self.viewing and row == self.ui.data_table.currentRow():
+                        item.setBackground(self.view_color)
+                    else:
+                        item.setBackground(QColor("white"))
+                    
+                    # Cycle Type (column 8) and Notes (column 9) are editable
+                    if col in {8, 9}:
+                        item.setFlags(
+                            Qt.ItemFlag.ItemIsEnabled
+                            | Qt.ItemFlag.ItemIsSelectable
+                            | Qt.ItemFlag.ItemIsEditable,
+                        )
+                    else:
                         item.setFlags(
                             Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable,
                         )
@@ -1772,7 +1899,8 @@ class DataWindow(QWidget):
                 shift_c = self.ui.data_table.item(i, 5).text()
                 shift_d = self.ui.data_table.item(i, 6).text()
                 ref = self.ui.data_table.item(i, 7).text()
-                note = self.ui.data_table.item(i, 8).text()
+                cycle_type = self.ui.data_table.item(i, 8).text()
+                note = self.ui.data_table.item(i, 9).text()
                 table_data.append(
                     {
                         "Name": name,
@@ -1783,6 +1911,7 @@ class DataWindow(QWidget):
                         "ShiftC": shift_c,
                         "ShiftD": shift_d,
                         "Reference": ref,
+                        "CycleType": cycle_type,
                         "UserNote": note,
                     },
                 )

@@ -15,7 +15,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QCheckBox, QFrame,
+from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QCheckBox, QComboBox, QFrame,
     QGraphicsView, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QPushButton, QSizePolicy,
     QSpacerItem, QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -501,27 +501,70 @@ class Ui_Processing(object):
         self.groupBox_4 = QGroupBox(self.curr_seg_box)
         self.groupBox_4.setObjectName(u"groupBox_4")
         self.groupBox_4.setGeometry(QRect(279, 0, 221, 151))
-        self.current_note = QLineEdit(self.groupBox_4)
-        self.current_note.setObjectName(u"current_note")
-        self.current_note.setEnabled(True)
-        self.current_note.setGeometry(QRect(10, 110, 201, 25))
-        sizePolicy2.setHeightForWidth(self.current_note.sizePolicy().hasHeightForWidth())
-        self.current_note.setSizePolicy(sizePolicy2)
-        self.current_note.setFont(font)
-        self.current_note.setFocusPolicy(Qt.ClickFocus)
-        self.current_note.setStyleSheet(u"\n"
-"QLineEdit {\n"
-"		background-color: white;\n"
-"		border: 1px solid rgb(171, 171, 171);\n"
-"		border-radius: 2px;\n"
-"\n"
-"}\n"
-"\n"
-"QLineEdit:focus{\n"
-"	background-color: rgb(240, 255, 245);\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 2px;\n"
-"}")
+        
+        # Cycle Type Dropdown
+        self.label_cycle_type = QLabel(self.groupBox_4)
+        self.label_cycle_type.setObjectName(u"label_cycle_type")
+        self.label_cycle_type.setGeometry(QRect(10, 80, 90, 21))
+        self.label_cycle_type.setText("Cycle Type:")
+        
+        self.current_cycle_type = QComboBox(self.groupBox_4)
+        self.current_cycle_type.setObjectName(u"current_cycle_type")
+        self.current_cycle_type.setGeometry(QRect(10, 100, 95, 25))
+        self.current_cycle_type.addItems(["Auto-read", "Baseline", "Flow", "Static"])
+        self.current_cycle_type.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                color: black;
+                border: 1px solid gray;
+                padding: 2px;
+            }
+            QComboBox:hover {
+                background-color: #f0f0f0;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: black;
+                selection-background-color: #0078d4;
+                selection-color: white;
+            }
+        """)
+        
+        # Cycle Time Dropdown
+        self.label_cycle_time = QLabel(self.groupBox_4)
+        self.label_cycle_time.setObjectName(u"label_cycle_time")
+        self.label_cycle_time.setGeometry(QRect(115, 80, 90, 21))
+        self.label_cycle_time.setText("Cycle Time:")
+        
+        self.current_cycle_time = QComboBox(self.groupBox_4)
+        self.current_cycle_time.setObjectName(u"current_cycle_time")
+        self.current_cycle_time.setGeometry(QRect(115, 100, 95, 25))
+        self.current_cycle_time.addItems(["5 min", "15 min", "30 min", "60 min"])
+        self.current_cycle_time.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                color: black;
+                border: 1px solid gray;
+                padding: 2px;
+            }
+            QComboBox:hover {
+                background-color: #f0f0f0;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: black;
+                selection-background-color: #0078d4;
+                selection-color: white;
+            }
+        """)
+        self.current_cycle_time.setEnabled(False)  # Initially disabled
+        
         self.end_time = QLabel(self.groupBox_4)
         self.end_time.setObjectName(u"end_time")
         self.end_time.setGeometry(QRect(100, 55, 91, 21))
@@ -540,11 +583,6 @@ class Ui_Processing(object):
         self.label = QLabel(self.groupBox_4)
         self.label.setObjectName(u"label")
         self.label.setGeometry(QRect(200, 30, 21, 21))
-        self.label_13 = QLabel(self.groupBox_4)
-        self.label_13.setObjectName(u"label_13")
-        self.label_13.setGeometry(QRect(10, 80, 41, 21))
-        self.label_13.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
-        self.label_13.setMargin(2)
         self.label_12 = QLabel(self.groupBox_4)
         self.label_12.setObjectName(u"label_12")
         self.label_12.setGeometry(QRect(10, 55, 81, 21))
@@ -916,13 +954,11 @@ class Ui_Processing(object):
         self.label_21.setText(QCoreApplication.translate("Processing", u"Shift B:", None))
         self.label_22.setText(QCoreApplication.translate("Processing", u"Shift C:", None))
         self.label_23.setText(QCoreApplication.translate("Processing", u"Shift D:", None))
-        self.groupBox_4.setTitle(QCoreApplication.translate("Processing", u"Time && Note", None))
-        self.current_note.setText("")
+        self.groupBox_4.setTitle(QCoreApplication.translate("Processing", u"Cycle Settings", None))
         self.end_time.setText(QCoreApplication.translate("Processing", u"-", None))
         self.label_2.setText(QCoreApplication.translate("Processing", u"s", None))
         self.start_time.setText(QCoreApplication.translate("Processing", u"-", None))
         self.label.setText(QCoreApplication.translate("Processing", u"s", None))
-        self.label_13.setText(QCoreApplication.translate("Processing", u"Note:", None))
         self.label_12.setText(QCoreApplication.translate("Processing", u"End Time:", None))
         self.label_11.setText(QCoreApplication.translate("Processing", u"Start Time:", None))
         self.save_segment_btn.setText(QCoreApplication.translate("Processing", u"Save\n"

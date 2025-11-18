@@ -18,6 +18,7 @@ class MainWindow(QWidget):
     set_start_sig = Signal()
     clear_flow_buf_sig = Signal()
     record_sig = Signal()
+    pause_sig = Signal(bool)  # True = pause, False = resume
 
     def __init__(self, app):
         super(MainWindow, self).__init__()
@@ -36,6 +37,42 @@ class MainWindow(QWidget):
         # set up recording
         self.recording = False
         self.ui.rec_btn.clicked.connect(self.record_trigger)
+        
+        # Add pause button next to recording button (hidden for now)
+        self.paused = False
+        self.pause_btn = QPushButton(self.ui.tool_bar)
+        self.pause_btn.setFixedSize(40, 40)
+        self.pause_btn.setToolTip("Pause/Resume\nLive Acquisition")
+        self.pause_btn.setCheckable(True)
+        self.pause_btn.setStyleSheet(
+            "QPushButton{\n"
+            "	background: rgb(207, 207, 207);\n"
+            "	border: 1px solid;\n"
+            "	border-radius: 8px;\n"
+            "}\n"
+            "\n"
+            "QPushButton:checked{\n"
+            "	background: rgb(255, 200, 100);\n"
+            "	border: 2px solid rgb(200, 150, 50);\n"
+            "	border-radius: 8px;\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: white;\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 8px;\n"
+            "}"
+        )
+        # Use pause/play icons (Unicode symbols)
+        self.pause_btn.setText("⏸")
+        self.pause_btn.setFont(self.ui.rec_btn.font())
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        # Insert pause button after recording button in toolbar
+        toolbar_layout = self.ui.tool_bar.layout()
+        rec_btn_index = toolbar_layout.indexOf(self.ui.rec_btn)
+        toolbar_layout.insertWidget(rec_btn_index + 1, self.pause_btn, 0, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        # Hide the pause button for now
+        self.pause_btn.hide()
 
         # set minimum size
         self.sidebar_width = 280
@@ -210,6 +247,36 @@ class MainWindow(QWidget):
 
     def record_trigger(self):
         self.record_sig.emit()
+    
+    def toggle_pause(self):
+        """Toggle pause/resume of live acquisition."""
+        self.paused = self.pause_btn.isChecked()
+        if self.paused:
+            self.pause_btn.setText("▶")  # Play icon when paused
+            self.ui.recording_status.setText("PAUSED")
+            self.ui.recording_status.setStyleSheet(
+                "background:none;\n"
+                "color: orange;\n"
+                "font: 87 8pt \"Segoe UI Black\";\n"
+            )
+        else:
+            self.pause_btn.setText("⏸")  # Pause icon when running
+            if self.recording:
+                # Resume recording status
+                self.ui.recording_status.setText("Recording\nin Progress")
+                self.ui.recording_status.setStyleSheet(
+                    "background: none; border: none; color: black;font: "
+                    "8pt 'Segoe UI Semibold';"
+                )
+            else:
+                # Resume non-recording status
+                self.ui.recording_status.setText("NOT\nRECORDING")
+                self.ui.recording_status.setStyleSheet(
+                    "background:none;\n"
+                    "color: red;\n"
+                    "font: 87 8pt \"Segoe UI Black\";\n"
+                )
+        self.pause_sig.emit(self.paused)
 
     def set_recording(self, state):
         self.recording = state

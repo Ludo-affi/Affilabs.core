@@ -15,7 +15,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QCheckBox, QFrame,
+from PySide6.QtWidgets import (QAbstractScrollArea, QAbstractItemView, QApplication, QCheckBox, QComboBox, QFrame,
     QGraphicsView, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QProgressBar, QPushButton,
     QSizePolicy, QSpacerItem, QTableWidget, QTableWidgetItem,
@@ -474,13 +474,77 @@ class Ui_Sensorgram(object):
 
         self.groupBox_4 = QGroupBox(Sensorgram)
         self.groupBox_4.setObjectName(u"groupBox_4")
-        self.verticalLayout_3 = QVBoxLayout(self.groupBox_4)
-        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.current_note = QLineEdit(self.groupBox_4)
-        self.current_note.setObjectName(u"current_note")
-
-        self.verticalLayout_3.addWidget(self.current_note)
-
+        self.horizontalLayout_cycle_controls = QHBoxLayout(self.groupBox_4)
+        self.horizontalLayout_cycle_controls.setObjectName(u"horizontalLayout_cycle_controls")
+        
+        # Cycle Type Dropdown
+        self.verticalLayout_cycle_type = QVBoxLayout()
+        self.verticalLayout_cycle_type.setObjectName(u"verticalLayout_cycle_type")
+        self.label_cycle_type = QLabel(self.groupBox_4)
+        self.label_cycle_type.setObjectName(u"label_cycle_type")
+        self.label_cycle_type.setText("Cycle Type")
+        self.verticalLayout_cycle_type.addWidget(self.label_cycle_type)
+        
+        self.current_cycle_type = QComboBox(self.groupBox_4)
+        self.current_cycle_type.setObjectName(u"current_cycle_type")
+        self.current_cycle_type.addItems(["Auto-read", "Baseline", "Flow", "Static"])
+        self.current_cycle_type.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                color: black;
+                border: 1px solid gray;
+                padding: 2px;
+            }
+            QComboBox:hover {
+                background-color: #f0f0f0;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: black;
+                selection-background-color: #0078d4;
+                selection-color: white;
+            }
+        """)
+        self.verticalLayout_cycle_type.addWidget(self.current_cycle_type)
+        self.horizontalLayout_cycle_controls.addLayout(self.verticalLayout_cycle_type)
+        
+        # Cycle Time Dropdown
+        self.verticalLayout_cycle_time = QVBoxLayout()
+        self.verticalLayout_cycle_time.setObjectName(u"verticalLayout_cycle_time")
+        self.label_cycle_time = QLabel(self.groupBox_4)
+        self.label_cycle_time.setObjectName(u"label_cycle_time")
+        self.label_cycle_time.setText("Cycle Time")
+        self.verticalLayout_cycle_time.addWidget(self.label_cycle_time)
+        
+        self.current_cycle_time = QComboBox(self.groupBox_4)
+        self.current_cycle_time.setObjectName(u"current_cycle_time")
+        self.current_cycle_time.addItems(["5 min", "15 min", "30 min", "60 min"])
+        self.current_cycle_time.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                color: black;
+                border: 1px solid gray;
+                padding: 2px;
+            }
+            QComboBox:hover {
+                background-color: #f0f0f0;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: black;
+                selection-background-color: #0078d4;
+                selection-color: white;
+            }
+        """)
+        self.current_cycle_time.setEnabled(False)  # Initially disabled
+        self.verticalLayout_cycle_time.addWidget(self.current_cycle_time)
+        self.horizontalLayout_cycle_controls.addLayout(self.verticalLayout_cycle_time)
 
         self.verticalLayout.addWidget(self.groupBox_4)
 
@@ -627,8 +691,8 @@ class Ui_Sensorgram(object):
         self.controls.addWidget(self.seg_table)
 
         self.data_table = QTableWidget(Sensorgram)
-        if (self.data_table.columnCount() < 9):
-            self.data_table.setColumnCount(9)
+        if (self.data_table.columnCount() < 10):
+            self.data_table.setColumnCount(10)
         font4 = QFont()
         font4.setFamilies([u"Segoe UI"])
         font4.setPointSize(8)
@@ -662,6 +726,9 @@ class Ui_Sensorgram(object):
         __qtablewidgetitem8 = QTableWidgetItem()
         __qtablewidgetitem8.setFont(font5);
         self.data_table.setHorizontalHeaderItem(8, __qtablewidgetitem8)
+        __qtablewidgetitem9 = QTableWidgetItem()
+        __qtablewidgetitem9.setFont(font5);
+        self.data_table.setHorizontalHeaderItem(9, __qtablewidgetitem9)
         self.data_table.setObjectName(u"data_table")
         sizePolicy5 = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         sizePolicy5.setHorizontalStretch(0)
@@ -672,10 +739,11 @@ class Ui_Sensorgram(object):
         self.data_table.setFocusPolicy(Qt.ClickFocus)
         self.data_table.setFrameShape(QFrame.NoFrame)
         self.data_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.data_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
         self.data_table.setShowGrid(True)
         self.data_table.setWordWrap(True)
         self.data_table.setRowCount(0)
-        self.data_table.setColumnCount(9)
+        self.data_table.setColumnCount(10)
         self.data_table.horizontalHeader().setVisible(True)
         self.data_table.horizontalHeader().setCascadingSectionResizes(True)
         self.data_table.horizontalHeader().setMinimumSectionSize(50)
@@ -683,6 +751,8 @@ class Ui_Sensorgram(object):
         self.data_table.horizontalHeader().setHighlightSections(True)
         self.data_table.horizontalHeader().setProperty("showSortIndicator", False)
         self.data_table.horizontalHeader().setStretchLastSection(True)
+        # Set wider column width for Cycle Type (column 8)
+        self.data_table.setColumnWidth(8, 100)
         self.data_table.verticalHeader().setVisible(False)
         self.data_table.verticalHeader().setCascadingSectionResizes(False)
         self.data_table.verticalHeader().setMinimumSectionSize(40)
@@ -748,7 +818,7 @@ class Ui_Sensorgram(object):
         self.label_4.setText(QCoreApplication.translate("Sensorgram", u"\u03bcL/min", None))
         self.label.setText(QCoreApplication.translate("Sensorgram", u"New:", None))
         self.label_2.setText(QCoreApplication.translate("Sensorgram", u"\u03bcL/min", None))
-        self.groupBox_4.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Notes", None))
+        self.groupBox_4.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Settings", None))
         self.save_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Save\n"
 "Cycle", None))
         self.new_segment_btn.setText(QCoreApplication.translate("Sensorgram", u"Start at\n"
@@ -777,6 +847,8 @@ class Ui_Sensorgram(object):
         ___qtablewidgetitem6 = self.data_table.horizontalHeaderItem(7)
         ___qtablewidgetitem6.setText(QCoreApplication.translate("Sensorgram", u"Ref", None));
         ___qtablewidgetitem7 = self.data_table.horizontalHeaderItem(8)
-        ___qtablewidgetitem7.setText(QCoreApplication.translate("Sensorgram", u"Note", None));
+        ___qtablewidgetitem7.setText(QCoreApplication.translate("Sensorgram", u"Cycle Type", None));
+        ___qtablewidgetitem8 = self.data_table.horizontalHeaderItem(9)
+        ___qtablewidgetitem8.setText(QCoreApplication.translate("Sensorgram", u"Note", None));
     # retranslateUi
 

@@ -395,6 +395,7 @@ class AffiniteApp(QMainWindow):
         self.main_window.set_start_sig.connect(self.set_start)
         self.main_window.clear_flow_buf_sig.connect(self.clear_sensor_reading_buffers)
         self.main_window.record_sig.connect(self.recording_on)
+        self.main_window.pause_sig.connect(self.handle_pause)
 
         # === Sensorgram Window Signals ===
         self.main_window.sensorgram.reset_graphs_sig.connect(self.clear_data)
@@ -871,6 +872,15 @@ class AffiniteApp(QMainWindow):
             self.channel_mgr.lambda_times[ch][:n] -= time_diff
             self.channel_mgr.buffered_times[ch][:n] -= time_diff
 
+        # Force UI update with shifted timestamps BEFORE reloading segments
+        # This ensures self.data in datawindow has the correct shifted times
+        if self.main_window.active_page == "sensorgram":
+            from PySide6.QtCore import QCoreApplication
+            self.update_live_signal.emit(self.sensorgram_data())
+            # Process events to ensure data update is applied before segment reload
+            QCoreApplication.processEvents()
+        
+        # Now reload segments with the updated data
         self.main_window.sensorgram.reload_segments(time_diff)
 
     def startup(self: Self) -> None:
@@ -970,154 +980,202 @@ class AffiniteApp(QMainWindow):
                     self._c_stop.set()
                     logger.debug("already calibrated")
                 else:
-                    logger.debug("Calibration started")
-                    self.calibration_started.emit()
-                    try:
-                        logger.debug("Getting wavelength intensities")
-                        # Read the wavelength data from the detector and get wave max
-                        # and min indices
-                        if self.device_config["ctrl"] in DEVICES:
-                            serial_number = self.usb.serial_number
-                            logger.debug(f"Spectrometer serial number: {serial_number}")
-                            wave_data = self.usb.read_wavelength()
-                            integration_step = INTEGRATION_STEP
-                        else:
-                            logger.debug(f"unrecognized controller: {self.ctrl.name}")
-                            wave_data = []
-                            self.error_handler("ctrl")
-                        if not self._c_stop.is_set():
-                            self.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
-                            self.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
-                            self.wave_data = wave_data[
-                                self.wave_min_index : self.wave_max_index
-                            ]
-                            logger.debug(
-                                f"wave min index : {self.wave_min_index}, "
-                                f"wave max index = {self.wave_max_index}",
-                            )
-
-                            # Standardize Fourier weights calculation via utility
-                            self.fourier_weights = calculate_fourier_weights(len(self.wave_data))
-
-                        # Automatically calibrate polarizer servo alignment if option is
-                        # enabled
-                        if self.auto_polarize and not self._c_stop.is_set():
-                            self.auto_polarize = False
-                            self.auto_polarization()
-
-                        # Perform LED calibration using refactored module
-                        if not (self._c_stop.is_set() or (self.ctrl is None)):
+                    # DEV MODE: Try to load cached calibration to skip calibration
+                    cached_loaded = False
+                    if DEV:
+                        try:
+                            import json
+                            from pathlib import Path
+                            cache_file = Path(__file__).parent / ".dev_calibration_cache.json"
+                            if cache_file.exists():
+                                with open(cache_file, 'r') as f:
+                                    cache = json.load(f)
+                                
+                                # Load cached values
+                                self.integration = cache.get("integration_time", 15)
+                                self.num_scans = cache.get("num_scans", 5)
+                                self.hw_state.ref_intensity = cache.get("ref_intensity", 255)
+                                self.hw_state.leds_calibrated = cache.get("leds_calibrated", {ch: 180 for ch in CH_LIST})
+                                
+                                # Still need wavelength data and fourier weights from hardware
+                                if self.device_config["ctrl"] in DEVICES:
+                                    wave_data = self.usb.read_wavelength()
+                                    self.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
+                                    self.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+                                    self.wave_data = wave_data[self.wave_min_index:self.wave_max_index]
+                                    
+                                    # Get dark noise
+                                    self.dark_noise = self.usb.read_spectrum()
+                                    
+                                    # Read reference spectrum
+                                    self.ctrl.ref_on()
+                                    time.sleep(0.1)
+                                    self.usb.set_integration(self.integration)
+                                    self.ref_sig = self.usb.read_spectrum()
+                                    self.ctrl.ref_off()
+                                    
+                                    # Compute Fourier weights
+                                    from utils.spr_signal_processing import compute_fourier_weights
+                                    self.fourier_weights = compute_fourier_weights(self.wave_data)
+                                    
+                                    cached_loaded = True
+                                    self.calibration_status.emit(True, "")
+                                    logger.info("✅ DEV MODE: Loaded cached calibration parameters")
+                                    logger.info(f"   Integration: {self.integration}ms, Scans: {self.num_scans}")
+                                    logger.info(f"   LED intensities: {self.hw_state.leds_calibrated}")
+                        except Exception as e:
+                            logger.warning(f"Failed to load dev calibration cache: {e}")
+                            cached_loaded = False
+                    
+                    if not cached_loaded:
+                        logger.debug("Calibration started")
+                        self.calibration_started.emit()
+                        try:
+                            logger.debug("Getting wavelength intensities")
+                            # Read the wavelength data from the detector and get wave max
+                            # and min indices
                             if self.device_config["ctrl"] in DEVICES:
-                                logger.info("Starting LED calibration...")
-
-                                # Perform full LED calibration
-                                cal_result = perform_full_led_calibration(
-                                    usb=self.usb,
-                                    ctrl=self.ctrl,
-                                    device_type=self.device_config["ctrl"],
-                                    single_mode=self.single_mode,
-                                    single_ch=self.single_ch,
-                                    integration_step=INTEGRATION_STEP,
-                                    stop_flag=self._c_stop,
+                                serial_number = self.usb.serial_number
+                                logger.debug(f"Spectrometer serial number: {serial_number}")
+                                wave_data = self.usb.read_wavelength()
+                                integration_step = INTEGRATION_STEP
+                            else:
+                                logger.debug(f"unrecognized controller: {self.ctrl.name}")
+                                wave_data = []
+                                self.error_handler("ctrl")
+                            if not self._c_stop.is_set():
+                                self.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
+                                self.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+                                self.wave_data = wave_data[
+                                    self.wave_min_index : self.wave_max_index
+                                ]
+                                logger.debug(
+                                    f"wave min index : {self.wave_min_index}, "
+                                    f"wave max index = {self.wave_max_index}",
                                 )
 
-                                if not self._c_stop.is_set():
-                                    # Update application state with calibration results
-                                    self.integration = cal_result.integration_time
-                                    self.num_scans = cal_result.num_scans
-                                    self.hw_state.ref_intensity = cal_result.ref_intensity
-                                    self.hw_state.leds_calibrated = cal_result.leds_calibrated
-                                    self.dark_noise = cal_result.dark_noise
-                                    self.ref_sig = cal_result.ref_sig
-                                    self.wave_data = cal_result.wave_data
-                                    self.wave_min_index = cal_result.wave_min_index
-                                    self.wave_max_index = cal_result.wave_max_index
-                                    self.fourier_weights = cal_result.fourier_weights
-                                    self.ch_error_list = cal_result.ch_error_list
+                                # Standardize Fourier weights calculation via utility
+                                self.fourier_weights = calculate_fourier_weights(len(self.wave_data))
 
-                                    # Format error message for UI
-                                    ch_str = ""
-                                    if len(self.ch_error_list) > 0:
-                                        for ch in self.ch_error_list:
-                                            if ch_str == "":
-                                                ch_str += f"{ch} "
-                                            else:
-                                                ch_str += f", {ch} "
-                                        calibration_success = False
-                                    else:
-                                        calibration_success = True
+                            # Automatically calibrate polarizer servo alignment if option is
+                            # enabled
+                            if self.auto_polarize and not self._c_stop.is_set():
+                                self.auto_polarize = False
+                                self.auto_polarization()
 
-                                    # Update calibration status
-                                    self.calibration_status.emit(calibration_success, ch_str)
+                            # Perform LED calibration using refactored module
+                            if not (self._c_stop.is_set() or (self.ctrl is None)):
+                                if self.device_config["ctrl"] in DEVICES:
+                                    logger.info("Starting LED calibration...")
 
-                                    # Auto-trigger optical calibration if device doesn't have one
-                                    from utils.device_integration import get_device_manager
-                                    device_manager = get_device_manager()
-                                    if device_manager.needs_optical_calibration():
-                                        logger.info("🔄 No optical calibration found - auto-starting afterglow measurement...")
-                                        try:
-                                            self.ui_message_sig.emit(
-                                                "Running first-time optical calibration\n\nThis measures LED phosphor decay for accurate corrections.",
-                                                "Information",
-                                                5,
-                                            )
-                                        except Exception:
-                                            pass
-                                        # Trigger afterglow measurement in background
-                                        self.measure_afterglow()
+                                    # Perform full LED calibration
+                                    cal_result = perform_full_led_calibration(
+                                        usb=self.usb,
+                                        ctrl=self.ctrl,
+                                        device_type=self.device_config["ctrl"],
+                                        single_mode=self.single_mode,
+                                        single_ch=self.single_ch,
+                                        integration_step=INTEGRATION_STEP,
+                                        stop_flag=self._c_stop,
+                                    )
 
-                                    # Recompute dynamic LED delay after calibration, if enabled
-                                    if USE_DYNAMIC_LED_DELAY:
-                                        try:
-                                            if getattr(self, "afterglow_correction", None) is not None:
-                                                dyn_delay = float(self.afterglow_correction.get_optimal_led_delay(
-                                                    integration_time_ms=float(self.integration),
-                                                    target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                                                ))
-                                            else:
-                                                raise RuntimeError("AfterglowCorrection not initialized")
-                                            logger.info(f"[Calib] Dynamic LED delay: {dyn_delay*1000:.1f} ms (legacy {self.led_delay*1000:.1f} ms)")
-                                            if 0.005 <= dyn_delay <= 0.200:
-                                                self.led_delay = dyn_delay
-                                            else:
-                                                logger.warning(f"[Calib] Dynamic delay {dyn_delay:.3f}s out of range; keeping {self.led_delay:.3f}s")
-                                        except Exception as e:
-                                            logger.warning(f"[Calib] Dynamic LED delay unavailable: {e}. Using legacy delay {self.led_delay:.3f}s")
+                                    if not self._c_stop.is_set():
+                                        # Update application state with calibration results
+                                        self.integration = cal_result.integration_time
+                                        self.num_scans = cal_result.num_scans
+                                        self.hw_state.ref_intensity = cal_result.ref_intensity
+                                        self.hw_state.leds_calibrated = cal_result.leds_calibrated
+                                        self.dark_noise = cal_result.dark_noise
+                                        self.ref_sig = cal_result.ref_sig
+                                        self.wave_data = cal_result.wave_data
+                                        self.wave_min_index = cal_result.wave_min_index
+                                        self.wave_max_index = cal_result.wave_max_index
+                                        self.fourier_weights = cal_result.fourier_weights
+                                        self.ch_error_list = cal_result.ch_error_list
 
-                                    # Recompute dynamic post delay after calibration, if enabled
-                                    if USE_DYNAMIC_POST_DELAY:
-                                        try:
-                                            if getattr(self, "afterglow_correction", None) is not None:
-                                                dyn_post = float(self.afterglow_correction.get_optimal_led_delay(
-                                                    integration_time_ms=float(self.integration),
-                                                    target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                                                ))
-                                                logger.info(f"[Calib] Dynamic post delay: {dyn_post*1000:.1f} ms (legacy {self.post_delay*1000:.1f} ms)")
-                                                if 0.000 <= dyn_post <= 0.300:
-                                                    self.post_delay = dyn_post
-                                            else:
-                                                raise RuntimeError("AfterglowCorrection not initialized")
-                                        except Exception as e:
-                                            logger.debug(f"[Calib] Dynamic post delay not updated: {e}")
+                                        # Format error message for UI
+                                        ch_str = ""
+                                        if len(self.ch_error_list) > 0:
+                                            for ch in self.ch_error_list:
+                                                if ch_str == "":
+                                                    ch_str += f"{ch} "
+                                                else:
+                                                    ch_str += f", {ch} "
+                                            calibration_success = False
+                                        else:
+                                            calibration_success = True
 
-                            else:
-                                logger.debug("controller does not match in config")
+                                        # Update calibration status
+                                        self.calibration_status.emit(calibration_success, ch_str)
+
+                                        # Auto-trigger optical calibration if device doesn't have one
+                                        from utils.device_integration import get_device_manager
+                                        device_manager = get_device_manager()
+                                        if device_manager.needs_optical_calibration():
+                                            logger.info("🔄 No optical calibration found - auto-starting afterglow measurement...")
+                                            try:
+                                                self.ui_message_sig.emit(
+                                                    "Running first-time optical calibration\n\nThis measures LED phosphor decay for accurate corrections.",
+                                                    "Information",
+                                                    5,
+                                                )
+                                            except Exception:
+                                                pass
+                                            # Trigger afterglow measurement in background
+                                            self.measure_afterglow()
+
+                                        # Recompute dynamic LED delay after calibration, if enabled
+                                        if USE_DYNAMIC_LED_DELAY:
+                                            try:
+                                                if getattr(self, "afterglow_correction", None) is not None:
+                                                    dyn_delay = float(self.afterglow_correction.get_optimal_led_delay(
+                                                        integration_time_ms=float(self.integration),
+                                                        target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
+                                                    ))
+                                                else:
+                                                    raise RuntimeError("AfterglowCorrection not initialized")
+                                                logger.info(f"[Calib] Dynamic LED delay: {dyn_delay*1000:.1f} ms (legacy {self.led_delay*1000:.1f} ms)")
+                                                if 0.005 <= dyn_delay <= 0.200:
+                                                    self.led_delay = dyn_delay
+                                                else:
+                                                    logger.warning(f"[Calib] Dynamic delay {dyn_delay:.3f}s out of range; keeping {self.led_delay:.3f}s")
+                                            except Exception as e:
+                                                logger.warning(f"[Calib] Dynamic LED delay unavailable: {e}. Using legacy delay {self.led_delay:.3f}s")
+
+                                        # Recompute dynamic post delay after calibration, if enabled
+                                        if USE_DYNAMIC_POST_DELAY:
+                                            try:
+                                                if getattr(self, "afterglow_correction", None) is not None:
+                                                    dyn_post = float(self.afterglow_correction.get_optimal_led_delay(
+                                                        integration_time_ms=float(self.integration),
+                                                        target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
+                                                    ))
+                                                    logger.info(f"[Calib] Dynamic post delay: {dyn_post*1000:.1f} ms (legacy {self.post_delay*1000:.1f} ms)")
+                                                    if 0.000 <= dyn_post <= 0.300:
+                                                        self.post_delay = dyn_post
+                                                else:
+                                                    raise RuntimeError("AfterglowCorrection not initialized")
+                                            except Exception as e:
+                                                logger.debug(f"[Calib] Dynamic post delay not updated: {e}")
+
+                                else:
+                                    logger.debug("controller does not match in config")
+                                    self._c_stop.set()
+
                                 self._c_stop.set()
 
-                        self._c_stop.set()
-
-                    except Exception as e:
-                        logger.exception(
-                            f"Device error during calibration: {e}, type {type(e)}",
-                        )
-                        self._c_stop.set()
-                        self.main_window.sidebar.device_widget.allow_commands(
-                            True,  # noqa: FBT003
-                        )
-                        if type(e) == serial.SerialException:
-                            self.raise_error.emit("ctrl")
-                        else:
-                            pass
+                        except Exception as e:
+                            logger.exception(
+                                f"Device error during calibration: {e}, type {type(e)}",
+                            )
+                            self._c_stop.set()
+                            self.main_window.sidebar.device_widget.allow_commands(
+                                True,  # noqa: FBT003
+                            )
+                            if type(e) == serial.SerialException:
+                                self.raise_error.emit("ctrl")
+                            else:
+                                pass
             else:
                 time.sleep(0.2)
 
@@ -1261,6 +1319,21 @@ class AffiniteApp(QMainWindow):
             self._b_no_read.clear()
         if self._b_stop.is_set():
             self._b_stop.clear()
+    
+    def handle_pause(self: Self, paused: bool) -> None:
+        """Handle pause/resume button from UI."""
+        if paused:
+            self.pause_live_read()
+            # Turn off all LEDs when paused
+            if self.ctrl is not None:
+                try:
+                    self.ctrl.all_off()
+                    logger.info("Paused acquisition - LEDs off")
+                except Exception as e:
+                    logger.warning(f"Failed to turn off LEDs on pause: {e}")
+        else:
+            self.resume_live_read()
+            logger.info("Resumed acquisition")
 
     # === Device Helpers ===
     def _read_servo_positions_decoded(self: Self) -> tuple[int, int]:
@@ -1436,8 +1509,8 @@ class AffiniteApp(QMainWindow):
                     )
                     if self.device_config["ctrl"] != "":
                         self.main_window.sensorgram.start_recording(self.rec_dir)
-                    self.set_start()
                     self.clear_sensor_reading_buffers()
+                    self.set_start()
                     self.rec_timer.start(1000 * RECORDING_INTERVAL)
             except Exception as e:
                 logger.exception(f"Error while starting recording: {e}")
@@ -3016,6 +3089,9 @@ class AffiniteApp(QMainWindow):
             try:
                 if DEV and hasattr(self.main_window.advanced_menu, "enable_afterglow_button"):
                     self.main_window.advanced_menu.enable_afterglow_button(True)
+                # Also enable delay status display in DEV mode
+                if DEV and hasattr(self.main_window.advanced_menu, "enable_delay_status"):
+                    self.main_window.advanced_menu.enable_delay_status(True)
                 # Connect measurement signal if present
                 if hasattr(self.main_window.advanced_menu, "measure_afterglow_sig"):
                     self.main_window.advanced_menu.measure_afterglow_sig.connect(self.measure_afterglow)

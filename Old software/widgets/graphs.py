@@ -2,7 +2,8 @@ import PySide6
 import pyqtgraph
 import numpy as np
 from PySide6.QtCore import Signal
-from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine
+from PySide6.QtGui import QBrush, QColor
+from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine, LinearRegionItem
 from copy import deepcopy
 import settings
 from settings import CH_LIST, UNIT_LIST, STATIC_PLOT, DEV
@@ -71,6 +72,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         self.plot.addItem(self.left_cursor)
         self.plot.addItem(self.right_cursor)
+
+        # Cycle time shaded region
+        self.cycle_time_region = None
 
         self.left_cursor.sigDragged.connect(self.left_cursor_sig_dragged)
         self.right_cursor.sigDragged.connect(self.right_cursor_sig_dragged)
@@ -244,6 +248,52 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.static[ch].setVisible(bool(flag))
+    
+    def show_cycle_time_region(self, cycle_time_minutes):
+        """Show a shaded region indicating the expected cycle duration."""
+        if cycle_time_minutes is None or cycle_time_minutes <= 0:
+            self.hide_cycle_time_region()
+            return
+        
+        # Remove existing region if any
+        self.hide_cycle_time_region()
+        
+        # Create shaded region from left cursor to left cursor + cycle_time
+        start_time = self.left_cursor_pos
+        end_time = start_time + (cycle_time_minutes * 60)  # Convert minutes to seconds
+        
+        # Create a filled region using pyqtgraph's FillBetweenItem
+        from pyqtgraph import FillBetweenItem, PlotCurveItem
+        
+        # Create two curves to define the region boundaries
+        y_min, y_max = self.plot.viewRange()[1]  # Get current y-axis range
+        
+        # Use LinearRegionItem for a vertical shaded region
+        from pyqtgraph import LinearRegionItem
+        self.cycle_time_region = LinearRegionItem(
+            values=[start_time, end_time],
+            orientation='vertical',
+            brush=(100, 100, 255, 50),  # Light blue with transparency
+            movable=False
+        )
+        self.plot.addItem(self.cycle_time_region)
+    
+    def hide_cycle_time_region(self):
+        """Hide the cycle time shaded region."""
+        if self.cycle_time_region is not None:
+            self.plot.removeItem(self.cycle_time_region)
+            self.cycle_time_region = None
+    
+    def update_cycle_time_region(self, cycle_time_minutes):
+        """Update the cycle time region position based on left cursor."""
+        if cycle_time_minutes is not None and cycle_time_minutes > 0:
+            start_time = self.left_cursor_pos
+            end_time = start_time + (cycle_time_minutes * 60)
+            
+            if self.cycle_time_region is not None:
+                self.cycle_time_region.setRegion([start_time, end_time])
+            else:
+                self.show_cycle_time_region(cycle_time_minutes)
         yrange = self.plot.viewRange()[1]
         self.plot.setRange(yRange=(yrange[0], yrange[1]), update=True, disableAutoRange=False)
 
@@ -410,16 +460,23 @@ class SegmentGraph(GraphicsLayoutWidget):
                     padded_y_min = y_min - y_padding_bottom
                     padded_y_max = y_max + y_padding_top
                     
-                    # X-axis: rolling 10-second window starting from earliest data point
-                    x_span = x_max - x_min
-                    if x_span < 10:
-                        # Show 0-10 second window, moving forward with new data
+                    # X-axis: use cycle_time if available (with 10% padding), otherwise rolling 10-second window
+                    if hasattr(seg, 'cycle_time') and seg.cycle_time is not None:
+                        # Cycle has a defined time: show cycle_time + 10%
+                        target_time = seg.cycle_time * 60  # Convert minutes to seconds
                         padded_x_min = x_min
-                        padded_x_max = x_min + 10
+                        padded_x_max = x_min + (target_time * 1.1)  # Add 10% padding
                     else:
-                        # Data exceeds 10 seconds, show all data
-                        padded_x_min = x_min
-                        padded_x_max = x_max
+                        # Auto-read or no cycle time: rolling 10-second window
+                        x_span = x_max - x_min
+                        if x_span < 10:
+                            # Show 0-10 second window, moving forward with new data
+                            padded_x_min = x_min
+                            padded_x_max = x_min + 10
+                        else:
+                            # Data exceeds 10 seconds, show all data
+                            padded_x_min = x_min
+                            padded_x_max = x_max
                     
                     # Set the ranges with padding disabled to avoid auto-scaling
                     self.plot.setRange(xRange=(padded_x_min, padded_x_max), 

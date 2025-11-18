@@ -18,7 +18,7 @@ def get_version() -> str:
     return match[2]
 
 
-DEV = True
+DEV = False  # Set to True to enable developer features (afterglow measurement button, etc.)
 SW_VERSION = f"Version {get_version()}"
 SW_APP_NAME = "ezControl"
 TARGET = "win"

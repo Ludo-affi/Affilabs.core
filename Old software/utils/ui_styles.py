@@ -220,6 +220,41 @@ class UIStyleManager:
         QFrame {{
             background-color: transparent;
         }}
+        QMenu {{
+            background-color: {cls.COLORS['widget_background']};
+            color: {cls.COLORS['text_primary']};
+            border: 1px solid {cls.COLORS['border_primary']};
+            padding: 2px;
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            color: {cls.COLORS['text_primary']};
+            padding: 5px 20px 5px 20px;
+        }}
+        QMenu::item:selected {{
+            background-color: {cls.COLORS['selection_background']};
+            color: {cls.COLORS['text_primary']};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {cls.COLORS['border_secondary']};
+            margin: 4px 0px;
+        }}
+        QDialog {{
+            background-color: {cls.COLORS['background_primary']};
+            color: {cls.COLORS['text_primary']};
+        }}
+        QTreeWidget {{
+            background-color: {cls.COLORS['widget_background']};
+            color: {cls.COLORS['text_primary']};
+            border: 1px solid {cls.COLORS['border_primary']};
+            selection-background-color: {cls.COLORS['selection_background']};
+            selection-color: {cls.COLORS['text_primary']};
+        }}
+        QTreeWidget::item:selected {{
+            background-color: {cls.COLORS['selection_background']};
+            color: {cls.COLORS['text_primary']};
+        }}
     """
 
     @classmethod
