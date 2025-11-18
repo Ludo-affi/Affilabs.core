@@ -1037,16 +1037,22 @@ class DataWindow(QWidget):
                     # Show gray zone and fix window when cycle starts
                     if self.data_source == "dynamic":
                         cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
+                        logger.debug(f"Cycle start: type={self.current_segment.cycle_type}, time={cycle_time_minutes} min")
+                        
                         if cycle_time_minutes is not None and cycle_time_minutes > 0:
                             # Show the gray zone
+                            logger.debug(f"Showing gray zone for {cycle_time_minutes} minutes")
                             self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
                             
                             # Fix window to cycle_time + 10%
                             window_seconds = cycle_time_minutes * 60 * 1.1  # Add 10%
                             start_time = self.full_segment_view.left_cursor_pos
                             end_time = start_time + window_seconds
+                            logger.debug(f"Setting fixed window: {start_time:.2f}s to {end_time:.2f}s ({window_seconds:.1f}s total)")
                             self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
                             self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
+                        else:
+                            logger.debug(f"Not showing gray zone: cycle_time_minutes={cycle_time_minutes}")
                         
                         # Reset dropdown to default after save
                         self.cycle_manager.reset_to_default()
@@ -2201,11 +2207,12 @@ class DataWindow(QWidget):
 
     def start_recording(self: Self, rec_dir: str) -> None:
         """Start recording."""
-        self.full_segment_view.reset_time()
+        # Fully reset the sensorgram display and timing
+        self.full_segment_view.reset_sensorgram()
         self.live_segment_start = None
-        # Move cursors to starting position (0) before creating new segment
-        self.full_segment_view.set_left(0, emit=False)
-        self.full_segment_view.set_right(2, emit=False)
+        # Set cursors to starting position (time 0)
+        self.full_segment_view.set_left(0, emit=False, update=False)
+        self.full_segment_view.set_right(2, emit=False, update=False)
         self.new_segment()
         self.save_data(rec_dir)
 
