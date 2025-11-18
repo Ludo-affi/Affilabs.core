@@ -35,14 +35,16 @@ from ui.ui_processing import Ui_Processing
 from ui.ui_sensorgram import Ui_Sensorgram
 from utils.logger import logger
 from widgets.channelmenu import ChannelMenu
+from widgets.cycle_manager import CycleManager
 from widgets.graphs import SegmentGraph, SensorgramGraph
 from widgets.message import show_message
 from widgets.metadata import Metadata, MetadataPrompt
+from widgets.ui_constants import COLUMNS_TO_TOGGLE, CYCLE_TYPES
 
 TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 # Tab 1 (default): Shows ID, Start, Cycle Type, Note (columns 0, 1, 8, 9)
 # Tab 2: Shows ID, Start, Shift A-D (columns 0, 1, 3, 4, 5, 6)
-COLUMNS_TO_TOGGLE = frozenset([2, 3, 4, 5, 6, 7])
+# COLUMNS_TO_TOGGLE and CYCLE_TYPES now imported from widgets.ui_constants
 
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
 OFF_BRUSH = QBrush(Qt.GlobalColor.transparent)
@@ -53,9 +55,6 @@ LOOP_PEN = QPen(LOOP_BRUSH, 6)
 SENSOR_PEN = QPen(SENSOR_BRUSH, 6)
 
 PROGRESS_BAR_UPDATE_TIME = 100
-
-# Cycle types available for selection
-CYCLE_TYPES = ["Auto-read", "Baseline", "Flow", "Static"]
 
 
 class CycleTypeDelegate(QStyledItemDelegate):
@@ -415,11 +414,12 @@ class DataWindow(QWidget):
         self.ui.left_cursor_time.returnPressed.connect(self.update_left)
         self.ui.right_cursor_time.returnPressed.connect(self.update_right)
         
-        # cycle type dropdown signal
-        self.ui.current_cycle_type.currentTextChanged.connect(self.on_cycle_type_changed)
-        
-        # cycle time dropdown signal
-        self.ui.current_cycle_time.currentTextChanged.connect(self.on_cycle_time_changed)
+        # Initialize cycle manager (handles cycle type/time logic)
+        self.cycle_manager = CycleManager(
+            cycle_type_dropdown=self.ui.current_cycle_type,
+            cycle_time_dropdown=self.ui.current_cycle_time,
+            sensorgram_graph=self.full_segment_view
+        )
 
         logger.debug(f"current row is {self.ui.data_table.currentRow()}")
 
@@ -732,13 +732,8 @@ class DataWindow(QWidget):
                     self.SOI_view.update_display(self.current_segment)
                     
                     # Update cycle time shaded region if applicable
-                    cycle_type = self.ui.current_cycle_type.currentText()
-                    if cycle_type in ["Baseline", "Flow", "Static"]:
-                        if cycle_type == "Baseline":
-                            cycle_time = 5
-                        else:
-                            time_text = self.ui.current_cycle_time.currentText()
-                            cycle_time = int(time_text.split()[0])
+                    cycle_time = self.cycle_manager.get_current_time_minutes()
+                    if cycle_time is not None:
                         self.full_segment_view.update_cycle_time_region(cycle_time)
                 else:
                     logger.debug(f"{self.current_segment.error}")
@@ -950,26 +945,16 @@ class DataWindow(QWidget):
                     row = self.deleted_segment.seg_id
 
                 else:
-                    # Set cycle type from dropdown
-                    self.current_segment.cycle_type = self.ui.current_cycle_type.currentText()
-                    
-                    # Set cycle time based on cycle type
-                    cycle_type = self.ui.current_cycle_type.currentText()
-                    if cycle_type == "Auto-read":
-                        self.current_segment.cycle_time = None
-                    elif cycle_type == "Baseline":
-                        self.current_segment.cycle_time = 5
-                    elif cycle_type in ["Flow", "Static"]:
-                        # Parse cycle time from dropdown (e.g., "5 min" -> 5)
-                        time_text = self.ui.current_cycle_time.currentText()
-                        self.current_segment.cycle_time = int(time_text.split()[0])
+                    # Set cycle type and time from cycle manager
+                    self.current_segment.cycle_type = self.cycle_manager.get_current_type()
+                    self.current_segment.cycle_time = self.cycle_manager.get_current_time_minutes()
                     
                     seg = self.current_segment
                     row = len(self.saved_segments)
                     self.seg_count += 1
                     if self.data_source == "dynamic":
                         # Reset dropdown to default after save
-                        self.ui.current_cycle_type.setCurrentText("Auto-read")
+                        self.cycle_manager.reset_to_default()
 
                 if (seg is not None) and (row is not None):
                     # Block signals to prevent cascading updates
@@ -1221,36 +1206,6 @@ class DataWindow(QWidget):
         self.ui.left_cursor_time.setEnabled(state)
         self.ui.right_cursor_time.setEnabled(state)
     
-    def on_cycle_type_changed(self: Self, cycle_type: str) -> None:
-        """Handle cycle type dropdown changes."""
-        if cycle_type == "Auto-read":
-            # Auto-read: disable cycle time dropdown and hide shaded region
-            self.ui.current_cycle_time.setEnabled(False)
-            self.ui.current_cycle_time.setCurrentText("5 min")
-            self.full_segment_view.hide_cycle_time_region()
-        elif cycle_type == "Baseline":
-            # Baseline: set to 5 min and disable, show shaded region
-            self.ui.current_cycle_time.setCurrentText("5 min")
-            self.ui.current_cycle_time.setEnabled(False)
-            if self.current_segment is not None:
-                self.full_segment_view.show_cycle_time_region(5)
-        elif cycle_type in ["Flow", "Static"]:
-            # Flow/Static: enable user selection and show shaded region
-            self.ui.current_cycle_time.setEnabled(True)
-            if self.current_segment is not None:
-                # Get current cycle time from dropdown
-                time_text = self.ui.current_cycle_time.currentText()
-                cycle_time_minutes = int(time_text.split()[0])
-                self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
-    
-    def on_cycle_time_changed(self: Self, time_text: str) -> None:
-        """Handle cycle time dropdown changes."""
-        cycle_type = self.ui.current_cycle_type.currentText()
-        if cycle_type in ["Flow", "Static"] and self.current_segment is not None:
-            # Update shaded region when time changes
-            cycle_time_minutes = int(time_text.split()[0])
-            self.full_segment_view.show_cycle_time_region(cycle_time_minutes)
-
     def reload_segments(self: Self, time_shift: float | None = None) -> None:
         """Reload segments."""
         logger.debug("reloading segments")
@@ -1344,20 +1299,14 @@ class DataWindow(QWidget):
             # Hide cycle time shaded region in view mode
             self.full_segment_view.hide_cycle_time_region()
 
-            # Show cycle type in dropdown
+            # Show cycle type and time in dropdowns using cycle_manager
             try:
                 cycle_type_text = self.current_segment.cycle_type if self.current_segment.cycle_type else "Auto-read"
-                self.ui.current_cycle_type.setCurrentText(cycle_type_text)
-                
-                # Show cycle time in dropdown if available
-                if self.current_segment.cycle_time is not None:
-                    time_text = f"{self.current_segment.cycle_time} min"
-                    self.ui.current_cycle_time.setCurrentText(time_text)
-                else:
-                    self.ui.current_cycle_time.setCurrentText("5 min")
+                cycle_time = self.current_segment.cycle_time
+                self.cycle_manager.set_cycle_info(cycle_type_text, cycle_time)
             except Exception as e:
-                logger.warning(f"Could not set cycle type: {e}")
-                self.ui.current_cycle_type.setCurrentText("Auto-read")
+                logger.warning(f"Could not set cycle info: {e}")
+                self.cycle_manager.reset_to_default()
 
     def enter_edit_mode(self: Self) -> None:
         """Enter edit mode."""
