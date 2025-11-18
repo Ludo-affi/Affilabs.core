@@ -477,9 +477,8 @@ class AffiniteApp(QMainWindow):
         self.main_window.spectroscopy.single_led_sig.connect(self.single_led)
         self.main_window.spectroscopy.polarizer_sig.connect(self.set_polarizer)
 
-        # === Advanced Menu (Development Mode) ===
-        if DEV:
-            self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
+        # === Advanced Menu ===
+        self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
 
         # === Pipeline Selector Signal ===
         if hasattr(self.main_window.sidebar, 'pipeline_widget') and self.main_window.sidebar.pipeline_widget:

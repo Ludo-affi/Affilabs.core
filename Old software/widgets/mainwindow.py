@@ -147,13 +147,12 @@ class MainWindow(QWidget):
 
     def on_device_config(self, config):
         self.device_config = config
-        if DEV:
-            if config['ctrl'] == 'QSPR':
-                self.advanced_menu = QSPRAdvMenu(parent=self)
-            elif config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR']:
-                self.advanced_menu = P4SPRAdvMenu(parent=self)
-                self.settings = Settings(self.sensorgram.reference_channel_dlg, self.advanced_menu, self)
-            self.connect_adv_sig.emit()
+        if config['ctrl'] == 'QSPR':
+            self.advanced_menu = QSPRAdvMenu(parent=self)
+        elif config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR']:
+            self.advanced_menu = P4SPRAdvMenu(parent=self)
+            self.settings = Settings(self.sensorgram.reference_channel_dlg, self.advanced_menu, self)
+        self.connect_adv_sig.emit()
 
     def main_display_resized(self):
         self.sensorgram.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
@@ -331,7 +330,7 @@ class MainWindow(QWidget):
         self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
 
     def show_adv_settings(self):
-        if DEV:
+        if self.advanced_menu and hasattr(self, 'settings'):
             self.advanced_menu.refresh_values()
             self.settings.show()
             self.settings.activateWindow()
@@ -342,7 +341,7 @@ class MainWindow(QWidget):
             self.ui.status.repaint()
             self.sensorgram.reference_channel_dlg.close()
             self.data_processing.reference_channel_dlg.close()
-            if DEV and (self.device_config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'QSPR', 'EZSPR', 'PicoEZSPR']):
+            if self.advanced_menu and (self.device_config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'QSPR', 'EZSPR', 'PicoEZSPR']):
                 self.advanced_menu.close()
             self.app.close()
             super().closeEvent(event)
