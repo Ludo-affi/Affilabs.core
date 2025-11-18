@@ -101,6 +101,57 @@ class CycleTypeDelegate(QStyledItemDelegate):
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 
+class TextInputDelegate(QStyledItemDelegate):
+    """Delegate for text input with character limits and validation."""
+    
+    # Character limits for different column types
+    NAME_LIMIT = 50
+    NOTE_LIMIT = 500
+    
+    def createEditor(self, parent, option, index):
+        """Create a line edit with character limit."""
+        from PySide6.QtWidgets import QLineEdit
+        
+        editor = QLineEdit(parent)
+        
+        # Set character limit based on column
+        column = index.column()
+        if column == 0:  # Name column
+            editor.setMaxLength(self.NAME_LIMIT)
+            editor.setPlaceholderText(f"Max {self.NAME_LIMIT} characters")
+        elif column == 9:  # Note column
+            editor.setMaxLength(self.NOTE_LIMIT)
+            editor.setPlaceholderText(f"Max {self.NOTE_LIMIT} characters")
+        else:
+            editor.setMaxLength(100)  # Default limit for other text columns
+        
+        return editor
+    
+    def setEditorData(self, editor, index):
+        """Set current value in editor with safety checks."""
+        try:
+            current_text = index.data()
+            if current_text is not None:
+                editor.setText(str(current_text))
+            else:
+                editor.setText("")
+        except Exception as e:
+            logger.warning(f"Error setting editor data: {e}")
+            editor.setText("")
+    
+    def setModelData(self, editor, model, index):
+        """Save value back to model with validation."""
+        try:
+            text = editor.text().strip()
+            # Additional validation: remove any problematic characters
+            text = text.replace('\x00', '')  # Remove null bytes
+            text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')  # Keep printable chars
+            model.setData(index, text, Qt.ItemDataRole.EditRole)
+        except Exception as e:
+            logger.error(f"Error saving table cell data: {e}")
+            # Don't crash - just log the error
+
+
 class DataDict(TypedDict, total=False):
     """Dictionary for holding data."""
 
@@ -253,11 +304,36 @@ class Segment:
             logger.exception(f"Error adding data: {e}")
 
     def add_info(self: Self, info: dict[str, str]) -> None:
-        """Add info to segment."""
-        self.name = info["name"]
-        self.note = info["note"]
+        """Add info to segment with input validation and sanitization."""
+        # Sanitize name - limit to 50 characters, remove problematic characters
+        try:
+            name_text = str(info.get("name", "")).strip()
+            name_text = name_text.replace('\x00', '')  # Remove null bytes
+            name_text = ''.join(char for char in name_text if ord(char) >= 32 or char in '\n\r\t')
+            self.name = name_text[:50] if name_text else str(self.seg_id + 1)
+        except Exception as e:
+            logger.warning(f"Error sanitizing segment name: {e}")
+            self.name = str(self.seg_id + 1)
+        
+        # Sanitize note - limit to 500 characters, remove problematic characters
+        try:
+            note_text = str(info.get("note", "")).strip()
+            note_text = note_text.replace('\x00', '')  # Remove null bytes
+            note_text = ''.join(char for char in note_text if ord(char) >= 32 or char in '\n\r\t')
+            self.note = note_text[:500] if note_text else ""
+        except Exception as e:
+            logger.warning(f"Error sanitizing segment note: {e}")
+            self.note = ""
+        
+        # Handle cycle type
         if "cycle_type" in info:
-            self.cycle_type = info["cycle_type"]
+            try:
+                cycle_type_text = str(info["cycle_type"]).strip()
+                self.cycle_type = cycle_type_text if cycle_type_text else "Auto-read"
+            except Exception:
+                self.cycle_type = "Auto-read"
+        
+        # Handle cycle time
         if "cycle_time" in info and info["cycle_time"]:
             try:
                 self.cycle_time = int(info["cycle_time"])
@@ -399,6 +475,12 @@ class DataWindow(QWidget):
         # Set up cycle type dropdown for column 8
         cycle_type_delegate = CycleTypeDelegate(self.ui.data_table)
         self.ui.data_table.setItemDelegateForColumn(8, cycle_type_delegate)
+        
+        # Set up text input delegates with character limits for name and note columns
+        text_delegate_name = TextInputDelegate(self.ui.data_table)
+        text_delegate_note = TextInputDelegate(self.ui.data_table)
+        self.ui.data_table.setItemDelegateForColumn(0, text_delegate_name)  # Name column
+        self.ui.data_table.setItemDelegateForColumn(9, text_delegate_note)  # Note column
 
         # open the average channel and reference channel dialog
         if isinstance(self.ui, Ui_Processing):
@@ -959,44 +1041,28 @@ class DataWindow(QWidget):
                     self.ui.data_table.blockSignals(True)
                     self.ui.data_table.insertRow(row)
 
-                    self.ui.data_table.setItem(row, 0, QTableWidgetItem(f"{seg.name}"))
-                    self.ui.data_table.setItem(
-                        row,
-                        1,
-                        QTableWidgetItem(f"{seg.start:.2f}"),
-                    )
-                    self.ui.data_table.setItem(
-                        row,
-                        2,
-                        QTableWidgetItem(f"{seg.end:.2f}"),
-                    )
-                    self.ui.data_table.setItem(
-                        row,
-                        3,
-                        QTableWidgetItem(f"{seg.shift['a']:.3f}"),
-                    )
-                    self.ui.data_table.setItem(
-                        row,
-                        4,
-                        QTableWidgetItem(f"{seg.shift['b']:.3f}"),
-                    )
-                    self.ui.data_table.setItem(
-                        row,
-                        5,
-                        QTableWidgetItem(f"{seg.shift['c']:.3f}"),
-                    )
-                    self.ui.data_table.setItem(
-                        row,
-                        6,
-                        QTableWidgetItem(f"{seg.shift['d']:.3f}"),
-                    )
-                    self.ui.data_table.setItem(
-                        row,
-                        7,
-                        QTableWidgetItem(f"{seg.ref_ch}"),
-                    )
-                    self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.cycle_type}"))
-                    self.ui.data_table.setItem(row, 9, QTableWidgetItem(f"{seg.note}"))
+                    # Safely create table items with sanitized data
+                    try:
+                        name = str(seg.name)[:50] if seg.name else ""
+                        note = str(seg.note)[:500] if seg.note else ""
+                        cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
+                        
+                        self.ui.data_table.setItem(row, 0, QTableWidgetItem(name))
+                        self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
+                        self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
+                        self.ui.data_table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
+                        self.ui.data_table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
+                        self.ui.data_table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
+                        self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
+                        self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
+                        self.ui.data_table.setItem(row, 8, QTableWidgetItem(cycle_type))
+                        self.ui.data_table.setItem(row, 9, QTableWidgetItem(note))
+                    except Exception as e:
+                        logger.error(f"Error creating table items: {e}")
+                        # Create minimal safe row if there's an error
+                        for col in range(10):
+                            if self.ui.data_table.item(row, col) is None:
+                                self.ui.data_table.setItem(row, col, QTableWidgetItem(""))
 
                     # Re-enable signals after all items are set
                     self.ui.data_table.blockSignals(False)
@@ -1028,21 +1094,32 @@ class DataWindow(QWidget):
             self.restoring = False
 
     def reassert_row(self: Self, row: int) -> None:
-        """Reassert a row in the data cycle table."""
-        seg = self.saved_segments[row]
-        # Block signals to prevent cascading updates
-        self.ui.data_table.blockSignals(True)
-        self.ui.data_table.setItem(row, 0, QTableWidgetItem(f"{seg.name}"))
-        self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
-        self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
-        self.ui.data_table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
-        self.ui.data_table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
-        self.ui.data_table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
-        self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
-        self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
-        self.ui.data_table.setItem(row, 8, QTableWidgetItem(f"{seg.cycle_type}"))
-        self.ui.data_table.setItem(row, 9, QTableWidgetItem(f"{seg.note}"))
-        self.ui.data_table.blockSignals(False)
+        """Reassert a row in the data cycle table with error handling."""
+        try:
+            seg = self.saved_segments[row]
+            # Block signals to prevent cascading updates
+            self.ui.data_table.blockSignals(True)
+            
+            # Safely create table items with sanitized data
+            name = str(seg.name)[:50] if seg.name else ""
+            note = str(seg.note)[:500] if seg.note else ""
+            cycle_type = str(seg.cycle_type) if seg.cycle_type else "Auto-read"
+            
+            self.ui.data_table.setItem(row, 0, QTableWidgetItem(name))
+            self.ui.data_table.setItem(row, 1, QTableWidgetItem(f"{seg.start:.2f}"))
+            self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{seg.end:.2f}"))
+            self.ui.data_table.setItem(row, 3, QTableWidgetItem(f"{seg.shift['a']:.3f}"))
+            self.ui.data_table.setItem(row, 4, QTableWidgetItem(f"{seg.shift['b']:.3f}"))
+            self.ui.data_table.setItem(row, 5, QTableWidgetItem(f"{seg.shift['c']:.3f}"))
+            self.ui.data_table.setItem(row, 6, QTableWidgetItem(f"{seg.shift['d']:.3f}"))
+            self.ui.data_table.setItem(row, 7, QTableWidgetItem(f"{seg.ref_ch}"))
+            self.ui.data_table.setItem(row, 8, QTableWidgetItem(cycle_type))
+            self.ui.data_table.setItem(row, 9, QTableWidgetItem(note))
+            
+            self.ui.data_table.blockSignals(False)
+        except Exception as e:
+            logger.error(f"Error reasserting table row {row}: {e}")
+            self.ui.data_table.blockSignals(False)  # Ensure signals are re-enabled
 
     def delete_row(self: Self, *, first_available: bool = False) -> None:
         """Delete a row in the data cycle table."""
