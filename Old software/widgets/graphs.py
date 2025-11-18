@@ -251,6 +251,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
     def show_cycle_time_region(self, cycle_time_minutes):
         """Show a shaded region indicating the expected cycle duration."""
+        logger.debug(f"show_cycle_time_region called: cycle_time={cycle_time_minutes} min")
         if cycle_time_minutes is None or cycle_time_minutes <= 0:
             self.hide_cycle_time_region()
             return
@@ -261,6 +262,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Create shaded region from left cursor to left cursor + cycle_time
         start_time = self.left_cursor_pos
         end_time = start_time + (cycle_time_minutes * 60)  # Convert minutes to seconds
+        logger.debug(f"Creating gray zone: from {start_time:.2f}s to {end_time:.2f}s")
 
         # Create a filled region using pyqtgraph's FillBetweenItem
         from pyqtgraph import FillBetweenItem, PlotCurveItem
@@ -277,6 +279,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
             movable=False
         )
         self.plot.addItem(self.cycle_time_region)
+        logger.debug(f"Gray zone added to plot: region object = {self.cycle_time_region}")
 
     def hide_cycle_time_region(self):
         """Hide the cycle time shaded region."""

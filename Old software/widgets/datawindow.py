@@ -2229,9 +2229,10 @@ class DataWindow(QWidget):
         # Reset time reference (but keep existing data - it will have negative timestamps)
         self.full_segment_view.reset_time()
         self.live_segment_start = None
-        # Move yellow cursor (right) to position 1 to avoid timing gap on first point
-        # Keep existing data visible with negative times
-        self.full_segment_view.set_right(1, emit=False, update=False)
+        # Move yellow cursor (right) slightly ahead to avoid timing gap on first point
+        # Use 0.5 seconds to account for data collection timing
+        self.full_segment_view.set_right(0.5, emit=False, update=False)
+        logger.debug("Recording started: yellow cursor set to 0.5s")
         self.new_segment()
         self.save_data(rec_dir)
 
