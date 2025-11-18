@@ -1063,16 +1063,26 @@ class DataWindow(QWidget):
                             end_time = start_time + window_seconds
                             logger.debug(f"Setting fixed window: X=[{start_time:.2f}s, {end_time:.2f}s] ({window_seconds:.1f}s total)")
 
-                            # Set X range with no padding
+                            # Set X range with no padding on both graphs
                             self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
                             self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
+                            
+                            # Also fix the Cycle of Interest (SOI) graph window
+                            self.SOI_view.plot.setXRange(start_time, end_time, padding=0)
+                            self.SOI_view.plot.enableAutoRange(axis='x', enable=False)
+                            logger.debug("Fixed window applied to both sensorgram and Cycle of Interest graphs")
 
                             # Set Y range with padding: +10 on top, -5 on bottom
                             y_min, y_max = self.full_segment_view.plot.viewRange()[1]
                             logger.debug(f"Current Y range: [{y_min:.2f}, {y_max:.2f}]")
                             self.full_segment_view.plot.setYRange(y_min - 5, y_max + 10, padding=0)
                             self.full_segment_view.plot.enableAutoRange(axis='y', enable=False)
-                            logger.debug(f"Fixed Y range: [{y_min-5:.2f}, {y_max+10:.2f}]")
+                            
+                            # Apply Y padding to SOI graph as well
+                            soi_y_min, soi_y_max = self.SOI_view.plot.viewRange()[1]
+                            self.SOI_view.plot.setYRange(soi_y_min - 5, soi_y_max + 10, padding=0)
+                            self.SOI_view.plot.enableAutoRange(axis='y', enable=False)
+                            logger.debug(f"Fixed Y range: sensorgram=[{y_min-5:.2f}, {y_max+10:.2f}], SOI=[{soi_y_min-5:.2f}, {soi_y_max+10:.2f}]")
                         else:
                             logger.debug(f"Not showing gray zone: cycle_time_minutes={cycle_time_minutes}")
 

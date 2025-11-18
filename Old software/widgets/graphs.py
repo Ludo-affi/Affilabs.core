@@ -266,12 +266,6 @@ class SensorgramGraph(GraphicsLayoutWidget):
         end_time = start_time + (cycle_time_minutes * 60)  # Convert minutes to seconds
         logger.debug(f"Creating gray zone: from {start_time:.2f}s to {end_time:.2f}s")
 
-        # Create a filled region using pyqtgraph's FillBetweenItem
-        from pyqtgraph import FillBetweenItem, PlotCurveItem
-
-        # Create two curves to define the region boundaries
-        y_min, y_max = self.plot.viewRange()[1]  # Get current y-axis range
-
         # Use LinearRegionItem for a vertical shaded region
         from pyqtgraph import LinearRegionItem
         self.cycle_time_region = LinearRegionItem(
@@ -280,8 +274,18 @@ class SensorgramGraph(GraphicsLayoutWidget):
             brush=(100, 100, 255, 50),  # Light blue with transparency
             movable=False
         )
+        
+        # Set z-order to ensure it's visible but behind data plots
+        self.cycle_time_region.setZValue(-10)
+        
+        # Add to plot
         self.plot.addItem(self.cycle_time_region)
         logger.debug(f"Gray zone added to plot: region object = {self.cycle_time_region}")
+        
+        # Force update/redraw
+        self.cycle_time_region.update()
+        self.plot.update()
+        logger.debug("Plot update called to render gray zone")
 
     def hide_cycle_time_region(self):
         """Hide the cycle time shaded region."""
