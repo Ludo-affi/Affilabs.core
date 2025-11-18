@@ -112,9 +112,9 @@ class ChannelMenu(QWidget):
                 # If empty, reset to default
                 self.ui.filt_win.setText("3")
                 return
-            
+
             filt_win = int(filt_win_text)
-            
+
             # Clamp to valid range
             if filt_win < 3:
                 filt_win = 3
@@ -122,7 +122,7 @@ class ChannelMenu(QWidget):
             elif filt_win > 51:
                 filt_win = 51
                 self.ui.filt_win.setText("51")
-            
+
             # Emit signal with validated value
             if self.datawindow_type == "dynamic":
                 self.live_filt_sig.emit(

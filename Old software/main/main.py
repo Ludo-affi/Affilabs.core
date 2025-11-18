@@ -355,7 +355,7 @@ class AffiniteApp(QMainWindow):
         self._connect_all_signals()
 
         self.kinetic_tasks = set()
-        
+
         # Register cleanup handler for graceful shutdown
         atexit.register(self._emergency_cleanup)
 
@@ -879,7 +879,7 @@ class AffiniteApp(QMainWindow):
             self.update_live_signal.emit(self.sensorgram_data())
             # Process events to ensure data update is applied before segment reload
             QCoreApplication.processEvents()
-        
+
         # Now reload segments with the updated data
         self.main_window.sensorgram.reload_segments(time_diff)
 
@@ -990,34 +990,34 @@ class AffiniteApp(QMainWindow):
                             if cache_file.exists():
                                 with open(cache_file, 'r') as f:
                                     cache = json.load(f)
-                                
+
                                 # Load cached values
                                 self.integration = cache.get("integration_time", 15)
                                 self.num_scans = cache.get("num_scans", 5)
                                 self.hw_state.ref_intensity = cache.get("ref_intensity", 255)
                                 self.hw_state.leds_calibrated = cache.get("leds_calibrated", {ch: 180 for ch in CH_LIST})
-                                
+
                                 # Still need wavelength data and fourier weights from hardware
                                 if self.device_config["ctrl"] in DEVICES:
                                     wave_data = self.usb.read_wavelength()
                                     self.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
                                     self.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
                                     self.wave_data = wave_data[self.wave_min_index:self.wave_max_index]
-                                    
+
                                     # Get dark noise
                                     self.dark_noise = self.usb.read_spectrum()
-                                    
+
                                     # Read reference spectrum
                                     self.ctrl.ref_on()
                                     time.sleep(0.1)
                                     self.usb.set_integration(self.integration)
                                     self.ref_sig = self.usb.read_spectrum()
                                     self.ctrl.ref_off()
-                                    
+
                                     # Compute Fourier weights
                                     from utils.spr_signal_processing import compute_fourier_weights
                                     self.fourier_weights = compute_fourier_weights(self.wave_data)
-                                    
+
                                     cached_loaded = True
                                     self.calibration_status.emit(True, "")
                                     logger.info("✅ DEV MODE: Loaded cached calibration parameters")
@@ -1026,7 +1026,7 @@ class AffiniteApp(QMainWindow):
                         except Exception as e:
                             logger.warning(f"Failed to load dev calibration cache: {e}")
                             cached_loaded = False
-                    
+
                     if not cached_loaded:
                         logger.debug("Calibration started")
                         self.calibration_started.emit()
@@ -1319,7 +1319,7 @@ class AffiniteApp(QMainWindow):
             self._b_no_read.clear()
         if self._b_stop.is_set():
             self._b_stop.clear()
-    
+
     def handle_pause(self: Self, paused: bool) -> None:
         """Handle pause/resume button from UI."""
         if paused:
@@ -1704,10 +1704,10 @@ class AffiniteApp(QMainWindow):
 
         # Acquire spectrum data
         int_data, trans_data = self._acquire_spectrum(channel)
-        
+
         # Capture timestamp immediately after hardware acquisition (before processing)
         acquisition_timestamp = self.channel_mgr.get_current_time()
-        
+
         if trans_data is None:
             return np.nan, acquisition_timestamp
 
@@ -1718,7 +1718,7 @@ class AffiniteApp(QMainWindow):
         # Process transmission spectrum to find resonance wavelength
         # (Processing happens AFTER timestamp, so overhead doesn't affect timing)
         wavelength = self._find_resonance_wavelength(channel, trans_data)
-        
+
         return wavelength, acquisition_timestamp
 
     def _should_acquire_channel(
@@ -1911,7 +1911,7 @@ class AffiniteApp(QMainWindow):
                 n = self.channel_mgr._current_length[ch]  # Actual data length for THIS CHANNEL
                 if n == 0:
                     continue
-                
+
                 # Work with slices of the valid data
                 lambda_values = self.channel_mgr.lambda_values[ch][:n]
                 lambda_times = self.channel_mgr.lambda_times[ch][:n]
@@ -1921,18 +1921,18 @@ class AffiniteApp(QMainWindow):
                     # VECTORIZED median filter - much faster than loop
                     half_win = self.med_filt_win // 2
                     new_filtered = np.empty(len(lambda_values))
-                    
+
                     for i in range(len(lambda_values)):
                         start_idx = max(0, i - half_win)
                         end_idx = min(len(lambda_values), i + half_win + 1)
                         new_filtered[i] = np.nanmedian(lambda_values[start_idx:end_idx])
-                    
+
                     # Find offset to match buffered times
                     offset = 0
                     max_offset = min(len(lambda_times), len(buffered_times))
                     while offset < max_offset and lambda_times[offset] != buffered_times[0]:
                         offset += 1
-                    
+
                     # Only update if we found a valid offset
                     if offset < max_offset:
                         # Write directly to the preallocated buffer
@@ -1958,7 +1958,7 @@ class AffiniteApp(QMainWindow):
         """Return sensorgram data (only valid data points, not preallocated space)."""
         # Get maximum data length across all channels
         max_n = max(self.channel_mgr._current_length.values()) if self.channel_mgr._current_length else 0
-        
+
         sens_data = {
             # Only copy valid data per channel, not entire preallocated buffers
             "lambda_values": {ch: self.channel_mgr.lambda_values[ch][:self.channel_mgr._current_length[ch]].copy() for ch in CH_LIST},
@@ -2997,10 +2997,10 @@ class AffiniteApp(QMainWindow):
             elif filt_win > 51:
                 logger.warning(f"Filter window too large ({filt_win}), using maximum of 51")
                 filt_win = 51
-            
+
             with self._filter_lock:
                 self.med_filt_win = self.median_window(filt_win)
-        
+
         if self.main_window.active_page == "data_processing":
             self.main_window.data_processing.set_filter(
                 filt_en=filt_en,
@@ -3011,7 +3011,7 @@ class AffiniteApp(QMainWindow):
         """Set live view filter."""
         filter_state_changed = (filt_en != self.filt_on)
         self.filt_on = filt_en
-        
+
         window_changed = False
         if filt_win != self.med_filt_win:
             # Validate filter window size
@@ -3021,10 +3021,10 @@ class AffiniteApp(QMainWindow):
             elif filt_win > 51:
                 logger.warning(f"Filter window too large ({filt_win}), using maximum of 51")
                 filt_win = 51
-            
+
             with self._filter_lock:
                 self.med_filt_win = self.median_window(filt_win)
-                
+
                 # Recreate TemporalFilter with new window size
                 if self.temporal_filter is not None:
                     self.temporal_filter = TemporalFilter(
@@ -3032,26 +3032,26 @@ class AffiniteApp(QMainWindow):
                         window_size=self.med_filt_win,
                     )
                     logger.debug(f"TemporalFilter updated (window={self.med_filt_win})")
-                
+
                 window_changed = True
-        
+
         # Retroactively apply filter to all existing data when filter settings change
         if filter_state_changed or window_changed:
             logger.debug(f"Filter settings changed - retroactively filtering data (enabled={filt_en}, window={self.med_filt_win})")
             self.update_filtered_lambda()
-            
+
             # Force display update
             if self.main_window.active_page == "sensorgram":
                 # Get fresh data with updated filter
                 fresh_data = self.sensorgram_data()
-                
+
                 # Update the main sensorgram display
                 self.update_live_signal.emit(fresh_data)
-                
+
                 # Process Qt events to ensure the signal is handled before we update segment
                 from PySide6.QtCore import QCoreApplication
                 QCoreApplication.processEvents()
-                
+
                 # Now update the segment (cycle of interest) display with fresh filtered data
                 self.main_window.sensorgram.quick_segment_update()
         elif self.main_window.active_page == "sensorgram":
@@ -3747,29 +3747,29 @@ class AffiniteApp(QMainWindow):
             self.main_window.ui.status.repaint()
         except:
             pass
-        
+
         try:
             if self.recording:
                 self.recording_on()
         except Exception as e:
             logger.error(f"Error stopping recording: {e}")
-        
+
         try:
             self.main_window.sidebar.device_widget.allow_commands(False)  # noqa: FBT003
         except:
             pass
-        
+
         if self._con_tr.is_alive():
             self._con_tr.join(0.1)
-        
+
         try:
             self.stop(knx=knx)
         except Exception as e:
             logger.error(f"Error in stop(): {e}")
-        
+
         self.calibrated = False
         time.sleep(0.5)
-        
+
         # Close USB spectrometer first (independent of ctrl)
         if self.usb is not None:
             try:
@@ -3777,7 +3777,7 @@ class AffiniteApp(QMainWindow):
                 self.usb.close()
             except Exception as e:
                 logger.error(f"Error closing USB: {e}")
-        
+
         # Close controller
         if (self.ctrl is not None) and ctrl:
             self.calibrated = False
@@ -3786,28 +3786,28 @@ class AffiniteApp(QMainWindow):
                 self.ctrl.stop()
             except Exception as e:
                 logger.error(f"Error stopping ctrl: {e}")
-            
+
             try:
                 self.ctrl.close()
             except Exception as e:
                 logger.error(f"Error closing ctrl: {e}")
             finally:
                 self.ctrl = None
-        
+
         # Close kinetics controller
         if (self.knx is not None) and knx:
             try:
                 self.knx_reset_ui.emit()
             except:
                 pass
-            
+
             try:
                 self.knx.close()
             except Exception as e:
                 logger.error(f"Error closing knx: {e}")
             finally:
                 self.knx = None
-        
+
         # Close pump
         if self.pump and pump:
             try:
@@ -3817,10 +3817,10 @@ class AffiniteApp(QMainWindow):
                 logger.error(f"Error closing pump: {e}")
             finally:
                 self.pump = None
-        
+
         if not ((self.ctrl is None) and (self.knx is None)):
             logger.debug(f"No manual close for ctrl {self.ctrl} and knx {self.knx}")
-        
+
         try:
             self.get_current_device_config()
             self.main_window.sidebar.device_widget.setup(
@@ -3842,12 +3842,12 @@ class AffiniteApp(QMainWindow):
             self.disconnect_dev()
         except Exception as e:
             logger.error(f"Error during disconnect_dev in close(): {e}")
-        
+
         self._b_kill.set()
         self._c_kill.set()
         self._s_kill.set()
         time.sleep(0.5)
-        
+
         if self._c_tr.is_alive():
             self._c_tr.join(0.5)
             logger.debug("calibration thread joined")
@@ -3860,21 +3860,21 @@ class AffiniteApp(QMainWindow):
         if self._s_tr.is_alive():
             self._s_tr.join(0.5)
             logger.debug("sensor reading thread joined")
-        
+
         try:
             self.rec_timer.stop()
         except Exception as e:
             logger.error(f"Error stopping rec_timer: {e}")
-        
+
         return super().close()
-    
+
     def _emergency_cleanup(self: Self) -> None:
         """Emergency cleanup for unexpected exits (called by atexit)."""
         if hasattr(self, 'closing') and self.closing:
             return  # Normal close already happened
-        
+
         logger.warning("Emergency cleanup triggered - forcing resource release")
-        
+
         # Force close all hardware connections without waiting
         try:
             if hasattr(self, 'ctrl') and self.ctrl is not None:
@@ -3884,7 +3884,7 @@ class AffiniteApp(QMainWindow):
                     logger.error(f"Emergency cleanup - ctrl.close() failed: {e}")
         except:
             pass
-        
+
         try:
             if hasattr(self, 'usb') and self.usb is not None:
                 try:
@@ -3893,7 +3893,7 @@ class AffiniteApp(QMainWindow):
                     logger.error(f"Emergency cleanup - usb.close() failed: {e}")
         except:
             pass
-        
+
         try:
             if hasattr(self, 'knx') and self.knx is not None:
                 try:
@@ -3902,9 +3902,9 @@ class AffiniteApp(QMainWindow):
                     logger.error(f"Emergency cleanup - knx.close() failed: {e}")
         except:
             pass
-        
+
         logger.info("Emergency cleanup completed")
-    
+
     def __del__(self: Self) -> None:
         """Destructor to ensure resources are cleaned up."""
         try:

@@ -8,7 +8,7 @@
   - Hover: Lighter border (#707070) with slight background highlight
   - Clear visual indication when checked
 
-- **QRadioButton**: Updated to modern 12×12px circular indicator with 1px border  
+- **QRadioButton**: Updated to modern 12×12px circular indicator with 1px border
   - Checked state: Blue (#4A90E2) inner dot (6×6px)
   - Hover: Lighter border with background highlight
   - Consistent with checkbox styling
@@ -54,7 +54,7 @@ These methods clear any remaining inline styles and ensure the global theme appl
 
 ## Testing Checklist
 - ✅ Sensorgram page checkboxes (segment_A/B/C/D)
-- ✅ Spectroscopy page checkboxes (segment_A/B/C/D)  
+- ✅ Spectroscopy page checkboxes (segment_A/B/C/D)
 - ✅ Data Processing page checkboxes (segment & SOI checkboxes)
 - ✅ Analysis page checkboxes (segment_A/B/C/D)
 - ✅ Settings page radio buttons (filter enable/disable, reference channel selection, unit selection)

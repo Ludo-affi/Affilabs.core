@@ -37,7 +37,7 @@ class MainWindow(QWidget):
         # set up recording
         self.recording = False
         self.ui.rec_btn.clicked.connect(self.record_trigger)
-        
+
         # Add pause button next to recording button (hidden for now)
         self.paused = False
         self.pause_btn = QPushButton(self.ui.tool_bar)
@@ -247,7 +247,7 @@ class MainWindow(QWidget):
 
     def record_trigger(self):
         self.record_sig.emit()
-    
+
     def toggle_pause(self):
         """Toggle pause/resume of live acquisition."""
         self.paused = self.pause_btn.isChecked()

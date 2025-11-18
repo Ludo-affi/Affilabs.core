@@ -501,13 +501,13 @@ class Ui_Processing(object):
         self.groupBox_4 = QGroupBox(self.curr_seg_box)
         self.groupBox_4.setObjectName(u"groupBox_4")
         self.groupBox_4.setGeometry(QRect(279, 0, 221, 151))
-        
+
         # Cycle Type Dropdown
         self.label_cycle_type = QLabel(self.groupBox_4)
         self.label_cycle_type.setObjectName(u"label_cycle_type")
         self.label_cycle_type.setGeometry(QRect(10, 80, 90, 21))
         self.label_cycle_type.setText("Cycle Type:")
-        
+
         self.current_cycle_type = QComboBox(self.groupBox_4)
         self.current_cycle_type.setObjectName(u"current_cycle_type")
         self.current_cycle_type.setGeometry(QRect(10, 100, 95, 25))
@@ -532,13 +532,13 @@ class Ui_Processing(object):
                 selection-color: white;
             }
         """)
-        
+
         # Cycle Time Dropdown
         self.label_cycle_time = QLabel(self.groupBox_4)
         self.label_cycle_time.setObjectName(u"label_cycle_time")
         self.label_cycle_time.setGeometry(QRect(115, 80, 90, 21))
         self.label_cycle_time.setText("Cycle Time:")
-        
+
         self.current_cycle_time = QComboBox(self.groupBox_4)
         self.current_cycle_time.setObjectName(u"current_cycle_time")
         self.current_cycle_time.setGeometry(QRect(115, 100, 95, 25))
@@ -564,7 +564,7 @@ class Ui_Processing(object):
             }
         """)
         self.current_cycle_time.setEnabled(False)  # Initially disabled
-        
+
         self.end_time = QLabel(self.groupBox_4)
         self.end_time.setObjectName(u"end_time")
         self.end_time.setGeometry(QRect(100, 55, 91, 21))

@@ -476,7 +476,7 @@ class Ui_Sensorgram(object):
         self.groupBox_4.setObjectName(u"groupBox_4")
         self.horizontalLayout_cycle_controls = QHBoxLayout(self.groupBox_4)
         self.horizontalLayout_cycle_controls.setObjectName(u"horizontalLayout_cycle_controls")
-        
+
         # Cycle Type Dropdown
         self.verticalLayout_cycle_type = QVBoxLayout()
         self.verticalLayout_cycle_type.setObjectName(u"verticalLayout_cycle_type")
@@ -484,7 +484,7 @@ class Ui_Sensorgram(object):
         self.label_cycle_type.setObjectName(u"label_cycle_type")
         self.label_cycle_type.setText("Cycle Type")
         self.verticalLayout_cycle_type.addWidget(self.label_cycle_type)
-        
+
         self.current_cycle_type = QComboBox(self.groupBox_4)
         self.current_cycle_type.setObjectName(u"current_cycle_type")
         self.current_cycle_type.addItems(["Auto-read", "Baseline", "Flow", "Static"])
@@ -510,7 +510,7 @@ class Ui_Sensorgram(object):
         """)
         self.verticalLayout_cycle_type.addWidget(self.current_cycle_type)
         self.horizontalLayout_cycle_controls.addLayout(self.verticalLayout_cycle_type)
-        
+
         # Cycle Time Dropdown
         self.verticalLayout_cycle_time = QVBoxLayout()
         self.verticalLayout_cycle_time.setObjectName(u"verticalLayout_cycle_time")
@@ -518,7 +518,7 @@ class Ui_Sensorgram(object):
         self.label_cycle_time.setObjectName(u"label_cycle_time")
         self.label_cycle_time.setText("Cycle Time")
         self.verticalLayout_cycle_time.addWidget(self.label_cycle_time)
-        
+
         self.current_cycle_time = QComboBox(self.groupBox_4)
         self.current_cycle_time.setObjectName(u"current_cycle_time")
         self.current_cycle_time.addItems(["5 min", "15 min", "30 min", "60 min"])

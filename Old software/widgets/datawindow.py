@@ -39,6 +39,7 @@ from widgets.cycle_manager import CycleManager
 from widgets.graphs import SegmentGraph, SensorgramGraph
 from widgets.message import show_message
 from widgets.metadata import Metadata, MetadataPrompt
+from widgets.table_manager import CycleTableManager
 from widgets.ui_constants import COLUMNS_TO_TOGGLE, CYCLE_TYPES
 
 TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
@@ -59,7 +60,7 @@ PROGRESS_BAR_UPDATE_TIME = 100
 
 class CycleTypeDelegate(QStyledItemDelegate):
     """Delegate to provide a dropdown for cycle type selection."""
-    
+
     def createEditor(self, parent, option, index):
         """Create a QComboBox editor."""
         combo = QComboBox(parent)
@@ -86,7 +87,7 @@ class CycleTypeDelegate(QStyledItemDelegate):
             }
         """)
         return combo
-    
+
     def setEditorData(self, editor, index):
         """Set the current value in the combo box."""
         current_text = index.data()
@@ -94,7 +95,7 @@ class CycleTypeDelegate(QStyledItemDelegate):
             editor.setCurrentText(current_text)
         else:
             editor.setCurrentIndex(0)
-    
+
     def setModelData(self, editor, model, index):
         """Save the selected value back to the model."""
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
@@ -201,14 +202,14 @@ class Segment:
                             ]
                         else:
                             self.error = "segment length = 0"
-                
+
                 # Find the earliest timestamp across all channels for proper normalization
                 min_time = None
                 for ch in CH_LIST:
                     if len(self.seg_x[ch]) > 0:
                         if min_time is None or self.seg_x[ch][0] < min_time:
                             min_time = self.seg_x[ch][0]
-                
+
                 # Now normalize all channels relative to the earliest timestamp
                 for ch in CH_LIST:
                     if (len(self.seg_x[ch]) > 0) and (len(self.seg_y[ch]) > 0):
@@ -227,7 +228,7 @@ class Segment:
                         self.error = None
                     else:
                         self.error = "seg x and y data empty"
-                        
+
                 if self.ref_ch is not None:
                     try:
                         for ch in CH_LIST:
@@ -394,7 +395,7 @@ class DataWindow(QWidget):
         # data table add/remove row
         self.ui.delete_row_btn.clicked.connect(self.delete_row)
         self.ui.add_row_btn.clicked.connect(self.restore_deleted)
-        
+
         # Set up cycle type dropdown for column 8
         cycle_type_delegate = CycleTypeDelegate(self.ui.data_table)
         self.ui.data_table.setItemDelegateForColumn(8, cycle_type_delegate)
@@ -413,7 +414,16 @@ class DataWindow(QWidget):
         # text fields
         self.ui.left_cursor_time.returnPressed.connect(self.update_left)
         self.ui.right_cursor_time.returnPressed.connect(self.update_right)
-        
+
+        # Set up page indicator circles for table toggle BEFORE initializing table_manager
+        self.ui.page_indicator.setScene(QGraphicsScene())
+        self.circles = (
+            QGraphicsEllipseItem(-4, 0, 5, 5),
+            QGraphicsEllipseItem(4, 0, 5, 5),
+        )
+        for c in self.circles:
+            self.ui.page_indicator.scene().addItem(c)
+
         # Initialize cycle manager (handles cycle type/time logic)
         self.cycle_manager = CycleManager(
             cycle_type_dropdown=self.ui.current_cycle_type,
@@ -421,9 +431,13 @@ class DataWindow(QWidget):
             sensorgram_graph=self.full_segment_view
         )
 
-        logger.debug(f"current row is {self.ui.data_table.currentRow()}")
+        # Initialize table manager (handles table operations)
+        self.table_manager = CycleTableManager(
+            table_widget=self.ui.data_table,
+            toggle_indicators=self.circles
+        )
 
-        # add ready flag
+        logger.debug(f"current row is {self.ui.data_table.currentRow()}")        # add ready flag
         self.enable_controls(data_ready=False)
 
         # live view and reset segment button if dynamic window, imports if static window
@@ -448,14 +462,7 @@ class DataWindow(QWidget):
         if isinstance(self.ui, Ui_Sensorgram):
             self.ui.flow_rate.setValidator(QDoubleValidator(-60000, 60000, 1))
 
-        # Set up pagee indicator for different table styles
-        self.ui.page_indicator.setScene(QGraphicsScene())
-        self.circles = (
-            QGraphicsEllipseItem(-4, 0, 5, 5),
-            QGraphicsEllipseItem(4, 0, 5, 5),
-        )
-        for c in self.circles:
-            self.ui.page_indicator.scene().addItem(c)
+        # Circles for page indicator already created before table_manager initialization
 
         # Set up valve indicator diagram
         if isinstance(self.ui, Ui_Sensorgram):
@@ -489,9 +496,8 @@ class DataWindow(QWidget):
             self.ui.loop_diagram.scene().addItem(self.loop_label)
             self.ui.loop_diagram.scene().addItem(self.sensor_label)
 
-        # Set startup table style
-        self.hide_columns = True  # Start with Tab 1 (simplified view) as default
-        self.update_table_style()
+        # Table manager initialized above with default Tab 1 view
+        # (no need for separate hide_columns variable)
 
         # Hide progress bar until injection
         if isinstance(self.ui, Ui_Sensorgram):
@@ -545,14 +551,7 @@ class DataWindow(QWidget):
 
     def update_table_style(self: Self) -> None:
         """Update the style of the cycle table."""
-        for column in COLUMNS_TO_TOGGLE:
-            self.ui.data_table.setColumnHidden(column, self.hide_columns)
-        if self.hide_columns:
-            self.circles[0].setBrush(ON_BRUSH)
-            self.circles[1].setBrush(OFF_BRUSH)
-        else:
-            self.circles[0].setBrush(OFF_BRUSH)
-            self.circles[1].setBrush(ON_BRUSH)
+        self.table_manager.update_table_style()
 
     def _fix_checkbox_styles(self: Self) -> None:
         """Fix checkbox and label styling to use global theme.
@@ -588,8 +587,7 @@ class DataWindow(QWidget):
     @Slot()
     def toggle_table_style(self: Self) -> None:
         """Toggle the style of the table."""
-        self.hide_columns = not self.hide_columns
-        self.update_table_style()
+        self.table_manager.toggle_table_style()
 
     def resizeEvent(self: Self, _: object) -> None:  # noqa: N802
         """Resize the widget."""
@@ -730,7 +728,7 @@ class DataWindow(QWidget):
                 )
                 if self.current_segment.error is None:
                     self.SOI_view.update_display(self.current_segment)
-                    
+
                     # Update cycle time shaded region if applicable
                     cycle_time = self.cycle_manager.get_current_time_minutes()
                     if cycle_time is not None:
@@ -948,7 +946,7 @@ class DataWindow(QWidget):
                     # Set cycle type and time from cycle manager
                     self.current_segment.cycle_type = self.cycle_manager.get_current_type()
                     self.current_segment.cycle_time = self.cycle_manager.get_current_time_minutes()
-                    
+
                     seg = self.current_segment
                     row = len(self.saved_segments)
                     self.seg_count += 1
@@ -1049,23 +1047,29 @@ class DataWindow(QWidget):
     def delete_row(self: Self, *, first_available: bool = False) -> None:
         """Delete a row in the data cycle table."""
         if len(self.saved_segments) == 0:
-            pass
-        elif first_available:
-            self.ui.data_table.removeRow(0)
-            del self.saved_segments[0]
+            return
+
+        row = None
+        new_seg_trigger = False
+
+        if first_available:
+            self.deleted_segment = self.table_manager.delete_row(
+                saved_segments=self.saved_segments,
+                first_available=True
+            )
         else:
-            row = 0
-            new_seg_trigger = False
             if self.viewing:
                 row = self.ui.data_table.currentRow()
                 new_seg_trigger = True
             elif self.segment_edit is not None:
                 row = self.segment_edit
                 new_seg_trigger = True
-            seg = self.saved_segments[row]
-            self.deleted_segment = deepcopy(seg)
-            self.ui.data_table.removeRow(row)
-            del self.saved_segments[row]
+
+            self.deleted_segment = self.table_manager.delete_row(
+                row=row,
+                saved_segments=self.saved_segments
+            )
+
             if new_seg_trigger and not self.saving:
                 self.new_segment()
 
@@ -1205,7 +1209,7 @@ class DataWindow(QWidget):
         """Set text edit cursors."""
         self.ui.left_cursor_time.setEnabled(state)
         self.ui.right_cursor_time.setEnabled(state)
-    
+
     def reload_segments(self: Self, time_shift: float | None = None) -> None:
         """Reload segments."""
         logger.debug("reloading segments")
@@ -1239,20 +1243,7 @@ class DataWindow(QWidget):
 
     def get_info(self: Self, row: int) -> dict[str, str]:
         """Get info."""
-        name = ""
-        cycle_type = "Auto-read"
-        note = ""
-        if self.ui.data_table.rowCount() > row:
-            name_item = self.ui.data_table.item(row, 0)
-            cycle_type_item = self.ui.data_table.item(row, 8)
-            note_item = self.ui.data_table.item(row, 9)
-            if name_item is not None:
-                name = name_item.text()
-            if cycle_type_item is not None:
-                cycle_type = cycle_type_item.text()
-            if note_item is not None:
-                note = note_item.text()
-        return {"name": name, "cycle_type": cycle_type, "note": note}
+        return self.table_manager.get_row_info(row)
 
     def enter_view_mode(self: Self) -> None:
         """Enter view mode."""
@@ -1295,7 +1286,7 @@ class DataWindow(QWidget):
             self.cursors_text_edit(state=False)
             self.ui.new_segment_btn.setText("Leave\nView Mode")
             self.ui.new_segment_btn.setStyleSheet(self.view_style)
-            
+
             # Hide cycle time shaded region in view mode
             self.full_segment_view.hide_cycle_time_region()
 
@@ -1357,7 +1348,7 @@ class DataWindow(QWidget):
                         item.setBackground(self.view_color)
                     else:
                         item.setBackground(QColor("white"))
-                    
+
                     # Cycle Type (column 8) and Notes (column 9) are editable
                     if col in {8, 9}:
                         item.setFlags(

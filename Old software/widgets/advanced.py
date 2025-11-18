@@ -103,7 +103,7 @@ class P4SPRAdvMenu(QDialog):
     def enable_afterglow_button(self: Self, visible: bool) -> None:
         """Show or hide the afterglow measurement button."""
         self.measure_afterglow_btn.setVisible(bool(visible))
-    
+
     def enable_delay_status(self: Self, visible: bool) -> None:
         """Show or hide the delay status label."""
         self.delay_status.setVisible(bool(visible))

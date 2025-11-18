@@ -112,7 +112,7 @@ class USB4000:
             self.opened = False
             self._device = None
             self.spec = None
-    
+
     def __del__(self):
         """Destructor to ensure spectrometer is closed."""
         try:

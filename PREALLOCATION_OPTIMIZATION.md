@@ -30,7 +30,7 @@ def __init__(self):
     # Preallocate 10,000 data points = ~2.5 hours at 1 Hz
     self._buffer_capacity = 10000
     self._current_length = 0  # Tracks actual data length
-    
+
     # Preallocate with NaN (unused space is NaN)
     self.lambda_values = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
     self.lambda_times = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
@@ -46,9 +46,9 @@ def add_data_point(self, channel, wavelength, timestamp, filtered_value):
     # Check if we need to grow (rare)
     if self._current_length >= self._buffer_capacity:
         self._grow_buffers()
-    
+
     idx = self._current_length
-    
+
     # Direct assignment - no copying!
     self.lambda_values[channel][idx] = wavelength
     self.lambda_times[channel][idx] = timestamp
@@ -63,13 +63,13 @@ def _grow_buffers(self):
     """Grow buffers by 50% when capacity reached (amortized O(1))."""
     old_capacity = self._buffer_capacity
     new_capacity = int(old_capacity * 1.5)  # 1.5x growth
-    
+
     for ch in CH_LIST:
         new_array = np.full(new_capacity, np.nan)
         new_array[:old_capacity] = self.lambda_values[ch]  # Copy once
         self.lambda_values[ch] = new_array
         # ... repeat for all arrays
-    
+
     self._buffer_capacity = new_capacity
 ```
 

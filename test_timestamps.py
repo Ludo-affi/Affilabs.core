@@ -14,12 +14,12 @@ mgr = ChannelManager()
 for cycle in range(3):
     print(f"Cycle {cycle + 1}:")
     cycle_time = time.perf_counter()
-    
+
     # Process each channel (as main.py does)
     for ch in CH_LIST:
         wavelength = 1550.0 + cycle * 0.1  # Same wavelength this cycle
         timestamp = cycle_time  # Same timestamp this cycle
-        
+
         mgr.add_data_point(
             channel=ch,
             wavelength=wavelength,
@@ -27,7 +27,7 @@ for cycle in range(3):
             filtered_value=wavelength,
         )
         print(f"  Ch {ch}: wavelength={wavelength:.3f}, timestamp={timestamp:.6f}")
-    
+
     # Increment buffer after all channels
     mgr.increment_buffer_index()
     print()
