@@ -1513,9 +1513,10 @@ class AffiniteApp(QMainWindow):
                     for ch in CH_LIST:
                         self.channel_mgr._current_length[ch] = 0
                     
-                    # Adjust timestamps to make recording start time zero
-                    # This shifts existing data to have negative timestamps
-                    self.set_start()
+                    # Reset experiment time so new data starts at time zero
+                    self.exp_start = time.time()
+                    self.exp_start_perf = time.perf_counter()
+                    logger.debug("Experiment time reset - recording will start at time zero")
 
                     # Start recording - this will reset time reference and move yellow cursor to 0
                     if self.device_config["ctrl"] != "":
