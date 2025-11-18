@@ -1074,15 +1074,21 @@ class DataWindow(QWidget):
 
                             # Set Y range with padding: +10 on top, -5 on bottom
                             y_min, y_max = self.full_segment_view.plot.viewRange()[1]
-                            logger.debug(f"Current Y range: [{y_min:.2f}, {y_max:.2f}]")
+                            logger.debug(f"Sensorgram Y range: [{y_min:.2f}, {y_max:.2f}]")
                             self.full_segment_view.plot.setYRange(y_min - 5, y_max + 10, padding=0)
                             self.full_segment_view.plot.enableAutoRange(axis='y', enable=False)
                             
-                            # Apply Y padding to SOI graph as well
-                            soi_y_min, soi_y_max = self.SOI_view.plot.viewRange()[1]
-                            self.SOI_view.plot.setYRange(soi_y_min - 5, soi_y_max + 10, padding=0)
-                            self.SOI_view.plot.enableAutoRange(axis='y', enable=False)
-                            logger.debug(f"Fixed Y range: sensorgram=[{y_min-5:.2f}, {y_max+10:.2f}], SOI=[{soi_y_min-5:.2f}, {soi_y_max+10:.2f}]")
+                            # Apply Y padding to SOI graph as well - get current data range
+                            try:
+                                soi_y_min, soi_y_max = self.SOI_view.plot.viewRange()[1]
+                                logger.debug(f"SOI Y range before: [{soi_y_min:.2f}, {soi_y_max:.2f}]")
+                                self.SOI_view.plot.setYRange(soi_y_min - 5, soi_y_max + 10, padding=0)
+                                self.SOI_view.plot.enableAutoRange(axis='y', enable=False)
+                                logger.debug(f"Fixed ranges applied: sensorgram=[{y_min-5:.2f}, {y_max+10:.2f}], SOI=[{soi_y_min-5:.2f}, {soi_y_max+10:.2f}]")
+                            except Exception as e:
+                                logger.error(f"Failed to set SOI Y range: {e}")
+                                # If SOI has no data yet, just disable auto-range
+                                self.SOI_view.plot.enableAutoRange(axis='y', enable=False)
                         else:
                             logger.debug(f"Not showing gray zone: cycle_time_minutes={cycle_time_minutes}")
 
@@ -1275,10 +1281,14 @@ class DataWindow(QWidget):
         """Set up the widget."""
         title = "Sensorgram" if self.data_source == "dynamic" else "Data Processing"
         self.full_segment_view = SensorgramGraph(title)
+        # Match title font size
+        self.full_segment_view.plot.titleLabel.setText(title, size='12pt')
         self.full_segment_view.setParent(self.ui.full_segment)
         self.full_segment_view.show()
 
         self.SOI_view = SegmentGraph("Cycle of Interest", self.unit)
+        # Match title font size
+        self.SOI_view.plot.titleLabel.setText("Cycle of Interest", size='12pt')
         self.SOI_view.setParent(self.ui.SOI)
         self.SOI_view.show()
 
@@ -2254,9 +2264,14 @@ class DataWindow(QWidget):
         # Reset time reference (but keep existing data - it will have negative timestamps)
         self.full_segment_view.reset_time()
         self.live_segment_start = None
-        # Move yellow cursor (right) to 0 - let set_start() handle timestamp adjustment
+        
+        # Reset view to show time zero
+        self.full_segment_view.plot.setXRange(-5, 50, padding=0)  # Show -5 to 50 seconds initially
+        self.full_segment_view.plot.enableAutoRange(axis='x', enable=True)  # Re-enable auto-range
+        
+        # Move yellow cursor (right) to 0
         self.full_segment_view.set_right(0, emit=False, update=False)
-        logger.debug("Recording started: yellow cursor set to 0")
+        logger.debug("Recording started: view reset to time zero")
         self.new_segment()
         # Don't save data yet - wait for set_start() to adjust timestamps
         # self.save_data(rec_dir) will be called after timestamps are adjusted

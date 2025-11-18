@@ -271,12 +271,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.cycle_time_region = LinearRegionItem(
             values=[start_time, end_time],
             orientation='vertical',
-            brush=(100, 100, 255, 50),  # Light blue with transparency
+            brush=(150, 150, 255, 100),  # Light blue with higher opacity
             movable=False
         )
         
         # Set z-order to ensure it's visible but behind data plots
         self.cycle_time_region.setZValue(-10)
+        logger.debug(f"Gray zone created with brush opacity 100, z-value -10")
         
         # Add to plot
         self.plot.addItem(self.cycle_time_region)

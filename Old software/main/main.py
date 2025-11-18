@@ -1488,6 +1488,25 @@ class AffiniteApp(QMainWindow):
         """Start recording data."""
         if not self.recording:
             try:
+                # Warn user about data loss
+                from PySide6.QtWidgets import QMessageBox
+                warning = QMessageBox(self)
+                warning.setIcon(QMessageBox.Warning)
+                warning.setWindowTitle("Start Recording")
+                warning.setText("Starting recording will erase all unsaved data.")
+                warning.setInformativeText(
+                    "To save current data before recording:\n"
+                    "• Right-click on the graph\n"
+                    "• Select 'Export unsaved data'\n\n"
+                    "Do you want to start recording?"
+                )
+                warning.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+                warning.setDefaultButton(QMessageBox.Cancel)
+                
+                if warning.exec() != QMessageBox.Yes:
+                    logger.debug("Recording cancelled by user")
+                    return None
+                
                 self.rec_dir = ""
                 self.rec_dir = QFileDialog.getExistingDirectory(
                     self,
