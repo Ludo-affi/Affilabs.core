@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame
+from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame, QVBoxLayout
 
 from widgets.message import show_message
 from widgets.sidebar_modern import ModernSidebar  # NEW: Use modern sidebar
@@ -295,9 +295,27 @@ class MainWindow(QWidget):
         self.ui.verticalLayout.insertWidget(1, self.main_content)
         self.main_content.show()  # Ensure main content is visible
 
-        # Sensorgram window
+        # Sensorgram window with modern graph header
+        from widgets.graph_components import GraphHeader
+        
+        # Create container for header + sensorgram
+        sensorgram_container = QWidget(self.ui.main_display)
+        sensorgram_layout = QVBoxLayout(sensorgram_container)
+        sensorgram_layout.setContentsMargins(0, 0, 0, 0)
+        sensorgram_layout.setSpacing(8)
+        
+        # Add channel header
+        self.graph_header = GraphHeader()
+        sensorgram_layout.addWidget(self.graph_header)
+        
+        # Add sensorgram
         self.sensorgram = DataWindow('dynamic')
-        self.sensorgram.setParent(self.ui.main_display)
+        self.sensorgram.setParent(sensorgram_container)
+        sensorgram_layout.addWidget(self.sensorgram, 1)
+        
+        # Set the container as the main display content
+        sensorgram_container.setParent(self.ui.main_display)
+        
         controls_panel = self.sensorgram.take_sensorgram_controls_panel()
         if controls_panel is not None:
             self.sidebar.install_sensorgram_controls(controls_panel)

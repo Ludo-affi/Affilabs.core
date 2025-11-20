@@ -1058,47 +1058,16 @@ class DataWindow(QWidget):
         # TODO(Ryan): Disable sensorgram controls?
         # 000
 
-    def set_advanced_smoothing(self: Self, enabled: bool, mode: str, level: str) -> None:
-        """
-        Configure advanced smoothing settings.
-        
-        Args:
-            enabled: Whether to use advanced smoothing instead of median filter
-            mode: 'auto', 'live', or 'saved'
-            level: 'light', 'medium', or 'heavy'
-        """
-        self.use_advanced_smoothing = enabled
-        self.smoothing_mode = mode if mode != 'auto' else 'saved'  # default to saved for auto
-        self.smoothing_level = level
-        logger.info(f"Advanced smoothing: enabled={enabled}, mode={mode}, level={level}")
-        
-        # Reapply filtering if data exists
-        if hasattr(self, 'data') and self.data.get('filt', False):
-            from settings import MED_FILT_WIN
-            self.set_filter(filt_en=True, med_filt_win=MED_FILT_WIN)
-
     def set_filter(self: Self, *, filt_en: bool, med_filt_win: int) -> None:
         """Set filter size on the data."""
         if self.data_source == "static":
             self.data["filt"] = filt_en
             if filt_en:
                 for ch in CH_LIST:
-                    # Use advanced smoothing if enabled, otherwise use median filter
-                    if hasattr(self, 'use_advanced_smoothing') and self.use_advanced_smoothing:
-                        from utils.advanced_smoothing import apply_advanced_smoothing
-                        mode = getattr(self, 'smoothing_mode', 'saved')
-                        level = getattr(self, 'smoothing_level', 'medium')
-                        self.data["filtered_lambda_values"][ch] = apply_advanced_smoothing(
-                            self.data["lambda_values"][ch],
-                            mode=mode,
-                            level=level
-                        )
-                    else:
-                        # Legacy median filter
-                        self.data["filtered_lambda_values"][ch] = medfilt(
-                            self.data["lambda_values"][ch],
-                            med_filt_win,
-                        )
+                    self.data["filtered_lambda_values"][ch] = medfilt(
+                        self.data["lambda_values"][ch],
+                        med_filt_win,
+                    )
             self.update_data(self.data)
             for seg in self.saved_segments:
                 seg.add_data(self.data, self.unit, seg.ref_ch)
@@ -1794,53 +1763,57 @@ class DataWindow(QWidget):
         return container
 
     def setup(self: Self) -> None:
-        """Set up the widget with master-detail layout (20% overview / 80% detail)."""
+        """Set up the widget with master-detail layout (30% overview / 70% detail)."""
         title = "Full Experiment Timeline" if self.data_source == "dynamic" else "Data Processing"
 
-        # Create graphs
-        self.full_segment_view = SensorgramGraph(title, show_title=True)
+        # Create modern graph containers with Rev 1 styling
+        from widgets.graph_components import GraphContainer
+        
+        # Top graph (Overview) - 30%
+        self.sensorgram_frame = GraphContainer(title, height=200, show_delta_spr=False)
+        self.sensorgram_frame.setMinimumHeight(150)
+        self.sensorgram_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        # Create graph and embed it
+        self.full_segment_view = SensorgramGraph(title, show_title=False)
         self.full_segment_view.setMinimumHeight(150)
         self.full_segment_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # Wrap graph in rounded frame
-        self.sensorgram_frame = RoundedFrame(self.full_segment_view, border_radius=8)
-        self.sensorgram_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.sensorgram_frame.set_graph_widget(self.full_segment_view)
 
-        # Don't create overlay - keep checkboxes in groupBox at top of layout
-
-        self.SOI_view = SegmentGraph("Cycle of Interest", self.unit, show_title=True)
+        # Bottom graph (Cycle of Interest) - 70%
+        self.soi_frame = GraphContainer("Cycle of Interest", height=400, show_delta_spr=True)
+        self.soi_frame.setMinimumHeight(200)
+        self.soi_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        # Create graph and embed it
+        self.SOI_view = SegmentGraph("Cycle of Interest", self.unit, show_title=False)
         self.SOI_view.setMinimumHeight(200)
         self.SOI_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # Wrap graph in rounded frame
-        self.soi_frame = RoundedFrame(self.SOI_view, border_radius=8)
-        self.soi_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.soi_frame.set_graph_widget(self.SOI_view)
 
-        # Create vertical splitter for master-detail layout with modern container styling
+        # Create vertical splitter for master-detail layout with modern grayscale styling
         self.graph_splitter = QSplitter(Qt.Orientation.Vertical)
         self.graph_splitter.addWidget(self.sensorgram_frame)
         self.graph_splitter.addWidget(self.soi_frame)
 
-        # Style the splitter (graphs now have their own rounded frames)
+        # Style the splitter handle with grayscale theme
         self.graph_splitter.setStyleSheet("""
             QSplitter {
                 background-color: transparent;
-                margin: 0px;
-                padding: 0px;
                 spacing: 8px;
             }
             QSplitter::handle {
-                background-color: rgb(46, 48, 227);
-                border: 1px solid rgb(36, 38, 207);
-                margin: 0px auto;
+                background: rgba(0, 0, 0, 0.1);
+                border: none;
+                border-radius: 4px;
+                margin: 0px 16px;
                 height: 8px;
-                border-radius: 3px;
             }
             QSplitter::handle:hover {
-                background-color: rgb(66, 68, 247);
-                border: 1px solid rgb(46, 48, 227);
+                background: rgba(0, 0, 0, 0.15);
             }
             QSplitter::handle:pressed {
-                background-color: rgb(36, 38, 207);
-                border: 2px solid rgb(26, 28, 187);
+                background: #1D1D1F;
             }
         """)
 
@@ -2316,22 +2289,10 @@ class DataWindow(QWidget):
 
                 self.data["filt"] = False
                 for ch in CH_LIST:
-                    # Use advanced smoothing if enabled, otherwise use median filter
-                    if hasattr(self, 'use_advanced_smoothing') and self.use_advanced_smoothing:
-                        from utils.advanced_smoothing import apply_advanced_smoothing
-                        mode = getattr(self, 'smoothing_mode', 'saved')
-                        level = getattr(self, 'smoothing_level', 'medium')
-                        self.data["filtered_lambda_values"][ch] = apply_advanced_smoothing(
-                            self.data["lambda_values"][ch],
-                            mode=mode,
-                            level=level
-                        )
-                    else:
-                        # Legacy median filter
-                        self.data["filtered_lambda_values"][ch] = medfilt(
-                            self.data["lambda_values"][ch],
-                            MED_FILT_WIN,
-                        )
+                    self.data["filtered_lambda_values"][ch] = medfilt(
+                        self.data["lambda_values"][ch],
+                        MED_FILT_WIN,
+                    )
                 self.data["buffered_lambda_times"] = deepcopy(
                     self.data["lambda_times"],
                 )
