@@ -3,7 +3,7 @@
 from typing import Self
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QWidget, QPushButton, QLabel
+from PySide6.QtWidgets import QDialog, QWidget, QPushButton, QLabel, QCheckBox, QGroupBox, QVBoxLayout
 
 from ui.ui_p4spr_adv_settings import Ui_P4SPR_Advanced
 from ui.ui_qspr_adv_settings import Ui_QSPR_Advanced
@@ -65,6 +65,7 @@ class P4SPRAdvMenu(QDialog):
     new_parameter_sig = Signal(dict)
     get_parameter_sig = Signal()
     measure_afterglow_sig = Signal()
+    quality_monitoring_toggled = Signal(bool)
 
     def __init__(self: Self, parent: QWidget | None = None) -> None:
         """Create the advance settings widget."""
@@ -73,6 +74,9 @@ class P4SPRAdvMenu(QDialog):
         self.ui.setupUi(self)
         self.ui.set_btn.clicked.connect(self.update_settings)
         self.setWindowFlag(Qt.WindowType.Tool)
+
+        # Add session quality monitoring UI section
+        self._setup_quality_monitoring_ui()
 
         # Hidden advanced action: measure LED afterglow calibration
         self.measure_afterglow_btn = QPushButton("Measure Afterglow…", self)
@@ -107,6 +111,60 @@ class P4SPRAdvMenu(QDialog):
     def enable_delay_status(self: Self, visible: bool) -> None:
         """Show or hide the delay status label."""
         self.delay_status.setVisible(bool(visible))
+
+    def _setup_quality_monitoring_ui(self: Self) -> None:
+        """Add session quality monitoring controls to advanced settings."""
+        try:
+            # Create quality monitoring group box
+            self.quality_group = QGroupBox("Session Quality Monitoring (FWHM-based QC)", self)
+            quality_layout = QVBoxLayout()
+
+            # Add checkbox for enable/disable
+            self.quality_monitoring_checkbox = QCheckBox("Enable session-based FWHM quality tracking", self)
+            self.quality_monitoring_checkbox.setToolTip(
+                "Track Full Width at Half Maximum (FWHM) of SPR peaks during recording.\n"
+                "Provides real-time quality assessment with RGB LED feedback:\n"
+                "  • Green: Excellent (FWHM < 30nm)\n"
+                "  • Yellow: Good (FWHM 30-60nm)\n"
+                "  • Red: Poor (FWHM ≥ 60nm)\n\n"
+                "Only tracks peaks within 580-630nm wavelength range.\n"
+                "Generates end-of-session QC report with historical comparison."
+            )
+            self.quality_monitoring_checkbox.stateChanged.connect(self._on_quality_monitoring_changed)
+            quality_layout.addWidget(self.quality_monitoring_checkbox)
+
+            # Add info label
+            info_label = QLabel(
+                "<small>Thresholds: <b>&lt;30nm</b> excellent, <b>30-60nm</b> good, <b>≥60nm</b> poor<br/>"
+                "Valid range: 580-630nm wavelength</small>",
+                self
+            )
+            info_label.setWordWrap(True)
+            quality_layout.addWidget(info_label)
+
+            self.quality_group.setLayout(quality_layout)
+
+            # Insert above the bottom button frame
+            idx = self.ui.verticalLayout.indexOf(self.ui.frame)
+            self.ui.verticalLayout.insertWidget(max(0, idx), self.quality_group)
+
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Could not add quality monitoring UI: {e}")
+
+    def _on_quality_monitoring_changed(self: Self, state: int) -> None:
+        """Handle quality monitoring checkbox state change."""
+        enabled = (state == Qt.CheckState.Checked.value)
+        self.quality_monitoring_toggled.emit(enabled)
+
+    def set_quality_monitoring_state(self: Self, enabled: bool) -> None:
+        """Set the quality monitoring checkbox state without emitting signal."""
+        try:
+            self.quality_monitoring_checkbox.blockSignals(True)
+            self.quality_monitoring_checkbox.setChecked(enabled)
+            self.quality_monitoring_checkbox.blockSignals(False)
+        except Exception:
+            pass
 
     def _emit_measure_afterglow(self: Self) -> None:
         # Give immediate local feedback in the dialog

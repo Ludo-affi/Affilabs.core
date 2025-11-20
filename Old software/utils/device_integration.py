@@ -169,8 +169,20 @@ def save_optical_calibration_result(calibration_file_path: Path) -> bool:
     Example:
         # In optical calibration tool after saving calibration:
         calibration_path = device_dir / "optical_calibration.json"
-        with open(calibration_path, 'w') as f:
-            json.dump(calibration_data, f, indent=2)
+        import tempfile
+
+        # Atomic write
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=calibration_path.parent,
+            delete=False,
+            suffix='.tmp'
+        ) as tmp_file:
+            json.dump(calibration_data, tmp_file, indent=2)
+            tmp_path = Path(tmp_file.name)
+
+        tmp_path.replace(calibration_path)
 
         save_optical_calibration_result(calibration_path)
     """

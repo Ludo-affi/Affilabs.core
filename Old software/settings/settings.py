@@ -7,15 +7,29 @@ from re import search
 
 def get_version() -> str:
     """Get the current version of this software."""
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        spec_file = Path(sys._MEIPASS) / "main.spec"  # noqa: SLF001
-    else:
-        spec_file = Path("main.spec")
-    match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
-    if match is None:
-        msg = "Could not find version in spec file."
-        raise RuntimeError(msg)
-    return match[2]
+    try:
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            # When frozen (compiled to .exe), read from bundled VERSION file
+            version_file = Path(sys._MEIPASS) / "VERSION"  # noqa: SLF001
+        else:
+            # When running from source, read from VERSION file in project root
+            version_file = Path(__file__).parent.parent / "VERSION"
+        
+        version = version_file.read_text().strip()
+        return version
+    except FileNotFoundError:
+        # Fallback: try to parse main.spec if VERSION file doesn't exist
+        try:
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                spec_file = Path(sys._MEIPASS) / "main.spec"  # noqa: SLF001
+            else:
+                spec_file = Path(__file__).parent.parent / "main.spec"
+            match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
+            if match is None:
+                return "4.0"  # Default fallback version
+            return match[2]
+        except (FileNotFoundError, AttributeError):
+            return "4.0"  # Default fallback version
 
 
 DEV = False  # Set to True to enable developer features (afterglow measurement button, etc.)
@@ -120,8 +134,27 @@ DEFAULT_CONFIG = {
 
 CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 if not os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, "w") as jp:
-        json.dump(DEFAULT_CONFIG, jp, indent=2)
+    import tempfile
+    from pathlib import Path
+    config_path = Path(CONFIG_FILE)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Atomic write using temp file
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=config_path.parent,
+            delete=False,
+            suffix='.tmp'
+        ) as tmp_file:
+            json.dump(DEFAULT_CONFIG, tmp_file, indent=2)
+            tmp_path = Path(tmp_file.name)
+
+        tmp_path.replace(config_path)
+    except Exception as e:
+        print(f"Failed to create default config: {e}")
+        raise
 
 try:
     from local_settings import *

@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Literal, Self, TypedDict
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QRect, QSize
+import pandas as pd
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QRect, QSize, QPoint
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -35,6 +36,8 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QHBoxLayout,
     QLayout,
+    QPushButton,
+    QScrollArea,
     QSplitter,
     QStyledItemDelegate,
     QTableWidgetItem,
@@ -55,6 +58,7 @@ from widgets.delegates import CycleTypeDelegate, TextInputDelegate
 from widgets.graphs import SegmentGraph, SensorgramGraph
 from widgets.message import show_message
 from widgets.metadata import Metadata, MetadataPrompt
+from widgets.segment_dataframe import SegmentDataFrame
 from widgets.table_manager import CycleTableManager
 from widgets.ui_constants import COLUMNS_TO_TOGGLE, CYCLE_TYPES
 
@@ -66,8 +70,9 @@ TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
 OFF_BRUSH = QBrush(Qt.GlobalColor.transparent)
 
-LOOP_BRUSH = QBrush(Qt.GlobalColor.green)
-SENSOR_BRUSH = QBrush(Qt.GlobalColor.blue)
+# Modern loop diagram colors
+LOOP_BRUSH = QBrush(QColor(46, 227, 111))  # Fresh green matching inject button
+SENSOR_BRUSH = QBrush(QColor(100, 150, 250))  # Clear blue matching flush button
 LOOP_PEN = QPen(LOOP_BRUSH, 6)
 
 # Cycle display constants
@@ -323,11 +328,13 @@ class DataWindow(QWidget):
     def __init__(
         self: Self,
         data_source: Literal["dynamic", "static"],
+        sidebar: 'Sidebar' = None,
     ) -> None:
         """Make a data processing widget."""
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, on=True)
         self.data_source = data_source
+        self._controls_detached = False
         self.reference_channel_id: str | None = None
         self.return_ref: str | None = None
         self.full_segment_view: SensorgramGraph
@@ -336,6 +343,87 @@ class DataWindow(QWidget):
         self.reloading = False
         self.live_mode = True
         self.progress_bar_timer = QTimer()
+        self.sidebar = sidebar
+        # --- Sidebar integration for cycle controls ---
+        from widgets.cycle_controls_widget import CycleControlsWidget
+        from widgets.prime_pump_widget import PrimePumpWidget
+        if self.sidebar is not None:
+            # Graph Controls tab: Clear Graph button
+            graph_controls = QWidget()
+            from PySide6.QtWidgets import QVBoxLayout, QFrame
+            from PySide6.QtCore import QSize
+            graph_layout = QVBoxLayout(graph_controls)
+            graph_layout.setContentsMargins(0, 0, 0, 0)
+            graph_layout.setSpacing(8)
+
+            # Styled container for Clear Graph button
+            from ui.styles import get_container_style, get_button_style
+            clear_container = QFrame(graph_controls)
+            clear_container.setObjectName("clear_graph_container")
+            clear_container.setStyleSheet(get_container_style(elevated=True))
+            clear_container.setFrameShape(QFrame.StyledPanel)
+            clear_container.setFrameShadow(QFrame.Raised)
+            clear_layout = QVBoxLayout(clear_container)
+            clear_layout.setContentsMargins(12, 12, 12, 12)
+            clear_layout.setSpacing(8)
+
+            self.clear_graph_btn_sidebar = QPushButton("Clear Graph", clear_container)
+            self.clear_graph_btn_sidebar.setMinimumSize(QSize(0, 35))
+            self.clear_graph_btn_sidebar.setObjectName("clear_graph_btn_sidebar")
+            self.clear_graph_btn_sidebar.setStyleSheet(get_button_style('error'))
+            clear_layout.addWidget(self.clear_graph_btn_sidebar)
+            graph_layout.addWidget(clear_container)
+
+            # Add Display channel checkboxes to Graphic Control tab
+            # Note: groupBox will be moved here after UI setup
+            # Placeholder for now - actual widget moved in setup()
+
+            graph_layout.addStretch()
+
+            # Static tab: Cycle settings only
+            static_controls = CycleControlsWidget(show_cycle_data_button=False, show_cycle_settings=True)
+
+            # Flow tab: Status message + Cycle settings + Cycle Data Table + Prime Pump button
+            flow_controls = QWidget()
+            from PySide6.QtWidgets import QVBoxLayout, QLabel
+            flow_layout = QVBoxLayout(flow_controls)
+            flow_layout.setContentsMargins(0, 0, 0, 0)
+            flow_layout.setSpacing(8)
+
+            # Create status message block at top
+            from widgets.flow_status_widget import FlowStatusWidget
+            self.flow_status_widget = FlowStatusWidget()
+            flow_layout.addWidget(self.flow_status_widget)
+
+            # Connect device status signals to flow status widget
+            if hasattr(self.sidebar, 'device_widget') and hasattr(self.sidebar.device_widget, 'device_status_widget'):
+                device_status = self.sidebar.device_widget.device_status_widget
+                device_status.device_status_changed.connect(
+                    lambda spr, knx, pump: self.flow_status_widget.update_device_status(spr, knx, pump)
+                )
+                device_status.system_status_changed.connect(
+                    lambda sensor, optics, fluidics: self.flow_status_widget.update_system_status(sensor, optics, fluidics)
+                )
+
+            flow_cycle_settings = CycleControlsWidget(show_cycle_data_button=False, show_cycle_settings=True)
+            flow_layout.addWidget(flow_cycle_settings)
+
+            # Add Cycle Data Table button in styled container
+            cycle_data_widget = CycleControlsWidget(show_cycle_data_button=True, show_cycle_settings=False)
+            cycle_data_widget.set_cycle_data_callback(self.open_cycle_table)
+            flow_layout.addWidget(cycle_data_widget)
+
+            prime_pump_widget = PrimePumpWidget()
+            flow_layout.addWidget(prime_pump_widget)
+            # Connect prime button to main handler if available
+            if hasattr(self, 'prime'):
+                prime_pump_widget.set_prime_callback(self.prime)
+
+            self.sidebar.set_widgets(
+                cycle_controls_widget=graph_controls,
+                static_cycle_controls=static_controls,
+                flow_cycle_controls=flow_controls
+            )
 
         # display data processing or sensorgram page depending on source
 
@@ -343,22 +431,23 @@ class DataWindow(QWidget):
             self.ui = Ui_Sensorgram()
             self.ui.setupUi(self)
             self._fix_checkbox_styles()
-            
+
             # White opaque rectangle as a standalone widget on the main UI
             from PySide6.QtWidgets import QFrame
             from PySide6.QtCore import QSize
+            from ui.styles import Colors, Radius
             self.bg_rect_widget = QFrame(self)
             self.bg_rect_widget.setStyleSheet(
-                "background-color: rgb(255, 255, 255);"
-                "border: 1px solid rgb(100, 100, 100);"
-                "border-radius: 6px;"
+                f"background-color: {Colors.SURFACE};"
+                f"border: 1px solid {Colors.ON_SURFACE_VARIANT};"
+                f"border-radius: {Radius.MD}px;"
             )
             # Store margins from splitter edges (left, top, right, bottom)
-            self.bg_rect_margin_left = -8
-            self.bg_rect_margin_top = -73
-            self.bg_rect_margin_right = -9
-            self.bg_rect_margin_bottom = -12
-            self.bg_rect_radius = 6
+            self.bg_rect_margin_left = -2
+            self.bg_rect_margin_top = -4
+            self.bg_rect_margin_right = -2
+            self.bg_rect_margin_bottom = -4
+            self.bg_rect_radius = 8
             # Will be sized and positioned in setup() based on splitter dimensions
 
         elif self.data_source == "static":
@@ -384,7 +473,7 @@ class DataWindow(QWidget):
         # segment data
         self.current_segment: Segment | None = None
         self.live_segment_start: list[float] | None = None
-        self.saved_segments: list[Segment] = []
+        self.saved_segments = SegmentDataFrame()  # Using pandas DataFrame backend
         self.deleted_segment: Segment | None = None
         self.segment_edit: int | None = None
         self.viewing = False
@@ -496,15 +585,43 @@ class DataWindow(QWidget):
 
         # clear graph button (only in sensorgram UI)
         if isinstance(self.ui, Ui_Sensorgram):
-            self.ui.clear_graph_btn.clicked.connect(self.reset_graphs)
-            # Connect the new button inside Display group box
-            if hasattr(self.ui, 'clear_graph_btn_in_display'):
-                self.ui.clear_graph_btn_in_display.clicked.connect(self.reset_graphs)
+            # Connect sidebar Clear Graph button if it exists
+            if hasattr(self, 'clear_graph_btn_sidebar'):
+                self.clear_graph_btn_sidebar.clicked.connect(self.reset_graphs)
 
-        # adjust rectangle button (only in sensorgram UI)
-        if isinstance(self.ui, Ui_Sensorgram) and hasattr(self.ui, 'adjust_rect_btn'):
-            self.ui.adjust_rect_btn.clicked.connect(self.open_adjust_rect_dialog)
-            self.bg_rect_dialog = None
+            # Legacy buttons (hidden)
+            if hasattr(self.ui, 'clear_graph_btn'):
+                self.ui.clear_graph_btn.clicked.connect(self.reset_graphs)
+
+            # Connect Clear button in Sensorgram graph (top-left)
+            if hasattr(self.full_segment_view, 'clear_button') and self.full_segment_view.clear_button:
+                self.full_segment_view.clear_button.clicked.connect(self.reset_graphs)
+
+            # Connect legend checkboxes in Cycle of Interest graph to sync with UI checkboxes
+            if hasattr(self.SOI_view, 'legend_checkboxes'):
+                for ch in CH_LIST:
+                    if ch in self.SOI_view.legend_checkboxes:
+                        # When legend checkbox changes, update the UI checkbox
+                        legend_cb = self.SOI_view.legend_checkboxes[ch]
+                        ui_cb = getattr(self.ui, f"segment_{ch.upper()}")
+
+                        # Legend checkbox -> UI checkbox
+                        legend_cb.stateChanged.connect(
+                            lambda state, ui_checkbox=ui_cb: (
+                                ui_checkbox.blockSignals(True),
+                                ui_checkbox.setChecked(state == Qt.CheckState.Checked.value),
+                                ui_checkbox.blockSignals(False)
+                            )
+                        )
+
+                        # UI checkbox -> Legend checkbox (already connected via display_channel_changed)
+
+            # Connect adjust margins button
+            if hasattr(self.ui, 'adjust_margins_btn'):
+                self.ui.adjust_margins_btn.clicked.connect(self.open_margin_adjust_dialog)
+            # Connect adjust margins button
+            if hasattr(self.ui, 'adjust_margins_btn'):
+                self.ui.adjust_margins_btn.clicked.connect(self.open_margin_adjust_dialog)
 
         # open cycle table dialog button (only in sensorgram UI)
         if isinstance(self.ui, Ui_Sensorgram):
@@ -580,12 +697,113 @@ class DataWindow(QWidget):
         elif isinstance(self.ui, Ui_Processing):
             self.ui.export_raw_data_btn.clicked.connect(self.export_raw_data)
             self.ui.export_table_btn.clicked.connect(self.export_table)
+
+            # Add Excel export button next to raw data export
+            self.export_excel_btn = QPushButton(self.ui.export_raw_data_btn.parent())
+            self.export_excel_btn.setObjectName("export_excel_btn")
+            self.export_excel_btn.setText("📊 Excel")
+            self.export_excel_btn.setToolTip("Export data to Excel format (.xlsx)")
+            self.export_excel_btn.setStyleSheet(
+                "QPushButton { "
+                "background-color: #1E8E3E; color: white; "
+                "border-radius: 4px; padding: 6px 12px; font-weight: 500; "
+                "} "
+                "QPushButton:hover { background-color: #188038; }"
+            )
+            # Position it near the export button
+            raw_btn_geom = self.ui.export_raw_data_btn.geometry()
+            self.export_excel_btn.setGeometry(
+                raw_btn_geom.x() + 35,
+                raw_btn_geom.y(),
+                70,
+                30
+            )
+            self.export_excel_btn.clicked.connect(self.export_to_excel)
+
             self.ui.import_sens_btn.clicked.connect(self.pull_from_sensorgram)
             self.ui.import_raw_data_btn.clicked.connect(self.import_raw_data)
             self.ui.import_table_btn.clicked.connect(self.import_table)
             self.ui.new_segment_btn.clicked.connect(self.start_from_last_seg)
 
         self.new_segment()
+
+        # Move display groupBox to Graphic Control tab in sidebar
+        if self.sidebar is not None and isinstance(self.ui, Ui_Sensorgram):
+            # Get the Graphic Control tab
+            graphic_control_tab = None
+            for i in range(self.sidebar.tabWidget.count()):
+                if self.sidebar.tabWidget.tabText(i) == "Graphic Control":
+                    graphic_control_tab = self.sidebar.tabWidget.widget(i)
+                    break
+
+            if graphic_control_tab and hasattr(self.ui, 'groupBox'):
+                # The tab content is wrapped in a QScrollArea
+                scroll_area = graphic_control_tab.findChild(QScrollArea)
+                if scroll_area:
+                    # Get the content widget inside the scroll area
+                    content_widget = scroll_area.widget()
+                    if content_widget:
+                        layout = content_widget.layout()
+                        if layout:
+                            # Remove groupBox from its current parent
+                            self.ui.groupBox.setParent(None)
+                            # Insert display groupBox after clear button, before stretch
+                            # Layout structure: clear_container, stretch
+                            # We want: clear_container, groupBox, stretch
+                            if layout.count() > 0:
+                                # Remove the stretch temporarily
+                                stretch_item = None
+                                for i in range(layout.count()):
+                                    item = layout.itemAt(i)
+                                    if item and item.spacerItem():
+                                        stretch_item = layout.takeAt(i)
+                                        break
+
+                                # Add groupBox
+                                layout.addWidget(self.ui.groupBox)
+
+                                # Re-add stretch at the end
+                                if stretch_item:
+                                    layout.addItem(stretch_item)
+                                else:
+                                    layout.addStretch()
+
+        # Add settings panel to Settings tab in sidebar
+        if self.sidebar is not None:
+            from widgets.settings_panel import SettingsPanel
+            settings_panel = SettingsPanel()
+            settings_panel.adjust_margins_requested.connect(self.open_margin_adjust_dialog)
+            settings_tab = self.sidebar.get_settings_tab()
+            if settings_tab:
+                layout = settings_tab.layout()
+                if layout:
+                    # Clear placeholder
+                    while layout.count():
+                        item = layout.takeAt(0)
+                        if item.widget():
+                            item.widget().deleteLater()
+                    # Add settings panel
+                    settings_panel.setParent(settings_tab)
+                    layout.addWidget(settings_panel)
+
+            # Add data export panel to Data tab (for sensorgram)
+            if isinstance(self.ui, Ui_Sensorgram):
+                from widgets.data_panel import DataPanel
+                self.data_panel = DataPanel()
+                self.data_panel.export_triggered.connect(self.export_trigger)
+                self.data_panel.export_excel_triggered.connect(self.export_to_excel)
+                data_tab = self.sidebar.get_data_tab()
+                if data_tab:
+                    layout = data_tab.layout()
+                    if layout:
+                        # Clear placeholder
+                        while layout.count():
+                            item = layout.takeAt(0)
+                            if item.widget():
+                                item.widget().deleteLater()
+                        # Add data panel
+                        self.data_panel.setParent(data_tab)
+                        layout.addWidget(self.data_panel)
 
         # Add text box validators
         self.ui.left_cursor_time.setValidator(QDoubleValidator())
@@ -599,27 +817,35 @@ class DataWindow(QWidget):
         if isinstance(self.ui, Ui_Sensorgram):
             self.ui.loop_diagram.setScene(QGraphicsScene())
 
-            self.loop = QGraphicsEllipseItem(0, 0, 100, 100)
-            self.loop_line = QGraphicsLineItem(-20, 0, 120, 0)
-            self.sensor_line = QGraphicsLineItem(-20, 120, 120, 120)
+            # Reduced size: 80x80 (was 100x100)
+            self.loop = QGraphicsEllipseItem(0, 0, 80, 80)
+            self.loop_line = QGraphicsLineItem(-15, 0, 95, 0)
+            self.sensor_line = QGraphicsLineItem(-15, 95, 95, 95)
             self.loop_label = QGraphicsSimpleTextItem("Loop")
             self.sensor_label = QGraphicsSimpleTextItem("Sensor")
 
-            self.loop.setPen(LOOP_PEN)
-            self.loop_line.setPen(LOOP_PEN)
-            self.sensor_line.setPen(SENSOR_PEN)
+            # Create modern styled pens with rounded caps (thinner: 5px instead of 6px)
+            loop_pen = QPen(LOOP_BRUSH, 5)
+            loop_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            sensor_pen = QPen(SENSOR_BRUSH, 5)
+            sensor_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
 
+            self.loop.setPen(loop_pen)
+            self.loop_line.setPen(loop_pen)
+            self.sensor_line.setPen(sensor_pen)
+
+            # Smaller font: 10pt instead of 12pt
             font = self.loop_label.font()
-            font.setPointSize(12)
+            font.setPointSize(10)
             font.setWeight(QFont.Weight.Medium)
 
             self.loop_label.setFont(font)
             self.loop_label.setBrush(LOOP_BRUSH)
-            self.loop_label.setPos(125, -12)
+            self.loop_label.setPos(100, -10)
 
             self.sensor_label.setFont(font)
             self.sensor_label.setBrush(SENSOR_BRUSH)
-            self.sensor_label.setPos(125, 108)
+            self.sensor_label.setPos(100, 85)
 
             self.ui.loop_diagram.scene().addItem(self.loop)
             self.ui.loop_diagram.scene().addItem(self.loop_line)
@@ -716,10 +942,11 @@ class DataWindow(QWidget):
     def resizeEvent(self: Self, _: object) -> None:  # noqa: N802
         """Resize the widget - splitter handles graph resizing automatically."""
         super().resizeEvent(_)
-        
+
         # Reposition background rectangle when window resizes
         self._position_bg_rect()
-    
+        self._position_channel_overlay()
+
     def _position_bg_rect(self: Self) -> None:
         """Position and size the background rectangle to match graph area with margins."""
         if hasattr(self, 'bg_rect_widget') and hasattr(self, 'graph_splitter'):
@@ -727,21 +954,36 @@ class DataWindow(QWidget):
             splitter_pos = self.graph_splitter.pos()
             splitter_width = self.graph_splitter.width()
             splitter_height = self.graph_splitter.height()
-            
+
             # Calculate rectangle geometry based on splitter size minus margins
             rect_x = splitter_pos.x() + self.bg_rect_margin_left
             rect_y = splitter_pos.y() + self.bg_rect_margin_top
             rect_width = splitter_width - self.bg_rect_margin_left - self.bg_rect_margin_right
             rect_height = splitter_height - self.bg_rect_margin_top - self.bg_rect_margin_bottom
-            
+
             # Set geometry (position and size) in DataWindow coordinate space
             self.bg_rect_widget.setGeometry(rect_x, rect_y, rect_width, rect_height)
-            
+
             # Show and ensure it's behind the splitter
             if not self.bg_rect_widget.isVisible():
                 self.bg_rect_widget.lower()
                 self.bg_rect_widget.show()
                 self.graph_splitter.raise_()
+
+    def _position_channel_overlay(self: Self) -> None:
+        """Keep the channel display block aligned with the sensorgram graph edge."""
+        if not hasattr(self, 'channel_overlay'):
+            return
+
+        if not hasattr(self, 'sensorgram_frame') or not hasattr(self, 'full_segment_view'):
+            return
+
+        # Map graph's origin into the sensorgram frame so we can align precisely
+        top_left = self.full_segment_view.mapTo(self.sensorgram_frame, QPoint(0, 0))
+        x_offset = getattr(self, '_channel_overlay_left_offset', 0)
+        y_offset = getattr(self, '_channel_overlay_top_offset', 0)
+        self.channel_overlay.move(top_left.x() + x_offset, top_left.y() + y_offset)
+        self.channel_overlay.raise_()
 
     def eventFilter(self, obj, event):
         """Handle double-click on splitter handle to swap graph ratios and splitter resize."""
@@ -755,7 +997,7 @@ class DataWindow(QWidget):
 
             if is_splitter or is_handle:
                 event_type = event.type()
-                
+
                 # Reposition background rectangle when splitter resizes
                 if event_type == QEvent.Type.Resize and is_splitter:
                     self._position_bg_rect()
@@ -816,16 +1058,47 @@ class DataWindow(QWidget):
         # TODO(Ryan): Disable sensorgram controls?
         # 000
 
+    def set_advanced_smoothing(self: Self, enabled: bool, mode: str, level: str) -> None:
+        """
+        Configure advanced smoothing settings.
+        
+        Args:
+            enabled: Whether to use advanced smoothing instead of median filter
+            mode: 'auto', 'live', or 'saved'
+            level: 'light', 'medium', or 'heavy'
+        """
+        self.use_advanced_smoothing = enabled
+        self.smoothing_mode = mode if mode != 'auto' else 'saved'  # default to saved for auto
+        self.smoothing_level = level
+        logger.info(f"Advanced smoothing: enabled={enabled}, mode={mode}, level={level}")
+        
+        # Reapply filtering if data exists
+        if hasattr(self, 'data') and self.data.get('filt', False):
+            from settings import MED_FILT_WIN
+            self.set_filter(filt_en=True, med_filt_win=MED_FILT_WIN)
+
     def set_filter(self: Self, *, filt_en: bool, med_filt_win: int) -> None:
         """Set filter size on the data."""
         if self.data_source == "static":
             self.data["filt"] = filt_en
             if filt_en:
                 for ch in CH_LIST:
-                    self.data["filtered_lambda_values"][ch] = medfilt(
-                        self.data["lambda_values"][ch],
-                        med_filt_win,
-                    )
+                    # Use advanced smoothing if enabled, otherwise use median filter
+                    if hasattr(self, 'use_advanced_smoothing') and self.use_advanced_smoothing:
+                        from utils.advanced_smoothing import apply_advanced_smoothing
+                        mode = getattr(self, 'smoothing_mode', 'saved')
+                        level = getattr(self, 'smoothing_level', 'medium')
+                        self.data["filtered_lambda_values"][ch] = apply_advanced_smoothing(
+                            self.data["lambda_values"][ch],
+                            mode=mode,
+                            level=level
+                        )
+                    else:
+                        # Legacy median filter
+                        self.data["filtered_lambda_values"][ch] = medfilt(
+                            self.data["lambda_values"][ch],
+                            med_filt_win,
+                        )
             self.update_data(self.data)
             for seg in self.saved_segments:
                 seg.add_data(self.data, self.unit, seg.ref_ch)
@@ -870,7 +1143,9 @@ class DataWindow(QWidget):
                         f"{int((self.exp_clock_raw % 3600) / 60):02d}m "
                         f"{int(self.exp_clock_raw % 60):02d}s"
                     )
-                    self.ui.exp_clock.setText(time_str)
+                    # Only update if the widget exists
+                    if hasattr(self.ui, 'exp_clock'):
+                        self.ui.exp_clock.setText(time_str)
                     # Also update the one in Cycle Settings
                     if hasattr(self.ui, 'exp_clock_settings'):
                         self.ui.exp_clock_settings.setText(time_str)
@@ -958,21 +1233,8 @@ class DataWindow(QWidget):
 
     def update_shift_display_box(self: Self, shift_data: dict) -> None:
         """Update the shift display box with shift values."""
-        if not isinstance(self.ui, Ui_Sensorgram):
-            return
-
-        if hasattr(self.ui, 'shift_display_box'):
-            if shift_data:
-                # Format the shift values for display
-                display_lines = []
-                for ch in CH_LIST:
-                    if ch in shift_data:
-                        shift_val = shift_data[ch]
-                        display_lines.append(f"{ch.upper()}: {shift_val:.2f} {self.unit}")
-                display_text = "  |  ".join(display_lines)
-                self.ui.shift_display_box.setText(display_text)
-            else:
-                self.ui.shift_display_box.setText("Ready")
+        # shift_display_box removed from UI - status now in Flow tab sidebar
+        pass
 
     def update_left(
         self: Self,
@@ -1367,17 +1629,7 @@ class DataWindow(QWidget):
         self.table_dialog.raise_()
         self.table_dialog.activateWindow()
 
-    def open_adjust_rect_dialog(self: Self) -> None:
-        """Open background rectangle adjustment dialog."""
-        if self.bg_rect_dialog is None:
-            from widgets.bg_rect_dialog import BgRectDialog
-            self.bg_rect_dialog = BgRectDialog(
-                parent=self,
-                data_window=self
-            )
-        self.bg_rect_dialog.show()
-        self.bg_rect_dialog.raise_()
-        self.bg_rect_dialog.activateWindow()
+
 
     def _get_table_widget(self):
         """Get the appropriate table widget based on UI type."""
@@ -1420,12 +1672,79 @@ class DataWindow(QWidget):
             self.SOI_view.reset_segment_graph(self.unit)
             for _i in range(self._get_table_widget().rowCount()):
                 self.delete_row(first_available=True)
-            self.saved_segments = []
+            self.saved_segments.clear()  # Clear DataFrame
             self.current_segment = None
             self.enable_controls(data_ready=False)
             self.live_segment_start = None
             self.seg_count = 0
             self.new_segment()
+
+    def open_margin_adjust_dialog(self: Self) -> None:
+        """Open dialog to adjust graph margins."""
+        if not hasattr(self, 'bg_rect_widget'):
+            from widgets.message import show_message
+            show_message(msg_type="Information", msg="Margin adjustment is only available in Sensorgram view.")
+            return
+
+        from widgets.margin_adjust_dialog import MarginAdjustDialog
+
+        # Get current margin values
+        current_margins = {
+            'left': self.bg_rect_margin_left,
+            'top': self.bg_rect_margin_top,
+            'right': self.bg_rect_margin_right,
+            'bottom': self.bg_rect_margin_bottom,
+            'radius': self.bg_rect_radius
+        }
+
+        # Store original values in case of cancel
+        self._original_margins = current_margins.copy()
+
+        # Create and show dialog (non-blocking)
+        if hasattr(self, '_margin_dialog') and self._margin_dialog:
+            # Close existing dialog if open
+            self._margin_dialog.close()
+
+        self._margin_dialog = MarginAdjustDialog(current_margins, self)
+        self._margin_dialog.margins_changed.connect(self.apply_margin_changes)
+
+        # Handle cancel/close to revert
+        def on_rejected():
+            if hasattr(self, '_original_margins'):
+                self.apply_margin_changes(self._original_margins)
+                del self._original_margins
+
+        def on_accepted():
+            if hasattr(self, '_original_margins'):
+                del self._original_margins
+
+        self._margin_dialog.rejected.connect(on_rejected)
+        self._margin_dialog.accepted.connect(on_accepted)
+
+        # Show non-blocking
+        self._margin_dialog.show()
+        self._margin_dialog.show()
+
+    def apply_margin_changes(self: Self, margins: dict) -> None:
+        """Apply new margin values to background rectangle."""
+        self.bg_rect_margin_left = margins['left']
+        self.bg_rect_margin_top = margins['top']
+        self.bg_rect_margin_right = margins['right']
+        self.bg_rect_margin_bottom = margins['bottom']
+        self.bg_rect_radius = margins['radius']
+
+        # Update border radius styling
+        if hasattr(self, 'bg_rect_widget'):
+            self.bg_rect_widget.setStyleSheet(
+                f"background-color: rgb(255, 255, 255);"
+                f"border: 1px solid rgb(100, 100, 100);"
+                f"border-radius: {self.bg_rect_radius}px;"
+            )
+
+        # Reposition rectangle with new margins
+        self._position_bg_rect()
+
+        logger.debug(f"Applied new margins: L={margins['left']}, T={margins['top']}, R={margins['right']}, B={margins['bottom']}, Radius={margins['radius']}")
 
     def reference_change(self: Self, ref_ch: str) -> None:
         """Change the reference channel."""
@@ -1456,51 +1775,44 @@ class DataWindow(QWidget):
         else:
             self.reference_channel_dlg.ui.noRef.setChecked(True)  # noqa: FBT003
 
+    def take_sensorgram_controls_panel(self) -> QWidget | None:
+        """Detach the right-hand sensorgram controls so they can live in the sidebar."""
+        if not isinstance(self.ui, Ui_Sensorgram):
+            return None
+
+        container = getattr(self.ui, "controls_container", None)
+        if container is None:
+            return None
+
+        if not self._controls_detached:
+            parent_layout = getattr(self.ui, "horizontalLayout", None)
+            if isinstance(parent_layout, QHBoxLayout):
+                parent_layout.removeWidget(container)
+            container.setParent(None)
+            self._controls_detached = True
+
+        return container
+
     def setup(self: Self) -> None:
         """Set up the widget with master-detail layout (20% overview / 80% detail)."""
-        title = "Sensorgram" if self.data_source == "dynamic" else "Data Processing"
+        title = "Full Experiment Timeline" if self.data_source == "dynamic" else "Data Processing"
 
         # Create graphs
-        self.full_segment_view = SensorgramGraph(title)
-        self.full_segment_view.plot.titleLabel.setText(title, size='11pt')  # Compact size
+        self.full_segment_view = SensorgramGraph(title, show_title=True)
         self.full_segment_view.setMinimumHeight(150)
-        self.full_segment_view.setMaximumHeight(350)
+        self.full_segment_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         # Wrap graph in rounded frame
         self.sensorgram_frame = RoundedFrame(self.full_segment_view, border_radius=8)
-        
-        # Create overlay for channel checkboxes on sensorgram
-        if hasattr(self.ui, 'segment_A'):
-            self.channel_overlay = QFrame(self.sensorgram_frame)
-            self.channel_overlay.setStyleSheet("""
-                QFrame {
-                    background-color: rgba(255, 255, 255, 200);
-                    border: 1px solid rgb(171, 171, 171);
-                    border-radius: 5px;
-                    padding: 5px;
-                }
-            """)
-            overlay_layout = QHBoxLayout(self.channel_overlay)
-            overlay_layout.setContentsMargins(8, 8, 8, 8)
-            overlay_layout.setSpacing(8)
-            
-            # Move checkboxes from groupBox to overlay
-            overlay_layout.addWidget(self.ui.segment_A)
-            overlay_layout.addWidget(self.ui.segment_B)
-            overlay_layout.addWidget(self.ui.segment_C)
-            overlay_layout.addWidget(self.ui.segment_D)
-            if hasattr(self.ui, 'clear_graph_btn_in_display'):
-                overlay_layout.addWidget(self.ui.clear_graph_btn_in_display)
-            
-            # Position overlay at top-left of sensorgram frame
-            self.channel_overlay.move(15, 15)
-            self.channel_overlay.adjustSize()
-            self.channel_overlay.raise_()  # Ensure overlay is on top
+        self.sensorgram_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        self.SOI_view = SegmentGraph("Cycle of Interest", self.unit)
-        self.SOI_view.plot.titleLabel.setText("Cycle of Interest", size='13pt')  # Larger for detail
+        # Don't create overlay - keep checkboxes in groupBox at top of layout
+
+        self.SOI_view = SegmentGraph("Cycle of Interest", self.unit, show_title=True)
         self.SOI_view.setMinimumHeight(200)
+        self.SOI_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         # Wrap graph in rounded frame
         self.soi_frame = RoundedFrame(self.SOI_view, border_radius=8)
+        self.soi_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Create vertical splitter for master-detail layout with modern container styling
         self.graph_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -1516,16 +1828,19 @@ class DataWindow(QWidget):
                 spacing: 8px;
             }
             QSplitter::handle {
-                background-color: #c0c0c0;
-                border: none;
+                background-color: rgb(46, 48, 227);
+                border: 1px solid rgb(36, 38, 207);
                 margin: 0px auto;
-                height: 4px;
+                height: 8px;
+                border-radius: 3px;
             }
             QSplitter::handle:hover {
-                background-color: #4a90e2;
+                background-color: rgb(66, 68, 247);
+                border: 1px solid rgb(46, 48, 227);
             }
             QSplitter::handle:pressed {
-                background-color: #2a70c2;
+                background-color: rgb(36, 38, 207);
+                border: 2px solid rgb(26, 28, 187);
             }
         """)
 
@@ -1537,7 +1852,7 @@ class DataWindow(QWidget):
         self.graph_splitter.setStretchFactor(1, 7)
 
         # Set handle width for visible appearance
-        self.graph_splitter.setHandleWidth(2)
+        self.graph_splitter.setHandleWidth(8)
 
         # Make splitter more responsive
         self.graph_splitter.setChildrenCollapsible(False)  # Prevent graphs from collapsing completely
@@ -1555,10 +1870,10 @@ class DataWindow(QWidget):
         # (splitter handles consume events, so we need both levels)
         handle.installEventFilter(self)
         self.graph_splitter.installEventFilter(self)
-        
+
         # Install resize event filter for splitter to reposition background rectangle
         self.graph_splitter.installEventFilter(self)
-        
+
         logger.debug("Event filter installed on splitter and handle")
 
         # Add splitter to UI - handle both UI types (Sensorgram and Processing)
@@ -1576,40 +1891,27 @@ class DataWindow(QWidget):
         if target_layout.count() > 0:
             self._clear_layout(target_layout)
 
+        # Remove extra padding so graphs can use the full width/height
+        target_layout.setContentsMargins(0, 0, 0, 0)
+        target_layout.setSpacing(6)
+
         # Rebuild the top-of-graph controls for the Sensorgram UI
         is_sensorgram = isinstance(self.ui, Ui_Sensorgram)
-        if is_sensorgram and hasattr(self.ui, 'shift_display_box'):
-            self.ui.shift_display_box.hide()
+        # shift_display_box removed from UI
 
         if is_sensorgram and hasattr(self.ui, 'groupBox'):
-            # Hide the groupBox since checkboxes are now overlaid on graph
+            # Hide the groupBox since we now have legend checkboxes in Cycle of Interest
             self.ui.groupBox.setVisible(False)
-            
-            display_layout = QHBoxLayout()
-            display_layout.setContentsMargins(0, 0, 0, 0)
-            display_layout.setSpacing(8)
-            
-            # Hide the standalone Clear Graph button since it's now in the overlay
+
+            # Hide the standalone Clear Graph button since it's in the groupBox
             if hasattr(self.ui, 'clear_graph_btn'):
                 self.ui.clear_graph_btn.hide()
-            if hasattr(self.ui, 'adjust_rect_btn'):
-                self.ui.adjust_rect_btn.setSizePolicy(
-                    QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-                )
-                self.ui.adjust_rect_btn.setMinimumWidth(90)
-                self.ui.adjust_rect_btn.setMaximumWidth(120)
-                button_height = 34
-                self.ui.adjust_rect_btn.setFixedHeight(button_height)
-                display_layout.addWidget(self.ui.adjust_rect_btn)
-            display_layout.addStretch(1)
-            target_layout.addLayout(display_layout)
-            target_layout.addSpacing(12)
 
             if hasattr(self.ui, 'groupBox_display_right'):
                 self.ui.groupBox_display_right.setVisible(False)
-        
+
         target_layout.addWidget(self.graph_splitter)
-        
+
         # Position background rectangle after splitter is in layout
         if hasattr(self, 'bg_rect_widget'):
             # Keep as child of DataWindow, position will be calculated relative to splitter
@@ -1924,134 +2226,112 @@ class DataWindow(QWidget):
                 skip_first = True
 
                 if "All_Graph" in file_name:
+                    # 🚀 OPTIMIZED: Use pandas for fast CSV loading
+                    import pandas as pd
+
                     columns = ["GraphAll_x", "GraphAll_y"]
+                    # Read entire CSV at once (much faster than row-by-row)
+                    df = pd.read_csv(file, sep='\t', names=columns, skiprows=1)
 
-                    with file as txtfile:
-                        cf = csv.DictReader(
-                            txtfile,
-                            dialect="excel-tab",
-                            fieldnames=columns,
-                        )
+                    # Convert to numpy arrays
+                    times = df["GraphAll_x"].values.astype(float)
+                    intensities = df["GraphAll_y"].values.astype(float)
 
-                        temp_data_all = {
-                            "Time": {ch: np.array([]) for ch in CH_LIST},
-                            "Intensity": {ch: np.array([]) for ch in CH_LIST},
-                        }
-                        count = 0
-                        ch_list = ["d", "a", "b", "c"]
-                        for row in cf:
-                            if skip_first:
-                                skip_first = False
-                                continue
-                            count += 1
-                            ch = ch_list[(count % 4)]
-                            temp_data_all["Time"][ch] = np.append(
-                                temp_data_all["Time"][ch],
-                                float(row["GraphAll_x"]),
-                            )
-                            temp_data_all["Intensity"][ch] = np.append(
-                                temp_data_all["Intensity"][ch],
-                                float(row["GraphAll_y"]),
-                            )
+                    # Distribute data across channels (d, a, b, c pattern)
+                    ch_list = ["d", "a", "b", "c"]
+                    for i, ch in enumerate(ch_list):
+                        # Extract every 4th value starting at position i
+                        ch_times = times[i::4]
+                        ch_intensities = intensities[i::4]
 
-                    for ch in CH_LIST:
-                        logger.debug(
-                            f"temp data ch {ch}: "
-                            f"{temp_data_all['Time'][ch]}, "
-                            f"{temp_data_all['Intensity'][ch]}",
-                        )
                         self.data["lambda_times"][ch] = np.append(
-                            self.data["lambda_times"][ch],
-                            temp_data_all["Time"][ch],
+                            self.data["lambda_times"][ch], ch_times
                         )
                         self.data["lambda_values"][ch] = np.append(
-                            self.data["lambda_values"][ch],
-                            temp_data_all["Intensity"][ch],
+                            self.data["lambda_values"][ch], ch_intensities
                         )
-                    logger.debug(f" all graph import: {self.data}")
 
                 else:
+                    # 🚀 OPTIMIZED: Use pandas for fast CSV loading
+                    import pandas as pd
+
                     columns = [
-                        "Time_A",
-                        "Channel_A",
-                        "Time_B",
-                        "Channel_B",
-                        "Time_C",
-                        "Channel_C",
-                        "Time_D",
-                        "Channel_D",
+                        "Time_A", "Channel_A",
+                        "Time_B", "Channel_B",
+                        "Time_C", "Channel_C",
+                        "Time_D", "Channel_D",
                     ]
 
-                    with file as txtfile:
-                        cf = csv.DictReader(
-                            txtfile,
-                            dialect="excel-tab",
-                            fieldnames=columns,
-                        )
-                        references = self.metadata.read_header(cf, columns)
+                    # Read CSV with pandas (much faster)
+                    df = pd.read_csv(file, sep='\t', names=columns)
 
-                        temp_data: dict[str, list[float]] = {
-                            "Time_A": [],
-                            "Channel_A": [],
-                            "Time_B": [],
-                            "Channel_B": [],
-                            "Time_C": [],
-                            "Channel_C": [],
-                            "Time_D": [],
-                            "Channel_D": [],
-                        }
+                    # Extract reference values from first row if present
+                    references = None
+                    try:
+                        # Check if first row contains reference values (non-numeric)
+                        first_row = df.iloc[0]
+                        if pd.isna(first_row['Time_A']) or not isinstance(first_row['Time_A'], (int, float)):
+                            # Has header/reference row
+                            references = [
+                                float(first_row[f'Channel_{ch}']) if pd.notna(first_row[f'Channel_{ch}']) else 0.0
+                                for ch in ['A', 'B', 'C', 'D']
+                            ]
+                            df = df.iloc[1:]  # Skip reference row
+                    except (ValueError, KeyError):
+                        pass
 
-                        for row in cf:
-                            for i, column in enumerate(columns):
-                                value = float(row[column])
+                    # Convert to numeric
+                    df = df.apply(pd.to_numeric, errors='coerce')
 
-                                # Must change the odd columns from RU to nm for
-                                # new file formats
-                                quot, rem = divmod(i, 2)
-                                if references and rem == 1:
-                                    value = value / 355 + references[quot]
+                    # Apply reference conversion if needed (RU to nm)
+                    if references:
+                        for i, ch in enumerate(['A', 'B', 'C', 'D']):
+                            df[f'Channel_{ch}'] = df[f'Channel_{ch}'] / 355 + references[i]
 
-                                temp_data[column].append(value)
-
+                    # Append to data arrays
                     self.data["lambda_times"]["a"] = np.append(
-                        self.data["lambda_times"]["a"],
-                        temp_data["Time_A"],
+                        self.data["lambda_times"]["a"], df["Time_A"].values
                     )
                     self.data["lambda_values"]["a"] = np.append(
-                        self.data["lambda_values"]["a"],
-                        temp_data["Channel_A"],
+                        self.data["lambda_values"]["a"], df["Channel_A"].values
                     )
                     self.data["lambda_times"]["b"] = np.append(
-                        self.data["lambda_times"]["b"],
-                        temp_data["Time_B"],
+                        self.data["lambda_times"]["b"], df["Time_B"].values
                     )
                     self.data["lambda_values"]["b"] = np.append(
-                        self.data["lambda_values"]["b"],
-                        temp_data["Channel_B"],
+                        self.data["lambda_values"]["b"], df["Channel_B"].values
                     )
                     self.data["lambda_times"]["c"] = np.append(
-                        self.data["lambda_times"]["c"],
-                        temp_data["Time_C"],
+                        self.data["lambda_times"]["c"], df["Time_C"].values
                     )
                     self.data["lambda_values"]["c"] = np.append(
-                        self.data["lambda_values"]["c"],
-                        temp_data["Channel_C"],
+                        self.data["lambda_values"]["c"], df["Channel_C"].values
                     )
                     self.data["lambda_times"]["d"] = np.append(
-                        self.data["lambda_times"]["d"],
-                        temp_data["Time_D"],
+                        self.data["lambda_times"]["d"], df["Time_D"].values
                     )
                     self.data["lambda_values"]["d"] = np.append(
-                        self.data["lambda_values"]["d"],
-                        temp_data["Channel_D"],
+                        self.data["lambda_values"]["d"], df["Channel_D"].values
                     )
 
                 self.data["filt"] = False
                 for ch in CH_LIST:
-                    self.data["filtered_lambda_values"][ch] = medfilt(
-                        self.data["lambda_values"][ch],
-                        MED_FILT_WIN,
-                    )
+                    # Use advanced smoothing if enabled, otherwise use median filter
+                    if hasattr(self, 'use_advanced_smoothing') and self.use_advanced_smoothing:
+                        from utils.advanced_smoothing import apply_advanced_smoothing
+                        mode = getattr(self, 'smoothing_mode', 'saved')
+                        level = getattr(self, 'smoothing_level', 'medium')
+                        self.data["filtered_lambda_values"][ch] = apply_advanced_smoothing(
+                            self.data["lambda_values"][ch],
+                            mode=mode,
+                            level=level
+                        )
+                    else:
+                        # Legacy median filter
+                        self.data["filtered_lambda_values"][ch] = medfilt(
+                            self.data["lambda_values"][ch],
+                            MED_FILT_WIN,
+                        )
                 self.data["buffered_lambda_times"] = deepcopy(
                     self.data["lambda_times"],
                 )
@@ -2070,7 +2350,7 @@ class DataWindow(QWidget):
                 show_message(msg="Import Error: Incorrect file for Raw Data")
 
     def import_table(self: Self) -> None:
-        """Import cycle data table."""
+        """Import cycle data table using pandas."""
         if (len(self.data["lambda_times"]["a"]) > 0) and (
             len(self.data["lambda_times"]["a"]) == len(self.data["lambda_times"]["d"])
         ):
@@ -2081,14 +2361,11 @@ class DataWindow(QWidget):
                 "Text Files (*.txt)",
             )[0]
 
-            try:
-                file = Path(file_name).open(encoding="utf-8")  # noqa: SIM115
-            except Exception as e:
-                logger.debug(f"import table error {type(e)}")
-                logger.exception(f"file open error: {e}")
+            if not file_name:
                 return
 
             try:
+                # Clear existing segments
                 if self.segment_edit is not None:
                     self.new_segment()
 
@@ -2096,53 +2373,33 @@ class DataWindow(QWidget):
                     self.delete_row(first_available=True)
                 self.seg_count = 0
 
-                with file as txtfile:
-                    has_ref = True
-                    cf = csv.DictReader(
-                        txtfile,
-                        dialect="excel-tab",
-                        fieldnames=[
-                            "Name",
-                            "StartTime",
-                            "EndTime",
-                            "ShiftA",
-                            "ShiftB",
-                            "ShiftC",
-                            "ShiftD",
-                            "Ref",
-                            "UserNote",
-                        ],
-                    )
+                # Import using pandas
+                imported_df = SegmentDataFrame.from_csv(file_name, encoding="utf-8")
 
-                    i = 0
-                    for row in cf:
-                        if row["Name"] == "Name":
-                            if row["Ref"] == "UserNote":
-                                has_ref = False
-                            continue
-                        if has_ref:
-                            ref_ch = row["Ref"]
-                            if ref_ch in {"", "None"}:
-                                ref_ch = None
-                            user_note = row["UserNote"]
-                        else:
-                            ref_ch = None
-                            user_note = row["Ref"]
-                        self.current_segment = Segment(
-                            i,
-                            float(row["StartTime"]),
-                            float(row["EndTime"]),
-                        )
-                        self.current_segment.add_info(
-                            {"name": row["Name"], "note": user_note},
-                        )
-                        self.current_segment.add_data(
-                            self.data,
-                            self.unit,
-                            ref_ch,
-                        )
-                        self.save_segment()
-                        i += 1
+                # Reconstruct Segment objects with data
+                for i, row_dict in enumerate(imported_df.df.iterrows()):
+                    _, row = row_dict
+                    self.current_segment = Segment(
+                        i,
+                        float(row['start']),
+                        float(row['end']),
+                    )
+                    self.current_segment.add_info(
+                        {"name": str(row['name']), "note": str(row['note'])},
+                    )
+                    ref_ch = row['ref_ch']
+                    if ref_ch in {"", "None", None}:
+                        ref_ch = None
+                    self.current_segment.add_data(
+                        self.data,
+                        self.unit,
+                        ref_ch,
+                    )
+                    # Set cycle type from imported data
+                    self.current_segment.cycle_type = str(row.get('cycle_type', 'Auto-read'))
+                    self.save_segment()
+
+                logger.info(f"Successfully imported {len(imported_df)} segments")
 
             except Exception as e:
                 logger.exception(f"import table error {e}, type {type(e)}")
@@ -2225,34 +2482,21 @@ class DataWindow(QWidget):
                         references,
                     )
 
-                    for i in range(row_count):
-                        for ch in CH_LIST:
-                            if np.isnan(l_val_data[ch][i]):
-                                l_val_data[ch][i] = None
-                        writer.writerow(
-                            {
-                                "X_RawDataA": round(l_time_data["a"][i], 4),
-                                "Y_RawDataA": round(
-                                    (l_val_data["a"][i] - references[0]) * 355,
-                                    4,
-                                ),
-                                "X_RawDataB": round(l_time_data["b"][i], 4),
-                                "Y_RawDataB": round(
-                                    (l_val_data["b"][i] - references[1]) * 355,
-                                    4,
-                                ),
-                                "X_RawDataC": round(l_time_data["c"][i], 4),
-                                "Y_RawDataC": round(
-                                    (l_val_data["c"][i] - references[2]) * 355,
-                                    4,
-                                ),
-                                "X_RawDataD": round(l_time_data["d"][i], 4),
-                                "Y_RawDataD": round(
-                                    (l_val_data["d"][i] - references[3]) * 355,
-                                    4,
-                                ),
-                            },
-                        )
+                    # Build DataFrame for vectorized CSV writing
+                    row_count = min(len(x) for x in l_time_data.values())
+
+                    # Prepare data dictionary
+                    data_dict = {}
+                    for i, ch in enumerate(CH_LIST):
+                        data_dict[f"X_RawData{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                        # Convert wavelength to shift (nm) using reference
+                        values = l_val_data[ch][:row_count]
+                        data_dict[f"Y_RawData{ch.upper()}"] = np.round((values - references[i]) * 355, 4)
+
+                    # Create DataFrame and write to CSV
+                    df = pd.DataFrame(data_dict)
+                    df.replace({np.nan: None}, inplace=True)
+                    df.to_csv(txtfile, sep='\t', index=False, header=False, encoding='utf-8')
 
             if self.data["filt"]:
                 full_file = f"{preset_dir} Filtered Data.txt"
@@ -2286,27 +2530,18 @@ class DataWindow(QWidget):
                         l_val_data = deepcopy(self.data["filtered_lambda_values"])
                         l_time_data = deepcopy(self.data["buffered_lambda_times"])
 
-                        row_count = len(l_time_data["a"])
-                        for ch in CH_LIST:
-                            if len(l_time_data[ch]) < row_count:
-                                row_count = len(l_time_data[ch])
+                        row_count = min(len(l_time_data[ch]) for ch in CH_LIST)
 
-                        for i in range(row_count):
-                            for ch in CH_LIST:
-                                if np.isnan(l_val_data[ch][i]):
-                                    l_val_data[ch][i] = None
-                            writer.writerow(
-                                {
-                                    "X_DataA": round(l_time_data["a"][i], 4),
-                                    "Y_DataA": round(l_val_data["a"][i], 4),
-                                    "X_DataB": round(l_time_data["b"][i], 4),
-                                    "Y_DataB": round(l_val_data["b"][i], 4),
-                                    "X_DataC": round(l_time_data["c"][i], 4),
-                                    "Y_DataC": round(l_val_data["c"][i], 4),
-                                    "X_DataD": round(l_time_data["d"][i], 4),
-                                    "Y_DataD": round(l_val_data["d"][i], 4),
-                                },
-                            )
+                        # Build DataFrame for vectorized CSV writing
+                        data_dict = {}
+                        for ch in CH_LIST:
+                            data_dict[f"X_Data{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                            data_dict[f"Y_Data{ch.upper()}"] = np.round(l_val_data[ch][:row_count], 4)
+
+                        # Create DataFrame and write to CSV
+                        df = pd.DataFrame(data_dict)
+                        df.replace({np.nan: None}, inplace=True)
+                        df.to_csv(txtfile, sep='\t', index=False, header=False, encoding='utf-8')
             if error:
                 self.export_error_signal.emit()
             elif not preset:
@@ -2320,6 +2555,91 @@ class DataWindow(QWidget):
             logger.exception(f"export raw data error: {e}")
             self.export_error_signal.emit()
 
+    def export_to_excel(self: Self) -> None:
+        """Export data to Excel format with multiple sheets (pandas-based)."""
+        try:
+            # Get file location from user
+            file_name = QFileDialog.getSaveFileName(
+                self,
+                "Export Data to Excel",
+                "",
+                "Excel Files (*.xlsx)",
+            )[0]
+
+            if not file_name:
+                return  # User cancelled
+
+            # Ensure .xlsx extension
+            if not file_name.endswith('.xlsx'):
+                file_name += '.xlsx'
+
+            # Prepare data from existing data structure
+            l_val_data = deepcopy(self.data["lambda_values"])
+            l_time_data = deepcopy(self.data["lambda_times"])
+
+            # Find reference index
+            reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
+            min_array_len = min(len(l_val_data[ch]) for ch in CH_LIST)
+            if min_array_len == 0:
+                logger.error("Cannot export: no data available")
+                show_message("No data to export", "Warning")
+                return
+            reference_index = min(reference_index, min_array_len - 1)
+            references = [l_val_data[ch][reference_index] for ch in CH_LIST]
+
+            row_count = min(len(x) for x in l_time_data.values())
+
+            # Create DataFrame for raw data
+            raw_data = {
+                'Time_A (s)': [round(l_time_data["a"][i], 4) for i in range(row_count)],
+                'Channel_A (RU)': [round((l_val_data["a"][i] - references[0]) * 355, 4) for i in range(row_count)],
+                'Time_B (s)': [round(l_time_data["b"][i], 4) for i in range(row_count)],
+                'Channel_B (RU)': [round((l_val_data["b"][i] - references[1]) * 355, 4) for i in range(row_count)],
+                'Time_C (s)': [round(l_time_data["c"][i], 4) for i in range(row_count)],
+                'Channel_C (RU)': [round((l_val_data["c"][i] - references[2]) * 355, 4) for i in range(row_count)],
+                'Time_D (s)': [round(l_time_data["d"][i], 4) for i in range(row_count)],
+                'Channel_D (RU)': [round((l_val_data["d"][i] - references[3]) * 355, 4) for i in range(row_count)],
+            }
+            df_raw = pd.DataFrame(raw_data)
+
+            # Create Excel writer
+            with pd.ExcelWriter(file_name, engine='openpyxl') as writer:
+                # Write raw data
+                df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+
+                # Add filtered data if available
+                if self.data["filt"]:
+                    l_val_filt = deepcopy(self.data["filtered_lambda_values"])
+                    l_time_filt = deepcopy(self.data["buffered_lambda_times"])
+                    filt_count = min(len(x) for x in l_time_filt.values())
+
+                    filtered_data = {
+                        'Time_A (s)': [round(l_time_filt["a"][i], 4) for i in range(filt_count)],
+                        'Channel_A (RU)': [round(l_val_filt["a"][i], 4) for i in range(filt_count)],
+                        'Time_B (s)': [round(l_time_filt["b"][i], 4) for i in range(filt_count)],
+                        'Channel_B (RU)': [round(l_val_filt["b"][i], 4) for i in range(filt_count)],
+                        'Time_C (s)': [round(l_time_filt["c"][i], 4) for i in range(filt_count)],
+                        'Channel_C (RU)': [round(l_val_filt["c"][i], 4) for i in range(filt_count)],
+                        'Time_D (s)': [round(l_time_filt["d"][i], 4) for i in range(filt_count)],
+                        'Channel_D (RU)': [round(l_val_filt["d"][i], 4) for i in range(filt_count)],
+                    }
+                    df_filt = pd.DataFrame(filtered_data)
+                    df_filt.to_excel(writer, sheet_name='Filtered Data', index=False)
+
+                # Add statistics summary
+                stats = df_raw[['Channel_A (RU)', 'Channel_B (RU)', 'Channel_C (RU)', 'Channel_D (RU)']].describe()
+                stats.to_excel(writer, sheet_name='Statistics')
+
+            show_message(
+                msg=f"Data exported to Excel:\n{Path(file_name).name}",
+                msg_type="Info",
+                auto_close_time=3,
+            )
+
+        except Exception as e:
+            logger.exception(f"Excel export error: {e}")
+            show_message(f"Excel export failed: {e}", "Error")
+
     # export table data
     def export_table(
         self: Self,
@@ -2327,36 +2647,12 @@ class DataWindow(QWidget):
         preset: bool = False,
         preset_dir: str | None = None,
     ) -> None:
-        """Export table data."""
+        """Export table data using pandas."""
         try:
-            row_count = len(self.saved_segments)
-            table_data = []
-            table = self._get_table_widget()
-            for i in range(row_count):
-                name = table.item(i, 0).text()
-                start = table.item(i, 1).text()
-                end = table.item(i, 2).text()
-                shift_a = table.item(i, 3).text()
-                shift_b = table.item(i, 4).text()
-                shift_c = table.item(i, 5).text()
-                shift_d = table.item(i, 6).text()
-                ref = table.item(i, 7).text()
-                cycle_type = table.item(i, 8).text()
-                note = table.item(i, 9).text()
-                table_data.append(
-                    {
-                        "Name": name,
-                        "StartTime": start,
-                        "EndTime": end,
-                        "ShiftA": shift_a,
-                        "ShiftB": shift_b,
-                        "ShiftC": shift_c,
-                        "ShiftD": shift_d,
-                        "Reference": ref,
-                        "CycleType": cycle_type,
-                        "UserNote": note,
-                    },
-                )
+            if len(self.saved_segments) == 0:
+                show_message("No segments to export", "Warning")
+                return
+
             error = True
             if preset:
                 dir_path = preset_dir
@@ -2373,31 +2669,8 @@ class DataWindow(QWidget):
                 "/Recording Cycle Data Table.txt",
             }:
                 error = False
-                with Path(full_file).open(
-                    mode="w",
-                    newline="",
-                    encoding="utf-8",
-                ) as txtfile:
-                    fieldnames = [
-                        "Name",
-                        "StartTime",
-                        "EndTime",
-                        "ShiftA",
-                        "ShiftB",
-                        "ShiftC",
-                        "ShiftD",
-                        "Reference",
-                        "CycleType",
-                        "UserNote",
-                    ]
-                    writer = csv.DictWriter(
-                        txtfile,
-                        dialect="excel-tab",
-                        fieldnames=fieldnames,
-                    )
-                    writer.writeheader()
-                    for row in table_data:
-                        writer.writerow(row)
+                # Use pandas to export table data
+                self.saved_segments.to_csv(full_file, encoding="utf-8")
 
                 for seg in self.saved_segments:
                     with Path(f"{file_name} Cycle{seg.name}.txt").open(
@@ -2662,9 +2935,57 @@ class DataWindow(QWidget):
             logger.info("✓ Cycle markers re-rendered")
 
     def save_data(self: Self, rec_dir: str) -> None:
-        """Save data."""
-        self.export_raw_data(preset=True, preset_dir=rec_dir)
-        self.export_table(preset=True, preset_dir=rec_dir)
+        """Save data using centralized DataExporter."""
+        try:
+            # Extract experiment name from rec_dir
+            from pathlib import Path
+            rec_path = Path(rec_dir)
+            exp_name = rec_path.name if rec_path.name else "Recording"
+
+            # Create DataExporter instance
+            exporter = DataExporter(base_dir=rec_dir, experiment_name=exp_name)
+
+            # Export raw data
+            try:
+                exporter.export_raw_data(
+                    data=self.data,
+                    metadata=self.metadata,
+                    references=None  # Will auto-calculate
+                )
+            except Exception as e:
+                logger.error(f"Failed to export raw data: {e}")
+
+            # Export filtered data if available
+            if self.data.get("filt", False):
+                try:
+                    # Create filtered data dict
+                    filtered_data = {
+                        "lambda_times": self.data.get("buffered_lambda_times", self.data["lambda_times"]),
+                        "lambda_values": self.data.get("filtered_lambda_values", self.data["lambda_values"]),
+                        "filt": True
+                    }
+                    exporter.export_filtered_data(data=filtered_data, metadata=self.metadata)
+                except Exception as e:
+                    logger.error(f"Failed to export filtered data: {e}")
+
+            # Export segments
+            try:
+                segments = [seg.to_dict() for seg in self.segment_list]
+                if segments:
+                    exporter.export_segments(
+                        segments=segments,
+                        value_list=self.data["lambda_values"],
+                        ts_list=self.data["lambda_times"]
+                    )
+            except Exception as e:
+                logger.error(f"Failed to export segments: {e}")
+
+            # Save manifest
+            exporter.save_manifest()
+            logger.info(f"Data export completed to {rec_dir}")
+
+        except Exception as e:
+            logger.exception(f"Error in save_data: {e}")
 
     def start_recording(self: Self, rec_dir: str) -> None:
         """Start recording."""

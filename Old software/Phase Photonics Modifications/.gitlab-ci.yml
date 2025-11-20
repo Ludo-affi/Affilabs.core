@@ -1,0 +1,45 @@
+# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Python.gitlab-ci.yml
+
+# Official language image. Look for the different tagged releases at:
+# https://hub.docker.com/r/library/python/tags/
+image: seven45/pdm-ci:3.11
+cache:
+  paths:
+    - .venv/
+    - build/
+
+before_script:
+  - apt-get update
+  - apt-get install -y libgl-dev libxkbcommon-dev libegl-dev libdbus-1-dev
+  - pdm sync --prod --group docs --no-self --only-keep
+
+pages:
+  script:
+    - pdm run docs
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+package:
+  script:
+    - export PDM_PUBLISH_REPO=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi
+    - export PDM_PUBLISH_USERNAME=gitlab-ci-token
+    - export PDM_PUBLISH_PASSWORD=${CI_JOB_TOKEN}
+    - pdm publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+binary:
+  script:
+    - 'ZIP_FILE=$(pdm run make)'
+    - '[[ $ZIP_FILE =~ ^ezControl\ .*v(.+)$ ]]'
+    - 'VERSION=${BASH_REMATCH[1]}'
+    - 'echo $VERSION'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "dist/${ZIP_FILE}" ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/generic/ezControl/${VERSION}/${ZIP_FILE}'
+  rules:
+    - if: $CI_COMMIT_BRANCH == "none"

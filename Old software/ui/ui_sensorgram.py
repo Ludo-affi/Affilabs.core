@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
     QLineEdit, QProgressBar, QPushButton, QSizePolicy,
     QSpacerItem, QVBoxLayout, QWidget)
 from . import ai_rc
+from .styles import apply_channel_checkbox_style, get_groupbox_title_font
 
 class Ui_Sensorgram(object):
     def setupUi(self, Sensorgram):
@@ -38,82 +39,53 @@ class Ui_Sensorgram(object):
         self.displays.setSpacing(0)
         self.displays.setObjectName(u"displays")
         self.displays.setContentsMargins(11, 11, 11, 11)
+        # Display groupBox moved to Graphic Control sidebar tab
+        # Channel checkboxes A, B, C, D are now in sidebar
+        from ui.styles import get_groupbox_style, get_groupbox_title_font, Colors
         self.groupBox = QGroupBox(Sensorgram)
         self.groupBox.setObjectName(u"groupBox")
-        self.groupBox.setStyleSheet(u"QGroupBox#groupBox{\n"
-"	background-color: white;\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 5px;\n"
-"	padding: 10px;\n"
-"}")
+        self.groupBox.setMinimumHeight(55)
+        self.groupBox.setMaximumHeight(55)
+        # Ensure it stays embedded in layout
+        self.groupBox.setWindowFlags(Qt.Widget)  # Not a separate window
+        self.groupBox.setStyleSheet(get_groupbox_style(Colors.SURFACE))
+        self.groupBox.setTitle("Display")
+        font_groupbox = get_groupbox_title_font()
+        self.groupBox.setFont(font_groupbox)
         self.horizontalLayout_12 = QHBoxLayout(self.groupBox)
         self.horizontalLayout_12.setObjectName(u"horizontalLayout_12")
         self.segment_A = QCheckBox(self.groupBox)
         self.segment_A.setObjectName(u"segment_A")
-        font1 = QFont()
-        font1.setFamilies([u"Segoe UI"])
-        font1.setPointSize(9)
-        font1.setBold(True)
-        self.segment_A.setFont(font1)
-        self.segment_A.setStyleSheet(u"QCheckBox{\n"
-"	color: black;\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_A, 'A')
         self.segment_A.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_A)
 
         self.segment_B = QCheckBox(self.groupBox)
         self.segment_B.setObjectName(u"segment_B")
-        self.segment_B.setFont(font1)
-        self.segment_B.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(255, 0, 81);\n"
-"	background:white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_B, 'B')
         self.segment_B.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_B)
 
         self.segment_C = QCheckBox(self.groupBox)
         self.segment_C.setObjectName(u"segment_C")
-        self.segment_C.setFont(font1)
-        self.segment_C.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 174, 255);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_C, 'C')
         self.segment_C.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_C)
 
         self.segment_D = QCheckBox(self.groupBox)
         self.segment_D.setObjectName(u"segment_D")
-        self.segment_D.setFont(font1)
-        self.segment_D.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 100, 0);\n"
-"	border: 1px solid rgb(171, 171, 171); \n"
-"	background: white;\n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_D, 'D')
         self.segment_D.setChecked(True)
 
         self.horizontalLayout_12.addWidget(self.segment_D)
-        
-        self.clear_graph_btn_in_display = QPushButton(self.groupBox)
-        self.clear_graph_btn_in_display.setObjectName(u"clear_graph_btn_in_display")
-        self.clear_graph_btn_in_display.setText("Clear")
-        self.clear_graph_btn_in_display.setMinimumSize(QSize(60, 26))
-        self.clear_graph_btn_in_display.setMaximumSize(QSize(80, 26))
 
-        self.horizontalLayout_12.addWidget(self.clear_graph_btn_in_display)
+        # groupBox NOT added to displays layout - will be moved to sidebar
+        # self.displays.addWidget(self.groupBox)
 
-
-        self.displays.addWidget(self.groupBox)
+        # shift_display_box removed - status messages now in Flow tab sidebar
 
         self.horizontalLayout_sensor_header = QHBoxLayout()
         self.horizontalLayout_sensor_header.setSpacing(8)
@@ -139,15 +111,27 @@ class Ui_Sensorgram(object):
         self.clear_graph_btn.setObjectName(u"clear_graph_btn")
         self.clear_graph_btn.setMinimumSize(QSize(20, 40))
         self.clear_graph_btn.setMaximumSize(QSize(20, 40))
+        self.clear_graph_btn.setVisible(False)  # Hidden - now in sidebar
 
         self.horizontalLayout_sensor_header.addWidget(self.clear_graph_btn)
 
-        self.adjust_rect_btn = QPushButton(Sensorgram)
-        self.adjust_rect_btn.setObjectName(u"adjust_rect_btn")
-        self.adjust_rect_btn.setText("Adjust Rect")
-        self.adjust_rect_btn.setMinimumSize(QSize(80, 30))
+        self.adjust_margins_btn = QPushButton(Sensorgram)
+        self.adjust_margins_btn.setObjectName(u"adjust_margins_btn")
+        self.adjust_margins_btn.setMinimumSize(QSize(100, 40))
+        self.adjust_margins_btn.setMaximumSize(QSize(120, 40))
+        self.adjust_margins_btn.setStyleSheet(u"QPushButton {\n"
+"    background-color: rgb(240, 240, 240);\n"
+"    border: 1px solid rgb(171, 171, 171);\n"
+"    border-radius: 3px;\n"
+"    font-size: 8pt;\n"
+"}\n"
+"QPushButton:hover {\n"
+"    background-color: rgb(253, 253, 253);\n"
+"    border: 1px solid rgb(46, 48, 227);\n"
+"}")
+        self.adjust_margins_btn.setText(u"Adjust Margins")
 
-        self.horizontalLayout_sensor_header.addWidget(self.adjust_rect_btn)
+        self.horizontalLayout_sensor_header.addWidget(self.adjust_margins_btn)
 
         self.horizontalSpacer_header = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -159,7 +143,7 @@ class Ui_Sensorgram(object):
 
         self.full_segment = QFrame(Sensorgram)
         self.full_segment.setObjectName(u"full_segment")
-        self.full_segment.setMinimumSize(QSize(200, 250))
+        self.full_segment.setMinimumSize(QSize(180, 225))
         self.full_segment.setMaximumSize(QSize(10000, 10000))
         self.full_segment.setMouseTracking(True)
         self.full_segment.setFrameShape(QFrame.StyledPanel)
@@ -180,7 +164,7 @@ class Ui_Sensorgram(object):
 
         self.SOI = QFrame(Sensorgram)
         self.SOI.setObjectName(u"SOI")
-        self.SOI.setMinimumSize(QSize(200, 250))
+        self.SOI.setMinimumSize(QSize(180, 225))
         self.SOI.setMaximumSize(QSize(10000, 10000))
         self.SOI.setFrameShape(QFrame.StyledPanel)
         self.SOI.setFrameShadow(QFrame.Raised)
@@ -201,66 +185,42 @@ class Ui_Sensorgram(object):
 
         self.horizontalLayout.addLayout(self.displays)
 
-        self.controls = QVBoxLayout()
+        self.controls_container = QWidget(Sensorgram)
+        self.controls_container.setObjectName(u"controls_container")
+        self.controls = QVBoxLayout(self.controls_container)
         self.controls.setObjectName(u"controls")
-        self.groupBox_display_right = QGroupBox(Sensorgram)
+        # Standard font for groupbox titles
+        font_groupbox = get_groupbox_title_font()
+        self.groupBox_display_right = QGroupBox(self.controls_container)
         self.groupBox_display_right.setObjectName(u"groupBox_display_right")
-        self.groupBox_display_right.setStyleSheet(u"QGroupBox#groupBox_display_right{\n"
-"	background-color: white;\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 5px;\n"
-"	padding: 10px;\n"
-"}")
+        self.groupBox_display_right.setFont(font_groupbox)
+        self.groupBox_display_right.setStyleSheet(get_groupbox_style(Colors.SURFACE))
         self.verticalLayout_display = QVBoxLayout(self.groupBox_display_right)
         self.verticalLayout_display.setObjectName(u"verticalLayout_display")
         self.segment_A_right = QCheckBox(self.groupBox_display_right)
         self.segment_A_right.setObjectName(u"segment_A_right")
-        self.segment_A_right.setFont(font1)
-        self.segment_A_right.setStyleSheet(u"QCheckBox{\n"
-"	color: black;\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_A_right, 'A')
         self.segment_A_right.setChecked(True)
 
         self.verticalLayout_display.addWidget(self.segment_A_right)
 
         self.segment_B_right = QCheckBox(self.groupBox_display_right)
         self.segment_B_right.setObjectName(u"segment_B_right")
-        self.segment_B_right.setFont(font1)
-        self.segment_B_right.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(255, 0, 81);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_B_right, 'B')
         self.segment_B_right.setChecked(True)
 
         self.verticalLayout_display.addWidget(self.segment_B_right)
 
         self.segment_C_right = QCheckBox(self.groupBox_display_right)
         self.segment_C_right.setObjectName(u"segment_C_right")
-        self.segment_C_right.setFont(font1)
-        self.segment_C_right.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 174, 255);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_C_right, 'C')
         self.segment_C_right.setChecked(True)
 
         self.verticalLayout_display.addWidget(self.segment_C_right)
 
         self.segment_D_right = QCheckBox(self.groupBox_display_right)
         self.segment_D_right.setObjectName(u"segment_D_right")
-        self.segment_D_right.setFont(font1)
-        self.segment_D_right.setStyleSheet(u"QCheckBox{\n"
-"	color: rgb(0, 230, 65);\n"
-"	background: white;\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 3px;\n"
-"}")
+        apply_channel_checkbox_style(self.segment_D_right, 'D')
         self.segment_D_right.setChecked(True)
 
         self.verticalLayout_display.addWidget(self.segment_D_right)
@@ -268,239 +228,428 @@ class Ui_Sensorgram(object):
 
         self.controls.addWidget(self.groupBox_display_right)
 
-        self.horizontalLayout_5 = QHBoxLayout()
-        self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
-        self.verticalLayout_2 = QVBoxLayout()
-        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.groupBox_6 = QGroupBox(Sensorgram)
-        self.groupBox_6.setObjectName(u"groupBox_6")
-        self.groupBox_6.setVisible(False)
-        self.verticalLayout_4 = QVBoxLayout(self.groupBox_6)
-        self.verticalLayout_4.setObjectName(u"verticalLayout_4")
-        self.live_btn = QCheckBox(self.groupBox_6)
+        # Hidden cursor controls (still needed by code but not displayed)
+        self.left_cursor_time = QLineEdit(self.controls_container)
+        self.left_cursor_time.setObjectName(u"left_cursor_time")
+        self.left_cursor_time.setVisible(False)
+
+        self.right_cursor_time = QLineEdit(self.controls_container)
+        self.right_cursor_time.setObjectName(u"right_cursor_time")
+        self.right_cursor_time.setVisible(False)
+
+        self.live_btn = QCheckBox(self.controls_container)
         self.live_btn.setObjectName(u"live_btn")
+        self.live_btn.setVisible(False)
         self.live_btn.setChecked(True)
 
-        self.verticalLayout_4.addWidget(self.live_btn)
-
-        self.label_14 = QLabel(self.groupBox_6)
-        self.label_14.setObjectName(u"label_14")
-
-        self.verticalLayout_4.addWidget(self.label_14)
-
-        self.horizontalLayout_6 = QHBoxLayout()
-        self.horizontalLayout_6.setObjectName(u"horizontalLayout_6")
-        self.label_6 = QLabel(self.groupBox_6)
-        self.label_6.setObjectName(u"label_6")
-        self.label_6.setStyleSheet(u"background: yellow;\n"
-"border-radius: 2px;\n"
-"border: 2px solid rgb(100, 100, 100);")
-
-        self.horizontalLayout_6.addWidget(self.label_6)
-
-        self.left_cursor_time = QLineEdit(self.groupBox_6)
-        self.left_cursor_time.setObjectName(u"left_cursor_time")
-        self.left_cursor_time.setFont(font)
-        self.left_cursor_time.setFocusPolicy(Qt.ClickFocus)
-        self.left_cursor_time.setStyleSheet(u"\n"
-"QLineEdit {\n"
-"		background-color: white;\n"
-"		border: 1px solid rgb(171, 171, 171);\n"
-"		border-radius: 2px;\n"
-"\n"
-"}\n"
-"\n"
-"QLineEdit:focus{\n"
-"	background-color: rgb(240, 255, 245);\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 2px;\n"
-"}")
-        self.left_cursor_time.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
-
-        self.horizontalLayout_6.addWidget(self.left_cursor_time)
-
-        self.label_10 = QLabel(self.groupBox_6)
-        self.label_10.setObjectName(u"label_10")
-
-        self.horizontalLayout_6.addWidget(self.label_10)
-
-
-        self.verticalLayout_4.addLayout(self.horizontalLayout_6)
-
-        self.label_16 = QLabel(self.groupBox_6)
-        self.label_16.setObjectName(u"label_16")
-
-        self.verticalLayout_4.addWidget(self.label_16)
-
-        self.horizontalLayout_7 = QHBoxLayout()
-        self.horizontalLayout_7.setObjectName(u"horizontalLayout_7")
-        self.label_7 = QLabel(self.groupBox_6)
-        self.label_7.setObjectName(u"label_7")
-        self.label_7.setStyleSheet(u"background: red;\n"
-"border-radius: 2px;\n"
-"border: 2px solid rgb(100, 100, 100);")
-
-        self.horizontalLayout_7.addWidget(self.label_7)
-
-        self.right_cursor_time = QLineEdit(self.groupBox_6)
-        self.right_cursor_time.setObjectName(u"right_cursor_time")
-        self.right_cursor_time.setFont(font)
-        self.right_cursor_time.setFocusPolicy(Qt.ClickFocus)
-        self.right_cursor_time.setStyleSheet(u"\n"
-"QLineEdit {\n"
-"		background-color: white;\n"
-"		border: 1px solid rgb(171, 171, 171);\n"
-"		border-radius: 2px;\n"
-"\n"
-"}\n"
-"\n"
-"QLineEdit:focus{\n"
-"	background-color: rgb(240, 255, 245);\n"
-"	border: 1px solid rgb(171, 171, 171);\n"
-"	border-radius: 2px;\n"
-"}")
-        self.right_cursor_time.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
-
-        self.horizontalLayout_7.addWidget(self.right_cursor_time)
-
-        self.label_9 = QLabel(self.groupBox_6)
-        self.label_9.setObjectName(u"label_9")
-
-        self.horizontalLayout_7.addWidget(self.label_9)
-
-
-        self.verticalLayout_4.addLayout(self.horizontalLayout_7)
-
-
-        self.verticalLayout_2.addWidget(self.groupBox_6)
-
-        self.horizontalLayout_14 = QHBoxLayout()
-        self.horizontalLayout_14.setObjectName(u"horizontalLayout_14")
-        self.label_3 = QLabel(Sensorgram)
-        self.label_3.setObjectName(u"label_3")
-        self.label_3.setVisible(False)
-        self.label_3.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
-
-        self.horizontalLayout_14.addWidget(self.label_3)
-
-        self.exp_clock = QLabel(Sensorgram)
-        self.exp_clock.setObjectName(u"exp_clock")
-        self.exp_clock.setVisible(False)
-        self.exp_clock.setStyleSheet(u"")
-
-        self.horizontalLayout_14.addWidget(self.exp_clock)
-
-
-        self.verticalLayout_2.addLayout(self.horizontalLayout_14)
-
-
-        self.horizontalLayout_5.addLayout(self.verticalLayout_2)
+        # Now verticalLayout is directly in controls
 
         self.verticalLayout = QVBoxLayout()
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.loop_diagram = QGraphicsView(Sensorgram)
+
+        # Loop Diagram Container (styled like Hardware Status)
+        self.loop_container = QFrame(self.controls_container)
+        self.loop_container.setObjectName(u"loop_container")
+        self.loop_container.setStyleSheet(u"QFrame#loop_container {\n"
+            "    background-color: white;\n"
+            "    border: 1px solid rgb(180, 180, 180);\n"
+            "    border-radius: 8px;\n"
+            "}")
+        self.loop_container.setFrameShape(QFrame.StyledPanel)
+        self.loop_container.setFrameShadow(QFrame.Raised)
+
+        self.loop_container_layout = QVBoxLayout(self.loop_container)
+        self.loop_container_layout.setSpacing(8)
+        self.loop_container_layout.setContentsMargins(12, 12, 12, 12)
+
+        # Loop Diagram Title
+        self.loop_title = QLabel(self.loop_container)
+        self.loop_title.setObjectName(u"loop_title")
+        loop_title_font = QFont()
+        loop_title_font.setPointSize(10)
+        loop_title_font.setBold(True)
+        self.loop_title.setFont(loop_title_font)
+        self.loop_title.setText("Loop Diagram")
+        self.loop_title.setStyleSheet(u"color: rgb(80, 80, 80); padding-bottom: 4px;")
+        self.loop_container_layout.addWidget(self.loop_title)
+
+        # Loop diagram with responsive container
+        self.loop_diagram_container = QFrame(self.loop_container)
+        self.loop_diagram_container.setObjectName(u"loop_diagram_container")
+        self.loop_diagram_container.setStyleSheet(u"QFrame#loop_diagram_container {\n"
+            "    background-color: transparent;\n"
+            "    border: none;\n"
+            "}")
+        self.loop_diagram_container_layout = QVBoxLayout(self.loop_diagram_container)
+        self.loop_diagram_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.loop_diagram_container_layout.setSpacing(4)
+
+        self.loop_diagram = QGraphicsView(self.loop_diagram_container)
         self.loop_diagram.setObjectName(u"loop_diagram")
-        self.loop_diagram.setMaximumSize(QSize(16777215, 200))
-        self.loop_diagram.setStyleSheet(u"background:transparent")
+        self.loop_diagram.setMinimumSize(QSize(200, 100))
+        self.loop_diagram.setMaximumSize(QSize(16777215, 150))
+        sizePolicy_diagram = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        sizePolicy_diagram.setHorizontalStretch(0)
+        sizePolicy_diagram.setVerticalStretch(0)
+        self.loop_diagram.setSizePolicy(sizePolicy_diagram)
+        self.loop_diagram.setStyleSheet(u"background:transparent; border: none;")
         self.loop_diagram.setFrameShape(QFrame.NoFrame)
         self.loop_diagram.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.loop_diagram.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.loop_diagram.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        self.verticalLayout.addWidget(self.loop_diagram)
+        self.loop_diagram_container_layout.addWidget(self.loop_diagram, 0, Qt.AlignTop)
 
-        self.progress_bar = QProgressBar(Sensorgram)
+        # Progress bar for injection timing
+        self.progress_bar = QProgressBar(self.loop_diagram_container)
         self.progress_bar.setObjectName(u"progress_bar")
-        self.progress_bar.setValue(24)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximumHeight(12)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet(u"QProgressBar {\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 3px;\n"
+            "    background-color: rgb(240, 240, 240);\n"
+            "}\n"
+            "QProgressBar::chunk {\n"
+            "    background-color: rgb(46, 48, 227);\n"
+            "    border-radius: 2px;\n"
+            "}")
+        self.loop_diagram_container_layout.addWidget(self.progress_bar, 0, Qt.AlignTop)
 
-        self.verticalLayout.addWidget(self.progress_bar)
+        self.loop_container_layout.addWidget(self.loop_diagram_container, 0, Qt.AlignTop)
 
-        self.inject_box = QWidget(Sensorgram)
-        self.inject_box.setObjectName(u"inject_box")
-        self.inject_box.setEnabled(False)
-        self.horizontalLayout_16 = QHBoxLayout(self.inject_box)
-        self.horizontalLayout_16.setObjectName(u"horizontalLayout_16")
-        self.horizontalLayout_16.setContentsMargins(0, 0, 0, 0)
-        self.inject_button = QPushButton(self.inject_box)
+        # Old flow_rate_section removed - replaced by pump_flowrate_frame below
+
+        # Pump Flowrate Section
+        self.pump_flowrate_frame = QFrame(self.loop_container)
+        self.pump_flowrate_frame.setObjectName(u"pump_flowrate_frame")
+        self.pump_flowrate_frame.setStyleSheet(u"QFrame#pump_flowrate_frame {\n"
+            "    background-color: rgb(250, 250, 250);\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 6px;\n"
+            "    margin-top: 8px;\n"
+            "}")
+        self.pump_flowrate_layout = QVBoxLayout(self.pump_flowrate_frame)
+        self.pump_flowrate_layout.setContentsMargins(8, 8, 8, 8)
+        self.pump_flowrate_layout.setSpacing(4)
+
+        # Pump Flowrate Title
+        self.pump_flowrate_title = QLabel(self.pump_flowrate_frame)
+        self.pump_flowrate_title.setObjectName(u"pump_flowrate_title")
+        pump_title_font = QFont()
+        pump_title_font.setPointSize(9)
+        pump_title_font.setBold(True)
+        self.pump_flowrate_title.setFont(pump_title_font)
+        self.pump_flowrate_title.setText("Pump Flowrate")
+        self.pump_flowrate_title.setStyleSheet(u"color: rgb(80, 80, 80); background: transparent; border: none;")
+        self.pump_flowrate_layout.addWidget(self.pump_flowrate_title)
+
+        # Current flowrate display
+        self.pump_current_layout = QHBoxLayout()
+        self.pump_current_layout.setSpacing(6)
+
+        self.pump_current_label = QLabel(self.pump_flowrate_frame)
+        self.pump_current_label.setObjectName(u"pump_current_label")
+        self.pump_current_label.setText("Current:")
+        self.pump_current_label.setMinimumWidth(50)
+        self.pump_current_label.setStyleSheet(u"color: rgb(80, 80, 80); font-weight: normal;")
+        self.pump_current_layout.addWidget(self.pump_current_label)
+
+        self.pump_current_value = QLabel(self.pump_flowrate_frame)
+        self.pump_current_value.setObjectName(u"pump_current_value")
+        self.pump_current_value.setText("0.0")
+        self.pump_current_value.setMinimumWidth(60)
+        sizePolicy_pump = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        sizePolicy_pump.setHorizontalStretch(0)
+        sizePolicy_pump.setVerticalStretch(0)
+        self.pump_current_value.setSizePolicy(sizePolicy_pump)
+        self.pump_current_value.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
+        self.pump_current_value.setStyleSheet(u"QLabel {\n"
+            "    background-color: white;\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 3px;\n"
+            "    padding: 4px 8px;\n"
+            "    color: rgb(46, 48, 227);\n"
+            "    font-weight: 600;\n"
+            "}")
+        self.pump_current_layout.addWidget(self.pump_current_value)
+
+        self.pump_current_unit = QLabel(self.pump_flowrate_frame)
+        self.pump_current_unit.setObjectName(u"pump_current_unit")
+        self.pump_current_unit.setText("μL/min")
+        self.pump_current_unit.setMinimumWidth(45)
+        self.pump_current_unit.setStyleSheet(u"color: rgb(80, 80, 80); font-weight: normal;")
+        self.pump_current_layout.addWidget(self.pump_current_unit)
+
+        self.pump_flowrate_layout.addLayout(self.pump_current_layout)
+
+        # Set flowrate
+        self.pump_set_layout = QHBoxLayout()
+        self.pump_set_layout.setSpacing(6)
+
+        self.pump_set_label = QLabel(self.pump_flowrate_frame)
+        self.pump_set_label.setObjectName(u"pump_set_label")
+        self.pump_set_label.setText("Set:")
+        self.pump_set_label.setMinimumWidth(50)
+        self.pump_set_label.setStyleSheet(u"color: rgb(80, 80, 80); font-weight: normal;")
+        self.pump_set_layout.addWidget(self.pump_set_label)
+
+        self.pump_set_value = QLineEdit(self.pump_flowrate_frame)
+        self.pump_set_value.setObjectName(u"pump_set_value")
+        self.pump_set_value.setMinimumWidth(60)
+        sizePolicy_pump_input = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        sizePolicy_pump_input.setHorizontalStretch(0)
+        sizePolicy_pump_input.setVerticalStretch(0)
+        self.pump_set_value.setSizePolicy(sizePolicy_pump_input)
+        self.pump_set_value.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
+        self.pump_set_value.setText("100")
+        self.pump_set_value.setStyleSheet(u"QLineEdit {\n"
+            "    background-color: white;\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 3px;\n"
+            "    padding: 4px 8px;\n"
+            "}\n"
+            "QLineEdit:focus {\n"
+            "    border: 2px solid rgb(46, 48, 227);\n"
+            "}")
+        self.pump_set_layout.addWidget(self.pump_set_value)
+
+        self.pump_set_unit = QLabel(self.pump_flowrate_frame)
+        self.pump_set_unit.setObjectName(u"pump_set_unit")
+        self.pump_set_unit.setText("μL/min")
+        self.pump_set_unit.setMinimumWidth(45)
+        self.pump_set_unit.setStyleSheet(u"color: rgb(80, 80, 80); font-weight: normal;")
+        self.pump_set_layout.addWidget(self.pump_set_unit)
+
+        self.pump_flowrate_layout.addLayout(self.pump_set_layout)
+
+        # Cycle progress
+        self.pump_cycle_layout = QHBoxLayout()
+        self.pump_cycle_layout.setSpacing(6)
+
+        self.pump_cycle_label = QLabel(self.pump_flowrate_frame)
+        self.pump_cycle_label.setObjectName(u"pump_cycle_label")
+        self.pump_cycle_label.setText("Cycles:")
+        self.pump_cycle_label.setMinimumWidth(50)
+        self.pump_cycle_label.setStyleSheet(u"color: rgb(80, 80, 80); font-weight: normal;")
+        self.pump_cycle_layout.addWidget(self.pump_cycle_label)
+
+        self.pump_cycle_progress = QLabel(self.pump_flowrate_frame)
+        self.pump_cycle_progress.setObjectName(u"pump_cycle_progress")
+        self.pump_cycle_progress.setText("0 / 0")
+        self.pump_cycle_progress.setMinimumWidth(60)
+        sizePolicy_cycle = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        sizePolicy_cycle.setHorizontalStretch(0)
+        sizePolicy_cycle.setVerticalStretch(0)
+        self.pump_cycle_progress.setSizePolicy(sizePolicy_cycle)
+        self.pump_cycle_progress.setAlignment(Qt.AlignCenter)
+        self.pump_cycle_progress.setStyleSheet(u"QLabel {\n"
+            "    background-color: white;\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 3px;\n"
+            "    padding: 4px 8px;\n"
+            "    color: rgb(60, 60, 60);\n"
+            "    font-weight: 600;\n"
+            "}")
+        self.pump_cycle_layout.addWidget(self.pump_cycle_progress)
+
+        self.pump_cycle_set = QLineEdit(self.pump_flowrate_frame)
+        self.pump_cycle_set.setObjectName(u"pump_cycle_set")
+        self.pump_cycle_set.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
+        self.pump_cycle_set.setText("1")
+        self.pump_cycle_set.setMaximumWidth(50)
+        self.pump_cycle_set.setStyleSheet(u"QLineEdit {\n"
+            "    background-color: white;\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 3px;\n"
+            "    padding: 4px 8px;\n"
+            "}\n"
+            "QLineEdit:focus {\n"
+            "    border: 2px solid rgb(46, 48, 227);\n"
+            "}")
+        self.pump_cycle_layout.addWidget(self.pump_cycle_set)
+
+        self.pump_flowrate_layout.addLayout(self.pump_cycle_layout)
+
+        # Pump control buttons
+        self.pump_buttons_layout = QHBoxLayout()
+        self.pump_buttons_layout.setSpacing(6)
+
+        # Compact button style
+        compact_button_style = u"QPushButton {\n"\
+            "    background-color: rgb(240, 240, 240);\n"\
+            "    color: rgb(60, 60, 60);\n"\
+            "    border: 1px solid rgb(200, 200, 200);\n"\
+            "    border-radius: 4px;\n"\
+            "    font-weight: 600;\n"\
+            "    padding: 4px 8px;\n"\
+            "}\n"\
+            "QPushButton:hover {\n"\
+            "    background-color: rgb(230, 230, 230);\n"\
+            "    border: 1px solid rgb(180, 180, 180);\n"\
+            "}\n"\
+            "QPushButton:pressed {\n"\
+            "    background-color: rgb(210, 210, 210);\n"\
+            "}\n"\
+            "QPushButton:disabled {\n"\
+            "    background-color: rgb(245, 245, 245);\n"\
+            "    color: rgb(180, 180, 180);\n"\
+            "    border: 1px solid rgb(220, 220, 220);\n"\
+            "}"
+
+        self.pump_stop_button = QPushButton(self.pump_flowrate_frame)
+        self.pump_stop_button.setObjectName(u"pump_stop_button")
+        self.pump_stop_button.setText("Stop")
+        self.pump_stop_button.setMinimumHeight(28)
+        self.pump_stop_button.setMinimumWidth(50)
+        sizePolicy_btn = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        sizePolicy_btn.setHorizontalStretch(0)
+        sizePolicy_btn.setVerticalStretch(0)
+        self.pump_stop_button.setSizePolicy(sizePolicy_btn)
+        self.pump_stop_button.setStyleSheet(compact_button_style)
+        self.pump_buttons_layout.addWidget(self.pump_stop_button)
+
+        self.pump_refill_button = QPushButton(self.pump_flowrate_frame)
+        self.pump_refill_button.setObjectName(u"pump_refill_button")
+        self.pump_refill_button.setText("Refill")
+        self.pump_refill_button.setMinimumHeight(28)
+        self.pump_refill_button.setMinimumWidth(50)
+        self.pump_refill_button.setSizePolicy(sizePolicy_btn)
+        self.pump_refill_button.setStyleSheet(compact_button_style)
+        self.pump_buttons_layout.addWidget(self.pump_refill_button)
+
+        self.pump_flowrate_layout.addLayout(self.pump_buttons_layout)
+
+        self.loop_container_layout.addWidget(self.pump_flowrate_frame)
+
+        # Preset Functions Section with light gray buttons
+        self.preset_functions_frame = QFrame(self.loop_container)
+        self.preset_functions_frame.setObjectName(u"preset_functions_frame")
+        self.preset_functions_frame.setStyleSheet(u"QFrame#preset_functions_frame {\n"
+            "    background-color: rgb(250, 250, 250);\n"
+            "    border: 1px solid rgb(200, 200, 200);\n"
+            "    border-radius: 6px;\n"
+            "    margin-top: 8px;\n"
+            "}")
+        self.preset_functions_layout = QVBoxLayout(self.preset_functions_frame)
+        self.preset_functions_layout.setContentsMargins(8, 8, 8, 8)
+        self.preset_functions_layout.setSpacing(6)
+
+        # Preset Functions Title
+        self.preset_title = QLabel(self.preset_functions_frame)
+        self.preset_title.setObjectName(u"preset_title")
+        preset_title_font = QFont()
+        preset_title_font.setPointSize(9)
+        preset_title_font.setBold(True)
+        self.preset_title.setFont(preset_title_font)
+        self.preset_title.setText("Preset Functions")
+        self.preset_title.setStyleSheet(u"color: rgb(80, 80, 80); background: transparent; border: none;")
+        self.preset_functions_layout.addWidget(self.preset_title)
+
+        # Single row with all preset buttons
+        self.preset_buttons_layout = QHBoxLayout()
+        self.preset_buttons_layout.setSpacing(6)
+
+        # Light gray button style
+        light_gray_style = u"QPushButton {\n"\
+            "    background-color: rgb(240, 240, 240);\n"\
+            "    color: rgb(60, 60, 60);\n"\
+            "    border: 1px solid rgb(200, 200, 200);\n"\
+            "    border-radius: 4px;\n"\
+            "    font-weight: 600;\n"\
+            "    padding: 6px 12px;\n"\
+            "}\n"\
+            "QPushButton:hover {\n"\
+            "    background-color: rgb(230, 230, 230);\n"\
+            "    border: 1px solid rgb(180, 180, 180);\n"\
+            "}\n"\
+            "QPushButton:pressed {\n"\
+            "    background-color: rgb(210, 210, 210);\n"\
+            "}\n"\
+            "QPushButton:disabled {\n"\
+            "    background-color: rgb(245, 245, 245);\n"\
+            "    color: rgb(180, 180, 180);\n"\
+            "    border: 1px solid rgb(220, 220, 220);\n"\
+            "}"
+
+        # Inject button (renamed for wiring)
+        self.inject_button = QPushButton(self.preset_functions_frame)
         self.inject_button.setObjectName(u"inject_button")
+        self.inject_button.setText("Inject")
+        self.inject_button.setMinimumHeight(28)
+        self.inject_button.setStyleSheet(light_gray_style)
+        self.preset_buttons_layout.addWidget(self.inject_button)
 
-        self.horizontalLayout_16.addWidget(self.inject_button)
-
-        self.regen_button = QPushButton(self.inject_box)
+        # Regen button (renamed for wiring)
+        self.regen_button = QPushButton(self.preset_functions_frame)
         self.regen_button.setObjectName(u"regen_button")
+        self.regen_button.setText("Regen")
+        self.regen_button.setMinimumHeight(28)
+        self.regen_button.setStyleSheet(light_gray_style)
+        self.preset_buttons_layout.addWidget(self.regen_button)
 
-        self.horizontalLayout_16.addWidget(self.regen_button)
-
-        self.flush_button = QPushButton(self.inject_box)
+        # Flush button (renamed for wiring)
+        self.flush_button = QPushButton(self.preset_functions_frame)
         self.flush_button.setObjectName(u"flush_button")
+        self.flush_button.setText("Flush")
+        self.flush_button.setMinimumHeight(28)
+        self.flush_button.setStyleSheet(light_gray_style)
+        self.preset_buttons_layout.addWidget(self.flush_button)
 
-        self.horizontalLayout_16.addWidget(self.flush_button)
+        # Prime button (renamed for wiring)
+        self.prime_button = QPushButton(self.preset_functions_frame)
+        self.prime_button.setObjectName(u"prime_button")
+        self.prime_button.setText("Prime")
+        self.prime_button.setMinimumHeight(28)
+        self.prime_button.setStyleSheet(light_gray_style)
+        self.preset_buttons_layout.addWidget(self.prime_button)
 
+        self.preset_functions_layout.addLayout(self.preset_buttons_layout)
 
-        self.verticalLayout.addWidget(self.inject_box)
+        self.loop_container_layout.addWidget(self.preset_functions_frame)
 
-        self.flow_rate_box = QGroupBox(Sensorgram)
-        self.flow_rate_box.setObjectName(u"flow_rate_box")
-        self.flow_rate_box.setEnabled(False)
-        self.verticalLayout_6 = QVBoxLayout(self.flow_rate_box)
-        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
-        self.horizontalLayout_15 = QHBoxLayout()
-        self.horizontalLayout_15.setObjectName(u"horizontalLayout_15")
-        self.label_8 = QLabel(self.flow_rate_box)
-        self.label_8.setObjectName(u"label_8")
-
-        self.horizontalLayout_15.addWidget(self.label_8)
-
-        self.flow_rate_now = QLabel(self.flow_rate_box)
-        self.flow_rate_now.setObjectName(u"flow_rate_now")
-        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.flow_rate_now.sizePolicy().hasHeightForWidth())
-        self.flow_rate_now.setSizePolicy(sizePolicy)
-        self.flow_rate_now.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
-
-        self.horizontalLayout_15.addWidget(self.flow_rate_now)
-
-        self.label_4 = QLabel(self.flow_rate_box)
-        self.label_4.setObjectName(u"label_4")
-
-        self.horizontalLayout_15.addWidget(self.label_4)
-
-
-        self.verticalLayout_6.addLayout(self.horizontalLayout_15)
-
-        self.horizontalLayout_2 = QHBoxLayout()
-        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.label = QLabel(self.flow_rate_box)
-        self.label.setObjectName(u"label")
-
-        self.horizontalLayout_2.addWidget(self.label)
-
-        self.flow_rate = QLineEdit(self.flow_rate_box)
-        self.flow_rate.setObjectName(u"flow_rate")
-        self.flow_rate.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
-
-        self.horizontalLayout_2.addWidget(self.flow_rate)
-
-        self.label_2 = QLabel(self.flow_rate_box)
-        self.label_2.setObjectName(u"label_2")
-
-        self.horizontalLayout_2.addWidget(self.label_2)
-
-
-        self.verticalLayout_6.addLayout(self.horizontalLayout_2)
-
-
-        self.verticalLayout.addWidget(self.flow_rate_box)
+        self.verticalLayout.addWidget(self.loop_container)
 
         self.verticalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer_3)
 
-        self.groupBox_4 = QGroupBox(Sensorgram)
+        # Hidden widgets still needed by code
+        self.flow_rate = QLineEdit(self.controls_container)
+        self.flow_rate.setObjectName(u"flow_rate")
+        self.flow_rate.setVisible(False)
+
+        self.flow_rate_now = QLabel(self.controls_container)
+        self.flow_rate_now.setObjectName(u"flow_rate_now")
+        self.flow_rate_now.setVisible(False)
+
+        # Cycle Settings Container (styled like Hardware Status)
+        self.groupBox_4 = QFrame(self.controls_container)
         self.groupBox_4.setObjectName(u"groupBox_4")
+        self.groupBox_4.setStyleSheet(u"QFrame#groupBox_4 {\n"
+            "    background-color: white;\n"
+            "    border: 1px solid rgb(180, 180, 180);\n"
+            "    border-radius: 8px;\n"
+            "}")
+        self.groupBox_4.setFrameShape(QFrame.StyledPanel)
+        self.groupBox_4.setFrameShadow(QFrame.Raised)
+
         self.verticalLayout_3 = QVBoxLayout(self.groupBox_4)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
+        self.verticalLayout_3.setContentsMargins(12, 12, 12, 12)
+        self.verticalLayout_3.setSpacing(8)
+
+        # Cycle Settings Title
+        self.cycle_title = QLabel(self.groupBox_4)
+        self.cycle_title.setObjectName(u"cycle_title")
+        cycle_title_font = QFont()
+        cycle_title_font.setPointSize(10)
+        cycle_title_font.setBold(True)
+        self.cycle_title.setFont(cycle_title_font)
+        self.cycle_title.setText("Cycle Settings")
+        self.cycle_title.setStyleSheet(u"color: rgb(80, 80, 80); padding-bottom: 4px;")
+        self.verticalLayout_3.addWidget(self.cycle_title)
         self.horizontalLayout_exp_time = QHBoxLayout()
         self.horizontalLayout_exp_time.setObjectName(u"horizontalLayout_exp_time")
         self.label_exp_time = QLabel(self.groupBox_4)
@@ -576,13 +725,30 @@ class Ui_Sensorgram(object):
 
         self.verticalLayout.addWidget(self.groupBox_4)
 
+        # Cycle Data Table button at bottom
+        self.cycle_data_table_btn = QPushButton(self.controls_container)
+        self.cycle_data_table_btn.setObjectName(u"cycle_data_table_btn")
+        self.cycle_data_table_btn.setText("Cycle Data Table")
+        self.cycle_data_table_btn.setMinimumSize(QSize(0, 35))
+        self.cycle_data_table_btn.setStyleSheet(u"QPushButton {\n"
+            "    background-color: rgb(46, 48, 227);\n"
+            "    color: white;\n"
+            "    border: 1px solid rgb(46, 48, 227);\n"
+            "    border-radius: 4px;\n"
+            "    font-weight: bold;\n"
+            "    padding: 8px;\n"
+            "}\n"
+            "QPushButton:hover {\n"
+            "    background-color: rgb(66, 68, 247);\n"
+            "}\n"
+            "QPushButton:pressed {\n"
+            "    background-color: rgb(26, 28, 207);\n"
+            "}")
 
-        self.horizontalLayout_5.addLayout(self.verticalLayout)
+        self.verticalLayout.addWidget(self.cycle_data_table_btn)
 
-        self.horizontalLayout_5.setStretch(0, 1)
-        self.horizontalLayout_5.setStretch(1, 2)
-
-        self.controls.addLayout(self.horizontalLayout_5)
+        # Add verticalLayout directly to controls (no more horizontalLayout_5)
+        self.controls.addLayout(self.verticalLayout)
 
         self.horizontalLayout_13 = QHBoxLayout()
         self.horizontalLayout_13.setObjectName(u"horizontalLayout_13")
@@ -590,7 +756,7 @@ class Ui_Sensorgram(object):
 
         self.horizontalLayout_13.addItem(self.horizontalSpacer_3)
 
-        self.reset_segment_btn = QPushButton(Sensorgram)
+        self.reset_segment_btn = QPushButton(self.controls_container)
         self.reset_segment_btn.setObjectName(u"reset_segment_btn")
         sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         sizePolicy1.setHorizontalStretch(0)
@@ -637,7 +803,7 @@ class Ui_Sensorgram(object):
 
         self.horizontalLayout_table_btn.addItem(self.horizontalSpacer_table_left)
 
-        self.open_table_btn = QPushButton(Sensorgram)
+        self.open_table_btn = QPushButton(self.controls_container)
         self.open_table_btn.setObjectName(u"open_table_btn")
         self.open_table_btn.setVisible(False)
         sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -674,7 +840,7 @@ class Ui_Sensorgram(object):
         self.controls.setStretch(0, 1)
         self.controls.setStretch(3, 2)
 
-        self.horizontalLayout.addLayout(self.controls)
+        self.horizontalLayout.addWidget(self.controls_container)
 
         self.horizontalLayout.setStretch(0, 1)
 
@@ -690,33 +856,21 @@ class Ui_Sensorgram(object):
         self.segment_B.setText(QCoreApplication.translate("Sensorgram", u"Channel B", None))
         self.segment_C.setText(QCoreApplication.translate("Sensorgram", u"Channel C", None))
         self.segment_D.setText(QCoreApplication.translate("Sensorgram", u"Channel D", None))
-        self.shift_display_box.setText(QCoreApplication.translate("Sensorgram", u"Ready", None))
+        # shift_display_box removed
         self.clear_graph_btn.setText("")
         self.groupBox_display_right.setTitle(QCoreApplication.translate("Sensorgram", u"Display", None))
         self.segment_A_right.setText(QCoreApplication.translate("Sensorgram", u"A", None))
         self.segment_B_right.setText(QCoreApplication.translate("Sensorgram", u"B", None))
         self.segment_C_right.setText(QCoreApplication.translate("Sensorgram", u"C", None))
         self.segment_D_right.setText(QCoreApplication.translate("Sensorgram", u"D", None))
-        self.groupBox_6.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Cursors", None))
-        self.live_btn.setText(QCoreApplication.translate("Sensorgram", u"Live View Mode", None))
-        self.label_14.setText(QCoreApplication.translate("Sensorgram", u"Start Cursor:", None))
-        self.label_6.setText("")
-        self.label_10.setText(QCoreApplication.translate("Sensorgram", u"s", None))
-        self.label_16.setText(QCoreApplication.translate("Sensorgram", u"End Cursor:", None))
-        self.label_7.setText("")
-        self.label_9.setText(QCoreApplication.translate("Sensorgram", u"s", None))
-        self.label_3.setText(QCoreApplication.translate("Sensorgram", u"Experiment time:", None))
-        self.exp_clock.setText(QCoreApplication.translate("Sensorgram", u"HH:MM:SS", None))
+        # Removed groupBox_6 and related labels - old gray box controls deleted
         self.inject_button.setText(QCoreApplication.translate("Sensorgram", u"Inject", None))
         self.regen_button.setText(QCoreApplication.translate("Sensorgram", u"Regenerate", None))
         self.flush_button.setText(QCoreApplication.translate("Sensorgram", u"Flush", None))
-        self.flow_rate_box.setTitle(QCoreApplication.translate("Sensorgram", u"Flow Rate", None))
-        self.label_8.setText(QCoreApplication.translate("Sensorgram", u"Current:", None))
+        # Old flow rate section removed - flow_rate widgets now hidden
         self.flow_rate_now.setText(QCoreApplication.translate("Sensorgram", u"30", None))
-        self.label_4.setText(QCoreApplication.translate("Sensorgram", u"\u03bcL/min", None))
-        self.label.setText(QCoreApplication.translate("Sensorgram", u"New:", None))
-        self.label_2.setText(QCoreApplication.translate("Sensorgram", u"\u03bcL/min", None))
-        self.groupBox_4.setTitle(QCoreApplication.translate("Sensorgram", u"Cycle Settings", None))
+        # groupBox_4 is now a QFrame with a title label, not QGroupBox
+        self.cycle_title.setText(QCoreApplication.translate("Sensorgram", u"Cycle Settings", None))
         self.label_exp_time.setText(QCoreApplication.translate("Sensorgram", u"Experiment time:", None))
         self.exp_clock_settings.setText(QCoreApplication.translate("Sensorgram", u"00h 02m 50s", None))
         self.label_cycle_type.setText(QCoreApplication.translate("Sensorgram", u"Type:", None))

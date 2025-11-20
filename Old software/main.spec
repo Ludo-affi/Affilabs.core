@@ -1,16 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from PyInstaller.utils.hooks import collect_dynamic_libs
+import os
 
 block_cipher = None
 
+# Build list of data files, only including files that exist
+datas = [("main.spec", "."), ("VERSION", ".")]
+if os.path.exists("affinite_ezspr.uf2"):
+    datas.append(("affinite_ezspr.uf2", "."))
 
 a = Analysis(
     ["main/main.py"],
     pathex=[],
     binaries=collect_dynamic_libs("utils"),
-    datas=[("main.spec", "."), ("affinite_ezspr.uf2", ".")],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=['afterglow_correction'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

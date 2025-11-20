@@ -133,21 +133,21 @@ class BgRectDialog(QDialog):
             margin_right = self.margin_right_spin.value()
             margin_bottom = self.margin_bottom_spin.value()
             radius = self.radius_spin.value()
-            
+
             # Update stored parameters
             self.data_window.bg_rect_margin_left = margin_left
             self.data_window.bg_rect_margin_top = margin_top
             self.data_window.bg_rect_margin_right = margin_right
             self.data_window.bg_rect_margin_bottom = margin_bottom
             self.data_window.bg_rect_radius = radius
-            
+
             # Update border radius and styling
             self.data_window.bg_rect_widget.setStyleSheet(
                 f"background-color: rgb(255, 255, 255);"
                 f"border: 1px solid rgb(100, 100, 100);"
                 f"border-radius: {radius}px;"
             )
-            
+
             # Recalculate position and size
             self.data_window._position_bg_rect()
 

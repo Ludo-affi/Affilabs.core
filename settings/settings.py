@@ -32,15 +32,29 @@ from re import search
 
 def get_version() -> str:
     """Get the current version of this software."""
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        spec_file = Path(sys._MEIPASS) / "main.spec"  # noqa: SLF001
-    else:
-        spec_file = Path("build/main.spec")
-    match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
-    if match is None:
-        msg = "Could not find version in spec file."
-        raise RuntimeError(msg)
-    return match[2]
+    try:
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            # When frozen (compiled to .exe), read from bundled VERSION file
+            version_file = Path(sys._MEIPASS) / "VERSION"  # noqa: SLF001
+        else:
+            # When running from source, read from VERSION file in project root
+            version_file = Path(__file__).parent.parent / "VERSION"
+        
+        version = version_file.read_text().strip()
+        return version
+    except FileNotFoundError:
+        # Fallback: try to parse main.spec if VERSION file doesn't exist
+        try:
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                spec_file = Path(sys._MEIPASS) / "main.spec"  # noqa: SLF001
+            else:
+                spec_file = Path(__file__).parent.parent / "build" / "main.spec"
+            match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
+            if match is None:
+                return "0.2"  # Default fallback version
+            return match[2]
+        except (FileNotFoundError, AttributeError):
+            return "0.2"  # Default fallback version
 
 
 DEV = True
@@ -294,6 +308,43 @@ POLYNOMIAL_FIT_RANGE = (600, 675)  # Full SPR dip range - covers entire resonanc
 # This is NOT "artificial" - it's REQUIRED for matching old software performance
 TEMPORAL_SMOOTHING_ENABLED = True      # ENABLED - Achieves 4-5 RU target (old software used this)
 TEMPORAL_SMOOTHING_METHOD = 'kalman'   # Kalman filter (optimal for real-time tracking)
+
+# =============================================================================
+# SESSION QUALITY MONITORING (FWHM-Based QC System)
+# =============================================================================
+# When enabled, the system will track FWHM (Full Width at Half Maximum) of the SPR
+# peak throughout each recording session and provide:
+#   - Real-time RGB LED status feedback (Green/Yellow/Red quality indicator)
+#   - Per-channel FWHM history tracking (only within 580-630nm valid range)
+#   - End-of-session QC report with statistics and historical comparison
+#   - Session-based tracking (resets each recording, not cumulative)
+#
+# Quality Thresholds (user-specified):
+#   - <30nm:   Excellent (Green LED)
+#   - 30-60nm: Good     (Yellow LED)
+#   - ≥60nm:   Poor     (Red LED)
+#
+# Wavelength Validation:
+#   - Only peaks within 580-630nm are tracked for QC purposes
+#   - Out-of-range peaks are ignored but logged for debugging
+#
+# Feature Status: DISABLED for controlled rollout pending user testing
+ENABLE_SESSION_QUALITY_MONITORING: bool = False  # Master switch for FWHM QC system
+
+# Quality thresholds for FWHM-based grading (nm)
+FWHM_EXCELLENT_THRESHOLD_NM: float = 30.0   # Green:  FWHM < 30nm
+FWHM_GOOD_THRESHOLD_NM: float = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
+                                             # Red:    FWHM ≥ 60nm
+
+# Wavelength range for QC validation (only peaks within this range are tracked)
+QC_WAVELENGTH_MIN_NM: float = 580.0  # Minimum wavelength for QC tracking
+QC_WAVELENGTH_MAX_NM: float = 630.0  # Maximum wavelength for QC tracking
+
+# Degradation detection threshold (nm/min)
+QC_DEGRADATION_ALERT_THRESHOLD: float = 0.5  # Alert if FWHM increases by >0.5nm/min
+
+# Session history persistence (stored in device directory)
+QC_MAX_SESSION_HISTORY: int = 50  # Keep last 50 sessions for baseline comparison
 
 # =============================================================================
 # CONSENSUS PEAK TRACKING (Phase 1 - v0.2.0)

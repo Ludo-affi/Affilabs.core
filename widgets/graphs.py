@@ -140,9 +140,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
             if total_points > 0:
                 logger.debug(f"📊 Plotting data: {total_points} total points across channels")
 
+            # Cache visibility checks for performance
+            visible_channels = {ch: self.plots[ch].isVisible() for ch in CH_LIST}
+
             for ch in CH_LIST:
                 # ✨ G3: Skip hidden channels (saves ~2ms per channel)
-                if not self.plots[ch].isVisible():
+                if not visible_channels[ch]:
                     logger.debug(f"Skipping hidden channel {ch} (plot not visible)")
                     continue
 

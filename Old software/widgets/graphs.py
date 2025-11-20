@@ -3,12 +3,21 @@ import pyqtgraph
 import numpy as np
 from PySide6.QtCore import Signal, Qt, QRectF
 from PySide6.QtGui import QBrush, QColor, QPen
-from PySide6.QtWidgets import QGraphicsRectItem
+from PySide6.QtWidgets import QGraphicsRectItem, QCheckBox, QWidget, QHBoxLayout, QPushButton, QGraphicsProxyWidget, QSizePolicy
 from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine, LinearRegionItem
 from copy import deepcopy
 import settings
 from settings import CH_LIST, UNIT_LIST, STATIC_PLOT, DEV
 from utils.logger import logger
+
+# Import modern theme colors
+try:
+    from styles import get_graph_colors, style_plot_widget, create_channel_pens
+    MODERN_COLORS = get_graph_colors()
+    MODERN_THEME = True
+except ImportError:
+    MODERN_THEME = False
+    MODERN_COLORS = None
 
 
 class SensorgramGraph(GraphicsLayoutWidget):
@@ -29,7 +38,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
     segment_signal = Signal(float, float, bool)
     shift_values_signal = Signal(dict)  # Signal to emit shift values to display box
 
-    def __init__(self, title_string):
+    def __init__(self, title_string, show_title=False):
         super(SensorgramGraph, self).__init__()
 
         self.subsample_threshold = 301
@@ -46,10 +55,14 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         setConfigOptions(antialias=True)
 
-        # Set plot settings: title, grid, x, y axis labels
-        self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, size='13pt')
-        self.plot.showGrid(x=True, y=True, alpha=0.2)
+        # Set plot settings: minimalist chrome for maximum data area
+        if show_title:
+            self.plot = self.addPlot(title=title_string)
+            # Style title
+            self.plot.titleLabel.setText(title_string, color=(30, 30, 30), size='11pt')
+        else:
+            self.plot = self.addPlot()
+        self.plot.showGrid(x=False, y=False)
         self.plot.setAxisItems()
         self.plot.setLabel('left', text=f'λ ({self.unit})')  # Lambda symbol
         self.plot.setLabel('bottom', text='Time (s)')
@@ -86,36 +99,38 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         self.live = True
 
-        # set vertical cursors: left and right with labels
+        cursor_pen = mkPen('#333333', width=2)
+        cursor_label_opts = {
+            'position': 0.95,
+            'color': (51, 51, 51),
+            'movable': False,
+            'fill': (255, 255, 255, 220),
+            'anchor': (1.0, 0.5),
+            'rotateAxis': (0, 1),
+        }
+
+        start_label_opts = cursor_label_opts.copy()
+        start_label_opts.update({
+            'position': 0.04,
+            'anchor': (0.5, 1.25),
+        })
+
+        # set vertical cursors: left and right with identical styling
         self.left_cursor = InfiniteLine(
             pos=0,
             angle=90,
-            pen=mkPen('#333333', width=2),
+            pen=cursor_pen,
             movable=True,
             label='Start 0.00s',
-            labelOpts={
-                'position': 0.95,
-                'color': (51, 51, 51),
-                'movable': False,
-                'fill': (255, 255, 255, 220),
-                'anchor': (1.0, 0.5),
-                'rotateAxis': (0, 1)
-            })
+            labelOpts=start_label_opts)
 
         self.right_cursor = InfiniteLine(
             pos=0,
             angle=90,
-            pen=mkPen('#333333', width=2),
+            pen=cursor_pen,
             movable=True,
             label='Stop 0.00s',
-            labelOpts={
-                'position': 0.95,
-                'color': (51, 51, 51),
-                'movable': False,
-                'fill': (255, 255, 255, 220),
-                'anchor': (1.0, 0.5),
-                'rotateAxis': (0, 1)
-            })
+            labelOpts=cursor_label_opts.copy())
 
         # set cursor hover color
         self.left_cursor.setHoverPen(mkPen('#666666', width=3))
@@ -142,6 +157,62 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.right_cursor_pos = 1
         self.set_left(0, emit=False)
         self.set_right(1, emit=False)
+
+        # Add Clear Graph button to top-left corner
+        self.clear_button = None
+        if show_title:
+            self._create_clear_button()
+
+    def _create_clear_button(self):
+        """Create a Clear Graph button positioned at the top-left corner."""
+        # Create button widget
+        button = QPushButton("Clear")
+        button.setMinimumSize(50, 24)
+        button.setMaximumSize(60, 26)
+        button.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 0, 0, 25);
+                color: rgb(45, 45, 45);
+                border: 1px solid rgba(0, 0, 0, 40);
+                border-radius: 6px;
+                padding: 2px 8px;
+                font-size: 8pt;
+                font-weight: normal;
+            }
+            QPushButton:hover {
+                background: rgba(0, 0, 0, 50);
+                color: white;
+            }
+            QPushButton:pressed {
+                background: rgba(0, 0, 0, 70);
+            }
+        """)
+
+        # Create proxy widget to add button to the graphics scene
+        proxy = QGraphicsProxyWidget()
+        proxy.setWidget(button)
+
+        # Store references
+        self.clear_button = button
+        self.clear_button_proxy = proxy
+
+        # Add to scene
+        self.plot.scene().addItem(proxy)
+
+        # Position the button - will be adjusted in layout
+        self._position_clear_button()
+
+    def _position_clear_button(self):
+        """Position the Clear button at the top-left of the graph."""
+        if hasattr(self, 'clear_button_proxy'):
+            # Get the plot area coordinates
+            plot_rect = self.plot.sceneBoundingRect()
+
+            # Position at top-left corner with some padding
+            x = plot_rect.left() + 10
+            y = plot_rect.top() + 10
+
+            self.clear_button_proxy.setPos(x, y)
 
     def update_colors(self):
         """Update plot colors when colorblind mode is toggled."""
@@ -442,16 +513,20 @@ class SegmentGraph(GraphicsLayoutWidget):
     assoc_cursor_sig = Signal(str, float, float)
     shift_values_signal = Signal(dict)  # Signal to emit shift values to display box
 
-    def __init__(self, title_string, unit_string, parent=None, has_cursors=False):
+    def __init__(self, title_string, unit_string, show_title=False, parent=None, has_cursors=False):
         super(SegmentGraph, self).__init__(parent=parent)
         setConfigOptions(antialias=True)
         self.unit = unit_string
 
-        # Set plot settings: title, grid, x, y axis labels
-        self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, size='10pt')
+        # Set plot settings: maximize data view (no title/grid)
+        if show_title:
+            self.plot = self.addPlot(title=title_string)
+            # Style title
+            self.plot.titleLabel.setText(title_string, color=(30, 30, 30), size='11pt')
+        else:
+            self.plot = self.addPlot()
         self.plot.setDownsampling(ds=False, mode='subsample')
-        self.plot.showGrid(x=True, y=True, alpha=0.2)
+        self.plot.showGrid(x=False, y=False)
         self.plot.setLabel("left", f"Δ SPR ({unit_string})")
         self.plot.setLabel("bottom", "Time (s)")
         self.plot.setMenuEnabled(True)
@@ -504,12 +579,131 @@ class SegmentGraph(GraphicsLayoutWidget):
                     self.dissoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.dissoc_update)
                     self.assoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.assoc_update)
 
+        # Create custom legend widget with checkboxes if title is shown
+        self.legend_checkboxes = {}
+        if show_title:
+            self._create_legend_with_checkboxes(title_string)
+
+    def _create_legend_with_checkboxes(self, title_string):
+        """Create a custom legend with title and channel checkboxes."""
+        # Create container widget for legend
+        legend_widget = QWidget()
+        legend_layout = QHBoxLayout(legend_widget)
+        legend_layout.setContentsMargins(8, 2, 8, 2)
+        legend_layout.setSpacing(12)
+
+        # Add title label (styled to match the plot title)
+        from PySide6.QtWidgets import QLabel
+        title_label = QLabel(title_string)
+        title_label.setStyleSheet("""
+            QLabel {
+                color: rgb(30, 30, 30);
+                font-size: 11pt;
+                font-weight: bold;
+                background: transparent;
+            }
+        """)
+        legend_layout.addWidget(title_label)
+
+        # Add spacer to push checkboxes to the right
+        legend_layout.addStretch()
+
+        # Create checkboxes for each channel with appropriate colors
+        for ch in CH_LIST:
+            checkbox = QCheckBox(f"Ch {ch.upper()}")
+            checkbox.setChecked(True)  # All channels visible by default
+
+            # Get color from settings
+            color = settings.ACTIVE_GRAPH_COLORS[ch]
+            if isinstance(color, tuple):
+                color_str = f"rgb({color[0]}, {color[1]}, {color[2]})"
+            else:
+                color_str = color
+
+            checkbox.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {color_str};
+                    font-weight: bold;
+                    font-size: 9pt;
+                    background: transparent;
+                    spacing: 5px;
+                }}
+                QCheckBox::indicator {{
+                    width: 16px;
+                    height: 16px;
+                }}
+            """)
+
+            # Store reference to checkbox
+            self.legend_checkboxes[ch] = checkbox
+
+            # Connect to display_channel_changed method
+            checkbox.stateChanged.connect(lambda state, channel=ch: self.display_channel_changed(channel, state == Qt.CheckState.Checked.value))
+
+            legend_layout.addWidget(checkbox)
+
+        # Make widget background transparent
+        legend_widget.setStyleSheet("background: transparent;")
+        legend_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        legend_widget.setMaximumHeight(40)
+
+        # Replace the title label with our custom legend widget
+        # Hide the default title
+        if hasattr(self.plot, 'titleLabel'):
+            self.plot.titleLabel.setVisible(False)
+
+        # Add the legend widget as a graphics proxy to the plot
+        proxy = QGraphicsProxyWidget()
+        proxy.setWidget(legend_widget)
+
+        # Position it at the top of the plot area
+        self.legend_proxy = proxy
+        self.plot.scene().addItem(proxy)
+
+        # Position the legend - will be adjusted in layout
+        self._position_legend()
+
+    def _position_legend(self):
+        """Position the legend widget at the top of the graph."""
+        if hasattr(self, 'legend_proxy'):
+            # Get the view box coordinates
+            vb = self.plot.getViewBox()
+            plot_rect = self.plot.sceneBoundingRect()
+
+            # Position at top-left of the plot area
+            x = plot_rect.left() + 10
+            y = plot_rect.top() + 5
+
+            self.legend_proxy.setPos(x, y)
+
     def update_colors(self):
         """Update plot and cursor colors when colorblind mode is toggled."""
         try:
             for ch in CH_LIST:
                 # Update line colors for each channel
                 self.plots[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+
+                # Update checkbox colors in legend
+                if ch in self.legend_checkboxes:
+                    color = settings.ACTIVE_GRAPH_COLORS[ch]
+                    if isinstance(color, tuple):
+                        color_str = f"rgb({color[0]}, {color[1]}, {color[2]})"
+                    else:
+                        color_str = color
+
+                    self.legend_checkboxes[ch].setStyleSheet(f"""
+                        QCheckBox {{
+                            color: {color_str};
+                            font-weight: bold;
+                            font-size: 9pt;
+                            background: transparent;
+                            spacing: 5px;
+                        }}
+                        QCheckBox::indicator {{
+                            width: 16px;
+                            height: 16px;
+                        }}
+                    """)
 
                 # Update dissociation/association cursor colors if present
                 for cursor in ['Start', 'End']:
@@ -670,6 +864,13 @@ class SegmentGraph(GraphicsLayoutWidget):
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.auto_range()
+
+        # Update checkbox state if it exists (without triggering signal)
+        if ch in self.legend_checkboxes:
+            self.legend_checkboxes[ch].blockSignals(True)
+            self.legend_checkboxes[ch].setChecked(bool(flag))
+            self.legend_checkboxes[ch].blockSignals(False)
+
         if self.dissoc_cursor_en:
             self.dissoc_cursors[ch]['Start'].setVisible(bool(flag))
             self.dissoc_cursors[ch]['End'].setVisible(bool(flag))
@@ -708,28 +909,54 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.shift_annotation = None
 
     def _update_shift_labels(self, seg, x_data, y_data):
-        """Emit shift values to display box instead of drawing on graph."""
+        """Display shift values in annotation box on graph."""
         try:
             # Get shift values from the segment object (stored in seg.shift dict)
             if not hasattr(seg, 'shift'):
                 return
 
-            # Build dictionary for visible channels only
-            shift_data = {}
+            # Build text for visible channels only
+            text_lines = []
             for ch in CH_LIST:
                 if self.plots[ch].isVisible():
                     shift_val = seg.shift.get(ch, 0.0)
-                    shift_data[ch] = shift_val
+                    color = settings.ACTIVE_GRAPH_COLORS[ch]
+                    # Handle different color formats
+                    if isinstance(color, str):
+                        color_str = color
+                    elif hasattr(color, 'name'):
+                        color_str = color.name()
+                    elif isinstance(color, (tuple, list)) and len(color) == 3:
+                        color_str = f'rgb({color[0]}, {color[1]}, {color[2]})'
+                    else:
+                        color_str = 'black'
+                    text_lines.append(f'<span style="color: {color_str}">Ch {ch.upper()}: {shift_val:.2f} {self.unit}</span>')
 
-            if shift_data:
-                # Emit signal with shift data
-                self.shift_values_signal.emit(shift_data)
+            if text_lines:
+                # Create or update annotation box
+                from pyqtgraph import TextItem
+
+                if self.shift_annotation is None:
+                    self.shift_annotation = TextItem(anchor=(0, 0))
+                    self.plot.addItem(self.shift_annotation)
+
+                # Set HTML text with colored channel labels
+                html_text = '<div style="background-color: rgba(255, 255, 255, 200); padding: 8px; border: 1px solid rgb(100, 100, 100); border-radius: 4px;">' + '<br>'.join(text_lines) + '</div>'
+                self.shift_annotation.setHtml(html_text)
+
+                # Position in upper-left corner of graph
+                view_range = self.plot.viewRange()
+                x_pos = view_range[0][0] + (view_range[0][1] - view_range[0][0]) * 0.02
+                y_pos = view_range[1][1] - (view_range[1][1] - view_range[1][0]) * 0.02
+                self.shift_annotation.setPos(x_pos, y_pos)
             else:
-                # Clear display if no channels visible
-                self.shift_values_signal.emit({})
+                # Clear annotation if no channels visible
+                self._clear_shift_annotation()
 
-            # Clear any old annotation
-            self._clear_shift_annotation()
+            # Also emit signal for external display
+            shift_data = {ch: seg.shift.get(ch, 0.0) for ch in CH_LIST if self.plots[ch].isVisible()}
+            if shift_data:
+                self.shift_values_signal.emit(shift_data)
 
         except Exception as e:
             logger.debug(f"Error updating shift annotation: {e}")

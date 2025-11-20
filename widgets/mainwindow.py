@@ -46,7 +46,7 @@ class MainWindow(QWidget):
             "}\n"
             "QPushButton:hover{\n"
             "	background: white;\n"
-            "	border: 2px solid rgb(45, 49, 224);\n"
+            "	border: 2px solid rgb(46, 48, 227);\n"
             "	border-radius: 4px;\n"
             "}\n"
             "QPushButton:pressed{\n"
@@ -63,14 +63,21 @@ class MainWindow(QWidget):
         self.ui.rec_btn.clicked.connect(self.record_trigger)
 
         # set minimum size
-        self.sidebar_width = 280
+        self.sidebar_width = 380
 
-        # setup button styles
+        # setup button styles - cache original and selected styles
         self.original_style = self.ui.sensorgram_btn.styleSheet()
         self.selected_style = (
-            "background-color: rgb(254, 254, 254); border: 2px solid rgb(45, 49, 224); "
+            "background-color: rgb(254, 254, 254); border: 2px solid rgb(46, 48, 227); "
             "border-radius: 3px;"
         )
+        # Cache button references for faster access
+        self._page_buttons = {
+            "sensorgram": self.ui.sensorgram_btn,
+            "spectroscopy": self.ui.spectroscopy_btn,
+            "data_processing": self.ui.data_processing_btn,
+            "data_analysis": self.ui.data_analysis_btn,
+        }
 
         # display sidebar open/close button
         self.sidebar_btn = QPushButton("Device\nControls", self)
@@ -89,25 +96,15 @@ class MainWindow(QWidget):
         self.sidebar.move(self.width(), 0)
         self.sidebar.set_widgets()
 
-        # Sensorgram window
+        # Sensorgram window (always created - main view)
         self.sensorgram = DataWindow("dynamic")
         self.sensorgram.setParent(self.ui.main_display)
 
-        # Spectroscopy window
-        self.spectroscopy = Spectroscopy()
-        self.spec_pop_out = SpecDebugWindow(parent=self)
-        if POP_OUT_SPEC:
-            self.spectroscopy.setParent(self.spec_pop_out.ui.single_frame)
-        else:
-            self.spectroscopy.setParent(self.ui.main_display)
-
-        # Data Processing window
-        self.data_processing = DataWindow("static")
-        self.data_processing.setParent(self.ui.main_display)
-
-        # Data Analysis window
-        self.data_analysis = AnalysisWindow()
-        self.data_analysis.setParent(self.ui.main_display)
+        # Lazy-loaded windows (created on first access)
+        self._spectroscopy = None
+        self._spec_pop_out = None
+        self._data_processing = None
+        self._data_analysis = None
 
         # recording errors
         self.sensorgram.export_error_signal.connect(self._on_record_error)
@@ -116,14 +113,8 @@ class MainWindow(QWidget):
         # display
         self.x_pos = self.width() - self.sidebar_btn.width()
 
-        # resize widgets
+        # resize sensorgram (others lazy-loaded)
         self.sensorgram.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        self.spectroscopy.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        self.data_processing.setFixedSize(
             self.ui.main_display.width(), self.ui.main_display.height()
         )
 
@@ -158,6 +149,49 @@ class MainWindow(QWidget):
 
         self.toggle_side_bar(animation_time=0)
 
+    @property
+    def spectroscopy(self):
+        """Lazy-load spectroscopy window."""
+        if self._spectroscopy is None:
+            self._spectroscopy = Spectroscopy()
+            if POP_OUT_SPEC:
+                self._spectroscopy.setParent(self.spec_pop_out.ui.single_frame)
+            else:
+                self._spectroscopy.setParent(self.ui.main_display)
+            self._spectroscopy.setFixedSize(
+                self.ui.main_display.width(), self.ui.main_display.height()
+            )
+        return self._spectroscopy
+
+    @property
+    def spec_pop_out(self):
+        """Lazy-load spectroscopy popup window."""
+        if self._spec_pop_out is None:
+            self._spec_pop_out = SpecDebugWindow(parent=self)
+        return self._spec_pop_out
+
+    @property
+    def data_processing(self):
+        """Lazy-load data processing window."""
+        if self._data_processing is None:
+            self._data_processing = DataWindow("static")
+            self._data_processing.setParent(self.ui.main_display)
+            self._data_processing.setFixedSize(
+                self.ui.main_display.width(), self.ui.main_display.height()
+            )
+        return self._data_processing
+
+    @property
+    def data_analysis(self):
+        """Lazy-load data analysis window."""
+        if self._data_analysis is None:
+            self._data_analysis = AnalysisWindow()
+            self._data_analysis.setParent(self.ui.main_display)
+            self._data_analysis.setFixedSize(
+                self.ui.main_display.width(), self.ui.main_display.height()
+            )
+        return self._data_analysis
+
     def on_device_config(self, config):
         self.device_config = config
         # Ensure advanced/settings menus exist; refresh when device config arrives
@@ -178,45 +212,51 @@ class MainWindow(QWidget):
         self.sensorgram.setFixedSize(
             self.ui.main_display.width(), self.ui.main_display.height()
         )
-        self.spectroscopy.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        self.data_processing.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        self.data_analysis.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
+        # Only resize lazy-loaded windows if they've been created
+        if self._spectroscopy is not None:
+            self._spectroscopy.setFixedSize(
+                self.ui.main_display.width(), self.ui.main_display.height()
+            )
+        if self._data_processing is not None:
+            self._data_processing.setFixedSize(
+                self.ui.main_display.width(), self.ui.main_display.height()
+            )
+        if self._data_analysis is not None:
+            self._data_analysis.setFixedSize(
+                self.ui.main_display.width(), self.ui.main_display.height()
+            )
 
     # navigate the main contents: Sensorgram, Spectroscopy, DataProcessing
     def set_main_widget(self, window_id):
-        page_list = {
-            "sensorgram": self.ui.sensorgram_btn,
-            "spectroscopy": self.ui.spectroscopy_btn,
-            "data_processing": self.ui.data_processing_btn,
-            "data_analysis": self.ui.data_analysis_btn,
-        }
+        # Use cached button references for performance
+        page_list = self._page_buttons
 
-        for page in page_list:
-            getattr(self, page).hide()
-        self.active_page = window_id
+        # Batch UI updates for better performance
+        self.setUpdatesEnabled(False)
+        try:
+            # Hide all pages
+            for page_name in page_list:
+                getattr(self, page_name).hide()
+            self.active_page = window_id
 
-        revert = False
-        if self.sidebar_state == "maximized":
-            self.toggle_side_bar(animation_time=0)
-            revert = True
+            revert = False
+            if self.sidebar_state == "maximized":
+                self.toggle_side_bar(animation_time=0)
+                revert = True
 
-        while len(page_list) > 0:
-            page = page_list.popitem()
-            if page[0] == self.active_page:
-                getattr(self, page[0]).show()
-                page[1].setStyleSheet(self.selected_style)
-            else:
-                page[1].setStyleSheet(self.original_style)
+            # Update button styles and show active page
+            for page_name, button in page_list.items():
+                if page_name == self.active_page:
+                    getattr(self, page_name).show()
+                    button.setStyleSheet(self.selected_style)
+                else:
+                    button.setStyleSheet(self.original_style)
 
-        self.redo_layout()
-        if revert:
-            self.toggle_side_bar(animation_time=0)
+            self.redo_layout()
+            if revert:
+                self.toggle_side_bar(animation_time=0)
+        finally:
+            self.setUpdatesEnabled(True)
 
     def display_sensorgram_page(self):
         self.set_main_widget("sensorgram")
@@ -249,38 +289,51 @@ class MainWindow(QWidget):
         self.redo_layout()
 
     def redo_layout(self):
-        if self.sidebar_state == "minimized":
-            self.x_pos = self.width() - self.sidebar_btn.width()
-        else:
-            self.x_pos = self.width() - self.sidebar_btn.width() - self.sidebar.width()
+        # Batch updates for better performance
+        self.setUpdatesEnabled(False)
+        try:
+            if self.sidebar_state == "minimized":
+                self.x_pos = self.width() - self.sidebar_btn.width()
+            else:
+                self.x_pos = self.width() - self.sidebar_btn.width() - self.sidebar.width()
 
-        self.ui.main_frame.setGeometry(
-            0, 0, self.x_pos + self.sidebar_btn.width(), self.height()
-        )
-        self.sensorgram.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        if POP_OUT_SPEC:
-            self.spectroscopy.setFixedSize(
-                self.spec_pop_out.ui.single_frame.width(),
-                self.spec_pop_out.ui.single_frame.height(),
+            self.ui.main_frame.setGeometry(
+                0, 0, self.x_pos + self.sidebar_btn.width(), self.height()
             )
-        else:
-            self.spectroscopy.setFixedSize(
+
+            # Resize sensorgram (always created)
+            self.sensorgram.setFixedSize(
                 self.ui.main_display.width(), self.ui.main_display.height()
             )
-        self.data_processing.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        self.data_analysis.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
-        )
-        self.data_analysis.resizeEvent()
 
-        self.sidebar.move(self.x_pos + self.sidebar_btn.width(), 0)
-        self.sidebar.setFixedSize(self.sidebar_width, self.height())
-        self.sidebar_btn.move(self.x_pos - 5, 20)
-        self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
+            # Only resize lazy-loaded windows if they've been created
+            if POP_OUT_SPEC and self._spec_pop_out is not None and self._spectroscopy is not None:
+                self._spectroscopy.setFixedSize(
+                    self._spec_pop_out.ui.single_frame.width(),
+                    self._spec_pop_out.ui.single_frame.height(),
+                )
+            elif self._spectroscopy is not None:
+                self._spectroscopy.setFixedSize(
+                    self.ui.main_display.width(), self.ui.main_display.height()
+                )
+
+            if self._data_processing is not None:
+                self._data_processing.setFixedSize(
+                    self.ui.main_display.width(), self.ui.main_display.height()
+                )
+
+            if self._data_analysis is not None:
+                self._data_analysis.setFixedSize(
+                    self.ui.main_display.width(), self.ui.main_display.height()
+                )
+                self._data_analysis.resizeEvent()
+
+            self.sidebar.move(self.x_pos + self.sidebar_btn.width(), 0)
+            self.sidebar.setFixedSize(self.sidebar_width, self.height())
+            self.sidebar_btn.move(self.x_pos - 5, 20)
+            self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
+        finally:
+            self.setUpdatesEnabled(True)
 
     def _on_record_error(self):
         if self.recording:
@@ -329,19 +382,23 @@ class MainWindow(QWidget):
             self.sidebar_btn.setText("Device\nControls")
             self.sidebar_btn.setStyleSheet(self.original_style)
 
-        self.sidebar_btn_anim = QPropertyAnimation(self.sidebar_btn, b"pos")
+        # Reuse animation objects for better performance
+        if self.sidebar_btn_anim is None:
+            self.sidebar_btn_anim = QPropertyAnimation(self.sidebar_btn, b"pos")
         self.sidebar_btn_anim.setEndValue(QPoint(self.x_pos - 5, self.sidebar_btn.y()))
         self.sidebar_btn_anim.setDuration(animation_time)
         self.sidebar_btn_anim.start()
 
-        self.sidebar_anim = QPropertyAnimation(self.sidebar, b"pos")
+        if self.sidebar_anim is None:
+            self.sidebar_anim = QPropertyAnimation(self.sidebar, b"pos")
         self.sidebar_anim.setEndValue(
             QPoint(self.x_pos + self.sidebar_btn.width(), self.sidebar.y())
         )
         self.sidebar_anim.setDuration(animation_time)
         self.sidebar_anim.start()
 
-        self.main_frame_anim = QPropertyAnimation(self.ui.main_frame, b"size")
+        if self.main_frame_anim is None:
+            self.main_frame_anim = QPropertyAnimation(self.ui.main_frame, b"size")
         self.main_frame_anim.setStartValue(self.ui.main_frame.size())
         self.main_frame_anim.setEndValue(
             QSize(self.x_pos + self.sidebar_btn.width(), self.height())
@@ -349,20 +406,27 @@ class MainWindow(QWidget):
         self.main_frame_anim.setDuration(animation_time)
         self.main_frame_anim.start()
 
-        self.sensorgram.setFixedSize(
-            self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
-        )
-        if not POP_OUT_SPEC:
-            self.spectroscopy.setFixedSize(
+        # Batch widget resizing
+        self.setUpdatesEnabled(False)
+        try:
+            self.sensorgram.setFixedSize(
                 self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
             )
-        self.data_processing.setFixedSize(
-            self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
-        )
-        self.data_analysis.setFixedSize(
-            self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
-        )
-        self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
+            if not POP_OUT_SPEC and self._spectroscopy is not None:
+                self._spectroscopy.setFixedSize(
+                    self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                )
+            if self._data_processing is not None:
+                self._data_processing.setFixedSize(
+                    self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                )
+            if self._data_analysis is not None:
+                self._data_analysis.setFixedSize(
+                    self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                )
+            self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
+        finally:
+            self.setUpdatesEnabled(True)
 
     def show_adv_settings(self):
         # Always allow opening the Settings dialog
@@ -382,13 +446,15 @@ class MainWindow(QWidget):
     def closeEvent(self, event):
         if show_message(msg="Quit application?", msg_type="Warning", yes_no=True):
             self.ui.status.setText("Closing application ... ")
-            self.ui.status.repaint()
             self.sensorgram.reference_channel_dlg.close()
-            self.data_processing.reference_channel_dlg.close()
+            # Access lazy-loaded windows only if they exist
+            if self._data_processing is not None:
+                self._data_processing.reference_channel_dlg.close()
             if DEV and (
                 self.device_config["ctrl"] in ["PicoP4SPR", "PicoEZSPR"]
             ):  # EZSPR disabled
-                self.advanced_menu.close()
+                if self.advanced_menu is not None:
+                    self.advanced_menu.close()
             self.app.close()
             super().closeEvent(event)
         else:

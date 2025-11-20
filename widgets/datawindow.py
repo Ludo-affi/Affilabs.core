@@ -25,6 +25,7 @@ except ImportError:
         from typing_extensions import TypedDict, Self
 
 import numpy as np
+import pandas as pd
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QDoubleValidator, QFont, QPen
 from PySide6.QtWidgets import (
@@ -76,8 +77,9 @@ CYCLE_Y_PADDING_BOTTOM = 5  # RU to subtract below min Y value
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
 OFF_BRUSH = QBrush(Qt.GlobalColor.transparent)
 
-LOOP_BRUSH = QBrush(Qt.GlobalColor.green)
-SENSOR_BRUSH = QBrush(Qt.GlobalColor.blue)
+# More visually appealing loop diagram colors
+LOOP_BRUSH = QBrush(QColor(46, 227, 111))  # Fresh green (matches inject button)
+SENSOR_BRUSH = QBrush(QColor(100, 150, 250))  # Clear blue (matches flush button)
 LOOP_PEN = QPen(LOOP_BRUSH, 6)
 SENSOR_PEN = QPen(SENSOR_BRUSH, 6)
 
@@ -549,8 +551,6 @@ class DataWindow(QWidget):
     def enable_controls(self: Self, *, data_ready: bool = False) -> None:
         """Enable controls."""
         self.ready = data_ready
-        # TODO(Ryan): Disable sensorgram controls?
-        # 000
 
     def set_filter(self: Self, *, filt_en: bool, med_filt_win: int) -> None:
         """Set filter size on the data."""
@@ -881,10 +881,13 @@ class DataWindow(QWidget):
                 self.full_segment_view.get_right(),
                 update=False,
             )
+            # Batch style updates
+            self.setUpdatesEnabled(False)
             self.ui.save_segment_btn.setText("Save\nCycle")
             self.ui.save_segment_btn.setStyleSheet(self.original_style)
             self.ui.new_segment_btn.setText("Start from\nLast Cycle")
             self.ui.new_segment_btn.setStyleSheet(self.original_style)
+            self.setUpdatesEnabled(True)
         self.full_segment_view.block_updates = False
         if self.return_ref is None:
             self.return_ref = self.reference_channel_dlg.ref_ch
@@ -1211,8 +1214,8 @@ class DataWindow(QWidget):
         """Change units to nanometers."""
         if self.live_segment_start is None and self.current_segment:
             self.live_segment_start = [
-                deepcopy(self.current_segment.start),
-                deepcopy(self.current_segment.end),
+                self.current_segment.start,
+                self.current_segment.end,
             ]
         self.unit = "nm"
         for ch in CH_LIST:
@@ -1224,8 +1227,8 @@ class DataWindow(QWidget):
         """Change unit to RU."""
         if self.live_segment_start is None and self.current_segment:
             self.live_segment_start = [
-                deepcopy(self.current_segment.start),
-                deepcopy(self.current_segment.end),
+                self.current_segment.start,
+                self.current_segment.end,
             ]
         self.unit = "RU"
         for ch in CH_LIST:
@@ -1272,8 +1275,8 @@ class DataWindow(QWidget):
             and self.current_segment
         ):
             self.live_segment_start = [
-                deepcopy(self.current_segment.start),
-                deepcopy(self.current_segment.end),
+                self.current_segment.start,
+                self.current_segment.end,
             ]
         for row in range(self.ui.data_table.rowCount()):
             self.segment_edit = row
@@ -1320,8 +1323,8 @@ class DataWindow(QWidget):
                 self.set_live(on=False)
             if self.live_segment_start is None and self.current_segment:
                 self.live_segment_start = [
-                    deepcopy(self.current_segment.start),
-                    deepcopy(self.current_segment.end),
+                    self.current_segment.start,
+                    self.current_segment.end,
                 ]
                 logger.debug(f"live segment start from view: {self.live_segment_start}")
             self.current_segment = self.saved_segments[row]
@@ -1369,8 +1372,8 @@ class DataWindow(QWidget):
             self.ui.new_segment_btn.setStyleSheet(self.edit_style)
             if self.live_segment_start is None and self.current_segment:
                 self.live_segment_start = [
-                    deepcopy(self.current_segment.start),
-                    deepcopy(self.current_segment.end),
+                    self.current_segment.start,
+                    self.current_segment.end,
                 ]
                 logger.debug(f"live segment start from edit: {self.live_segment_start}")
             self.current_segment = deepcopy(self.saved_segments[row])
@@ -1438,11 +1441,12 @@ class DataWindow(QWidget):
                 proceed = False
 
             if proceed:
-                self.data = deepcopy(sens_data)
-                for _i in range(len(self.saved_segments)):
+                self.data = sens_data  # sens_data is already a dict from sensorgram_data()
+                # Clear all segments - safer than iterating over changing list
+                while self.saved_segments:
                     self.delete_row(first_available=True)
                 self.seg_count = 0
-                for seg in deepcopy(seg_list):
+                for seg in seg_list:  # Iterating doesn't modify the list
                     self.current_segment = seg
                     self.save_segment()
                 self.current_segment = None
@@ -1613,11 +1617,12 @@ class DataWindow(QWidget):
                         self.data["lambda_values"][ch],
                         MED_FILT_WIN,
                     )
-                self.data["buffered_lambda_times"] = deepcopy(
-                    self.data["lambda_times"],
-                )
+                self.data["buffered_lambda_times"] = {
+                    ch: self.data["lambda_times"][ch].copy() for ch in CH_LIST
+                }
 
-                for _i in range(len(self.saved_segments)):
+                # Clear all segments - safer than iterating over changing list
+                while self.saved_segments:
                     self.delete_row(first_available=True)
 
                 self.current_segment = None
@@ -1653,7 +1658,8 @@ class DataWindow(QWidget):
                 if self.segment_edit is not None:
                     self.new_segment()
 
-                for _i in range(self.ui.data_table.rowCount()):
+                # Clear all segments - safer than iterating over changing list
+                while self.saved_segments:
                     self.delete_row(first_available=True)
                 self.seg_count = 0
 
@@ -1762,8 +1768,8 @@ class DataWindow(QWidget):
                         fieldnames=fieldnames,
                     )
 
-                    l_val_data = deepcopy(self.data["lambda_values"])
-                    l_time_data = deepcopy(self.data["lambda_times"])
+                    l_val_data = self.data["lambda_values"]  # Read-only for export
+                    l_time_data = self.data["lambda_times"]
 
                     # 🔍 DEBUG: Check timestamp arrays before export
                     logger.warning("=" * 80)
@@ -1790,44 +1796,21 @@ class DataWindow(QWidget):
                         references,
                     )
 
-                    for i in range(row_count):
-                        # 🔍 DEBUG: Log first 3 rows to see what gets exported
-                        if i < 3:
-                            logger.warning(
-                                f"📝 CSV Row {i}: "
-                                f"A={l_time_data['a'][i]:.3f}s, "
-                                f"B={l_time_data['b'][i]:.3f}s, "
-                                f"C={l_time_data['c'][i]:.3f}s, "
-                                f"D={l_time_data['d'][i]:.3f}s"
-                            )
+                    # Build DataFrame for vectorized CSV writing
+                    row_count = min(len(x) for x in l_time_data.values())
 
-                        for ch in CH_LIST:
-                            if np.isnan(l_val_data[ch][i]):
-                                l_val_data[ch][i] = None
-                        writer.writerow(
-                            {
-                                "X_RawDataA": round(l_time_data["a"][i], 4),
-                                "Y_RawDataA": round(
-                                    (l_val_data["a"][i] - references[0]) * 355,
-                                    4,
-                                ),
-                                "X_RawDataB": round(l_time_data["b"][i], 4),
-                                "Y_RawDataB": round(
-                                    (l_val_data["b"][i] - references[1]) * 355,
-                                    4,
-                                ),
-                                "X_RawDataC": round(l_time_data["c"][i], 4),
-                                "Y_RawDataC": round(
-                                    (l_val_data["c"][i] - references[2]) * 355,
-                                    4,
-                                ),
-                                "X_RawDataD": round(l_time_data["d"][i], 4),
-                                "Y_RawDataD": round(
-                                    (l_val_data["d"][i] - references[3]) * 355,
-                                    4,
-                                ),
-                            },
-                        )
+                    # Prepare data dictionary
+                    data_dict = {}
+                    for i, ch in enumerate(CH_LIST):
+                        data_dict[f"X_RawData{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                        # Convert wavelength to shift (nm) using reference
+                        values = l_val_data[ch][:row_count]
+                        data_dict[f"Y_RawData{ch.upper()}"] = np.round((values - references[i]) * 355, 4)
+
+                    # Create DataFrame and write to CSV
+                    df = pd.DataFrame(data_dict)
+                    df.replace({np.nan: None}, inplace=True)
+                    df.to_csv(txtfile, sep='\t', index=False, header=False)
 
             if self.data["filt"]:
                 full_file = f"{preset_dir} Filtered Data.txt"
@@ -1858,29 +1841,21 @@ class DataWindow(QWidget):
                         )
                         writer.writeheader()
 
-                        l_val_data = deepcopy(self.data["filtered_lambda_values"])
-                        l_time_data = deepcopy(self.data["buffered_lambda_times"])
+                        l_val_data = self.data["filtered_lambda_values"]  # Read-only for export
+                        l_time_data = self.data["buffered_lambda_times"]
 
-                        row_count = len(l_time_data["a"])
+                        row_count = min(len(l_time_data[ch]) for ch in CH_LIST)
+
+                        # Build DataFrame for vectorized CSV writing
+                        data_dict = {}
                         for ch in CH_LIST:
-                            row_count = min(row_count, len(l_time_data[ch]))
+                            data_dict[f"X_Data{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                            data_dict[f"Y_Data{ch.upper()}"] = np.round(l_val_data[ch][:row_count], 4)
 
-                        for i in range(row_count):
-                            for ch in CH_LIST:
-                                if np.isnan(l_val_data[ch][i]):
-                                    l_val_data[ch][i] = None
-                            writer.writerow(
-                                {
-                                    "X_DataA": round(l_time_data["a"][i], 4),
-                                    "Y_DataA": round(l_val_data["a"][i], 4),
-                                    "X_DataB": round(l_time_data["b"][i], 4),
-                                    "Y_DataB": round(l_val_data["b"][i], 4),
-                                    "X_DataC": round(l_time_data["c"][i], 4),
-                                    "Y_DataC": round(l_val_data["c"][i], 4),
-                                    "X_DataD": round(l_time_data["d"][i], 4),
-                                    "Y_DataD": round(l_val_data["d"][i], 4),
-                                },
-                            )
+                        # Create DataFrame and write to CSV
+                        df = pd.DataFrame(data_dict)
+                        df.replace({np.nan: None}, inplace=True)
+                        df.to_csv(txtfile, sep='\t', index=False, header=False)
             if error:
                 self.export_error_signal.emit()
             elif not preset:

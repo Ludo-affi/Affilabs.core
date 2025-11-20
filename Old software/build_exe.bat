@@ -3,7 +3,7 @@ REM Build ezControl executable using PyInstaller
 REM This script packages the Old software into a standalone Windows executable
 
 echo ========================================
-echo ezControl Build Script
+echo ezControl-AI Build Script
 echo ========================================
 echo.
 
@@ -18,6 +18,7 @@ if not exist "main\main.py" (
 echo Step 1: Installing build dependencies...
 echo ----------------------------------------
 ..\. venv312\Scripts\python.exe -m pip install --upgrade pip
+..\. venv312\Scripts\python.exe -m pip install pyinstaller
 ..\.venv312\Scripts\python.exe -m pip install pyinstaller pillow
 
 echo.

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
     QPushButton, QRadioButton, QSizePolicy, QVBoxLayout,
     QWidget)
 import ui.ai_rc
+from ui.styles import get_standard_radiobutton_style, get_standard_checkbox_style, get_standard_button_style, get_groupbox_title_font
 
 class Ui_Kinetic(object):
     def setupUi(self, Kinetic):
@@ -45,14 +46,19 @@ class Ui_Kinetic(object):
         self.verticalLayout_2.setSpacing(2)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.verticalLayout_2.setSizeConstraint(QLayout.SetMinimumSize)
+        # Get Material Design styles
+        from ui.styles import get_radiobutton_style, get_checkbox_style, get_button_style, get_groupbox_style, get_groupbox_title_font
+        radiobutton_style = get_radiobutton_style()
+        checkbox_style = get_checkbox_style()
+        button_style = get_button_style('standard')
+        groupbox_style = get_groupbox_style()
+        groupbox_font = get_groupbox_title_font()
         self.CH1 = QGroupBox(Kinetic)
         self.CH1.setObjectName(u"CH1")
         self.CH1.setMinimumSize(QSize(255, 215))
         self.CH1.setMaximumSize(QSize(255, 215))
-        font1 = QFont()
-        font1.setFamilies([u"Segoe UI"])
-        font1.setPointSize(8)
-        self.CH1.setFont(font1)
+        self.CH1.setFont(groupbox_font)
+        self.CH1.setStyleSheet(groupbox_style)
         self.run1 = QPushButton(self.CH1)
         self.run1.setObjectName(u"run1")
         self.run1.setGeometry(QRect(10, 50, 81, 28))
@@ -122,27 +128,34 @@ class Ui_Kinetic(object):
         self.sync_1.setObjectName(u"sync_1")
         self.sync_1.setEnabled(True)
         self.sync_1.setGeometry(QRect(170, 10, 81, 41))
+        self.sync_1.setStyleSheet(checkbox_style)
         self.pump_flow_ch1 = QGroupBox(self.CH1)
         self.pump_flow_ch1.setObjectName(u"pump_flow_ch1")
         self.pump_flow_ch1.setGeometry(QRect(10, 120, 115, 65))
+        self.pump_flow_ch1.setFont(groupbox_font)
         self.spr_ch1 = QRadioButton(self.pump_flow_ch1)
         self.spr_ch1.setObjectName(u"spr_ch1")
         self.spr_ch1.setGeometry(QRect(30, 40, 81, 20))
+        self.spr_ch1.setStyleSheet(radiobutton_style)
         self.waste_ch1 = QRadioButton(self.pump_flow_ch1)
         self.waste_ch1.setObjectName(u"waste_ch1")
         self.waste_ch1.setGeometry(QRect(30, 20, 81, 20))
         self.waste_ch1.setChecked(True)
+        self.waste_ch1.setStyleSheet(radiobutton_style)
         self.sample_flow_ch1 = QGroupBox(self.CH1)
         self.sample_flow_ch1.setObjectName(u"sample_flow_ch1")
         self.sample_flow_ch1.setEnabled(True)
         self.sample_flow_ch1.setGeometry(QRect(130, 120, 115, 65))
+        self.sample_flow_ch1.setFont(groupbox_font)
         self.inject_ch1 = QRadioButton(self.sample_flow_ch1)
         self.inject_ch1.setObjectName(u"inject_ch1")
         self.inject_ch1.setGeometry(QRect(30, 40, 71, 20))
+        self.inject_ch1.setStyleSheet(radiobutton_style)
         self.load_ch1 = QRadioButton(self.sample_flow_ch1)
         self.load_ch1.setObjectName(u"load_ch1")
         self.load_ch1.setGeometry(QRect(30, 20, 71, 20))
         self.load_ch1.setChecked(True)
+        self.load_ch1.setStyleSheet(radiobutton_style)
         self.sensor_frame_ch1 = QFrame(self.CH1)
         self.sensor_frame_ch1.setObjectName(u"sensor_frame_ch1")
         self.sensor_frame_ch1.setGeometry(QRect(100, 70, 151, 51))
@@ -182,41 +195,18 @@ class Ui_Kinetic(object):
         self.CH2.setObjectName(u"CH2")
         self.CH2.setMinimumSize(QSize(255, 215))
         self.CH2.setMaximumSize(QSize(255, 215))
-        self.CH2.setFont(font)
+        self.CH2.setFont(groupbox_font)
+        self.CH2.setStyleSheet(groupbox_style)
         self.run2 = QPushButton(self.CH2)
         self.run2.setObjectName(u"run2")
         self.run2.setGeometry(QRect(10, 50, 81, 28))
         self.run2.setMinimumSize(QSize(40, 25))
-        self.run2.setStyleSheet(u"QPushButton {\n"
-"		\n"
-"		background-color: rgb(230, 230, 230);\n"
-"	    border: 1px solid rgb(171, 171, 171); \n"
-"		border-radius: 3px;\n"
-"\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: rgb(253, 253, 253);\n"
-"	border: 1px raised;\n"
-"	border-radius: 5px;\n"
-"}")
+        self.run2.setStyleSheet(button_style)
         self.flush2 = QPushButton(self.CH2)
         self.flush2.setObjectName(u"flush2")
         self.flush2.setGeometry(QRect(10, 80, 81, 28))
         self.flush2.setMinimumSize(QSize(40, 25))
-        self.flush2.setStyleSheet(u"QPushButton {\n"
-"		\n"
-"		background-color: rgb(230, 230, 230);\n"
-"	    border: 1px solid rgb(171, 171, 171); \n"
-"		border-radius: 3px;\n"
-"\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: rgb(253, 253, 253);\n"
-"	border: 1px raised;\n"
-"	border-radius: 5px;\n"
-"}")
+        self.flush2.setStyleSheet(button_style)
         self.label_16 = QLabel(self.CH2)
         self.label_16.setObjectName(u"label_16")
         self.label_16.setGeometry(QRect(10, 20, 55, 21))
@@ -245,27 +235,34 @@ class Ui_Kinetic(object):
         self.sync_2.setObjectName(u"sync_2")
         self.sync_2.setEnabled(True)
         self.sync_2.setGeometry(QRect(170, 10, 81, 41))
+        self.sync_2.setStyleSheet(checkbox_style)
         self.pump_flow_ch2 = QGroupBox(self.CH2)
         self.pump_flow_ch2.setObjectName(u"pump_flow_ch2")
         self.pump_flow_ch2.setGeometry(QRect(10, 120, 115, 65))
+        self.pump_flow_ch2.setFont(groupbox_font)
         self.spr_ch2 = QRadioButton(self.pump_flow_ch2)
         self.spr_ch2.setObjectName(u"spr_ch2")
         self.spr_ch2.setGeometry(QRect(30, 40, 81, 20))
+        self.spr_ch2.setStyleSheet(radiobutton_style)
         self.waste_ch2 = QRadioButton(self.pump_flow_ch2)
         self.waste_ch2.setObjectName(u"waste_ch2")
         self.waste_ch2.setGeometry(QRect(30, 20, 81, 20))
         self.waste_ch2.setChecked(True)
+        self.waste_ch2.setStyleSheet(radiobutton_style)
         self.sample_flow_ch2 = QGroupBox(self.CH2)
         self.sample_flow_ch2.setObjectName(u"sample_flow_ch2")
         self.sample_flow_ch2.setEnabled(True)
         self.sample_flow_ch2.setGeometry(QRect(130, 120, 115, 65))
+        self.sample_flow_ch2.setFont(groupbox_font)
         self.inject_ch2 = QRadioButton(self.sample_flow_ch2)
         self.inject_ch2.setObjectName(u"inject_ch2")
         self.inject_ch2.setGeometry(QRect(30, 40, 71, 20))
+        self.inject_ch2.setStyleSheet(radiobutton_style)
         self.load_ch2 = QRadioButton(self.sample_flow_ch2)
         self.load_ch2.setObjectName(u"load_ch2")
         self.load_ch2.setGeometry(QRect(30, 20, 71, 20))
         self.load_ch2.setChecked(True)
+        self.load_ch2.setStyleSheet(radiobutton_style)
         self.sensor_frame_ch2 = QFrame(self.CH2)
         self.sensor_frame_ch2.setObjectName(u"sensor_frame_ch2")
         self.sensor_frame_ch2.setGeometry(QRect(100, 70, 151, 51))

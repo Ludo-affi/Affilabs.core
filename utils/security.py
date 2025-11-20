@@ -103,7 +103,7 @@ class SecurityManager:
             # Make file read-only for non-admins (Windows: read-only attribute)
             try:
                 os.chmod(self.security_file, 0o600)  # Owner read/write only
-            except:
+            except OSError:
                 pass  # May fail on Windows, that's OK
 
             logger.warning("⚠️ Default OEM password created!")

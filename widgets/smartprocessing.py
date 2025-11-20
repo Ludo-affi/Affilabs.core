@@ -16,6 +16,7 @@ import os
 from copy import deepcopy
 
 import numpy as np
+import pandas as pd
 from pyqtgraph import LinearRegionItem, PlotWidget, mkPen
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
@@ -772,37 +773,27 @@ class SmartProcessingDialog(QDialog):
                         # This format doesn't work, try alternative
                         break
 
-                if len(test_rows) >= 2:  # Successfully parsed test rows
-                    # Reset file and parse full data
-                    file.seek(0)
-                    reader = csv.DictReader(
-                        file, dialect="excel-tab", fieldnames=columns
-                    )
+            if len(test_rows) >= 2:  # Successfully parsed test rows
+                # Reset file and parse full data with pandas
+                file.seek(0)
+                df = pd.read_csv(
+                    file,
+                    sep="\t",
+                    names=columns,
+                    dtype=float,
+                    na_values=["", "NA", "nan"],
+                    on_bad_lines="skip",
+                )
+                df = df.fillna(0.0)
 
-                    temp_data = {col: [] for col in columns}
+                # Convert to expected format
+                channel_map = {"a": "A", "b": "B", "c": "C", "d": "D"}
+                for ch in CH_LIST:
+                    ch_upper = channel_map[ch]
+                    self.raw_data[ch]["time"] = df[f"Time_{ch_upper}"].to_numpy()
+                    self.raw_data[ch]["signal"] = df[f"Channel_{ch_upper}"].to_numpy()
 
-                    for row in reader:
-                        for col in columns:
-                            try:
-                                value = float(row[col]) if row[col] else 0.0
-                                temp_data[col].append(value)
-                            except (ValueError, KeyError):
-                                temp_data[col].append(0.0)
-
-                    # Convert to expected format
-                    channel_map = {"a": "A", "b": "B", "c": "C", "d": "D"}
-                    for ch in CH_LIST:
-                        ch_upper = channel_map[ch]
-                        self.raw_data[ch]["time"] = np.array(
-                            temp_data[f"Time_{ch_upper}"]
-                        )
-                        self.raw_data[ch]["signal"] = np.array(
-                            temp_data[f"Channel_{ch_upper}"]
-                        )
-
-                    return True
-
-                # If standard format failed, try header-based detection
+                return True                # If standard format failed, try header-based detection
                 file.seek(0)
                 return self._try_header_based_parsing(file, delimiter)
 
@@ -813,40 +804,27 @@ class SmartProcessingDialog(QDialog):
     def _parse_all_graph_format(self, file, delimiter):
         """Parse All_Graph format (interleaved channels)."""
         try:
-            columns = ["GraphAll_x", "GraphAll_y"]
-            reader = csv.DictReader(file, dialect="excel-tab", fieldnames=columns)
+            # Read all data with pandas
+            df = pd.read_csv(
+                file,
+                sep="\t",
+                names=["GraphAll_x", "GraphAll_y"],
+                dtype=float,
+                skiprows=1,  # Skip first row
+                na_values=["", "NA", "nan"],
+                on_bad_lines="skip",
+            )
+            df = df.dropna()
 
-            temp_data_all = {
-                "Time": {ch: [] for ch in CH_LIST},
-                "Intensity": {ch: [] for ch in CH_LIST},
-            }
+            # Interleaved format: d, a, b, c repeating
+            ch_list = ["d", "a", "b", "c"]
 
-            count = 0
-            ch_list = ["d", "a", "b", "c"]  # Original order from datawindow
-            skip_first = True
-
-            for row in reader:
-                if skip_first:
-                    skip_first = False
-                    continue
-
-                try:
-                    count += 1
-                    ch = ch_list[(count - 1) % 4]
-
-                    time_val = float(row["GraphAll_x"])
-                    intensity_val = float(row["GraphAll_y"])
-
-                    temp_data_all["Time"][ch].append(time_val)
-                    temp_data_all["Intensity"][ch].append(intensity_val)
-
-                except (ValueError, KeyError):
-                    continue
-
-            # Convert to numpy arrays
-            for ch in CH_LIST:
-                self.raw_data[ch]["time"] = np.array(temp_data_all["Time"][ch])
-                self.raw_data[ch]["signal"] = np.array(temp_data_all["Intensity"][ch])
+            # Vectorized channel assignment using modulo
+            for i, ch in enumerate(ch_list):
+                # Select every 4th row starting at offset i
+                mask = np.arange(len(df)) % 4 == i
+                self.raw_data[ch]["time"] = df.loc[mask, "GraphAll_x"].to_numpy()
+                self.raw_data[ch]["signal"] = df.loc[mask, "GraphAll_y"].to_numpy()
 
             return True
 
@@ -943,35 +921,28 @@ class SmartProcessingDialog(QDialog):
             if not valid_channels:
                 return False
 
-            # Parse data using the mapping
+            # Parse data using pandas with header
             file.seek(0)
-            reader = csv.reader(file, delimiter=delimiter)
-            next(reader)  # Skip header
+            df = pd.read_csv(
+                file,
+                sep=delimiter,
+                dtype=float,
+                na_values=["", "NA", "nan"],
+                on_bad_lines="skip",
+            )
+            df = df.dropna(how="all")
 
-            for ch in CH_LIST:
-                self.raw_data[ch]["time"] = []
-                self.raw_data[ch]["signal"] = []
-
-            for row in reader:
-                if len(row) < max(
-                    max(mapping.values()) for mapping in channel_mapping.values()
-                ):
-                    continue
-
-                for ch in valid_channels:
-                    try:
-                        time_val = float(row[channel_mapping[ch]["time_idx"]])
-                        signal_val = float(row[channel_mapping[ch]["signal_idx"]])
-
-                        self.raw_data[ch]["time"].append(time_val)
-                        self.raw_data[ch]["signal"].append(signal_val)
-                    except (ValueError, IndexError):
-                        continue
-
-            # Convert to numpy arrays
+            # Extract data for each valid channel
             for ch in valid_channels:
-                self.raw_data[ch]["time"] = np.array(self.raw_data[ch]["time"])
-                self.raw_data[ch]["signal"] = np.array(self.raw_data[ch]["signal"])
+                time_col_name = headers[channel_mapping[ch]["time_idx"]]
+                signal_col_name = headers[channel_mapping[ch]["signal_idx"]]
+
+                if time_col_name in df.columns and signal_col_name in df.columns:
+                    self.raw_data[ch]["time"] = df[time_col_name].to_numpy()
+                    self.raw_data[ch]["signal"] = df[signal_col_name].to_numpy()
+                else:
+                    self.raw_data[ch]["time"] = np.array([])
+                    self.raw_data[ch]["signal"] = np.array([])
 
             return len(valid_channels) > 0
 
@@ -1042,67 +1013,46 @@ class SmartProcessingDialog(QDialog):
                 # Format: ChA_Time, ChA_Value, ChB_Time, ChB_Value, ChC_Time, ChC_Value, ChD_Time, ChD_Value
                 print("DEBUG: Parsing as interleaved time-value pairs format")
 
-                channels_data = {ch: {"time": [], "signal": []} for ch in CH_LIST}
+                # Convert to pandas DataFrame for vectorized processing
+                df = pd.DataFrame(data_lines, dtype=float)
 
-                for parts in data_lines:
-                    try:
-                        # Parse each channel's time-value pair
-                        for i, ch in enumerate(CH_LIST):
-                            time_col = i * 2  # Column index for time (0, 2, 4, 6)
-                            value_col = i * 2 + 1  # Column index for value (1, 3, 5, 7)
+                # Extract time-value pairs for each channel
+                for i, ch in enumerate(CH_LIST):
+                    time_col = i * 2  # Column index for time (0, 2, 4, 6)
+                    value_col = i * 2 + 1  # Column index for value (1, 3, 5, 7)
 
-                            if time_col < len(parts) and value_col < len(parts):
-                                time_val = float(parts[time_col])
-                                signal_val = float(parts[value_col])
-
-                                channels_data[ch]["time"].append(time_val)
-                                channels_data[ch]["signal"].append(signal_val)
-
-                    except (ValueError, IndexError):
-                        continue
-
-                # Store parsed data
-                for ch in CH_LIST:
-                    if len(channels_data[ch]["time"]) > 0:
-                        self.raw_data[ch]["time"] = np.array(channels_data[ch]["time"])
-                        self.raw_data[ch]["signal"] = np.array(
-                            channels_data[ch]["signal"]
-                        )
+                    if time_col < len(df.columns) and value_col < len(df.columns):
+                        self.raw_data[ch]["time"] = df[time_col].dropna().to_numpy()
+                        self.raw_data[ch]["signal"] = df[value_col].dropna().to_numpy()
                         print(
                             f"DEBUG: Channel {ch}: {len(self.raw_data[ch]['time'])} points"
                         )
+                    else:
+                        self.raw_data[ch]["time"] = np.array([])
+                        self.raw_data[ch]["signal"] = np.array([])
 
             elif num_cols >= 5:  # Simple multi-column format (fallback)
                 # Assume format: Time, Ch_A_Wavelength, Ch_B_Wavelength, Ch_C_Wavelength, Ch_D_Wavelength
                 print("DEBUG: Parsing as simple multi-channel wavelength format")
 
-                times = []
-                channels_data = {ch: [] for ch in CH_LIST}
+                # Convert to pandas DataFrame for vectorized processing
+                df = pd.DataFrame(data_lines, dtype=float)
+                df = df.fillna(0.0)
 
-                for parts in data_lines:
-                    try:
-                        time_val = float(parts[0])
-                        times.append(time_val)
+                # Extract time column (first column)
+                times = df[0].to_numpy()
 
-                        # Parse wavelength data for each channel (columns 1-4)
-                        for i, ch in enumerate(CH_LIST):
-                            if i + 1 < len(parts):
-                                wavelength_val = float(parts[i + 1])
-                                channels_data[ch].append(wavelength_val)
-                            else:
-                                channels_data[ch].append(0.0)  # Fill missing data
-
-                    except (ValueError, IndexError):
-                        continue
-
-                # Store parsed data
-                for ch in CH_LIST:
-                    if len(channels_data[ch]) > 0:
-                        self.raw_data[ch]["time"] = np.array(times)
-                        self.raw_data[ch]["signal"] = np.array(channels_data[ch])
+                # Parse wavelength data for each channel (columns 1-4)
+                for i, ch in enumerate(CH_LIST):
+                    if i + 1 < len(df.columns):
+                        self.raw_data[ch]["time"] = times
+                        self.raw_data[ch]["signal"] = df[i + 1].to_numpy()
                         print(
                             f"DEBUG: Channel {ch}: {len(self.raw_data[ch]['time'])} points"
                         )
+                    else:
+                        self.raw_data[ch]["time"] = np.array([])
+                        self.raw_data[ch]["signal"] = np.array([])
 
             else:  # Standard 2-column format
                 print("DEBUG: Parsing as standard 2-column format")

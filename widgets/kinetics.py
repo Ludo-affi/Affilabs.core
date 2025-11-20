@@ -186,24 +186,20 @@ class Kinetic(QWidget):
 
     def run_ch1(self):
         self.ui.status1.setText("Updating...")
-        self.ui.status1.repaint()
         run_rate = int(self.ui.run_rate_ch1.currentText())
         self.run_sig.emit("CH1", run_rate)
 
     def run_ch2(self):
         self.ui.status2.setText("Updating...")
-        self.ui.status1.repaint()
         run_rate = int(self.ui.run_rate_ch2.currentText())
         self.run_sig.emit("CH2", run_rate)
 
     def flush_ch1(self):
         self.ui.status1.setText("Updating...")
-        self.ui.status1.repaint()
         self.flush_sig.emit("CH1")
 
     def flush_ch2(self):
         self.ui.status2.setText("Updating...")
-        self.ui.status2.repaint()
         self.flush_sig.emit("CH2")
 
     def change_speed_ch1(self):
@@ -248,7 +244,6 @@ class Kinetic(QWidget):
             ):
                 self.sync = True
                 self.ui.status2.setText("Updating...")
-                self.ui.status2.repaint()
                 self.ui.CH2.setEnabled(False)
                 self.ui.sync_1.setChecked(True)
                 self.ui.sync_2.setChecked(True)

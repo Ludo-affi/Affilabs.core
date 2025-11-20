@@ -1048,8 +1048,8 @@ def main():
             ctrl.all_off()
             ctrl.disconnect()
             spec.close()
-        except:
-            pass
+        except (IOError, AttributeError, RuntimeError):
+            pass  # Cleanup operations may fail if connection already closed
 
 
 if __name__ == "__main__":

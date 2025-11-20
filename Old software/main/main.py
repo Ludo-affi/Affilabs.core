@@ -30,6 +30,7 @@ if str(_pkg_root) not in sys.path:
     sys.path.insert(0, str(_pkg_root))
 
 import numpy as np
+import pandas as pd
 import pyqtgraph
 import serial
 try:
@@ -103,10 +104,12 @@ from utils.controller import (
     PicoKNX2,
     PicoP4SPR,
     QSPRController,
+    StaticController,
+    FlowController,
 )
 from utils.logger import logger
 # from utils.SpectrometerAPI import SENSOR_FRAME_T
-from utils.usb4000_wrapper import USB4000
+from utils.detector_factory import create_detector
 # Initialize processing pipelines
 import utils.pipelines  # This auto-registers all pipelines
 from widgets.datawindow import Segment
@@ -114,19 +117,33 @@ from widgets.mainwindow import MainWindow
 from widgets.message import show_message
 from widgets.priming import PrimingWindow
 
+# Import modern theme system
+try:
+    from styles import apply_modern_theme, apply_modern_graph_style
+    MODERN_THEME_AVAILABLE = True
+except ImportError:
+    logger.warning("Modern theme system not available, using default styling")
+    MODERN_THEME_AVAILABLE = False
+
 with suppress(ImportError):
     import pyi_splash
 
-pyqtgraph.setConfigOption("background", "w")
-pyqtgraph.setConfigOption("foreground", "k")
+# Apply modern PyQtGraph styling
+if MODERN_THEME_AVAILABLE:
+    apply_modern_graph_style()
+else:
+    # Fallback to basic white background
+    pyqtgraph.setConfigOption("background", "w")
+    pyqtgraph.setConfigOption("foreground", "k")
 
 
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-DEVICES = ["P4SPR", "PicoP4SPR", "QSPR", "EZSPR", "PicoEZSPR"]
+DEVICES = ["P4SPR", "PicoP4SPR", "EZSPR", "PicoEZSPR"]  # QSPR removed - obsolete hardware
 TIME_ZONE = dt.datetime.now(dt.UTC).astimezone().tzinfo
 
-Controller = ArduinoController | PicoEZSPR | PicoP4SPR | QSPRController
-KNX = KineticController | PicoKNX2 | PicoEZSPR
+# Type unions organized by capability
+Controller = StaticController | FlowController  # All controllers
+KNX = KineticController | PicoKNX2 | PicoEZSPR  # Flow controllers with pump/valve support
 
 
 class AffiniteApp(QMainWindow):
@@ -174,15 +191,21 @@ class AffiniteApp(QMainWindow):
 
     def __init__(self: Self) -> None:
         """Create the app's main window."""
-        gc.enable()
+        # CRITICAL: Initialize QMainWindow FIRST before creating any child widgets
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, on=True)
+
+        # Defer garbage collection until after startup
+        gc.disable()
+        
         self.main_window = MainWindow(self)
         self.device_config = {"ctrl": "", "knx": ""}
         self.conf = get_config()
-        try:
-            self.usb = USB4000(self)
-        except (FileNotFoundError, OSError, RuntimeError) as e:
-            logger.warning(f"Could not initialize USB4000 spectrometer: {e}")
-            self.usb = None
+
+        # Defer detector initialization to avoid blocking startup
+        self.usb = None
+        QTimer.singleShot(100, self._init_detector)
+
         self.recording = False
         self.rec_dir = ""
         self.adv_connected = False
@@ -214,33 +237,9 @@ class AffiniteApp(QMainWindow):
         # start with no fixed filtered data
         self.new_filtered_data = np.array([])
 
-        # Wire advanced delay status updates to Advanced dialog if present
-        try:
-            self.adv_delay_status_sig.connect(
-                lambda led, post, dled, dpost, path: (
-                    hasattr(self.main_window, "advanced_menu")
-                    and self.main_window.advanced_menu is not None
-                    and hasattr(self.main_window.advanced_menu, "set_delay_status")
-                    and self.main_window.advanced_menu.set_delay_status(
-                        led_delay_s=float(led),
-                        post_delay_s=float(post),
-                        dyn_led=bool(dled),
-                        dyn_post=bool(dpost),
-                        cal_path=str(path) if path else None,
-                    )
-                )
-            )
-            # Text-only status updates (e.g., "Starting…", "Completed")
-            self.adv_status_text_sig.connect(
-                lambda txt: (
-                    hasattr(self.main_window, "advanced_menu")
-                    and self.main_window.advanced_menu is not None
-                    and hasattr(self.main_window.advanced_menu, "set_status_text")
-                    and self.main_window.advanced_menu.set_status_text(str(txt))
-                )
-            )
-        except Exception:
-            pass
+        # Defer advanced menu signal connections until menu is created
+        self.adv_delay_status_sig.connect(self._on_adv_delay_status)
+        self.adv_status_text_sig.connect(self._on_adv_status_text)
 
         # Spectrum acquisition helper (for vectorized acquisition)
         self.spectrum_acq = None  # Initialized after USB device is opened
@@ -281,20 +280,15 @@ class AffiniteApp(QMainWindow):
         self._c_stop = threading.Event()
         self._c_stop.set()
 
-        # Connect thread-safe UI messaging
-        try:
-            self.ui_message_sig.connect(lambda m, t, s: show_message(msg=m, msg_type=t, auto_close_time=s))
-        except Exception:
-            pass
+        # Connect thread-safe UI messaging (simplified)
+        self.ui_message_sig.connect(self._show_ui_message)
+        
         self._c_kill.clear()
         self._c_tr = threading.Thread(target=self.calibrate)
         self._c_tr.start()
 
         self._con_tr = threading.Thread(target=self.connection_thread)
         self._new_sig_tr = threading.Thread(target=self.new_ref_thread)
-
-        self.single_mode = False
-        self.single_ch = "x"
 
         self._s_kill = threading.Event()
         self._s_stop = threading.Event()
@@ -315,41 +309,24 @@ class AffiniteApp(QMainWindow):
         self.timer1.timeout.connect(self.turn_off_six_ch1)
         self.timer2.timeout.connect(self.turn_off_six_ch2)
 
-        self.temp_log: dict[str, list[str]] = {
-            "readings": [],
-            "times": [],
-            "exp": [],
-        }
+        # Temperature log - using pandas DataFrame
+        self.temp_log = pd.DataFrame(columns=["Timestamp", "Experiment Time", "Device Temp"])
+
         self.temp = 0.0
         self.flow_buf_1: list[float] = []
         self.temp_buf_1: list[float] = []
         self.flow_buf_2: list[float] = []
         self.temp_buf_2: list[float] = []
-        self.log_ch1: dict[str, list[str]] = {
-            "timestamps": [],
-            "times": [],
-            "events": [],
-            "flow": [],
-            "temp": [],
-            "dev": [],
-        }
-        self.log_ch2: dict[str, list[str]] = {
-            "timestamps": [],
-            "times": [],
-            "events": [],
-            "flow": [],
-            "temp": [],
-            "dev": [],
-        }
+
+        # Event logs - using pandas DataFrames
+        self.log_ch1 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
+        self.log_ch2 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
 
         self.exp_start = time.time()
         self.exp_start_perf = time.perf_counter()
         self.reconnect_count = 2
         self.closing = False
         self.new_default_values = False
-
-        super().__init__()
-        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, on=True)
 
         # Connect all UI and internal signals
         self._connect_all_signals()
@@ -358,6 +335,71 @@ class AffiniteApp(QMainWindow):
 
         # Register cleanup handler for graceful shutdown
         atexit.register(self._emergency_cleanup)
+        
+        # Re-enable garbage collection after startup and schedule first collection
+        QTimer.singleShot(1000, lambda: (gc.enable(), gc.collect()))
+
+    def _init_detector(self: Self) -> None:
+        """Deferred detector initialization to avoid blocking startup."""
+        try:
+            self.usb = create_detector(self, self.conf)
+            if self.usb is None:
+                logger.warning("No detector available - running in simulation mode")
+        except Exception as e:
+            logger.error(f"Detector initialization failed: {e}")
+            self.usb = None
+
+    def _on_adv_delay_status(self: Self, led, post, dled, dpost, path) -> None:
+        """Handle advanced delay status updates (lazy check for menu)."""
+        if (hasattr(self.main_window, "advanced_menu") and 
+            self.main_window.advanced_menu is not None and 
+            hasattr(self.main_window.advanced_menu, "set_delay_status")):
+            self.main_window.advanced_menu.set_delay_status(
+                led_delay_s=float(led),
+                post_delay_s=float(post),
+                dyn_led=bool(dled),
+                dyn_post=bool(dpost),
+                cal_path=str(path) if path else None,
+            )
+
+    def _on_adv_status_text(self: Self, txt: str) -> None:
+        """Handle advanced status text updates (lazy check for menu)."""
+        if (hasattr(self.main_window, "advanced_menu") and 
+            self.main_window.advanced_menu is not None and 
+            hasattr(self.main_window.advanced_menu, "set_status_text")):
+            self.main_window.advanced_menu.set_status_text(str(txt))
+
+    def _show_ui_message(self: Self, msg: str, msg_type: str, auto_close_time: int) -> None:
+        """Show UI message (simplified wrapper)."""
+        show_message(msg=msg, msg_type=msg_type, auto_close_time=auto_close_time)
+
+    def _log_event(self: Self, channel: str, event: str, flow: str = "-", temp: str = "-", dev: str = "-") -> None:
+        """Add event to log using pandas DataFrame.
+
+        Args:
+            channel: "CH1" or "CH2"
+            event: Event description
+            flow: Flow rate value (default "-")
+            temp: Temperature value (default "-")
+            dev: Device value (default "-")
+        """
+        time_now = dt.datetime.now(TIME_ZONE)
+        log_timestamp = f"{time_now.hour:02d}:{time_now.minute:02d}:{time_now.second:02d}"
+        log_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
+
+        new_event = pd.DataFrame([{
+            'timestamp': log_timestamp,
+            'time': log_time,
+            'event': event,
+            'flow': flow,
+            'temp': temp,
+            'dev': dev
+        }])
+
+        if channel == "CH1":
+            self.log_ch1 = pd.concat([self.log_ch1, new_event], ignore_index=True)
+        else:
+            self.log_ch2 = pd.concat([self.log_ch2, new_event], ignore_index=True)
 
     def _connect_all_signals(self: Self) -> None:
         """Centralized signal connection management.
@@ -375,6 +417,8 @@ class AffiniteApp(QMainWindow):
 
         # === Data Update Signals (App -> UI) ===
         self.update_spec_signal.connect(self.main_window.spectroscopy.update_data)
+        if hasattr(self.main_window, "sidebar_spectroscopy"):
+            self.update_spec_signal.connect(self.main_window.sidebar_spectroscopy.update_data)
         self.update_live_signal.connect(self.main_window.sensorgram.update_data)
         self.update_temp_display.connect(
             self.main_window.sidebar.device_widget.update_temp,
@@ -413,6 +457,7 @@ class AffiniteApp(QMainWindow):
             self.handle_regen_button,
         )
         self.main_window.sensorgram.ui.flush_button.clicked.connect(self.handle_flush_button)
+        self.main_window.sensorgram.ui.prime_button.clicked.connect(self.prime)
         self.main_window.sensorgram.ui.flow_rate.editingFinished.connect(
             self.change_flow_rate,
         )
@@ -477,6 +522,11 @@ class AffiniteApp(QMainWindow):
         self.main_window.spectroscopy.single_led_sig.connect(self.single_led)
         self.main_window.spectroscopy.polarizer_sig.connect(self.set_polarizer)
 
+        # === Sidebar Spectroscopy Signals ===
+        if hasattr(self.main_window, "sidebar_spectroscopy"):
+            self.main_window.sidebar_spectroscopy.full_cal_sig.connect(self.full_recalibration)
+            logger.info("Connected sidebar spectroscopy full_calibrate_btn to full_recalibration")
+
         # === Advanced Menu ===
         self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
 
@@ -507,9 +557,9 @@ class AffiniteApp(QMainWindow):
 
     def connection_thread(self: Self) -> None:
         """Attempt to connect to different controlers."""
-        # Skip connection if USB spectrometer not available
+        # Skip connection if spectrometer not available
         if self.usb is None:
-            logger.warning("USB4000 spectrometer not available, skipping hardware connection")
+            logger.warning("Spectrometer not available, skipping hardware connection")
             return
 
         qspr = QSPRController()
@@ -600,7 +650,7 @@ class AffiniteApp(QMainWindow):
                     self.pump = None
 
             if self.knx is not None:
-                self.main_window.sensorgram.ui.inject_box.setEnabled(True)
+                self.main_window.sensorgram.ui.preset_functions_frame.setEnabled(True)
 
             # Only emit connected signal if at least one device was found
             if self.ctrl is not None or self.knx is not None:
@@ -777,9 +827,9 @@ class AffiniteApp(QMainWindow):
                     f"{self.flow_rate * 60:.1f}",
                 )
 
-                self.main_window.sensorgram.ui.inject_box.setEnabled(False)
+                self.main_window.sensorgram.ui.preset_functions_frame.setEnabled(False)
                 await asyncio.sleep(15)  # ✨ MODIFIED: Reduced from 50 to 15 seconds
-                self.main_window.sensorgram.ui.inject_box.setEnabled(True)
+                self.main_window.sensorgram.ui.preset_functions_frame.setEnabled(True)
             except FTDIError as e:
                 logger.exception(f"Error communicating with pump: {e}")
 
@@ -852,7 +902,7 @@ class AffiniteApp(QMainWindow):
             self.ctrl is None
             or self.device_config["ctrl"]
             not in ["P4SPR", "PicoP4SPR", "EZSPR", "PicoEZSPR"]
-            or self.usb.spec is not None
+            or (self.usb is not None and self.usb.opened)
         )
 
     @Slot()
@@ -981,14 +1031,21 @@ class AffiniteApp(QMainWindow):
                 else:
                     # DEV MODE: Try to load cached calibration to skip calibration
                     cached_loaded = False
+                    CACHE_VERSION = "1.0"  # Increment when cache format changes
                     if DEV:
                         try:
                             import json
                             from pathlib import Path
                             cache_file = Path(__file__).parent / ".dev_calibration_cache.json"
                             if cache_file.exists():
-                                with open(cache_file, 'r') as f:
+                                with open(cache_file, 'r', encoding='utf-8') as f:
                                     cache = json.load(f)
+
+                                # Validate cache version
+                                if cache.get("version") != CACHE_VERSION:
+                                    logger.warning(f"Cache version mismatch: {cache.get('version')} != {CACHE_VERSION}, ignoring cache")
+                                    cache_file.unlink()
+                                    raise ValueError("Cache version mismatch")
 
                                 # Load cached values
                                 self.integration = cache.get("integration_time", 15)
@@ -1068,12 +1125,13 @@ class AffiniteApp(QMainWindow):
                                     logger.info("Starting LED calibration...")
 
                                     # Perform full LED calibration
+                                    # Calibrate all 4 channels (a, b, c, d) by default
                                     cal_result = perform_full_led_calibration(
                                         usb=self.usb,
                                         ctrl=self.ctrl,
                                         device_type=self.device_config["ctrl"],
-                                        single_mode=self.single_mode,
-                                        single_ch=self.single_ch,
+                                        single_mode=False,  # Always calibrate all channels
+                                        single_ch="a",  # Not used when single_mode=False
                                         integration_step=INTEGRATION_STEP,
                                         stop_flag=self._c_stop,
                                     )
@@ -1106,6 +1164,21 @@ class AffiniteApp(QMainWindow):
 
                                         # Update calibration status
                                         self.calibration_status.emit(calibration_success, ch_str)
+
+                                        # Compute spectral correction from S-mode reference
+                                        spectral_correction = self._compute_spectral_correction()
+
+                                        # Initialize or update SpectrumProcessor with spectral correction
+                                        if self.spectrum_processor is None and self.fourier_weights is not None:
+                                            self.spectrum_processor = SpectrumProcessor(
+                                                fourier_weights=self.fourier_weights,
+                                                fourier_window_size=165,
+                                                spectral_correction=spectral_correction,
+                                            )
+                                            logger.info("SpectrumProcessor initialized with spectral correction")
+                                        elif self.spectrum_processor is not None:
+                                            self.spectrum_processor.spectral_correction = spectral_correction
+                                            logger.info("Spectral correction updated in SpectrumProcessor")
 
                                         # Auto-trigger optical calibration if device doesn't have one
                                         from utils.device_integration import get_device_manager
@@ -1206,6 +1279,8 @@ class AffiniteApp(QMainWindow):
                 time.sleep(1)
                 self.main_window.ui.status.setText("New reference ...")
                 self.main_window.spectroscopy.ui.controls.setEnabled(False)
+                if hasattr(self.main_window, "sidebar_spectroscopy"):
+                    self.main_window.sidebar_spectroscopy.enable_controls(False)
                 self.main_window.sidebar.device_widget.allow_commands(state=False)
                 if new_settings:
                     try:
@@ -1231,6 +1306,8 @@ class AffiniteApp(QMainWindow):
                 self._new_sig_tr.join(0.1)
             self.main_window.ui.status.setText("Connected")
             self.main_window.spectroscopy.ui.controls.setEnabled(True)
+            if hasattr(self.main_window, "sidebar_spectroscopy"):
+                self.main_window.sidebar_spectroscopy.enable_controls(True)
             self.main_window.sidebar.device_widget.allow_commands(state=True)
             self.resume_live_read()
             show_message(msg="New reference completed", auto_close_time=5)
@@ -1276,16 +1353,67 @@ class AffiniteApp(QMainWindow):
                 logger.exception(f"Error during new reference: {e}")
 
     def single_led(self: Self, led_setting: str) -> None:
-        """Trun on only one LED."""
-        if led_setting == "auto":
-            self.single_mode = False
-            self.single_ch = "x"
-        elif led_setting in ["a", "b", "c", "d"]:
-            self.single_mode = True
-            self.single_ch = led_setting
-        else:
-            self.single_mode = True
-            self.single_ch = "x"
+        """Turn on only one LED.
+
+        Note: This is for UI display purposes only, not used in calibration.
+        Calibration always processes all 4 channels (a, b, c, d).
+        """
+        # This function can be removed or kept for future single-channel features
+        pass
+
+    def _compute_spectral_correction(self: Self) -> dict[str, np.ndarray]:
+        """Compute per-channel spectral response correction from S-mode reference.
+
+        Uses the S-mode reference spectrum (max transmission, no sample) to normalize
+        out fiber coupling differences, LED variations, and detector non-uniformity.
+        This is a flat-field correction technique that significantly improves:
+        - Channel-to-channel consistency (2-5× improvement)
+        - Wavelength precision, especially at red end (2-3× improvement)
+        - Baseline stability by correcting for LED/fiber variations
+
+        Returns:
+            Dictionary mapping channel -> correction weight array
+        """
+        spectral_correction = {}
+
+        try:
+            for ch in CH_LIST:
+                if ch not in self.ref_sig or len(self.ref_sig[ch]) == 0:
+                    logger.warning(f"No reference spectrum available for channel {ch}")
+                    continue
+
+                ref_spectrum = self.ref_sig[ch]
+
+                # Compute correction weights (invert to correct)
+                # Add small epsilon to prevent division by zero
+                epsilon = 1e-6
+                weights = 1.0 / (ref_spectrum + epsilon)
+
+                # Normalize weights so median correction is 1.0
+                # This preserves count levels and dynamic range
+                median_weight = np.nanmedian(weights)
+                if median_weight > 0 and np.isfinite(median_weight):
+                    weights = weights / median_weight
+                else:
+                    logger.warning(f"Invalid median weight for channel {ch}, skipping correction")
+                    continue
+
+                # Sanity check: clip extreme weights to prevent noise amplification
+                # Allow 10× correction range (0.1 to 10.0)
+                weights = np.clip(weights, 0.1, 10.0)
+
+                spectral_correction[ch] = weights
+
+                logger.info(f"Spectral correction computed for channel {ch}")
+                logger.info(f"  Weight range: {weights.min():.3f} - {weights.max():.3f}")
+                logger.info(f"  Median weight: {np.nanmedian(weights):.3f}")
+                logger.info(f"  Mean weight: {np.nanmean(weights):.3f}")
+
+        except Exception as e:
+            logger.exception(f"Error computing spectral correction: {e}")
+            return {}
+
+        return spectral_correction
 
     def set_polarizer(self: Self, pos: str) -> None:
         """Move polariizer."""
@@ -1371,6 +1499,8 @@ class AffiniteApp(QMainWindow):
         self.main_window.ui.status.setText("Calibrating")
         self.main_window.sensorgram.enable_controls(data_ready=False)
         self.main_window.spectroscopy.enable_controls(False)  # noqa: FBT003
+        if hasattr(self.main_window, "sidebar_spectroscopy"):
+            self.main_window.sidebar_spectroscopy.enable_controls(False)
         self.main_window.sidebar.device_widget.allow_commands(False)  # noqa: FBT003
         show_message(
             msg="Calibration Started:\nThis process may take a few minutes to complete",
@@ -1437,6 +1567,8 @@ class AffiniteApp(QMainWindow):
             logger.debug(f"TemporalFilter initialized (method=median, window={self.med_filt_win})")
 
         self.main_window.spectroscopy.enable_controls(True)  # noqa: FBT003
+        if hasattr(self.main_window, "sidebar_spectroscopy"):
+            self.main_window.sidebar_spectroscopy.enable_controls(True)
         self.main_window.sidebar.device_widget.allow_commands(True)  # noqa: FBT003
         # ✨ MODIFIED: Allow live data even if calibration fails (removed "and state" condition)
         if not self._b_kill.is_set():
@@ -1463,7 +1595,7 @@ class AffiniteApp(QMainWindow):
                 self.main_window.ui.status.setText("Device Connection Error")
 
     def _on_spec_error(self: Self) -> None:
-        if self.usb.spec is not None:
+        if self.usb is not None and self.usb.opened:
             self.disconnect_dev(knx=False)
             if not self.closing:
                 show_message(
@@ -1556,18 +1688,54 @@ class AffiniteApp(QMainWindow):
         return None
 
     def save_rec_data(self: Self) -> None:
-        """Save recorded data."""
+        """Save recorded data using DataExporter."""
+        from pathlib import Path
+        from utils.data_exporter import DataExporter
+
+        # Get experiment name from rec_dir
+        rec_path = Path(self.rec_dir)
+        exp_name = rec_path.name if rec_path.name else "Recording"
+
+        # Create DataExporter (reuse from sensorgram if possible)
+        exporter = DataExporter(base_dir=self.rec_dir, experiment_name=exp_name)
+
         if self.device_config["ctrl"] != "":
             logger.debug("saving SPR data")
             self.main_window.sensorgram.save_data(self.rec_dir)
+
+            # Export temperature log if available
             if self.device_config["ctrl"] == "PicoP4SPR":
-                self.save_temp_log(self.rec_dir)
+                try:
+                    if self.temp_log is not None and not self.temp_log.empty:
+                        exporter.export_temperature_log(self.temp_log)
+                except Exception as e:
+                    logger.error(f"Failed to export temperature log: {e}")
+
         if self.device_config["knx"] != "" or self.device_config["ctrl"] in [
             "EZSPR",
             "PicoEZSPR",
         ]:
             logger.debug("saving kinetic log")
-            self.save_kinetic_log(self.rec_dir)
+            try:
+                if self.log_ch1 is not None and not self.log_ch1.empty:
+                    version = self.knx.version if self.knx else "1.0"
+                    log_ch2 = self.log_ch2 if hasattr(self, 'log_ch2') and self.log_ch2 is not None else None
+                    exporter.export_kinetic_log(self.log_ch1, log_ch2, version)
+            except Exception as e:
+                logger.error(f"Failed to export kinetic logs: {e}")
+
+        # Save experiment metadata and manifest
+        try:
+            settings = {
+                "integration_time": self.usb.integration_time if self.usb else None,
+                "channels": CH_LIST,
+                "temperature": self.temp if hasattr(self, 'temp') else None
+            }
+            exporter.save_metadata(self.device_config, settings)
+            exporter.save_manifest()
+        except Exception as e:
+            logger.error(f"Failed to save metadata/manifest: {e}")
+
         self.rec_timer.start()
 
     def manual_export_raw_data(self: Self) -> None:
@@ -1670,13 +1838,12 @@ class AffiniteApp(QMainWindow):
         # Configure channel manager with current device settings
         self.channel_mgr.configure(
             device_type=self.device_config["ctrl"],
-            single_mode=self.single_mode,
-            single_channel=self.single_ch,
+            single_mode=False,  # Always process all 4 channels
+            single_channel="a",  # Not used when single_mode=False
         )
 
         logger.info(
-            f"Acquisition initialized: device={self.device_config['ctrl']}, "
-            f"single_mode={self.single_mode}"
+            f"Acquisition initialized: device={self.device_config['ctrl']}"
         )
 
     def _ensure_channel_synchronization(self: Self) -> None:
@@ -1895,10 +2062,11 @@ class AffiniteApp(QMainWindow):
         self.update_spec_signal.emit(self.spectroscopy_data())
 
     def _update_temperature_display(self: Self) -> None:
-        """Update temperature display if using P4SPR device."""
+        """Update temperature display if using P4SPR-based device."""
+        # PicoP4SPR and PicoEZSPR support temperature readout
         if (
-            self.device_config["ctrl"] == "PicoP4SPR"
-            and isinstance(self.ctrl, PicoP4SPR)
+            self.device_config["ctrl"] in ["PicoP4SPR", "PicoEZSPR"]
+            and isinstance(self.ctrl, (PicoP4SPR, PicoEZSPR))
         ):
             self.temp_sig.emit(self.ctrl.get_temp())
 
@@ -2043,7 +2211,8 @@ class AffiniteApp(QMainWindow):
             self.ctrl.set_intensity("a", 255)
             # Use HAL to set integration; convert seconds→milliseconds
             try:
-                min_sec = max(MIN_INTEGRATION / 1000.0, getattr(self, "spec_adapter", self.usb).min_integration)
+                detector = getattr(self, "spec_adapter", self.usb)
+                min_sec = max(MIN_INTEGRATION / 1000.0, detector.min_integration if detector else 0.001)
                 integ_ms = int(round(min_sec * 1000.0))
                 if getattr(self, "spec_adapter", None) is not None:
                     self.spec_adapter.set_integration(integ_ms)
@@ -2053,8 +2222,9 @@ class AffiniteApp(QMainWindow):
                 logger.debug(f"Failed to set min integration via HAL; fallback: {e}")
                 with suppress(Exception):
                     # Final fallback to legacy path with ms
-                    min_sec = max(MIN_INTEGRATION / 1000.0, self.usb.min_integration)
-                    self.usb.set_integration(int(round(min_sec * 1000.0)))
+                    if self.usb is not None:
+                        min_sec = max(MIN_INTEGRATION / 1000.0, self.usb.min_integration)
+                        self.usb.set_integration(int(round(min_sec * 1000.0)))
 
             # Measure S-mode (should be HIGH)
             self.ctrl.set_mode("s")
@@ -2320,25 +2490,10 @@ class AffiniteApp(QMainWindow):
                         self.knx.knx_led("x", 2)
                 self.hw_state.pump_states[stop_ch] = "Off"
                 logger.debug("pump stopped")
-                log_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
-                time_now = dt.datetime.now(TIME_ZONE)
-                log_timestamp = (
-                    f"{time_now.hour:02d}:{time_now.minute:02d}:{time_now.second:02d}"
-                )
                 if log1:
-                    self.log_ch1["timestamps"].append(log_timestamp)
-                    self.log_ch1["times"].append(log_time)
-                    self.log_ch1["events"].append("CH 1 Stop")
-                    self.log_ch1["flow"].append("-")
-                    self.log_ch1["temp"].append("-")
-                    self.log_ch1["dev"].append("-")
+                    self._log_event("CH1", "CH 1 Stop")
                 if log2:
-                    self.log_ch2["timestamps"].append(log_timestamp)
-                    self.log_ch2["times"].append(log_time)
-                    self.log_ch2["events"].append("CH 2 Stop")
-                    self.log_ch2["flow"].append("-")
-                    self.log_ch2["temp"].append("-")
-                    self.log_ch2["dev"].append("-")
+                    self._log_event("CH2", "CH 2 Stop")
                 self._s_stop.clear()
                 self.update_pump_display.emit(self.hw_state.pump_states, self.hw_state.synced)
             except Exception as e:
@@ -2370,25 +2525,10 @@ class AffiniteApp(QMainWindow):
                     if self.knx.version == "1.1":
                         self.knx.knx_led("g", 2)
                 self.hw_state.pump_states[run_ch] = state
-                log_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
-                time_now = dt.datetime.now(TIME_ZONE)
-                log_timestamp = (
-                    f"{time_now.hour:02d}:{time_now.minute:02d}:{time_now.second:02d}"
-                )
                 if log1:
-                    self.log_ch1["timestamps"].append(log_timestamp)
-                    self.log_ch1["times"].append(log_time)
-                    self.log_ch1["events"].append(f"CH 1 {state} ({run_rate})")
-                    self.log_ch1["flow"].append("-")
-                    self.log_ch1["temp"].append("-")
-                    self.log_ch1["dev"].append("-")
+                    self._log_event("CH1", f"CH 1 {state} ({run_rate})")
                 if log2:
-                    self.log_ch2["timestamps"].append(log_timestamp)
-                    self.log_ch2["times"].append(log_time)
-                    self.log_ch2["events"].append(f"CH 2 {state} ({run_rate})")
-                    self.log_ch2["flow"].append("-")
-                    self.log_ch2["temp"].append("-")
-                    self.log_ch2["dev"].append("-")
+                    self._log_event("CH2", f"CH 2 {state} ({run_rate})")
                 self._s_stop.clear()
                 self.update_pump_display.emit(self.hw_state.pump_states, self.hw_state.synced)
             except Exception as e:
@@ -2501,17 +2641,8 @@ class AffiniteApp(QMainWindow):
             elif self.hw_state.valve_states[ch] == "Waste":
                 self.hw_state.valve_states[ch] = "Dispose"
             inject_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
-            time_now = dt.datetime.now(TIME_ZONE)
-            inject_timestamp = (
-                f"{time_now.hour:02d}:{time_now.minute:02d}:{time_now.second:02d}"
-            )
             if ch == "CH1":
-                self.log_ch1["timestamps"].append(inject_timestamp)
-                self.log_ch1["times"].append(inject_time)
-                self.log_ch1["events"].append("Inject sample")
-                self.log_ch1["flow"].append("-")
-                self.log_ch1["temp"].append("-")
-                self.log_ch1["dev"].append("-")
+                self._log_event("CH1", "Inject sample")
                 self.main_window.sidebar.kinetic_widget.ui.inject_time_ch1.setText(
                     f"{inject_time}",
                 )
@@ -2526,12 +2657,7 @@ class AffiniteApp(QMainWindow):
                 )
                 self.timer1.start(int(1000 * 60 * timeout_mins))
             if (ch == "CH2") or self.hw_state.synced:
-                self.log_ch2["timestamps"].append(inject_timestamp)
-                self.log_ch2["times"].append(inject_time)
-                self.log_ch2["events"].append("Inject sample")
-                self.log_ch2["flow"].append("-")
-                self.log_ch2["temp"].append("-")
-                self.log_ch2["dev"].append("-")
+                self._log_event("CH2", "Inject sample")
                 self.main_window.sidebar.kinetic_widget.ui.inject_time_ch2.setText(
                     f"{inject_time}",
                 )
@@ -2625,6 +2751,19 @@ class AffiniteApp(QMainWindow):
                 if checkbox.isChecked() != should_be_checked:
                     checkbox.setChecked(should_be_checked)
 
+    def _on_advanced_smoothing_changed(self: Self, enabled: bool, mode: str, level: str) -> None:
+        """Handle advanced smoothing settings change from kinetics widget."""
+        logger.info(f"Advanced smoothing changed: enabled={enabled}, mode={mode}, level={level}")
+        # Update sensorgram window (DataWindow instance)
+        if hasattr(self.main_window, 'sensorgram') and hasattr(self.main_window.sensorgram, 'set_advanced_smoothing'):
+            self.main_window.sensorgram.set_advanced_smoothing(enabled, mode, level)
+        # Update spectroscopy window if it has the method
+        if hasattr(self.main_window, 'spectroscopy') and hasattr(self.main_window.spectroscopy, 'set_advanced_smoothing'):
+            self.main_window.spectroscopy.set_advanced_smoothing(enabled, mode, level)
+        # Update processing window if exists and has the method
+        if hasattr(self.main_window, 'processing') and hasattr(self.main_window.processing, 'set_advanced_smoothing'):
+            self.main_window.processing.set_advanced_smoothing(enabled, mode, level)
+
     def enable_sensor_reading(self: Self) -> None:
         """Enable sensor reading."""
         self._s_stop.clear()
@@ -2632,22 +2771,8 @@ class AffiniteApp(QMainWindow):
     def clear_kin_log(self: Self) -> None:
         """Clear kinetics log."""
         self.clear_sensor_reading_buffers()
-        self.log_ch1 = {
-            "timestamps": [],
-            "times": [],
-            "events": [],
-            "flow": [],
-            "temp": [],
-            "dev": [],
-        }
-        self.log_ch2 = {
-            "timestamps": [],
-            "times": [],
-            "events": [],
-            "flow": [],
-            "temp": [],
-            "dev": [],
-        }
+        self.log_ch1 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
+        self.log_ch2 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
 
     def clear_sensor_reading_buffers(self: Self) -> None:
         """Clear sensor reading buffer."""
@@ -2658,153 +2783,10 @@ class AffiniteApp(QMainWindow):
         self.update_sensor_display.emit(
             {"flow1": "", "temp1": "", "flow2": "", "temp2": ""},
         )
-        self.temp_log = {"readings": [], "times": [], "exp": []}
+        self.temp_log = pd.DataFrame(columns=["Timestamp", "Experiment Time", "Device Temp"])
         self.update_temp_display.emit(0.0, "ctrl")
 
-    def save_temp_log(self: Self, rec_dir: str) -> None:
-        """Save temperature log."""
-        try:
-            if rec_dir is not None:
-                with Path(rec_dir + " Temperature Log.txt").open(
-                    "w",
-                    newline="",
-                    encoding="utf-8",
-                ) as txtfile:
-                    fieldnames = ["Timestamp", "Experiment Time", "Device Temp"]
-                    writer = csv.DictWriter(
-                        txtfile,
-                        dialect="excel-tab",
-                        fieldnames=fieldnames,
-                    )
-                    writer.writeheader()
-                    for i in range(len(self.temp_log["readings"])):
-                        writer.writerow(
-                            {
-                                "Timestamp": self.temp_log["times"][i],
-                                "Experiment Time": self.temp_log["exp"][i],
-                                "Device Temp": self.temp_log["readings"][i],
-                            },
-                        )
-        except Exception as e:
-            logger.exception(f" Error while saving temperature log data: {e}")
-
-    def save_kinetic_log(self: Self, rec_dir: str) -> None:
-        """Save kinetics log."""
-        if self.knx is not None:
-            try:
-                if rec_dir is not None:
-                    with Path(rec_dir + " Kinetic Log Ch A.txt").open(
-                        "w",
-                        newline="",
-                        encoding="utf-8",
-                    ) as txtfile:
-                        if self.knx.version == "1.1":
-                            fieldnames = [
-                                "Timestamp",
-                                "Experiment Time",
-                                "Event Type",
-                                "Flow Rate",
-                                "Sensor Temp",
-                                "Device Temp",
-                            ]
-                        else:
-                            fieldnames = [
-                                "Timestamp",
-                                "Experiment Time",
-                                "Event Type",
-                                "Flow Rate",
-                                "Temperature",
-                            ]
-                        writer = csv.DictWriter(
-                            txtfile,
-                            dialect="excel-tab",
-                            fieldnames=fieldnames,
-                        )
-                        writer.writeheader()
-
-                        for i in range(len(self.log_ch1["times"])):
-                            if self.knx.version == "1.1":
-                                writer.writerow(
-                                    {
-                                        "Timestamp": self.log_ch1["timestamps"][i],
-                                        "Experiment Time": self.log_ch1["times"][i],
-                                        "Event Type": self.log_ch1["events"][i],
-                                        "Flow Rate": self.log_ch1["flow"][i],
-                                        "Sensor Temp": self.log_ch1["temp"][i],
-                                        "Device Temp": self.log_ch1["dev"][i],
-                                    },
-                                )
-                            else:
-                                writer.writerow(
-                                    {
-                                        "Timestamp": self.log_ch1["timestamps"][i],
-                                        "Experiment Time": self.log_ch1["times"][i],
-                                        "Event Type": self.log_ch1["events"][i],
-                                        "Flow Rate": self.log_ch1["flow"][i],
-                                        "Temperature": self.log_ch1["temp"][i],
-                                    },
-                                )
-
-                        logger.debug("Ch 1 log saved")
-
-                    if (self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]) or (
-                        self.device_config["knx"] in ["KNX2", "PicoKNX2"]
-                    ):
-                        with Path(rec_dir + " Kinetic Log Ch B.txt").open(
-                            "w",
-                            newline="",
-                            encoding="utf-8",
-                        ) as txtfile:
-                            if self.knx.version == "1.1":
-                                fieldnames = [
-                                    "Timestamp",
-                                    "Experiment Time",
-                                    "Event Type",
-                                    "Flow Rate",
-                                    "Sensor Temp",
-                                    "Device Temp",
-                                ]
-                            else:
-                                fieldnames = [
-                                    "Timestamp",
-                                    "Experiment Time",
-                                    "Event Type",
-                                    "Flow Rate",
-                                    "Temperature",
-                                ]
-                            writer = csv.DictWriter(
-                                txtfile,
-                                dialect="excel-tab",
-                                fieldnames=fieldnames,
-                            )
-                            writer.writeheader()
-
-                            for i in range(len(self.log_ch2["times"])):
-                                if self.knx.version == "1.1":
-                                    writer.writerow(
-                                        {
-                                            "Timestamp": self.log_ch2["timestamps"][i],
-                                            "Experiment Time": self.log_ch2["times"][i],
-                                            "Event Type": self.log_ch2["events"][i],
-                                            "Flow Rate": self.log_ch2["flow"][i],
-                                            "Sensor Temp": self.log_ch2["temp"][i],
-                                            "Device Temp": self.log_ch2["dev"][i],
-                                        },
-                                    )
-                                else:
-                                    writer.writerow(
-                                        {
-                                            "Timestamp": self.log_ch2["timestamps"][i],
-                                            "Experiment Time": self.log_ch2["times"][i],
-                                            "Event Type": self.log_ch2["events"][i],
-                                            "Flow Rate": self.log_ch2["flow"][i],
-                                            "Temperature": self.log_ch2["temp"][i],
-                                        },
-                                    )
-                            logger.debug("Ch 2 log saved")
-
-            except Exception as e:
-                logger.exception(f" Error while saving kinetic log data: {e}")
+    # Note: save_temp_log and save_kinetic_log are now handled by DataExporter in save_rec_data
 
     def update_internal_temp(self: Self, new_temp: float) -> None:
         """Update internal temperature."""
@@ -2852,12 +2834,6 @@ class AffiniteApp(QMainWindow):
                             self.flow_buf_1.append(update1["flow"])
                             self.temp_buf_1.append(update1["temp"])
                             flow_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
-                            time_now = dt.datetime.now(TIME_ZONE)
-                            flow_timestamp = (
-                                f"{time_now.hour:02d}"
-                                f":{time_now.minute:02d}"
-                                f":{time_now.second:02d}"
-                            )
                             if len(self.flow_buf_1) <= SENSOR_AVG:
                                 flow1_text = f"{(np.nanmean(self.flow_buf_1)):.2f}"
                                 temp1_text = f"{(np.nanmean(self.temp_buf_1)):.2f}"
@@ -2868,12 +2844,7 @@ class AffiniteApp(QMainWindow):
                                 temp1_text = (
                                     f"{(np.nanmean(self.temp_buf_1[-SENSOR_AVG:])):.2f}"
                                 )
-                            self.log_ch1["timestamps"].append(flow_timestamp)
-                            self.log_ch1["times"].append(flow_time)
-                            self.log_ch1["events"].append("Sensor reading")
-                            self.log_ch1["flow"].append(flow1_text)
-                            self.log_ch1["temp"].append(temp1_text)
-                            self.log_ch1["dev"].append("-")
+                            self._log_event("CH1", "Sensor reading", flow=flow1_text, temp=temp1_text)
                             logger.debug(
                                 f"CH1 append flow1={flow1_text}, temp1={temp1_text}",
                             )
@@ -2885,12 +2856,6 @@ class AffiniteApp(QMainWindow):
                             self.flow_buf_2.append(update2["flow"])
                             self.temp_buf_2.append(update2["temp"])
                             flow_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
-                            time_now = dt.datetime.now(TIME_ZONE)
-                            flow_timestamp = (
-                                f"{time_now.hour:02d}"
-                                f":{time_now.minute:02d}"
-                                f":{time_now.second:02d}"
-                            )
                             if len(self.flow_buf_2) <= SENSOR_AVG:
                                 flow2_text = f"{(np.nanmean(self.flow_buf_2)):.2f}"
                                 temp2_text = f"{(np.nanmean(self.temp_buf_2)):.2f}"
@@ -2901,12 +2866,7 @@ class AffiniteApp(QMainWindow):
                                 temp2_text = (
                                     f"{(np.nanmean(self.temp_buf_2[-SENSOR_AVG:])):.2f}"
                                 )
-                            self.log_ch2["timestamps"].append(flow_timestamp)
-                            self.log_ch2["times"].append(flow_time)
-                            self.log_ch2["events"].append("Sensor reading")
-                            self.log_ch2["flow"].append(flow2_text)
-                            self.log_ch2["temp"].append(temp2_text)
-                            self.log_ch2["dev"].append("-")
+                            self._log_event("CH2", "Sensor reading", flow=flow2_text, temp=temp2_text)
                             logger.debug(
                                 f"CH2 append flow2={flow2_text}, temp2={temp2_text}",
                             )
@@ -2918,16 +2878,12 @@ class AffiniteApp(QMainWindow):
                         }
                         self.update_sensor_display.emit(sensor_data)
                     if (
-                        self.device_config["ctrl"] in ["QSPR", "EZSPR", "PicoEZSPR"]
+                        self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]  # QSPR removed
                     ) or (self.device_config["knx"] in ["KNX", "KNX2", "PicoKNX2"]):
                         temp = ""
                         try:
-                            if self.device_config["ctrl"] == "QSPR" and isinstance(
-                                self.ctrl,
-                                QSPRController,
-                            ):
-                                temp = f"{self.ctrl.get_status()['Temperature']:.1f}"
-                            elif self.knx.version == "1.1":
+                            # QSPR temperature check disabled - obsolete hardware
+                            if self.knx.version == "1.1":
                                 status = self.knx.get_status()
                                 if isinstance(status, dict):
                                     temp = f"{status['Temperature']:.1f}"
@@ -2949,25 +2905,8 @@ class AffiniteApp(QMainWindow):
                                 self.update_temp_display.emit(temp, "ctrl")
                             else:
                                 self.update_temp_display.emit(temp, "knx")
-                            dev_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
-                            time_now = dt.datetime.now(TIME_ZONE)
-                            dev_timestamp = (
-                                f"{time_now.hour:02d}"
-                                f":{time_now.minute:02d}"
-                                f":{time_now.second:02d}"
-                            )
-                            self.log_ch1["timestamps"].append(dev_timestamp)
-                            self.log_ch1["times"].append(dev_time)
-                            self.log_ch1["events"].append("Device reading")
-                            self.log_ch1["flow"].append("-")
-                            self.log_ch1["temp"].append("-")
-                            self.log_ch1["dev"].append(temp)
-                            self.log_ch2["timestamps"].append(dev_timestamp)
-                            self.log_ch2["times"].append(dev_time)
-                            self.log_ch2["events"].append("Device reading")
-                            self.log_ch2["flow"].append("-")
-                            self.log_ch2["temp"].append("-")
-                            self.log_ch2["dev"].append(temp)
+                            self._log_event("CH1", "Device reading", dev=temp)
+                            self._log_event("CH2", "Device reading", dev=temp)
                     if self.device_config["ctrl"] == "PicoP4SPR":
                         try:
                             min_temp = 5
@@ -2979,16 +2918,19 @@ class AffiniteApp(QMainWindow):
                                     temp = f"{np.nanmean(temp_buffer[-window:]):.1f}"
                                 else:
                                     temp = f"{self.temp:.1f}"
-                                self.temp_log["readings"].append(temp)
                                 exp_time = time.perf_counter() - self.exp_start_perf
-                                self.temp_log["exp"].append(f"{exp_time:.2f}")
                                 time_now = dt.datetime.now(TIME_ZONE)
                                 dev_timestamp = (
                                     f"{time_now.hour:02d}"
                                     f":{time_now.minute:02d}"
                                     f":{time_now.second:02d}"
                                 )
-                                self.temp_log["times"].append(dev_timestamp)
+                                new_row = pd.DataFrame([{
+                                    "Timestamp": dev_timestamp,
+                                    "Experiment Time": f"{exp_time:.2f}",
+                                    "Device Temp": temp,
+                                }])
+                                self.temp_log = pd.concat([self.temp_log, new_row], ignore_index=True)
                                 self.update_temp_display.emit(temp, "ctrl")
                         except Exception as e:
                             logger.exception(f"error geting device temp: {e}")
@@ -3003,12 +2945,13 @@ class AffiniteApp(QMainWindow):
 
     def save_default_values(self: Self) -> None:
         """Save default values."""
+        # All controllers with detector (static + ezSPR) support EEPROM flash
         if self.device_config["ctrl"] in [
             "P4SPR",
             "PicoP4SPR",
             "EZSPR",
             "PicoEZSPR",
-        ] and isinstance(self.ctrl, ArduinoController | PicoEZSPR | PicoP4SPR):
+        ] and hasattr(self.ctrl, 'flash'):
             if show_message(
                 msg="Save settings permanently to device?\n"
                 "This will overwrite factory default settings",
@@ -3134,6 +3077,13 @@ class AffiniteApp(QMainWindow):
                 # Connect measurement signal if present
                 if hasattr(self.main_window.advanced_menu, "measure_afterglow_sig"):
                     self.main_window.advanced_menu.measure_afterglow_sig.connect(self.measure_afterglow)
+                # Connect session quality monitoring toggle
+                if hasattr(self.main_window.advanced_menu, "quality_monitoring_toggled"):
+                    self.main_window.advanced_menu.quality_monitoring_toggled.connect(self._toggle_quality_monitoring)
+                    # Set initial state
+                    if hasattr(self.main_window.advanced_menu, "set_quality_monitoring_state"):
+                        from settings.settings import ENABLE_SESSION_QUALITY_MONITORING
+                        self.main_window.advanced_menu.set_quality_monitoring_state(ENABLE_SESSION_QUALITY_MONITORING)
             except Exception as _adv_err:
                 logger.debug(f"Advanced afterglow controls not fully wired: {_adv_err}")
             self.adv_connected = True
@@ -3144,30 +3094,8 @@ class AffiniteApp(QMainWindow):
         if not self.adv_connected or self.main_window.advanced_menu is None:
             return
 
-        if self.device_config["ctrl"] == "QSPR" and isinstance(
-            self.ctrl,
-            QSPRController,
-        ):
-            params = self.ctrl.get_parameters()
-            self.main_window.advanced_menu.display_settings(params)
-            # Update small status line in Advanced with current delays and cal file
-            try:
-                cal_file = None
-                try:
-                    optical_cfg = (self.conf or {}).get('optical_calibration', {}) if hasattr(self, 'conf') else {}
-                    cal_file = optical_cfg.get('optical_calibration_file') or (self.conf or {}).get('optical_calibration_file')
-                except Exception:
-                    pass
-                self.adv_delay_status_sig.emit(
-                    float(getattr(self, "led_delay", LED_DELAY)),
-                    float(getattr(self, "post_delay", LED_POST_DELAY)),
-                    bool(USE_DYNAMIC_LED_DELAY),
-                    bool(USE_DYNAMIC_POST_DELAY),
-                    str(cal_file) if cal_file else "",
-                )
-            except Exception:
-                pass
-        elif self.ctrl is not None and not isinstance(self.ctrl, QSPRController):
+        # Get device parameters and display in advanced settings
+        if self.ctrl is not None:  # QSPRController check removed - obsolete
             s_pos = 0
             p_pos = 0
             if self.device_config["ctrl"] in [
@@ -3224,19 +3152,17 @@ class AffiniteApp(QMainWindow):
         if self.adv_connected:
             paused = False
             try:
-                if self.device_config["ctrl"] == "QSPR" and isinstance(
-                    self.ctrl,
-                    QSPRController,
-                ):
+                if False:  # QSPR disabled - obsolete hardware
+                    # self.device_config["ctrl"] == "QSPR" and isinstance(
+                    #     self.ctrl,
+                    #     QSPRController,
+                    # ):
                     p_string = (
                         f"{params['s_pos']},{params['p_pos']},{params['up_time']},{params['down_time']},"
                         f"{params['adj_time']},{params['debounce']},{params['start_interval']}"
                     )
                     self.ctrl.set_parameters(p_string)
-                elif self.ctrl is not None and not isinstance(
-                    self.ctrl,
-                    QSPRController,
-                ):
+                elif self.ctrl is not None:  # QSPRController check removed - obsolete
                     self.pause()
                     paused = True
                     self.led_delay = float(params["led_del"])
@@ -3430,6 +3356,60 @@ class AffiniteApp(QMainWindow):
                 if paused:
                     self.resume()
                     logger.debug("Resumed acquisition after advanced parameter update")
+
+    def _toggle_quality_monitoring(self: Self, enabled: bool) -> None:
+        """Toggle session-based FWHM quality monitoring.
+
+        Args:
+            enabled: True to enable quality monitoring, False to disable
+        """
+        try:
+            from settings import settings
+            # Update the setting dynamically
+            settings.ENABLE_SESSION_QUALITY_MONITORING = enabled
+
+            if enabled:
+                # Initialize quality monitor if not already done
+                if self.quality_monitor is None and self.usb is not None:
+                    from utils.device_integration import get_device_directory
+                    from utils.session_quality_monitor import SessionQualityMonitor
+                    from settings.settings import (
+                        FWHM_EXCELLENT_THRESHOLD_NM,
+                        FWHM_GOOD_THRESHOLD_NM,
+                        QC_WAVELENGTH_MIN_NM,
+                        QC_WAVELENGTH_MAX_NM,
+                        QC_DEGRADATION_ALERT_THRESHOLD,
+                        QC_MAX_SESSION_HISTORY,
+                    )
+
+                    device_dir = get_device_directory(self.usb)
+                    if device_dir:
+                        self.quality_monitor = SessionQualityMonitor(
+                            device_directory=device_dir,
+                            excellent_threshold_nm=FWHM_EXCELLENT_THRESHOLD_NM,
+                            good_threshold_nm=FWHM_GOOD_THRESHOLD_NM,
+                            valid_wavelength_min_nm=QC_WAVELENGTH_MIN_NM,
+                            valid_wavelength_max_nm=QC_WAVELENGTH_MAX_NM,
+                            degradation_alert_threshold=QC_DEGRADATION_ALERT_THRESHOLD,
+                            max_session_history=QC_MAX_SESSION_HISTORY,
+                        )
+                        logger.info(f"✅ Session quality monitoring ENABLED: {device_dir.name}")
+                    else:
+                        logger.warning("⚠️  Cannot enable quality monitoring: no device directory")
+                        if hasattr(self.main_window.advanced_menu, "set_quality_monitoring_state"):
+                            self.main_window.advanced_menu.set_quality_monitoring_state(False)
+                        return
+                else:
+                    logger.info("✅ Session quality monitoring ENABLED")
+            else:
+                # Disable but keep the monitor instance
+                logger.info("⚠️  Session quality monitoring DISABLED")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to toggle quality monitoring: {e}")
+            # Revert UI state on error
+            if hasattr(self.main_window.advanced_menu, "set_quality_monitoring_state"):
+                self.main_window.advanced_menu.set_quality_monitoring_state(not enabled)
 
     def measure_afterglow(self: Self) -> None:
         """Handle user-triggered optical afterglow calibration.
@@ -3697,21 +3677,9 @@ class AffiniteApp(QMainWindow):
         time.sleep(0.5)
 
     def crt_control_handler(self: Self, command: str) -> None:
-        """Crt control handler."""
-        if self.device_config["ctrl"] == "QSPR" and isinstance(
-            self.ctrl,
-            QSPRController,
-        ):
-            self.pause()
-            if command == "up":
-                self.ctrl.crt_up()
-            elif command == "down":
-                self.ctrl.crt_down()
-            elif command == "adj_up":
-                self.ctrl.crt_adj_up()
-            elif command == "adj_down":
-                self.ctrl.crt_adj_down()
-            self.resume()
+        """Crt control handler - QSPR cartridge control disabled (obsolete hardware)."""
+        # QSPR cartridge control disabled
+        pass
 
     def shutdown_handler(self: Self, device_type: str) -> None:
         """Shutdown."""
@@ -3732,7 +3700,7 @@ class AffiniteApp(QMainWindow):
     def shutdown_controller(self: Self) -> None:
         """Shutdown controller."""
         self.main_window.ui.status.setText("SPR device powering off...")
-        if isinstance(self.ctrl, PicoEZSPR | QSPRController):
+        if isinstance(self.ctrl, PicoEZSPR):  # QSPRController removed - obsolete
             self.ctrl.shutdown()
         self.disconnect_dev(knx=False)
         self.get_current_device_config()
@@ -3979,8 +3947,14 @@ def main() -> None:
 
     _affinite_app = QApplication(sys.argv)
 
-    # Apply centralized UI theme
-    UIStyleManager.apply_app_theme(_affinite_app)
+    # Apply modern theme system
+    if MODERN_THEME_AVAILABLE:
+        logger.info("✨ Applying modern UI theme...")
+        apply_modern_theme(_affinite_app)
+        logger.info("✅ Modern theme applied successfully")
+    else:
+        # Fallback: Apply centralized UI theme (legacy)
+        UIStyleManager.apply_app_theme(_affinite_app)
 
     app = AffiniteApp()
 

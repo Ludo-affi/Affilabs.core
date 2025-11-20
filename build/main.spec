@@ -9,7 +9,7 @@ a = Analysis(
     ["main/main.py"],
     pathex=[],
     binaries=collect_dynamic_libs("oceandirect"),
-    datas=[("main.spec", "."), ("affinite_ezspr.uf2", ".")],
+    datas=[("main.spec", "."), ("affinite_ezspr.uf2", "."), ("VERSION", ".")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

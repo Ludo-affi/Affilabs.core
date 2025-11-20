@@ -66,11 +66,27 @@ if sys.version_info < (3, 12):
 from PySide6.QtCore import Slot, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
-from settings import SW_VERSION
+from settings import (
+    SW_VERSION,
+    ENABLE_SESSION_QUALITY_MONITORING,
+    FWHM_EXCELLENT_THRESHOLD_NM,
+    FWHM_GOOD_THRESHOLD_NM,
+    QC_WAVELENGTH_MIN_NM,
+    QC_WAVELENGTH_MAX_NM,
+    QC_DEGRADATION_ALERT_THRESHOLD,
+    QC_MAX_SESSION_HISTORY,
+)
 from utils.device_configuration import DeviceConfiguration
 from utils.logger import logger
 from widgets.mainwindow import MainWindow
 from widgets.message import show_message
+
+# Session quality monitoring (disabled by default)
+if ENABLE_SESSION_QUALITY_MONITORING:
+    from utils.session_quality_monitor import SessionQualityMonitor
+    logger.info("✅ Session quality monitoring ENABLED")
+else:
+    logger.info("⚠️  Session quality monitoring DISABLED (feature flag off)")
 
 # Environment variable to choose between state machine and threading
 # DISABLED BY DEFAULT: State machine causes GUI freezes due to blocking hardware I/O
@@ -129,6 +145,11 @@ class AffiniteApp(QApplication):
         self.data_processor = None
         self.leds_calibrated = {}
         self.ref_sig = {}
+
+        # Session quality monitoring (initialized after device connection)
+        self.quality_monitor = None
+        if ENABLE_SESSION_QUALITY_MONITORING:
+            logger.info("✅ Session quality monitoring will be initialized after device connection")
 
         # Initialize main window
         self.main_window = MainWindow(self)
@@ -511,6 +532,30 @@ class AffiniteApp(QApplication):
                     logger.info("Updating device configuration...")
                     self._update_device_config()
                     logger.info("Device configuration updated")
+
+                    # Initialize session quality monitor if enabled
+                    if ENABLE_SESSION_QUALITY_MONITORING and self.quality_monitor is None:
+                        try:
+                            # Get device directory for session history storage
+                            from utils.device_integration import get_device_directory
+                            device_dir = get_device_directory(self.usb) if self.usb else None
+
+                            if device_dir:
+                                self.quality_monitor = SessionQualityMonitor(
+                                    device_directory=device_dir,
+                                    excellent_threshold_nm=FWHM_EXCELLENT_THRESHOLD_NM,
+                                    good_threshold_nm=FWHM_GOOD_THRESHOLD_NM,
+                                    valid_wavelength_min_nm=QC_WAVELENGTH_MIN_NM,
+                                    valid_wavelength_max_nm=QC_WAVELENGTH_MAX_NM,
+                                    degradation_alert_threshold=QC_DEGRADATION_ALERT_THRESHOLD,
+                                    max_session_history=QC_MAX_SESSION_HISTORY,
+                                )
+                                logger.info(f"✅ Session quality monitor initialized: {device_dir.name}")
+                            else:
+                                logger.warning("⚠️  Could not initialize quality monitor: no device directory")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to initialize quality monitor: {e}")
+
                     self.main_window.ui.status.setText("Hardware connected - Starting calibration...")
                     logger.info(f"🔌 Hardware connected - Controller: {self.ctrl is not None}, Spectrometer: {self.usb is not None}")
 

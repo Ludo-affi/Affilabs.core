@@ -146,38 +146,7 @@ class Ui_mainWindow:
 
         self.horizontalLayout_4.addWidget(self.sensorgram_btn)
 
-        self.spectroscopy_btn = QPushButton(self.frame_2)
-        self.spectroscopy_btn.setObjectName("spectroscopy_btn")
-        sizePolicy1.setHeightForWidth(
-            self.spectroscopy_btn.sizePolicy().hasHeightForWidth(),
-        )
-        self.spectroscopy_btn.setSizePolicy(sizePolicy1)
-        self.spectroscopy_btn.setMinimumSize(QSize(102, 35))
-        self.spectroscopy_btn.setMaximumSize(QSize(110, 16777215))
-        self.spectroscopy_btn.setFont(font2)
-        self.spectroscopy_btn.setLayoutDirection(Qt.LeftToRight)
-        self.spectroscopy_btn.setAutoFillBackground(False)
-        self.spectroscopy_btn.setStyleSheet(
-            "QPushButton {\n"
-            "\n"
-            "	background-color: rgb(240, 240, 240); \n"
-            "	border: 1px solid; \n"
-            "	border-radius: 3px;\n"
-            "\n"
-            "}\n"
-            "\n"
-            "QPushButton::hover{\n"
-            "	background: rgb(253, 253, 253);\n"
-            "	border: 1px raised;\n"
-            "	border-radius: 5px;\n"
-            "}",
-        )
-        self.spectroscopy_btn.setAutoRepeat(False)
-        self.spectroscopy_btn.setAutoExclusive(False)
-        self.spectroscopy_btn.setAutoDefault(False)
-        self.spectroscopy_btn.setFlat(False)
 
-        self.horizontalLayout_4.addWidget(self.spectroscopy_btn)
 
         self.data_processing_btn = QPushButton(self.frame_2)
         self.data_processing_btn.setObjectName("data_processing_btn")
@@ -257,49 +226,7 @@ class Ui_mainWindow:
 
         self.horizontalLayout.addItem(self.horizontalSpacer_3)
 
-        self.adv_btn = QPushButton(self.tool_bar)
-        self.adv_btn.setObjectName("adv_btn")
-        self.adv_btn.setEnabled(False)
-        sizePolicy2 = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        sizePolicy2.setHorizontalStretch(0)
-        sizePolicy2.setVerticalStretch(0)
-        sizePolicy2.setHeightForWidth(self.adv_btn.sizePolicy().hasHeightForWidth())
-        self.adv_btn.setSizePolicy(sizePolicy2)
-        self.adv_btn.setMinimumSize(QSize(35, 35))
-        self.adv_btn.setMaximumSize(QSize(35, 35))
-        font3 = QFont()
-        font3.setFamilies(["Segoe UI"])
-        font3.setPointSize(5)
-        self.adv_btn.setFont(font3)
-        self.adv_btn.setMouseTracking(True)
-        self.adv_btn.setLayoutDirection(Qt.LeftToRight)
-        self.adv_btn.setAutoFillBackground(False)
-        self.adv_btn.setStyleSheet(
-            "QPushButton{\n"
-            "	border: none;\n"
-            "	background: none;\n"
-            "}\n"
-            "\n"
-            "QPushButton::hover{\n"
-            "	background: white;\n"
-            "	border: 1px raised;\n"
-            "	border-radius: 8px;\n"
-            "}",
-        )
-        icon1 = QIcon()
-        icon1.addFile(":/img/img/settings.png", QSize(), QIcon.Normal, QIcon.Off)
-        self.adv_btn.setIcon(icon1)
-        self.adv_btn.setIconSize(QSize(28, 28))
-        self.adv_btn.setAutoRepeat(False)
-        self.adv_btn.setAutoExclusive(False)
-        self.adv_btn.setAutoDefault(False)
-        self.adv_btn.setFlat(False)
 
-        self.horizontalLayout.addWidget(
-            self.adv_btn,
-            0,
-            Qt.AlignHCenter | Qt.AlignVCenter,
-        )
 
         self.rec_btn = QPushButton(self.tool_bar)
         self.rec_btn.setObjectName("rec_btn")
@@ -495,10 +422,10 @@ class Ui_mainWindow:
         self.retranslateUi(mainWindow)
 
         self.sensorgram_btn.setDefault(False)
-        self.spectroscopy_btn.setDefault(False)
+        # self.spectroscopy_btn.setDefault(False)
         self.data_processing_btn.setDefault(False)
         self.data_analysis_btn.setDefault(False)
-        self.adv_btn.setDefault(False)
+        # self.adv_btn.setDefault(False)
         self.rec_btn.setDefault(False)
 
         QMetaObject.connectSlotsByName(mainWindow)
@@ -513,9 +440,6 @@ class Ui_mainWindow:
         self.sensorgram_btn.setText(
             QCoreApplication.translate("mainWindow", "Sensorgram", None),
         )
-        self.spectroscopy_btn.setText(
-            QCoreApplication.translate("mainWindow", "Spectroscopy", None),
-        )
         self.data_processing_btn.setText(
             QCoreApplication.translate("mainWindow", "Data Processing", None),
         )
@@ -523,11 +447,7 @@ class Ui_mainWindow:
             QCoreApplication.translate("mainWindow", "Data Analysis", None),
         )
         # if QT_CONFIG(tooltip)
-        self.adv_btn.setToolTip(
-            QCoreApplication.translate("mainWindow", "Advanced Settings", None),
-        )
-        # endif // QT_CONFIG(tooltip)
-        self.adv_btn.setText("")
+        # # endif // QT_CONFIG(tooltip)
         # if QT_CONFIG(tooltip)
         self.rec_btn.setToolTip(
             QCoreApplication.translate("mainWindow", "Start/Stop\nRecording", None),

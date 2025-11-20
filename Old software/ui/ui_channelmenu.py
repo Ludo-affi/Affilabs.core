@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QRadioButton, QCheckBox,
     QSizePolicy, QSpacerItem, QVBoxLayout, QWidget)
 import ui.ai_rc
+from ui.styles import get_standard_radiobutton_style, get_standard_checkbox_style
 
 class Ui_ChannelMenu(object):
     def setupUi(self, ChannelMenu):
@@ -33,12 +34,20 @@ class Ui_ChannelMenu(object):
         ChannelMenu.setWindowIcon(icon)
         self.verticalLayout = QVBoxLayout(ChannelMenu)
         self.verticalLayout.setObjectName(u"verticalLayout")
+        # Standard font for groupbox titles
+        font_groupbox = QFont()
+        font_groupbox.setFamilies([u"Segoe UI"])
+        font_groupbox.setPointSize(8)
+        # Standard font for general UI elements
+        font_standard = QFont()
+        font_standard.setFamilies([u"Segoe UI"])
+        font_standard.setPointSize(9)
+        # Get standard styles
+        radiobutton_style = get_standard_radiobutton_style()
+        checkbox_style = get_standard_checkbox_style()
         self.filter = QGroupBox(ChannelMenu)
         self.filter.setObjectName(u"filter")
-        font1 = QFont()
-        font1.setFamilies([u"Segoe UI"])
-        font1.setPointSize(9)
-        self.filter.setFont(font1)
+        self.filter.setFont(font_groupbox)
         self.verticalLayout_2 = QVBoxLayout(self.filter)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
@@ -48,6 +57,7 @@ class Ui_ChannelMenu(object):
         self.horizontalLayout.setContentsMargins(11, 0, 11, 0)
         self.filt_en = QCheckBox(self.filter)
         self.filt_en.setObjectName(u"filt_en")
+        self.filt_en.setStyleSheet(checkbox_style)
         sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -101,11 +111,7 @@ class Ui_ChannelMenu(object):
         self.groupBox = QGroupBox(ChannelMenu)
         self.groupBox.setObjectName(u"groupBox")
         self.groupBox.setEnabled(True)
-        font2 = QFont()
-        font2.setFamilies([u"Segoe UI"])
-        font2.setPointSize(9)
-        font2.setBold(False)
-        self.groupBox.setFont(font2)
+        self.groupBox.setFont(font_groupbox)
         self.groupBox.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
         self.verticalLayout_3 = QVBoxLayout(self.groupBox)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
@@ -115,33 +121,38 @@ class Ui_ChannelMenu(object):
         self.horizontalLayout_4.setContentsMargins(15, -1, -1, -1)
         self.noRef = QRadioButton(self.groupBox)
         self.noRef.setObjectName(u"noRef")
-        self.noRef.setFont(font2)
+        self.noRef.setFont(font_standard)
         self.noRef.setChecked(True)
+        self.noRef.setStyleSheet(radiobutton_style)
 
         self.horizontalLayout_4.addWidget(self.noRef)
 
         self.channelA = QRadioButton(self.groupBox)
         self.channelA.setObjectName(u"channelA")
-        self.channelA.setFont(font2)
+        self.channelA.setFont(font_standard)
         self.channelA.setChecked(False)
+        self.channelA.setStyleSheet(radiobutton_style)
 
         self.horizontalLayout_4.addWidget(self.channelA)
 
         self.channelB = QRadioButton(self.groupBox)
         self.channelB.setObjectName(u"channelB")
-        self.channelB.setFont(font2)
+        self.channelB.setFont(font_standard)
+        self.channelB.setStyleSheet(radiobutton_style)
 
         self.horizontalLayout_4.addWidget(self.channelB)
 
         self.channelC = QRadioButton(self.groupBox)
         self.channelC.setObjectName(u"channelC")
-        self.channelC.setFont(font2)
+        self.channelC.setFont(font_standard)
+        self.channelC.setStyleSheet(radiobutton_style)
 
         self.horizontalLayout_4.addWidget(self.channelC)
 
         self.channelD = QRadioButton(self.groupBox)
         self.channelD.setObjectName(u"channelD")
-        self.channelD.setFont(font2)
+        self.channelD.setFont(font_standard)
+        self.channelD.setStyleSheet(radiobutton_style)
         self.channelD.setChecked(False)
 
         self.horizontalLayout_4.addWidget(self.channelD)
@@ -155,7 +166,7 @@ class Ui_ChannelMenu(object):
         self.groupBox_3 = QGroupBox(ChannelMenu)
         self.groupBox_3.setObjectName(u"groupBox_3")
         self.groupBox_3.setEnabled(True)
-        self.groupBox_3.setFont(font2)
+        self.groupBox_3.setFont(font_groupbox)
         self.horizontalLayout_3 = QHBoxLayout(self.groupBox_3)
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
         self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
@@ -165,7 +176,7 @@ class Ui_ChannelMenu(object):
         self.label_2.setObjectName(u"label_2")
         self.label_2.setMinimumSize(QSize(150, 0))
         self.label_2.setMaximumSize(QSize(150, 16777215))
-        self.label_2.setFont(font2)
+        self.label_2.setFont(font_standard)
         self.label_2.setAlignment(Qt.AlignCenter)
 
         self.horizontalLayout_5.addWidget(self.label_2)
@@ -191,6 +202,7 @@ class Ui_ChannelMenu(object):
 
         self.groupBox_2 = QGroupBox(ChannelMenu)
         self.groupBox_2.setObjectName(u"groupBox_2")
+        self.groupBox_2.setFont(font_groupbox)
         self.horizontalLayout_7 = QHBoxLayout(self.groupBox_2)
         self.horizontalLayout_7.setObjectName(u"horizontalLayout_7")
         self.reset_data = QPushButton(self.groupBox_2)
@@ -208,11 +220,13 @@ class Ui_ChannelMenu(object):
 
         self.groupBox_4 = QGroupBox(ChannelMenu)
         self.groupBox_4.setObjectName(u"groupBox_4")
+        self.groupBox_4.setFont(font_groupbox)
         self.horizontalLayout_8 = QHBoxLayout(self.groupBox_4)
         self.horizontalLayout_8.setObjectName(u"horizontalLayout_8")
         self.colorblind_mode = QCheckBox(self.groupBox_4)
         self.colorblind_mode.setObjectName(u"colorblind_mode")
         self.colorblind_mode.setChecked(False)
+        self.colorblind_mode.setStyleSheet(checkbox_style)
 
         self.horizontalLayout_8.addWidget(self.colorblind_mode)
 

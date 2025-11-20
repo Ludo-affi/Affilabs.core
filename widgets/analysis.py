@@ -20,6 +20,7 @@ except ImportError:
     from typing import Optional
 
 import numpy as np
+import pandas as pd
 from pyqtgraph import InfiniteLine, PlotDataItem, mkPen
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFileDialog, QTableWidgetItem, QWidget
@@ -711,38 +712,26 @@ class AnalysisWindow(QWidget):
                             if (len(seg.seg_y[ch]) > 0) and (
                                 len(seg.seg_y[ch]) == len(seg.seg_x[ch])
                             ):
-                                end_time = 1000000
-                                for seg in self.auto_segments:
-                                    end_time = min(end_time, seg.seg_x[ch][-1])
-                                temp_data = []
-                                for seg in self.auto_segments:
-                                    x = []
-                                    y = []
-                                    for j in range(len(seg.seg_x[ch])):
-                                        if (seg.seg_x[ch][j] >= 0) and (
-                                            seg.seg_x[ch][j] < end_time
-                                        ):
-                                            x.append(seg.seg_x[ch][j])
-                                            y.append(seg.seg_y[ch][j])
-                                    temp_data.append({"x": x, "y": y})
-                                max_length = 0
-                                for i in range(len(temp_data)):
-                                    max_length = max(max_length, len(temp_data[i]["x"]))
-                                for i in range(len(temp_data)):
-                                    for j in range(max_length):
-                                        if (j + 1) > len(temp_data[i]["x"]):
-                                            temp_data[i]["x"].append(None)
-                                            temp_data[i]["y"].append(None)
-                                for row in range(max_length):
-                                    data_dict = {}
-                                    for i in range(len(temp_data)):
-                                        data_dict[fieldnames[2 * i]] = temp_data[i][
-                                            "x"
-                                        ][row]
-                                        data_dict[fieldnames[(2 * i) + 1]] = temp_data[
-                                            i
-                                        ]["y"][row]
-                                    writer.writerow(data_dict)
+                                # Find minimum end time across all segments
+                                end_time = min(seg.seg_x[ch][-1] for seg in self.auto_segments)
+
+                                # Build DataFrame columns for all segments
+                                data_dict = {}
+                                for i, seg in enumerate(self.auto_segments):
+                                    # Filter data within time range
+                                    mask = (seg.seg_x[ch] >= 0) & (seg.seg_x[ch] < end_time)
+                                    x_filtered = np.array(seg.seg_x[ch])[mask]
+                                    y_filtered = np.array(seg.seg_y[ch])[mask]
+
+                                    # Add to dict with proper field names
+                                    data_dict[fieldnames[2 * i]] = x_filtered
+                                    data_dict[fieldnames[2 * i + 1]] = y_filtered
+
+                                # Create DataFrame and fill missing values with None
+                                df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in data_dict.items()]))
+
+                                # Write to CSV
+                                df.to_csv(file, index=False, header=False, mode='a')
 
                 with Path(f"{export_dir}/AnalysisRawData.json").open("w") as json_file:
                     analysis_data: list[object] = [self.unit]

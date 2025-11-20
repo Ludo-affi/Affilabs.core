@@ -2,7 +2,15 @@ from functools import partial
 
 import numpy as np
 from pyqtgraph import GraphicsLayoutWidget, mkPen, setConfigOptions
-from PySide6.QtWidgets import QWidget, QDialog
+from PySide6.QtWidgets import (
+    QWidget,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QRadioButton,
+    QButtonGroup,
+)
 from PySide6.QtCore import Signal
 
 from ui.ui_spectroscopy import Ui_Spectroscopy
@@ -25,6 +33,9 @@ class Spectroscopy(QWidget):
         self.ui.setupUi(self)
         self._fix_checkbox_styles()
         self.led_mode = 'auto'
+
+        # Configure graph toggles before creating plot widgets
+        self._setup_graph_toggles()
 
         # setup plots
         self.intensity_plot_view = SpecPlot("Intensity Plot", "Wavelength (nm)", "Intensity (counts)")
@@ -123,6 +134,73 @@ class Spectroscopy(QWidget):
                 self.led_mode = 'x'
         self.single_led_sig.emit(self.led_mode)
 
+    def _setup_graph_toggles(self):
+        """Insert circular toggle controls to switch/raw view visibility."""
+        # Reorder plots so transmission is always first
+        plots_layout = self.ui.Plots
+        plots_layout.removeWidget(self.ui.intensity_plot)
+        plots_layout.removeWidget(self.ui.transmission_plot)
+        plots_layout.addWidget(self.ui.transmission_plot)
+        plots_layout.addWidget(self.ui.intensity_plot)
+
+        toggle_frame = QFrame(self)
+        toggle_layout = QHBoxLayout(toggle_frame)
+        toggle_layout.setContentsMargins(4, 0, 4, 4)
+        toggle_layout.setSpacing(12)
+
+        title = QLabel("Graph Selector", toggle_frame)
+        title.setStyleSheet("font-weight: 600; color: rgb(60, 60, 75);")
+        toggle_layout.addWidget(title)
+
+        dot_style = (
+            "QRadioButton::indicator {"
+            " width: 14px;"
+            " height: 14px;"
+            " border-radius: 7px;"
+            " border: 2px solid rgb(150, 150, 150);"
+            " background: transparent;"
+            "}"
+            "QRadioButton::indicator:checked {"
+            " background: rgb(0, 102, 204);"
+            " border-color: rgb(0, 102, 204);"
+            "}"
+        )
+
+        self.transmission_toggle = QRadioButton(toggle_frame)
+        self.transmission_toggle.setStyleSheet(dot_style)
+        self.transmission_toggle.setToolTip("Show transmission graph only")
+        transmission_label = QLabel("Transmission", toggle_frame)
+
+        self.raw_toggle = QRadioButton(toggle_frame)
+        self.raw_toggle.setStyleSheet(dot_style)
+        self.raw_toggle.setToolTip("Reveal raw data graph underneath")
+        raw_label = QLabel("Raw", toggle_frame)
+
+        toggle_layout.addWidget(self.transmission_toggle)
+        toggle_layout.addWidget(transmission_label)
+        toggle_layout.addSpacing(10)
+        toggle_layout.addWidget(self.raw_toggle)
+        toggle_layout.addWidget(raw_label)
+        toggle_layout.addStretch(1)
+
+        plots_layout.insertWidget(0, toggle_frame)
+
+        self.graph_toggle_group = QButtonGroup(self)
+        self.graph_toggle_group.addButton(self.transmission_toggle)
+        self.graph_toggle_group.addButton(self.raw_toggle)
+
+        self.transmission_toggle.setChecked(True)
+        self.raw_toggle.setChecked(False)
+        self.ui.intensity_plot.setVisible(False)
+
+        self.transmission_toggle.toggled.connect(self._update_graph_visibility)
+        self.raw_toggle.toggled.connect(self._update_graph_visibility)
+
+    def _update_graph_visibility(self):
+        """Show raw graph when its toggle is selected."""
+        show_raw = getattr(self, "raw_toggle", None) and self.raw_toggle.isChecked()
+        self.ui.intensity_plot.setVisible(bool(show_raw))
+
 
 class SpecPlot(GraphicsLayoutWidget):
 
@@ -132,9 +210,12 @@ class SpecPlot(GraphicsLayoutWidget):
         # Enable antialiasing for prettier plots
         setConfigOptions(antialias=True)
 
-        # Set plot settings: title, grid, x, y axis labels
-        self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, color=(250, 250, 250), size='10pt')
+        # Set plot settings: title (optional), grid, x, y axis labels
+        if title_string:
+            self.plot = self.addPlot(title=title_string)
+            self.plot.titleLabel.setText(title_string, color=(250, 250, 250), size='10pt')
+        else:
+            self.plot = self.addPlot()
         self.plot.showGrid(x=True, y=True)
         if DEV:
             self.plot.setMenuEnabled(True)

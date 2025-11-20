@@ -3,9 +3,13 @@
 This module provides a UIStyleManager class that centralizes all UI styling,
 making it easy to maintain consistent theming and implement features like
 dark mode in the future.
+
+Now using custom modern theme system.
 """
 
 from __future__ import annotations
+
+from PySide6.QtWidgets import QApplication
 
 
 class UIStyleManager:
@@ -48,8 +52,29 @@ class UIStyleManager:
     }
 
     @classmethod
+    def apply_app_theme(cls, app: QApplication) -> None:
+        """Apply professional modern theme using custom design system.
+
+        This provides a modern, consistent look with proper hover states,
+        focus indicators, and professional styling throughout the app.
+
+        Args:
+            app: QApplication instance to apply theme to
+        """
+        # Use the modern theme from styles package
+        try:
+            from styles.theme_manager import apply_modern_theme
+            apply_modern_theme(app)
+        except ImportError:
+            # Fallback to basic styling if modern theme not available
+            pass
+
+    @classmethod
     def get_main_stylesheet(cls) -> str:
         """Get the complete application-wide stylesheet.
+
+        DEPRECATED: Use apply_app_theme() instead for qt-material styling.
+        This method is kept for backwards compatibility only.
 
         Returns:
             str: Complete CSS stylesheet for the application.

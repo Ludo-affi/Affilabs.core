@@ -22,8 +22,8 @@ class Ui_Device(object):
     def setupUi(self, Device):
         if not Device.objectName():
             Device.setObjectName(u"Device")
-        Device.resize(275, 300)
-        Device.setMinimumSize(QSize(275, 280))
+        Device.resize(375, 600)
+        Device.setMinimumSize(QSize(375, 580))
         font = QFont()
         font.setFamilies([u"Segoe UI"])
         Device.setFont(font)

@@ -24,7 +24,7 @@ class Ui_mainWindow(object):
     def setupUi(self, mainWindow):
         if not mainWindow.objectName():
             mainWindow.setObjectName(u"mainWindow")
-        mainWindow.resize(1200, 700)
+        mainWindow.resize(1400, 800)  # Professional default size
         mainWindow.setMinimumSize(QSize(1200, 700))
         font = QFont()
         font.setFamilies([u"Segoe UI"])
@@ -66,7 +66,8 @@ class Ui_mainWindow(object):
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.tool_bar = QFrame(self.main_frame)
         self.tool_bar.setObjectName(u"tool_bar")
-        self.tool_bar.setMaximumSize(QSize(16777215, 80))
+        self.tool_bar.setMinimumSize(QSize(0, 60))
+        self.tool_bar.setMaximumSize(QSize(16777215, 60))
         font1 = QFont()
         font1.setFamilies([u"Segoe UI"])
         font1.setPointSize(8)
@@ -105,6 +106,7 @@ class Ui_mainWindow(object):
         self.frame_2.setFrameShadow(QFrame.Raised)
         self.horizontalLayout_4 = QHBoxLayout(self.frame_2)
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.horizontalLayout_4.setContentsMargins(140, 0, 0, 0)  # Left margin to align with main page
         self.sensorgram_btn = QPushButton(self.frame_2)
         self.sensorgram_btn.setObjectName(u"sensorgram_btn")
         sizePolicy1 = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -173,8 +175,8 @@ class Ui_mainWindow(object):
         self.data_processing_btn.setObjectName(u"data_processing_btn")
         sizePolicy1.setHeightForWidth(self.data_processing_btn.sizePolicy().hasHeightForWidth())
         self.data_processing_btn.setSizePolicy(sizePolicy1)
-        self.data_processing_btn.setMinimumSize(QSize(112, 35))
-        self.data_processing_btn.setMaximumSize(QSize(120, 16777215))
+        self.data_processing_btn.setMinimumSize(QSize(125, 35))
+        self.data_processing_btn.setMaximumSize(QSize(135, 16777215))
         self.data_processing_btn.setFont(font2)
         self.data_processing_btn.setLayoutDirection(Qt.LeftToRight)
         self.data_processing_btn.setAutoFillBackground(False)
@@ -203,8 +205,8 @@ class Ui_mainWindow(object):
         self.data_analysis_btn.setEnabled(True)
         sizePolicy1.setHeightForWidth(self.data_analysis_btn.sizePolicy().hasHeightForWidth())
         self.data_analysis_btn.setSizePolicy(sizePolicy1)
-        self.data_analysis_btn.setMinimumSize(QSize(100, 35))
-        self.data_analysis_btn.setMaximumSize(QSize(110, 16777215))
+        self.data_analysis_btn.setMinimumSize(QSize(118, 35))
+        self.data_analysis_btn.setMaximumSize(QSize(135, 16777215))
         self.data_analysis_btn.setFont(font2)
         self.data_analysis_btn.setLayoutDirection(Qt.LeftToRight)
         self.data_analysis_btn.setAutoFillBackground(False)
@@ -331,6 +333,34 @@ class Ui_mainWindow(object):
 
         self.horizontalLayout.addWidget(self.recording_status)
 
+        self.power_btn = QPushButton(self.tool_bar)
+        self.power_btn.setObjectName(u"power_btn")
+        self.power_btn.setMinimumSize(QSize(90, 90))
+        self.power_btn.setMaximumSize(QSize(90, 90))
+        font_power = QFont()
+        font_power.setFamilies([u"Segoe UI"])
+        font_power.setPointSize(48)
+        font_power.setBold(False)
+        self.power_btn.setFont(font_power)
+        self.power_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.power_btn.setToolTip(u"OFF")
+        self.power_btn.setStyleSheet(u"QPushButton {\n"
+"    background-color: transparent;\n"
+"    color: rgb(150, 150, 150);\n"
+"    border: none;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    color: rgb(100, 100, 100);\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    color: rgb(50, 50, 50);\n"
+"}")
+        self.power_btn.setText(u"⏻")
+
+        self.horizontalLayout.addWidget(self.power_btn, 0, Qt.AlignHCenter|Qt.AlignVCenter)
+
         self.horizontalSpacer_2 = QSpacerItem(90, 20, QSizePolicy.Preferred, QSizePolicy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer_2)
@@ -341,10 +371,14 @@ class Ui_mainWindow(object):
         self.main_display = QFrame(self.main_frame)
         self.main_display.setObjectName(u"main_display")
         self.main_display.setFont(font2)
-        self.main_display.setStyleSheet(u"")
+        self.main_display.setStyleSheet(u"QFrame#main_display {\n"
+"    background-color: rgb(240, 240, 240);\n"
+"    border: none;\n"
+"}")
         self.main_display.setFrameShape(QFrame.NoFrame)
         self.main_display.setFrameShadow(QFrame.Raised)
         self.main_display.setLineWidth(0)
+        self.main_display.setContentsMargins(30, 20, 30, 30)
 
         self.verticalLayout.addWidget(self.main_display)
 
@@ -420,6 +454,9 @@ class Ui_mainWindow(object):
 
         self.layout_statusbar.addItem(self.horizontalSpacer_4)
 
+        # Ensure statusBar is visible
+        self.statusBar.setVisible(True)
+        self.statusBar.setMinimumHeight(25)
 
         self.verticalLayout.addWidget(self.statusBar)
 
@@ -445,8 +482,8 @@ class Ui_mainWindow(object):
         self.label.setText("")
         self.sensorgram_btn.setText(QCoreApplication.translate("mainWindow", u"Sensorgram", None))
         self.spectroscopy_btn.setText(QCoreApplication.translate("mainWindow", u"Spectroscopy", None))
-        self.data_processing_btn.setText(QCoreApplication.translate("mainWindow", u"Data Processing", None))
-        self.data_analysis_btn.setText(QCoreApplication.translate("mainWindow", u"Data Analysis", None))
+        self.data_processing_btn.setText(QCoreApplication.translate("mainWindow", u"Processing", None))
+        self.data_analysis_btn.setText(QCoreApplication.translate("mainWindow", u"Analysis", None))
 #if QT_CONFIG(tooltip)
         self.adv_btn.setToolTip(QCoreApplication.translate("mainWindow", u"Advanced Settings", None))
 #endif // QT_CONFIG(tooltip)

@@ -2,6 +2,7 @@
 
 Handles all cycle table operations including row management, column toggling,
 data extraction, and styling. Extracted from datawindow.py to improve modularity.
+Works with SegmentDataFrame for efficient pandas-based operations.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from utils.logger import logger
 
 if TYPE_CHECKING:
     from widgets.datawindow import Segment
+    from widgets.segment_dataframe import SegmentDataFrame
 
 # Brush colors for table toggle indicators
 ON_BRUSH = QBrush(Qt.GlobalColor.darkGray)
@@ -73,14 +75,14 @@ class CycleTableManager:
     def delete_row(
         self,
         row: Optional[int] = None,
-        saved_segments: Optional[list[Segment]] = None,
+        saved_segments: Optional[SegmentDataFrame] = None,
         first_available: bool = False
     ) -> Optional[Segment]:
         """Delete a row from the table.
 
         Args:
             row: Row index to delete (if None, uses current row)
-            saved_segments: List of saved segments to update
+            saved_segments: SegmentDataFrame to update
             first_available: If True, delete first row (row 0)
 
         Returns:
@@ -133,11 +135,11 @@ class CycleTableManager:
 
         return {"name": name, "cycle_type": cycle_type, "note": note}
 
-    def clear_all_rows(self, saved_segments: Optional[list] = None) -> None:
+    def clear_all_rows(self, saved_segments: Optional[SegmentDataFrame] = None) -> None:
         """Clear all rows from the table.
 
         Args:
-            saved_segments: List of saved segments to clear (optional)
+            saved_segments: SegmentDataFrame to clear (optional)
         """
         for _i in range(self.table.rowCount()):
             self.table.removeRow(0)

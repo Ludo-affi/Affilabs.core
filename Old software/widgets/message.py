@@ -6,11 +6,12 @@ from ui import ai_rc
 
 class TimerMessageBox(QMessageBox):
 
-    def __init__(self, timeout=None, parent=None, yn=False, q=(False, '', '')):
+    def __init__(self, timeout=None, parent=None, yn=False, q=(False, '', ''), title=None):
         super(TimerMessageBox, self).__init__(parent)
-        self.setWindowTitle("Affinite Instruments")
+        self.setWindowTitle(title or "Affinite Instruments")
         self.setWindowIcon(QIcon(":/img/img/affinite2.ico"))
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
+        self.setMinimumSize(600, 320)
         if yn:
             self.y_btn = self.addButton('Yes', QMessageBox.ButtonRole.AcceptRole)
             self.n_btn = self.addButton('No', QMessageBox.ButtonRole.RejectRole)
@@ -38,7 +39,7 @@ class TimerMessageBox(QMessageBox):
         event.accept()
 
 
-def show_message(msg, msg_type='Information', auto_close_time=None, yes_no=False, q=(False, '', '')):
+def show_message(msg, msg_type='Information', auto_close_time=None, yes_no=False, q=(False, '', ''), title=None):
     """
     :param q:
     :param yes_no:
@@ -47,7 +48,7 @@ def show_message(msg, msg_type='Information', auto_close_time=None, yes_no=False
     :param msg_type: Information/Warning/Critical/Question
     :return:
     """
-    m = TimerMessageBox(timeout=auto_close_time, yn=yes_no, q=q)
+    m = TimerMessageBox(timeout=auto_close_time, yn=yes_no, q=q, title=title)
     m.setIcon(getattr(m.Icon, msg_type) if hasattr(m.Icon, msg_type) else m.Icon.NoIcon)
     m.setText(msg)
     m.exec_()

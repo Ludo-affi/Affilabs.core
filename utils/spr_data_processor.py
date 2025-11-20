@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Optional
 import numpy as np
+import pandas as pd
 from numpy import ndarray
 from scipy.fft import dst, idct
 from scipy.stats import linregress
@@ -1011,25 +1012,16 @@ class SPRDataProcessor:
         if window is None:
             window = self.med_filt_win
 
-        filtered = np.full_like(data, np.nan)
-        half_window = window // 2
-
         try:
-            for i in range(len(data)):
-                if np.isnan(data[i]):
-                    filtered[i] = np.nan
-                    continue
+            # Use pandas rolling window for vectorized median calculation
+            series = pd.Series(data)
+            filtered = series.rolling(
+                window=window,
+                center=True,
+                min_periods=1
+            ).median()
 
-                # Centered window
-                start = max(0, i - half_window)
-                end = min(len(data), i + half_window + 1)
-                window_data = data[start:end]
-
-                # Use MEDIAN (robust to outliers)
-                if not np.isnan(window_data).all():
-                    filtered[i] = np.nanmedian(window_data)
-
-            return filtered
+            return filtered.to_numpy()
 
         except Exception as e:
             logger.exception(f"Error in centered median filter: {e}")
@@ -1062,40 +1054,28 @@ class SPRDataProcessor:
             Boolean array: True for outliers, False for normal points
 
         """
-        outlier_mask = np.zeros(len(data), dtype=bool)
-
         try:
-            for i in range(len(data)):
-                if np.isnan(data[i]):
-                    continue
+            # Use pandas rolling window for vectorized quartile calculation
+            series = pd.Series(data)
 
-                # Get lookback window
-                start = max(0, i - lookback)
-                window = data[start : i + 1]
-                window_clean = window[~np.isnan(window)]
+            # Calculate rolling Q1 and Q3
+            q1 = series.rolling(window=lookback, min_periods=4).quantile(0.25)
+            q3 = series.rolling(window=lookback, min_periods=4).quantile(0.75)
+            iqr = q3 - q1
 
-                if len(window_clean) < 4:
-                    # Need at least 4 points for quartiles
-                    continue
+            # Calculate bounds
+            lower_bound = q1 - iqr_multiplier * iqr
+            upper_bound = q3 + iqr_multiplier * iqr
 
-                # Calculate quartiles
-                q1 = np.percentile(window_clean, 25)
-                q3 = np.percentile(window_clean, 75)
-                iqr = q3 - q1
-
-                # Define outlier bounds
-                lower_bound = q1 - iqr_multiplier * iqr
-                upper_bound = q3 + iqr_multiplier * iqr
-
-                # Mark outliers
-                if data[i] < lower_bound or data[i] > upper_bound:
-                    outlier_mask[i] = True
+            # Vectorized outlier detection
+            outlier_mask = (series < lower_bound) | (series > upper_bound)
+            outlier_mask = outlier_mask.fillna(False).to_numpy()
 
             return outlier_mask
 
         except Exception as e:
             logger.exception(f"Error in outlier detection: {e}")
-            return outlier_mask
+            return np.zeros(len(data), dtype=bool)
 
     def apply_advanced_filter(
         self,

@@ -43,8 +43,14 @@ class Ui_P4SPR_Advanced(object):
 
         self.verticalLayout.addWidget(self.label)
 
+        # Standard font for groupbox titles
+        font_groupbox = QFont()
+        font_groupbox.setFamilies([u"Segoe UI"])
+        font_groupbox.setPointSize(8)
+
         self.groupBox_4 = QGroupBox(P4SPR_Advanced)
         self.groupBox_4.setObjectName(u"groupBox_4")
+        self.groupBox_4.setFont(font_groupbox)
         self.formLayout = QFormLayout(self.groupBox_4)
         self.formLayout.setObjectName(u"formLayout")
         self.label_8 = QLabel(self.groupBox_4)
@@ -112,6 +118,7 @@ class Ui_P4SPR_Advanced(object):
 
         self.groupBox_3 = QGroupBox(P4SPR_Advanced)
         self.groupBox_3.setObjectName(u"groupBox_3")
+        self.groupBox_3.setFont(font_groupbox)
         self.formLayout_3 = QFormLayout(self.groupBox_3)
         self.formLayout_3.setObjectName(u"formLayout_3")
         self.label_12 = QLabel(self.groupBox_3)
@@ -141,6 +148,7 @@ class Ui_P4SPR_Advanced(object):
 
         self.groupBox = QGroupBox(P4SPR_Advanced)
         self.groupBox.setObjectName(u"groupBox")
+        self.groupBox.setFont(font_groupbox)
         self.formLayout_4 = QFormLayout(self.groupBox)
         self.formLayout_4.setObjectName(u"formLayout_4")
         self.pump_1_correction = QLineEdit(self.groupBox)
@@ -168,6 +176,7 @@ class Ui_P4SPR_Advanced(object):
 
         self.groupBox_2 = QGroupBox(P4SPR_Advanced)
         self.groupBox_2.setObjectName(u"groupBox_2")
+        self.groupBox_2.setFont(font_groupbox)
         self.formLayout_2 = QFormLayout(self.groupBox_2)
         self.formLayout_2.setObjectName(u"formLayout_2")
         self.label_4 = QLabel(self.groupBox_2)

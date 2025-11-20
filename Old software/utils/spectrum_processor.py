@@ -76,15 +76,21 @@ class SpectrumProcessor:
         self,
         fourier_weights: Optional[np.ndarray] = None,
         fourier_window_size: int = 165,
+        spectral_correction: Optional[dict[str, np.ndarray]] = None,
     ):
         """Initialize the spectrum processor.
 
         Args:
             fourier_weights: Pre-computed Fourier weights for fallback method
             fourier_window_size: Window size for Fourier peak detection
+            spectral_correction: Per-channel spectral response correction weights.
+                Dictionary mapping channel -> correction array (same length as wavelengths).
+                Used to normalize out fiber coupling differences, LED variations,
+                and detector non-uniformity.
         """
         self.fourier_weights = fourier_weights
         self.fourier_window_size = fourier_window_size
+        self.spectral_correction = spectral_correction or {}
 
         # Processing statistics per channel
         self.stats = {
@@ -144,6 +150,11 @@ class SpectrumProcessor:
             raise ValueError("Transmission and wavelengths must have same length")
         if channel not in self.stats:
             raise ValueError(f"Invalid channel: {channel}")
+
+        # Apply spectral correction if available for this channel
+        # This normalizes out fiber coupling, LED variations, and detector non-uniformity
+        if channel in self.spectral_correction:
+            transmission = transmission * self.spectral_correction[channel]
 
         # Try active pipeline first - use cached version if available
         try:

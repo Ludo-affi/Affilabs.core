@@ -15,10 +15,15 @@ class Sidebar(QWidget):
         self.ui.setupUi(self)
 
     def set_widgets(self):
-        # display device widget on top
-        self.device_widget = Device()
-        self.device_widget.setParent(self.ui.device_frame)
+        # Reuse existing widgets if they already exist (performance optimization)
+        if self.device_widget is None:
+            # display device widget on top
+            self.device_widget = Device()
+            self.device_widget.setParent(self.ui.device_frame)
+            self.device_widget.show()
 
-        # display kinetic widget on bottom
-        self.kinetic_widget = Kinetic()
-        self.kinetic_widget.setParent(self.ui.kinetic_frame)
+        if self.kinetic_widget is None:
+            # display kinetic widget on bottom
+            self.kinetic_widget = Kinetic()
+            self.kinetic_widget.setParent(self.ui.kinetic_frame)
+            self.kinetic_widget.show()

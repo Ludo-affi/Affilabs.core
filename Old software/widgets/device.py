@@ -9,6 +9,7 @@ from ui.ui_Affipump import Ui_Affipump
 from ui.ui_device import Ui_Device
 from utils.logger import logger
 from widgets.message import show_message
+from widgets.device_status import DeviceStatusWidget
 from settings import DEV
 
 
@@ -35,12 +36,26 @@ class Device(QWidget):
         self.knx_pico = False
         self.pump_widget = None
         self.up = False
-        self.ui.add_ctrl.clicked.connect(self.call_connect)
-        self.ui.add_knx.clicked.connect(self.call_connect)
-        self.ui.add_pump.clicked.connect(self.call_connect)
+
+        # Add device status widget at the top
+        self.status_widget = DeviceStatusWidget()
+        self.ui.verticalLayout.insertWidget(0, self.status_widget)
+        self.status_widget.show()  # Ensure it's always visible
+
+        # Connect status widget signals
+        self.status_widget.connect_requested.connect(self.call_connect)
+
+        # Hide legacy add device buttons
+        self.ui.add_ctrl.hide()
+        self.ui.add_knx.hide()
+        self.ui.add_pump.hide()
 
     def setup(self, ctrl_type, knx_type, pump):
         logger.debug("updating device widget")
+
+        # Update status widget first
+        self.status_widget.update_status(ctrl_type, knx_type, pump is not None)
+
         # Reset display
         if self.ctrl_widget is not None:
             self.ctrl_widget.hide()
@@ -50,10 +65,9 @@ class Device(QWidget):
             self.pump_widget.hide()
         # Set up controller
         if ctrl_type == '':
-            self.ui.add_ctrl.show()
+            pass  # No controller connected
         elif ctrl_type in ['P4SPR', 'PicoP4SPR']:
             self.p4spr = True
-            self.ui.add_ctrl.hide()
             self.ctrl_widget = P4SPRWidget(self.ui.controller_frame)
             # Keep temperature hidden until a valid reading arrives
             self.ctrl_widget.ui.temp_display.setVisible(False)
@@ -64,7 +78,6 @@ class Device(QWidget):
         elif ctrl_type == 'QSPR':
             self.up = False
             self.qspr = True
-            self.ui.add_ctrl.hide()
             self.ctrl_widget = QSPRWidget(self.ui.controller_frame)
             self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
             self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
@@ -76,8 +89,6 @@ class Device(QWidget):
         elif ctrl_type in ['EZSPR', 'PicoEZSPR']:
             if ctrl_type == 'PicoEZSPR':
                 self.ctrl_pico = True
-            self.ui.add_ctrl.hide()
-            self.ui.add_knx.hide()
             if self.ctrl_widget is not None:
                 self.ctrl_widget.hide()
             self.ctrl_widget = EZSPRWidget(self.ui.controller_frame, self.ctrl_pico)
@@ -91,15 +102,10 @@ class Device(QWidget):
 
         # Set up kinetic
         if knx_type == '':
-            if ctrl_type == '':
-                self.ui.add_knx.hide()
-                self.ui.add_ctrl.setText("Add Devices")
-            elif ctrl_type not in ['EZSPR', 'PicoEZSPR']:
-                self.ui.add_knx.show()
+            pass  # No kinetic controller connected
         elif knx_type in ['KNX', 'KNX2', 'PicoKNX2']:
             if knx_type == 'PicoKNX2':
                 self.knx_pico = True
-            self.ui.add_knx.hide()
             self.knx_widget = KNX2Widget(self.ui.kinetic_frame, self.knx_pico)
             self.knx_widget.disconnect_btn.connect(self.call_disconnect)
             self.knx_widget.shutdown_btn.connect(self.initiate_shutdown)
@@ -110,12 +116,12 @@ class Device(QWidget):
 
         # Set up pump
         if pump is None:
-            self.ui.add_pump.show()
+            self.ui.pump_frame.hide()  # Hide pump frame when no pump connected
         else:
-            self.ui.add_pump.hide()
             self.pump_widget = AffipumpWidget(self.ui.pump_frame)
             self.pump_widget.disconnect_btn.connect(self.disconnect_dev_sig)
             self.pump_widget.initialize.connect(self.init_pumps)
+            self.ui.pump_frame.show()  # Show pump frame when pump is connected
 
         self.allow_commands(True)
 

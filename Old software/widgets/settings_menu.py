@@ -55,9 +55,15 @@ class Settings(QDialog):
         self.main_layout.addWidget(self.tabs)
 
         # Add sub-widgets to tabs
+
         self.tabs.addTab(self.spr_settings, "SPR Settings")
         self.tabs.addTab(self.metadata, "TraceDrawer Metadata")
         self.tabs.addTab(self.advanced, "Advanced Settings")
+
+        # Disable TraceDrawer tab
+        trace_index = self.tabs.indexOf(self.metadata)
+        if trace_index != -1:
+            self.tabs.setTabEnabled(trace_index, False)
 
 
 if __name__ == "__main__":

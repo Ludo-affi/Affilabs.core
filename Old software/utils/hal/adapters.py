@@ -28,17 +28,17 @@ class CtrlLEDAdapter(LEDController):
 
     def set_mode(self, mode: str) -> None:  # type: ignore[override]
         self._ctrl.set_mode(mode)
-    
+
     def execute_batch(self, commands: List[LEDCommand]) -> bool:  # type: ignore[override]
         """Execute batch LED commands with optimized protocol.
-        
+
         For Pico controllers, uses batch command: lb<mode><intensity><ch_a><int_a>...
         For other controllers, falls back to sequential execution.
         """
         try:
             # Check if controller supports batch commands (Pico variants)
             supports_batch = 'Pico' in self._controller_type
-            
+
             if not supports_batch:
                 # Fall back to sequential execution
                 for cmd in commands:
@@ -51,28 +51,28 @@ class CtrlLEDAdapter(LEDController):
                     elif cmd.action == 'mode':
                         self.set_mode(cmd.mode)
                 return True
-            
+
             # Analyze commands for batch optimization
             mode = None
             intensities = {}
-            
+
             for cmd in commands:
                 if cmd.action == 'mode':
                     mode = cmd.mode
                 elif cmd.action == 'intensity':
                     intensities[cmd.channel] = cmd.intensity
-            
+
             # Use batch command if we have mode + multiple intensities
             if mode and len(intensities) >= 2:
                 # Build batch command: lb<mode><default_intensity><ch_a><int_a><ch_b><int_b>...
                 batch_cmd = f"lb{mode}255"
-                
+
                 for ch in ['a', 'b', 'c', 'd']:
                     if ch in intensities:
                         batch_cmd += f"{ch}{intensities[ch]:03d}"
-                
+
                 batch_cmd += "\n"
-                
+
                 # Send via controller's serial interface
                 # Use same pattern as controller methods: check _ser or call open()
                 if hasattr(self._ctrl, '_ser') and hasattr(self._ctrl, 'open'):
@@ -84,7 +84,7 @@ class CtrlLEDAdapter(LEDController):
                         else:
                             self._ctrl._ser.write(batch_cmd.encode())
                             response = self._ctrl._ser.readline().strip()
-                        
+
                         if response == b'1':
                             logger.debug(f"✅ Batch LED command: {batch_cmd.strip()}")
                             return True
@@ -109,11 +109,11 @@ class CtrlLEDAdapter(LEDController):
                     elif cmd.action == 'mode':
                         self.set_mode(cmd.mode)
                 return True
-                
+
         except Exception as e:
             logger.error(f"Batch command execution failed: {e}")
             return False
-    
+
     def get_capabilities(self) -> Dict[str, Any]:  # type: ignore[override]
         """Return controller capabilities"""
         supports_batch = 'Pico' in self._controller_type
@@ -136,10 +136,18 @@ class UsbSpectrometerInfoAdapter(SpectrometerInfo):
 
 
 class OceanSpectrometerAdapter(Spectrometer):
-    """Adapter exposing Ocean Optics spectrometer via a simple interface.
+    """Adapter exposing spectrometer via HAL interface.
 
-    Wraps the existing `usb` object and provides an optimized ROI reader that
-    uses SeaBreeze directly when available, or the DLL fast path otherwise.
+    Wraps detector objects (USB4000, PhasePhotonics, etc.) and provides an
+    optimized ROI reader. Works with any detector that implements:
+    - read_intensity() -> ndarray
+    - read_wavelength() -> ndarray
+    - set_integration(ms: float)
+    - serial_number property
+    - min_integration property
+
+    For SeaBreeze-based detectors (USB4000), uses direct intensity reads.
+    For DLL-based detectors (PhasePhotonics), uses fast path via sensor frames.
     """
 
     def __init__(self, usb) -> None:

@@ -78,10 +78,11 @@ class Device(QWidget):
 
         # Set up kinetic
         if knx_type == "":
-            if ctrl_type == "":
+            # Always show the Add Kinetic button when no kinetic device is connected
+            # unless we have an EZSPR controller (which has integrated kinetics)
+            if ctrl_type in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
                 self.ui.add_knx.hide()
-                self.ui.add_ctrl.setText("Add Devices")
-            elif ctrl_type not in ["PicoEZSPR"]:  # EZSPR disabled (obsolete)
+            else:
                 self.ui.add_knx.show()
         elif knx_type in ["KNX", "KNX2"]:  # PicoKNX2 disabled (obsolete)
             # Note: knx_pico flag removed with PicoKNX2 deprecation

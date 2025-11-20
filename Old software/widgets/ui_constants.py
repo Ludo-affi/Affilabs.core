@@ -107,6 +107,7 @@ class UIStyle:
         QComboBox QAbstractItemView {
             background-color: white;
             border: 2px solid #0078d7;
+            color: black;
             selection-background-color: #0078d7;
             selection-color: white;
             font-size: 11pt;

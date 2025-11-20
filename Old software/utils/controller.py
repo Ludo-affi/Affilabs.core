@@ -22,6 +22,7 @@ CH_DICT = {'a': 1, 'b': 2, 'c': 3, 'd': 4}
 
 
 class ControllerBase:
+    """Abstract base class for all hardware controllers."""
 
     def __init__(self, name):
         self._ser = None
@@ -66,7 +67,40 @@ class ControllerBase:
             pass
 
 
-class ArduinoController(ControllerBase):
+class StaticController(ControllerBase):
+    """Base class for static-mode controllers (P4SPR family).
+
+    Static controllers have detector/spectroscopy capabilities but no pumps or valves.
+    They operate by having liquid statically incubate on the sensor surface.
+
+    Hardware: ArduinoController (Gen 1), PicoP4SPR (Gen 2)
+    """
+
+    @property
+    def supports_flow_mode(self) -> bool:
+        """Static controllers do not support flow mode."""
+        return False
+
+
+class FlowController(ControllerBase):
+    """Base class for flow-mode controllers (P4PRO, KNX, ezSPR families).
+
+    Flow controllers support liquid handling via pumps and valves for continuous
+    flow-based SPR measurements.
+
+    Hardware configurations:
+    - P4PRO: P4SPR detector + KNX valves + external AffiPump
+    - KNX: Standalone pump/valve unit (no detector)
+    - ezSPR/P4PROPlus: P4SPR detector + integrated KNX pumps/valves
+    """
+
+    @property
+    def supports_flow_mode(self) -> bool:
+        """Flow controllers support flow mode."""
+        return True
+
+
+class ArduinoController(StaticController):
 
     def __init__(self):
         super().__init__(name='p4spr')
@@ -342,7 +376,7 @@ class QSPRController(ControllerBase):
         return "qSPR Board"
 
 
-class KineticController(ControllerBase):
+class KineticController(FlowController):
 
     def __init__(self):
         super().__init__(name='KNX2')
@@ -476,7 +510,7 @@ class KineticController(ControllerBase):
         return "KNX2 Board"
 
 
-class PicoP4SPR(ControllerBase):
+class PicoP4SPR(StaticController):
 
     def __init__(self):
         super().__init__(name='pico_p4spr')
@@ -834,7 +868,7 @@ class PicoP4SPR(ControllerBase):
         return "Pico Mini Board"
 
 
-class PicoKNX2(ControllerBase):
+class PicoKNX2(FlowController):
 
     def __init__(self):
         super().__init__(name='pico_knx2')
@@ -994,7 +1028,7 @@ class PicoKNX2(ControllerBase):
         return "Pico Carrier Board"
 
 
-class PicoEZSPR(ControllerBase):
+class PicoEZSPR(FlowController):
 
     UPDATABLE_VERSIONS: Final[set] = {"V1.3", "V1.4"}
     VERSIONS_WITH_PUMP_CORRECTION: Final[set] = {"V1.4", "V1.5"}
