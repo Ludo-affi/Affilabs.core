@@ -3,7 +3,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy
 
 from widgets.message import show_message
-from widgets.sidebar import Sidebar
+from widgets.sidebar_modern import ModernSidebar  # NEW: Use modern sidebar
 from widgets.datawindow import DataWindow
 from widgets.advanced import P4SPRAdvMenu  # QSPRAdvMenu removed - obsolete hardware
 from widgets.analysis import AnalysisWindow
@@ -153,7 +153,7 @@ class MainWindow(QWidget):
         self.main_content_layout.setContentsMargins(8, 8, 8, 8)  # Standard padding around content
         self.main_content_layout.setSpacing(8)  # Spacing between sidebar and main area
 
-        self.sidebar = Sidebar()
+        self.sidebar = ModernSidebar()  # NEW: Use modern sidebar
         self.sidebar.setParent(self.main_content)
         self.sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.sidebar.set_widgets()
