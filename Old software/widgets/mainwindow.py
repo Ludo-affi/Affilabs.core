@@ -157,12 +157,11 @@ class MainWindow(QWidget):
         # Hide the pause button for now
         self.pause_btn.hide()
 
-        # Set standard dimensions for professional layout
-        self.sidebar_width = 320  # Standard sidebar width
+        # Set standard dimensions for professional layout (Rev 1 style)
+        self.sidebar_width = 450  # Initial sidebar width (Rev 1 default)
         self.toolbar_height = 60  # Standard toolbar height
         self.ui.tool_bar.setMinimumHeight(self.toolbar_height)
         self.ui.tool_bar.setMaximumHeight(self.toolbar_height)
-        self.sidebar_collapsed = False  # Track sidebar state
 
         # setup modern pill-shaped button styles (Grayscale theme from Rev 1)
         self.original_style = (
@@ -235,64 +234,44 @@ class MainWindow(QWidget):
         self.ui.sensorgram_btn.setChecked(True)
         self.ui.sensorgram_btn.setStyleSheet(self.selected_style)
 
-        # Embed the sidebar directly into the main content area
+        # Embed the sidebar with QSplitter for draggable resize (Rev 1 style)
         self.ui.verticalLayout.removeWidget(self.ui.main_display)
         self.main_content = QWidget(self.ui.main_frame)
         self.main_content.setObjectName("main_content")
         self.main_content_layout = QHBoxLayout(self.main_content)
-        self.main_content_layout.setContentsMargins(8, 8, 8, 8)  # Standard padding around content
-        self.main_content_layout.setSpacing(8)  # Spacing between sidebar and main area
+        self.main_content_layout.setContentsMargins(0, 0, 0, 0)  # No padding - Rev 1 style
+        self.main_content_layout.setSpacing(0)
+
+        # Create QSplitter for resizable sidebar (Rev 1 implementation)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setHandleWidth(6)
+        self.splitter.setStyleSheet(
+            "QSplitter::handle {"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "}"
+            "QSplitter::handle:hover {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "}"
+            "QSplitter::handle:pressed {"
+            "  background: rgba(0, 0, 0, 0.15);"
+            "}"
+        )
 
         self.sidebar = ModernSidebar()  # NEW: Use modern sidebar
-        self.sidebar.setParent(self.main_content)
-        self.sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.sidebar.setParent(self.splitter)
+        self.sidebar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.sidebar.set_widgets()
+
+        # Set sidebar size constraints for splitter
+        self.sidebar.setMinimumWidth(55)  # Allow very small resize
+        self.sidebar.setMaximumWidth(800)  # Maximum reasonable width
 
         # Get tab bar width (will stay fixed)
         self.tab_bar_width = self.sidebar.tab_widget.tabBar().sizeHint().width()
 
-        # Set initial sidebar width
-        self.sidebar.setMinimumWidth(self.sidebar_width)
-        self.sidebar.setMaximumWidth(self.sidebar_width)
-
-        # Create subtle toggle button at bottom of tab bar
-        from PySide6.QtWidgets import QToolButton
-        from PySide6.QtCore import Qt as QtCore
-
-        self.sidebar_toggle_btn = QToolButton(self.sidebar)
-        self.sidebar_toggle_btn.setText("◀")
-        self.sidebar_toggle_btn.setToolTip("Collapse Sidebar")
-        self.sidebar_toggle_btn.setFixedSize(60, 24)
-        self.sidebar_toggle_btn.setStyleSheet(
-            "QToolButton {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  color: #1D1D1F;"
-            "  font-weight: bold;"
-            "  font-size: 11px;"
-            "}"
-            "QToolButton:hover {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "}"
-            "QToolButton:pressed {"
-            "  background: rgba(0, 0, 0, 0.15);"
-            "}"
-        )
-        self.sidebar_toggle_btn.clicked.connect(self.toggle_sidebar)
-        self.sidebar_toggle_btn.raise_()  # Ensure button is on top
-        self.sidebar_toggle_btn.show()  # Explicitly show the button
-
-        # Setup animation for sidebar width (will collapse to just tab bar width)
-        self.sidebar_animation = QPropertyAnimation(self.sidebar, b"minimumWidth")
-        self.sidebar_animation.setDuration(300)
-        self.sidebar_animation.setEasingCurve(QEasingCurve.InOutQuad)
-        self.sidebar_animation.finished.connect(self._on_sidebar_animation_finished)
-
-        # Also animate maximum width
-        self.sidebar_max_animation = QPropertyAnimation(self.sidebar, b"maximumWidth")
-        self.sidebar_max_animation.setDuration(300)
-        self.sidebar_max_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        # Add sidebar to splitter
+        self.splitter.addWidget(self.sidebar)
+        self.splitter.setCollapsible(0, False)  # Prevent sidebar from collapsing completely
 
         # Add settings panel to Settings tab
         from widgets.settings_panel import SettingsPanel
@@ -313,15 +292,17 @@ class MainWindow(QWidget):
 
         self.sidebar_spectroscopy = SidebarSpectroscopyPanel()
         self.sidebar.install_spectroscopy_panel(self.sidebar_spectroscopy)
-        self.main_content_layout.addWidget(self.sidebar)
-        self.sidebar.raise_()  # Ensure sidebar is above main_display
 
-        self.ui.main_display.setParent(self.main_content)
+        # Add main_display to splitter
+        self.ui.main_display.setParent(self.splitter)
         self.ui.main_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.main_content_layout.addWidget(self.ui.main_display, 1)
-        self.main_content_layout.setStretch(0, 0)
-        self.main_content_layout.setStretch(1, 1)
+        self.splitter.addWidget(self.ui.main_display)
 
+        # Set initial splitter sizes: 450px for sidebar, rest for main content (Rev 1 style)
+        self.splitter.setSizes([450, 950])
+
+        # Add splitter to main content layout
+        self.main_content_layout.addWidget(self.splitter)
         self.ui.verticalLayout.insertWidget(1, self.main_content)
         self.main_content.show()  # Ensure main content is visible
 
@@ -447,42 +428,6 @@ class MainWindow(QWidget):
         # Connect the settings panel button to inspector
         if hasattr(self, '_settings_panel_needs_connection') and hasattr(self, 'settings_panel'):
             self.settings_panel.ui_inspector_btn.clicked.connect(self.open_ui_inspector)
-
-    def toggle_sidebar(self):
-        """Toggle sidebar collapse/expand with smooth animation."""
-        # Get actual tab bar width
-        tab_bar_width = self.sidebar.tab_widget.tabBar().width()
-        if tab_bar_width < 50:  # Fallback if width not calculated yet
-            tab_bar_width = 80
-
-        # Get current sidebar width
-        current_width = self.sidebar.width()
-
-        if self.sidebar_collapsed:
-            # Expand sidebar
-            self.sidebar_animation.setStartValue(current_width)
-            self.sidebar_animation.setEndValue(self.sidebar_width)
-            self.sidebar_max_animation.setStartValue(current_width)
-            self.sidebar_max_animation.setEndValue(self.sidebar_width)
-            self.sidebar_collapsed = False
-            self.sidebar_toggle_btn.setText("◀")
-            self.sidebar_toggle_btn.setToolTip("Collapse Sidebar")
-        else:
-            # Collapse sidebar to just show tab bar
-            self.sidebar_animation.setStartValue(current_width)
-            self.sidebar_animation.setEndValue(tab_bar_width)
-            self.sidebar_max_animation.setStartValue(current_width)
-            self.sidebar_max_animation.setEndValue(tab_bar_width)
-            self.sidebar_collapsed = True
-            self.sidebar_toggle_btn.setText("▶")
-            self.sidebar_toggle_btn.setToolTip("Expand Sidebar")
-
-        self.sidebar_animation.start()
-        self.sidebar_max_animation.start()
-
-    def _on_sidebar_animation_finished(self):
-        """Called when sidebar animation completes - resize main display."""
-        self.redo_layout()
 
     def _create_sensorgram_content(self):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern) from Rev 1."""
