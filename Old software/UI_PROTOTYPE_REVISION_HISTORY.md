@@ -12,7 +12,7 @@
   - 6 tabs: Device Status, Graphic Control, Settings, Static, Export, (remaining tabs placeholder)
   - West-oriented vertical tabs with grayscale theme
 
-- **Top Navigation Bar**: 
+- **Top Navigation Bar**:
   - Pill-shaped navigation buttons (Sensorgram, Edits, Analyze, Report)
   - Recording status indicator with live state display
   - Record button (● symbol) - gray when viewing, red when recording
@@ -21,7 +21,7 @@
 #### Recording Workflow
 - **Auto-read Mode**: Device displays data without saving by default
 - **Recording States**:
-  - Viewing Mode: Gray dot + "Viewing (not saved)" 
+  - Viewing Mode: Gray dot + "Viewing (not saved)"
   - Recording Mode: Red dot + "Recording to: filename.h5"
 - **Save Dialog**: Appears on Record button press before recording starts
 - **Visual Feedback**: Red button and indicator during active recording
@@ -60,23 +60,23 @@
 - **Section 1: Data Selection**
   - Raw/Processed/Segments/Summary checkboxes
   - Time range selector (Full/Current/Selected/Custom)
-  
+
 - **Section 2: Channel Selection**
   - Individual channel checkboxes (A, B, C, D)
   - Select All button
-  
+
 - **Section 3: Export Format**
   - Excel (.xlsx) - Multi-tab workbook
   - CSV (.csv) - Single or multiple files
   - JSON (.json) - Structured data
   - HDF5 (.h5) - Large datasets
-  
+
 - **Section 4: Export Options**
   - Metadata inclusion toggle
   - Event markers toggle
   - Decimal precision selector (2-5)
   - Timestamp format options (Relative/Absolute/Elapsed)
-  
+
 - **Section 5: File Settings & Export**
   - Filename input with placeholder
   - Destination folder with browse button
@@ -101,7 +101,7 @@
 - **Hover States**: #3A3A3C (button hover)
 - **Pressed States**: #48484A (button pressed)
 - **Helper Text**: #86868B (labels, placeholders)
-- **Backgrounds**: 
+- **Backgrounds**:
   - rgba(0,0,0,0.03) - Light cards
   - rgba(0,0,0,0.04) - Subtle backgrounds
   - rgba(0,0,0,0.06) - Controls

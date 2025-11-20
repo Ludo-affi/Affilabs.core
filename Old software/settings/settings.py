@@ -14,7 +14,7 @@ def get_version() -> str:
         else:
             # When running from source, read from VERSION file in project root
             version_file = Path(__file__).parent.parent / "VERSION"
-        
+
         version = version_file.read_text().strip()
         return version
     except FileNotFoundError:

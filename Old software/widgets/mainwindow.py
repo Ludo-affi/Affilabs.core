@@ -28,7 +28,6 @@ class MainWindow(QWidget):
         self.ui.setupUi(self)
         self.setDisabled(False)
         self.app = app
-        self.active_page = 'sensorgram'
         self.update_counter = 0
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
         self.ui.version.setText(SW_VERSION)
@@ -36,9 +35,13 @@ class MainWindow(QWidget):
         self.ui.adv_btn.setEnabled(True)  # Enable settings button
         self.device_config = {'ctrl': '', 'knx': ''}
 
+        # Modern stacked widget system for tab pages
+        from PySide6.QtWidgets import QStackedWidget
+        self.content_stack = None  # Will be created after UI setup
+
         # set up recording
         self.recording = False
-        
+
         # Add recording indicator next to record button
         from PySide6.QtWidgets import QFrame
         self.recording_indicator = QFrame(self.ui.tool_bar)
@@ -52,7 +55,7 @@ class MainWindow(QWidget):
         indicator_layout = QHBoxLayout(self.recording_indicator)
         indicator_layout.setContentsMargins(10, 6, 10, 6)
         indicator_layout.setSpacing(8)
-        
+
         self.rec_status_dot = QLabel("●")
         self.rec_status_dot.setStyleSheet(
             "QLabel {"
@@ -62,7 +65,7 @@ class MainWindow(QWidget):
             "}"
         )
         indicator_layout.addWidget(self.rec_status_dot)
-        
+
         self.rec_status_text = QLabel("Viewing (not saved)")
         self.rec_status_text.setStyleSheet(
             "QLabel {"
@@ -75,13 +78,13 @@ class MainWindow(QWidget):
         )
         indicator_layout.addWidget(self.rec_status_text)
         indicator_layout.addStretch()
-        
+
         # Insert recording indicator before record button in toolbar
         toolbar_layout = self.ui.tool_bar.layout()
         rec_btn_index = toolbar_layout.indexOf(self.ui.rec_btn)
         toolbar_layout.insertWidget(rec_btn_index, self.recording_indicator, 0, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         toolbar_layout.insertSpacing(rec_btn_index + 1, 8)  # Add spacing between indicator and button
-        
+
         # Style the record button with grayscale theme
         self.ui.rec_btn.setFixedSize(40, 40)
         self.ui.rec_btn.setCheckable(True)
@@ -193,17 +196,44 @@ class MainWindow(QWidget):
             "}"
         )
 
-        self.nav_buttons = [
-            self.ui.sensorgram_btn,
-            # self.ui.spectroscopy_btn,  # Moved to sidebar
-            self.ui.data_processing_btn,
-            self.ui.data_analysis_btn,
-        ]
-        # Hide spectroscopy button since it's now in the sidebar
+        # Modern navigation system - buttons will be recreated in content setup
+        # Hide old spectroscopy button
         self.ui.spectroscopy_btn.hide()
 
-        for button in self.nav_buttons:
+        # Create Report button (4th nav button)
+        self.report_btn = QPushButton(self.ui.frame_2)
+        self.report_btn.setObjectName("report_btn")
+        self.report_btn.setMinimumSize(110, 35)
+        self.report_btn.setMaximumSize(135, 16777215)
+        self.report_btn.setFont(self.ui.sensorgram_btn.font())
+        self.report_btn.setText("Report")
+        self.report_btn.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.report_btn.setAutoFillBackground(False)
+        self.report_btn.setAutoRepeat(False)
+        self.report_btn.setAutoExclusive(False)
+        self.report_btn.setAutoDefault(False)
+        self.report_btn.setFlat(False)
+        
+        # Insert Report button after Analyze button in the layout
+        # Find the layout containing nav buttons (horizontalLayout_4)
+        nav_layout = self.ui.data_analysis_btn.parent().layout()
+        nav_layout.addWidget(self.report_btn)
+        
+        self.nav_buttons = {
+            'Sensorgram': self.ui.sensorgram_btn,
+            'Edits': self.ui.data_processing_btn,  # Repurpose for Edits
+            'Analyze': self.ui.data_analysis_btn,  # Repurpose for Analyze
+            'Report': self.report_btn,  # New 4th button
+        }
+
+        # Apply initial styling to nav buttons
+        for button in self.nav_buttons.values():
             button.setStyleSheet(self.original_style)
+            button.setCheckable(True)
+
+        # Set first button as checked
+        self.ui.sensorgram_btn.setChecked(True)
+        self.ui.sensorgram_btn.setStyleSheet(self.selected_style)
 
         # Embed the sidebar directly into the main content area
         self.ui.verticalLayout.removeWidget(self.ui.main_display)
@@ -295,36 +325,69 @@ class MainWindow(QWidget):
         self.ui.verticalLayout.insertWidget(1, self.main_content)
         self.main_content.show()  # Ensure main content is visible
 
-        # Sensorgram window with modern graph header
+        # Create modern stacked widget system for all tabs
+        self.content_stack = QStackedWidget(self.ui.main_display)
+        self.content_stack.setStyleSheet("QStackedWidget { background: #F8F9FA; border: none; }")
+
+        # Page 0: Sensorgram with modern graph header
         from widgets.graph_components import GraphHeader
-        
-        # Create container for header + sensorgram
-        sensorgram_container = QWidget(self.ui.main_display)
-        sensorgram_layout = QVBoxLayout(sensorgram_container)
-        sensorgram_layout.setContentsMargins(0, 0, 0, 0)
+        sensorgram_page = QWidget()
+        sensorgram_layout = QVBoxLayout(sensorgram_page)
+        sensorgram_layout.setContentsMargins(16, 16, 16, 16)
         sensorgram_layout.setSpacing(8)
-        
+
         # Add channel header
         self.graph_header = GraphHeader()
         sensorgram_layout.addWidget(self.graph_header)
-        
+
         # Add sensorgram
         self.sensorgram = DataWindow('dynamic')
-        self.sensorgram.setParent(sensorgram_container)
         sensorgram_layout.addWidget(self.sensorgram, 1)
-        
-        # Set the container as the main display content
-        sensorgram_container.setParent(self.ui.main_display)
-        
+
         controls_panel = self.sensorgram.take_sensorgram_controls_panel()
         if controls_panel is not None:
             self.sidebar.install_sensorgram_controls(controls_panel)
+
+        self.content_stack.addWidget(sensorgram_page)  # Index 0
+
+        # Page 1: Edits (placeholder for now)
+        edits_page = self._create_placeholder_page("Edits", "📝", "Data editing features coming soon")
+        self.content_stack.addWidget(edits_page)  # Index 1
+
+        # Page 2: Analyze (Data Processing)
+        self.data_processing = DataWindow('static')
+        analyze_page = QWidget()
+        analyze_layout = QVBoxLayout(analyze_page)
+        analyze_layout.setContentsMargins(16, 16, 16, 16)
+        analyze_layout.setSpacing(8)
+        analyze_layout.addWidget(self.data_processing)
+        self.content_stack.addWidget(analyze_page)  # Index 2
+
+        # Page 3: Report (Data Analysis - placeholder)
+        self.data_analysis = AnalysisWindow()
+        report_page = QWidget()
+        report_layout = QVBoxLayout(report_page)
+        report_layout.setContentsMargins(16, 16, 16, 16)
+        report_layout.setSpacing(8)
+        report_layout.addWidget(self.data_analysis)
+        self.content_stack.addWidget(report_page)  # Index 3
 
         # Connect settings panel button to sensorgram margin adjustment
         if hasattr(self, 'settings_panel'):
             self.settings_panel.adjust_margins_requested.connect(
                 self.sensorgram.open_margin_adjust_dialog
             )
+
+        # Connect navigation buttons to page switching
+        self.ui.sensorgram_btn.clicked.connect(lambda: self._switch_page(0))
+        self.ui.data_processing_btn.clicked.connect(lambda: self._switch_page(1))  # Edits placeholder
+        self.ui.data_analysis_btn.clicked.connect(lambda: self._switch_page(2))  # Analyze (was data processing)
+        self.report_btn.clicked.connect(lambda: self._switch_page(3))  # Report (data analysis)
+
+        # Update button labels to match Rev 1
+        self.ui.sensorgram_btn.setText("Sensorgram")
+        self.ui.data_processing_btn.setText("Edits")
+        self.ui.data_analysis_btn.setText("Analyze")
 
         # Helper methods available for layout customization:
         # self.move_graph_settings_to_device_status() - Move graph display settings to device status
@@ -360,17 +423,17 @@ class MainWindow(QWidget):
         self.sensorgram.export_error_signal.connect(self._on_record_error)
         self.sidebar.kinetic_widget.export_error_signal.connect(self._on_record_error)
 
-        # resize widgets
-        self.sensorgram.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        self.spectroscopy.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        self.data_processing.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
+        # Set content stack to fill main_display
+        if self.content_stack:
+            self.content_stack.setParent(self.ui.main_display)
+            # Use a layout to make stack fill the entire main_display
+            if not self.ui.main_display.layout():
+                display_layout = QVBoxLayout(self.ui.main_display)
+                display_layout.setContentsMargins(0, 0, 0, 0)
+                display_layout.setSpacing(0)
+                display_layout.addWidget(self.content_stack)
 
-        self.ui.sensorgram_btn.clicked.connect(self.display_sensorgram_page)
-        # self.ui.spectroscopy_btn.clicked.connect(self.display_spectroscopy_page)  # Moved to sidebar
-        self.ui.data_processing_btn.clicked.connect(self.display_data_processing_page)
-        self.ui.data_analysis_btn.clicked.connect(self.display_data_analysis_page)
         self.ui.adv_btn.clicked.connect(self.show_adv_settings)
-        self.set_main_widget('sensorgram')
 
         # Ensure all UI elements are properly shown
         self.sidebar.show()
@@ -427,11 +490,91 @@ class MainWindow(QWidget):
     def _on_sidebar_animation_finished(self):
         """Called when sidebar animation completes - resize main display."""
         self.redo_layout()
-    
+
+    def _create_placeholder_page(self, title, icon, message):
+        """Create a placeholder page for tabs not yet implemented."""
+        page = QFrame()
+        page.setStyleSheet(
+            "QFrame {"
+            "  background: #F8F9FA;"
+            "  border: none;"
+            "}"
+        )
+
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(40, 40, 40, 40)
+
+        # Icon
+        icon_label = QLabel(icon)
+        icon_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 64px;"
+            "  background: transparent;"
+            "}"
+        )
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(icon_label)
+
+        layout.addSpacing(20)
+
+        # Title
+        title_label = QLabel(title)
+        title_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 24px;"
+            "  font-weight: 600;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        layout.addSpacing(12)
+
+        # Message
+        message_label = QLabel(message)
+        message_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 14px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message_label.setWordWrap(True)
+        layout.addWidget(message_label)
+
+        return page
+
+    def _switch_page(self, page_index):
+        """Switch to the specified page in the content stack."""
+        if self.content_stack:
+            self.content_stack.setCurrentIndex(page_index)
+
+            # Update button styles
+            button_map = {
+                0: self.ui.sensorgram_btn,
+                1: self.ui.data_processing_btn,
+                2: self.ui.data_analysis_btn,
+                3: self.report_btn,
+            }
+
+            for idx, btn in button_map.items():
+                if idx == page_index:
+                    btn.setChecked(True)
+                    btn.setStyleSheet(self.selected_style)
+                else:
+                    btn.setChecked(False)
+                    btn.setStyleSheet(self.original_style)
+
     def _update_power_button_style(self):
         """Update power button styling based on current state."""
         power_state = self.ui.power_btn.property("powerState")
-        
+
         if power_state == "disconnected":
             # Gray - no device connected
             self.ui.power_btn.setStyleSheet(
@@ -503,48 +646,8 @@ class MainWindow(QWidget):
         self.connect_adv_sig.emit()
 
     def main_display_resized(self):
-        self.sensorgram.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        self.spectroscopy.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        self.data_processing.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        self.data_analysis.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-
-    # navigate the main contents: Sensorgram, Spectroscopy, DataProcessing
-    def set_main_widget(self, window_id):
-
-        page_list = {'sensorgram': self.ui.sensorgram_btn,
-                     # 'spectroscopy': self.ui.spectroscopy_btn,  # Moved to sidebar
-                     'data_processing': self.ui.data_processing_btn, 'data_analysis': self.ui.data_analysis_btn}
-
-        for page in page_list:
-            getattr(self, page).hide()
-        self.active_page = window_id
-
-        while len(page_list) > 0:
-            page = page_list.popitem()
-            if page[0] == self.active_page:
-                getattr(self, page[0]).show()
-                page[1].setStyleSheet(self.selected_style)
-            else:
-                page[1].setStyleSheet(self.original_style)
-
-        self.redo_layout()
-
-    def display_sensorgram_page(self):
-        self.set_main_widget('sensorgram')
-
-    def display_spectroscopy_page(self):
-        if POP_OUT_SPEC:
-            self.spec_pop_out.show()
-            self.spectroscopy.show()
-            self.redo_layout()
-        else:
-            self.set_main_widget('spectroscopy')
-
-    def display_data_processing_page(self):
-        self.set_main_widget('data_processing')
-
-    def display_data_analysis_page(self):
-        self.set_main_widget('data_analysis')
+        # Stacked widget handles sizing automatically
+        pass
 
     def changeEvent(self, event):
         if event.type() == 105:
@@ -560,13 +663,8 @@ class MainWindow(QWidget):
                 self.sidebar_toggle_btn.raise_()  # Keep on top after resize
 
     def redo_layout(self):
-        self.sensorgram.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        if POP_OUT_SPEC:
-            self.spectroscopy.setFixedSize(self.spec_pop_out.ui.single_frame.width(),
-                                           self.spec_pop_out.ui.single_frame.height())
-        else:
-            self.spectroscopy.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
-        self.data_processing.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
+        # Stacked widget handles all page sizing automatically
+        pass
         self.data_analysis.setFixedSize(self.ui.main_display.width(), self.ui.main_display.height())
         self.data_analysis.resizeEvent()
         self.ui.tool_bar.setFixedWidth(self.ui.main_frame.width())

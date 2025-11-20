@@ -35,7 +35,7 @@ splash = Splash(
 
 exe = EXE(
     pyz,
-    a.scripts, 
+    a.scripts,
     splash,
     exclude_binaries=True,
     name='ezControl',
@@ -56,7 +56,7 @@ coll = COLLECT(
     splash.binaries,
     a.binaries,
     a.zipfiles,
-    a.datas, 
+    a.datas,
     strip=False,
     upx=True,
     upx_exclude=[],

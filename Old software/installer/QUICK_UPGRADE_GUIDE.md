@@ -64,7 +64,7 @@ But the installer is safer because it:
 
 **Upgrade Mode** (Recommended):
 - Drivers already present ✅
-- Faster installation ✅  
+- Faster installation ✅
 - Preserves settings ✅
 - Just update the app ✅
 
@@ -79,7 +79,7 @@ But the installer is safer because it:
 
 Since drivers exist on target computer, you can **skip downloading**:
 - ❌ FTDI drivers
-- ❌ LibUSB drivers  
+- ❌ LibUSB drivers
 - ❌ VC++ redistributable (probably already there too)
 
 **Just build and go!**

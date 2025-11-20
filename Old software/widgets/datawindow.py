@@ -1768,12 +1768,12 @@ class DataWindow(QWidget):
 
         # Create modern graph containers with Rev 1 styling
         from widgets.graph_components import GraphContainer
-        
+
         # Top graph (Overview) - 30%
         self.sensorgram_frame = GraphContainer(title, height=200, show_delta_spr=False)
         self.sensorgram_frame.setMinimumHeight(150)
         self.sensorgram_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        
+
         # Create graph and embed it
         self.full_segment_view = SensorgramGraph(title, show_title=False)
         self.full_segment_view.setMinimumHeight(150)
@@ -1784,7 +1784,7 @@ class DataWindow(QWidget):
         self.soi_frame = GraphContainer("Cycle of Interest", height=400, show_delta_spr=True)
         self.soi_frame.setMinimumHeight(200)
         self.soi_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        
+
         # Create graph and embed it
         self.SOI_view = SegmentGraph("Cycle of Interest", self.unit, show_title=False)
         self.SOI_view.setMinimumHeight(200)
