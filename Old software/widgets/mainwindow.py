@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame, QVBoxLayout, QSplitter
 
 from widgets.message import show_message
 from widgets.sidebar_modern import ModernSidebar  # NEW: Use modern sidebar
@@ -213,12 +213,12 @@ class MainWindow(QWidget):
         self.report_btn.setAutoExclusive(False)
         self.report_btn.setAutoDefault(False)
         self.report_btn.setFlat(False)
-        
+
         # Insert Report button after Analyze button in the layout
         # Find the layout containing nav buttons (horizontalLayout_4)
         nav_layout = self.ui.data_analysis_btn.parent().layout()
         nav_layout.addWidget(self.report_btn)
-        
+
         self.nav_buttons = {
             'Sensorgram': self.ui.sensorgram_btn,
             'Edits': self.ui.data_processing_btn,  # Repurpose for Edits
@@ -328,26 +328,18 @@ class MainWindow(QWidget):
         # Create modern stacked widget system for all tabs
         self.content_stack = QStackedWidget(self.ui.main_display)
         self.content_stack.setStyleSheet("QStackedWidget { background: #F8F9FA; border: none; }")
+        
+        # Add content_stack to main_display layout
+        if self.ui.main_display.layout() is None:
+            main_display_layout = QVBoxLayout(self.ui.main_display)
+            main_display_layout.setContentsMargins(0, 0, 0, 0)
+            main_display_layout.setSpacing(0)
+        else:
+            main_display_layout = self.ui.main_display.layout()
+        main_display_layout.addWidget(self.content_stack)
 
-        # Page 0: Sensorgram with modern graph header
-        from widgets.graph_components import GraphHeader
-        sensorgram_page = QWidget()
-        sensorgram_layout = QVBoxLayout(sensorgram_page)
-        sensorgram_layout.setContentsMargins(16, 16, 16, 16)
-        sensorgram_layout.setSpacing(8)
-
-        # Add channel header
-        self.graph_header = GraphHeader()
-        sensorgram_layout.addWidget(self.graph_header)
-
-        # Add sensorgram
-        self.sensorgram = DataWindow('dynamic')
-        sensorgram_layout.addWidget(self.sensorgram, 1)
-
-        controls_panel = self.sensorgram.take_sensorgram_controls_panel()
-        if controls_panel is not None:
-            self.sidebar.install_sensorgram_controls(controls_panel)
-
+        # Page 0: Sensorgram with dual-graph layout from Rev 1
+        sensorgram_page = self._create_sensorgram_content()
         self.content_stack.addWidget(sensorgram_page)  # Index 0
 
         # Page 1: Edits (placeholder for now)
@@ -384,10 +376,11 @@ class MainWindow(QWidget):
         self.ui.data_analysis_btn.clicked.connect(lambda: self._switch_page(2))  # Analyze (was data processing)
         self.report_btn.clicked.connect(lambda: self._switch_page(3))  # Report (data analysis)
 
-        # Update button labels to match Rev 1
-        self.ui.sensorgram_btn.setText("Sensorgram")
-        self.ui.data_processing_btn.setText("Edits")
-        self.ui.data_analysis_btn.setText("Analyze")
+        # Update button labels to match Rev 1 - FIXED ORDER
+        self.ui.sensorgram_btn.setText("Sensorgram")  # Index 0
+        self.ui.data_processing_btn.setText("Edits")  # Index 1  
+        self.ui.data_analysis_btn.setText("Analyze")  # Index 2
+        self.report_btn.setText("Report")  # Index 3
 
         # Helper methods available for layout customization:
         # self.move_graph_settings_to_device_status() - Move graph display settings to device status
@@ -490,6 +483,192 @@ class MainWindow(QWidget):
     def _on_sidebar_animation_finished(self):
         """Called when sidebar animation completes - resize main display."""
         self.redo_layout()
+
+    def _create_sensorgram_content(self):
+        """Create the Sensorgram tab content with dual-graph layout (master-detail pattern) from Rev 1."""
+        content_widget = QFrame()
+        content_widget.setStyleSheet(
+            "QFrame {"
+            "  background: #F8F9FA;"
+            "  border: none;"
+            "}"
+        )
+
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(8)
+
+        # Graph header with channel controls (from Rev 1)
+        from widgets.graph_components import GraphHeader
+        self.graph_header = GraphHeader()
+        content_layout.addWidget(self.graph_header)
+
+        # Create QSplitter for resizable graph panels (30/70 split) 
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setHandleWidth(8)
+        splitter.setChildrenCollapsible(False)
+
+        # Top graph (Navigation/Overview) - 30%
+        top_graph = self._create_graph_container(
+            "Full Experiment Timeline",
+            height=200,
+            show_delta_spr=False
+        )
+
+        # Bottom graph (Detail/Cycle of Interest) - 70%
+        bottom_graph = self._create_graph_container(
+            "Cycle of Interest",
+            height=400,
+            show_delta_spr=True
+        )
+
+        splitter.addWidget(top_graph)
+        splitter.addWidget(bottom_graph)
+
+        # Set initial sizes (30% / 70%)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 7)
+
+        # Style the splitter handle (grayscale theme)
+        splitter.setStyleSheet(
+            "QSplitter {"
+            "  background-color: transparent;"
+            "  spacing: 8px;"
+            "}"
+            "QSplitter::handle {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "  margin: 0px 16px;"
+            "}"
+            "QSplitter::handle:hover {"
+            "  background: rgba(0, 0, 0, 0.15);"
+            "}"
+            "QSplitter::handle:pressed {"
+            "  background: #1D1D1F;"
+            "}"
+        )
+
+        content_layout.addWidget(splitter, 1)
+        
+        # Connect to real sensorgram data
+        self.sensorgram = DataWindow('dynamic')
+        controls_panel = self.sensorgram.take_sensorgram_controls_panel()
+        if controls_panel is not None:
+            self.sidebar.install_sensorgram_controls(controls_panel)
+        
+        return content_widget
+
+    def _create_graph_container(self, title, height, show_delta_spr=False):
+        """Create a graph container with title and controls (from Rev 1 prototype)."""
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        
+        container = QFrame()
+        container.setMinimumHeight(height)
+        container.setStyleSheet(
+            "QFrame {"
+            "  background: #FFFFFF;"
+            "  border: none;"
+            "  border-radius: 12px;"
+            "}"
+        )
+        # Add shadow
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(8)
+        shadow.setColor(QColor(0, 0, 0, 20))
+        shadow.setOffset(0, 2)
+        container.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Title row with controls
+        title_row = QHBoxLayout()
+        title_row.setSpacing(12)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 15px;"
+            "  font-weight: 600;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        title_row.addWidget(title_label)
+
+        title_row.addStretch()
+
+        # Delta SPR signal display (only for Cycle of Interest graph)
+        if show_delta_spr:
+            delta_display = QLabel("Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm")
+            delta_display.setStyleSheet(
+                "QLabel {"
+                "  background: rgba(0, 0, 0, 0.04);"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 6px 12px;"
+                "  font-size: 12px;"
+                "  font-weight: 500;"
+                "  color: #1D1D1F;"
+                "  font-family: 'SF Mono', 'Consolas', monospace;"
+                "}"
+            )
+            title_row.addWidget(delta_display)
+
+        layout.addLayout(title_row)
+
+        # Placeholder for graph widget (will be replaced with PyQtGraph)
+        graph_placeholder = QLabel("[Graph Placeholder - Connect to real sensorgram data]")
+        graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        graph_placeholder.setStyleSheet(
+            "QLabel {"
+            "  background: #F8F9FA;"
+            "  color: #86868B;"
+            "  border: 1px dashed rgba(0, 0, 0, 0.2);"
+            "  border-radius: 8px;"
+            "  padding: 40px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        layout.addWidget(graph_placeholder, 1)
+
+        # Axis labels
+        axis_row = QHBoxLayout()
+        axis_row.setSpacing(0)
+
+        y_label = QLabel("SPR Signal (nm)")
+        y_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 11px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        axis_row.addWidget(y_label)
+
+        axis_row.addStretch()
+
+        x_label = QLabel("Time (s)")
+        x_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 11px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        axis_row.addWidget(x_label)
+
+        layout.addLayout(axis_row)
+
+        return container
 
     def _create_placeholder_page(self, title, icon, message):
         """Create a placeholder page for tabs not yet implemented."""
