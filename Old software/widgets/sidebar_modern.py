@@ -267,3 +267,48 @@ class ModernSidebar(QWidget):
             
             flow_layout.addWidget(flow_cycle_controls)
             flow_layout.addStretch()
+    
+    def get_settings_tab(self):
+        """Get the Settings tab container widget - API compatibility method."""
+        return self.tabs.get("Settings")
+    
+    def get_data_tab(self):
+        """Get the Export/Data tab container widget - API compatibility method."""
+        return self.tabs.get("Export")
+    
+    def install_sensorgram_controls(self, controls_widget):
+        """Embed sensorgram controls into the Flow tab - API compatibility method."""
+        self._replace_tab_content("Flow", controls_widget)
+    
+    def install_spectroscopy_panel(self, panel_widget):
+        """Install spectroscopy preview widget - API compatibility method."""
+        # We don't have a Spectroscopy tab yet, but add it for future compatibility
+        pass
+    
+    def _replace_tab_content(self, title, widget):
+        """Replace tab content with a new widget."""
+        container = self.tabs.get(title)
+        if container is None:
+            return
+        
+        layout = container.layout()
+        if layout is None:
+            return
+        
+        # Clear all content except title (first 2 items: title label + spacing)
+        while layout.count() > 2:
+            item = layout.takeAt(2)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # Remove stretch if present
+        if layout.count() > 0:
+            last_item = layout.itemAt(layout.count() - 1)
+            if last_item.spacerItem():
+                layout.removeItem(last_item)
+        
+        # Add new widget
+        widget.setParent(container)
+        widget.show()
+        layout.addWidget(widget)
+        layout.addStretch()

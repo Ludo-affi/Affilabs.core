@@ -372,7 +372,7 @@ class Ui_mainWindow(object):
         self.main_display.setObjectName(u"main_display")
         self.main_display.setFont(font2)
         self.main_display.setStyleSheet(u"QFrame#main_display {\n"
-"    background-color: rgb(240, 240, 240);\n"
+"    background-color: #F8F9FA;\n"
 "    border: none;\n"
 "}")
         self.main_display.setFrameShape(QFrame.NoFrame)

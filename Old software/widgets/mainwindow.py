@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame
 
 from widgets.message import show_message
 from widgets.sidebar_modern import ModernSidebar  # NEW: Use modern sidebar
@@ -38,25 +38,85 @@ class MainWindow(QWidget):
 
         # set up recording
         self.recording = False
-        self.ui.rec_btn.clicked.connect(self.record_trigger)
-
-        # Set up power button (always visible, changes color based on state)
-        self.ui.power_btn.clicked.connect(self.power_off_device)
-        # Start in OFF state (gray)
-        self.ui.power_btn.setStyleSheet(
-            "QPushButton {"
-            "    background-color: transparent;"
-            "    color: rgb(150, 150, 150);"
-            "    border: none;"
-            "}"
-            "QPushButton:hover {"
-            "    color: rgb(100, 100, 100);"
-            "}"
-            "QPushButton:pressed {"
-            "    color: rgb(50, 50, 50);"
+        
+        # Add recording indicator next to record button
+        from PySide6.QtWidgets import QFrame
+        self.recording_indicator = QFrame(self.ui.tool_bar)
+        self.recording_indicator.setFixedSize(200, 32)
+        self.recording_indicator.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 0, 0, 0.04);"
+            "  border-radius: 6px;"
             "}"
         )
-        self.ui.power_btn.setToolTip("OFF - No device connected")
+        indicator_layout = QHBoxLayout(self.recording_indicator)
+        indicator_layout.setContentsMargins(10, 6, 10, 6)
+        indicator_layout.setSpacing(8)
+        
+        self.rec_status_dot = QLabel("●")
+        self.rec_status_dot.setStyleSheet(
+            "QLabel {"
+            "  color: #86868B;"
+            "  font-size: 16px;"
+            "  background: transparent;"
+            "}"
+        )
+        indicator_layout.addWidget(self.rec_status_dot)
+        
+        self.rec_status_text = QLabel("Viewing (not saved)")
+        self.rec_status_text.setStyleSheet(
+            "QLabel {"
+            "  font-size: 12px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-weight: 500;"
+            "}"
+        )
+        indicator_layout.addWidget(self.rec_status_text)
+        indicator_layout.addStretch()
+        
+        # Insert recording indicator before record button in toolbar
+        toolbar_layout = self.ui.tool_bar.layout()
+        rec_btn_index = toolbar_layout.indexOf(self.ui.rec_btn)
+        toolbar_layout.insertWidget(rec_btn_index, self.recording_indicator, 0, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        toolbar_layout.insertSpacing(rec_btn_index + 1, 8)  # Add spacing between indicator and button
+        
+        # Style the record button with grayscale theme
+        self.ui.rec_btn.setFixedSize(40, 40)
+        self.ui.rec_btn.setCheckable(True)
+        self.ui.rec_btn.setText("●")
+        self.ui.rec_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  color: #86868B;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  font-size: 16px;"
+            "  font-weight: 400;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover:!checked {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "}"
+            "QPushButton:checked {"
+            "  background: #FF3B30;"
+            "  color: white;"
+            "}"
+            "QPushButton:hover:checked {"
+            "  background: #E6342A;"
+            "}"
+        )
+        self.ui.rec_btn.setToolTip("Start/Stop Recording (Ctrl+R)")
+        self.ui.rec_btn.clicked.connect(self.record_trigger)
+
+        # Set up power button with three states (gray/yellow/green)
+        self.ui.power_btn.setCheckable(True)
+        self.ui.power_btn.setFixedSize(40, 40)
+        self.ui.power_btn.setText("⏻")
+        self.ui.power_btn.setProperty("powerState", "disconnected")  # Track state
+        self.ui.power_btn.clicked.connect(self.power_off_device)
+        self._update_power_button_style()  # Apply initial disconnected style
 
         # Add pause button next to recording button (hidden for now)
         self.paused = False
@@ -101,35 +161,35 @@ class MainWindow(QWidget):
         self.ui.tool_bar.setMaximumHeight(self.toolbar_height)
         self.sidebar_collapsed = False  # Track sidebar state
 
-        # setup modern pill-shaped button styles (Company blue palette)
+        # setup modern pill-shaped button styles (Grayscale theme from Rev 1)
         self.original_style = (
             "QPushButton {"
-            "  background: rgba(46, 48, 227, 8);"
-            "  color: rgb(30, 35, 55);"
-            "  border: 1px solid rgba(46, 48, 227, 50);"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  color: #1D1D1F;"
+            "  border: none;"
             "  border-radius: 20px;"
             "  padding: 10px 24px;"
-            "  font-weight: 600;"
+            "  font-weight: 500;"
             "  font-size: 13px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover {"
-            "  background: rgba(46, 48, 227, 18);"
-            "  border: 1px solid rgba(46, 48, 227, 80);"
+            "  background: rgba(0, 0, 0, 0.1);"
             "}"
         )
         self.selected_style = (
             "QPushButton {"
-            "  background: rgb(46, 48, 227);"
+            "  background: #1D1D1F;"
             "  color: white;"
-            "  border: 1px solid rgb(46, 48, 227);"
+            "  border: none;"
             "  border-radius: 20px;"
-            "  padding: 10px 26px;"
-            "  font-weight: 700;"
+            "  padding: 10px 24px;"
+            "  font-weight: 600;"
             "  font-size: 13px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover {"
-            "  background: rgb(36, 38, 207);"
-            "  border: 2px solid rgb(56, 58, 247);"
+            "  background: #3A3A3C;"
             "}"
         )
 
@@ -175,19 +235,18 @@ class MainWindow(QWidget):
         self.sidebar_toggle_btn.setFixedSize(60, 24)
         self.sidebar_toggle_btn.setStyleSheet(
             "QToolButton {"
-            "  background: rgba(46, 48, 227, 8);"
-            "  border: 1px solid rgba(46, 48, 227, 30);"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  border: none;"
             "  border-radius: 4px;"
-            "  color: rgb(46, 48, 227);"
+            "  color: #1D1D1F;"
             "  font-weight: bold;"
             "  font-size: 11px;"
             "}"
             "QToolButton:hover {"
-            "  background: rgba(46, 48, 227, 15);"
-            "  border: 1px solid rgba(46, 48, 227, 60);"
+            "  background: rgba(0, 0, 0, 0.1);"
             "}"
             "QToolButton:pressed {"
-            "  background: rgba(46, 48, 227, 25);"
+            "  background: rgba(0, 0, 0, 0.15);"
             "}"
         )
         self.sidebar_toggle_btn.clicked.connect(self.toggle_sidebar)
@@ -350,43 +409,72 @@ class MainWindow(QWidget):
     def _on_sidebar_animation_finished(self):
         """Called when sidebar animation completes - resize main display."""
         self.redo_layout()
+    
+    def _update_power_button_style(self):
+        """Update power button styling based on current state."""
+        power_state = self.ui.power_btn.property("powerState")
+        
+        if power_state == "disconnected":
+            # Gray - no device connected
+            self.ui.power_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: rgba(0, 0, 0, 0.06);"
+                "  color: #86868B;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  font-size: 16px;"
+                "  font-weight: 400;"
+                "}"
+                "QPushButton:hover {"
+                "  background: rgba(0, 0, 0, 0.1);"
+                "}"
+            )
+            self.ui.power_btn.setToolTip("Power On Device\nGray = Disconnected")
+        elif power_state == "searching":
+            # Yellow - searching for connection
+            self.ui.power_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #FFCC00;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  font-size: 16px;"
+                "  font-weight: 400;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #E6B800;"
+                "}"
+            )
+            self.ui.power_btn.setToolTip("Connecting...\nYellow = Searching")
+        elif power_state == "connected":
+            # Green - device connected
+            self.ui.power_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #34C759;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  font-size: 16px;"
+                "  font-weight: 400;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #2FB350;"
+                "}"
+            )
+            self.ui.power_btn.setToolTip("Device Connected\nClick to power off")
 
     def on_device_config(self, config):
         self.device_config = config
-        # Update power button styling based on device connection
+        # Update power button state based on device connection
         if config['ctrl'] and config['ctrl'] != '':
-            # Connected state - company blue
-            self.ui.power_btn.setStyleSheet(
-                "QPushButton {"
-                "    background-color: transparent;"
-                "    color: rgb(46, 48, 227);"
-                "    border: none;"
-                "}"
-                "QPushButton:hover {"
-                "    color: rgb(66, 68, 247);"
-                "}"
-                "QPushButton:pressed {"
-                "    color: rgb(26, 28, 187);"
-                "}"
-            )
-            self.ui.power_btn.setToolTip("ON - Click to gracefully exit")
+            # Connected state - green
+            self.ui.power_btn.setProperty("powerState", "connected")
+            self._update_power_button_style()
             self.ui.power_btn.show()
         else:
-            # Disconnected state - gray/black, acts as Connect button
-            self.ui.power_btn.setStyleSheet(
-                "QPushButton {"
-                "    background-color: transparent;"
-                "    color: rgb(150, 150, 150);"
-                "    border: none;"
-                "}"
-                "QPushButton:hover {"
-                "    color: rgb(100, 100, 100);"
-                "}"
-                "QPushButton:pressed {"
-                "    color: rgb(50, 50, 50);"
-                "}"
-            )
-            self.ui.power_btn.setToolTip("OFF - Click to connect device")
+            # Disconnected state - gray
+            self.ui.power_btn.setProperty("powerState", "disconnected")
+            self._update_power_button_style()
             self.ui.power_btn.show()
 
         # Create advanced menu - QSPR disabled (obsolete hardware)
