@@ -50,6 +50,8 @@ class DataAcquisitionManager(QObject):
     calibration_failed = Signal(str)  # Error message
     calibration_progress = Signal(str)  # Progress message
     acquisition_error = Signal(str)  # Error message
+    acquisition_started = Signal()  # Emitted when acquisition loop starts
+    acquisition_stopped = Signal()  # Emitted when acquisition loop stops
 
     def __init__(self, hardware_mgr):
         super().__init__()
