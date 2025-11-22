@@ -1,0 +1,324 @@
+{
+  "session_id": "test_demo_001",
+  "session_start": "2025-11-21T07:28:49.567950",
+  "session_end": "2025-11-21T07:28:49.693833",
+  "system_health": {
+    "overall_health": "degraded",
+    "session_id": "test_demo_001",
+    "session_duration_minutes": 0.0020980499999999997,
+    "active_failures": {
+      "count": 8,
+      "failures": [
+        {
+          "mode": "led_saturation",
+          "channel": "b",
+          "severity": "HIGH",
+          "since": 0.120674
+        },
+        {
+          "mode": "dark_noise_high",
+          "channel": "c",
+          "severity": "MEDIUM",
+          "since": 0.114678
+        },
+        {
+          "mode": "afterglow_tau_out_of_range",
+          "channel": "b",
+          "severity": "MEDIUM",
+          "since": 0.107157
+        },
+        {
+          "mode": "afterglow_amplitude_high",
+          "channel": "c",
+          "severity": "MEDIUM",
+          "since": 0.101732
+        },
+        {
+          "mode": "afterglow_fit_poor",
+          "channel": "b",
+          "severity": "MEDIUM",
+          "since": 0.091016
+        },
+        {
+          "mode": "signal_loss",
+          "channel": "b",
+          "severity": "HIGH",
+          "since": 0.073319
+        },
+        {
+          "mode": "pump_interference",
+          "channel": "a",
+          "severity": "LOW",
+          "since": 0.064415
+        },
+        {
+          "mode": "fwhm_degradation",
+          "channel": "a",
+          "severity": "MEDIUM",
+          "since": 0.060352
+        }
+      ]
+    },
+    "severity_distribution": {
+      "INFO": 0,
+      "LOW": 1,
+      "MEDIUM": 5,
+      "HIGH": 2,
+      "CRITICAL": 0
+    },
+    "phase_status": {
+      "calibration_completed": true,
+      "afterglow_validated": true,
+      "live_data_active": true
+    },
+    "correlation_score": 100.0,
+    "total_events": 13
+  },
+  "active_scenarios": [
+    {
+      "name": "LED Timing \u2192 High Afterglow",
+      "description": "LED turn-off timing too fast causes elevated afterglow amplitude",
+      "detection_logic": "Afterglow amplitude > 10,000 counts AND LED calibration passed",
+      "mitigation": "Increase LED settle delay from 45ms to 75ms",
+      "severity": "MEDIUM",
+      "correlation_check": "Compare LED intensity vs afterglow amplitude"
+    },
+    {
+      "name": "Poor Calibration \u2192 Invalid Afterglow",
+      "description": "LED calibration drift/saturation invalidates afterglow model",
+      "detection_logic": "LED saturation OR drift >10% AND afterglow tau out of range",
+      "mitigation": "Re-run full optical calibration with lower LED intensities",
+      "severity": "HIGH",
+      "correlation_check": "LED stability correlates with tau consistency"
+    }
+  ],
+  "all_events": [
+    {
+      "timestamp": "2025-11-21T07:28:49.569992",
+      "phase": "calibration",
+      "event_type": "led_calibration",
+      "channel": "a",
+      "passed": true,
+      "failure_mode": null,
+      "severity": "INFO",
+      "metrics": {
+        "intensity": 25000,
+        "target": 25000,
+        "deviation_pct": 0.0,
+        "r_squared": 0.997
+      },
+      "mitigation": null,
+      "notes": "LED cal: 25000 counts (target: 25000, dev: 0.0%)"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.573159",
+      "phase": "calibration",
+      "event_type": "led_calibration",
+      "channel": "b",
+      "passed": false,
+      "failure_mode": "led_saturation",
+      "severity": "HIGH",
+      "metrics": {
+        "intensity": 62000,
+        "target": 25000,
+        "saturation_threshold": 60000
+      },
+      "mitigation": "Reduce LED intensity and recalibrate",
+      "notes": "Channel B saturated at 62000 counts"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.578259",
+      "phase": "calibration",
+      "event_type": "dark_noise_measurement",
+      "channel": null,
+      "passed": true,
+      "failure_mode": null,
+      "severity": "INFO",
+      "metrics": {
+        "dark_mean": 95.0,
+        "dark_std": 15.0,
+        "expected": 100.0,
+        "snr": 6.333333333333333
+      },
+      "mitigation": null,
+      "notes": "Dark noise: 95.0 \u00b1 15.0 counts"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.579155",
+      "phase": "calibration",
+      "event_type": "dark_noise_measurement",
+      "channel": "c",
+      "passed": false,
+      "failure_mode": "dark_noise_high",
+      "severity": "MEDIUM",
+      "metrics": {
+        "dark_mean": 250.0,
+        "dark_std": 45.0,
+        "expected": 100.0,
+        "snr": 5.555555555555555
+      },
+      "mitigation": "Check for light leaks, verify afterglow correction applied",
+      "notes": "Dark noise: 250.0 \u00b1 45.0 counts"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.582219",
+      "phase": "afterglow",
+      "event_type": "afterglow_tau_validation",
+      "channel": "a",
+      "passed": true,
+      "failure_mode": null,
+      "severity": "INFO",
+      "metrics": {
+        "tau_ms": 21.5,
+        "led_type": "LCW",
+        "expected_range": [
+          15,
+          26
+        ],
+        "warn_range": [
+          10,
+          35
+        ]
+      },
+      "mitigation": null,
+      "notes": "Tau: 21.50ms (expected: 15-26ms)"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.586676",
+      "phase": "afterglow",
+      "event_type": "afterglow_tau_validation",
+      "channel": "b",
+      "passed": false,
+      "failure_mode": "afterglow_tau_out_of_range",
+      "severity": "MEDIUM",
+      "metrics": {
+        "tau_ms": 42.0,
+        "led_type": "LCW",
+        "expected_range": [
+          15,
+          26
+        ],
+        "warn_range": [
+          10,
+          35
+        ]
+      },
+      "mitigation": "Tau significantly out of range - check LED timing, verify LED type correct, consider re-characterization",
+      "notes": "Tau: 42.00ms (expected: 15-26ms)"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.592101",
+      "phase": "afterglow",
+      "event_type": "afterglow_amplitude_check",
+      "channel": "c",
+      "passed": false,
+      "failure_mode": "afterglow_amplitude_high",
+      "severity": "MEDIUM",
+      "metrics": {
+        "amplitude": 15000,
+        "integration_time_ms": 55.0,
+        "max_threshold": 10000.0
+      },
+      "mitigation": "High amplitude suggests LED timing issue - increase settle delay from 45ms to 75ms",
+      "notes": "Amplitude: 15000 counts @ 55.0ms integration"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.594675",
+      "phase": "afterglow",
+      "event_type": "afterglow_fit_quality",
+      "channel": "a",
+      "passed": true,
+      "failure_mode": null,
+      "severity": "INFO",
+      "metrics": {
+        "r_squared": 0.978,
+        "min_threshold": 0.85,
+        "good_threshold": 0.95
+      },
+      "mitigation": null,
+      "notes": "Fit R\u00b2: 0.9780 (excellent)"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.602817",
+      "phase": "afterglow",
+      "event_type": "afterglow_fit_quality",
+      "channel": "b",
+      "passed": false,
+      "failure_mode": "afterglow_fit_poor",
+      "severity": "MEDIUM",
+      "metrics": {
+        "r_squared": 0.812,
+        "min_threshold": 0.85,
+        "good_threshold": 0.95
+      },
+      "mitigation": "Poor fit quality - check LED stability, verify measurement timing, may need re-characterization",
+      "notes": "Fit R\u00b2: 0.8120 (poor)"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.619224",
+      "phase": "live_data",
+      "event_type": "signal_quality_check",
+      "channel": "a",
+      "passed": true,
+      "failure_mode": null,
+      "severity": "INFO",
+      "metrics": {
+        "peak_intensity": 25000,
+        "fwhm_nm": 38.5,
+        "snr": 125.0
+      },
+      "mitigation": null,
+      "notes": "Signal: 25000 counts, FWHM: 38.5nm, SNR: 125.0"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.620514",
+      "phase": "live_data",
+      "event_type": "signal_quality_check",
+      "channel": "b",
+      "passed": false,
+      "failure_mode": "signal_loss",
+      "severity": "HIGH",
+      "metrics": {
+        "peak_intensity": 500,
+        "fwhm_nm": 85.0,
+        "snr": 5.2
+      },
+      "mitigation": "Check LED intensity, verify spectrometer connection, check for optical obstructions",
+      "notes": "Signal: 500 counts, FWHM: 85.0nm, SNR: 5.2"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.629418",
+      "phase": "live_data",
+      "event_type": "pump_correlation_check",
+      "channel": "a",
+      "passed": false,
+      "failure_mode": "pump_interference",
+      "severity": "LOW",
+      "metrics": {
+        "pump_flow_rate": 200.0,
+        "signal_change": 150.0,
+        "time_since_pump_change": 1.2,
+        "expected_correlation": false
+      },
+      "mitigation": "Apply temporal filtering, flag affected data region, consider flow stabilization time",
+      "notes": "Pump @ 200 \u00b5L/min, signal \u0394150.0, \u0394t=1.2s"
+    },
+    {
+      "timestamp": "2025-11-21T07:28:49.633481",
+      "phase": "live_data",
+      "event_type": "fwhm_trend_check",
+      "channel": "a",
+      "passed": false,
+      "failure_mode": "fwhm_degradation",
+      "severity": "MEDIUM",
+      "metrics": {
+        "current_fwhm": 42.8,
+        "calibration_fwhm": 38.5,
+        "delta_fwhm": 4.299999999999997,
+        "rate_nm_per_min": 0.65
+      },
+      "mitigation": "FWHM degrading - check sensor temperature, verify optical alignment, consider recalibration",
+      "notes": "FWHM: 42.8nm (cal: 38.5nm, rate: 0.65nm/min)"
+    }
+  ]
+}

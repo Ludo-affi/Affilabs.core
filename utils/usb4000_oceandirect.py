@@ -352,10 +352,6 @@ class USB4000OceanDirect:
             time_microseconds = int(time_seconds * 1000000)
             self._device.integration_time_micros(time_microseconds)
             self._current_integration_time = time_seconds
-
-            logger.debug(
-                f"Set integration time to {time_seconds * 1000:.1f}ms ({time_microseconds}μs)",
-            )
             return True
 
         except Exception as e:

@@ -735,9 +735,34 @@ class DataAcquisitionManager(QObject):
             transmission_spectrum = None
             if channel in self.ref_sig and self.ref_sig[channel] is not None:
                 try:
-                    from utils.spr_signal_processing import calculate_transmission
+                    from utils.spr_signal_processing import calculate_transmission, validate_sp_orientation
                     # Calculate transmission percentage
                     transmission_spectrum = calculate_transmission(raw_spectrum, self.ref_sig[channel])
+                    
+                    # Validate S/P orientation on first transmission calculation per channel
+                    if not hasattr(self, '_sp_orientation_validated'):
+                        self._sp_orientation_validated = set()
+                    
+                    if channel not in self._sp_orientation_validated:
+                        validation = validate_sp_orientation(
+                            p_spectrum=raw_spectrum,
+                            s_spectrum=self.ref_sig[channel],
+                            wavelengths=wavelength,
+                            window_px=200
+                        )
+                        
+                        self._sp_orientation_validated.add(channel)
+                        
+                        if validation['is_flat']:
+                            logger.warning(f"⚠️ Ch {channel.upper()}: S/P check - Flat transmission spectrum")
+                            logger.warning(f"   Possible saturation or dark signal - transmission data may be unreliable")
+                        elif not validation['orientation_correct']:
+                            logger.warning(f"⚠️ Ch {channel.upper()}: S/P orientation appears inverted (confirmation check)")
+                            logger.warning(f"   Peak at {validation['peak_wl']:.1f}nm is HIGHER ({validation['peak_value']:.1f}%) than sides ({validation['left_value']:.1f}%, {validation['right_value']:.1f}%)")
+                            logger.warning(f"   Note: This should have been caught during calibration - device may need recalibration")
+                        else:
+                            logger.info(f"✅ Ch {channel.upper()}: S/P orientation confirmed (dip at {validation['peak_wl']:.1f}nm = {validation['peak_value']:.1f}%, confidence={validation['confidence']:.2f})")
+                            
                 except Exception as e:
                     logger.warning(f"Could not calculate transmission for peak finding: {e}")
                     transmission_spectrum = None

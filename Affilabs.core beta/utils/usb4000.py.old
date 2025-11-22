@@ -1,0 +1,317 @@
+"""USB4000 Spectrometer Driver
+
+Supports both DLL-based API (Sensor.dll) and SeaBreeze backend for robust hardware detection.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from time import sleep
+import threading
+
+import numpy as np
+from numpy import all, arange, asarray, frombuffer, isnan
+from numpy.polynomial import Polynomial
+
+from utils.common import get_config
+from utils.logger import logger
+
+from .SpectrometerAPI import SENSOR_DATA_LEN, SpectrometerAPI
+
+# Try to import ftd2xx (optional)
+try:
+    from ftd2xx import listDevices
+except ImportError:
+    # ftd2xx is optional - only needed for USB4000 hardware with DLL backend
+    def listDevices():
+        return []
+
+# Try to import SeaBreeze as fallback backend
+try:
+    # CRITICAL: Use cseabreeze (C backend) for performance and stability
+    import seabreeze
+    seabreeze.use('cseabreeze')
+    from seabreeze.spectrometers import Spectrometer, list_devices as seabreeze_list_devices
+    SEABREEZE_AVAILABLE = True
+    logger.info("SeaBreeze (cseabreeze C backend) available for USB4000")
+except (ImportError, KeyboardInterrupt, Exception) as e:
+    SEABREEZE_AVAILABLE = False
+    Spectrometer = None
+    seabreeze_list_devices = None
+    if isinstance(e, KeyboardInterrupt):
+        raise  # Don't suppress user interrupts during normal operation
+    logger.warning(f"SeaBreeze not available: {e}. Will use DLL backend only.")
+
+
+class USB4000:
+    """USB4000 device driver with SeaBreeze fallback"""
+
+    CONFIG_SIZE = 4096
+    CALIBRATION_OFFSET = 3072
+    CALIBRATION_DEGREE = 4
+    CONNECTION_TIMEOUT = 30.0  # 30 second timeout for connection (SeaBreeze can be slow)
+
+    def __init__(self, app):
+        super(USB4000, self).__init__()
+        self.app = app
+        self.spec = None
+        self.opened = False
+        self.min_integration = 0
+        self.max_integration = 5_000_000
+        self.serial_number = None
+        self.use_seabreeze = False
+
+        # Try to initialize DLL-based API first
+        try:
+            self.api = SpectrometerAPI(Path(__file__).parent / "Sensor.dll")
+            self.devs = [s.decode() for s in listDevices() if s.startswith(b"ST")]
+            logger.info("Using Sensor.dll backend for USB4000")
+        except (FileNotFoundError, OSError) as e:
+            logger.warning(f"Sensor.dll not available: {e}")
+            if SEABREEZE_AVAILABLE:
+                logger.info("Falling back to SeaBreeze backend")
+                self.use_seabreeze = True
+                self.api = None
+                self.devs = []
+            else:
+                raise RuntimeError("No USB4000 backend available (neither Sensor.dll nor SeaBreeze)")
+
+    def get_device_list(self):
+        try:
+            logger.debug("trying to open spec list")
+            self.devs = [s.decode() for s in listDevices() if s.startswith(b"ST")]
+        except Exception as e:
+            logger.debug(f"Error getting device list {e}")
+
+    def open(self):
+        """Open connection to USB4000 spectrometer - simplified robust approach."""
+        if self.opened:
+            logger.debug("USB4000 already connected")
+            return True
+
+        try:
+            if self.use_seabreeze:
+                # SeaBreeze backend - match NEW code pattern
+                logger.info("Attempting to connect using SeaBreeze backend...")
+
+                # Device discovery (let it run without timeout)
+                logger.debug("Scanning for Ocean Optics devices...")
+                try:
+                    devices = seabreeze_list_devices()
+                    logger.info(f"SeaBreeze found {len(devices)} device(s)")
+                except Exception as e:
+                    logger.error(f"SeaBreeze device discovery failed: {e}")
+                    logger.error(f"Error type: {type(e).__name__}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    return False
+
+                if not devices:
+                    logger.error("No SeaBreeze devices found")
+                    return False
+
+                # Log device info
+                for device in devices:
+                    logger.debug(f"Found device: {device.model} (Serial: {device.serial_number})")
+
+                # Connect to first device with timeout protection
+                result = {"device": None, "completed": False, "error": None}
+                target_serial = devices[0].serial_number
+
+                def connection_worker():
+                    try:
+                        logger.debug(f"Creating spectrometer for device {target_serial}")
+                        device = Spectrometer.from_serial_number(str(target_serial))
+                        result["device"] = device
+                        result["completed"] = True
+                    except Exception as e:
+                        logger.error(f"Connection worker error: {e}")
+                        result["error"] = e
+                        result["completed"] = True
+
+                # Start connection in separate thread
+                connection_thread = threading.Thread(target=connection_worker, daemon=True)
+                connection_thread.start()
+
+                # Wait for completion or timeout (5 seconds)
+                connection_thread.join(timeout=5.0)
+
+                if not result["completed"]:
+                    logger.error(f"Connection to device {target_serial} timed out after 5 seconds")
+                    return False
+                elif result["error"]:
+                    logger.error(f"Connection error: {result['error']}")
+                    return False
+                elif result["device"] is None:
+                    logger.error("Connection completed but no device returned")
+                    return False
+
+                self.spec = result["device"]
+                self.serial_number = self.spec.serial_number
+
+                # Initialize device properties
+                self._initialize_seabreeze_properties()
+
+                self.opened = True
+                logger.info(
+                    f"Successfully connected via SeaBreeze to {self.spec.model} "
+                    f"(Serial: {self.serial_number})"
+                )
+                return True
+
+            else:
+                # DLL backend
+                logger.debug("Discovering USB4000 devices with DLL...")
+                self.devs = [s.decode() for s in listDevices() if s.startswith(b"ST")]
+                logger.debug(f"Found {len(self.devs)} device(s): {self.devs}")
+
+                if not self.devs:
+                    logger.warning("No USB4000 devices found")
+                    return False
+
+                self.serial_number = self.devs[0]
+                logger.info(f"Connecting to USB4000 with serial: {self.serial_number}")
+
+                # Select appropriate DLL for specific device
+                if self.serial_number == "ST00005":
+                    self.api = SpectrometerAPI(
+                        Path(__file__).parent / "SensorT_x64.dll",
+                    )
+
+                # Initialize device
+                self.spec = self.api.usb_initialize(self.devs[0])
+
+                # Set integration time
+                integration_time = max(get_config()["integration_time"], self.min_integration)
+                self.set_integration(integration_time)
+
+                self.opened = True
+                logger.info("USB4000 connection successful")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to spectrometer: {e}", exc_info=True)
+            if hasattr(self.app, 'raise_error'):
+                self.app.raise_error.emit("spec")
+            return False
+
+    def _initialize_seabreeze_properties(self):
+        """Initialize device properties after SeaBreeze connection."""
+        try:
+            # Get integration time limits with fallback
+            try:
+                self.min_integration = self.spec.minimum_integration_time_micros / 1_000_000
+            except AttributeError:
+                logger.debug("Using fallback minimum integration time")
+                self.min_integration = 0.001  # 1ms
+
+            try:
+                self.max_integration = self.spec.maximum_integration_time_micros / 1_000_000
+            except AttributeError:
+                logger.debug("Using fallback maximum integration time")
+                self.max_integration = 5.0  # 5 seconds
+
+            # Set integration time
+            integration_time = max(get_config()["integration_time"], self.min_integration)
+            self.spec.integration_time_micros(int(integration_time * 1_000_000))
+
+            logger.debug("SeaBreeze device properties initialized:")
+            logger.debug(f"  Serial: {self.serial_number}")
+            logger.debug(f"  Integration time range: {self.min_integration:.3f}s - {self.max_integration:.1f}s")
+            logger.debug(f"  Current integration time: {integration_time:.3f}s")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize some device properties: {e}")    # Added method to set integration time
+    def set_integration(self, integration):
+        """Set integration time with bounds checking."""
+        if integration < self.min_integration or integration > self.max_integration:
+            logger.warning(
+                f"Integration time {integration} out of bounds "
+                f"[{self.min_integration}, {self.max_integration}]"
+            )
+            return False
+        try:
+            if self.use_seabreeze:
+                micros = int(integration * 1_000_000)
+                self.spec.integration_time_micros(micros)
+                logger.debug(f"SeaBreeze integration time set to {integration}s ({micros}µs)")
+                sleep(0.1)  # Small delay for settings to take effect
+                return True
+            else:
+                r = self.api.usb_set_interval(self.spec, int(integration * 1000))
+                sleep(0.3)
+                return bool(r)
+        except Exception as e:
+            logger.error(f"Failed to set integration time - {e}")
+            if hasattr(self.app, 'raise_error'):
+                self.app.raise_error.emit("spec")
+            return False
+
+    def read_wavelength(self):
+        """Read wavelength calibration data from spectrometer."""
+        if self.spec is None and not self.open():
+            logger.warning("Cannot read wavelength - device not connected")
+            return None
+
+        try:
+            if self.use_seabreeze:
+                # SeaBreeze provides wavelengths directly
+                return self.spec.wavelengths()
+            else:
+                # DLL backend reads from config
+                bytes_read, config = self.api.usb_read_config(self.spec, 0)
+                if bytes_read == self.CONFIG_SIZE:
+                    coeffs = frombuffer(
+                        config.data,
+                        ">f8",
+                        self.CALIBRATION_DEGREE,
+                        self.CALIBRATION_OFFSET,
+                    )
+                    if all(isnan(coeffs)):
+                        msg = "Spectrometer has not been calibrated."
+                        raise RuntimeError(msg)  # noqa: TRY301
+                    calibration_curve = Polynomial(coeffs)
+                    return calibration_curve(arange(SENSOR_DATA_LEN))
+                else:
+                    logger.warning(f"Unexpected config size: {bytes_read} (expected {self.CONFIG_SIZE})")
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to read wavelength data from spectrometer - {e}")
+            if hasattr(self.app, 'raise_error'):
+                self.app.raise_error.emit("spec")
+            return None
+
+    def read_intensity(self):
+        """Read intensity spectrum from spectrometer."""
+        if self.spec is None:
+            logger.warning("Cannot read intensity - device not connected")
+            return None
+
+        try:
+            if self.use_seabreeze:
+                # SeaBreeze provides intensities directly - returns numpy array
+                intensity_data = np.array(self.spec.intensities())
+                return intensity_data.astype(float)
+            else:
+                # DLL backend reads from API
+                return asarray(self.api.usb_read_image(self.spec)[1].pixels, float)
+        except Exception as e:
+            logger.error(f"Failed to read intensity data from spectrometer - {e}")
+            if hasattr(self.app, 'raise_error'):
+                self.app.raise_error.emit("spec")
+            return None
+
+    def close(self):
+        """Close connection to spectrometer."""
+        if self.spec is not None:
+            try:
+                if self.use_seabreeze:
+                    self.spec.close()
+                else:
+                    self.api.usb_deinit(self.spec)
+                logger.info("USB4000 connection closed")
+            except Exception as e:
+                logger.error(f"Error closing USB4000: {e}")
+            finally:
+                self.spec = None
+                self.opened = False

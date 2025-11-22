@@ -168,7 +168,12 @@ def calibrate_led_channel(
     intensity = deepcopy(P_LED_MAX)
     ctrl.set_intensity(ch=ch, raw_val=intensity)
     time.sleep(LED_DELAY)
-    calibration_max = usb.read_intensity().max()
+
+    intensity_data = usb.read_intensity()
+    if intensity_data is None:
+        logger.error(f"Failed to read intensity for channel {ch.upper()} - spectrometer not responding")
+        raise RuntimeError(f"Spectrometer read failed for channel {ch.upper()}")
+    calibration_max = intensity_data.max()
 
     logger.debug(f"Initial intensity: {intensity} = {calibration_max:.0f} counts")
 
@@ -182,7 +187,11 @@ def calibrate_led_channel(
         intensity -= quick_adjustment
         ctrl.set_intensity(ch=ch, raw_val=intensity)
         time.sleep(LED_DELAY)
-        calibration_max = usb.read_intensity().max()
+
+        intensity_data = usb.read_intensity()
+        if intensity_data is None:
+            raise RuntimeError(f"Spectrometer read failed during coarse adjustment")
+        calibration_max = intensity_data.max()
 
     logger.debug(f"Coarse adjust: {intensity} = {calibration_max:.0f} counts")
 
@@ -196,7 +205,11 @@ def calibrate_led_channel(
         intensity += medium_adjustment
         ctrl.set_intensity(ch=ch, raw_val=intensity)
         time.sleep(LED_DELAY)
-        calibration_max = usb.read_intensity().max()
+
+        intensity_data = usb.read_intensity()
+        if intensity_data is None:
+            raise RuntimeError(f"Spectrometer read failed during medium adjustment")
+        calibration_max = intensity_data.max()
 
     logger.debug(f"Medium adjust: {intensity} = {calibration_max:.0f} counts")
 
@@ -206,7 +219,11 @@ def calibrate_led_channel(
         intensity -= fine_adjustment
         ctrl.set_intensity(ch=ch, raw_val=intensity)
         time.sleep(LED_DELAY)
-        calibration_max = usb.read_intensity().max()
+
+        intensity_data = usb.read_intensity()
+        if intensity_data is None:
+            raise RuntimeError(f"Spectrometer read failed during fine adjustment")
+        calibration_max = intensity_data.max()
 
     logger.debug(f"Fine adjust: {intensity} = {calibration_max:.0f} counts")
 
@@ -250,7 +267,14 @@ def calibrate_p_mode_leds(
         p_intensity = deepcopy(ref_intensity[ch])
         ctrl.set_intensity(ch=ch, raw_val=p_intensity)
         time.sleep(LED_DELAY)
-        calibration_max = usb.read_intensity().max()
+
+        # Read intensity with error checking
+        intensity_data = usb.read_intensity()
+        if intensity_data is None:
+            logger.error(f"Failed to read intensity for channel {ch.upper()} - spectrometer not responding")
+            raise RuntimeError(f"Spectrometer read failed for channel {ch.upper()}")
+
+        calibration_max = intensity_data.max()
         initial_counts = deepcopy(calibration_max)
         logger.debug(f"Initial counts: {initial_counts:.0f}")
 
@@ -263,7 +287,12 @@ def calibrate_p_mode_leds(
             p_intensity += quick_adjustment
             ctrl.set_intensity(ch=ch, raw_val=p_intensity)
             time.sleep(LED_DELAY)
-            calibration_max = usb.read_intensity().max()
+
+            intensity_data = usb.read_intensity()
+            if intensity_data is None:
+                logger.error(f"Failed to read intensity during coarse adjust for channel {ch.upper()}")
+                raise RuntimeError(f"Spectrometer read failed during calibration")
+            calibration_max = intensity_data.max()
 
         logger.debug(f"Coarse adjust: {p_intensity} = {calibration_max:.0f} counts")
 
@@ -272,7 +301,12 @@ def calibrate_p_mode_leds(
             p_intensity -= medium_adjustment
             ctrl.set_intensity(ch=ch, raw_val=p_intensity)
             time.sleep(LED_DELAY)
-            calibration_max = usb.read_intensity().max()
+
+            intensity_data = usb.read_intensity()
+            if intensity_data is None:
+                logger.error(f"Failed to read intensity during medium adjust for channel {ch.upper()}")
+                raise RuntimeError(f"Spectrometer read failed during calibration")
+            calibration_max = intensity_data.max()
 
         logger.debug(f"Medium adjust: {p_intensity} = {calibration_max:.0f} counts")
 
@@ -285,7 +319,12 @@ def calibrate_p_mode_leds(
             p_intensity += fine_adjustment
             ctrl.set_intensity(ch=ch, raw_val=p_intensity)
             time.sleep(LED_DELAY)
-            calibration_max = usb.read_intensity().max()
+
+            intensity_data = usb.read_intensity()
+            if intensity_data is None:
+                logger.error(f"Failed to read intensity during fine adjust for channel {ch.upper()}")
+                raise RuntimeError(f"Spectrometer read failed during calibration")
+            calibration_max = intensity_data.max()
 
         logger.debug(f"Fine adjust: {p_intensity} = {calibration_max:.0f} counts")
 
@@ -333,7 +372,13 @@ def measure_dark_noise(
     for _scan in range(dark_scans):
         if stop_flag and stop_flag.is_set():
             break
-        dark_noise_single = usb.read_intensity()[wave_min_index:wave_max_index]
+
+        intensity_data = usb.read_intensity()
+        if intensity_data is None:
+            logger.error("Failed to read intensity during dark noise measurement")
+            raise RuntimeError("Spectrometer read failed during dark noise measurement")
+
+        dark_noise_single = intensity_data[wave_min_index:wave_max_index]
         dark_noise_sum += dark_noise_single
 
     dark_noise = dark_noise_sum / dark_scans
@@ -393,7 +438,12 @@ def measure_reference_signals(
         ref_data_sum = np.zeros_like(dark_noise)
 
         for _scan in range(ref_scans):
-            int_val = usb.read_intensity()[wave_min_index:wave_max_index]
+            intensity_data = usb.read_intensity()
+            if intensity_data is None:
+                logger.error(f"Failed to read intensity for channel {ch.upper()} during reference measurement")
+                raise RuntimeError(f"Spectrometer read failed during reference signal measurement")
+
+            int_val = intensity_data[wave_min_index:wave_max_index]
             ref_data_single = int_val - dark_noise
             ref_data_sum += ref_data_single
 
@@ -429,7 +479,14 @@ def verify_calibration(
 
         ctrl.set_intensity(ch=ch, raw_val=intensity)
         time.sleep(LED_DELAY)
-        calibration_max = usb.read_intensity().max()
+
+        intensity_data = usb.read_intensity()
+        if intensity_data is None:
+            logger.error(f"Failed to read intensity during verification for channel {ch.upper()}")
+            ch_error_list.append(ch)
+            continue
+
+        calibration_max = intensity_data.max()
 
         if calibration_max < P_COUNT_THRESHOLD:
             ch_error_list.append(ch)

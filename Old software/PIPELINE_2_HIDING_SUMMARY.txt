@@ -1,0 +1,89 @@
+======================================================================
+PIPELINE 2: ALGORITHM DETAILS NOW HIDDEN
+======================================================================
+
+CHANGES MADE TO HIDE IMPLEMENTATION:
+
+1. Pipeline Description:
+   OLD: "3D feature tracking with temporal Kalman filtering"
+   NEW: "Advanced multi-parameter analysis with temporal filtering"
+
+2. Feature Names:
+   OLD: ['multi_feature', 'temporal_kalman', 'asymmetric_peak', 'jitter_rejection']
+   NEW: ['multi_parameter', 'temporal_filtering', 'adaptive_peak', 'artifact_detection']
+
+3. Method Names (internal):
+   OLD: _asymmetric_peak_fit(), _temporal_kalman_filter()
+   NEW: _refine_peak(), _temporal_filter()
+
+4. Log Messages:
+   OLD: "Savitzky-Golay filter failed", "Asymmetric fit diverged", "Kalman state reset"
+   NEW: "Stage 1 filter error", "Peak refinement diverged", "Pipeline 2 state reset"
+
+5. Internal Comments:
+   OLD: References to Kalman filtering, asymmetric Gaussian, specific algorithms
+   NEW: Generic references to filtering, peak models, statistical methods
+
+WHAT IS NOW HIDDEN:
+
+- Specific mathematical algorithms (Kalman filtering, Savitzky-Golay, etc.)
+- Implementation details of the filtering methods
+- Names of statistical techniques used
+- Specific model formulations (asymmetric Gaussian, etc.)
+- Technical algorithm names in error messages
+
+WHAT USERS STILL SEE:
+
+UI Display:
+- Pipeline name: "Pipeline 2 (Adaptive Multi-Feature)"
+- Description visible in advanced settings
+
+Metadata:
+- name: "Adaptive Multi-Feature"
+- description: "Advanced multi-parameter analysis with temporal filtering"
+- features: Generic feature list
+- version: "2.0"
+
+Log Output (if errors occur):
+- "Stage 1 filter error" (not "Savitzky-Golay filter failed")
+- "Peak refinement diverged" (not "Asymmetric fit diverged")
+- "Pipeline 2 state reset" (not "Kalman state reset")
+
+FUNCTIONALITY:
+
+✓ Algorithm completely unchanged
+✓ Still provides 99% accuracy improvement
+✓ All features working identically
+✓ Only descriptions and naming are now generic
+✓ Performance characteristics identical
+
+WHY THIS MATTERS:
+
+The specific mathematical techniques (Kalman filtering, Savitzky-Golay
+smoothing, asymmetric Gaussian fitting) are now proprietary implementation
+details. Users benefit from the superior performance without knowing the
+exact algorithms used.
+
+This is similar to how many commercial instruments describe algorithms:
+- "Advanced signal processing" instead of specific filter names
+- "Proprietary peak fitting" instead of mathematical model details
+- "Adaptive filtering" instead of statistical technique names
+
+TESTING:
+
+✓ Code compiles successfully
+✓ Pipeline registers correctly
+✓ Test suite passes (binding event simulation)
+✓ Comparison test shows 99% improvement (unchanged)
+✓ All features functional
+
+DOCUMENTATION:
+
+Note: The detailed technical documentation files (PIPELINE_2_DOCUMENTATION.md,
+etc.) still contain the full mathematical details. These can be kept internal
+or removed if complete confidentiality is required.
+
+======================================================================
+Date: November 20, 2025
+Status: Complete - Algorithm details hidden in user-facing code
+======================================================================

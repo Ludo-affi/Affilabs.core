@@ -10,17 +10,7 @@ Requirements:
 
 from utils.logger import logger
 
-# SINGLE CONNECTION METHOD: pyseabreeze backend only
-try:
-    import seabreeze
-    seabreeze.use('pyseabreeze')  # REQUIRED: pyseabreeze works on this system (cseabreeze doesn't detect device)
-    from seabreeze.spectrometers import Spectrometer, list_devices
-    SEABREEZE_AVAILABLE = True
-    logger.info("USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)")
-except ImportError as e:
-    SEABREEZE_AVAILABLE = False
-    logger.error(f"SeaBreeze not available: {e}")
-    logger.error("Install with: pip install seabreeze pyusb")
+# Defer all seabreeze imports until open() is called to avoid blocking on import
 
 
 class USB4000:
@@ -44,13 +34,44 @@ class USB4000:
         try:
             logger.info("Connecting to USB4000...")
 
-            if not SEABREEZE_AVAILABLE:
-                logger.error("SeaBreeze not available")
+            # Import seabreeze only when actually opening (deferred to avoid blocking on import)
+            try:
+                import seabreeze
+                seabreeze.use('pyseabreeze')
+                from seabreeze.spectrometers import Spectrometer, list_devices
+                logger.info("USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)")
+            except ImportError as e:
+                logger.error(f"SeaBreeze not available: {e}")
+                logger.error("Install with: pip install seabreeze pyusb")
                 return False
 
-            # Discover devices (NEW software method)
-            logger.debug("Scanning for Ocean Optics devices...")
-            devices = list_devices()
+            # Discover devices (NEW software method) with timeout
+            logger.debug("Scanning for Ocean Optics devices (5s timeout)...")
+
+            # Use threading with timeout to prevent indefinite blocking
+            import threading
+            devices = []
+            exception = [None]
+
+            def scan_devices():
+                try:
+                    nonlocal devices
+                    devices = list_devices()
+                except Exception as e:
+                    exception[0] = e
+
+            scan_thread = threading.Thread(target=scan_devices, daemon=True)
+            scan_thread.start()
+            scan_thread.join(timeout=5.0)
+
+            if scan_thread.is_alive():
+                logger.warning("USB device scan timed out after 5 seconds - no spectrometer connected")
+                return False
+
+            if exception[0]:
+                logger.error(f"USB device scan failed: {exception[0]}")
+                return False
+
             logger.debug(f"SeaBreeze found {len(devices)} device(s)")
 
             if not devices:
@@ -64,9 +85,7 @@ class USB4000:
 
             # Connect using SeaBreeze (NEW software method)
             logger.debug(f"SeaBreeze: Creating spectrometer for serial {target_serial}")
-            self._device = Spectrometer.from_serial_number(target_serial)
-
-            # Set connection state
+            self._device = Spectrometer.from_serial_number(target_serial)            # Set connection state
             self.opened = True
             self.serial_number = target_serial
             self.spec = self._device

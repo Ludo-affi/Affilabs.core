@@ -1,0 +1,25 @@
+<RCC>
+  <qresource prefix="img">
+    <file>img/kd_wizard.png</file>
+    <file>img/affinite2.ico</file>
+    <file>img/affinite-no-background.png</file>
+    <file>img/disconnect.png</file>
+    <file>img/folder.png</file>
+    <file>img/help.png</file>
+    <file>img/import.png</file>
+    <file>img/power.png</file>
+    <file>img/record.png</file>
+    <file>img/reload.png</file>
+    <file>img/save.png</file>
+    <file>img/settings.png</file>
+    <file>img/stop.png</file>
+    <file>img/trash.png</file>
+    <file>img/undo.png</file>
+    <file>img/crt_up.png</file>
+    <file>img/crt_down.png</file>
+    <file>img/adj_up.png</file>
+    <file>img/adj_down.png</file>
+    <file>img/deg_c.png</file>
+    <file>img/micro_per_min.png</file>
+  </qresource>
+</RCC>

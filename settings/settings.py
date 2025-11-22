@@ -131,7 +131,7 @@ WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by defa
 LED_DELAY = 0.050  # 50ms LED settling time (deprecated; use PRE/POST below)
 
 # New default LED delays (ms)
-PRE_LED_DELAY_MS: float = 95.0   # Delay after LED ON before measurement
+PRE_LED_DELAY_MS: float = 45.0   # Delay after LED ON before measurement
 POST_LED_DELAY_MS: float = 5.0   # Delay after LED OFF before switching channel
 
 # Optional: one-cycle LED verification at maximum brightness in live mode

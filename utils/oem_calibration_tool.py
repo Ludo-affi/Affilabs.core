@@ -703,7 +703,8 @@ class DeviceProfileManager:
         serial_number: str,
         polarizer_results: Optional[dict],
         afterglow_results: Optional[dict],
-        detector_model: str = "Unknown"
+        detector_model: str = "Unknown",
+        led_type: str = "LCW"
     ) -> Path:
         """Save unified device profile.
 
@@ -712,6 +713,7 @@ class DeviceProfileManager:
             polarizer_results: Polarizer calibration results
             afterglow_results: Afterglow characterization results
             detector_model: Detector model name
+            led_type: LED PCB type code ('LCW' = Luminus Cool White, 'OWW' = Osram Warm White)
 
         Returns:
             Path to saved profile
@@ -720,20 +722,37 @@ class DeviceProfileManager:
         profile_name = f"device_{serial_number}_{timestamp}.json"
         profile_path = self.output_dir / profile_name
 
+        # Expand LED type to full name for metadata
+        led_type_names = {
+            'LCW': 'Luminus Cool White',
+            'OWW': 'Osram Warm White'
+        }
+        led_type_full = led_type_names.get(led_type, led_type)
+
         profile_data = {
             "device_serial": serial_number,
             "device_type": "PicoP4SPR",
             "detector_model": detector_model,
-            "oem_calibration_version": "1.0",
+            "led_type": led_type,  # Short code: LCW or OWW
+            "led_type_full": led_type_full,  # Human readable
+            "oem_calibration_version": "1.1",  # Bumped version to include LED type
             "calibration_date": datetime.now().isoformat(),
             "polarizer": polarizer_results if polarizer_results else {},
             "afterglow": afterglow_results if afterglow_results else {}
         }
 
+        # Add LED type to afterglow metadata for validation
+        if afterglow_results and 'channels' in afterglow_results:
+            if 'metadata' not in profile_data['afterglow']:
+                profile_data['afterglow']['metadata'] = {}
+            profile_data['afterglow']['metadata']['led_type'] = led_type
+
         with profile_path.open('w') as f:
             json.dump(profile_data, f, indent=2)
 
         logger.info(f"✅ Device profile saved: {profile_path}")
+        logger.info(f"   Serial: {serial_number}")
+        logger.info(f"   LED Type: {led_type} ({led_type_full})")
         return profile_path
 
     def update_device_config(self, polarizer_results: Optional[dict]) -> None:
@@ -908,6 +927,13 @@ def main():
         help='Detector model name'
     )
     parser.add_argument(
+        '--led-type',
+        type=str,
+        choices=['LCW', 'OWW'],
+        default='LCW',
+        help='LED PCB type: LCW (Luminus Cool White) or OWW (Osram Warm White)'
+    )
+    parser.add_argument(
         '--legacy-sweep',
         action='store_true',
         help='Use legacy sequential sweep instead of optimized two-phase (for validation)'
@@ -920,6 +946,7 @@ def main():
     logger.info("=" * 80)
     logger.info(f"Device Serial: {args.serial}")
     logger.info(f"Detector: {args.detector}")
+    logger.info(f"LED Type: {args.led_type} ({'Luminus Cool White' if args.led_type == 'LCW' else 'Osram Warm White'})")
     logger.info(f"Output Directory: {args.output_dir}")
     logger.info("=" * 80)
 
@@ -993,7 +1020,8 @@ def main():
             serial_number=args.serial,
             polarizer_results=polarizer_results,
             afterglow_results=afterglow_results,
-            detector_model=args.detector
+            detector_model=args.detector,
+            led_type=args.led_type
         )
 
         # Update device_config.json with OEM calibration data

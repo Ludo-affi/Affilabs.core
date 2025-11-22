@@ -5,9 +5,113 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QParall
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTabWidget, QLabel, QFrame, QToolButton, QScrollArea, QGraphicsDropShadowEffect,
-    QSlider, QSpinBox, QSplitter
+    QSlider, QSpinBox, QSplitter, QMenu
 )
-from PySide6.QtGui import QIcon, QColor, QFont
+from PySide6.QtGui import QIcon, QColor, QFont, QAction
+
+
+class ElementInspector:
+    """Utility to inspect UI elements and copy their information."""
+
+    @staticmethod
+    def get_element_info(widget):
+        """Extract detailed information about a widget."""
+        info_parts = []
+
+        # Widget class and object name
+        info_parts.append(f"Class: {widget.__class__.__name__}")
+        if widget.objectName():
+            info_parts.append(f"ObjectName: {widget.objectName()}")
+
+        # Text content (if applicable)
+        if hasattr(widget, 'text') and callable(widget.text):
+            text = widget.text()
+            if text:
+                info_parts.append(f"Text: {text}")
+
+        # Window title (if applicable)
+        if hasattr(widget, 'windowTitle') and callable(widget.windowTitle):
+            title = widget.windowTitle()
+            if title:
+                info_parts.append(f"WindowTitle: {title}")
+
+        # Geometry
+        geo = widget.geometry()
+        info_parts.append(f"Geometry: x={geo.x()}, y={geo.y()}, w={geo.width()}, h={geo.height()}")
+
+        # Size
+        size = widget.size()
+        info_parts.append(f"Size: {size.width()}x{size.height()}")
+
+        # Visibility
+        info_parts.append(f"Visible: {widget.isVisible()}")
+        info_parts.append(f"Enabled: {widget.isEnabled()}")
+
+        # Parent hierarchy
+        parent_chain = []
+        parent = widget.parent()
+        while parent and len(parent_chain) < 5:
+            parent_name = parent.__class__.__name__
+            if parent.objectName():
+                parent_name += f" ({parent.objectName()})"
+            parent_chain.append(parent_name)
+            parent = parent.parent()
+
+        if parent_chain:
+            info_parts.append(f"Parent Chain: {' > '.join(parent_chain)}")
+
+        # Stylesheet (first 200 chars)
+        stylesheet = widget.styleSheet()
+        if stylesheet:
+            preview = stylesheet[:200].replace('\n', ' ')
+            if len(stylesheet) > 200:
+                preview += "..."
+            info_parts.append(f"StyleSheet: {preview}")
+
+        return "\n".join(info_parts)
+
+    @staticmethod
+    def install_inspector(widget):
+        """Install right-click inspector on a widget and all its children."""
+        widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        widget.customContextMenuRequested.connect(
+            lambda pos: ElementInspector.show_inspector_menu(widget, pos)
+        )
+
+        # Recursively install on all children
+        for child in widget.findChildren(QWidget):
+            if not child.testAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent):
+                child.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                child.customContextMenuRequested.connect(
+                    lambda pos, w=child: ElementInspector.show_inspector_menu(w, pos)
+                )
+
+    @staticmethod
+    def show_inspector_menu(widget, pos):
+        """Show context menu with inspect option."""
+        menu = QMenu(widget)
+
+        # Inspect action
+        inspect_action = QAction("🔍 Copy Element Info", menu)
+        inspect_action.triggered.connect(
+            lambda: ElementInspector.copy_element_info(widget)
+        )
+        menu.addAction(inspect_action)
+
+        # Show menu at cursor position
+        menu.exec(widget.mapToGlobal(pos))
+
+    @staticmethod
+    def copy_element_info(widget):
+        """Copy element information to clipboard."""
+        info = ElementInspector.get_element_info(widget)
+        clipboard = QApplication.clipboard()
+        clipboard.setText(info)
+
+        # Visual feedback
+        print("📋 Element info copied to clipboard:")
+        print(info)
+        print("-" * 60)
 
 
 class CollapsibleSection(QWidget):
@@ -6174,6 +6278,9 @@ End of Debug Log
         """Connect UI signals."""
         self.sidebar.scan_btn.clicked.connect(self._handle_scan_hardware)
         self.sidebar.debug_log_btn.clicked.connect(self._handle_debug_log_download)
+
+        # Install element inspector for right-click inspection
+        ElementInspector.install_inspector(self)
 
 
 # Main entry point

@@ -56,10 +56,14 @@ set_danger_button_style(delete_button)
 ```python
 # Old way (DELETE THIS):
 color = "rgb(46, 48, 227)"
+background = "rgb(240, 240, 243)"
 
 # New way (USE THIS):
-from styles import PRIMARY, CHANNEL_A, SUCCESS
-color = PRIMARY  # or CHANNEL_A, SUCCESS, etc.
+from ui.styles import Colors
+color = Colors.GRAY_900        # Dark primary
+background = Colors.GRAY_50    # Light background
+success = Colors.SUCCESS       # Green
+error = Colors.ERROR          # Red
 ```
 
 ### 4. Style Containers

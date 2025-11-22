@@ -416,7 +416,6 @@ class AffiniteApp(QMainWindow):
         self.temp_sig.connect(self.update_internal_temp)
 
         # === Data Update Signals (App -> UI) ===
-        self.update_spec_signal.connect(self.main_window.spectroscopy.update_data)
         if hasattr(self.main_window, "sidebar_spectroscopy"):
             self.update_spec_signal.connect(self.main_window.sidebar_spectroscopy.update_data)
         self.update_live_signal.connect(self.main_window.sensorgram.update_data)
@@ -516,11 +515,6 @@ class AffiniteApp(QMainWindow):
         )
 
         # === Spectroscopy Window Signals ===
-        self.main_window.spectroscopy.ui.prime_btn.clicked.connect(self.prime)
-        self.main_window.spectroscopy.full_cal_sig.connect(self.full_recalibration)
-        self.main_window.spectroscopy.new_ref_sig.connect(self.start_new_ref)
-        self.main_window.spectroscopy.single_led_sig.connect(self.single_led)
-        self.main_window.spectroscopy.polarizer_sig.connect(self.set_polarizer)
 
         # === Sidebar Spectroscopy Signals ===
         if hasattr(self.main_window, "sidebar_spectroscopy"):
@@ -691,19 +685,17 @@ class AffiniteApp(QMainWindow):
         if self.pump or self.device_config["ctrl"] == "EZSPR":
             mods.append("Pumps")
         dev_str = " + ".join(mods) or "No Devices"
-        self.main_window.ui.device.setText(dev_str)
+        # Device display removed
         if dev_str == "No Devices":
-            self.main_window.ui.status.setText("No Connection")
+            logger.info("Status updated")
         else:
-            self.main_window.ui.status.setText("Connected")
+            logger.info("Status updated")
         self.main_window.on_device_config(self.device_config)
 
     def open_device(self: Self) -> None:
         """Open connection to devices."""
         if self._con_tr.is_alive():
-            self.main_window.ui.status.setText(
-                "Connection Error: Check USB cables & drivers",
-            )
+            logger.info("Status updated")
             self._con_tr.join(0.5)
         self.get_current_device_config()
         if self.ctrl is None and self.knx is None:
@@ -1257,7 +1249,7 @@ class AffiniteApp(QMainWindow):
             self.pause_live_read()
             time.sleep(1)
             self.calibrated = False
-            self.main_window.ui.adv_btn.setEnabled(False)
+            self.main_window.adv_btn.setEnabled(False)
             self._c_stop.clear()
 
     def full_recalibration(self: Self) -> None:
@@ -1266,7 +1258,7 @@ class AffiniteApp(QMainWindow):
             self.pause_live_read()
             time.sleep(1)
             self.calibrated = False
-            self.main_window.ui.adv_btn.setEnabled(False)
+            self.main_window.adv_btn.setEnabled(False)
             self.auto_polarize = True
             self._c_stop.clear()
 
@@ -1277,8 +1269,7 @@ class AffiniteApp(QMainWindow):
                 logger.debug("starting new reference")
                 self.pause_live_read()
                 time.sleep(1)
-                self.main_window.ui.status.setText("New reference ...")
-                self.main_window.spectroscopy.ui.controls.setEnabled(False)
+                logger.info("Status updated")
                 if hasattr(self.main_window, "sidebar_spectroscopy"):
                     self.main_window.sidebar_spectroscopy.enable_controls(False)
                 self.main_window.sidebar.device_widget.allow_commands(state=False)
@@ -1304,8 +1295,7 @@ class AffiniteApp(QMainWindow):
             logger.debug("done new reference")
             if self._new_sig_tr.is_alive():
                 self._new_sig_tr.join(0.1)
-            self.main_window.ui.status.setText("Connected")
-            self.main_window.spectroscopy.ui.controls.setEnabled(True)
+            logger.info("Status updated")
             if hasattr(self.main_window, "sidebar_spectroscopy"):
                 self.main_window.sidebar_spectroscopy.enable_controls(True)
             self.main_window.sidebar.device_widget.allow_commands(state=True)
@@ -1496,9 +1486,8 @@ class AffiniteApp(QMainWindow):
         return s_pos, p_pos
 
     def _on_calibration_started(self: Self) -> None:
-        self.main_window.ui.status.setText("Calibrating")
+        logger.info("Status updated")
         self.main_window.sensorgram.enable_controls(data_ready=False)
-        self.main_window.spectroscopy.enable_controls(False)  # noqa: FBT003
         if hasattr(self.main_window, "sidebar_spectroscopy"):
             self.main_window.sidebar_spectroscopy.enable_controls(False)
         self.main_window.sidebar.device_widget.allow_commands(False)  # noqa: FBT003
@@ -1514,10 +1503,10 @@ class AffiniteApp(QMainWindow):
     ) -> None:
         self.calibrated = state
         if self.adv_connected:
-            self.main_window.ui.adv_btn.setEnabled(True)
-        current_text = self.main_window.ui.status.text()
+            self.main_window.adv_btn.setEnabled(True)
+        current_text = "Connected"
         if current_text.endswith("Calibrating"):
-            self.main_window.ui.status.setText("Connected")
+            logger.info("Status updated")
         if ch_error_str != "":
             if (
                 self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]
@@ -1566,7 +1555,6 @@ class AffiniteApp(QMainWindow):
             )
             logger.debug(f"TemporalFilter initialized (method=median, window={self.med_filt_win})")
 
-        self.main_window.spectroscopy.enable_controls(True)  # noqa: FBT003
         if hasattr(self.main_window, "sidebar_spectroscopy"):
             self.main_window.sidebar_spectroscopy.enable_controls(True)
         self.main_window.sidebar.device_widget.allow_commands(True)  # noqa: FBT003
@@ -1592,7 +1580,7 @@ class AffiniteApp(QMainWindow):
                     msg="Error: Device Disconnected!\nCheck connection and USB cable",
                     msg_type="Warning",
                 )
-                self.main_window.ui.status.setText("Device Connection Error")
+                logger.info("Status updated")
 
     def _on_spec_error(self: Self) -> None:
         if self.usb is not None and self.usb.opened:
@@ -1602,7 +1590,7 @@ class AffiniteApp(QMainWindow):
                     msg="Error: Device Disconnected!\nCheck connection and USB cable",
                     msg_type="Warning",
                 )
-                self.main_window.ui.status.setText("Device Connection Error")
+                logger.info("Status updated")
 
     @Slot(dict, list, str)
     def send_to_analysis(
@@ -2086,7 +2074,7 @@ class AffiniteApp(QMainWindow):
 
         # Stop acquisition
         self._b_stop.set()
-        self.main_window.ui.status.setText("Error while reading SPR data")
+        logger.info("Status updated")
 
         # Show appropriate error message
         if isinstance(error, IndexError):
@@ -2758,8 +2746,6 @@ class AffiniteApp(QMainWindow):
         if hasattr(self.main_window, 'sensorgram') and hasattr(self.main_window.sensorgram, 'set_advanced_smoothing'):
             self.main_window.sensorgram.set_advanced_smoothing(enabled, mode, level)
         # Update spectroscopy window if it has the method
-        if hasattr(self.main_window, 'spectroscopy') and hasattr(self.main_window.spectroscopy, 'set_advanced_smoothing'):
-            self.main_window.spectroscopy.set_advanced_smoothing(enabled, mode, level)
         # Update processing window if exists and has the method
         if hasattr(self.main_window, 'processing') and hasattr(self.main_window.processing, 'set_advanced_smoothing'):
             self.main_window.processing.set_advanced_smoothing(enabled, mode, level)
@@ -3639,7 +3625,7 @@ class AffiniteApp(QMainWindow):
     def connect_dev(self: Self) -> None:
         """Connect a device - follows same path as autoconnect at startup."""
         if self.ctrl is None or self.knx is None or self.pump is None:
-            self.main_window.ui.status.setText("Scanning for devices...")
+            logger.info("Status updated")
 
             # Use threaded connection like autoconnect does at startup
             # This ensures the same connection path is followed
@@ -3699,7 +3685,7 @@ class AffiniteApp(QMainWindow):
 
     def shutdown_controller(self: Self) -> None:
         """Shutdown controller."""
-        self.main_window.ui.status.setText("SPR device powering off...")
+        logger.info("Status updated")
         if isinstance(self.ctrl, PicoEZSPR):  # QSPRController removed - obsolete
             self.ctrl.shutdown()
         self.disconnect_dev(knx=False)
@@ -3712,7 +3698,7 @@ class AffiniteApp(QMainWindow):
 
     def shutdown_kinetics(self: Self, *, skip_setup: bool = False) -> None:
         """Shutdown kinetics."""
-        self.main_window.ui.status.setText("Kinetic unit powering off...")
+        logger.info("Status updated")
         self._s_stop.set()
         if self.knx is not None:
             self.knx.shutdown()
@@ -3750,8 +3736,8 @@ class AffiniteApp(QMainWindow):
     ) -> None:
         """Disconnect a device."""
         try:
-            self.main_window.ui.status.setText("Disconnecting...")
-            self.main_window.ui.status.repaint()
+            logger.info("Status updated")
+            # Status bar removed
         except:
             pass
 

@@ -52,6 +52,59 @@ from scipy.interpolate import CubicSpline
 from utils.logger import logger
 
 
+# LED Type Specifications and Expected Ranges
+LED_SPECS = {
+    'LCW': {  # Luminus Cool White
+        'name': 'Luminus Cool White',
+        'tau_range_ms': (15, 26),  # Expected tau range (will refine as we learn)
+        'tau_warn_range_ms': (10, 35),  # Warning thresholds
+        'r_squared_min': 0.85,  # Minimum acceptable fit quality
+        'r_squared_good': 0.95,  # Good fit quality
+    },
+    'OWW': {  # Osram Warm White
+        'name': 'Osram Warm White',
+        'tau_range_ms': (14, 24),  # Expected tau range (will refine as we learn)
+        'tau_warn_range_ms': (10, 35),  # Warning thresholds
+        'r_squared_min': 0.85,  # Minimum acceptable fit quality
+        'r_squared_good': 0.95,  # Good fit quality
+    }
+}
+
+
+class AfterglowValidationResult:
+    """Results from afterglow measurement validation."""
+
+    def __init__(self):
+        self.warnings = []
+        self.errors = []
+        self.passed = True
+        self.metrics = {}
+
+    def add_warning(self, message: str):
+        """Add a warning (non-blocking)."""
+        self.warnings.append(message)
+        logger.warning(f"⚠️ Afterglow validation: {message}")
+
+    def add_error(self, message: str):
+        """Add an error (for severe issues, but still non-blocking)."""
+        self.errors.append(message)
+        self.passed = False
+        logger.error(f"❌ Afterglow validation: {message}")
+
+    def add_metric(self, key: str, value):
+        """Store a validation metric."""
+        self.metrics[key] = value
+
+    def log_summary(self):
+        """Log validation summary."""
+        if self.passed and not self.warnings:
+            logger.info("✅ Afterglow validation: All checks passed")
+        elif self.passed and self.warnings:
+            logger.info(f"⚠️ Afterglow validation: Passed with {len(self.warnings)} warning(s)")
+        else:
+            logger.warning(f"❌ Afterglow validation: {len(self.errors)} error(s), {len(self.warnings)} warning(s)")
+
+
 class AfterglowCorrection:
     """Apply LED phosphor afterglow correction using optical calibration data.
 
@@ -98,6 +151,9 @@ class AfterglowCorrection:
             f"   τ range (Ch A): "
             f"{self._get_tau_range('a')[0]:.2f}-{self._get_tau_range('a')[1]:.2f} ms"
         )
+
+        # Validate afterglow measurements against expected ranges
+        self._validate_calibration_data()
 
     def _load_calibration(self) -> dict:
         """Load and validate calibration JSON.
@@ -202,6 +258,119 @@ class AfterglowCorrection:
 
         # Store integration time range for validation
         self.int_time_range_ms = (min(all_int_times), max(all_int_times))
+
+    def _validate_calibration_data(self):
+        """Validate afterglow calibration data against expected ranges.
+
+        This validation is NON-BLOCKING - warnings are logged but operation continues.
+        This allows us to collect data and refine thresholds as we learn more about
+        different LED types.
+        """
+        # Extract LED type from metadata if available
+        led_type = self.calibration_data.get('metadata', {}).get('led_type', 'LCW')  # Default to Luminus
+
+        if led_type not in LED_SPECS:
+            logger.warning(f"⚠️ Unknown LED type '{led_type}', using LCW defaults for validation")
+            led_type = 'LCW'
+
+        specs = LED_SPECS[led_type]
+        validation = AfterglowValidationResult()
+
+        logger.info(f"📊 Validating afterglow data for {specs['name']} ({led_type})")
+
+        # Validate each channel
+        for channel, ch_data in self.calibration_data['channel_data'].items():
+            for data_point in ch_data['integration_time_data']:
+                int_time = data_point['integration_time_ms']
+                tau = data_point['tau_ms']
+                amplitude = data_point['amplitude']
+                baseline = data_point.get('baseline', 0)
+                r_squared = data_point.get('r_squared', 0)
+
+                # Check 1: R² fit quality
+                if r_squared < specs['r_squared_min']:
+                    validation.add_error(
+                        f"Ch {channel.upper()} @ {int_time}ms: Poor fit quality (R²={r_squared:.3f} < {specs['r_squared_min']})"
+                    )
+                elif r_squared < specs['r_squared_good']:
+                    validation.add_warning(
+                        f"Ch {channel.upper()} @ {int_time}ms: Marginal fit quality (R²={r_squared:.3f})"
+                    )
+
+                # Check 2: Tau within expected range
+                tau_min, tau_max = specs['tau_range_ms']
+                tau_warn_min, tau_warn_max = specs['tau_warn_range_ms']
+
+                if tau < tau_warn_min or tau > tau_warn_max:
+                    validation.add_error(
+                        f"Ch {channel.upper()} @ {int_time}ms: τ={tau:.2f}ms severely outside expected range "
+                        f"[{tau_warn_min}, {tau_warn_max}]ms - possible LED timing issue"
+                    )
+                elif tau < tau_min or tau > tau_max:
+                    validation.add_warning(
+                        f"Ch {channel.upper()} @ {int_time}ms: τ={tau:.2f}ms outside typical range "
+                        f"[{tau_min}, {tau_max}]ms for {specs['name']}"
+                    )
+
+                # Check 3: Amplitude reasonableness (should not be extreme)
+                if amplitude < 0:
+                    validation.add_error(
+                        f"Ch {channel.upper()} @ {int_time}ms: Negative amplitude ({amplitude:.1f}) - fit error"
+                    )
+                elif amplitude > 10000:  # Unusually high afterglow
+                    validation.add_warning(
+                        f"Ch {channel.upper()} @ {int_time}ms: Very high amplitude ({amplitude:.1f} counts) - "
+                        "possible LED not fully turning off"
+                    )
+
+                # Check 4: Baseline stability
+                if baseline < -100:  # Shouldn't have large negative baseline
+                    validation.add_warning(
+                        f"Ch {channel.upper()} @ {int_time}ms: Negative baseline ({baseline:.1f} counts)"
+                    )
+                elif baseline > 1000:  # Baseline shouldn't be very high
+                    validation.add_warning(
+                        f"Ch {channel.upper()} @ {int_time}ms: High baseline ({baseline:.1f} counts) - "
+                        "LED may not be fully off"
+                    )
+
+        # Check 5: Tau integration time dependency
+        for channel in ['a', 'b', 'c', 'd']:
+            taus = []
+            int_times = []
+            for data_point in self.calibration_data['channel_data'][channel]['integration_time_data']:
+                int_times.append(data_point['integration_time_ms'])
+                taus.append(data_point['tau_ms'])
+
+            # Tau should generally increase or stay stable with integration time
+            # (longer exposure accumulates more phosphor energy)
+            if len(taus) >= 3:
+                # Check for monotonicity or reasonable trend
+                tau_slope = np.polyfit(int_times, taus, 1)[0]  # Linear trend
+
+                # Store metrics for analysis
+                validation.add_metric(f'tau_slope_ch_{channel}', tau_slope)
+
+                if tau_slope < -0.1:  # Decreasing trend is unexpected
+                    validation.add_warning(
+                        f"Ch {channel.upper()}: τ decreases with integration time (slope={tau_slope:.3f}) - "
+                        "unexpected for phosphor physics"
+                    )
+
+        # Log validation summary
+        validation.log_summary()
+
+        # Store validation results in metadata for future reference
+        if 'validation' not in self.calibration_data:
+            self.calibration_data['validation'] = {}
+
+        self.calibration_data['validation']['afterglow'] = {
+            'led_type': led_type,
+            'passed': validation.passed,
+            'warnings': validation.warnings,
+            'errors': validation.errors,
+            'metrics': validation.metrics
+        }
 
     def _get_tau_range(self, channel: str) -> tuple[float, float]:
         """Get τ range for a channel (for logging)."""

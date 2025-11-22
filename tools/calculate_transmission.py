@@ -94,10 +94,10 @@ for ch in channels:
         s_corrected = s_spec - s_dark
         p_corrected = p_spec - p_dark
 
-        # Calculate transmission: T = S / P
+        # Calculate transmission: T = P / S (light transmitted through sensor)
         # Add small epsilon to avoid division by zero
         epsilon = 1.0
-        transmission = s_corrected / (p_corrected + epsilon)
+        transmission = p_corrected / (s_corrected + epsilon)
 
         transmission_spectra.append(transmission)
         transmission_times.append((s_times[i] + p_times[i]) / 2)  # Average time

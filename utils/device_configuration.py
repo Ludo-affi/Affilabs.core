@@ -44,9 +44,20 @@ class DeviceConfiguration:
 
     # Valid configuration values
     VALID_LED_PCB_MODELS = ['luminus_cool_white', 'osram_warm_white']
+    VALID_LED_TYPE_CODES = ['LCW', 'OWW']  # Short codes for LED types
     VALID_FIBER_DIAMETERS = [100, 200]  # micrometers
     VALID_LED_MODES = [2, 4]  # number of LEDs
     VALID_POLARIZER_TYPES = ['barrel', 'round']  # barrel (2 fixed windows) or round (continuous rotation)
+
+    # LED type mapping (short code to full name)
+    LED_TYPE_MAP = {
+        'LCW': 'luminus_cool_white',
+        'OWW': 'osram_warm_white'
+    }
+    LED_TYPE_REVERSE_MAP = {
+        'luminus_cool_white': 'LCW',
+        'osram_warm_white': 'OWW'
+    }
 
     # Default values
     DEFAULT_CONFIG = {
@@ -58,6 +69,7 @@ class DeviceConfiguration:
         },
         'hardware': {
             'led_pcb_model': 'luminus_cool_white',  # or 'osram_warm_white'
+            'led_type_code': 'LCW',  # Short code: LCW or OWW
             'led_pcb_serial': None,
             'spectrometer_model': 'Flame-T',
             'spectrometer_serial': None,
