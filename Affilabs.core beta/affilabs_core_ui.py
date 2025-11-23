@@ -175,7 +175,7 @@ class StartupCalibProgressDialog(QDialog):
             self.parent_window.installEventFilter(self)
 
         # Remove window close button and make it frameless for modern look
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
 
         # Style with border
         self.setStyleSheet(
@@ -232,7 +232,7 @@ class StartupCalibProgressDialog(QDialog):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumHeight(50)
-        self.status_label.setMaximumHeight(80)
+        self.status_label.setMaximumHeight(150)
         main_layout.addWidget(self.status_label)
 
         # Add spacer for better vertical distribution
@@ -1656,8 +1656,8 @@ class MainWindowPrototype(QMainWindow):
 
         nav_layout.addSpacing(8)
 
-        # Pause button (matching record button style)
-        self.pause_btn = QPushButton("| |")
+        # Pause button with custom drawn lines (matching record button style)
+        self.pause_btn = QPushButton()
         self.pause_btn.setCheckable(True)
         self.pause_btn.setFixedSize(40, 40)
         self.pause_btn.setEnabled(False)  # Disabled until acquisition starts
@@ -1665,12 +1665,8 @@ class MainWindowPrototype(QMainWindow):
         self.pause_btn.setStyleSheet(
             "QPushButton {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F5F5F7);"
-            "  color: rgb(46, 48, 227);"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
             "  border-radius: 8px;"
-            "  font-size: 18px;"
-            "  font-weight: bold;"
-            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover:!checked {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.1), stop:1 rgba(46, 48, 227, 0.15));"
@@ -1678,7 +1674,6 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:checked {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E68500);"
-            "  color: white;"
             "  border: 1px solid rgba(255, 149, 0, 0.3);"
             "}"
             "QPushButton:hover:checked {"
@@ -1687,10 +1682,59 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:disabled {"
             "  background: rgba(46, 48, 227, 0.1);"
-            "  color: rgba(46, 48, 227, 0.3);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
             "}"
         )
+
+        # Override paintEvent to draw custom pause lines
+        def paint_pause_lines(event):
+            """Draw two vertical lines for pause button."""
+            from PySide6.QtGui import QPainter, QColor
+            from PySide6.QtCore import QRect
+
+            # Call default painting first
+            QPushButton.paintEvent(self.pause_btn, event)
+
+            painter = QPainter(self.pause_btn)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            # Determine color based on state
+            if not self.pause_btn.isEnabled():
+                color = QColor(46, 48, 227, 77)  # 30% opacity (0.3 * 255 = 77)
+            elif self.pause_btn.isChecked():
+                color = QColor(255, 255, 255)  # White when checked (orange background)
+            else:
+                color = QColor(46, 48, 227)  # Blue when unchecked
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(color)
+
+            # Draw two vertical rectangles (pause lines)
+            line_width = 3
+            line_height = 14
+            gap = 4  # Gap between lines
+            center_x = self.pause_btn.width() // 2
+            center_y = self.pause_btn.height() // 2
+
+            # Left line
+            left_x = center_x - line_width - gap // 2
+            painter.drawRoundedRect(
+                left_x, center_y - line_height // 2,
+                line_width, line_height,
+                1.5, 1.5
+            )
+
+            # Right line
+            right_x = center_x + gap // 2
+            painter.drawRoundedRect(
+                right_x, center_y - line_height // 2,
+                line_width, line_height,
+                1.5, 1.5
+            )
+
+            painter.end()
+
+        self.pause_btn.paintEvent = paint_pause_lines
         self.pause_btn.clicked.connect(self._toggle_pause)
         nav_layout.addWidget(self.pause_btn)
 
@@ -3891,7 +3935,7 @@ class MainWindowPrototype(QMainWindow):
                 "  border: 1px solid rgba(230, 184, 0, 0.3);"
                 "}"
             )
-            self.power_btn.setToolTip("Searching for Device...\nYellow = Device Not Found\nClick to cancel")
+            self.power_btn.setToolTip("Searching for Device...\nClick to CANCEL search")
         elif state == "connected":
             # Green - Device powered and connected
             self.power_btn.setStyleSheet(
@@ -3912,7 +3956,13 @@ class MainWindowPrototype(QMainWindow):
             self.power_btn.setToolTip("Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off")
 
     def _handle_power_click(self):
-        """Handle power button click - connects/disconnects hardware."""
+        """Handle power button click - connects/disconnects hardware.
+
+        Button behavior:
+        - DISCONNECTED (gray): Click to start connection → SEARCHING (yellow)
+        - SEARCHING (yellow): Click to cancel search → DISCONNECTED (gray)
+        - CONNECTED (green): Click to disconnect → DISCONNECTED (gray)
+        """
         current_state = self.power_btn.property("powerState")
         print(f"\n{'='*60}")
         print(f"🔘 POWER BUTTON CLICKED!")
@@ -3921,36 +3971,33 @@ class MainWindowPrototype(QMainWindow):
         logger.info(f"🔘 Power button clicked: current_state={current_state}")
 
         if current_state == "disconnected":
-            # Check if we have the minimum required hardware (controller + spectrometer)
-            # Note: This check happens in main_simplified.py after scan completes
-            # Here we just allow the power button to be pressed - validation happens after scan
+            # Start hardware connection
             print("[UI] Power ON: Starting hardware connection...")
-            
-            # Emit signal FIRST to trigger hardware connection (handled by Application class)
-            print(f"[UI] About to emit power_on_requested signal...")
-            print(f"[UI] Signal exists: {hasattr(self, 'power_on_requested')}")
+
+            # Emit signal to trigger hardware connection (handled by Application class)
             if hasattr(self, 'power_on_requested'):
                 self.power_on_requested.emit()
                 print(f"[UI] ✅ Signal power_on_requested.emit() called!")
             else:
                 print("[UI] ❌ ERROR: power_on_requested signal not defined!")
-            
-            # Then update UI state
+
+            # Update UI state to searching
             self.power_btn.setProperty("powerState", "searching")
-            
-            try:
-                print("[UI] Updating button style...")
-                self._update_power_button_style()
-                print("[UI] Style updated successfully")
-            except Exception as e:
-                print(f"[UI] ❌ Error updating style: {e}")
-                import traceback
-                traceback.print_exc()
+            self._update_power_button_style()
 
         elif current_state == "searching":
-            # Ignore clicks while searching - connection is in progress
-            # User must wait for connection to succeed or fail
-            print("[UI] Hardware connection in progress - please wait...")
+            # Cancel hardware connection in progress
+            print("[UI] CANCEL: User cancelled hardware search")
+
+            # Return to disconnected state
+            self.power_btn.setProperty("powerState", "disconnected")
+            self._update_power_button_style()
+            self._reset_subunit_status()  # Reset subunit status to gray
+
+            # Emit signal to cancel connection (if backend supports it)
+            # Backend will handle stopping the connection thread
+            if hasattr(self, 'power_off_requested'):
+                self.power_off_requested.emit()
 
         elif current_state == "connected":
             # Power OFF: Show warning dialog
@@ -4026,7 +4073,8 @@ class MainWindowPrototype(QMainWindow):
         self.power_btn.setProperty("powerState", state)
         self._update_power_button_style()
 
-        if state == "disconnected":
+        # Reset subunit status whenever power state is not "connected"
+        if state in ["disconnected", "searching"]:
             self._reset_subunit_status()
 
     def _set_power_button_state(self, state: str):
@@ -4112,27 +4160,19 @@ class MainWindowPrototype(QMainWindow):
         devices = []
 
         ctrl_type = status.get('ctrl_type')
-        spectrometer = status.get('spectrometer')
 
-        # Determine device name based on what's connected
-        if ctrl_type and spectrometer:
-            # Both controller and spectrometer = show controller type
+        # Only controller counts as a real device connection
+        # Spectrometer is a subunit, NOT a device
+        if ctrl_type:
+            # Controller found = show device type
             devices.append(f"Device: {ctrl_type}")
-        elif ctrl_type:
-            # Only controller = show controller type
-            devices.append(f"Device: {ctrl_type}")
-        elif spectrometer:
-            # Only spectrometer = show as P4SPR device
-            devices.append("Device: P4SPR")
 
         if status.get('knx_type'):
             devices.append(f"Kinetic Controller: {status['knx_type']}")
 
-        # Pump status: show "N/A" if not connected, "Connected" if connected
+        # Pump status: only show if actually connected
         if status.get('pump_connected'):
             devices.append("Pump: Connected")
-        else:
-            devices.append("Pump: N/A")
 
         # Update device labels
         for i, label in enumerate(self.sidebar.hw_device_labels):

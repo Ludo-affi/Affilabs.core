@@ -64,7 +64,19 @@ class HardwareManager(QObject):
         logger.info("HardwareManager initialized")
 
     def scan_and_connect(self):
-        """Scan for and connect to all available hardware (non-blocking)."""
+        """Scan for and connect to all available hardware (non-blocking).
+
+        IMPORTANT: If hardware is already connected, this method will:
+        - Report current hardware status
+        - NOT disconnect existing connections
+        - NOT re-scan USB devices
+        - Return immediately
+
+        This ensures that clicking "Scan for Hardware" or pressing the power button
+        while hardware is connected is SAFE and will not interrupt operations.
+
+        See: README_HARDWARE_BEHAVIOR.md for complete documentation
+        """
         if self._connecting:
             logger.warning("Connection already in progress")
             return
@@ -78,6 +90,7 @@ class HardwareManager(QObject):
                 'knx_type': self._get_kinetic_type(),
                 'pump_connected': self.pump is not None,
                 'spectrometer': self.usb is not None,
+                'spectrometer_serial': self.usb.serial_number if self.usb and hasattr(self.usb, 'serial_number') else None,
                 'sensor_ready': self._sensor_verified,
                 'optics_ready': self._optics_verified,
                 'fluidics_ready': self.pump is not None
@@ -128,18 +141,32 @@ class HardwareManager(QObject):
                 'knx_type': self._get_kinetic_type(),
                 'pump_connected': self.pump is not None,
                 'spectrometer': self.usb is not None,
+                'spectrometer_serial': self.usb.serial_number if self.usb and hasattr(self.usb, 'serial_number') else None,
                 'sensor_ready': False,  # Will be set to True after calibration
                 'optics_ready': False,  # Will be set to True after calibration
                 'fluidics_ready': self.pump is not None  # Fluidics ready if pump connected
             }
 
+            # Log hardware detection results
+            logger.info("="*60)
+            logger.info("HARDWARE DETECTION SUMMARY:")
+            logger.info(f"  • Controller: {self.ctrl.name if self.ctrl else 'NOT FOUND'}")
+            logger.info(f"  • Kinetic:    {self.knx.name if self.knx else 'NOT FOUND'}")
+            logger.info(f"  • Pump:       {'CONNECTED' if self.pump else 'NOT FOUND'}")
+            logger.info(f"  • Spectro:    {'CONNECTED' if self.usb else 'NOT FOUND'}")
+            logger.info(f"  → Device Type: {ctrl_type if ctrl_type else 'UNKNOWN (no controller)'}")
+            logger.info("="*60)
+
+            # ALWAYS emit hardware_connected signal, even if nothing found
+            # This ensures UI gets updated and power button returns to disconnected state
             if any([self.ctrl, self.knx, self.pump, self.usb]):
-                logger.info(f"Hardware scan complete: {status}")
-                self.hardware_connected.emit(status)
+                logger.info(f"✅ Hardware scan complete - emitting connection status")
             else:
-                logger.info("No hardware detected")
+                logger.info("⚠️ No hardware detected - returning to disconnected state")
                 self.connection_progress.emit("No hardware detected")
-                self.hardware_connected.emit(status)
+
+            # Emit status regardless - UI will handle "no hardware" case
+            self.hardware_connected.emit(status)
 
         except Exception as e:
             logger.exception(f"Error during hardware scan: {e}")
@@ -177,34 +204,66 @@ class HardwareManager(QObject):
     def _connect_controller(self):
         """Attempt to connect to SPR controller."""
         try:
+            logger.info("="*60)
+            logger.info("SCANNING FOR CONTROLLERS...")
+            logger.info("="*60)
+
+            # First check what serial ports are available via pyserial
+            import serial.tools.list_ports
+            available_ports = list(serial.tools.list_ports.comports())
+            logger.info(f"PySerial detected {len(available_ports)} accessible serial port(s):")
+            if available_ports:
+                for port in available_ports:
+                    vid_str = f"0x{port.vid:04X}" if port.vid else "None"
+                    pid_str = f"0x{port.pid:04X}" if port.pid else "None"
+                    logger.info(f"  • {port.device}: VID={vid_str} PID={pid_str} - {port.description}")
+            else:
+                logger.debug("  PySerial enumeration found no ports (this is normal - direct connection will still be attempted)")
+
             # Try Arduino-based controllers
             from utils.controller import ArduinoController
+            from settings import ARDUINO_VID, ARDUINO_PID, PICO_VID, PICO_PID
+
+            logger.info(f"\nLooking for Arduino (VID:PID = {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)})...")
             arduino = ArduinoController()
             if arduino.open():
-                logger.info("Arduino P4SPR controller connected")
+                logger.info("✅ Arduino P4SPR controller connected")
                 self.ctrl = arduino
                 return
 
+            logger.info(f"Looking for PicoP4SPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
             # Try Pico-based controllers
             from utils.controller import PicoP4SPR
             pico_p4spr = PicoP4SPR()
             if pico_p4spr.open():
-                logger.info("Pico P4SPR controller connected")
+                logger.info("✅ Pico P4SPR controller connected")
                 self.ctrl = pico_p4spr
                 return
 
+            logger.info(f"Looking for PicoEZSPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
             from utils.controller import PicoEZSPR
             pico_ezspr = PicoEZSPR()
             if pico_ezspr.open():
-                logger.info("Pico EZSPR controller connected")
+                logger.info("✅ Pico EZSPR controller connected")
                 self.ctrl = pico_ezspr
                 return
 
-            logger.debug("No SPR controller found")
+            logger.warning("\n❌ NO SPR CONTROLLER FOUND")
+            logger.warning("   Checked for:")
+            logger.warning(f"   • Arduino (VID:PID = {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)})")
+            logger.warning(f"   • PicoP4SPR/PicoEZSPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})")
+            logger.warning("\n   Troubleshooting steps:")
+            logger.warning("   1. Check if driver is installed (Device Manager should show 'OK' status)")
+            logger.warning("   2. Try unplugging and replugging the USB cable")
+            logger.warning("   3. Try a different USB port")
+            logger.warning("   4. Close any other programs that might be using the serial port")
+            logger.warning("   5. Reinstall USB Serial drivers (e.g., CH340, CP210x, or Pico CDC)")
+            logger.info("="*60)
             self.ctrl = None
 
         except Exception as e:
-            logger.error(f"Controller connection failed: {e}")
+            logger.error(f"❌ Controller connection failed: {e}")
+            logger.exception("Full exception details:")
             self.ctrl = None
 
     def _connect_kinetic(self):
@@ -248,19 +307,46 @@ class HardwareManager(QObject):
             self.pump = None
 
     def _get_controller_type(self) -> str:
-        """Get the type of connected controller."""
+        """Get the type of connected controller based on plugged hardware.
+
+        Device identification logic:
+        - Arduino OR PicoP4SPR alone = P4SPR
+        - PicoP4SPR + RPi kinetic controller = P4SPR+KNX or ezSPR (check serial number list)
+        - PicoEZSPR = P4PRO
+
+        The device type is ONLY determined by what is physically plugged in.
+        Serial number exceptions will be handled separately.
+        """
         if self.ctrl is None:
-            return ''
+            return ''  # No controller = no device type
 
         name = getattr(self.ctrl, 'name', '')
+
+        # Arduino-based P4SPR controller
         if name == 'p4spr':
             return 'P4SPR'
-        elif name in ['pico_p4spr', 'pico_ezspr']:
-            # If PicoP4SPR is connected without kinetic controller, display as P4SPR
-            if hasattr(self.knx, 'name') and self.knx.name == 'EZSPR':
-                return 'EZSPR'
-            # PicoP4SPR alone = P4SPR device
-            return 'P4SPR'
+
+        # Pico-based P4SPR controller
+        elif name == 'pico_p4spr':
+            # Check if kinetic controller is also connected
+            if self.knx is not None:
+                # PicoP4SPR + RPi = P4SPR+KNX or ezSPR
+                # TODO: Check serial number list to determine if ezSPR vs P4SPR+KNX
+                knx_name = getattr(self.knx, 'name', '')
+                if 'EZSPR' in knx_name.upper():
+                    return 'ezSPR'
+                elif 'KNX' in knx_name.upper():
+                    return 'P4SPR+KNX'
+                else:
+                    return 'P4SPR+KNX'  # Default to KNX if unclear
+            else:
+                # PicoP4SPR alone = P4SPR
+                return 'P4SPR'
+
+        # Pico-based ezSPR controller (P4PRO)
+        elif name == 'pico_ezspr':
+            return 'P4PRO'
+
         return ''
 
     def _get_kinetic_type(self) -> str:

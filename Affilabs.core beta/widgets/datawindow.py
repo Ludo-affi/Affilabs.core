@@ -383,27 +383,12 @@ class DataWindow(QWidget):
             # Static tab: Cycle settings only
             static_controls = CycleControlsWidget(show_cycle_data_button=False, show_cycle_settings=True)
 
-            # Flow tab: Status message + Cycle settings + Cycle Data Table + Prime Pump button
+            # Flow tab: Cycle settings + Cycle Data Table + Prime Pump button (identical structure to Static)
             flow_controls = QWidget()
             from PySide6.QtWidgets import QVBoxLayout, QLabel
             flow_layout = QVBoxLayout(flow_controls)
             flow_layout.setContentsMargins(0, 0, 0, 0)
             flow_layout.setSpacing(8)
-
-            # Create status message block at top
-            from widgets.flow_status_widget import FlowStatusWidget
-            self.flow_status_widget = FlowStatusWidget()
-            flow_layout.addWidget(self.flow_status_widget)
-
-            # Connect device status signals to flow status widget
-            if hasattr(self.sidebar, 'device_widget') and hasattr(self.sidebar.device_widget, 'device_status_widget'):
-                device_status = self.sidebar.device_widget.device_status_widget
-                device_status.device_status_changed.connect(
-                    lambda spr, knx, pump: self.flow_status_widget.update_device_status(spr, knx, pump)
-                )
-                device_status.system_status_changed.connect(
-                    lambda sensor, optics, fluidics: self.flow_status_widget.update_system_status(sensor, optics, fluidics)
-                )
 
             flow_cycle_settings = CycleControlsWidget(show_cycle_data_button=False, show_cycle_settings=True)
             flow_layout.addWidget(flow_cycle_settings)

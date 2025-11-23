@@ -150,6 +150,17 @@ DEMO = False  # enable/disable demo mode
 STATIC_PLOT = False  # enable/disable static portion of plots
 POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
 
+# === Performance Profiling Settings ===
+PROFILING_ENABLED = False  # Enable performance profiling
+PROFILING_REPORT_INTERVAL = 30  # Seconds between profiling reports (if enabled)
+
+# === Timezone Settings ===
+import datetime
+try:
+    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+except AttributeError:
+    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+
 DEFAULT_CONFIG = {
     "unit": UNIT,
     "min_wavelength": MIN_WAVELENGTH,

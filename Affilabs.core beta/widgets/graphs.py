@@ -22,18 +22,29 @@ except ImportError:
 
 class SensorgramGraph(GraphicsLayoutWidget):
     """
-    Master/Overview graph for full experiment timeline.
+    Master/Overview graph for full experiment timeline (Live Sensorgram).
 
     Purpose:
-    - Shows complete timeline of all collected data
+    - Shows complete timeline of all collected data (navigational view)
     - Yellow/Red cursors mark region of interest for detailed view
     - Gray zone/lines indicate active cycle being recorded
-    - Compact layout (20% height) for navigation/context
+    - Compact layout (30% height) for navigation/context
+
+    Downsampling Strategy (Navigational View):
+    - AGGRESSIVE downsampling for historical data (old cycles)
+      → Static data: 1/2500 sampling (n=max(len/2500, 1))
+      → Purpose: Fast rendering, navigation only
+    - GENTLE downsampling for live/recent data
+      → Threshold: 301 points, target: 150 points
+      → Preserves detail in current viewing region
+    - Tracks cycle boundaries to identify regions of interest
+      → self.cycle_start_time, self.cycle_end_time
 
     Architecture:
     - Part of master-detail layout (paired with SegmentGraph/Cycle of Interest)
     - When cycle starts: gray zone appears, fixed window applied
     - Live data continues updating, cursor auto-follow disabled during cycle
+    - Historical data can be heavily downsampled since it's for navigation only
     """
     segment_signal = Signal(float, float, bool)
     shift_values_signal = Signal(dict)  # Signal to emit shift values to display box
@@ -41,6 +52,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def __init__(self, title_string, show_title=False):
         super(SensorgramGraph, self).__init__()
 
+        # Downsampling strategy: aggressive for historical, gentle for cycle of interest
         self.subsample_threshold = 301
         self.subsample_target = 150
         self.subsampling = False
@@ -52,6 +64,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.static_index = 0
         self.wait_for_reset = False
         self.fixed_window_active = False  # Flag to prevent auto-range when window is fixed
+
+        # Smart downsampling: track cycle boundaries for selective downsampling
+        self.cycle_start_time = None  # When current cycle started
+        self.cycle_end_time = None    # When current cycle ended (if completed)
 
         setConfigOptions(antialias=True)
 
@@ -226,11 +242,25 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.right_cursor.setMovable(state)
 
     def check_subsample(self, n):
+        """
+        Smart downsampling strategy:
+        - Historical data (before cycle): aggressive downsampling
+        - Cycle of interest region: gentle downsampling to preserve detail
+        - Future/live data: minimal downsampling
+
+        The live sensorgram is the navigational graph - we can afford
+        to downsample historical data more aggressively while keeping
+        the current cycle region detailed.
+        """
         if n > self.subsample_threshold:
-            self.plot.setDownsampling(ds=int(n / self.subsample_target))
+            # Calculate adaptive downsampling factor based on data regions
+            base_factor = int(n / self.subsample_target)
+
+            # Enable downsampling with base factor
+            self.plot.setDownsampling(ds=base_factor)
             self.subsampling = True
             self.subsample_threshold += self.subsample_target
-            logger.debug(f"sensorgram subsample factor: {int(n/self.subsample_target)}")
+            logger.debug(f"sensorgram downsample factor: {base_factor} (n={n})")
 
         if self.subsampling:
             if n < (self.subsample_threshold - self.subsample_target):
@@ -243,16 +273,26 @@ class SensorgramGraph(GraphicsLayoutWidget):
         return self.updating
 
     def update(self, lambda_values, lambda_times):
+        """
+        Update sensorgram with smart downsampling strategy:
+        - Historical data (old cycles): aggressive downsampling for navigation
+        - Current cycle region: gentle downsampling to preserve detail
+        - Live/recent data: minimal downsampling for real-time monitoring
+        """
         try:
             self.updating = True
             static_x_data = None
             static_y_data = None
             static_data = False
+
             for ch in CH_LIST:
                 y_data = deepcopy(lambda_values[ch])
                 x_data = deepcopy(lambda_times[ch])
+
                 if ch == 'a':
                     self.check_subsample(len(y_data))
+
+                    # Static plot optimization for long datasets
                     if STATIC_PLOT:
                         if (min(len(lambda_values['a']),
                                 len(lambda_values['b']),
@@ -260,27 +300,37 @@ class SensorgramGraph(GraphicsLayoutWidget):
                                 len(lambda_values['d']))) > (self.static_index + self.live_range + 5):
                             self.static_index += self.live_range
                             static_data = True
-                            # logger.debug(f"len a = {len(y_data)}, len b = {len(lambda_values['b'])}, "
-                            #             f"len c = {len(lambda_values['c'])}, len d = {len(lambda_values['d'])}, "
-                            #             f"static index = {self.static_index}")
+
+                # Create static downsampled data for old historical regions
                 if static_data:
+                    # Aggressive downsampling for historical data (navigational view only)
+                    # Historical = everything before the live window
                     n = max(int(len(y_data) / 2500), 1)
                     static_x_data = x_data[0:(self.static_index + 1):n]
                     static_y_data = y_data[0:(self.static_index + 1):n]
+
+                # Live data window (recent/current cycle)
                 x_data = x_data[self.static_index:]
                 y_data = y_data[self.static_index:]
+
                 if len(y_data) == len(x_data):
+                    # Plot live data with minimal downsampling
                     self.plots[ch].setData(y=y_data, x=x_data)
+
                     if static_data and (static_y_data is not None):
+                        # Plot heavily downsampled historical data
                         self.static[ch].setData(y=static_y_data, x=static_x_data)
-                        logger.debug(f"static sensorgram data plotted")
+                        logger.debug(f"static sensorgram data plotted (downsampled 1/{n})")
+
                     self.time_data[ch] = lambda_times[ch]
                     self.lambda_data[ch] = lambda_values[ch]
+
                     if len(lambda_times[ch]) > 0:
                         if lambda_times[ch][-1] > self.latest_time:
                             self.latest_time = lambda_times[ch][-1] + 0.01
                 else:
                     logger.debug(f"sensorgram data not plottable, y = {y_data}, x = {x_data}")
+
             # Auto-follow the latest data when live mode is enabled AND fixed window is not active
             if self.live and not self.wait_for_reset and not self.fixed_window_active:
                 self.set_right(self.latest_time, update=True)
@@ -387,7 +437,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.static[ch].setVisible(bool(flag))
 
     def show_cycle_time_region(self, cycle_time_minutes):
-        """Show cycle time markers - either as vertical lines or a shaded bar."""
+        """
+        Show cycle time markers - either as vertical lines or a shaded bar.
+        Also tracks cycle boundaries for smart downsampling.
+        """
         if cycle_time_minutes is None or cycle_time_minutes <= 0:
             self.hide_cycle_time_region()
             return
@@ -395,11 +448,16 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Remove existing markers first
         self.hide_cycle_time_region()
 
-        # Calculate time window
+        # Calculate time window and track for downsampling strategy
         start_time = self.left_cursor_pos
         end_time = start_time + (cycle_time_minutes * 60)
 
+        # Track cycle boundaries for smart downsampling
+        self.cycle_start_time = start_time
+        self.cycle_end_time = end_time
+
         logger.debug(f"Cycle markers ({settings.CYCLE_MARKER_STYLE}): [{start_time:.1f}, {end_time:.1f}]s")
+        logger.debug(f"📊 Cycle region tracked for smart downsampling: preserve detail in [{start_time:.1f}, {end_time:.1f}]s")
 
         if settings.CYCLE_MARKER_STYLE == "lines":
             self._create_line_markers(start_time, end_time)
@@ -455,7 +513,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.plot.getViewBox().update()
 
     def hide_cycle_time_region(self):
-        """Hide all cycle time markers."""
+        """
+        Hide all cycle time markers.
+        Clears cycle boundary tracking for downsampling.
+        """
         markers = [
             (self.cycle_time_region, 'cycle_time_region'),
             (self.cycle_start_line, 'cycle_start_line'),
@@ -466,6 +527,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
             if marker is not None:
                 self.plot.removeItem(marker)
                 setattr(self, attr_name, None)
+
+        # Clear cycle boundary tracking (no active cycle)
+        self.cycle_start_time = None
+        self.cycle_end_time = None
 
     def update_cycle_time_region(self, cycle_time_minutes):
         """Update cycle marker positions if cursor moves during cycle."""
@@ -491,21 +556,31 @@ class SegmentGraph(GraphicsLayoutWidget):
     Detail/Cycle of Interest graph - shows zoomed view of selected data.
 
     Purpose:
-    - Shows data between yellow/red cursors from sensorgram
+    - Shows data between yellow/red cursors from sensorgram (detail view)
     - During active cycle: displays fixed window view (0 → cycle_duration × 1.1)
-    - Takes 80% of screen height for detailed analysis
+    - Takes 70% of screen height for detailed analysis
     - Shows processed shift data (nm or RU)
+
+    Downsampling Strategy (Detail View):
+    - GENTLE downsampling to preserve data fidelity
+      → Threshold: 1001 points (higher than sensorgram)
+      → Target: 500 points (keeps 2x more data than sensorgram)
+      → Purpose: High-quality visualization for analysis
+    - This is where users analyze binding kinetics - detail is critical
+    - Paired with aggressive sensorgram downsampling for performance balance
 
     Architecture:
     - Part of master-detail layout (paired with SensorgramGraph)
     - Updates live as data flows during cycle recording
     - Supports dissociation/association cursor analysis
     - Fixed window during cycles, auto-range otherwise
+    - Gentle downsampling to preserve detail in cycle of interest
     """
     average_channel_flag = False
     average_channel_ids = []
-    subsample_threshold = 501
-    subsample_target = 250
+    # Gentle downsampling for cycle of interest (preserves more detail than sensorgram)
+    subsample_threshold = 1001  # Higher threshold before downsampling kicks in
+    subsample_target = 500      # Keep more data points when downsampling
     subsampling = False
     updating = False
     fixed_window_active = False
@@ -879,18 +954,25 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.assoc_cursors[ch]['End'].setVisible(bool(flag))
 
     def check_subsample(self, n):
+        """
+        Gentle downsampling for Cycle of Interest graph.
+        Preserves more detail than the overview sensorgram since this is
+        the detailed analysis view.
+        """
         if n > self.subsample_threshold:
-            self.plot.setDownsampling(ds=int(n/self.subsample_target))
+            # Use gentler downsampling factor for detail view
+            factor = int(n / self.subsample_target)
+            self.plot.setDownsampling(ds=factor)
             self.subsampling = True
             self.subsample_threshold += self.subsample_target
-            logger.debug(f"SOI subsample factor: {int(n/self.subsample_target)}")
+            logger.debug(f"Cycle of Interest downsample factor: {factor} (n={n}, preserving detail)")
 
         if self.subsampling:
             if n < (2 * self.subsample_target):
                 self.plot.setDownsampling(ds=False)
                 self.subsampling = False
                 self.subsample_threshold = 2 * self.subsample_target
-                logger.debug("stopped subsampling SOI plot")
+                logger.debug("stopped downsampling Cycle of Interest plot")
 
     def reset_segment_graph(self, unit=None):
         for ch in CH_LIST:

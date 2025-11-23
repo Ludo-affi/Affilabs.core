@@ -58,6 +58,95 @@ class ControllerBase:
             finally:
                 self._ser = None
 
+    # EEPROM Configuration Methods
+    def is_config_valid_in_eeprom(self) -> bool:
+        """Check if valid configuration exists in EEPROM."""
+        return False  # Override in subclass
+
+    def read_config_from_eeprom(self) -> dict:
+        """Read device configuration from controller EEPROM.
+
+        Returns dict with keys:
+            led_pcb_model: 'luminus_cool_white' or 'osram_warm_white'
+            controller_type: 'arduino', 'pico_p4spr', 'pico_ezspr', 'qspr'
+            fiber_diameter_um: 100 or 200
+            polarizer_type: 'barrel' or 'round'
+            servo_s_position: 0-180
+            servo_p_position: 0-180
+            led_intensity_a: 0-255
+            led_intensity_b: 0-255
+            led_intensity_c: 0-255
+            led_intensity_d: 0-255
+            integration_time_ms: int
+            num_scans: int
+
+        Returns None if no valid config or firmware doesn't support.
+        """
+        return None  # Override in subclass
+
+    def write_config_to_eeprom(self, config: dict) -> bool:
+        """Write device configuration to controller EEPROM.
+
+        Args:
+            config: Dict with same keys as read_config_from_eeprom()
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return False  # Override in subclass
+
+    @staticmethod
+    def _encode_led_model(model: str) -> int:
+        """Convert LED model name to byte value."""
+        mapping = {
+            'luminus_cool_white': 0,
+            'osram_warm_white': 1
+        }
+        return mapping.get(model.lower(), 255)
+
+    @staticmethod
+    def _decode_led_model(value: int) -> str:
+        """Convert byte value to LED model name."""
+        mapping = {0: 'luminus_cool_white', 1: 'osram_warm_white'}
+        return mapping.get(value, None)
+
+    @staticmethod
+    def _encode_controller_type(controller_type: str) -> int:
+        """Convert controller type to byte value."""
+        mapping = {
+            'arduino': 0,
+            'pico_p4spr': 1,
+            'pico_ezspr': 2,
+            'qspr': 3
+        }
+        return mapping.get(controller_type.lower(), 255)
+
+    @staticmethod
+    def _decode_controller_type(value: int) -> str:
+        """Convert byte value to controller type."""
+        mapping = {0: 'arduino', 1: 'pico_p4spr', 2: 'pico_ezspr', 3: 'qspr'}
+        return mapping.get(value, None)
+
+    @staticmethod
+    def _encode_polarizer_type(polarizer: str) -> int:
+        """Convert polarizer type to byte value."""
+        mapping = {'barrel': 0, 'round': 1}
+        return mapping.get(polarizer.lower(), 255)
+
+    @staticmethod
+    def _decode_polarizer_type(value: int) -> str:
+        """Convert byte value to polarizer type."""
+        mapping = {0: 'barrel', 1: 'round'}
+        return mapping.get(value, None)
+
+    @staticmethod
+    def _calculate_checksum(data: bytes) -> int:
+        """Calculate XOR checksum of first 16 bytes."""
+        checksum = 0
+        for byte in data[0:16]:
+            checksum ^= byte
+        return checksum
+
     def __del__(self):
         """Destructor to ensure serial port is closed."""
         try:
@@ -230,6 +319,143 @@ class ArduinoController(StaticController):
                 return False
         except Exception as e:
             logger.error(f"EEPROM flash failed with exception: {e}")
+            return False
+
+    def is_config_valid_in_eeprom(self) -> bool:
+        """Check if valid configuration exists in EEPROM."""
+        import time
+        try:
+            if self._ser is not None or self.open():
+                self._ser.reset_input_buffer()
+                self._ser.write(b'cv\n')
+                time.sleep(0.1)
+                response = self._ser.read(1)
+                return response == b'1'
+            return False
+        except Exception as e:
+            logger.debug(f"EEPROM config check failed: {e}")
+            return False
+
+    def read_config_from_eeprom(self) -> dict:
+        """Read device configuration from controller EEPROM."""
+        import time
+        import struct
+        try:
+            if self._ser is not None or self.open():
+                self._ser.reset_input_buffer()
+                self._ser.write(b'rc\n')
+                time.sleep(0.15)
+
+                # Read 20 bytes
+                data = self._ser.read(20)
+                if len(data) != 20:
+                    logger.warning(f"EEPROM read returned {len(data)} bytes, expected 20")
+                    return None
+
+                # Verify checksum
+                calculated_checksum = self._calculate_checksum(data)
+                stored_checksum = data[16]
+                if calculated_checksum != stored_checksum:
+                    logger.warning(f"EEPROM checksum mismatch: calc={calculated_checksum}, stored={stored_checksum}")
+                    return None
+
+                # Parse data
+                version = data[0]
+                if version != 1:
+                    logger.warning(f"Unknown EEPROM config version: {version}")
+                    return None
+
+                led_model = self._decode_led_model(data[1])
+                controller_type = self._decode_controller_type(data[2])
+                fiber_diameter = data[3]
+                polarizer_type = self._decode_polarizer_type(data[4])
+                servo_s = struct.unpack('<H', data[5:7])[0]  # little-endian uint16
+                servo_p = struct.unpack('<H', data[7:9])[0]
+                led_a = data[9]
+                led_b = data[10]
+                led_c = data[11]
+                led_d = data[12]
+                integration_time = struct.unpack('<H', data[13:15])[0]
+                num_scans = data[15]
+
+                config = {
+                    'led_pcb_model': led_model,
+                    'controller_type': controller_type,
+                    'fiber_diameter_um': fiber_diameter,
+                    'polarizer_type': polarizer_type,
+                    'servo_s_position': servo_s,
+                    'servo_p_position': servo_p,
+                    'led_intensity_a': led_a,
+                    'led_intensity_b': led_b,
+                    'led_intensity_c': led_c,
+                    'led_intensity_d': led_d,
+                    'integration_time_ms': integration_time,
+                    'num_scans': num_scans
+                }
+
+                logger.info(f"✓ Loaded device config from EEPROM: {led_model}, {fiber_diameter}µm fiber")
+                return config
+
+        except Exception as e:
+            logger.error(f"Failed to read EEPROM config: {e}")
+            return None
+
+    def write_config_to_eeprom(self, config: dict) -> bool:
+        """Write device configuration to controller EEPROM."""
+        import time
+        import struct
+        try:
+            if self._ser is not None or self.open():
+                # Build 20-byte config packet
+                data = bytearray(20)
+                data[0] = 1  # version
+                data[1] = self._encode_led_model(config.get('led_pcb_model', 'luminus_cool_white'))
+                data[2] = self._encode_controller_type(config.get('controller_type', 'arduino'))
+                data[3] = config.get('fiber_diameter_um', 200)
+                data[4] = self._encode_polarizer_type(config.get('polarizer_type', 'round'))
+
+                # Servo positions (little-endian uint16)
+                servo_s = config.get('servo_s_position', 10)
+                servo_p = config.get('servo_p_position', 100)
+                data[5:7] = struct.pack('<H', servo_s)
+                data[7:9] = struct.pack('<H', servo_p)
+
+                # LED intensities
+                data[9] = config.get('led_intensity_a', 0)
+                data[10] = config.get('led_intensity_b', 0)
+                data[11] = config.get('led_intensity_c', 0)
+                data[12] = config.get('led_intensity_d', 0)
+
+                # Integration time and num scans
+                integration_time = config.get('integration_time_ms', 100)
+                data[13:15] = struct.pack('<H', integration_time)
+                data[15] = config.get('num_scans', 3)
+
+                # Calculate checksum
+                data[16] = self._calculate_checksum(data)
+
+                # Reserved bytes (17-19) already 0
+
+                # Send to controller
+                self._ser.reset_input_buffer()
+                self._ser.write(b'wc')
+                self._ser.write(bytes(data))
+                self._ser.write(b'\n')
+
+                time.sleep(0.2)  # Wait for EEPROM write
+
+                response = self._ser.read(1)
+                success = (response == b'1')
+
+                if success:
+                    logger.info("✓ Device config written to EEPROM")
+                else:
+                    logger.warning(f"EEPROM write failed, response: {response}")
+
+                return success
+
+        except Exception as e:
+            logger.error(f"Failed to write EEPROM config: {e}")
             return False
 
     def __str__(self):
@@ -530,7 +756,7 @@ class PicoP4SPR(StaticController):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=5)
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=3, write_timeout=5)
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
@@ -538,13 +764,13 @@ class PicoP4SPR(StaticController):
                     cmd = f"id\n"
                     self._ser.write(cmd.encode())
                     import time
-                    time.sleep(0.05)  # Small delay for Pico to respond
+                    time.sleep(0.1)  # Increased delay for Pico to respond
                     reply = self._ser.readline()[0:5].decode()
                     logger.debug(f"Pico P4SPR reply - {reply}")
                     if reply == 'P4SPR':
                         cmd = f"iv\n"
                         self._ser.write(cmd.encode())
-                        time.sleep(0.05)
+                        time.sleep(0.1)
                         self.version = self._ser.readline()[0:4].decode()
                         logger.debug(f" Pico P4SPR Fw: {self.version}")
                         return True
@@ -859,6 +1085,140 @@ class PicoP4SPR(StaticController):
                 return False
         except Exception as e:
             logger.error(f"PicoP4SPR EEPROM flash failed: {e}")
+            return False
+
+    def is_config_valid_in_eeprom(self) -> bool:
+        """Check if valid configuration exists in EEPROM."""
+        import time
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(b'cv\n')
+                    time.sleep(0.1)
+                    response = self._ser.read(1)
+                    return response == b'1'
+            return False
+        except Exception as e:
+            logger.debug(f"PicoP4SPR EEPROM config check failed: {e}")
+            return False
+
+    def read_config_from_eeprom(self) -> dict:
+        """Read device configuration from controller EEPROM."""
+        import time
+        import struct
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(b'rc\n')
+                    time.sleep(0.15)
+
+                    # Read 20 bytes
+                    data = self._ser.read(20)
+                    if len(data) != 20:
+                        logger.warning(f"PicoP4SPR EEPROM read returned {len(data)} bytes, expected 20")
+                        return None
+
+                    # Verify checksum
+                    calculated_checksum = self._calculate_checksum(data)
+                    stored_checksum = data[16]
+                    if calculated_checksum != stored_checksum:
+                        logger.warning(f"PicoP4SPR EEPROM checksum mismatch: calc={calculated_checksum}, stored={stored_checksum}")
+                        return None
+
+                    # Parse data (same format as Arduino)
+                    version = data[0]
+                    if version != 1:
+                        logger.warning(f"Unknown PicoP4SPR EEPROM config version: {version}")
+                        return None
+
+                    led_model = self._decode_led_model(data[1])
+                    controller_type = self._decode_controller_type(data[2])
+                    fiber_diameter = data[3]
+                    polarizer_type = self._decode_polarizer_type(data[4])
+                    servo_s = struct.unpack('<H', data[5:7])[0]
+                    servo_p = struct.unpack('<H', data[7:9])[0]
+                    led_a = data[9]
+                    led_b = data[10]
+                    led_c = data[11]
+                    led_d = data[12]
+                    integration_time = struct.unpack('<H', data[13:15])[0]
+                    num_scans = data[15]
+
+                    config = {
+                        'led_pcb_model': led_model,
+                        'controller_type': controller_type,
+                        'fiber_diameter_um': fiber_diameter,
+                        'polarizer_type': polarizer_type,
+                        'servo_s_position': servo_s,
+                        'servo_p_position': servo_p,
+                        'led_intensity_a': led_a,
+                        'led_intensity_b': led_b,
+                        'led_intensity_c': led_c,
+                        'led_intensity_d': led_d,
+                        'integration_time_ms': integration_time,
+                        'num_scans': num_scans
+                    }
+
+                    logger.info(f"✓ Loaded device config from PicoP4SPR EEPROM: {led_model}, {fiber_diameter}µm fiber")
+                    return config
+
+        except Exception as e:
+            logger.error(f"Failed to read PicoP4SPR EEPROM config: {e}")
+            return None
+
+    def write_config_to_eeprom(self, config: dict) -> bool:
+        """Write device configuration to controller EEPROM."""
+        import time
+        import struct
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    # Build 20-byte config packet (same as Arduino)
+                    data = bytearray(20)
+                    data[0] = 1  # version
+                    data[1] = self._encode_led_model(config.get('led_pcb_model', 'luminus_cool_white'))
+                    data[2] = self._encode_controller_type(config.get('controller_type', 'pico_p4spr'))
+                    data[3] = config.get('fiber_diameter_um', 200)
+                    data[4] = self._encode_polarizer_type(config.get('polarizer_type', 'round'))
+
+                    servo_s = config.get('servo_s_position', 10)
+                    servo_p = config.get('servo_p_position', 100)
+                    data[5:7] = struct.pack('<H', servo_s)
+                    data[7:9] = struct.pack('<H', servo_p)
+
+                    data[9] = config.get('led_intensity_a', 0)
+                    data[10] = config.get('led_intensity_b', 0)
+                    data[11] = config.get('led_intensity_c', 0)
+                    data[12] = config.get('led_intensity_d', 0)
+
+                    integration_time = config.get('integration_time_ms', 100)
+                    data[13:15] = struct.pack('<H', integration_time)
+                    data[15] = config.get('num_scans', 3)
+
+                    data[16] = self._calculate_checksum(data)
+
+                    # Send to controller
+                    self._ser.reset_input_buffer()
+                    self._ser.write(b'wc')
+                    self._ser.write(bytes(data))
+                    self._ser.write(b'\n')
+
+                    time.sleep(0.2)
+
+                    response = self._ser.read(1)
+                    success = (response == b'1')
+
+                    if success:
+                        logger.info("✓ Device config written to PicoP4SPR EEPROM")
+                    else:
+                        logger.warning(f"PicoP4SPR EEPROM write failed, response: {response}")
+
+                    return success
+
+        except Exception as e:
+            logger.error(f"Failed to write PicoP4SPR EEPROM config: {e}")
             return False
 
     def stop(self):

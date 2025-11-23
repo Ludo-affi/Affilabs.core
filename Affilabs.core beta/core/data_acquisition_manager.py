@@ -94,6 +94,10 @@ class DataAcquisitionManager(QObject):
         self._previous_channel = None  # Track previous channel for afterglow correction
         self._led_delay_ms = 45.0  # Default LED delay in milliseconds (PRE_LED_DELAY_MS)
 
+        # S/P orientation validation tracking
+        self._sp_validation_results = {}  # {channel: {orientation_correct, confidence, peak_wl, timestamp}}
+        self._sp_orientation_validated = set()  # Set of channels validated during runtime
+
         # Batched acquisition settings (from settings.py)
         from settings import BATCH_SIZE, ENABLE_INTERPOLATED_DISPLAY
         self.batch_size = BATCH_SIZE  # Minimum raw spectra to buffer before processing (reduces USB overhead)
@@ -252,7 +256,7 @@ class DataAcquisitionManager(QObject):
             self.calibrated = True
 
             # Load afterglow correction if available
-            self._load_afterglow_correction()
+            afterglow_loaded = self._load_afterglow_correction()
 
             # Emit calibration complete with settings and channel errors
             calibration_data = {
@@ -263,7 +267,9 @@ class DataAcquisitionManager(QObject):
                 'ch_error_list': self.ch_error_list.copy(),
                 's_ref_qc_results': self.s_ref_qc_results,  # Include optical QC results
                 'channel_performance': self.channel_performance,  # Per-channel metrics for ML
-                'calibration_type': 'full'  # This is full LED calibration with afterglow
+                'calibration_type': 'full',  # This is full LED calibration with afterglow
+                'afterglow_available': afterglow_loaded,  # Flag for UI to prompt OEM calibration
+                'sp_validation_results': getattr(self, '_sp_validation_results', {})  # S/P orientation data
             }
 
             if len(self.ch_error_list) > 0:
@@ -740,11 +746,8 @@ class DataAcquisitionManager(QObject):
                     from utils.spr_signal_processing import calculate_transmission, validate_sp_orientation
                     # Calculate transmission percentage
                     transmission_spectrum = calculate_transmission(raw_spectrum, self.ref_sig[channel])
-                    
+
                     # Validate S/P orientation on first transmission calculation per channel
-                    if not hasattr(self, '_sp_orientation_validated'):
-                        self._sp_orientation_validated = set()
-                    
                     if channel not in self._sp_orientation_validated:
                         validation = validate_sp_orientation(
                             p_spectrum=raw_spectrum,
@@ -752,19 +755,30 @@ class DataAcquisitionManager(QObject):
                             wavelengths=wavelength,
                             window_px=200
                         )
-                        
+
                         self._sp_orientation_validated.add(channel)
-                        
+
+                        # Store validation results
+                        import datetime
+                        self._sp_validation_results[channel] = {
+                            'orientation_correct': validation['orientation_correct'],
+                            'confidence': validation['confidence'],
+                            'peak_wl': validation['peak_wl'],
+                            'peak_value': validation['peak_value'],
+                            'timestamp': datetime.datetime.now().isoformat(),
+                            'is_flat': validation['is_flat']
+                        }
+
                         if validation['is_flat']:
                             logger.warning(f"⚠️ Ch {channel.upper()}: S/P check - Flat transmission spectrum")
-                            logger.warning(f"   Possible saturation or dark signal - transmission data may be unreliable")
+                            logger.warning("   Possible saturation or dark signal - transmission data may be unreliable")
                         elif not validation['orientation_correct']:
                             logger.warning(f"⚠️ Ch {channel.upper()}: S/P orientation appears inverted (confirmation check)")
                             logger.warning(f"   Peak at {validation['peak_wl']:.1f}nm is HIGHER ({validation['peak_value']:.1f}%) than sides ({validation['left_value']:.1f}%, {validation['right_value']:.1f}%)")
-                            logger.warning(f"   Note: This should have been caught during calibration - device may need recalibration")
+                            logger.warning("   Note: This should have been caught during calibration - device may need recalibration")
                         else:
                             logger.info(f"✅ Ch {channel.upper()}: S/P orientation confirmed (dip at {validation['peak_wl']:.1f}nm = {validation['peak_value']:.1f}%, confidence={validation['confidence']:.2f})")
-                            
+
                 except Exception as e:
                     logger.warning(f"Could not calculate transmission for peak finding: {e}")
                     transmission_spectrum = None
@@ -869,8 +883,12 @@ class DataAcquisitionManager(QObject):
         logger.info("Spectral correction disabled - using SNR-aware peak finding instead")
         return
 
-    def _load_afterglow_correction(self):
-        """Load device-specific afterglow correction calibration."""
+    def _load_afterglow_correction(self) -> bool:
+        """Load device-specific afterglow correction calibration.
+
+        Returns:
+            True if afterglow correction loaded successfully, False otherwise
+        """
         try:
             from afterglow_correction import AfterglowCorrection
             from utils.device_integration import get_device_optical_calibration_path
@@ -897,13 +915,16 @@ class DataAcquisitionManager(QObject):
                             logger.info(f"   Optimal LED delay: {self._led_delay_ms:.1f} ms")
                 except Exception as e:
                     logger.debug(f"Dynamic LED delay calculation skipped: {e}")
+                return True
             else:
                 logger.info("⚠️ No device-specific optical calibration found")
                 logger.info("   Afterglow correction disabled (run OEM calibration from UI)")
                 self.afterglow_enabled = False
+                return False
         except Exception as e:
             logger.warning(f"AfterglowCorrection unavailable: {e}")
             self.afterglow_enabled = False
+            return False
 
     def _update_calibration_intelligence(self, calibration_data: Dict):
         """Update system intelligence with calibration metrics.

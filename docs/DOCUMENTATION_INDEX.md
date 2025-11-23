@@ -13,6 +13,19 @@
 
 ---
 
+## 📚 **Master Documentation References**
+
+### For Developers & Technical Writers
+- **[USER_MANUAL_MASTER_INDEX.md](USER_MANUAL_MASTER_INDEX.md)** - ⭐ **Central index for user manual content**
+- All documentation needed to write user manuals and support guides
+- Organized by user-facing features and manual chapters
+- Includes EEPROM backup, calibration, hardware connection
+
+### For Software Developers
+- **[../Affilabs.core beta/DOCUMENTATION_INDEX.md](../Affilabs.core%20beta/DOCUMENTATION_INDEX.md)** - Core beta documentation
+
+---
+
 ## 🔧 Setup & Configuration
 
 ### Hardware Setup
@@ -22,6 +35,7 @@
 
 ### Software Configuration
 - **[SETTINGS_QUICK_REFERENCE.md](../SETTINGS_QUICK_REFERENCE.md)** - Application settings reference
+- **Device Configuration & EEPROM Backup** → See [USER_MANUAL_MASTER_INDEX.md](USER_MANUAL_MASTER_INDEX.md) Section 2
 
 ---
 

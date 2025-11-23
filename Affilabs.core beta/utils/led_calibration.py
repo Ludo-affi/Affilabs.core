@@ -32,11 +32,33 @@ ALTERNATIVE Method (Global LED Intensity) - EXPERIMENTAL (Disabled by default):
   - Trade-offs: Variable integration per channel in S-mode, P-mode inherits S-mode timing
   - Enable via settings.USE_ALTERNATIVE_CALIBRATION = True
 
-QUALITY CONTROL:
-================
-Both calibration methods share common QC validation:
-  - S-ref QC: LED peak intensity, position tracking (validate_s_ref_quality)
-  - P-mode QC: Saturation check, SPR dip validation, FWHM analysis (verify_calibration)
+QUALITY CONTROL & WATER DETECTION:
+===================================
+Both calibration methods share common QC validation with distinct capabilities:
+
+S-pol QC (validate_s_ref_quality):
+  - Purpose: PRISM PRESENCE DETECTION ONLY
+  - What we CAN detect:
+    * Prism present/absent (by signal intensity vs expected for integration time)
+    * Fiber connection status
+    * LED spectral profile (peak wavelength, intensity)
+  - What we CANNOT detect:
+    * Water presence (no transmission spectrum yet)
+    * SPR coupling quality (need P/S ratio)
+  - Detection: If intensity << expected → prism likely absent or fiber disconnected
+
+P-pol QC (verify_calibration):
+  - Purpose: WATER PRESENCE & SPR COUPLING DETECTION
+  - What we CAN detect (by analyzing transmission spectrum P/S):
+    * Water presence (SPR dip visible in transmission)
+    * SPR coupling quality (dip depth and FWHM)
+    * Sensor response (transmission dip shape)
+  - Checks performed:
+    1. Saturation check on P-spectrum
+    2. Transmission calculation (P/S ratio)
+    3. SPR dip detection in transmission (proves water present)
+    4. FWHM analysis on transmission (coupling quality)
+  - Detection: No dip or inverted peak → dry sensor or swapped polarizer
 """
 
 from __future__ import annotations
@@ -208,6 +230,12 @@ def calibrate_integration_time(
 
     logger.debug("Starting integration time calibration...")
 
+    # === PRISM PRESENCE CHECK ===
+    # Early detection: If prism is absent, S-mode signal will be MUCH HIGHER than expected
+    # (no SPR absorption, just direct transmission through empty holder)
+    # This check uses previous calibration data to detect anomalous signal levels
+    prism_check_readings = []
+
     # Find minimum integration time needed for weakest channel
     for ch in ch_list:
         if stop_flag and stop_flag.is_set():
@@ -218,6 +246,7 @@ def calibrate_integration_time(
         int_array = usb.read_intensity()
         time.sleep(LED_DELAY)
         current_count = int_array.max()
+        prism_check_readings.append(current_count)
         logger.debug(f"Ch {ch} initial reading at {integration}ms: {current_count:.0f} counts (target: {target_counts})")
 
         while current_count < target_counts and integration < max_int:
@@ -232,6 +261,99 @@ def calibrate_integration_time(
             )
             current_count = new_count
 
+    # === PRISM PRESENCE DIAGNOSTIC ===
+    # Compare measured signal to expected levels from previous calibration
+    # If prism is absent: signals will be 5-10× HIGHER (no SPR absorption)
+    # If prism is present but dry: signals will be 2-3× higher (weak SPR coupling)
+    try:
+        from utils.device_configuration import DeviceConfiguration
+        device_config = DeviceConfiguration()
+        prev_calib = device_config.config.get('led_calibration', {})
+        prev_integration = prev_calib.get('integration_time_ms', None)
+        prev_s_ref_max = prev_calib.get('s_ref_max_intensity', {})
+
+        if prev_integration and prev_s_ref_max and prism_check_readings:
+            # Calculate expected signal at current integration time
+            # Scale previous S-ref max intensities by integration time ratio
+            integration_ratio = integration / prev_integration
+            avg_reading = sum(prism_check_readings) / len(prism_check_readings)
+
+            # Get average previous max intensity (at LED=255, old integration time)
+            prev_signals = [prev_s_ref_max.get(ch, 0) for ch in ch_list if ch in prev_s_ref_max]
+            if prev_signals:
+                avg_prev_max = sum(prev_signals) / len(prev_signals)
+
+                # Current reading is at S_LED_INT (typically 150), scale to estimate max
+                estimated_max_at_current_int = avg_reading * (255 / S_LED_INT) * integration_ratio
+
+                # Compare to previous calibration
+                signal_ratio = estimated_max_at_current_int / avg_prev_max if avg_prev_max > 0 else 0
+
+                logger.info(f"\n🔍 PRISM PRESENCE CHECK:")
+                logger.info(f"   Current reading: {avg_reading:.0f} counts (at LED={S_LED_INT}, {integration}ms)")
+                logger.info(f"   Estimated max: {estimated_max_at_current_int:.0f} counts (scaled to LED=255)")
+                logger.info(f"   Previous calib: {avg_prev_max:.0f} counts (at LED=255, {prev_integration}ms)")
+                logger.info(f"   Signal ratio: {signal_ratio:.2f}x")
+                logger.info(f"")
+
+                # Diagnostic interpretation
+                if signal_ratio >= 5.0:
+                    # CRITICAL: Signal way too high - likely no prism
+                    logger.error(f"   ❌ PRISM LIKELY ABSENT!")
+                    logger.error(f"   Signal is {signal_ratio:.1f}× higher than previous calibration")
+                    logger.error(f"   Expected: ~1.0× (with prism + water)")
+                    logger.error(f"   Measured: {signal_ratio:.1f}× (no SPR absorption detected)")
+                    logger.error(f"")
+                    logger.error(f"   🔧 DIAGNOSIS: No prism installed in sensor holder")
+                    logger.error(f"   → Install prism, apply water, and retry calibration")
+                    logger.error(f"")
+                    raise ValueError("Prism absent - install prism and retry calibration")
+
+                elif signal_ratio >= 2.5:
+                    # WARNING: Signal moderately high - possibly dry or poor contact
+                    logger.warning(f"   ⚠️ PRISM MAY BE DRY OR POOR CONTACT!")
+                    logger.warning(f"   Signal is {signal_ratio:.1f}× higher than previous calibration")
+                    logger.warning(f"   Expected: ~1.0× (with prism + water)")
+                    logger.warning(f"   Measured: {signal_ratio:.1f}× (weak SPR coupling)")
+                    logger.warning(f"")
+                    logger.warning(f"   🔧 LIKELY CAUSES:")
+                    logger.warning(f"   1. Prism is DRY (no water applied) - MOST COMMON")
+                    logger.warning(f"   2. Air bubbles between prism and sensor")
+                    logger.warning(f"   3. Prism not seated properly")
+                    logger.warning(f"")
+                    logger.warning(f"   💧 Recommendation: Apply fresh water and retry")
+                    logger.warning(f"   (Continuing calibration - may fail FWHM validation later)")
+                    logger.warning(f"")
+
+                elif signal_ratio >= 1.5:
+                    # NOTICE: Signal slightly high - monitor
+                    logger.info(f"   ℹ️ Signal slightly elevated ({signal_ratio:.1f}×)")
+                    logger.info(f"   This may indicate:")
+                    logger.info(f"   • Prism contact not optimal")
+                    logger.info(f"   • Water layer thin")
+                    logger.info(f"   • Room temperature different from previous calibration")
+                    logger.info(f"   Continuing - watch for FWHM validation results...")
+                    logger.info(f"")
+
+                elif signal_ratio >= 0.5:
+                    # NORMAL: Signal in expected range
+                    logger.info(f"   ✅ Signal ratio normal ({signal_ratio:.1f}×)")
+                    logger.info(f"   Prism presence confirmed")
+                    logger.info(f"")
+
+                else:
+                    # Signal unexpectedly LOW - different issue
+                    logger.warning(f"   ⚠️ Signal LOWER than expected ({signal_ratio:.1f}×)")
+                    logger.warning(f"   Possible causes:")
+                    logger.warning(f"   • LED degradation")
+                    logger.warning(f"   • Fiber misalignment")
+                    logger.warning(f"   • Detector issue")
+                    logger.warning(f"")
+
+    except Exception as e:
+        # If we can't load previous calibration, skip this check
+        logger.debug(f"Prism presence check skipped: {e}")
+
     # Check if low intensity saturates and reduce if needed
     for ch in ch_list:
         if stop_flag and stop_flag.is_set():
@@ -239,7 +361,15 @@ def calibrate_integration_time(
 
         ctrl.set_intensity(ch=ch, raw_val=S_LED_MIN)
         time.sleep(LED_DELAY)
-        int_array = usb.read_intensity()
+
+        try:
+            int_array = usb.read_intensity()
+        except ConnectionError as e:
+            logger.error(f"🔌 Spectrometer disconnected during integration time calibration")
+            logger.error(f"   Channel: {ch.upper()}, Step: Saturation check")
+            logger.error(f"   Error: {str(e)}")
+            raise  # Propagate to main calibration handler
+
         current_count = int_array.max()
         logger.debug(f"Saturation check ch {ch}: {current_count:.0f}, limit: {target_counts}")
 
@@ -816,14 +946,19 @@ def measure_reference_signals(
         ref_data_sum = np.zeros_like(dark_noise)
 
         for _scan in range(ref_scans):
-            intensity_data = usb.read_intensity()
-            if intensity_data is None:
-                logger.error(f"Failed to read intensity for channel {ch.upper()} during reference measurement")
-                raise RuntimeError(f"Spectrometer read failed during reference signal measurement")
+            try:
+                intensity_data = usb.read_intensity()
+                if intensity_data is None:
+                    logger.error(f"Failed to read intensity for channel {ch.upper()} during reference measurement")
+                    raise RuntimeError(f"Spectrometer read failed during reference signal measurement")
 
-            int_val = intensity_data[wave_min_index:wave_max_index]
-            ref_data_single = int_val - dark_noise
-            ref_data_sum += ref_data_single
+                int_val = intensity_data[wave_min_index:wave_max_index]
+                ref_data_single = int_val - dark_noise
+                ref_data_sum += ref_data_single
+            except ConnectionError:
+                # Re-raise ConnectionError to be handled at calibration level
+                logger.error(f"🔌 Spectrometer disconnected during scan {_scan+1}/{ref_scans} for channel {ch.upper()}")
+                raise
 
         # Average the scans
         ref_spectrum = ref_data_sum / ref_scans
@@ -865,9 +1000,18 @@ def measure_reference_signals(
 # =============================================================================
 
 def validate_s_ref_quality(ref_sig: dict, wave_data) -> dict:
-    """Quick S-ref signal strength check during initial calibration.
+    """S-pol signal strength check - PRISM PRESENCE DETECTION ONLY.
 
-    This is a lightweight check to ensure LED signals are strong enough.
+    At S-pol, we can ONLY assess if a prism is present or absent by checking
+    signal intensity. We CANNOT determine water presence at this stage.
+
+    Detection logic:
+    - If intensity is significantly lower than expected for the integration time
+      and LED settings, suspect the prism is absent or fiber disconnected
+    - Water presence can ONLY be assessed after P-pol when transmission
+      spectrum (P/S ratio) is calculated and we can see if there's an SPR dip
+
+    This is a lightweight check during initial calibration.
     For comprehensive validation (intensity drift, spectral shape correlation),
     use validate_s_ref_qc() in spr_calibrator.py instead.
 
@@ -895,7 +1039,7 @@ def validate_s_ref_quality(ref_sig: dict, wave_data) -> dict:
         }
 
         try:
-            # Find LED peak
+            # Find LED peak intensity
             peak_intensity = np.max(spectrum)
             peak_idx = np.argmax(spectrum)
             peak_wavelength = wave_data[peak_idx]
@@ -903,11 +1047,12 @@ def validate_s_ref_quality(ref_sig: dict, wave_data) -> dict:
             result['peak'] = float(peak_intensity)
             result['peak_wl'] = float(peak_wavelength)
 
-            # Just check if signal is strong enough
+            # Check signal strength for prism presence detection
+            # Very low signal suggests prism absent or fiber disconnected
             if peak_intensity < 5000:
-                result['warnings'].append('Very weak signal - check fiber connection')
+                result['warnings'].append('Very weak signal - prism may be absent or fiber disconnected')
             elif peak_intensity < 10000:
-                result['warnings'].append('Weak signal - optics may need cleaning')
+                result['warnings'].append('Weak signal - check fiber connection or optics')
 
             result['passed'] = peak_intensity > 5000
 
@@ -931,25 +1076,37 @@ def verify_calibration(
     leds_calibrated: dict[str, int],
     wave_data: np.ndarray = None,
     s_ref_signals: dict = None,
-) -> tuple[list[str], dict[str, float]]:
+) -> tuple[list[str], dict[str, float], bool]:
     """Verify that all calibrated P-mode channels meet minimum requirements.
+
+    CRITICAL: This is where we detect water presence and SPR coupling quality!
+
+    At S-pol (previous step), we could ONLY detect:
+    - Prism presence/absence (by signal intensity)
+    - Fiber connection status
+
+    At P-pol (this step), we can NOW detect:
+    - Water presence (by SPR dip in transmission spectrum P/S)
+    - SPR coupling quality (by dip depth and FWHM)
+    - Sensor response (by comparing P vs S intensities)
 
     Verification checks:
     1. No saturation across full spectrum (< 95% of detector max)
-    2. SPR dip validation: P-mode should show reduction vs S-mode
-       - Uses dynamic ROI based on S-pol LED peak position for each channel
-       - Accounts for sensor-specific SPR location and detector calibration shifts
-       - P/S ratio threshold adjusted for P-mode LED boost (up to 1.33x)
-         Example: 1.33x boost with 30% SPR dip → P/S = 1.33 × 0.7 = 0.93
-    3. FWHM analysis: Measure SPR dip width as sensor quality indicator
-       - Narrow FWHM = high-quality sensor
-       - Broad FWHM = degraded or lower-quality sensor
+    2. SPR dip validation in TRANSMISSION spectrum (P/S ratio):
+       - Calculate transmission = P-spectrum / S-spectrum
+       - Check for SPR dip (valley) in transmission
+       - Dip presence confirms water/buffer is present
+       - No dip or inverted peak suggests dry sensor or swapped polarizer
+    3. FWHM analysis on TRANSMISSION spectrum:
+       - Narrow FWHM (15-30nm) = good water contact, high sensitivity
+       - Broad FWHM (>50nm) = poor water contact, air bubbles, or sensor degradation
+       - Very broad (>80nm) = likely dry sensor or no SPR coupling
 
     Conceptual model:
-    - S-pol: Sets optimal optical conditions (LED+optics baseline)
-    - P-pol: S-pol baseline + SPR sensor contribution (adds SPR dip)
-    - P-mode LED boosted to compensate for polarizer losses
-    - Validation confirms sensor is responding and SPR is being detected
+    - S-pol: LED spectral profile baseline (no SPR information)
+    - P-pol: Measures light after SPR interaction (includes SPR absorption)
+    - Transmission (P/S): Isolates SPR effect by dividing out LED profile
+    - SPR dip in transmission = proof of water presence and sensor response
 
     Args:
         usb: Spectrometer instance
@@ -959,9 +1116,10 @@ def verify_calibration(
         s_ref_signals: S-mode reference signals for comparison
 
     Returns:
-        Tuple of (ch_error_list, spr_fwhm_dict)
+        Tuple of (ch_error_list, spr_fwhm_dict, polarizer_swap_detected)
         - ch_error_list: List of channels that failed verification
         - spr_fwhm_dict: Dictionary of FWHM values for each channel (nm)
+        - polarizer_swap_detected: True if 3+ channels show inverted S/P orientation
     """
     logger.debug("Verifying P-mode LED calibration...")
 
@@ -976,6 +1134,7 @@ def verify_calibration(
 
     ch_error_list = []
     spr_fwhm = {}
+    orientation_inverted_channels = []  # Track channels with S/P swap detected
 
     # CRITICAL: Turn off all channels before P-mode switch to eliminate afterglow
     # Prevents residual signal from S-ref measurements affecting P-mode verification
@@ -1022,19 +1181,21 @@ def verify_calibration(
 
         logger.debug(f"   Ch {ch.upper()}: max={spectrum_max:.0f}, mean={spectrum_mean:.0f}, threshold={saturation_threshold:.0f}")
 
-        # CRITICAL: Validate S/P orientation on first P-mode measurement per channel
-        # This ensures transmission peaks are dips (valleys), not peaks (hills)
+        # CRITICAL: Validate S/P orientation using transmission spectrum analysis
+        # This confirms polarizer orientation by analyzing transmission peak shape, width, depth
+        # and triangulating peak vs edges
+        # Note: Raw P vs S intensity comparison is ONLY used in servo calibration, not here
         if s_ref_signals and ch in s_ref_signals and wave_data is not None:
             try:
                 from utils.spr_signal_processing import validate_sp_orientation
-                
+
                 validation = validate_sp_orientation(
                     p_spectrum=intensity_data,
                     s_spectrum=s_ref_signals[ch],
                     wavelengths=wave_data,
                     window_px=200
                 )
-                
+
                 if validation['is_flat']:
                     logger.error(f"❌ CALIBRATION FAILED - Ch {ch.upper()}: Flat transmission spectrum!")
                     logger.error(f"   Range: {np.ptp(intensity_data / (s_ref_signals[ch] + 1e-10)):.2f}% - possible saturation or dark signal")
@@ -1049,10 +1210,11 @@ def verify_calibration(
                     logger.error(f"   → OEM calibration required to set correct polarizer positions")
                     logger.error(f"   This is a BLOCKING issue tied to device-level configuration")
                     ch_error_list.append(ch)
+                    orientation_inverted_channels.append(ch)  # Track for auto-correction
                     continue
                 else:
                     logger.info(f"✅ Ch {ch.upper()}: S/P orientation validated (dip at {validation['peak_wl']:.1f}nm = {validation['peak_value']:.1f}%, confidence={validation['confidence']:.2f})")
-                    
+
             except Exception as e:
                 logger.warning(f"⚠️ S/P orientation validation failed for ch {ch.upper()}: {e}")
 
@@ -1166,19 +1328,26 @@ def verify_calibration(
                         fwhm = wave_roi[indices[-1]] - wave_roi[indices[0]]
                         spr_fwhm[ch] = float(fwhm)
 
-                        # Quality assessment based on FWHM thresholds
+                        # Quality assessment based on FWHM thresholds (sensor readiness)
+                        # Narrow FWHM = good sensor coupling, wide FWHM = poor coupling or sensor degradation
                         if fwhm < 15:
                             quality = "excellent"
+                            sensor_readiness = "✅ Excellent sensor coupling"
                         elif fwhm < 30:
                             quality = "good"
+                            sensor_readiness = "✅ Good sensor quality"
                         elif fwhm < 50:
                             quality = "okay"
+                            sensor_readiness = "⚠️ Acceptable but monitor coupling"
                         else:
                             quality = "poor"
+                            sensor_readiness = "⚠️ Poor sensor coupling - check water/prism contact"
 
+                        logger.info(
+                            f"✅ Ch {ch.upper()}: SPR FWHM={fwhm:.1f}nm ({quality}) - {sensor_readiness}"
+                        )
                         logger.debug(
-                            f"✅ Ch {ch.upper()} verified: max={spectrum_max:.0f} counts, "
-                            f"P/S ratio={ratio:.2f}, SPR FWHM={fwhm:.1f}nm ({quality})"
+                            f"   Details: max={spectrum_max:.0f} counts, P/S ratio={ratio:.2f}"
                         )
                     else:
                         logger.debug(
@@ -1195,6 +1364,9 @@ def verify_calibration(
                 # With max boost (1.33x) and minimal SPR (20% dip), ratio = 1.33 × 0.8 = 1.06
                 # Use 1.15 threshold to allow for measurement noise and weak SPR
                 if ratio >= 1.15:  # P significantly higher than S, SPR dip very weak/absent
+                    logger.error(f"⚠️ Ch {ch.upper()}: Transmission peak WEAK or ABSENT (P/S={ratio:.2f})")
+                    logger.error(f"   💧 LIKELY CAUSE: Sensor is DRY - no water on prism surface!")
+                    logger.error(f"   → Apply water or buffer to prism and retry calibration")
                     logger.warning(
                         f"⚠️ P-mode verification note for ch {ch.upper()}: "
                         f"P/S ratio = {ratio:.2f} in SPR region ({roi_start:.0f}-{roi_end:.0f}nm) - "
@@ -1205,7 +1377,40 @@ def verify_calibration(
         else:
             logger.debug(f"✅ Ch {ch.upper()} verified: {spectrum_max:.0f} counts (no saturation)")
 
-    return ch_error_list, spr_fwhm
+    # Log FWHM summary for sensor readiness assessment
+    if spr_fwhm:
+        logger.info("")
+        logger.info("📏 SENSOR READINESS ASSESSMENT (FWHM):")
+        for ch, fwhm in spr_fwhm.items():
+            if fwhm < 15:
+                status = "✅ Excellent"
+            elif fwhm < 30:
+                status = "✅ Good"
+            elif fwhm < 50:
+                status = "⚠️ Okay"
+            else:
+                status = "⚠️ Poor"
+            logger.info(f"   Ch {ch.upper()}: {fwhm:.1f}nm - {status}")
+
+        avg_fwhm = sum(spr_fwhm.values()) / len(spr_fwhm)
+        if avg_fwhm < 30:
+            logger.info(f"   ✅ Average: {avg_fwhm:.1f}nm - Sensor ready for measurements")
+        elif avg_fwhm < 50:
+            logger.info(f"   ⚠️ Average: {avg_fwhm:.1f}nm - Acceptable but monitor quality")
+        else:
+            logger.info(f"   ⚠️ Average: {avg_fwhm:.1f}nm - Check water/prism contact")
+        logger.info("")
+
+    # Detect if polarizer positions should be swapped
+    # Use 3+ channels as threshold for safety (global issue, not single channel)
+    polarizer_swap_detected = len(orientation_inverted_channels) >= 3
+
+    if polarizer_swap_detected:
+        logger.error(f"\n⚠️ POLARIZER SWAP DETECTED: {len(orientation_inverted_channels)} channels show inverted orientation")
+        logger.error(f"   Affected channels: {', '.join([c.upper() for c in orientation_inverted_channels])}")
+        logger.error(f"   This is a GLOBAL issue - polarizer servo positions need to be swapped")
+
+    return ch_error_list, spr_fwhm, polarizer_swap_detected
 
 
 # =============================================================================
@@ -1221,6 +1426,7 @@ def perform_full_led_calibration(
     integration_step: int = 2,
     stop_flag=None,
     progress_callback=None,
+    _polarizer_swap_retry_done: bool = False,  # Internal flag to prevent infinite recursion
 ) -> LEDCalibrationResult:
     """Perform complete LED calibration using STANDARD optical configuration.
 
@@ -1251,6 +1457,15 @@ def perform_full_led_calibration(
 
     try:
         logger.info("=== Starting LED Calibration ===")
+        logger.info("")
+        logger.info("⚠️  PRE-CALIBRATION CHECKLIST:")
+        logger.info("   ✅ Prism installed in sensor holder")
+        logger.info("   ✅ Water or buffer applied to prism surface")
+        logger.info("   ✅ No air bubbles between prism and sensor")
+        logger.info("   ✅ Temperature stable (wait 10 min after setup)")
+        logger.info("")
+        logger.info("💧 Water is REQUIRED - dry sensor will show weak/absent SPR peak")
+        logger.info("")
 
         # Get wavelength data
         logger.debug("Reading wavelength data...")
@@ -1276,9 +1491,16 @@ def perform_full_led_calibration(
         logger.debug(f"Calibrating channels: {ch_list}")
 
         # Step 1: Calibrate integration time
-        result.integration_time, result.num_scans = calibrate_integration_time(
-            usb, ctrl, ch_list, integration_step, stop_flag
-        )
+        try:
+            result.integration_time, result.num_scans = calibrate_integration_time(
+                usb, ctrl, ch_list, integration_step, stop_flag
+            )
+        except ConnectionError as e:
+            logger.error(f"🔌 Hardware disconnected during Step 1 (Integration Time)")
+            logger.error(f"   {str(e)}")
+            result.success = False
+            result.error = f"Hardware disconnected during integration time calibration: {str(e)}"
+            return result
 
         if stop_flag and stop_flag.is_set():
             return result
@@ -1428,23 +1650,48 @@ def perform_full_led_calibration(
 
         # Step 5: Measure reference signals
         logger.debug("Measuring reference signals...")
-        result.ref_sig = measure_reference_signals(
-            usb,
-            ctrl,
-            ch_list,
-            result.ref_intensity,
-            result.dark_noise,
-            result.integration_time,
-            result.wave_min_index,
-            result.wave_max_index,
-            stop_flag,
-            afterglow_correction,  # Pass afterglow correction for S-ref
-        )
+        try:
+            result.ref_sig = measure_reference_signals(
+                usb,
+                ctrl,
+                ch_list,
+                result.ref_intensity,
+                result.dark_noise,
+                result.integration_time,
+                result.wave_min_index,
+                result.wave_max_index,
+                stop_flag,
+                afterglow_correction,  # Pass afterglow correction for S-ref
+            )
+        except ConnectionError as e:
+            logger.error(f"🔌 USB disconnection detected during S-ref measurement")
+            logger.error(f"   {str(e)}")
+            logger.info("")
+            logger.info("⚠️  CALIBRATION FAILED - Hardware disconnected")
+            logger.info("")
+            logger.info("Possible causes:")
+            logger.info("  1. USB cable was unplugged during calibration")
+            logger.info("  2. Spectrometer lost power or reset")
+            logger.info("  3. USB hub issue or driver timeout")
+            logger.info("  4. System suspended the USB device (power management)")
+            logger.info("")
+            logger.info("Action required:")
+            logger.info("  1. Check USB cable connection (try different cable/port)")
+            logger.info("  2. Restart the application")
+            logger.info("  3. Reconnect hardware (use Power button)")
+            logger.info("  4. Run calibration again")
+            logger.info("  5. If problem persists, check Windows Device Manager for USB errors")
+            logger.info("")
+            result.success = False
+            result.error = f"Hardware disconnected during calibration: {str(e)}"
+            return result
 
         if stop_flag and stop_flag.is_set():
             return result
 
-        # Step 5.5: Validate S-ref quality (Optical QC)
+        # === S-REF OPTICAL QUALITY CHECK ===
+        # S-pol characterizes LED spectral profile and detector performance
+        # NO SPR dip analysis - S-pol is about LED intensity profile only
         logger.debug("📊 Performing S-ref optical quality checks...")
         result.s_ref_qc_results = validate_s_ref_quality(result.ref_sig, result.wave_data)
         logger.debug(f"   QC validation complete for {len(result.s_ref_qc_results)} channels")
@@ -1466,9 +1713,55 @@ def perform_full_led_calibration(
         # Step 7: Verify P-mode calibration (check saturation, S vs P comparison, and FWHM)
         # Use trimmed wave_data (already trimmed to MIN_WAVELENGTH:MAX_WAVELENGTH)
         # to match the trimmed ref_sig from measure_reference_signals
-        result.ch_error_list, result.spr_fwhm = verify_calibration(
+        result.ch_error_list, result.spr_fwhm, polarizer_swap_detected = verify_calibration(
             usb, ctrl, result.leds_calibrated, result.wave_data, result.ref_sig
         )
+
+        # Auto-correct polarizer swap if detected (3+ channels with inverted orientation)
+        # Only attempt correction ONCE to prevent infinite loops
+        if polarizer_swap_detected and not _polarizer_swap_retry_done:
+            logger.error(f"\n🔄 AUTO-CORRECTION: Swapping S/P polarizer positions and retrying calibration...")
+
+            try:
+                from utils.device_configuration import DeviceConfiguration
+                device_config = DeviceConfiguration()
+
+                # Get current positions
+                hw = device_config.config.get('hardware', {})
+                s_pos = hw.get('servo_s_position', 10)
+                p_pos = hw.get('servo_p_position', 100)
+
+                logger.error(f"   Current positions: S={s_pos}, P={p_pos}")
+                logger.error(f"   Swapping to: S={p_pos}, P={s_pos}")
+
+                # Swap positions
+                hw['servo_s_position'] = p_pos
+                hw['servo_p_position'] = s_pos
+                device_config.save()
+
+                # Apply new positions to controller
+                ctrl.set_mode(mode="s")
+                time.sleep(0.4)
+
+                logger.error(f"   ✅ Polarizer positions swapped in config")
+                logger.error(f"   🔄 Restarting calibration with corrected positions...\n")
+
+                # Recursive call with swapped positions - PASS THE FLAG!
+                return perform_full_led_calibration(
+                    usb=usb,
+                    ctrl=ctrl,
+                    device_type=device_type,
+                    single_mode=single_mode,
+                    single_ch=single_ch,
+                    integration_step=integration_step,
+                    stop_flag=stop_flag,
+                    progress_callback=progress_callback,
+                    _polarizer_swap_retry_done=True,  # Prevent infinite recursion
+                )
+
+            except Exception as e:
+                logger.error(f"   ❌ Failed to swap polarizer positions: {e}")
+                logger.error(f"   Manual intervention required - check device_config.json")
 
         # Log FWHM results for sensor quality tracking
         if result.spr_fwhm:
@@ -1643,6 +1936,7 @@ def perform_alternative_calibration(
     single_ch: str = "a",
     stop_flag=None,
     progress_callback=None,
+    _polarizer_swap_retry_done: bool = False,  # Internal flag to prevent infinite recursion
 ) -> LEDCalibrationResult:
     """Perform LED calibration using ALTERNATIVE optical configuration.
 
@@ -1965,9 +2259,54 @@ def perform_alternative_calibration(
         # Step 7: Verify P-mode calibration (shared QC function)
         # Use trimmed wave_data (already trimmed to MIN_WAVELENGTH:MAX_WAVELENGTH)
         # to match the trimmed ref_sig from measure_reference_signals
-        result.ch_error_list, result.spr_fwhm = verify_calibration(
+        result.ch_error_list, result.spr_fwhm, polarizer_swap_detected = verify_calibration(
             usb, ctrl, result.leds_calibrated, result.wave_data, result.ref_sig
         )
+
+        # Auto-correct polarizer swap if detected (3+ channels with inverted orientation)
+        # Only attempt correction ONCE to prevent infinite loops
+        if polarizer_swap_detected and not _polarizer_swap_retry_done:
+            logger.error(f"\n🔄 AUTO-CORRECTION: Swapping S/P polarizer positions and retrying calibration...")
+
+            try:
+                from utils.device_configuration import DeviceConfiguration
+                device_config = DeviceConfiguration()
+
+                # Get current positions
+                hw = device_config.config.get('hardware', {})
+                s_pos = hw.get('servo_s_position', 10)
+                p_pos = hw.get('servo_p_position', 100)
+
+                logger.error(f"   Current positions: S={s_pos}, P={p_pos}")
+                logger.error(f"   Swapping to: S={p_pos}, P={s_pos}")
+
+                # Swap positions
+                hw['servo_s_position'] = p_pos
+                hw['servo_p_position'] = s_pos
+                device_config.save()
+
+                # Apply new positions to controller
+                ctrl.set_mode(mode="s")
+                time.sleep(0.4)
+
+                logger.error(f"   ✅ Polarizer positions swapped in config")
+                logger.error(f"   🔄 Restarting calibration with corrected positions...\n")
+
+                # Recursive call with swapped positions - PASS THE FLAG!
+                return perform_alternative_calibration(
+                    usb=usb,
+                    ctrl=ctrl,
+                    device_type=device_type,
+                    single_mode=single_mode,
+                    single_ch=single_ch,
+                    stop_flag=stop_flag,
+                    progress_callback=progress_callback,
+                    _polarizer_swap_retry_done=True,  # Prevent infinite recursion
+                )
+
+            except Exception as e:
+                logger.error(f"   ❌ Failed to swap polarizer positions: {e}")
+                logger.error(f"   Manual intervention required - check device_config.json")
 
         # Log FWHM results
         if result.spr_fwhm:

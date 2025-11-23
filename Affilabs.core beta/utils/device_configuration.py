@@ -117,7 +117,7 @@ class DeviceConfiguration:
         },
     }
 
-    def __init__(self, config_path: Optional[str] = None, device_serial: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, device_serial: Optional[str] = None, controller=None):
         """
         Initialize device configuration.
 
@@ -125,6 +125,7 @@ class DeviceConfiguration:
             config_path: Path to configuration file. If None, uses default location.
             device_serial: Device serial number for device-specific config. If provided,
                           creates config in devices/<serial>/device_config.json
+            controller: Controller instance for EEPROM fallback (optional)
         """
         if config_path is None:
             if device_serial:
@@ -143,13 +144,26 @@ class DeviceConfiguration:
             self.config_path = Path(config_path)
 
         self.device_serial = device_serial
+        self.controller = controller
+        self.loaded_from_eeprom = False
         self.config = self._load_or_create_config()
+
+        # Auto-save EEPROM config to JSON if loaded from EEPROM
+        if self.loaded_from_eeprom:
+            self.save()
+            logger.info(f"✓ Saved EEPROM config to JSON: {self.config_path}")
+
         logger.info(f"Device configuration loaded from: {self.config_path}")
         self._log_config_summary()
 
     def _load_or_create_config(self) -> Dict[str, Any]:
         """
         Load configuration from file or create new with defaults.
+
+        Load priority:
+        1. JSON file (if exists)
+        2. EEPROM (if JSON missing and controller connected)
+        3. Defaults (if both missing)
 
         Returns:
             Configuration dictionary
@@ -158,18 +172,83 @@ class DeviceConfiguration:
             try:
                 with open(self.config_path, 'r') as f:
                     config = json.load(f)
-                logger.info(f"Loaded existing configuration from {self.config_path}")
+                logger.info(f"✓ Loaded existing configuration from {self.config_path}")
 
                 # Validate and merge with defaults (in case new fields added)
                 config = self._merge_with_defaults(config)
+                self.loaded_from_eeprom = False
                 return config
             except Exception as e:
                 logger.error(f"Failed to load configuration: {e}")
-                logger.warning("Creating new configuration with defaults")
-                return self._create_default_config()
+                logger.warning("Attempting EEPROM fallback...")
+                return self._try_load_from_eeprom_or_default()
         else:
-            logger.info("No existing configuration found. Creating new configuration.")
-            return self._create_default_config()
+            logger.info("No JSON configuration found. Checking EEPROM...")
+            return self._try_load_from_eeprom_or_default()
+
+    def _try_load_from_eeprom_or_default(self) -> Dict[str, Any]:
+        """Try to load config from EEPROM, or create defaults if that fails."""
+        if self.controller is not None:
+            try:
+                if self.controller.is_config_valid_in_eeprom():
+                    logger.info("✓ Valid configuration found in EEPROM")
+                    eeprom_config = self.controller.read_config_from_eeprom()
+
+                    if eeprom_config:
+                        # Convert EEPROM config to full config structure
+                        config = self._create_config_from_eeprom(eeprom_config)
+                        self.loaded_from_eeprom = True
+
+                        # Note: Don't call self.save() here - config not yet assigned to self.config
+                        # It will be saved after __init__ assigns it
+
+                        return config
+                else:
+                    logger.info("No valid configuration in EEPROM")
+            except Exception as e:
+                logger.warning(f"EEPROM read failed: {e}")
+
+        # Fallback to defaults
+        logger.info("Creating new configuration with defaults")
+        self.loaded_from_eeprom = False
+        return self._create_default_config()
+
+    def _create_config_from_eeprom(self, eeprom_config: dict) -> Dict[str, Any]:
+        """Create full configuration structure from EEPROM data.
+
+        Args:
+            eeprom_config: Dict from controller.read_config_from_eeprom()
+
+        Returns:
+            Full configuration with defaults for missing fields
+        """
+        import copy
+        config = copy.deepcopy(self.DEFAULT_CONFIG)
+
+        # Set timestamps
+        now = datetime.now().isoformat()
+        config['device_info']['created_date'] = now
+        config['device_info']['last_modified'] = now
+
+        # Map EEPROM data to config structure
+        config['hardware']['led_pcb_model'] = eeprom_config.get('led_pcb_model', 'luminus_cool_white')
+        config['hardware']['optical_fiber_diameter_um'] = eeprom_config.get('fiber_diameter_um', 200)
+        config['hardware']['polarizer_type'] = eeprom_config.get('polarizer_type', 'round')
+        config['hardware']['servo_s_position'] = eeprom_config.get('servo_s_position', 10)
+        config['hardware']['servo_p_position'] = eeprom_config.get('servo_p_position', 100)
+
+        config['calibration']['led_intensity_a'] = eeprom_config.get('led_intensity_a', 0)
+        config['calibration']['led_intensity_b'] = eeprom_config.get('led_intensity_b', 0)
+        config['calibration']['led_intensity_c'] = eeprom_config.get('led_intensity_c', 0)
+        config['calibration']['led_intensity_d'] = eeprom_config.get('led_intensity_d', 0)
+        config['calibration']['integration_time_ms'] = eeprom_config.get('integration_time_ms', 100)
+        config['calibration']['num_scans'] = eeprom_config.get('num_scans', 3)
+
+        # Mark as factory calibrated if LED intensities are non-zero
+        if any([eeprom_config.get(f'led_intensity_{ch}', 0) > 0 for ch in ['a', 'b', 'c', 'd']]):
+            config['calibration']['factory_calibrated'] = True
+
+        return config
 
     def _create_default_config(self) -> Dict[str, Any]:
         """Create new configuration with default values."""
@@ -599,6 +678,43 @@ class DeviceConfiguration:
         cal['integration_time_ms'] = integration_time_ms
         cal['num_scans'] = num_scans
         self.config['device_info']['last_modified'] = datetime.now().isoformat()
+
+    def save_sp_validation(self, sp_results: Dict[str, Dict]):
+        """
+        Save S/P orientation validation results to device config.
+
+        Args:
+            sp_results: Dict with channel keys, each containing:
+                - orientation_correct: bool
+                - confidence: float
+                - peak_wl: float
+                - peak_value: float
+                - timestamp: str (ISO format)
+                - is_flat: bool
+        """
+        cal = self.config['calibration']
+
+        # Add sp_orientation section if not exists
+        if 'sp_orientation' not in cal:
+            cal['sp_orientation'] = {}
+
+        # Store validation results
+        cal['sp_orientation']['validated'] = True
+        cal['sp_orientation']['validation_date'] = datetime.now().isoformat()
+        cal['sp_orientation']['channels'] = {}
+
+        for ch, result in sp_results.items():
+            cal['sp_orientation']['channels'][ch] = {
+                'orientation_correct': result.get('orientation_correct'),
+                'confidence': result.get('confidence'),
+                'peak_wavelength_nm': result.get('peak_wl'),
+                'peak_transmission_percent': result.get('peak_value'),
+                'is_flat': result.get('is_flat', False)
+            }
+
+        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+        logger.info(f"S/P orientation validation saved for {len(sp_results)} channels")
+        self.config['device_info']['last_modified'] = datetime.now().isoformat()
         logger.info(f"Calibration settings updated: Integration={integration_time_ms}ms, Scans={num_scans}")
 
     def increment_measurement_cycles(self, count: int = 1):
@@ -651,6 +767,70 @@ class DeviceConfiguration:
         except Exception as e:
             logger.error(f"Failed to import configuration: {e}")
             raise
+
+    def sync_to_eeprom(self, controller) -> bool:
+        """
+        Synchronize current configuration to controller EEPROM.
+
+        This creates a portable backup of device settings that travels with the hardware.
+        Called automatically on major config changes or manually via UI.
+
+        Args:
+            controller: Controller instance with write_config_to_eeprom() method
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if controller is None:
+            logger.warning("Cannot sync to EEPROM: No controller connected")
+            return False
+
+        try:
+            # Extract config data for EEPROM
+            hw = self.config['hardware']
+            cal = self.config['calibration']
+
+            eeprom_config = {
+                'led_pcb_model': hw.get('led_pcb_model', 'luminus_cool_white'),
+                'controller_type': self._get_controller_type_name(controller),
+                'fiber_diameter_um': hw.get('optical_fiber_diameter_um', 200),
+                'polarizer_type': hw.get('polarizer_type', 'round'),
+                'servo_s_position': hw.get('servo_s_position', 10),
+                'servo_p_position': hw.get('servo_p_position', 100),
+                'led_intensity_a': cal.get('led_intensity_a', 0),
+                'led_intensity_b': cal.get('led_intensity_b', 0),
+                'led_intensity_c': cal.get('led_intensity_c', 0),
+                'led_intensity_d': cal.get('led_intensity_d', 0),
+                'integration_time_ms': cal.get('integration_time_ms', 100),
+                'num_scans': cal.get('num_scans', 3)
+            }
+
+            success = controller.write_config_to_eeprom(eeprom_config)
+
+            if success:
+                logger.info("✓ Configuration synchronized to EEPROM")
+            else:
+                logger.warning("✗ Failed to sync configuration to EEPROM")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Exception while syncing to EEPROM: {e}")
+            return False
+
+    def _get_controller_type_name(self, controller) -> str:
+        """Determine controller type from controller instance."""
+        controller_str = str(controller).lower()
+        if 'arduino' in controller_str:
+            return 'arduino'
+        elif 'pico mini' in controller_str or 'picop4spr' in controller_str:
+            return 'pico_p4spr'
+        elif 'pico ez' in controller_str or 'picoezspr' in controller_str:
+            return 'pico_ezspr'
+        elif 'qspr' in controller_str:
+            return 'qspr'
+        else:
+            return 'arduino'  # default fallback
 
     def reset_to_defaults(self):
         """Reset configuration to factory defaults."""

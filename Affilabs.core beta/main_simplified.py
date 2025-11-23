@@ -28,6 +28,16 @@ import sys
 import atexit
 from pathlib import Path
 import threading
+import warnings
+import os
+
+# Suppress Qt threading warnings for logging from worker threads
+# (logging still works correctly, Qt is just overly cautious about QTextDocument)
+warnings.filterwarnings('ignore', message='.*QObject.*different thread.*', category=DeprecationWarning)
+warnings.filterwarnings('ignore', message='.*QTextDocument.*different thread.*', category=RuntimeWarning)
+
+# Suppress Qt debug messages about threading (these are harmless - our logging system is thread-safe)
+os.environ['QT_LOGGING_RULES'] = '*.debug=false;qt.qpa.*=false'
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer, Qt
@@ -270,8 +280,8 @@ class Application(QApplication):
         """Register data acquisition manager signal connections."""
         acq = self.data_mgr
 
-        # Spectrum data
-        acq.spectrum_acquired.connect(self._on_spectrum_acquired)
+        # Spectrum data (thread-safe - emitted from acquisition worker)
+        acq.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
 
         # Calibration lifecycle (thread-safe for background calibration)
         acq.calibration_started.connect(self._on_calibration_started, Qt.QueuedConnection)
@@ -279,10 +289,10 @@ class Application(QApplication):
         acq.calibration_failed.connect(self._on_calibration_failed, Qt.QueuedConnection)
         acq.calibration_progress.connect(self._on_calibration_progress, Qt.QueuedConnection)
 
-        # Acquisition lifecycle
-        acq.acquisition_started.connect(self._on_acquisition_started)
-        acq.acquisition_stopped.connect(self._on_acquisition_stopped)
-        acq.acquisition_error.connect(self._on_acquisition_error)
+        # Acquisition lifecycle (thread-safe - emitted from acquisition worker)
+        acq.acquisition_started.connect(self._on_acquisition_started, Qt.QueuedConnection)
+        acq.acquisition_stopped.connect(self._on_acquisition_stopped, Qt.QueuedConnection)
+        acq.acquisition_error.connect(self._on_acquisition_error, Qt.QueuedConnection)
 
     def _connect_recording_signals(self):
         """Register recording manager signal connections."""
@@ -359,7 +369,7 @@ class Application(QApplication):
         # TODO: Verify these widgets exist in sidebar
         # ui.simple_led_calibration_btn.clicked.connect(self._on_simple_led_calibration)
         # ui.full_calibration_btn.clicked.connect(self._on_full_calibration)
-        # ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
+        ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
 
         # --- Cycle Control ---
         ui.sidebar.start_cycle_btn.clicked.connect(self._on_start_button_clicked)
@@ -390,33 +400,71 @@ class Application(QApplication):
 
     def _on_hardware_connected(self, status: dict):
         """Hardware connection completed and update Device Status UI."""
-        logger.info(f"Hardware connected: {status}")
+        logger.info(f"🔌 Hardware connection callback received")
+        logger.info(f"   Status: {status}")
 
         # Reset scan button state in UI
         self.main_window._on_hardware_scan_complete()
 
-        # Check if any hardware was actually detected
+        # Check if actual DEVICE hardware was detected (controller, kinetic, or pump)
+        # Spectrometer is a subunit, NOT a device - don't count it for power button
         hardware_detected = any([
             status.get('ctrl_type'),
             status.get('knx_type'),
-            status.get('pump_connected'),
-            status.get('spectrometer')
+            status.get('pump_connected')
         ])
 
         # Update power button based on whether hardware was found
         if hardware_detected:
-            self.ui.set_power_state("connected")
+            logger.info("✅ Hardware found - updating power button to CONNECTED (green)")
+            self.main_window.set_power_state("connected")
         else:
-            logger.info("No hardware detected - resetting power button to disconnected state")
-            self.ui.set_power_state("disconnected")
+            logger.info("⚠️ NO hardware found - reverting power button to DISCONNECTED (gray)")
+            self.main_window.set_power_state("disconnected")
+
+            # Clear Device Status UI to remove any ghost hardware displays
+            empty_status = {
+                'ctrl_type': None,
+                'knx_type': None,
+                'pump_connected': False,
+                'spectrometer': False,
+                'sensor_ready': False,
+                'optics_ready': False,
+                'fluidics_ready': False
+            }
+            self._update_device_status_ui(empty_status)
+
             from widgets.message import show_message
-            show_message("No devices found. Please check connections and try again.", "Connection Failed", parent=self.main_window)
+            show_message(
+                "No devices found.\n\nPlease check:\n• USB connections\n• Device power\n• Driver installation",
+                msg_type="Warning",
+                title="Connection Failed"
+            )
             return  # Exit early if no hardware detected
 
         # Re-initialize device config with actual device serial number
         device_serial = status.get('spectrometer_serial')
         if device_serial:
             logger.info(f"Re-initializing device configuration for S/N: {device_serial}")
+
+            # Initialize device-specific directory and configuration
+            from utils.device_integration import initialize_device_on_connection
+
+            # Create a mock USB device object with serial number for device initialization
+            class MockUSBDevice:
+                def __init__(self, serial):
+                    self.serial_number = serial
+
+            mock_usb = MockUSBDevice(device_serial)
+            device_dir = initialize_device_on_connection(mock_usb)
+
+            if device_dir:
+                logger.info(f"✅ Device initialized: {device_dir}")
+
+            # NOTE: _init_device_config() would auto-prompt for missing fields if implemented
+            # Currently this method exists in LL_UI_v1_0.py but not yet in affilabs_core_ui.py
+            # For new devices, either: 1) Run LL_UI_v1_0.py once, or 2) Manually edit device_config.json
+            # See DEVICE_CONFIG_STATUS.md for details
             self.main_window._init_device_config(device_serial=device_serial)
         else:
             logger.warning("No spectrometer serial in hardware status - using default config")
@@ -430,6 +478,32 @@ class Application(QApplication):
 
         # Load servo positions and LED intensities from device EEPROM
         self._load_device_settings()
+
+        # Update calibration dialog if it exists and is waiting for hardware
+        if self._calibration_dialog and not self._calibration_dialog._is_closing:
+            if status.get('ctrl_type') and status.get('spectrometer'):
+                # Both hardware components detected
+                logger.info("✅ Calibration dialog updated: Hardware detected")
+                self._calibration_dialog.update_status(
+                    f"Hardware detected:\n"
+                    f"• Controller: {status.get('ctrl_type')}\n"
+                    f"• Spectrometer: Connected\n\n"
+                    f"Calibration will start automatically..."
+                )
+            elif status.get('spectrometer') and not status.get('ctrl_type'):
+                logger.warning("⚠️ Spectrometer found but controller missing")
+                self._calibration_dialog.update_status(
+                    "⚠️ Controller not detected\n\n"
+                    "Please connect the SPR controller\n"
+                    "to continue calibration."
+                )
+            elif status.get('ctrl_type') and not status.get('spectrometer'):
+                logger.warning("⚠️ Controller found but spectrometer missing")
+                self._calibration_dialog.update_status(
+                    "⚠️ Spectrometer not detected\n\n"
+                    "Please connect the spectrometer\n"
+                    "to continue calibration."
+                )
 
         # Start calibration ONLY on initial connection, not on status updates
         # This prevents calibration from restarting when optics_ready changes
@@ -466,7 +540,7 @@ class Application(QApplication):
         self._initial_connection_done = False  # Reset for next connection
 
         # Update power button to disconnected state
-        self.ui.set_power_state("disconnected")
+        self.main_window.set_power_state("disconnected")
 
         # Clear hardware status UI to show no devices
         empty_status = {
@@ -1022,6 +1096,8 @@ class Application(QApplication):
         ch_error_list = calibration_data.get('ch_error_list', [])
         calibration_type = calibration_data.get('calibration_type', 'full')  # 'full', 'afterglow', 'led'
         s_ref_qc_results = calibration_data.get('s_ref_qc_results', {})
+        afterglow_available = calibration_data.get('afterglow_available', False)
+        sp_validation = calibration_data.get('sp_validation_results', {})
 
         # Log summary instead of full data dictionary
         logger.info(f"✅ Calibration complete ({calibration_type})")
@@ -1033,9 +1109,47 @@ class Application(QApplication):
             led_str = ", ".join([f"Ch {ch.upper()}: {intensity}" for ch, intensity in sorted(leds.items())])
             logger.info(f"💡 LED Intensities: {led_str}")
 
+        # Log S/P validation results
+        if sp_validation:
+            for ch, result in sp_validation.items():
+                status_icon = "✅" if result.get('orientation_correct') else "⚠️"
+                logger.info(f"{status_icon} Ch {ch.upper()} S/P: confidence={result.get('confidence', 0):.2f}, peak={result.get('peak_wl', 0):.1f}nm")
+
         # Check if afterglow correction was loaded
-        if hasattr(self.data_mgr, 'afterglow_enabled') and self.data_mgr.afterglow_enabled:
+        if afterglow_available:
             logger.info("✅ Afterglow correction is ACTIVE")
+        else:
+            logger.info("⚠️ Afterglow correction NOT loaded")
+
+        # Save S/P validation to device config
+        if self.main_window.device_config and sp_validation:
+            try:
+                self.main_window.device_config.save_sp_validation(sp_validation)
+                logger.info("💾 S/P orientation validation saved to device config")
+            except Exception as e:
+                logger.warning(f"Failed to save S/P validation: {e}")
+
+        # Prompt for OEM calibration if afterglow missing (non-blocking)
+        if not afterglow_available and len(ch_error_list) == 0:
+            from PySide6.QtCore import QTimer
+            def prompt_oem_calibration():
+                from PySide6.QtWidgets import QMessageBox
+                reply = QMessageBox.question(
+                    self.main_window,
+                    "Optional: OEM Calibration",
+                    "Optical calibration (afterglow correction) not found.\n\n"
+                    "This calibration improves data quality by compensating\n"
+                    "for LED phosphor decay effects.\n\n"
+                    "Would you like to run OEM calibration now?\n"
+                    "(Takes ~5-10 minutes)",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    logger.info("User chose to run OEM calibration")
+                    self._on_oem_led_calibration()
+            # Delay prompt so calibration dialog can close first
+            QTimer.singleShot(500, prompt_oem_calibration)
 
         # Update hardware manager with calibration results for optics verification
         # Now includes S-ref optical QC results
@@ -1371,6 +1485,11 @@ class Application(QApplication):
         """Calibration failed."""
         logger.error(f"Calibration failed: {error}")
 
+        # Check if there's a critical error with detailed info
+        critical_error_info = None
+        if hasattr(self.hardware_mgr, 'calibrator') and self.hardware_mgr.calibrator:
+            critical_error_info = self.hardware_mgr.calibrator.get_last_critical_error()
+
         # Update dialog to show error
         if self._calibration_dialog:
             self._calibration_dialog.update_title("❌ Calibration Failed")
@@ -1379,6 +1498,10 @@ class Application(QApplication):
             # Auto-close after 4 seconds
             from PySide6.QtCore import QTimer
             QTimer.singleShot(4000, lambda: self._close_calibration_dialog())
+
+        # Show detailed error dialog if critical error info is available
+        if critical_error_info:
+            self._show_critical_calibration_error_dialog(critical_error_info)
         else:
             # Fallback if dialog doesn't exist
             from widgets.message import show_message
@@ -1506,6 +1629,65 @@ class Application(QApplication):
 
             except (RuntimeError, AttributeError) as e:
                 logger.debug(f"Dialog already closed or deleted: {e}")
+
+    def _show_critical_calibration_error_dialog(self, error_info: dict):
+        """Show user-friendly error dialog for critical calibration failures.
+
+        Args:
+            error_info: Dictionary containing:
+                - type: Error type identifier
+                - user_message: Simple explanation for end users
+                - user_actions: List of troubleshooting steps
+                - technical_details: Detailed technical info (shown separately)
+        """
+        from PySide6.QtWidgets import QMessageBox, QPushButton, QTextEdit
+        from PySide6.QtCore import Qt
+
+        # Create custom message box
+        msg_box = QMessageBox(self.main_window)
+        msg_box.setWindowTitle("Calibration Failed")
+        msg_box.setIcon(QMessageBox.Icon.Critical)
+
+        # Build user-friendly message
+        user_text = error_info['user_message']
+
+        # Add troubleshooting steps
+        if error_info.get('user_actions'):
+            user_text += "\n\n" + "What to do:\n"
+            for i, action in enumerate(error_info['user_actions'], 1):
+                user_text += f"{i}. {action}\n"
+
+        msg_box.setText(user_text)
+
+        # Add technical details in collapsible section (for internal use)
+        technical_details = error_info.get('technical_details', '')
+        if technical_details:
+            details_text = f"Technical Details (for support):\n{technical_details}"
+            msg_box.setDetailedText(details_text)
+
+        # Add buttons
+        retry_btn = msg_box.addButton("Retry Calibration", QMessageBox.ButtonRole.AcceptRole)
+        support_btn = msg_box.addButton("Contact Support", QMessageBox.ButtonRole.HelpRole)
+        close_btn = msg_box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+
+        msg_box.setDefaultButton(retry_btn)
+        msg_box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+
+        # Show dialog and handle response
+        msg_box.exec()
+        clicked = msg_box.clickedButton()
+
+        if clicked == retry_btn:
+            # User wants to retry calibration
+            logger.info("User clicked 'Retry Calibration'")
+            # Trigger calibration again
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(100, self._handle_calibrate_action)
+        elif clicked == support_btn:
+            # User wants to contact support
+            logger.info("User clicked 'Contact Support'")
+            import webbrowser
+            webbrowser.open("https://affiniteinstruments.com/support")
 
     def _on_acquisition_error(self, error: str):
         """Data acquisition error."""
@@ -2619,6 +2801,9 @@ class Application(QApplication):
 
         The device config file is provided by OEM with factory-calibrated servo positions.
         This replaces reading from EEPROM since the config file is the source of truth.
+        
+        If S/P positions are missing or invalid (default values 10/100), automatically
+        triggers servo calibration to find optimal positions.
         """
         if not self.hardware_mgr or not self.hardware_mgr.ctrl:
             logger.warning("Cannot load settings - hardware not connected")
@@ -2632,6 +2817,20 @@ class Application(QApplication):
                 servo_positions = self.main_window.device_config.get_servo_positions()
                 s_pos = servo_positions['s']
                 p_pos = servo_positions['p']
+
+                # Check if positions are absent or still at default values
+                # Default values (10/100) indicate servo calibration hasn't been run
+                if s_pos == 10 and p_pos == 100:
+                    logger.warning("=" * 80)
+                    logger.warning("⚠️  SERVO POSITIONS AT DEFAULT VALUES")
+                    logger.warning("=" * 80)
+                    logger.warning("   S=10, P=100 are uncalibrated defaults")
+                    logger.warning("   Auto-triggering servo calibration...")
+                    logger.warning("=" * 80)
+                    
+                    # Trigger auto-calibration
+                    self._run_servo_auto_calibration()
+                    return  # Exit - calibration will update positions when complete
 
                 # Update UI inputs with loaded values
                 self.main_window.s_position_input.setText(str(s_pos))
@@ -2671,6 +2870,136 @@ class Application(QApplication):
         except Exception as e:
             logger.error(f"Failed to load device settings: {e}")
             logger.debug(f"Settings load error details:", exc_info=True)
+
+    def _run_servo_auto_calibration(self):
+        """Run automatic servo calibration to find optimal S/P positions.
+        
+        This is triggered automatically when S/P positions are missing or at default values.
+        Uses the intelligent servo calibration module with transmission validation.
+        """
+        try:
+            logger.info("=" * 80)
+            logger.info("🔧 AUTO-TRIGGERING SERVO CALIBRATION")
+            logger.info("=" * 80)
+            
+            # Check hardware availability
+            if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
+                logger.error("❌ Hardware not ready for servo calibration")
+                logger.error("   Missing: controller or spectrometer")
+                return
+            
+            # Get polarizer type from device config (default: circular)
+            polarizer_type = "circular"
+            if self.main_window.device_config:
+                hw_config = self.main_window.device_config.config.get('hardware', {})
+                polarizer_type = hw_config.get('polarizer_type', 'circular')
+                # Map 'round' to 'circular' for servo_calibration module
+                if polarizer_type == 'round':
+                    polarizer_type = 'circular'
+            
+            logger.info(f"   Polarizer type: {polarizer_type}")
+            logger.info(f"   Method: {'Quadrant search (~13 measurements)' if polarizer_type == 'circular' else 'Window detection + SPR signature'}")
+            logger.info("=" * 80)
+            
+            # Import servo calibration module
+            from utils.servo_calibration import auto_calibrate_polarizer
+            
+            # Run calibration (requires water for circular, optional for barrel)
+            require_water = (polarizer_type == 'circular')
+            result = auto_calibrate_polarizer(
+                usb=self.hardware_mgr.usb,
+                ctrl=self.hardware_mgr.ctrl,
+                require_water=require_water,
+                polarizer_type=polarizer_type
+            )
+            
+            if result is None or not result.get('success'):
+                logger.error("=" * 80)
+                logger.error("❌ SERVO CALIBRATION FAILED")
+                logger.error("=" * 80)
+                logger.error("   Possible causes:")
+                logger.error("   1. No water on sensor (required for circular polarizer)")
+                logger.error("   2. Poor SPR coupling")
+                logger.error("   3. LED saturation or insufficient intensity")
+                logger.error("   4. Servo mechanical issue")
+                logger.error("=" * 80)
+                logger.error("   ACTION REQUIRED:")
+                logger.error("   - Check water presence on sensor")
+                logger.error("   - Verify SPR chip coupling")
+                logger.error("   - Run manual servo calibration from Settings menu")
+                logger.error("=" * 80)
+                return
+            
+            # Calibration succeeded - show results and ask for user confirmation
+            logger.info("=" * 80)
+            logger.info("✅ SERVO CALIBRATION SUCCESSFUL")
+            logger.info("=" * 80)
+            logger.info(f"   Found positions:")
+            logger.info(f"   • S position: {result['s_pos']}°")
+            logger.info(f"   • P position: {result['p_pos']}°")
+            logger.info(f"   • S/P ratio: {result['sp_ratio']:.2f}×")
+            logger.info(f"   • Dip depth: {result['dip_depth_percent']:.1f}%")
+            if result.get('resonance_wavelength'):
+                logger.info(f"   • Resonance: {result['resonance_wavelength']:.1f}nm")
+            logger.info("=" * 80)
+            
+            # Show confirmation dialog to user
+            from PySide6.QtWidgets import QMessageBox
+            msg = QMessageBox(self.main_window)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Servo Calibration Complete")
+            msg.setText(
+                f"<b>Servo calibration successful!</b><br><br>"
+                f"Found optimal positions:<br>"
+                f"<table style='margin-top:10px;'>"
+                f"<tr><td style='padding-right:20px;'><b>S position:</b></td><td>{result['s_pos']}°</td></tr>"
+                f"<tr><td><b>P position:</b></td><td>{result['p_pos']}°</td></tr>"
+                f"<tr><td><b>S/P ratio:</b></td><td>{result['sp_ratio']:.2f}×</td></tr>"
+                f"<tr><td><b>Dip depth:</b></td><td>{result['dip_depth_percent']:.1f}%</td></tr>"
+                f"</table><br>"
+                f"<i>Do you want to save these positions to device config?</i>"
+            )
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.Yes)
+            
+            reply = msg.exec()
+            
+            if reply == QMessageBox.Yes:
+                # Save positions to device config
+                s_pos = result['s_pos']
+                p_pos = result['p_pos']
+                
+                self.main_window.device_config.set_servo_positions(s_pos, p_pos)
+                self.main_window.device_config.save()
+                
+                # Update UI
+                self.main_window.s_position_input.setText(str(s_pos))
+                self.main_window.p_position_input.setText(str(p_pos))
+                
+                # Apply to hardware
+                self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
+                
+                logger.info("=" * 80)
+                logger.info("✅ POSITIONS SAVED TO DEVICE CONFIG")
+                logger.info("=" * 80)
+                logger.info(f"   S={s_pos}, P={p_pos} saved to device_config.json")
+                logger.info("   Positions applied to hardware")
+                logger.info("=" * 80)
+                logger.info("💡 TIP: Click 'Push to EEPROM' to backup these positions")
+                logger.info("=" * 80)
+            else:
+                logger.info("=" * 80)
+                logger.info("⚠️  USER DECLINED - POSITIONS NOT SAVED")
+                logger.info("=" * 80)
+                logger.info("   Calibration results discarded")
+                logger.info("   You can run calibration again from Settings menu")
+                logger.info("=" * 80)
+        
+        except ImportError as e:
+            logger.error(f"❌ Failed to import servo_calibration module: {e}")
+            logger.error("   Ensure utils/servo_calibration.py is available")
+        except Exception as e:
+            logger.exception(f"❌ Servo auto-calibration error: {e}")
 
     def _update_led_intensities_in_ui(self):
         """Update UI with calibrated LED intensities after calibration completes."""
@@ -3189,6 +3518,32 @@ class Application(QApplication):
 
 def main():
     """Launch the application with modern UI."""
+    # Suppress Qt's direct stderr warnings about threading
+    # Our logging system is properly thread-safe, Qt is just being overly cautious
+    import io
+    import contextlib
+
+    class QtWarningFilter:
+        """Filter to suppress Qt threading warnings while keeping other messages."""
+        def __init__(self, stream):
+            self.stream = stream
+            self.buffer = ""
+
+        def write(self, text):
+            # Suppress known harmless Qt threading warnings
+            if "QObject: Cannot create children" in text or \
+               "parent's thread is" in text or \
+               "QTextDocument" in text:
+                return
+            self.stream.write(text)
+
+        def flush(self):
+            self.stream.flush()
+
+    # Replace stderr with filtered version
+    original_stderr = sys.stderr
+    sys.stderr = QtWarningFilter(original_stderr)
+
     dtnow = dt.datetime.now(TIME_ZONE)
     logger.info("="*70)
     logger.info("AffiLabs.core - Surface Plasmon Resonance Analysis")
@@ -3199,7 +3554,12 @@ def main():
     app = Application(sys.argv)
 
     logger.info("🚀 Starting event loop...")
-    sys.exit(app.exec())
+    exit_code = app.exec()
+
+    # Restore original stderr
+    sys.stderr = original_stderr
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

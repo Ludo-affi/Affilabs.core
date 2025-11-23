@@ -154,14 +154,20 @@ class USB4000:
 
             # Log detector capabilities
             try:
-                min_int_us = self._device.minimum_integration_time_micros
-                min_max_limits = self._device.integration_time_micros_limits
-                logger.info(
-                    f"Detector integration time limits: "
-                    f"{min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms"
-                )
+                # SeaBreeze provides integration_time_micros_limits as a tuple (min, max)
+                if hasattr(self._device, 'integration_time_micros_limits'):
+                    min_max_limits = self._device.integration_time_micros_limits
+                    logger.info(
+                        f"Detector integration time limits: "
+                        f"{min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms"
+                    )
+                elif hasattr(self._device, 'minimum_integration_time_micros'):
+                    min_int_us = self._device.minimum_integration_time_micros
+                    logger.info(f"Detector minimum integration time: {min_int_us/1000:.2f}ms")
+                else:
+                    logger.debug("Detector does not expose integration time limits via SeaBreeze")
             except Exception as e:
-                logger.warning(f"Could not read detector capabilities: {e}")
+                logger.debug(f"Could not read detector capabilities: {e}")
 
             logger.info(f"USB4000 connected: {self.serial_number}")
             return True

@@ -585,6 +585,9 @@ class SPRCalibrator:
             self.state = CalibrationState()
             logger.info("⚠️ SPRCalibrator created NEW CalibrationState")
 
+        # Initialize error tracking
+        self._last_critical_error: Optional[dict] = None
+
         # LED timing (default delays; can be overridden by afterglow/device config)
         # Calibrator maintains its own copy since many methods reference self.led_on/off_delay_s
         try:
@@ -644,34 +647,55 @@ class SPRCalibrator:
         s_pos, p_pos, sp_ratio = self._load_positions_from_config(device_config)
 
         if s_pos is not None and p_pos is not None:
-            # Store positions in state
+            # Check if positions are at default uncalibrated values
+            if s_pos == 10 and p_pos == 100:
+                logger.warning("=" * 80)
+                logger.warning("⚠️  SERVO POSITIONS AT DEFAULT VALUES (UNCALIBRATED)")
+                logger.warning("=" * 80)
+                logger.warning(f"   S-position: {s_pos} (default)")
+                logger.warning(f"   P-position: {p_pos} (default)")
+                logger.warning("   These are factory defaults, NOT calibrated positions")
+                logger.warning("   Calibration will proceed but may have suboptimal results")
+                logger.warning("=" * 80)
+                logger.warning("   RECOMMENDATION: Run servo calibration to find optimal positions")
+                logger.warning("   The application should auto-trigger servo calibration on startup")
+                logger.warning("=" * 80)
+            
+            # Store positions in state (even if at defaults)
             self.state.polarizer_s_position = s_pos
             self.state.polarizer_p_position = p_pos
             self.state.polarizer_sp_ratio = sp_ratio
 
-            # Success logging
-            logger.info("=" * 80)
-            logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
-            logger.info("=" * 80)
-            logger.info(f"   S-position: {s_pos} (HIGH transmission - reference)")
-            logger.info(f"   P-position: {p_pos} (LOWER transmission - resonance)")
-            if sp_ratio:
-                logger.info(f"   S/P ratio: {sp_ratio:.2f}x")
-            logger.info("   ⚡ Fail-fast enabled: Invalid config detected immediately (<1s)")
-            logger.info("=" * 80)
+            # Success logging (only if not at defaults)
+            if not (s_pos == 10 and p_pos == 100):
+                logger.info("=" * 80)
+                logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
+                logger.info("=" * 80)
+                logger.info(f"   S-position: {s_pos} (HIGH transmission - reference)")
+                logger.info(f"   P-position: {p_pos} (LOWER transmission - resonance)")
+                if sp_ratio:
+                    logger.info(f"   S/P ratio: {sp_ratio:.2f}x")
+                logger.info("   ⚡ Fail-fast enabled: Invalid config detected immediately (<1s)")
+                logger.info("=" * 80)
         else:
-            # Positions not found in config - fail immediately
-            logger.error("=" * 80)
-            logger.error("❌ CRITICAL: OEM CALIBRATION POSITIONS NOT FOUND")
-            logger.error("=" * 80)
-            logger.error(f"   device_config keys: {list(device_config.keys())}")
-            logger.error(POLARIZER_ERROR_MESSAGE)
-            logger.error("=" * 80)
-            raise ValueError("OEM calibration positions not found in device_config")
-            logger.error("")
-            logger.error("   ❌ NO DEFAULT POSITIONS - OEM calibration is MANDATORY")
-            logger.error("=" * 80)
-            raise ValueError("OEM calibration required but not found in device config")
+            # Positions not found in config - use defaults but warn
+            logger.warning("=" * 80)
+            logger.warning("⚠️  OEM CALIBRATION POSITIONS NOT FOUND - USING DEFAULTS")
+            logger.warning("=" * 80)
+            logger.warning(f"   device_config keys: {list(device_config.keys())}")
+            logger.warning("   Using default positions: S=10, P=100")
+            logger.warning("   These are NOT calibrated - suboptimal performance expected")
+            logger.warning("=" * 80)
+            logger.warning(POLARIZER_ERROR_MESSAGE)
+            logger.warning("=" * 80)
+            
+            # Use defaults instead of failing
+            s_pos = 10
+            p_pos = 100
+            sp_ratio = None
+            self.state.polarizer_s_position = s_pos
+            self.state.polarizer_p_position = p_pos
+            self.state.polarizer_sp_ratio = sp_ratio
 
         # Initialize LED response model for predictive calibration
         self.led_model = LEDResponseModel()
@@ -3933,6 +3957,24 @@ Ready for Live Acquisition: ✓ YES
                 logger.error("=" * 80)
                 logger.error("❌ STEP 4 LED BALANCING FAILED!")
                 logger.error("=" * 80)
+
+                # Store error details for UI dialog
+                self._last_critical_error = {
+                    'type': 'led_balancing_failed',
+                    'user_message': (
+                        "The calibration process encountered an unexpected issue.\n\n"
+                        "This may require technical support to resolve."
+                    ),
+                    'user_actions': [
+                        "Click 'Retry' to attempt calibration again",
+                        "If this error persists after 2-3 attempts, contact Affinité support",
+                        "Have your device serial number ready"
+                    ],
+                    'technical_details': (
+                        f"LED balancing validation failed. All channels showing identical LED values "
+                        f"or invalid balancing pattern. ref_intensity: {self.state.ref_intensity}"
+                    )
+                }
                 return False
 
             logger.info("")
@@ -5048,6 +5090,24 @@ Ready for Live Acquisition: ✓ YES
             logger.error("❌ CRITICAL: self.state.ref_intensity is empty!")
             logger.error("   Step 4 did not store LED values properly")
             logger.error("   Cannot proceed to Step 5")
+
+            # Store error details for UI dialog
+            self._last_critical_error = {
+                'type': 'missing_led_values',
+                'user_message': (
+                    "The calibration process encountered an internal error.\n\n"
+                    "Please restart the software and try again."
+                ),
+                'user_actions': [
+                    "Close and restart the application",
+                    "Retry calibration after restart",
+                    "Contact support if the error continues"
+                ],
+                'technical_details': (
+                    "self.state.ref_intensity is empty after Step 4 - LED values not stored properly "
+                    "(possible state corruption or Step 4 failure)"
+                )
+            }
             return False
 
         # Check each channel
@@ -5130,6 +5190,25 @@ Ready for Live Acquisition: ✓ YES
                 else:
                     logger.error("   ❌ _all_leds_off_batch() returned False - LEDs NOT confirmed off")
                     logger.error("   Cannot proceed with dark measurement - stopping calibration")
+
+                    # Store error details for UI dialog
+                    self._last_critical_error = {
+                        'type': 'led_off_failure',
+                        'user_message': (
+                            "The system is having trouble controlling the LEDs.\n\n"
+                            "This indicates a communication issue with the controller."
+                        ),
+                        'user_actions': [
+                            "Check that the controller USB cable is securely connected",
+                            "Try unplugging and reconnecting the controller",
+                            "Restart the software and try again",
+                            "Contact support if the problem persists"
+                        ],
+                        'technical_details': (
+                            "LED off command failed - controller not responding to intensity=0 commands "
+                            "or 'lx' batch command. Step 5 dark measurement aborted."
+                        )
+                    }
                     return False
             except Exception as e:
                 logger.error(f"   ❌ Failed to turn off LEDs: {e}")
@@ -5287,6 +5366,25 @@ Ready for Live Acquisition: ✓ YES
                     else:
                         logger.error("   ❌ _all_leds_off_batch() returned False - LEDs NOT confirmed off")
                         logger.error("   Cannot proceed with dark measurement - stopping calibration")
+
+                        # Store error details for UI dialog
+                        self._last_critical_error = {
+                            'type': 'led_off_failure',
+                            'user_message': (
+                                "The system is having trouble controlling the LEDs.\n\n"
+                                "This indicates a communication issue with the controller."
+                            ),
+                            'user_actions': [
+                                "Check that the controller USB cable is securely connected",
+                                "Try unplugging and reconnecting the controller",
+                                "Restart the software and try again",
+                                "Contact support if the problem persists"
+                            ],
+                            'technical_details': (
+                                "LED off command failed - controller not responding to intensity=0 commands "
+                                "or 'lx' batch command. Step 1 dark measurement aborted."
+                            )
+                        }
                         return False
                 except Exception as e:
                     logger.error(f"   ❌ Failed to turn off LEDs: {e}")
@@ -5373,6 +5471,26 @@ Ready for Live Acquisition: ✓ YES
                         logger.error("   • All LEDs are physically off")
                         logger.error("   • Detector enclosure is light-tight")
                         logger.error("   • Hardware connections are secure")
+
+                        # Store error details for UI dialog
+                        self._last_critical_error = {
+                            'type': 'dark_noise_high',
+                            'user_message': (
+                                "The sensor is detecting unexpected light when it should be completely dark.\n\n"
+                                "This usually indicates a light leak or LED control issue."
+                            ),
+                            'user_actions': [
+                                "Check that the sensor cover is properly closed",
+                                "Ensure the sensor holder is not damaged or cracked",
+                                "Verify room lights are not shining directly on the sensor",
+                                "Wait 30 seconds and try again"
+                            ],
+                            'technical_details': (
+                                f"Dark noise: {dark_mean:.0f} counts (threshold: {DARK_QC_THRESHOLD:.0f}, "
+                                f"expected: ~{EXPECTED_DARK_MEAN_OCEAN_OPTICS:.0f}). "
+                                f"Failed after {MAX_RETRY_ATTEMPTS} retry attempts."
+                            )
+                        }
                         return False
                 else:
                     # QC PASSED
@@ -6702,6 +6820,24 @@ Ready for Live Acquisition: ✓ YES
             polarizer_valid = self.validate_polarizer_positions()
             if not polarizer_valid:
                 self._safe_hardware_cleanup()
+
+                # Store error details for UI dialog
+                self._last_critical_error = {
+                    'type': 'polarizer_invalid',
+                    'user_message': (
+                        "The polarizer needs to be configured before calibration can proceed.\n\n"
+                        "This is a one-time setup required for your device."
+                    ),
+                    'user_actions': [
+                        "Contact Affinité support for polarizer calibration",
+                        "Support will guide you through the setup process",
+                        "This typically takes 5-10 minutes"
+                    ],
+                    'technical_details': (
+                        "OEM polarizer positions not configured in device_config.json "
+                        "(servo_s_position and servo_p_position missing or invalid)"
+                    )
+                }
                 return False, "Polarizer positions invalid - run auto-polarization from Settings"
 
             # Step 3: Auto-polarize if enabled (advanced feature)
@@ -6724,6 +6860,26 @@ Ready for Live Acquisition: ✓ YES
             weakest_ch, channel_intensities = self.step_3_identify_weakest_channel(ch_list)
             if weakest_ch is None or self._is_stopped():
                 self._safe_hardware_cleanup()
+
+                # Store error details for UI dialog (only if not stopped by user)
+                if not self._is_stopped():
+                    self._last_critical_error = {
+                        'type': 'no_signal',
+                        'user_message': (
+                            "The system is not detecting any light from the sensor.\n\n"
+                            "This usually means the optical connections need attention."
+                        ),
+                        'user_actions': [
+                            "Check that all 4 fiber cables are fully connected",
+                            "Verify the prism is installed in the sensor holder",
+                            "Check that the LED indicator light is ON",
+                            "Inspect fiber tips for damage or dirt"
+                        ],
+                        'technical_details': (
+                            f"All channels showing zero/dark signal. "
+                            f"Channel intensities: {channel_intensities if channel_intensities else 'None measured'}"
+                        )
+                    }
                 return False, "Step 3: Failed to identify weakest channel"
 
             # Store weakest channel in calibration state
@@ -7448,65 +7604,66 @@ Ready for Live Acquisition: ✓ YES
         self,
         ctrl: PicoP4SPR | PicoEZSPR,
         usb: USB4000,
-    ) -> Optional[tuple[int, int]]:
-        """Automatically find optimal polarizer positions for P and S modes.
+        polarizer_type: str = "circular",
+    ) -> Optional[dict]:
+        """Automatically find optimal polarizer positions using improved method.
 
-        Uses peak detection to find the angles where maximum light transmission
-        occurs for both polarization modes.
+        This method uses the improved servo_calibration module with:
+        - Intelligent quadrant search for circular polarizers (~13 measurements)
+        - Window detection with SPR signature for barrel polarizers
+        - ROI-based measurement (600-750nm SPR region)
+        - Transmission-based validation
+        - Water presence check (circular only)
+
+        NOTE: This method does NOT automatically save positions.
+        Caller must handle user confirmation and save to device_config.
 
         Args:
             ctrl: SPR controller instance
             usb: USB4000 spectrometer instance
+            polarizer_type: Type of polarizer ("circular" or "barrel")
 
         Returns:
-            Tuple of (s_pos, p_pos) if successful, None if failed
-
+            Dict with calibration results if successful, None if failed:
+            {
+                'success': True,
+                'polarizer_type': str,
+                's_pos': int,
+                'p_pos': int,
+                'sp_ratio': float,
+                'dip_depth_percent': float,
+                'resonance_wavelength': float (circular only),
+                'transmission_min': float,
+                'validation_checks': list
+            }
         """
         try:
-            from scipy.signal import find_peaks, peak_prominences, peak_widths
+            from utils.servo_calibration import auto_calibrate_polarizer
 
-            # Set initial conditions
-            ctrl.set_intensity("a", 255)
-            usb.set_integration(max(MIN_INTEGRATION / 1000.0, usb.min_integration))
+            logger.info(f"Starting {polarizer_type} polarizer calibration...")
 
-            # Define sweep parameters (0-255 servo position range)
-            min_position = 10
-            max_position = MAX_POLARIZER_POSITION
-            half_range = (max_position - min_position) // 2
-            position_step = 5
-            steps = half_range // position_step
+            # Run improved calibration with appropriate method
+            result = auto_calibrate_polarizer(
+                usb=usb,
+                ctrl=ctrl,
+                require_water=(polarizer_type == "circular"),  # Only circular needs water check
+                polarizer_type=polarizer_type
+            )
 
-            # Initialize intensity array
-            max_intensities = np.zeros(2 * steps + 1)
+            if result is None:
+                logger.error("Polarizer calibration failed")
+                return None
 
-            # Set starting position
-            ctrl.servo_set(half_range + min_position, max_position)
-            ctrl.set_mode("p")
-            ctrl.set_mode("s")
-            max_intensities[steps] = usb.read_intensity().max()
+            logger.info(f"Polarizer calibration successful ({polarizer_type}):")
+            logger.info(f"  S position: {result['s_pos']}°")
+            logger.info(f"  P position: {result['p_pos']}°")
+            logger.info(f"  S/P ratio: {result['sp_ratio']:.2f}×")
+            if result.get('dip_depth_percent'):
+                logger.info(f"  Dip depth: {result['dip_depth_percent']:.1f}%")
+            if result.get('resonance_wavelength'):
+                logger.info(f"  Resonance: {result['resonance_wavelength']:.1f}nm")
 
-            # Sweep through positions
-            for i in range(steps):
-                x = min_position + position_step * i
-                ctrl.servo_set(s=x, p=x + half_range + position_step)
-                ctrl.set_mode("s")
-                max_intensities[i] = usb.read_intensity().max()
-                ctrl.set_mode("p")
-                max_intensities[i + steps + 1] = usb.read_intensity().max()
-
-            # Find peaks and optimal positions
-            peaks = find_peaks(max_intensities)[0]
-            prominences = peak_prominences(max_intensities, peaks)
-            i = prominences[0].argsort()[-2:]
-            edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
-            edges = np.array(edges)[:, i]
-
-            # Calculate final positions (0-255 scale)
-            p_pos, s_pos = (min_position + position_step * edges.mean(0)).astype(int)
-            ctrl.servo_set(s_pos, p_pos)
-
-            logger.info(f"Auto-polarization complete: s={s_pos}, p={p_pos} (0-255 scale)")
-            return s_pos, p_pos
+            return result
 
         except Exception as e:
             logger.exception(f"Error during auto-polarization: {e}")
@@ -7561,6 +7718,19 @@ Ready for Live Acquisition: ✓ YES
             Error message string, empty if no error
         """
         return getattr(self, '_error_message', "")
+
+    def get_last_critical_error(self) -> Optional[dict]:
+        """Get detailed information about the last critical calibration error.
+
+        Returns:
+            Dictionary with error details including:
+                - type: Error type identifier (e.g., 'dark_noise_high', 'no_signal')
+                - user_message: User-friendly problem description
+                - user_actions: List of troubleshooting steps for users
+                - technical_details: Technical diagnostic information (OEM/support only)
+            Returns None if no critical error occurred.
+        """
+        return getattr(self, '_last_critical_error', None)
 
     def stop(self) -> None:
         """Stop calibration process."""

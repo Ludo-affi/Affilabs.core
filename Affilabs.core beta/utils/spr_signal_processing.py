@@ -238,46 +238,73 @@ def validate_sp_orientation(
     wavelengths: np.ndarray,
     window_px: int = 200
 ) -> dict:
-    """Validate S/P mode orientation by checking transmission peak shape.
-    
-    For proper SPR transmission (P/S ratio), the resonance should appear as a DIP
-    (valley, minimum). If we see a PEAK (hill, maximum), S and P are swapped.
-    
-    Method: Find peak position, sample ±200px, check if peak is higher than sides.
-    
+    """Validate S/P polarizer orientation by analyzing transmission spectrum ONLY.
+
+    IMPORTANT: This function analyzes the TRANSMISSION SPECTRUM (P/S ratio) to detect
+    polarizer orientation. Raw P vs S intensity comparison is NOT used here - that's
+    only done during servo/polarizer calibration to find optimal positions.
+
+    DETECTION METHOD:
+    Analyze transmission spectrum (P/S ratio) for:
+    - Peak shape (dip vs hill)
+    - Peak depth (transmission reduction at SPR wavelength)
+    - Peak width (FWHM characteristics)
+    - Triangulation (peak vs edges comparison)
+
+    For correct orientation:
+    - Transmission shows a DIP (valley, minimum) due to SPR absorption
+    - Peak value is LOWER than surrounding edge baselines
+    - Dip depth indicates SPR coupling strength
+
+    For inverted orientation (swapped S/P positions):
+    - Transmission shows a PEAK (hill, maximum) instead of dip
+    - Peak value is HIGHER than surrounding edge baselines
+    - No SPR absorption visible (high transmission at resonance wavelength)
+
+    Key insight: With weak SPR coupling (marginal water contact), the dip may be
+    very shallow or barely visible. We need to distinguish between:
+    - Shallow dip (correct orientation, weak coupling)
+    - Actual peak/hill (inverted orientation)
+
+    Method:
+    1. Calculate transmission = P/S ratio
+    2. Find local min/max in SPR region (600-750nm)
+    3. Compare peak vs edge baselines
+    4. Determine if structure is dip (correct) or peak (inverted)
+
     Args:
         p_spectrum: P-mode intensity spectrum
-        s_spectrum: S-mode reference spectrum  
+        s_spectrum: S-mode reference spectrum
         wavelengths: Wavelength array
         window_px: Number of pixels to sample on each side of peak (default 200)
-        
+
     Returns:
         dict with:
-            - 'orientation_correct': bool - True if peak is a dip (correct), False if inverted
+            - 'orientation_correct': bool - True if dip detected (correct), False if peak (inverted)
             - 'peak_idx': int - Index of peak/dip
-            - 'peak_wl': float - Wavelength of peak/dip  
+            - 'peak_wl': float - Wavelength of peak/dip
             - 'peak_value': float - Transmission value at peak
-            - 'left_value': float - Mean transmission 200px left of peak
-            - 'right_value': float - Mean transmission 200px right of peak
+            - 'left_value': float - Mean transmission left of peak
+            - 'right_value': float - Mean transmission right of peak
             - 'is_flat': bool - True if spectrum is flat (saturation or dark)
             - 'confidence': float - Confidence score (0-1) based on peak prominence
     """
     # Calculate transmission
     transmission = calculate_transmission(p_spectrum, s_spectrum)
-    
+
     # Find peak (could be min or max depending on orientation)
     min_idx = np.argmin(transmission)
     max_idx = np.argmax(transmission)
-    
+
     min_val = transmission[min_idx]
     max_val = transmission[max_idx]
-    
+
     # Determine which is more prominent
     spectrum_range = np.ptp(transmission)  # peak-to-peak amplitude
-    
+
     # Check if flat (saturation or dark signal)
     is_flat = spectrum_range < 5.0  # Less than 5% variation = flat
-    
+
     if is_flat:
         logger.warning(f"⚠️ S/P validation: Flat transmission spectrum (range={spectrum_range:.2f}%) - possible saturation or dark signal")
         return {
@@ -290,36 +317,71 @@ def validate_sp_orientation(
             'is_flat': True,
             'confidence': 0.0
         }
-    
-    # Use the more prominent feature (larger deviation from mean)
-    mean_val = np.mean(transmission)
-    min_prominence = abs(min_val - mean_val)
-    max_prominence = abs(max_val - mean_val)
-    
-    if min_prominence > max_prominence:
-        # Dip is more prominent - this is CORRECT orientation
+
+    # NEW APPROACH: Check for local structure in SPR region (600-750nm) first
+    # This is more robust than global min/max for weak coupling cases
+    spr_region_start = np.searchsorted(wavelengths, 600)
+    spr_region_end = np.searchsorted(wavelengths, 750)
+
+    if spr_region_end > spr_region_start:
+        spr_transmission = transmission[spr_region_start:spr_region_end]
+        spr_wavelengths = wavelengths[spr_region_start:spr_region_end]
+
+        # Find local minimum in SPR region
+        local_min_idx = np.argmin(spr_transmission)
+        local_max_idx = np.argmax(spr_transmission)
+
+        local_min_val = spr_transmission[local_min_idx]
+        local_max_val = spr_transmission[local_max_idx]
+
+        # Check structure: compare center vs edges of SPR region
+        edge_width = min(50, len(spr_transmission) // 4)
+        left_edge_mean = np.mean(spr_transmission[:edge_width])
+        right_edge_mean = np.mean(spr_transmission[-edge_width:])
+        edge_mean = (left_edge_mean + right_edge_mean) / 2
+
+        # Calculate how much the min and max differ from edges
+        min_deviation = local_min_val - edge_mean
+        max_deviation = local_max_val - edge_mean
+
+        logger.debug(f"   S/P validation in 600-750nm region:")
+        logger.debug(f"     Min at {spr_wavelengths[local_min_idx]:.1f}nm: {local_min_val:.1f}% (deviation: {min_deviation:+.1f}%)")
+        logger.debug(f"     Max at {spr_wavelengths[local_max_idx]:.1f}nm: {local_max_val:.1f}% (deviation: {max_deviation:+.1f}%)")
+        logger.debug(f"     Edges: left={left_edge_mean:.1f}%, right={right_edge_mean:.1f}%")
+
+        # Decision logic:
+        # - If min is BELOW edges: correct orientation (has a dip)
+        # - If max is ABOVE edges MORE than min is below: inverted (has a peak instead)
+        # - Allow some tolerance for weak coupling (±5% is acceptable noise)
+
+        if min_deviation < -5:  # Clear dip present
+            orientation_correct = True
+            peak_idx = spr_region_start + local_min_idx
+            peak_val = local_min_val
+            logger.debug(f"   ✓ SPR DIP detected: {min_deviation:.1f}% below edges - CORRECT orientation")
+        elif max_deviation > 10:  # Clear peak present (inverted)
+            orientation_correct = False
+            peak_idx = spr_region_start + local_max_idx
+            peak_val = local_max_val
+            logger.debug(f"   ✗ SPR PEAK detected: {max_deviation:+.1f}% above edges - INVERTED orientation")
+        elif abs(min_deviation) > abs(max_deviation):  # Subtle dip more prominent than peak
+            orientation_correct = True
+            peak_idx = spr_region_start + local_min_idx
+            peak_val = local_min_val
+            logger.debug(f"   ✓ Subtle SPR dip detected (weak coupling): {min_deviation:.1f}% - CORRECT orientation")
+        else:  # Weak structure, default to checking global min/max
+            logger.warning(f"   ⚠️ Weak SPR structure in 600-750nm, falling back to global analysis")
+            # Use global min as best guess for weak coupling
+            orientation_correct = True
+            peak_idx = min_idx
+            peak_val = min_val
+    else:
+        # No valid SPR region - fallback to global analysis
+        logger.warning(f"   ⚠️ Invalid wavelength range for SPR analysis")
+        orientation_correct = True
         peak_idx = min_idx
         peak_val = min_val
-        orientation_correct = True
-    else:
-        # Peak is more prominent - INVERTED orientation  
-        peak_idx = max_idx
-        peak_val = max_val
-        orientation_correct = False
-    
-    # Sample regions ±window_px from peak
-    left_start = max(0, peak_idx - window_px)
-    left_end = peak_idx
-    right_start = peak_idx + 1
-    right_end = min(len(transmission), peak_idx + window_px + 1)
-    
-    left_mean = np.mean(transmission[left_start:left_end]) if left_end > left_start else peak_val
-    right_mean = np.mean(transmission[right_start:right_end]) if right_end > right_start else peak_val
-    
-    # Calculate confidence based on how much peak differs from sides
-    side_mean = (left_mean + right_mean) / 2
-    confidence = min(1.0, abs(peak_val - side_mean) / (spectrum_range + 1e-6))
-    
+
     return {
         'orientation_correct': orientation_correct,
         'peak_idx': peak_idx,
