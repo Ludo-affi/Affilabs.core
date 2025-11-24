@@ -1653,9 +1653,16 @@ class Application(QApplication):
             # Use simulated wavelengths if available, otherwise use data_mgr.wave_data
             wavelengths = data.get('wavelengths', self.data_mgr.wave_data)
 
-            # For simulated data, generate wavelength array if not provided
+            # For simulated data ONLY, generate wavelength array if not provided
             if wavelengths is None and data.get('simulated', False):
                 wavelengths = np.linspace(640, 690, len(transmission))
+                logger.debug(f"[SIMULATION] Generated wavelength array for channel {channel}")
+            
+            # Safety check: Real hardware data should NEVER hit this path
+            if wavelengths is None and not data.get('simulated', False):
+                logger.error(f"[HARDWARE ERROR] No wavelength data for channel {channel}! "
+                           f"Calibration may have failed. Skipping spectrum update.")
+                return  # Don't update dialogs without wavelength data
 
             self._pending_transmission_updates[channel] = {
                 'transmission': transmission,
