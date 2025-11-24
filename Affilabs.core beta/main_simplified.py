@@ -777,6 +777,9 @@ class Application(QApplication):
                     elapsed = time.time() - start_time[0]
                     logger.info(f"[SIM-TRACK-2] Elapsed time: {elapsed:.3f}s")
 
+                    # Generate wavelength array (match real detector: ~640-690nm range for SPR)
+                    wavelengths = np.linspace(640, 690, 512)  # 512 points for smooth spectrum
+
                     for ch in channels:
                         logger.info(f"[SIM-TRACK-3] Generating data for channel {ch}")
 
@@ -784,16 +787,28 @@ class Application(QApplication):
                         base_wavelength = peak_positions[ch]
                         drift = 0.5 * np.sin(elapsed / 10)  # Slow oscillation
                         noise = np.random.normal(0, 0.1)
-                        wavelength = base_wavelength + drift + noise
+                        peak_wavelength = base_wavelength + drift + noise
 
-                        # Generate intensity
-                        intensity = intensities[ch] + np.random.normal(0, 500)
+                        # Generate full spectrum arrays (simulate SPR dip)
+                        # Raw spectrum: Gaussian dip around resonance wavelength
+                        raw_spectrum = intensities[ch] - 5000 * np.exp(-((wavelengths - peak_wavelength) ** 2) / (2 * 3 ** 2))
+                        raw_spectrum += np.random.normal(0, 200, len(wavelengths))  # Add noise
+                        raw_spectrum = np.clip(raw_spectrum, 1000, 65000)  # Realistic detector range
 
-                        # Create data point matching real acquisition format
+                        # Transmission spectrum: Calculate from raw (simulate P/S ratio)
+                        # Assume S_ref is constant baseline
+                        s_ref = intensities[ch] * np.ones_like(wavelengths)
+                        transmission_spectrum = (raw_spectrum / s_ref) * 100.0  # Percentage
+                        transmission_spectrum = np.clip(transmission_spectrum, 0, 150)
+
+                        # Create data dict with full spectrum arrays (matching real format)
                         data = {
                             'channel': ch,
-                            'wavelength': float(wavelength),
-                            'intensity': float(intensity),
+                            'wavelength': float(peak_wavelength),  # Resonance peak for timeline
+                            'intensity': float(intensities[ch]),    # Average intensity
+                            'raw_spectrum': raw_spectrum,           # Full raw spectrum array
+                            'transmission_spectrum': transmission_spectrum,  # Full transmission array
+                            'wavelengths': wavelengths,             # Wavelength array for plots
                             'timestamp': time.time(),
                             'elapsed_time': elapsed,
                             'is_preview': False,
@@ -1657,13 +1672,19 @@ class Application(QApplication):
 
         # Queue for batch update if we have valid data
         if transmission is not None and len(transmission) > 0:
+            # Use simulated wavelengths if available, otherwise use data_mgr.wave_data
+            wavelengths = data.get('wavelengths', self.data_mgr.wave_data)
+            
+            # For simulated data, generate wavelength array if not provided
+            if wavelengths is None and data.get('simulated', False):
+                wavelengths = np.linspace(640, 690, len(transmission))
+                
             self._pending_transmission_updates[channel] = {
                 'transmission': transmission,
                 'raw_spectrum': raw_spectrum,
-                'wavelengths': self.data_mgr.wave_data
+                'wavelengths': wavelengths
             }
 
-            wavelengths = self.data_mgr.wave_data
             if wavelengths is not None:
                 # Update transmission dialog if open
                 if self._transmission_dialog is not None and self._transmission_dialog.isVisible():
