@@ -1734,11 +1734,11 @@ class Application(QApplication):
 
         During LIVE acquisition: Shows all data with simple downsampling for performance.
         During POST-RUN: Full resolution available for detailed analysis.
+        
+        Note: Graph updates continue even when "Live Data" checkbox is unchecked.
+        The checkbox only controls cursor auto-follow behavior.
         """
         with measure('ui_update_timer'):
-            if not self.main_window.live_data_enabled:
-                return
-
             # Skip updates during tab transitions to prevent UI freezing
             if self._skip_graph_updates:
                 return
@@ -1873,7 +1873,12 @@ class Application(QApplication):
 
         This slot is called from the cursor_update_signal emitted by the
         processing thread. It safely updates the cursor on the main Qt thread.
-
+        
+        Behavior:
+        - Only updates cursor if "Live Data" checkbox is enabled
+        - Respects user drag interaction (pauses during drag)
+        - Cycle of interest graph always updates regardless of checkbox state
+        
         Args:
             elapsed_time: Time value to set cursor to
         """
@@ -1887,13 +1892,19 @@ class Application(QApplication):
             stop_cursor = self.main_window.full_timeline_graph.stop_cursor
             if stop_cursor is None:
                 return
+            
+            # Check if "Live Data" checkbox is enabled (controls cursor auto-follow)
+            if not hasattr(self.main_window, 'live_data_enabled'):
+                return
+            if not self.main_window.live_data_enabled:
+                return  # Checkbox disabled - stop cursor updates but keep recording
 
             # Check if user is currently dragging the cursor
             is_moving = getattr(stop_cursor, 'moving', False)
             if is_moving:
                 return  # Don't auto-move while user is dragging
 
-            # Update cursor position
+            # Update cursor position (only when checkbox enabled)
             stop_cursor.setValue(elapsed_time)
 
             # Update label if it exists

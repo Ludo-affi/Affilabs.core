@@ -2120,7 +2120,12 @@ class AffilabsMainWindow(QMainWindow):
         # Live Data checkbox
         self.live_data_checkbox = QCheckBox("Live Data")
         self.live_data_checkbox.setChecked(True)
-        self.live_data_checkbox.setToolTip("Enable/disable real-time graph updates (uncheck to freeze display)")
+        self.live_data_checkbox.setToolTip(
+            "Enable/disable live cursor auto-follow\n"
+            "• Checked: Stop cursor follows latest data point\n"
+            "• Unchecked: Stop cursor freezes, data keeps recording\n"
+            "• Cycle of Interest graph always updates between cursors"
+        )
         self.live_data_checkbox.setStyleSheet(
             "QCheckBox {"
             "  font-size: 13px;"
