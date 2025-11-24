@@ -133,7 +133,7 @@ def qt_message_handler(msg_type, context, message):
 
 qInstallMessageHandler(qt_message_handler)
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, Signal
 from affilabs_core_ui import AffilabsMainWindow
 from core.hardware_manager import HardwareManager
 from core.data_acquisition_manager import DataAcquisitionManager
@@ -175,6 +175,9 @@ import numpy as np
 
 class Application(QApplication):
     """Main application class that coordinates UI and hardware."""
+
+    # Signal for thread-safe cursor updates (emitted from processing thread)
+    cursor_update_signal = Signal(float)  # elapsed_time
 
     def __init__(self, argv):
         super().__init__(argv)
@@ -341,6 +344,9 @@ class Application(QApplication):
         self.main_window.full_timeline_graph.stop_cursor.sigPositionChanged.connect(
             self._update_cycle_of_interest_graph
         )
+
+        # Connect cursor auto-follow signal (thread-safe)
+        self.cursor_update_signal.connect(self._update_stop_cursor_position)
 
         # Connect polarizer toggle button to servo control
         self.main_window.polarizer_toggle_btn.clicked.connect(self._on_polarizer_toggle_clicked)
@@ -1532,40 +1538,12 @@ class Application(QApplication):
                     import traceback
                     traceback.print_exc()
 
-            # DISABLED: Auto-follow cursor update (THREAD SAFETY FIX)
-            # This code was causing Qt crashes because it accesses widgets from background thread.
-            # Qt widgets can ONLY be accessed from the main thread.
-            # TODO: Implement cursor updates via signal to main thread if needed
-            logger.info(f"[CRASH-TRACK-2F] Cursor update SKIPPED (thread safety)")
-
-            # # Auto-follow latest data with stop cursor (when Live Data is enabled)
-            # # Only move cursor if not currently being dragged by user
-            # try:
-            #     logger.info(f"[CRASH-TRACK-2F] Checking cursor update")
-            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] About to check live_data_enabled")
-            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] self.main_window type: {type(self.main_window)}")
-            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] Accessing live_data_enabled now...")
-            #     live_enabled = self.main_window.live_data_enabled
-            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] live_data_enabled = {live_enabled}")
-            #     if live_enabled:
-            #         if (hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
-            #             self.main_window.full_timeline_graph.stop_cursor is not None):
-            #             stop_cursor = self.main_window.full_timeline_graph.stop_cursor
-            #
-            #             # Check if cursor is being dragged (don't auto-move during drag)
-            #             is_moving = getattr(stop_cursor, 'moving', False)
-            #
-            #             if not is_moving:
-            #                 # Move stop cursor to follow latest time point
-            #                 stop_cursor.setValue(elapsed_time)
-            #                 # Update label
-            #                 if hasattr(stop_cursor, 'label') and stop_cursor.label:
-            #                     stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
-            #     logger.info(f"[CRASH-TRACK-2G] Cursor update complete")
-            # except (AttributeError, RuntimeError) as e:
-            #     logger.warning(f"[CRASH-TRACK-2G-WARN] Cursor update failed (non-fatal): {e}")
-            #     print(f"[PROCESS ERROR] Channel {channel}: Cursor update failed: {e}")
-            #     pass  # Cursor not ready yet, skip this update
+            # Cursor auto-follow (thread-safe via signal)
+            # Emit signal to update cursor on main thread
+            try:
+                self.cursor_update_signal.emit(elapsed_time)
+            except Exception as e:
+                logger.warning(f"Cursor update signal emit failed: {e}")
 
         except Exception as e:
             # TOP-LEVEL CATCH: Prevent any exception from killing the processing thread
@@ -1674,11 +1652,11 @@ class Application(QApplication):
         if transmission is not None and len(transmission) > 0:
             # Use simulated wavelengths if available, otherwise use data_mgr.wave_data
             wavelengths = data.get('wavelengths', self.data_mgr.wave_data)
-            
+
             # For simulated data, generate wavelength array if not provided
             if wavelengths is None and data.get('simulated', False):
                 wavelengths = np.linspace(640, 690, len(transmission))
-                
+
             self._pending_transmission_updates[channel] = {
                 'transmission': transmission,
                 'raw_spectrum': raw_spectrum,
@@ -1882,6 +1860,42 @@ class Application(QApplication):
                 # Silent fail - non-critical display error
                 pass        # Clear processed updates
         self._pending_transmission_updates = {'a': None, 'b': None, 'c': None, 'd': None}
+
+    def _update_stop_cursor_position(self, elapsed_time: float):
+        """Update stop cursor position on main thread (thread-safe).
+
+        This slot is called from the cursor_update_signal emitted by the
+        processing thread. It safely updates the cursor on the main Qt thread.
+
+        Args:
+            elapsed_time: Time value to set cursor to
+        """
+        try:
+            # Check if graph and cursor exist
+            if not hasattr(self.main_window, 'full_timeline_graph'):
+                return
+            if not hasattr(self.main_window.full_timeline_graph, 'stop_cursor'):
+                return
+
+            stop_cursor = self.main_window.full_timeline_graph.stop_cursor
+            if stop_cursor is None:
+                return
+
+            # Check if user is currently dragging the cursor
+            is_moving = getattr(stop_cursor, 'moving', False)
+            if is_moving:
+                return  # Don't auto-move while user is dragging
+
+            # Update cursor position
+            stop_cursor.setValue(elapsed_time)
+
+            # Update label if it exists
+            if hasattr(stop_cursor, 'label') and stop_cursor.label:
+                stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
+
+        except (AttributeError, RuntimeError) as e:
+            # Cursor not ready yet, skip this update silently
+            pass
 
     def _update_cycle_of_interest_graph(self):
         """Update the cycle of interest graph based on cursor positions.
@@ -2113,7 +2127,7 @@ class Application(QApplication):
 
         # Update UI recording indicator with filename
         self.ui.set_recording_state(True, filename)
-        
+
         # Update spectroscopy status
         if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
             status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
@@ -2134,7 +2148,7 @@ class Application(QApplication):
 
         # Update UI recording indicator
         self.ui.set_recording_state(False)
-        
+
         # Update spectroscopy status back to "Running" (not recording)
         if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
             status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
@@ -2171,7 +2185,7 @@ class Application(QApplication):
         """Live data acquisition has started - enable record and pause buttons."""
         logger.info("✅ Live acquisition started - enabling record/pause buttons")
         self.ui.enable_recording_controls()
-        
+
         # Update spectroscopy status to "Running"
         if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
             indicator = self.ui.sidebar.subunit_status['Spectroscopy']['indicator']
@@ -2233,7 +2247,7 @@ class Application(QApplication):
             self.main_window.record_btn.setChecked(False)
         if self.main_window.pause_btn.isChecked():
             self.main_window.pause_btn.setChecked(False)
-        
+
         # Update spectroscopy status to "Stopped"
         if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
             status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
@@ -2244,7 +2258,7 @@ class Application(QApplication):
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
-        
+
         # Stop recording if active
         if self.recording_mgr.is_recording:
             logger.info("📝 Stopping recording due to acquisition stop...")
