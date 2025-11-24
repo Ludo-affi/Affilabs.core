@@ -703,12 +703,20 @@ class PicoP4SPRHAL(SPRControllerHAL):
                 self._ser.reset_input_buffer()
                 self._ser.reset_output_buffer()
 
-            # SKIP VERIFICATION: Just assume it's correct device on COM4 to prevent freeze
-            logger.warning("SKIPPING device identity verification to prevent GUI freeze")
-            return True
-
-            # Test device identification (DISABLED)
-            # return self._verify_device_identity()
+            # Verify device identity with fast non-blocking check
+            # This prevents connecting to wrong devices while avoiding GUI freeze
+            if self._verify_device_identity():
+                logger.debug(f"Successfully verified PicoP4SPR identity on {port}")
+                return True
+            else:
+                logger.warning(f"Device on {port} did not respond as PicoP4SPR")
+                # Close and cleanup failed connection
+                try:
+                    self._ser.close()
+                except Exception:
+                    pass
+                self._ser = None
+                return False
 
         except Exception as e:
             logger.debug(f"Connection attempt to {port} failed: {e}")
@@ -721,25 +729,40 @@ class PicoP4SPRHAL(SPRControllerHAL):
             return False
 
     def _verify_device_identity(self) -> bool:
-        """Verify device is PicoP4SPR with minimal blocking."""
+        """Verify device is PicoP4SPR with minimal blocking.
+
+        Uses fast non-blocking reads with 200ms total timeout to prevent GUI freeze.
+        Returns True only if device responds with "P4SPR" identifier.
+        """
         if not self._ser:
             return False
 
-        # ULTRA-FAST: Only 1 attempt to prevent any GUI freeze
         try:
+            # Clear any stale data
+            with suppress(Exception):
+                self._ser.reset_input_buffer()
+
+            # Send identity query
             self._ser.write(b"id\r\n")
-            time.sleep(0.05)  # 50ms for device to respond
 
-            # Non-blocking read: only read what's available
-            if self._ser.in_waiting > 0:
-                line = self._ser.read(self._ser.in_waiting)
-                reply = line.decode(errors="ignore").strip()
-                logger.debug(f"Device ID response: {reply}")
+            # Fast polling loop with 200ms max timeout (matches serial timeout)
+            # This prevents GUI freeze while allowing device to respond
+            max_polls = 10  # 10 polls × 20ms = 200ms max
+            for poll in range(max_polls):
+                time.sleep(0.02)  # 20ms between polls
 
-                if "P4SPR" in reply:
-                    return True
-            else:
-                logger.debug("No immediate response from device")
+                if self._ser.in_waiting > 0:
+                    # Read available data
+                    line = self._ser.read(self._ser.in_waiting)
+                    reply = line.decode(errors="ignore").strip()
+                    logger.debug(f"Device ID response (poll {poll+1}): {reply}")
+
+                    if "P4SPR" in reply:
+                        logger.info("✅ Verified PicoP4SPR device identity")
+                        return True
+
+            # No valid response within timeout
+            logger.warning("⚠️ Device did not respond with P4SPR identifier within 200ms")
 
         except Exception as e:
             logger.debug(f"ID verification failed: {e}")

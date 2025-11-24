@@ -48,6 +48,7 @@ class DeviceConfiguration:
     VALID_FIBER_DIAMETERS = [100, 200]  # micrometers
     VALID_LED_MODES = [2, 4]  # number of LEDs
     VALID_POLARIZER_TYPES = ['barrel', 'round']  # barrel (2 fixed windows) or round (continuous rotation)
+    VALID_SERVO_MODELS = ['HS-55MG', 'Alternate']  # Default is HS-55MG
 
     # LED type mapping (short code to full name)
     LED_TYPE_MAP = {
@@ -78,8 +79,9 @@ class DeviceConfiguration:
             'optical_fiber_diameter_um': 200,  # 200 µm or 100 µm
             'polarizer_type': 'barrel',  # 'barrel' (2 fixed windows) or 'round' (continuous rotation)
                                          # Hardware rule: Arduino and PicoP4SPR ALWAYS use 'round'
-            'servo_s_position': 10,  # S-mode polarizer position (0-180)
-            'servo_p_position': 100,  # P-mode polarizer position (0-180)
+            'servo_model': 'HS-55MG',  # Servo motor model: 'HS-55MG' (default) or 'Alternate'
+            'servo_s_position': 10,  # S-mode polarizer position (0-255, ~1°/step, covers ~250°)
+            'servo_p_position': 100,  # P-mode polarizer position (0-255, ~1°/step, covers ~250°)
         },
         'timing_parameters': {
             'led_a_delay_ms': 0,
@@ -90,10 +92,8 @@ class DeviceConfiguration:
             'led_rise_fall_time_ms': 5,  # Time for LED to stabilize
         },
         'frequency_limits': {
-            '4_led_max_hz': 5.0,
-            '4_led_recommended_hz': 2.0,
-            '2_led_max_hz': 10.0,
-            '2_led_recommended_hz': 5.0,
+            '4_led_target_hz': 1.0,  # Target frequency for 4-LED mode
+            '2_led_target_hz': 2.0,  # Target frequency for 2-LED mode (not yet implemented)
         },
         'calibration': {
             'dark_calibration_date': None,
@@ -146,6 +146,7 @@ class DeviceConfiguration:
         self.device_serial = device_serial
         self.controller = controller
         self.loaded_from_eeprom = False
+        self.created_from_scratch = False  # True if config created with known info (user needs to fill missing fields)
         self.config = self._load_or_create_config()
 
         # Auto-save EEPROM config to JSON if loaded from EEPROM
@@ -163,7 +164,7 @@ class DeviceConfiguration:
         Load priority:
         1. JSON file (if exists)
         2. EEPROM (if JSON missing and controller connected)
-        3. Defaults (if both missing)
+        3. Create with known info (device serial, controller type) - UI will prompt for missing fields
 
         Returns:
             Configuration dictionary
@@ -177,6 +178,7 @@ class DeviceConfiguration:
                 # Validate and merge with defaults (in case new fields added)
                 config = self._merge_with_defaults(config)
                 self.loaded_from_eeprom = False
+                self.created_from_scratch = False  # Loaded from file, not created
                 return config
             except Exception as e:
                 logger.error(f"Failed to load configuration: {e}")
@@ -187,7 +189,7 @@ class DeviceConfiguration:
             return self._try_load_from_eeprom_or_default()
 
     def _try_load_from_eeprom_or_default(self) -> Dict[str, Any]:
-        """Try to load config from EEPROM, or create defaults if that fails."""
+        """Try to load config from EEPROM, or create partial config with known info if that fails."""
         if self.controller is not None:
             try:
                 if self.controller.is_config_valid_in_eeprom():
@@ -198,6 +200,7 @@ class DeviceConfiguration:
                         # Convert EEPROM config to full config structure
                         config = self._create_config_from_eeprom(eeprom_config)
                         self.loaded_from_eeprom = True
+                        self.created_from_scratch = False
 
                         # Note: Don't call self.save() here - config not yet assigned to self.config
                         # It will be saved after __init__ assigns it
@@ -208,10 +211,13 @@ class DeviceConfiguration:
             except Exception as e:
                 logger.warning(f"EEPROM read failed: {e}")
 
-        # Fallback to defaults
-        logger.info("Creating new configuration with defaults")
+        # Fallback: create partial config with known information
+        # UI will prompt user for missing fields (LED model, fiber diameter, polarizer type)
+        logger.info("Creating new configuration with known information (device serial, controller type)")
+        logger.info("UI will prompt for missing fields: LED model, fiber diameter, polarizer type")
         self.loaded_from_eeprom = False
-        return self._create_default_config()
+        self.created_from_scratch = True  # Flag to trigger UI popup
+        return self._create_partial_config_with_known_info()
 
     def _create_config_from_eeprom(self, eeprom_config: dict) -> Dict[str, Any]:
         """Create full configuration structure from EEPROM data.
@@ -260,6 +266,90 @@ class DeviceConfiguration:
         config['device_info']['created_date'] = now
         config['device_info']['last_modified'] = now
 
+        # Set next maintenance to November of next year (one year from now)
+        current_date = datetime.now()
+        current_year = current_date.year
+        current_month = current_date.month
+
+        # If we're past November, schedule for next year's November
+        if current_month >= 11:
+            next_maintenance_year = current_year + 1
+        else:
+            # If we're before November, schedule for this year's November
+            next_maintenance_year = current_year
+
+        config['maintenance']['next_maintenance_due'] = f"{next_maintenance_year}-11-01"
+
+        return config
+
+    def _create_partial_config_with_known_info(self) -> Dict[str, Any]:
+        """Create partial configuration with known information.
+
+        Populates fields we know from hardware detection:
+        - Device serial number (spectrometer)
+        - Controller type (detected from hardware)
+
+        Leaves these fields for user input:
+        - LED model (LCW or OWW)
+        - Fiber diameter (100 or 200 µm)
+        - Polarizer type (barrel or circle)
+
+        Servo positions and LED intensities will be populated after calibration.
+
+        Returns:
+            Partial configuration with known info
+        """
+        import copy
+        config = copy.deepcopy(self.DEFAULT_CONFIG)
+
+        # Set timestamps
+        now = datetime.now().isoformat()
+        config['device_info']['created_date'] = now
+        config['device_info']['last_modified'] = now
+
+        # Set next maintenance to November of next year (one year from now)
+        current_date = datetime.now()
+        current_year = current_date.year
+        current_month = current_date.month
+
+        # If we're past November, schedule for next year's November
+        if current_month >= 11:
+            next_maintenance_year = current_year + 1
+        else:
+            # If we're before November, schedule for this year's November
+            next_maintenance_year = current_year
+
+        config['maintenance']['next_maintenance_due'] = f"{next_maintenance_year}-11-01"
+
+        # Populate known information
+        if self.device_serial:
+            config['hardware']['spectrometer_serial'] = self.device_serial
+            config['device_info']['device_id'] = self.device_serial
+            logger.info(f"  ✓ Device Serial: {self.device_serial}")
+
+        # Try to detect controller type from hardware
+        if self.controller is not None:
+            try:
+                ctrl_name = getattr(self.controller, 'device_name', '').lower()
+                if 'arduino' in ctrl_name or ctrl_name == 'p4spr':
+                    config['hardware']['controller_type'] = 'Arduino'
+                    config['hardware']['controller_model'] = 'Arduino P4SPR'
+                    config['hardware']['polarizer_type'] = 'round'  # Hardware rule: Arduino always uses round
+                    logger.info(f"  ✓ Controller: Arduino (auto-set polarizer to 'round')")
+                elif 'pico_p4spr' in ctrl_name or 'picop4spr' in ctrl_name:
+                    config['hardware']['controller_type'] = 'PicoP4SPR'
+                    config['hardware']['controller_model'] = 'Raspberry Pi Pico P4SPR'
+                    config['hardware']['polarizer_type'] = 'round'  # Hardware rule: PicoP4SPR always uses round
+                    logger.info(f"  ✓ Controller: PicoP4SPR (auto-set polarizer to 'round')")
+                elif 'pico_ezspr' in ctrl_name or 'picoezspr' in ctrl_name:
+                    config['hardware']['controller_type'] = 'PicoEZSPR'
+                    config['hardware']['controller_model'] = 'Raspberry Pi Pico EZSPR'
+                    config['hardware']['polarizer_type'] = 'barrel'  # Hardware rule: PicoEZSPR typically uses barrel
+                    logger.info(f"  ✓ Controller: PicoEZSPR (auto-set polarizer to 'barrel')")
+            except Exception as e:
+                logger.debug(f"Could not auto-detect controller type: {e}")
+
+        logger.info("  ⚠️ User input required: LED model, fiber diameter")
         return config
 
     def _merge_with_defaults(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -288,8 +378,12 @@ class DeviceConfiguration:
 
         return merged
 
-    def save(self):
-        """Save configuration to file."""
+    def save(self, auto_sync_eeprom: bool = False):
+        """Save configuration to file.
+
+        Args:
+            auto_sync_eeprom: If True and controller is available, automatically sync to EEPROM
+        """
         try:
             # Update last modified timestamp
             self.config['device_info']['last_modified'] = datetime.now().isoformat()
@@ -302,6 +396,16 @@ class DeviceConfiguration:
                 json.dump(self.config, f, indent=2)
 
             logger.info(f"Configuration saved to {self.config_path}")
+
+            # Auto-sync to EEPROM if requested and controller available
+            if auto_sync_eeprom and self.controller is not None:
+                logger.info("Auto-syncing configuration to EEPROM...")
+                success = self.sync_to_eeprom(self.controller)
+                if success:
+                    logger.info("✓ Configuration auto-synced to EEPROM")
+                else:
+                    logger.warning("✗ EEPROM auto-sync failed")
+
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
             raise
@@ -612,6 +716,28 @@ class DeviceConfiguration:
         hw['servo_p_position'] = p_pos
         self.config['device_info']['last_modified'] = datetime.now().isoformat()
         logger.info(f"Servo positions updated: S={s_pos}, P={p_pos}")
+
+    def swap_servo_positions(self) -> tuple[int, int]:
+        """
+        Swap S and P polarizer servo positions.
+
+        Used for auto-correction when polarizer orientation is detected as inverted
+        (e.g., when 3+ channels show inverted SPR dips).
+
+        Returns:
+            Tuple of (new_s_pos, new_p_pos) after swap
+        """
+        hw = self.config['hardware']
+        s_pos = hw.get('servo_s_position', 10)
+        p_pos = hw.get('servo_p_position', 100)
+
+        # Swap positions
+        hw['servo_s_position'] = p_pos
+        hw['servo_p_position'] = s_pos
+        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+
+        logger.info(f"Servo positions swapped: S={s_pos}→{p_pos}, P={p_pos}→{s_pos}")
+        return p_pos, s_pos
 
     def get_led_intensities(self) -> Dict[str, int]:
         """

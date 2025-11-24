@@ -83,6 +83,21 @@ This document is the single source of truth for understanding S-polarization and
 
 ## 🎯 Servo/Polarizer Calibration
 
+### When Servo Calibration Runs
+
+Servo calibration is part of the **initial device setup sequence**:
+
+```
+1. Connect Hardware → Device identified
+2. Load device_config.json → Check for servo positions
+3. Decision Point:
+   • If servo positions EXIST → Skip to LED calibration (fast path)
+   • If servo positions MISSING → Run servo calibration (method below)
+4. LED Calibration → Common path (same for all polarizer types)
+```
+
+**Key Point**: Servo calibration is **only required once** during initial setup or after hardware changes. Once servo positions are stored in device_config.json, the system uses them for all future sessions and proceeds directly to LED calibration.
+
 ### Circular Polarizers (Standard Devices)
 
 **Method**: Intelligent Quadrant Search

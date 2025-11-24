@@ -14,13 +14,55 @@ FILE ORGANIZATION:
    - perform_full_led_calibration(): Standard method (Global Integration Time) - DEFAULT
    - perform_alternative_calibration(): Alternative method (Global LED Intensity) - EXPERIMENTAL
 
+POLARIZER HARDWARE & CALIBRATION COMPLEXITY:
+============================================
+CRITICAL: Distinguish between TWO separate calibration phases:
+
+**PHASE 1: SERVO POSITION CALIBRATION (OEM Manufacturing - Done ONCE)**
+
+BARREL POLARIZER (Simple):
+  - Hardware: Two FIXED polarization windows at 90° to each other
+  - Servo Calibration: SIMPLE - just find the 2 window alignment positions
+    * Sweep servo 10-255, look for 2 transmission peaks
+    * Higher peak = S-mode (perpendicular), lower peak = P-mode (parallel)
+    * ~1.4 minutes, done once at manufacturing (OEM calibration tool)
+  - Result: Servo positions stored in device EEPROM/config
+
+CIRCULAR POLARIZER (Complex):
+  - Hardware: Continuously rotating polarizer element
+  - Servo Calibration: COMPLEX - must find optimal angles in continuous space
+    * Quadrant search algorithm (~13 measurements) with water required
+    * Must identify global max (S-mode) and optimal working point (P-mode)
+    * Physics: polarization angle changes continuously with servo position
+  - Result: Servo positions stored in device EEPROM/config
+
+**PHASE 2: LED INTENSITY CALIBRATION (This Module - Every Measurement Session)**
+
+BOTH POLARIZER TYPES (Same Complexity):
+  - Once servo positions are known, LED calibration is IDENTICAL for both types
+  - LED Calibration Process:
+    * S-mode: Optimize LED intensities to reach target counts
+    * Analyze headroom: How much LED intensity was used in S-mode
+    * P-mode: Boost LED intensities based on available headroom
+    * BOTH types require headroom analysis for S→P boost prediction
+  - Expected S/P Ratio: 1.5-15.0× for BOTH types (depends on sample coupling, not polarizer)
+  - Complexity: STANDARD for both (the servo position complexity was already solved in Phase 1)
+
+KEY INSIGHT: The polarizer type determines SERVO CALIBRATION complexity (Phase 1),
+NOT LED CALIBRATION complexity (Phase 2, this module). Once servo positions are
+established at manufacturing, LED intensity optimization follows the same process
+regardless of polarizer type.
+
+**THIS MODULE HANDLES PHASE 2 ONLY** - LED intensity calibration assuming servo
+positions are already known from Phase 1 (manufacturing calibration).
+
 CALIBRATION METHODS:
 ====================
 STANDARD Method (Global Integration Time) - DEFAULT:
   - Sequential optimization: integration time first (global), then LED intensities (per-channel)
-  - Used for general purpose, well-tested and stable
+  - Used for circular polarizers where LED intensity affects polarization
   - Steps: wavelength → global integration → S-mode LED/channel → dark → S-ref → S-QC → P-mode LED/channel → P-QC
-  - S-mode LED analysis predicts P-mode boost potential (headroom intelligence)
+  - S-mode LED analysis predicts P-mode boost potential (headroom intelligence for LED-polarization coupling)
   - Timing budget: 200ms/channel (integration + 50ms hardware overhead) ≈ 1Hz per channel
 
 ALTERNATIVE Method (Global LED Intensity) - EXPERIMENTAL (Disabled by default):
@@ -34,37 +76,61 @@ ALTERNATIVE Method (Global LED Intensity) - EXPERIMENTAL (Disabled by default):
 
 QUALITY CONTROL & WATER DETECTION:
 ===================================
-Both calibration methods share common QC validation with distinct capabilities:
+Both calibration methods share common QC validation with TWO DISTINCT PHASES:
 
-S-pol QC (validate_s_ref_quality):
-  - Purpose: PRISM PRESENCE DETECTION ONLY
-  - What we CAN detect:
-    * Prism present/absent (by signal intensity vs expected for integration time)
-    * Fiber connection status
-    * LED spectral profile (peak wavelength, intensity)
-  - What we CANNOT detect:
-    * Water presence (no transmission spectrum yet)
-    * SPR coupling quality (need P/S ratio)
-  - Detection: If intensity << expected → prism likely absent or fiber disconnected
+**CRITICAL DISTINCTION**: S-mode and P-mode measure DIFFERENT things:
+- S-mode: Detector + LED performance (no SPR, no sensor validation)
+- P-mode: Sensor + SPR performance (requires transmission spectrum P/S)
 
-P-pol QC (verify_calibration):
-  - Purpose: WATER PRESENCE & SPR COUPLING DETECTION
-  - What we CAN detect (by analyzing transmission spectrum P/S):
-    * Water presence (SPR dip visible in transmission)
-    * SPR coupling quality (dip depth and FWHM)
-    * Sensor response (transmission dip shape)
-  - Checks performed:
-    1. Saturation check on P-spectrum
-    2. Transmission calculation (P/S ratio)
-    3. SPR dip detection in transmission (proves water present)
-    4. FWHM analysis on transmission (coupling quality)
-  - Detection: No dip or inverted peak → dry sensor or swapped polarizer
+**PHASE A: S-MODE QC** (validate_s_ref_quality) - DETECTOR & LED BASELINE
+Purpose: Characterize optical system WITHOUT SPR
+Measures: LED spectral profile, detector response, optical path losses
+QC Metrics:
+  ✅ CAN detect:
+    • Prism present/absent (by signal intensity vs expected)
+    • Fiber connection status (weak signal = disconnected)
+    • LED spectral profile (peak wavelength, intensity)
+    • Optical system health (spectral shape)
+  ❌ CANNOT detect:
+    • Water presence (NO SPR information in S-pol!)
+    • SPR coupling quality (need transmission spectrum)
+    • Sensor degradation (need SPR dip analysis)
+  Detection method: Intensity threshold (<5000 counts = likely prism absent)
+  Result: S-ref baseline stored for transmission calculation
+
+**PHASE B: P-MODE QC** (verify_calibration) - SENSOR & SPR VALIDATION
+Purpose: Validate SPR coupling and water presence
+Measures: SPR dip in transmission (P/S ratio), coupling quality
+QC Metrics:
+  ✅ CAN detect:
+    • Water presence (SPR dip visible in transmission)
+    • SPR coupling quality (dip depth >10% = good)
+    • Sensor response (FWHM 15-30nm = high sensitivity)
+    • Polarizer orientation (dip vs peak in transmission)
+  ❌ CANNOT check on:
+    • Individual S or P spectra (meaningless without ratio)
+    • Raw intensity comparisons (LED profile contamination)
+  Detection method: Transmission spectrum analysis (P/S ratio)
+    - Calculate transmission = P-spectrum / S-spectrum × 100%
+    - Look for SPR dip (valley) at 590-670nm
+    - Measure FWHM: <30nm=good, 30-50nm=acceptable, >80nm=dry
+  Result: Validated system ready for measurements
+
+**Why this separation matters**:
+1. S-mode establishes "what the system can do" (optical baseline)
+2. P-mode validates "what the sensor can measure" (SPR performance)
+3. Trying to detect water in S-mode = IMPOSSIBLE (no SPR in S-pol)
+4. Trying to analyze SPR in raw P-spectrum = MEANINGLESS (LED profile mixed in)
+5. ONLY transmission spectrum (P/S ratio) contains isolated SPR information
+
+Think of it as: S-mode = "System QC", P-mode = "Sensor QC"
 """
 
 from __future__ import annotations
 
 import time
 from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -128,6 +194,263 @@ HARDWARE_OVERHEAD_MS = ESTIMATED_LED_DELAY_MS + ESTIMATED_AFTERGLOW_MS + \
 
 
 # =============================================================================
+# HELPER DATACLASSES
+# =============================================================================
+
+@dataclass
+class DetectorParams:
+    """Detector hardware parameters (read once, reused throughout calibration)."""
+    target_counts: float  # Target signal level for S-mode calibration
+    max_counts: float     # Maximum detector count (saturation point)
+    saturation_threshold: float  # Safe maximum (typically 95% of max_counts)
+
+@dataclass
+class ScanConfig:
+    """Scan count configuration based on integration time."""
+    dark_scans: int  # Number of scans for dark noise measurement
+    ref_scans: int   # Number of scans for reference signal measurement
+    num_scans: int   # Number of scans for live acquisition
+
+@dataclass
+class ChannelHeadroomAnalysis:
+    """LED headroom analysis for a single channel."""
+    channel: str
+    s_intensity: int           # S-mode LED intensity (0-255)
+    headroom: int              # Remaining LED range (P_LED_MAX - s_intensity)
+    headroom_pct: float        # Headroom as percentage
+    predicted_boost: float     # Predicted P-mode boost ratio
+    is_weak: bool              # True if s_intensity > 200 (weak optical signal)
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def determine_channel_list(device_type: str, single_mode: bool = False, single_ch: str = "a") -> list[str]:
+    """Determine which channels to calibrate based on device type.
+
+    Centralized channel list determination - single source of truth.
+
+    Args:
+        device_type: Device type string (e.g., 'P4SPR', 'EZSPR', 'PicoEZSPR')
+        single_mode: If True, only calibrate single channel
+        single_ch: Channel to calibrate in single mode
+
+    Returns:
+        List of channel identifiers to calibrate
+    """
+    if single_mode:
+        return [single_ch]
+    elif device_type in ["EZSPR", "PicoEZSPR"]:
+        return EZ_CH_LIST
+    else:
+        return CH_LIST
+
+
+def get_detector_params(usb) -> DetectorParams:
+    """Read detector parameters once at calibration start.
+
+    These are hardware constants that don't change during calibration.
+    Reading once and passing through eliminates redundant property accesses.
+
+    Args:
+        usb: Spectrometer instance
+
+    Returns:
+        DetectorParams with target_counts, max_counts, saturation_threshold
+    """
+    target_counts = usb.target_counts
+    max_counts = usb.max_counts
+    saturation_threshold = max_counts * 0.95  # 95% of max = safe maximum
+
+    logger.debug(f"Detector params: target={target_counts:.0f}, max={max_counts:.0f}, safe_max={saturation_threshold:.0f}")
+
+    return DetectorParams(
+        target_counts=target_counts,
+        max_counts=max_counts,
+        saturation_threshold=saturation_threshold
+    )
+
+
+def calculate_scan_counts(integration_time_ms: int) -> ScanConfig:
+    """Calculate scan counts based on integration time.
+
+    Centralized scan count logic - single source of truth.
+    Below 50ms: use full scan counts for better averaging
+    Above 50ms: use half scan counts to keep total acquisition time reasonable
+
+    Args:
+        integration_time_ms: Integration time in milliseconds
+
+    Returns:
+        ScanConfig with dark_scans, ref_scans, num_scans
+    """
+    if integration_time_ms < INTEGRATION_THRESHOLD_MS:
+        # Short integration: use full scan counts for better SNR
+        dark_scans = DARK_NOISE_SCANS
+        ref_scans = REF_SCANS
+        num_scans = min(int(MAX_READ_TIME / integration_time_ms), MAX_NUM_SCANS)
+    else:
+        # Long integration: reduce scan counts to keep acquisition time reasonable
+        dark_scans = int(DARK_NOISE_SCANS / 2)
+        ref_scans = int(REF_SCANS / 2)
+        num_scans = min(int(MAX_READ_TIME / integration_time_ms), MAX_NUM_SCANS)
+
+    logger.debug(f"Scan counts for {integration_time_ms}ms integration: dark={dark_scans}, ref={ref_scans}, live={num_scans}")
+
+    return ScanConfig(
+        dark_scans=dark_scans,
+        ref_scans=ref_scans,
+        num_scans=num_scans
+    )
+
+
+def switch_mode_safely(ctrl: ControllerBase, mode: str, turn_off_leds: bool = True) -> None:
+    """Switch polarizer mode with proper settling and optional LED cleanup.
+
+    Centralized mode switching logic - consistent timing and behavior.
+
+    Args:
+        ctrl: Controller instance
+        mode: Target mode ('s' or 'p')
+        turn_off_leds: If True, turn off LEDs and wait for afterglow decay
+    """
+    if turn_off_leds:
+        ctrl.turn_off_channels()
+        time.sleep(LED_DELAY * 3)  # Extra delay for afterglow decay (~60ms total)
+
+    ctrl.set_mode(mode=mode)
+
+    # Use appropriate delay based on mode
+    delay = P_MODE_SWITCH_DELAY if mode == "p" else MODE_SWITCH_DELAY
+    time.sleep(delay)
+
+    logger.debug(f"Switched to {mode.upper()}-mode (delay: {delay}s, LEDs off: {turn_off_leds})")
+
+
+def get_calibration_expectations(polarizer_type: str) -> dict[str, any]:
+    """Get calibration expectations based on polarizer hardware type.
+
+    CALIBRATION SEQUENCE:
+    --------------------
+    1. Connect hardware → Identify device type
+    2. Load device_config → Check for servo positions
+    3. IF servo positions exist → Fast path (LED calibration only - this module)
+       IF servo positions missing → Servo calibration first (method depends on polarizer type)
+    4. LED intensity calibration → Common path (same for both types)
+
+    This function describes expectations for BOTH phases:
+
+    **Servo Position Calibration (if needed - not in this module):**
+    - Barrel: SIMPLE - Find 2 fixed window positions (~1.4 min)
+    - Circular: COMPLEX - Quadrant search with water (~13 measurements)
+    - Only runs if device_config.json is not populated
+
+    **LED Intensity Calibration (this module - always runs):**
+    - BOTH types: Same complexity once servo positions are known/loaded
+    - BOTH: Optimize LED intensities from S-mode to P-mode
+    - BOTH: Require headroom analysis for P-mode boost
+    - BOTH: Same expected S/P ratio (1.5-15× depending on sample)
+    - This is the "common path" - process identical for both polarizer types
+
+    Args:
+        polarizer_type: 'barrel' or 'round'/'circular'
+
+    Returns:
+        Dictionary with calibration expectations:
+        - 'servo_calibration_complexity': How complex servo calibration is (if needed)
+        - 'led_calibration_complexity': Always 'STANDARD' (common path)
+        - 'expected_s_p_ratio': Expected (min, max) S/P signal ratio (sample-dependent)
+        - 'requires_headroom_analysis': Always True (needed for P-mode boost)
+        - 'servo_calibration_method': Description of servo calibration process
+        - 'led_calibration_notes': Description of LED calibration process
+    """
+    # Normalize polarizer type
+    normalized = polarizer_type.lower()
+    if normalized in ['round', 'circular']:
+        normalized = 'circular'
+    elif normalized == 'barrel':
+        normalized = 'barrel'
+    else:
+        logger.warning(f"Unknown polarizer type '{polarizer_type}', assuming circular")
+        normalized = 'circular'
+
+    if normalized == 'barrel':
+        expectations = {
+            'servo_calibration_complexity': 'SIMPLE',
+            'led_calibration_complexity': 'STANDARD',  # Same as circular once positions known
+            'expected_s_p_ratio': (1.5, 15.0),  # Depends on sample coupling, not polarizer type
+            'requires_headroom_analysis': True,  # BOTH types need S→P boost prediction
+            'servo_calibration_method': 'Window detection - find 2 fixed perpendicular windows (~1.4 min at OEM)',
+            'led_calibration_notes': 'Standard LED intensity optimization (S-mode → P-mode boost)'
+        }
+    else:  # circular
+        expectations = {
+            'servo_calibration_complexity': 'COMPLEX',
+            'led_calibration_complexity': 'STANDARD',  # Same as barrel once positions known
+            'expected_s_p_ratio': (1.5, 15.0),  # Depends on sample coupling, not polarizer type
+            'requires_headroom_analysis': True,  # BOTH types need S→P boost prediction
+            'servo_calibration_method': 'Quadrant search with water required (~13 measurements at OEM)',
+            'led_calibration_notes': 'Standard LED intensity optimization (S-mode → P-mode boost)'
+        }
+
+    logger.debug(f"Calibration expectations for {normalized} polarizer: LED calibration is {expectations['led_calibration_complexity']}")
+    return expectations
+
+
+def analyze_channel_headroom(ref_intensity: dict[str, int]) -> dict[str, ChannelHeadroomAnalysis]:
+    """Analyze LED headroom for all channels after S-mode calibration.
+
+    This analysis predicts P-mode boost potential based on S-mode LED usage.
+    Done once after S-mode, results reused in P-mode calibration.
+
+    Args:
+        ref_intensity: S-mode LED intensities for each channel
+
+    Returns:
+        Dictionary mapping channel to ChannelHeadroomAnalysis
+    """
+    analyses = {}
+
+    logger.info("\n📊 LED HEADROOM ANALYSIS (P-mode potential prediction):")
+
+    for ch, s_intensity in ref_intensity.items():
+        headroom = P_LED_MAX - s_intensity
+        headroom_pct = (headroom / P_LED_MAX) * 100
+
+        # Predict P-mode boost potential based on S-mode intensity
+        if s_intensity < 80:
+            predicted_boost = 2.5
+            potential = "EXCELLENT"
+        elif s_intensity < 150:
+            predicted_boost = 1.75
+            potential = "GOOD"
+        elif s_intensity < 200:
+            predicted_boost = 1.35
+            potential = "MODERATE"
+        else:
+            predicted_boost = 1.2
+            potential = "LIMITED"
+
+        is_weak = s_intensity > 200
+
+        analyses[ch] = ChannelHeadroomAnalysis(
+            channel=ch,
+            s_intensity=s_intensity,
+            headroom=headroom,
+            headroom_pct=headroom_pct,
+            predicted_boost=predicted_boost,
+            is_weak=is_weak
+        )
+
+        logger.info(f"   Ch {ch.upper()}: S-LED={s_intensity}/255 ({headroom_pct:.0f}% headroom) - {potential} P-boost potential ({predicted_boost:.1f}x)")
+
+    logger.info("")
+
+    return analyses
+
+
+# =============================================================================
 # CALIBRATION RESULT
 # =============================================================================
 
@@ -155,6 +478,9 @@ class LEDCalibrationResult:
         self.channel_performance = {}  # {ch: {'max_counts', 'utilization_pct', 'snr_estimate', 'optical_limit'}}
         # These metrics guide peak tracking sensitivity and noise models per channel
 
+        # LED headroom analysis (computed once after S-mode, reused in P-mode)
+        self.headroom_analysis = {}  # {ch: ChannelHeadroomAnalysis}
+
         # Alternative method specific (Global LED Intensity method)
         self.per_channel_integration = {}  # {ch: integration_time_ms} - for variable integration per channel
         self.per_channel_dark_noise = {}   # {ch: dark_noise_array} - dark noise at each channel's integration time
@@ -171,6 +497,8 @@ def calibrate_integration_time(
     ch_list: list[str],
     integration_step: int,
     stop_flag=None,
+    device_config=None,  # Optional: pre-loaded DeviceConfiguration (avoids redundant file reads)
+    detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
 ) -> tuple[int, int]:
     """Calibrate integration time to find optimal value for all channels.
 
@@ -190,10 +518,18 @@ def calibrate_integration_time(
         ch_list: List of LED channels to calibrate
         integration_step: Step size for integration time adjustment
         stop_flag: Optional threading event to check for cancellation
+        device_config: Optional pre-loaded DeviceConfiguration
+        detector_params: Optional pre-read detector parameters
 
     Returns:
-        Tuple of (integration_time, max_integration_allowed)
+        Tuple of (integration_time, num_scans)
     """
+    # Get detector parameters (use provided or read once)
+    if detector_params is None:
+        detector_params = get_detector_params(usb)
+
+    target_counts = detector_params.target_counts
+
     integration = MIN_INTEGRATION
     max_int = MAX_INTEGRATION
 
@@ -266,8 +602,11 @@ def calibrate_integration_time(
     # If prism is absent: signals will be 5-10× HIGHER (no SPR absorption)
     # If prism is present but dry: signals will be 2-3× higher (weak SPR coupling)
     try:
-        from utils.device_configuration import DeviceConfiguration
-        device_config = DeviceConfiguration()
+        # Use provided device_config or load it (optimization: avoid redundant file read)
+        if device_config is None:
+            from utils.device_configuration import DeviceConfiguration
+            device_serial = getattr(usb, 'serial_number', None)
+            device_config = DeviceConfiguration(device_serial=device_serial)
         prev_calib = device_config.config.get('led_calibration', {})
         prev_integration = prev_calib.get('integration_time_ms', None)
         prev_s_ref_max = prev_calib.get('s_ref_max_intensity', {})
@@ -446,6 +785,7 @@ def calibrate_led_channel(
     ch: str,
     target_counts: float = None,
     stop_flag=None,
+    detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
 ) -> int:
     """Calibrate a single LED channel to target count level.
 
@@ -453,21 +793,26 @@ def calibrate_led_channel(
         usb: Spectrometer instance
         ctrl: Controller instance
         ch: Channel to calibrate ('a', 'b', 'c', or 'd')
-        target_counts: Target detector count level (if None, uses detector's target_counts)
+        target_counts: Target detector count level (if None, uses detector_params or reads from detector)
         stop_flag: Optional threading event to check for cancellation
+        detector_params: Optional pre-read detector parameters
 
     Returns:
         Calibrated LED intensity value (0-255)
     """
-    # Get target from detector if not specified
+    # Get detector parameters (use provided or read once)
+    if detector_params is None:
+        detector_params = get_detector_params(usb)
+
+    # Get target from parameters or use provided override
     if target_counts is None:
-        target_counts = usb.target_counts
+        target_counts = detector_params.target_counts
         logger.debug(f"Using detector target: {target_counts} counts")
+
     logger.debug(f"Calibrating LED {ch.upper()}...")
 
-    # Get detector limits for saturation detection
-    max_counts = usb.max_counts
-    saturation_threshold = max_counts * 0.95  # 95% of max = safe maximum
+    max_counts = detector_params.max_counts
+    saturation_threshold = detector_params.saturation_threshold
 
     # Start at maximum intensity
     intensity = P_LED_MAX
@@ -574,6 +919,8 @@ def calibrate_p_mode_leds(
     ch_list: list[str],
     ref_intensity: dict[str, int],
     stop_flag=None,
+    detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
+    headroom_analysis: dict[str, ChannelHeadroomAnalysis] = None,  # Optional: pre-computed headroom analysis
 ) -> tuple[dict[str, int], dict[str, dict]]:
     """Calibrate LED intensities in P-mode to maximize signal without saturation.
 
@@ -588,6 +935,8 @@ def calibrate_p_mode_leds(
         ch_list: List of LED channels to calibrate
         ref_intensity: S-mode reference intensities for each channel (starting point)
         stop_flag: Optional threading event to check for cancellation
+        detector_params: Optional pre-read detector parameters
+        headroom_analysis: Optional pre-computed headroom analysis from S-mode
 
     Returns:
         Tuple of (leds_calibrated, channel_performance):
@@ -596,9 +945,12 @@ def calibrate_p_mode_leds(
     """
     logger.debug("Starting P-mode LED calibration (maximize signal per channel)...")
 
-    # Get detector limits
-    max_counts = usb.max_counts
-    saturation_threshold = max_counts * 0.95  # 95% of max = safe maximum
+    # Get detector parameters (use provided or read once)
+    if detector_params is None:
+        detector_params = get_detector_params(usb)
+
+    max_counts = detector_params.max_counts
+    saturation_threshold = detector_params.saturation_threshold
 
     # Target: Get as close to saturation_threshold as possible for maximum SNR
     # But leave safety margin for spectrum variations
@@ -606,40 +958,16 @@ def calibrate_p_mode_leds(
 
     logger.debug(f"Max counts: {max_counts:.0f}, Saturation threshold: {saturation_threshold:.0f}, Optimal target: {optimal_target:.0f}")
 
-    # Analyze S-mode LED intensities to predict P-mode potential
-    # S-mode is the "sandbox" - it tells us how much headroom we have for P-mode boost
-    logger.info("\n📊 Analyzing S-mode LED intensities (P-mode potential predictor):")
-    for ch in ch_list:
-        s_intensity = ref_intensity[ch]
-        headroom = P_LED_MAX - s_intensity
-        headroom_pct = (headroom / P_LED_MAX) * 100
+    # Use pre-computed headroom analysis if available (optimization: eliminate duplicate calculation)
+    if headroom_analysis is None:
+        # Fallback: analyze if not provided (shouldn't happen in normal flow)
+        logger.debug("Headroom analysis not provided, computing now...")
+        headroom_analysis = analyze_channel_headroom(ref_intensity)
+    else:
+        logger.debug("Using pre-computed headroom analysis (optimization)")
 
-        # Classify LED strength and P-mode potential
-        if s_intensity < 80:  # Very strong LED
-            potential = "EXCELLENT P-boost potential (very strong LED)"
-            advice = "Expect 2-3x boost possible"
-        elif s_intensity < 150:  # Strong LED
-            potential = "GOOD P-boost potential (strong LED)"
-            advice = "Expect 1.5-2x boost possible"
-        elif s_intensity < 200:  # Moderate LED
-            potential = "MODERATE P-boost potential"
-            advice = "Expect 1.2-1.5x boost possible"
-        else:  # Weak LED (>200)
-            potential = "LIMITED P-boost potential (weak LED)"
-            advice = "May only achieve 1.1-1.3x boost"
-
-        logger.info(f"   Ch {ch.upper()}: S-LED={s_intensity}/255 ({headroom_pct:.0f}% headroom) - {potential}")
-        logger.info(f"            {advice}")
-    logger.info("")
-
-    # CRITICAL: Turn off all channels before P-mode switch to eliminate afterglow
-    # S-ref measurements just finished with all channels lit sequentially
-    # Without this, residual afterglow causes false saturation in P-mode
-    ctrl.turn_off_channels()
-    time.sleep(LED_DELAY * 3)  # Extra delay for afterglow decay (~60ms total)
-
-    ctrl.set_mode(mode="p")
-    time.sleep(P_MODE_SWITCH_DELAY)
+    # Switch to P-mode with proper LED cleanup (use centralized helper)
+    switch_mode_safely(ctrl, "p", turn_off_leds=True)
 
     leds_calibrated = {}
     channel_performance = {}  # Store per-channel metrics for ML system
@@ -648,29 +976,19 @@ def calibrate_p_mode_leds(
         if stop_flag and stop_flag.is_set():
             break
 
-        # Analyze S-mode LED intensity to predict optimization strategy
-        s_intensity = ref_intensity[ch]
-        headroom = P_LED_MAX - s_intensity
-        headroom_pct = (headroom / P_LED_MAX) * 100
+        # Use pre-computed headroom analysis (optimization: eliminate duplicate calculation)
+        analysis = headroom_analysis[ch]
+        s_intensity = analysis.s_intensity
+        headroom = analysis.headroom
+        headroom_pct = analysis.headroom_pct
+        predicted_boost = analysis.predicted_boost
 
         logger.debug(f"Optimizing P-mode LED {ch.upper()} (maximize without saturating)...")
         logger.debug(f"   S-mode baseline: LED={s_intensity}, headroom={headroom} ({headroom_pct:.0f}%)")
+        logger.debug(f"   Predicted boost: {predicted_boost:.1f}x")
 
-        # Predict maximum achievable boost based on S-mode intensity
-        if s_intensity < 80:
-            predicted_boost = 2.5  # Very strong LED
-            logger.debug(f"   Prediction: Very strong LED, expecting 2-3x boost capability")
-        elif s_intensity < 150:
-            predicted_boost = 1.75  # Strong LED
-            logger.debug(f"   Prediction: Strong LED, expecting 1.5-2x boost capability")
-        elif s_intensity < 200:
-            predicted_boost = 1.35  # Moderate LED
-            logger.debug(f"   Prediction: Moderate LED, expecting 1.2-1.5x boost capability")
-        else:
-            predicted_boost = 1.2  # Weak LED
-            logger.debug(f"   Prediction: Weak LED, limited boost potential (1.1-1.3x)")
-            if headroom < 30:
-                logger.warning(f"   ⚠️ Ch {ch.upper()}: Very limited headroom ({headroom}). Consider reducing integration time for better P-mode optimization.")
+        if analysis.is_weak and headroom < 30:
+            logger.warning(f"   ⚠️ Ch {ch.upper()}: Very limited headroom ({headroom}). Consider reducing integration time for better P-mode optimization.")
 
         # Start from REDUCED intensity (50% of S-mode) since P-mode sees much more signal
         # P-mode polarizer rotation dramatically amplifies signal, so S-mode LED is too bright
@@ -841,6 +1159,7 @@ def measure_dark_noise(
     wave_min_index: int,
     wave_max_index: int,
     stop_flag=None,
+    num_scans: int = None,  # Optional: pre-calculated scan count
 ) -> np.ndarray:
     """Measure dark noise with all LEDs off.
 
@@ -851,6 +1170,7 @@ def measure_dark_noise(
         wave_min_index: Minimum wavelength index
         wave_max_index: Maximum wavelength index
         stop_flag: Optional threading event to check for cancellation
+        num_scans: Optional pre-calculated scan count (if None, calculates based on integration)
 
     Returns:
         Array of dark noise values
@@ -860,11 +1180,14 @@ def measure_dark_noise(
     ctrl.turn_off_channels()
     time.sleep(LED_DELAY)
 
-    # Adjust scan count based on integration time
-    if integration < INTEGRATION_THRESHOLD_MS:
-        dark_scans = DARK_NOISE_SCANS
+    # Use provided scan count or calculate based on integration time
+    if num_scans is None:
+        if integration < INTEGRATION_THRESHOLD_MS:
+            dark_scans = DARK_NOISE_SCANS
+        else:
+            dark_scans = int(DARK_NOISE_SCANS / 2)
     else:
-        dark_scans = int(DARK_NOISE_SCANS / 2)
+        dark_scans = num_scans
 
     dark_noise_sum = np.zeros(wave_max_index - wave_min_index)
 
@@ -897,6 +1220,7 @@ def measure_reference_signals(
     wave_max_index: int,
     stop_flag=None,
     afterglow_correction=None,
+    num_scans: int = None,  # Optional: pre-calculated scan count
 ) -> dict[str, np.ndarray]:
     """Measure reference signals in S-mode for each channel.
 
@@ -918,14 +1242,23 @@ def measure_reference_signals(
         wave_max_index: Maximum wavelength index
         stop_flag: Optional threading event to check for cancellation
         afterglow_correction: Optional AfterglowCorrection instance for correction
+        num_scans: Optional pre-calculated scan count (if None, calculates based on integration)
 
     Returns:
         Dictionary of reference signal arrays for each channel (afterglow-corrected)
     """
     logger.debug("Measuring reference signals in S-mode...")
 
-    ctrl.set_mode(mode="s")
-    time.sleep(P_MODE_SWITCH_DELAY)
+    switch_mode_safely(ctrl, "s", turn_off_leds=False)  # Use centralized mode switching
+
+    # Use provided scan count or calculate based on integration time
+    if num_scans is None:
+        if integration < INTEGRATION_THRESHOLD_MS:
+            ref_scans = REF_SCANS
+        else:
+            ref_scans = int(REF_SCANS / 2)
+    else:
+        ref_scans = num_scans
 
     ref_sig = {}
     previous_channel = None  # Track previous channel for afterglow correction
@@ -936,12 +1269,6 @@ def measure_reference_signals(
 
         ctrl.set_intensity(ch=ch, raw_val=ref_intensity[ch])
         time.sleep(LED_DELAY)
-
-        # Adjust scan count based on integration time
-        if integration < INTEGRATION_THRESHOLD_MS:
-            ref_scans = REF_SCANS
-        else:
-            ref_scans = int(REF_SCANS / 2)
 
         ref_data_sum = np.zeros_like(dark_noise)
 
@@ -1427,6 +1754,12 @@ def perform_full_led_calibration(
     stop_flag=None,
     progress_callback=None,
     _polarizer_swap_retry_done: bool = False,  # Internal flag to prevent infinite recursion
+    wave_data=None,  # Optional: pre-read wavelength data (avoids redundant USB read)
+    wave_min_index: int = None,  # Optional: pre-computed min index
+    wave_max_index: int = None,  # Optional: pre-computed max index
+    device_config=None,  # Optional: pre-loaded DeviceConfiguration (avoids redundant file reads)
+    polarizer_type: str = None,  # Optional: polarizer type ('barrel' or 'round') - sets calibration expectations
+    afterglow_correction=None,  # Optional: pre-loaded AfterglowCorrection (avoids redundant file I/O)
 ) -> LEDCalibrationResult:
     """Perform complete LED calibration using STANDARD optical configuration.
 
@@ -1467,33 +1800,56 @@ def perform_full_led_calibration(
         logger.info("💧 Water is REQUIRED - dry sensor will show weak/absent SPR peak")
         logger.info("")
 
-        # Get wavelength data
-        logger.debug("Reading wavelength data...")
-        wave_data = usb.read_wavelength()
-        result.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
-        result.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+        # Get wavelength data (use provided or read from hardware)
+        if wave_data is None:
+            logger.debug("Reading wavelength data...")
+            wave_data = usb.read_wavelength()
+            result.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
+            result.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+        else:
+            logger.debug("Using pre-read wavelength data (optimization)")
+            result.wave_min_index = wave_min_index if wave_min_index is not None else wave_data.searchsorted(MIN_WAVELENGTH)
+            result.wave_max_index = wave_max_index if wave_max_index is not None else wave_data.searchsorted(MAX_WAVELENGTH)
+
         result.wave_data = wave_data[result.wave_min_index : result.wave_max_index]
         logger.debug(
             f"Wavelength range: index {result.wave_min_index} to {result.wave_max_index}"
         )
 
+        # Get detector parameters ONCE (optimization: eliminates 5-6 redundant property accesses)
+        detector_params = get_detector_params(usb)
+
+        # Get polarizer type and set calibration expectations
+        if polarizer_type is None and device_config is not None:
+            polarizer_type = device_config.get_polarizer_type()
+        if polarizer_type is None:
+            polarizer_type = 'circular'  # Default assumption for safety
+
+        # Set expectations based on polarizer hardware
+        cal_expectations = get_calibration_expectations(polarizer_type)
+        logger.info(f"\n🔧 POLARIZER CONFIGURATION:")
+        logger.info(f"   Type: {polarizer_type.upper()}")
+        logger.info(f"   Servo Positions: Loaded from device_config.json (calibrated previously)")
+        logger.info(f"   → If config was not populated, {cal_expectations['servo_calibration_complexity']} servo calibration would run first")
+        logger.info(f"   → {cal_expectations['servo_calibration_method']}")
+        logger.info(f"   LED Calibration: {cal_expectations['led_calibration_complexity']} (common path) - {cal_expectations['led_calibration_notes']}")
+        logger.info(f"   Expected S/P Ratio: {cal_expectations['expected_s_p_ratio'][0]:.1f}× to {cal_expectations['expected_s_p_ratio'][1]:.1f}× (sample-dependent)")
+        logger.info(f"   P-mode Strategy: {'Boost LED using S-mode headroom analysis' if cal_expectations['requires_headroom_analysis'] else 'Direct optimization'}")
+        logger.info("")
+
         # Calculate Fourier weights for denoising (centralized utility)
         result.fourier_weights = calculate_fourier_weights(len(result.wave_data))
 
-        # Determine channel list
-        if single_mode:
-            ch_list = [single_ch]
-        elif device_type in ["EZSPR", "PicoEZSPR"]:
-            ch_list = EZ_CH_LIST
-        else:
-            ch_list = CH_LIST
-
+        # Determine channel list ONCE (optimization: single source of truth)
+        ch_list = determine_channel_list(device_type, single_mode, single_ch)
         logger.debug(f"Calibrating channels: {ch_list}")
 
         # Step 1: Calibrate integration time
         try:
             result.integration_time, result.num_scans = calibrate_integration_time(
-                usb, ctrl, ch_list, integration_step, stop_flag
+                usb, ctrl, ch_list, integration_step, stop_flag,
+                device_config=device_config,
+                detector_params=detector_params
             )
         except ConnectionError as e:
             logger.error(f"🔌 Hardware disconnected during Step 1 (Integration Time)")
@@ -1506,16 +1862,98 @@ def perform_full_led_calibration(
             return result
 
         # Step 2: Calibrate LED intensities in S-mode
-        logger.info("Calibrating LED intensities (S-mode)...")
-        ctrl.set_mode(mode="s")
-        time.sleep(MODE_SWITCH_DELAY)
+        # OPTIMIZATION: Check if optical calibration was run first and has S-mode LED intensities
+        # If available, use those as starting values and just validate (faster workflow)
+        optical_cal_led_intensities = None
+        if afterglow_correction is not None:
+            try:
+                # Check if optical calibration file has S-mode LED intensities saved
+                import json
+                from pathlib import Path
+                optical_cal_path = afterglow_correction.calibration_file
+                logger.debug(f"🔍 Checking for LED fast-track: optical_cal_path={optical_cal_path}")
+                if optical_cal_path and Path(optical_cal_path).exists():
+                    with open(optical_cal_path, 'r') as f:
+                        optical_cal_data = json.load(f)
+                    optical_cal_led_intensities = optical_cal_data.get('metadata', {}).get('led_intensities_s_mode', None)
+                    if optical_cal_led_intensities:
+                        logger.info(f"📋 Found S-mode LED intensities from optical calibration:")
+                        for ch, intensity in optical_cal_led_intensities.items():
+                            logger.info(f"   Ch {ch.upper()}: LED = {intensity}/255 (from optical calibration)")
+                    else:
+                        logger.debug("   No led_intensities_s_mode found in metadata")
+                else:
+                    logger.debug(f"   Optical calibration path does not exist: {optical_cal_path}")
+            except Exception as e:
+                logger.debug(f"Could not load LED intensities from optical calibration: {e}")
 
-        for ch in ch_list:
-            if stop_flag and stop_flag.is_set():
-                break
-            result.ref_intensity[ch] = calibrate_led_channel(
-                usb, ctrl, ch, None, stop_flag  # None = use detector's target_counts
-            )
+        logger.info("Calibrating LED intensities (S-mode)...")
+        switch_mode_safely(ctrl, "s", turn_off_leds=False)  # Use centralized mode switching
+
+        if optical_cal_led_intensities:
+            # Validation-only workflow: Use LED intensities from optical calibration
+            # and just verify they still work (much faster than full calibration)
+            logger.info("🚀 OPTIMIZED WORKFLOW: Using LED intensities from optical calibration")
+            logger.info("   Validating LED values (faster than full calibration)...")
+
+            # Show fast-track message in UI
+            if progress_callback:
+                progress_callback("Fast-track: Validating saved LED values...")
+
+            for ch in ch_list:
+                if stop_flag and stop_flag.is_set():
+                    break
+
+                # Get LED intensity from optical calibration
+                if ch in optical_cal_led_intensities:
+                    led_val = int(optical_cal_led_intensities[ch])
+
+                    # Set LED and validate signal level
+                    ctrl.set_intensity(ch=ch, raw_val=led_val)
+                    time.sleep(0.1)
+
+                    # Read signal and verify it's within acceptable range
+                    sp = usb.read_intensity()
+                    roi = sp[wave_min_index:wave_max_index]
+                    max_val = float(np.max(roi))
+
+                    # Check if signal is in reasonable range (30-80% of detector max)
+                    detector_max = detector_params.max_counts
+                    if 0.3 * detector_max <= max_val <= 0.8 * detector_max:
+                        result.ref_intensity[ch] = led_val
+                        logger.info(f"   ✅ Ch {ch.upper()}: LED {led_val} validated (signal: {max_val:.0f} counts)")
+                    else:
+                        # Signal out of range - do full calibration for this channel
+                        logger.warning(f"   ⚠️ Ch {ch.upper()}: Signal {max_val:.0f} out of range, recalibrating...")
+                        if progress_callback:
+                            progress_callback(f"Recalibrating LED {ch.upper()}...")
+                        result.ref_intensity[ch] = calibrate_led_channel(
+                            usb, ctrl, ch, None, stop_flag,
+                            detector_params=detector_params
+                        )
+                else:
+                    # Channel not in optical calibration - do full calibration
+                    if progress_callback:
+                        progress_callback(f"Calibrating LED {ch.upper()}...")
+                    result.ref_intensity[ch] = calibrate_led_channel(
+                        usb, ctrl, ch, None, stop_flag,
+                        detector_params=detector_params
+                    )
+
+            logger.info("✅ Fast-track LED validation complete - proceeding to measure S-mode spectra")
+            if progress_callback:
+                progress_callback("Fast-track complete - measuring reference spectra...")
+        else:
+            # Standard workflow: Full LED calibration
+            for i, ch in enumerate(ch_list):
+                if stop_flag and stop_flag.is_set():
+                    break
+                if progress_callback:
+                    progress_callback(f"Calibrating LED {ch.upper()}...")
+                result.ref_intensity[ch] = calibrate_led_channel(
+                    usb, ctrl, ch, None, stop_flag,
+                    detector_params=detector_params  # Pass pre-read detector params
+                )
 
         logger.info(f"✅ S-mode calibration complete: {result.ref_intensity}")
 
@@ -1599,10 +2037,19 @@ def perform_full_led_calibration(
             logger.info(f"   Integration time: {result.integration_time}ms (budget: {MAX_INTEGRATION_BUDGET_MS}ms)")
             logger.info(f"   Excellent balance between speed ({SYSTEM_ACQUISITION_TARGET_HZ}Hz) and signal strength\n")
 
+        # === LED HEADROOM ANALYSIS (done once, reused in P-mode) ===
+        # Analyze S-mode LED intensities to predict P-mode boost potential
+        result.headroom_analysis = analyze_channel_headroom(result.ref_intensity)
+
         if stop_flag and stop_flag.is_set():
             return result
 
+        # Calculate scan counts ONCE based on integration time (optimization: single source of truth)
+        scan_config = calculate_scan_counts(result.integration_time)
+
         # Step 3: Measure dark noise
+        if progress_callback:
+            progress_callback("Measuring dark noise...")
         logger.debug("Measuring dark noise...")
         result.dark_noise = measure_dark_noise(
             usb,
@@ -1611,44 +2058,42 @@ def perform_full_led_calibration(
             result.wave_min_index,
             result.wave_max_index,
             stop_flag,
+            num_scans=scan_config.dark_scans  # Use pre-calculated scan count
         )
 
         if stop_flag and stop_flag.is_set():
             return result
 
-        # Step 4: Load afterglow correction if available (for S-ref correction)
-        afterglow_correction = None
-        try:
-            from afterglow_correction import AfterglowCorrection
-            from pathlib import Path
+        # Step 4: Use afterglow correction if provided (optimization: loaded upstream)
+        # If not provided, load it here (fallback for backward compatibility)
+        if afterglow_correction is None:
+            try:
+                from afterglow_correction import AfterglowCorrection
+                from pathlib import Path
 
-            # Try to load device-specific afterglow calibration
-            # This is used to correct S-ref measurements during calibration
-            device_serial = getattr(usb, 'serial_number', None)
-            if device_serial:
-                calibration_dir = Path('optical_calibration')
-                if calibration_dir.exists():
-                    # Find most recent calibration file for this device
-                    pattern = f"system_{device_serial}_*.json"
-                    cal_files = sorted(calibration_dir.glob(pattern), reverse=True)
-
-                    if cal_files:
-                        afterglow_correction = AfterglowCorrection(cal_files[0])
-                        logger.info(f"✅ Loaded afterglow correction for S-ref: {cal_files[0].name}")
+                device_serial = getattr(usb, 'serial_number', None)
+                if device_serial:
+                    calibration_dir = Path('optical_calibration')
+                    if calibration_dir.exists():
+                        pattern = f"system_{device_serial}_*.json"
+                        cal_files = sorted(calibration_dir.glob(pattern), reverse=True)
+                        if cal_files:
+                            afterglow_correction = AfterglowCorrection(cal_files[0])
+                            logger.info(f"✅ Loaded afterglow correction: {cal_files[0].name}")
+                        else:
+                            logger.debug(f"No afterglow calibration found for device {device_serial}")
                     else:
-                        logger.info(f"ℹ️ No afterglow calibration found for device {device_serial}")
-                        logger.info(f"   Calibration will proceed without afterglow correction")
-                        logger.info(f"   To enable: Run afterglow measurement from Advanced Settings")
+                        logger.debug(f"Optical calibration directory not found")
                 else:
-                    logger.info(f"ℹ️ Optical calibration directory not found")
-                    logger.info(f"   Afterglow correction disabled - measurements will use raw spectra")
-            else:
-                logger.warning(f"⚠️ Device serial number not available - cannot load afterglow correction")
-        except Exception as e:
-            logger.warning(f"⚠️ Afterglow correction not available: {e}")
-            logger.info(f"   Calibration will proceed without afterglow correction")
+                    logger.debug(f"Device serial number not available")
+            except Exception as e:
+                logger.debug(f"Afterglow correction not available: {e}")
+        else:
+            logger.debug("Using pre-loaded afterglow correction (optimization)")
 
         # Step 5: Measure reference signals
+        if progress_callback:
+            progress_callback("Measuring reference signals...")
         logger.debug("Measuring reference signals...")
         try:
             result.ref_sig = measure_reference_signals(
@@ -1662,6 +2107,7 @@ def perform_full_led_calibration(
                 result.wave_max_index,
                 stop_flag,
                 afterglow_correction,  # Pass afterglow correction for S-ref
+                num_scans=scan_config.ref_scans  # Use pre-calculated scan count
             )
         except ConnectionError as e:
             logger.error(f"🔌 USB disconnection detected during S-ref measurement")
@@ -1704,7 +2150,9 @@ def perform_full_led_calibration(
         # Step 6: Calibrate P-mode LED intensities (returns LED values + performance metrics)
         logger.debug("Calibrating P-mode LEDs...")
         result.leds_calibrated, result.channel_performance = calibrate_p_mode_leds(
-            usb, ctrl, ch_list, result.ref_intensity, stop_flag
+            usb, ctrl, ch_list, result.ref_intensity, stop_flag,
+            detector_params=detector_params,  # Pass pre-read detector params
+            headroom_analysis=result.headroom_analysis  # Pass pre-computed headroom analysis
         )
 
         if stop_flag and stop_flag.is_set():
@@ -1723,20 +2171,20 @@ def perform_full_led_calibration(
             logger.error(f"\n🔄 AUTO-CORRECTION: Swapping S/P polarizer positions and retrying calibration...")
 
             try:
-                from utils.device_configuration import DeviceConfiguration
-                device_config = DeviceConfiguration()
+                # Use provided device_config or load fresh (optimization: reuse if available)
+                if device_config is None:
+                    from utils.device_configuration import DeviceConfiguration
+                    device_serial = getattr(usb, 'serial_number', None)
+                    device_config = DeviceConfiguration(device_serial=device_serial)
 
-                # Get current positions
-                hw = device_config.config.get('hardware', {})
-                s_pos = hw.get('servo_s_position', 10)
-                p_pos = hw.get('servo_p_position', 100)
+                # Get current positions for logging
+                current_positions = device_config.get_servo_positions()
+                logger.error(f"   Current positions: S={current_positions['s']}, P={current_positions['p']}")
 
-                logger.error(f"   Current positions: S={s_pos}, P={p_pos}")
-                logger.error(f"   Swapping to: S={p_pos}, P={s_pos}")
+                # Swap positions using centralized method (optimization: single source of truth)
+                new_s, new_p = device_config.swap_servo_positions()
+                logger.error(f"   Swapped to: S={new_s}, P={new_p}")
 
-                # Swap positions
-                hw['servo_s_position'] = p_pos
-                hw['servo_p_position'] = s_pos
                 device_config.save()
 
                 # Apply new positions to controller
@@ -1937,6 +2385,12 @@ def perform_alternative_calibration(
     stop_flag=None,
     progress_callback=None,
     _polarizer_swap_retry_done: bool = False,  # Internal flag to prevent infinite recursion
+    wave_data=None,  # Optional: pre-read wavelength data (avoids redundant USB read)
+    wave_min_index: int = None,  # Optional: pre-computed min index
+    wave_max_index: int = None,  # Optional: pre-computed max index
+    device_config=None,  # Optional: pre-loaded DeviceConfiguration (avoids redundant file reads)
+    polarizer_type: str = None,  # Optional: polarizer type ('barrel' or 'round') - sets calibration expectations
+    afterglow_correction=None,  # Optional: pre-loaded AfterglowCorrection (avoids redundant file I/O)
 ) -> LEDCalibrationResult:
     """Perform LED calibration using ALTERNATIVE optical configuration.
 
@@ -1987,39 +2441,56 @@ def perform_alternative_calibration(
         # Mark this as alternative method for downstream processing
         result.calibration_method = "alternative"
 
-        # Get wavelength data
-        logger.debug("Reading wavelength data...")
-        wave_data = usb.read_wavelength()
-        result.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
-        result.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+        # Get wavelength data (use provided or read from hardware)
+        if wave_data is None:
+            logger.debug("Reading wavelength data...")
+            wave_data = usb.read_wavelength()
+            result.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
+            result.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+        else:
+            logger.debug("Using pre-read wavelength data (optimization)")
+            result.wave_min_index = wave_min_index if wave_min_index is not None else wave_data.searchsorted(MIN_WAVELENGTH)
+            result.wave_max_index = wave_max_index if wave_max_index is not None else wave_data.searchsorted(MAX_WAVELENGTH)
+
         result.wave_data = wave_data[result.wave_min_index : result.wave_max_index]
         logger.debug(f"Wavelength range: index {result.wave_min_index} to {result.wave_max_index}")
+
+        # Get detector parameters ONCE (optimization: eliminates redundant property accesses)
+        detector_params = get_detector_params(usb)
+
+        # Get polarizer type and set calibration expectations
+        if polarizer_type is None and device_config is not None:
+            polarizer_type = device_config.get_polarizer_type()
+        if polarizer_type is None:
+            polarizer_type = 'circular'  # Default assumption for safety
+
+        # Set expectations based on polarizer hardware
+        cal_expectations = get_calibration_expectations(polarizer_type)
+        logger.info(f"\n🔧 POLARIZER CONFIGURATION:")
+        logger.info(f"   Type: {polarizer_type.upper()}")
+        logger.info(f"   Servo Positions: Loaded from device_config.json (calibrated previously)")
+        logger.info(f"   → If config was not populated, {cal_expectations['servo_calibration_complexity']} servo calibration would run first")
+        logger.info(f"   → {cal_expectations['servo_calibration_method']}")
+        logger.info(f"   LED Calibration: {cal_expectations['led_calibration_complexity']} (common path) - {cal_expectations['led_calibration_notes']}")
+        logger.info(f"   Expected S/P Ratio: {cal_expectations['expected_s_p_ratio'][0]:.1f}× to {cal_expectations['expected_s_p_ratio'][1]:.1f}× (sample-dependent)")
+        logger.info(f"   P-mode Strategy: {'Boost LED using S-mode headroom analysis' if cal_expectations['requires_headroom_analysis'] else 'Direct optimization'}")
+        logger.info("")
 
         # Calculate Fourier weights for denoising
         result.fourier_weights = calculate_fourier_weights(len(result.wave_data))
 
-        # Determine channel list
-        if single_mode:
-            ch_list = [single_ch]
-        elif device_type in ["EZSPR", "PicoEZSPR"]:
-            ch_list = EZ_CH_LIST
-        else:
-            ch_list = CH_LIST
-
+        # Determine channel list ONCE (optimization: single source of truth)
+        ch_list = determine_channel_list(device_type, single_mode, single_ch)
         logger.debug(f"Calibrating channels: {ch_list}")
 
-        # Get target counts from detector
-        target_counts = usb.target_counts
-        logger.info(f"Target signal: {target_counts} counts per channel")
+        logger.info(f"Target signal: {detector_params.target_counts} counts per channel")
 
         if stop_flag and stop_flag.is_set():
             return result
 
         # Step 1: Calibrate integration time per channel in S-mode (all LEDs at 255)
         logger.info("\n📊 S-MODE: Calibrating per-channel integration time (LEDs fixed at 255)...")
-        ctrl.set_mode(mode="s")
-        time.sleep(MODE_SWITCH_DELAY)
-        ctrl.turn_off_channels()
+        switch_mode_safely(ctrl, "s", turn_off_leds=True)
 
         # Store per-channel integration times and scan counts
         s_integration_times = {}
@@ -2030,7 +2501,8 @@ def perform_alternative_calibration(
 
             # In alternative method, we only need integration time (always 1 scan per spectrum)
             s_integration_times[ch], _ = calibrate_integration_per_channel(
-                usb, ctrl, ch, led_intensity=255, target_counts=target_counts, stop_flag=stop_flag
+                usb, ctrl, ch, led_intensity=255, target_counts=detector_params.target_counts,
+                stop_flag=stop_flag
             )
 
             # Store LED intensity (always 255 in this method)
@@ -2056,6 +2528,13 @@ def perform_alternative_calibration(
 
         # Analyze integration time headroom (similar concept to LED headroom in standard method)
         logger.info(f"\n📊 INTEGRATION TIME HEADROOM ANALYSIS:")
+
+        # Compute headroom analysis (optimization: compute once, reuse if needed)
+        result.headroom_analysis = analyze_channel_headroom(result.ref_intensity)
+
+        # Compute scan counts ONCE (optimization: centralized calculation)
+        scan_config = calculate_scan_counts(result.integration_time)
+
         weak_channels = []
         for ch, int_time in s_integration_times.items():
             headroom_ms = MAX_INTEGRATION_BUDGET_MS - int_time
@@ -2101,7 +2580,7 @@ def perform_alternative_calibration(
             usb.set_integration(ch_integration)
             time.sleep(0.1)
 
-            # Measure dark noise for this channel
+            # Measure dark noise for this channel (optimization: pass pre-calculated scan count)
             dark_noise_per_channel[ch] = measure_dark_noise(
                 usb,
                 ctrl,
@@ -2109,6 +2588,7 @@ def perform_alternative_calibration(
                 result.wave_min_index,
                 result.wave_max_index,
                 stop_flag,
+                num_scans=scan_config.dark_scans
             )
 
         # For compatibility with rest of code, store the dark noise for the max integration time
@@ -2164,6 +2644,7 @@ def perform_alternative_calibration(
             result.wave_max_index,
             stop_flag,
             afterglow_correction,
+            num_scans=scan_config.ref_scans
         )
 
         if stop_flag and stop_flag.is_set():
@@ -2182,19 +2663,13 @@ def perform_alternative_calibration(
         # integration time to boost signal (similar to LED boost in standard method)
         logger.info("\n📊 P-MODE: Optimizing integration time for maximum signal (LEDs at 255)...")
 
-        # CRITICAL: Turn off all channels before P-mode switch to eliminate afterglow
-        ctrl.turn_off_channels()
-        time.sleep(LED_DELAY * 3)  # Extra delay for afterglow decay
-
-        ctrl.set_mode(mode="p")
-        time.sleep(P_MODE_SWITCH_DELAY)
-        ctrl.turn_off_channels()
+        # CRITICAL: Use centralized mode switching with proper delays (optimization)
+        switch_mode_safely(ctrl, "p", turn_off_leds=True)
 
         # Target 80% of detector max for P-mode (similar to standard method's target)
-        max_counts = usb.max_counts
-        p_target_counts = max_counts * 0.80  # 80% of detector max
+        p_target_counts = detector_params.max_counts * 0.80  # 80% of detector max
 
-        logger.info(f"   P-mode target: {p_target_counts:.0f} counts (80% of {max_counts:.0f} max)")
+        logger.info(f"   P-mode target: {p_target_counts:.0f} counts (80% of {detector_params.max_counts:.0f} max)")
 
         p_integration_times = {}
 
@@ -2269,20 +2744,20 @@ def perform_alternative_calibration(
             logger.error(f"\n🔄 AUTO-CORRECTION: Swapping S/P polarizer positions and retrying calibration...")
 
             try:
-                from utils.device_configuration import DeviceConfiguration
-                device_config = DeviceConfiguration()
+                # Use provided device_config or load fresh (optimization: reuse if available)
+                if device_config is None:
+                    from utils.device_configuration import DeviceConfiguration
+                    device_serial = getattr(usb, 'serial_number', None)
+                    device_config = DeviceConfiguration(device_serial=device_serial)
 
-                # Get current positions
-                hw = device_config.config.get('hardware', {})
-                s_pos = hw.get('servo_s_position', 10)
-                p_pos = hw.get('servo_p_position', 100)
+                # Get current positions for logging
+                current_positions = device_config.get_servo_positions()
+                logger.error(f"   Current positions: S={current_positions['s']}, P={current_positions['p']}")
 
-                logger.error(f"   Current positions: S={s_pos}, P={p_pos}")
-                logger.error(f"   Swapping to: S={p_pos}, P={s_pos}")
+                # Swap positions using centralized method (optimization: single source of truth)
+                new_s, new_p = device_config.swap_servo_positions()
+                logger.error(f"   Swapped to: S={new_s}, P={new_p}")
 
-                # Swap positions
-                hw['servo_s_position'] = p_pos
-                hw['servo_p_position'] = s_pos
                 device_config.save()
 
                 # Apply new positions to controller

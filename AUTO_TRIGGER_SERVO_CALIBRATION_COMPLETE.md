@@ -1,6 +1,6 @@
 # Auto-Trigger Servo Calibration Implementation ✅
 
-**Date**: November 23, 2025  
+**Date**: November 23, 2025
 **Status**: Complete
 
 ---
@@ -135,7 +135,7 @@ if s_pos == 10 and p_pos == 100:
    1. No water on sensor (required for circular polarizer)
    2. Poor SPR coupling
    3. LED saturation
-   
+
    ACTION REQUIRED:
    - Check water presence
    - Run manual servo calibration from Settings

@@ -552,11 +552,36 @@ Action:
 
 ### 7.2 Hardware Health Monitoring
 
-**Optical System:**
-- LED intensity drift detection
+**CRITICAL DISTINCTION: Optics vs SPR Issue Separation**
+
+During live measurements, signal changes can originate from:
+1. **Optical system** (device-specific): LED, detector, fiber, optics
+2. **SPR sensor** (consumable-specific): water coupling, surface chemistry, binding
+
+**See dedicated document:** `LIVE_MONITORING_OPTICS_VS_SPR_SEPARATION.md` for complete separation strategy.
+
+**Key discrimination features:**
+
+| Feature | Optics Issue | SPR Sensor Issue |
+|---------|-------------|------------------|
+| Multi-channel correlation | ✅ HIGH (all channels) | ❌ LOW (channel-specific) |
+| Wavelength pattern | Matches LED spectrum | Matches SPR dip only |
+| Temporal behavior | Slow drift (hours) | Fast changes (seconds) |
+| Background slope | Changes | Stable |
+| SPR dip depth | Entire spectrum scales | Only dip affected |
+| SPR dip position | Usually stable | Shifts with binding |
+
+**Optical System Monitoring:**
+- LED intensity drift detection (multi-channel correlation)
 - Afterglow model changes over time
-- Detector sensitivity changes
+- Detector sensitivity changes (noise floor)
 - Polarizer positioning accuracy
+
+**SPR Sensor Monitoring:**
+- Water coupling quality (dip depth)
+- Surface degradation (FWHM broadening)
+- Contamination (asymmetry, background)
+- Binding events (smooth position shifts)
 
 **Fluidic System:**
 - Bubble detection from spectral artifacts
@@ -989,6 +1014,8 @@ sharpness = abs(second_deriv[peak_idx])
 - [ ] Quality classification engine
 - [ ] Alert generation system
 - [ ] User feedback UI
+- [ ] **Optics vs SPR separation logic (see LIVE_MONITORING_OPTICS_VS_SPR_SEPARATION.md)**
+- [ ] **Multi-channel correlation analysis**
 
 ### Quality Assurance
 - [ ] Unit tests for all algorithms
@@ -996,6 +1023,8 @@ sharpness = abs(second_deriv[peak_idx])
 - [ ] Performance benchmarks
 - [ ] Validation on diverse datasets
 - [ ] User acceptance testing
+- [ ] **Optics issue validation (LED drift, noise)**
+- [ ] **SPR issue validation (water loss, degradation)**
 
 ### Documentation
 - [ ] API documentation
@@ -1003,6 +1032,7 @@ sharpness = abs(second_deriv[peak_idx])
 - [ ] Troubleshooting flowcharts
 - [ ] Research publications
 - [ ] Patent applications
+- [ ] ✅ **Optics vs SPR separation strategy (LIVE_MONITORING_OPTICS_VS_SPR_SEPARATION.md)**
 
 ---
 

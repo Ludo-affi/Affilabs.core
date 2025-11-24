@@ -660,7 +660,7 @@ class SPRCalibrator:
                 logger.warning("   RECOMMENDATION: Run servo calibration to find optimal positions")
                 logger.warning("   The application should auto-trigger servo calibration on startup")
                 logger.warning("=" * 80)
-            
+
             # Store positions in state (even if at defaults)
             self.state.polarizer_s_position = s_pos
             self.state.polarizer_p_position = p_pos
@@ -688,7 +688,7 @@ class SPRCalibrator:
             logger.warning("=" * 80)
             logger.warning(POLARIZER_ERROR_MESSAGE)
             logger.warning("=" * 80)
-            
+
             # Use defaults instead of failing
             s_pos = 10
             p_pos = 100
@@ -895,18 +895,18 @@ class SPRCalibrator:
             logger.info(f"   LED intensities: {led_intensities}")
             logger.info(f"   Channels: {CH_LIST}")
 
-            # Run afterglow calibration
+            # Run afterglow calibration (pass pre-computed wave indices from LED calibration)
             calibration_data = run_afterglow_calibration(
                 ctrl=self.ctrl,
                 usb=self.usb,
-                wave_min_index=self.state.wave_min_index,
-                wave_max_index=self.state.wave_max_index,
+                wave_min_index=self.state.wave_min_index,  # From LED calibration result
+                wave_max_index=self.state.wave_max_index,  # From LED calibration result
                 channels=CH_LIST,
                 integration_grid_ms=integration_grid,
                 pre_on_duration_s=max(0.20, float(LED_DELAY)),
                 acquisition_duration_ms=250,
                 settle_delay_s=0.10,
-                led_intensities=led_intensities,
+                led_intensities=led_intensities,  # Use calibrated LED intensities
             )
 
             # Save to device-specific directory

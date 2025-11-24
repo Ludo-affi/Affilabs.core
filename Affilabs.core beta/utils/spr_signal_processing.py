@@ -323,6 +323,13 @@ def validate_sp_orientation(
     spr_region_start = np.searchsorted(wavelengths, 600)
     spr_region_end = np.searchsorted(wavelengths, 750)
 
+    # Initialize edge values (will be overwritten if SPR region is valid)
+    left_edge_mean = transmission[0] if len(transmission) > 0 else 0
+    right_edge_mean = transmission[-1] if len(transmission) > 0 else 0
+
+    # Initialize confidence (will be calculated based on structure prominence)
+    confidence = 0.5  # Default moderate confidence
+
     if spr_region_end > spr_region_start:
         spr_transmission = transmission[spr_region_start:spr_region_end]
         spr_wavelengths = wavelengths[spr_region_start:spr_region_end]
@@ -358,16 +365,19 @@ def validate_sp_orientation(
             orientation_correct = True
             peak_idx = spr_region_start + local_min_idx
             peak_val = local_min_val
+            confidence = min(1.0, abs(min_deviation) / 30.0)  # Scale: 30% deviation = 100% confidence
             logger.debug(f"   ✓ SPR DIP detected: {min_deviation:.1f}% below edges - CORRECT orientation")
         elif max_deviation > 10:  # Clear peak present (inverted)
             orientation_correct = False
             peak_idx = spr_region_start + local_max_idx
             peak_val = local_max_val
+            confidence = min(1.0, max_deviation / 30.0)
             logger.debug(f"   ✗ SPR PEAK detected: {max_deviation:+.1f}% above edges - INVERTED orientation")
         elif abs(min_deviation) > abs(max_deviation):  # Subtle dip more prominent than peak
             orientation_correct = True
             peak_idx = spr_region_start + local_min_idx
             peak_val = local_min_val
+            confidence = min(0.7, abs(min_deviation) / 30.0)  # Lower confidence for weak signal
             logger.debug(f"   ✓ Subtle SPR dip detected (weak coupling): {min_deviation:.1f}% - CORRECT orientation")
         else:  # Weak structure, default to checking global min/max
             logger.warning(f"   ⚠️ Weak SPR structure in 600-750nm, falling back to global analysis")
@@ -375,20 +385,22 @@ def validate_sp_orientation(
             orientation_correct = True
             peak_idx = min_idx
             peak_val = min_val
+            confidence = 0.3  # Low confidence for fallback
     else:
         # No valid SPR region - fallback to global analysis
         logger.warning(f"   ⚠️ Invalid wavelength range for SPR analysis")
         orientation_correct = True
         peak_idx = min_idx
         peak_val = min_val
+        confidence = 0.2  # Very low confidence for invalid range
 
     return {
         'orientation_correct': orientation_correct,
         'peak_idx': peak_idx,
         'peak_wl': wavelengths[peak_idx],
         'peak_value': peak_val,
-        'left_value': left_mean,
-        'right_value': right_mean,
+        'left_value': left_edge_mean,
+        'right_value': right_edge_mean,
         'is_flat': False,
         'confidence': confidence
     }

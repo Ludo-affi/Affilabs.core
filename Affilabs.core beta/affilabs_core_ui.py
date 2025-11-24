@@ -1,17 +1,25 @@
-"""AffiLabs.core UI - Main Window Interface
+"""AffiLabs.core Production UI - Main Window
 
-This module contains the main UI window (MainWindowPrototype) for AffiLabs.core.
+PRODUCTION CODE - Used by main_simplified.py
+
+This module contains the production main window (AffilabsMainWindow) for AffiLabs.core application.
+
+NOT TO BE CONFUSED WITH:
+========================
+- widgets/mainwindow.py (old/unused version)
+- LL_UI_v1_0.py (actual prototype UI, not production)
 
 MODULAR DESIGN:
 ===============
-- MainWindowPrototype: Main application window with navigation, tabs, and graphs
+- AffilabsMainWindow: Main application window with navigation, tabs, and graphs
 - StartupCalibProgressDialog: Non-modal calibration progress dialog
 - ElementInspector: Developer tool for inspecting UI elements
-- Components imported from: sidebar.py, sections.py, plot_helpers.py, diagnostics_dialog.py
+- Components imported from: sidebar.py (AffilabsSidebar), sections.py, plot_helpers.py
 
 UI ARCHITECTURE:
 ================
 - Clean separation from business logic (managed by main_simplified.py)
+- EventBus integration for centralized signal routing
 - Signal-based communication with Application layer
 - Independently updatable without touching core logic
 - Scalable: new features added here don't affect hardware/data managers
@@ -35,7 +43,7 @@ INTEGRATION REFERENCE:
    - self.full_timeline_graph: Top graph showing full experiment timeline
    - self.cycle_of_interest_graph: Bottom graph showing zoomed region
 
-   Sidebar Controls (forwarded from SidebarPrototype):
+   Sidebar Controls (forwarded from AffilabsSidebar):
    - self.grid_check: Show/hide grid checkbox
    - self.auto_radio / self.manual_radio: Y-axis scaling mode
    - self.min_input / self.max_input: Manual Y-axis range inputs
@@ -131,7 +139,7 @@ from ui_styles import (
 )
 from diagnostics_dialog import DiagnosticsDialog
 from sections import CollapsibleSection
-from sidebar import SidebarPrototype
+from sidebar import AffilabsSidebar
 from plot_helpers import create_time_plot, add_channel_curves, create_spectroscopy_plot
 from diagnostics_dialog import DiagnosticsDialog
 from inspector import ElementInspector
@@ -151,7 +159,7 @@ class StartupCalibProgressDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
         self.setMinimumWidth(500)
-        self.setMinimumHeight(280)
+        self.setMinimumHeight(200)
         self.setMaximumWidth(600)
 
         # Track dialog state to prevent race conditions
@@ -177,7 +185,7 @@ class StartupCalibProgressDialog(QDialog):
         # Remove window close button and make it frameless for modern look
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
 
-        # Style with border
+        # Style with border and rounded corners
         self.setStyleSheet(
             "QDialog { background: #FFFFFF; border: 2px solid #007AFF; border-radius: 12px; }"
             "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }"
@@ -204,13 +212,14 @@ class StartupCalibProgressDialog(QDialog):
         self.progress_bar.setMaximum(0)  # Start in indeterminate mode
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFixedHeight(24)
+        self.progress_bar.setVisible(False)  # Hidden initially for checklist
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_bar.setStyleSheet(
             "QProgressBar {"
             "  background: rgba(0, 0, 0, 0.06);"
             "  border-radius: 4px;"
             "  border: 1px solid #D1D1D6;"
-            "  color: #FFFFFF;"
+            "  color: #1D1D1F;"
             "  font-size: 12px;"
             "  font-weight: 700;"
             "  text-align: center;"
@@ -294,14 +303,27 @@ class StartupCalibProgressDialog(QDialog):
 
     def _on_start_clicked(self) -> None:
         """Handle start button click."""
-        if not self._is_closing:
-            # Emit signal FIRST, then close
-            # This ensures handler can see dialog state before it closes
-            self.start_clicked.emit()
-
-            # Now close and clean up
-            self._is_closing = True
-            self.close()
+        try:
+            if not self._is_closing:
+                # Check if this is the initial start (pre-calibration) or final start (post-calibration)
+                if self._is_complete:
+                    # Post-calibration: Emit signal to start acquisition, dialog will close after
+                    from utils.logger import logger
+                    logger.info("📋 Dialog Start button clicked (post-calibration) - emitting signal")
+                    self.start_clicked.emit()
+                    logger.info("📋 Signal emitted, dialog will close after acquisition starts")
+                    # Don't close immediately - let coordinator close it after acquisition starts
+                    # self._is_closing = True
+                    # self.close()
+                else:
+                    # Pre-calibration: Emit signal but keep dialog open for progress updates
+                    self.start_clicked.emit()
+                    # Dialog stays open to show calibration progress
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"❌ Error in _on_start_clicked: {e}", exc_info=True)
+            import traceback
+            traceback.print_exc()
 
     def closeEvent(self, event: Any) -> None:
         """Clean up overlay when dialog closes."""
@@ -383,6 +405,39 @@ class StartupCalibProgressDialog(QDialog):
                 if maximum > 0:
                     percentage = int((value / maximum) * 100)
                     self.progress_bar.setFormat(f"{percentage}%")
+            except RuntimeError:
+                pass  # Widget deleted
+
+    def hide_progress_bar(self) -> None:
+        """Hide progress bar (for checklist/pre-calibration state)."""
+        if not self._is_closing and self.isVisible():
+            try:
+                self.progress_bar.hide()
+            except RuntimeError:
+                pass  # Widget deleted
+
+    def show_progress_bar(self) -> None:
+        """Show progress bar (when calibration starts)."""
+        if not self._is_closing and self.isVisible():
+            try:
+                self.progress_bar.show()
+                self.progress_bar.setMaximum(100)
+                self.progress_bar.setValue(0)
+            except RuntimeError:
+                pass  # Widget deleted
+
+    def enable_start_button_pre_calib(self) -> None:
+        """Enable the Start button for pre-calibration checklist (thread-safe).
+
+        Does NOT set _is_complete flag - dialog will stay open during calibration.
+        """
+        from utils.logger import logger
+        logger.debug(f"🔧 enable_start_button_pre_calib() called: _is_complete={self._is_complete}")
+        if not self._is_closing and self.isVisible() and self.start_button:
+            try:
+                self._is_error_state = False
+                self.start_button.setEnabled(True)
+                logger.debug(f"   ✅ Button enabled, _is_complete={self._is_complete} (should be False)")
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -561,12 +616,14 @@ class StartupCalibProgressDialog(QDialog):
 class DeviceConfigDialog(QDialog):
     """Dialog to collect missing device configuration information."""
 
-    def __init__(self, parent: Optional[QWidget] = None, device_serial: Optional[str] = None, controller_type: str = '') -> None:
+    def __init__(self, parent: Optional[QWidget] = None, device_serial: Optional[str] = None, controller_type: str = '', controller=None, device_config=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Device Configuration Required")
         self.setFixedWidth(500)
         self.setModal(True)
         self.controller_type = controller_type
+        self.controller = controller  # For EEPROM sync
+        self.device_config = device_config  # DeviceConfiguration instance
 
         # Apply modern styling
         self.setStyleSheet(
@@ -603,6 +660,18 @@ class DeviceConfigDialog(QDialog):
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
+
+        # Config source indicator (EEPROM vs JSON)
+        self.config_source_label = QLabel()
+        self.config_source_label.setStyleSheet(
+            "font-size: 12px;"
+            "color: #86868B;"
+            "padding: 8px 12px;"
+            "background: #F5F5F7;"
+            "border-radius: 6px;"
+        )
+        self._update_config_source_indicator()
+        layout.addWidget(self.config_source_label)
 
         # Form layout
         form = QFormLayout()
@@ -750,6 +819,31 @@ class DeviceConfigDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 
+        # Push to EEPROM button (only show if controller connected)
+        if self.controller is not None:
+            eeprom_btn = QPushButton("Push to EEPROM")
+            eeprom_btn.setStyleSheet(
+                "QPushButton {"
+                "  padding: 8px 20px;"
+                "  background: #FF9500;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  font-size: 13px;"
+                "  font-weight: 600;"
+                "  color: #FFFFFF;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #FF8000;"
+                "}"
+                "QPushButton:disabled {"
+                "  background: #E5E5E7;"
+                "  color: #86868B;"
+                "}"
+            )
+            eeprom_btn.setToolTip("Save configuration to device EEPROM for portable backup")
+            eeprom_btn.clicked.connect(self._on_push_to_eeprom)
+            button_layout.addWidget(eeprom_btn)
+
         save_btn = QPushButton("Save Configuration")
         save_btn.setStyleSheet(
             "QPushButton {"
@@ -789,6 +883,86 @@ class DeviceConfigDialog(QDialog):
             self.polarizer_type_combo.setCurrentText('circle')
         elif self.controller_type == 'PicoEZSPR':
             self.polarizer_type_combo.setCurrentText('barrel')
+
+    def _update_config_source_indicator(self):
+        """Update the config source indicator label."""
+        if self.device_config is None:
+            self.config_source_label.setText("ℹ️ New configuration")
+            return
+
+        if hasattr(self.device_config, 'loaded_from_eeprom') and self.device_config.loaded_from_eeprom:
+            self.config_source_label.setText("📦 Configuration loaded from EEPROM")
+            self.config_source_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #FF9500;"
+                "padding: 8px 12px;"
+                "background: #FFF3E0;"
+                "border-radius: 6px;"
+            )
+        else:
+            self.config_source_label.setText("💾 Configuration loaded from JSON file")
+            self.config_source_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #34C759;"
+                "padding: 8px 12px;"
+                "background: #E8F5E9;"
+                "border-radius: 6px;"
+            )
+
+    def _on_push_to_eeprom(self):
+        """Push current form configuration to EEPROM."""
+        if self.controller is None:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "No Controller",
+                "Cannot push to EEPROM: No controller connected."
+            )
+            return
+
+        # Update device_config with current form values (if it exists)
+        if self.device_config is not None:
+            config_data = self.get_config_data()
+            self.device_config.set_hardware_config(
+                led_pcb_model=config_data['led_pcb_model'],
+                optical_fiber_diameter_um=config_data['optical_fiber_diameter_um'],
+                polarizer_type=config_data['polarizer_type']
+            )
+
+        # Sync to EEPROM
+        from utils.logger import logger
+        logger.info("Pushing configuration to EEPROM...")
+
+        if self.device_config is not None:
+            success = self.device_config.sync_to_eeprom(self.controller)
+        else:
+            # No device_config yet - create temporary EEPROM config from form
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Save First",
+                "Please save the configuration to JSON first, then push to EEPROM."
+            )
+            return
+
+        # Show result
+        from PySide6.QtWidgets import QMessageBox
+        if success:
+            QMessageBox.information(
+                self,
+                "EEPROM Sync Complete",
+                "✓ Configuration successfully pushed to device EEPROM.\n\n"
+                "The device can now be used on other computers without reconfiguration."
+            )
+            logger.info("✓ EEPROM sync successful")
+        else:
+            QMessageBox.warning(
+                self,
+                "EEPROM Sync Failed",
+                "Failed to push configuration to EEPROM.\n\n"
+                "Check the logs for details."
+            )
+            logger.error("✗ EEPROM sync failed")
 
     def get_config_data(self):
         """Get the configuration data from the form."""
@@ -1364,8 +1538,8 @@ class AdvancedSettingsDialog(QDialog):
 
 
 
-class MainWindowPrototype(QMainWindow):
-    """Main application window for AffiLabs.core.
+class AffilabsMainWindow(QMainWindow):
+    """Production main window for AffiLabs.core application.
 
     QUICK REFERENCE FOR INTEGRATION:
     ================================
@@ -1402,7 +1576,7 @@ class MainWindowPrototype(QMainWindow):
     # Signal for export operations
     export_requested = Signal(dict)  # Export configuration dict
 
-    def __init__(self):
+    def __init__(self, event_bus=None):
         super().__init__()
         self.setWindowTitle("AI - AffiLabs.core")
         self.setWindowIcon(QIcon("ui/img/affinite2.ico"))
@@ -1412,10 +1586,17 @@ class MainWindowPrototype(QMainWindow):
         self.recording_indicator = None
         self.record_button = None
 
+        # Store event bus reference
+        self.event_bus = event_bus
+
         # Device configuration and maintenance tracking
         self.device_config = None
         self.led_start_time = None
         self.last_powered_on = None
+
+        # OEM provisioning flag - set to True when device config dialog completes
+        # Used to trigger calibration when spectrometer is connected after config
+        self.oem_config_just_completed = False
 
         # Live data flag (default enabled)
         self.live_data_enabled = True
@@ -1477,7 +1658,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
         )
 
-        self.sidebar = SidebarPrototype()
+        self.sidebar = AffilabsSidebar(event_bus=self.event_bus)
         self.sidebar.setMinimumWidth(55)  # Allow window to resize very small
         self.sidebar.setMaximumWidth(900)  # Maximum width for sidebar
         self.splitter.addWidget(self.sidebar)
@@ -3964,11 +4145,7 @@ class MainWindowPrototype(QMainWindow):
         - CONNECTED (green): Click to disconnect → DISCONNECTED (gray)
         """
         current_state = self.power_btn.property("powerState")
-        print(f"\n{'='*60}")
-        print(f"🔘 POWER BUTTON CLICKED!")
-        print(f"   current_state={current_state}")
-        print(f"{'='*60}\n")
-        logger.info(f"🔘 Power button clicked: current_state={current_state}")
+        logger.info(f"Power button clicked: current_state={current_state}")
 
         if current_state == "disconnected":
             # Start hardware connection
@@ -4083,11 +4260,16 @@ class MainWindowPrototype(QMainWindow):
 
     def enable_controls(self) -> None:
         """Enable record and pause buttons after calibration completes."""
-        logger.info("🎮 Enabling recording controls (calibration complete)")
-        self.record_btn.setEnabled(True)
-        self.pause_btn.setEnabled(True)
-        self.record_btn.setToolTip("Start Recording\n(Click to begin saving data)")
-        self.pause_btn.setToolTip("Pause Live Acquisition\n(Click to temporarily stop data flow)")
+        try:
+            logger.info("🎮 Enabling recording controls (calibration complete)")
+            self.record_btn.setEnabled(True)
+            self.pause_btn.setEnabled(True)
+            self.record_btn.setToolTip("Start Recording\n(Click to begin saving data)")
+            self.pause_btn.setToolTip("Pause Live Acquisition\n(Click to temporarily stop data flow)")
+        except Exception as e:
+            # Suppress Qt threading warnings that are false positives
+            if 'QTextDocument' not in str(e) and 'different thread' not in str(e):
+                raise
 
     def _reset_subunit_status(self) -> None:
         """Reset all subunit status indicators to 'Not Ready' state."""
@@ -4267,6 +4449,12 @@ class MainWindowPrototype(QMainWindow):
 
     def _set_optics_warning(self) -> None:
         """Apply light red background to live sensorgram when proceeding with unready optics."""
+        # Only set warning if we actually have optics issues (not just unverified)
+        if not hasattr(self, '_optics_status_details') or not self._optics_status_details:
+            from utils.logger import logger
+            logger.debug("_set_optics_warning called but no optics issues detected - skipping red background")
+            return
+
         if hasattr(self, 'full_timeline_graph') and self.full_timeline_graph:
             self.full_timeline_graph.setBackground('#FFE5E5')  # Light red
             self._optics_warning_active = True
@@ -4276,12 +4464,13 @@ class MainWindowPrototype(QMainWindow):
                 failed = self._optics_status_details.get('failed_channels', [])
                 maintenance = self._optics_status_details.get('maintenance_channels', [])
 
-                failed_str = ', '.join([ch.upper() for ch in failed]) if failed else 'none'
-                maint_str = ', '.join([ch.upper() for ch in maintenance]) if maintenance else 'none'
+                if failed or maintenance:  # Only warn if there are actual problems
+                    failed_str = ', '.join([ch.upper() for ch in failed]) if failed else 'none'
+                    maint_str = ', '.join([ch.upper() for ch in maintenance]) if maintenance else 'none'
 
-                from utils.logger import logger
-                logger.warning(f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]")
-                logger.warning("   Live sensorgram background set to light red - please resolve optics issues")
+                    from utils.logger import logger
+                    logger.warning(f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]")
+                    logger.warning("   Live sensorgram background set to light red - please resolve optics issues")
 
     def _clear_optics_warning(self) -> None:
         """Clear light red background from live sensorgram when optics become ready."""
@@ -4646,20 +4835,43 @@ End of Debug Log
         try:
             import os
             from utils.device_configuration import DeviceConfiguration
-            self.device_config = DeviceConfiguration(device_serial=device_serial)
+
+            # Get controller reference for EEPROM operations and hardware detection
+            controller = None
+            if hasattr(self, 'app') and self.app and hasattr(self.app, 'hardware_mgr'):
+                controller = self.app.hardware_mgr.ctrl if self.app.hardware_mgr else None
+
+            self.device_config = DeviceConfiguration(device_serial=device_serial, controller=controller)
 
             # Initialize tracking variables
             self.led_start_time = None
             self.last_powered_on = None
 
-            # Check for missing critical configuration fields and prompt user if needed
-            # This is important for device operation, not just a dev feature
-            if device_serial:
-                missing_fields = self._check_missing_config_fields()
-                if missing_fields:
-                    logger.info(f"⚠️ Missing device configuration fields: {', '.join(missing_fields)}")
-                    logger.info(f"   Prompting user to complete device configuration...")
-                    self._prompt_device_config(device_serial)
+            # Check if config was created from scratch (not loaded from JSON or EEPROM)
+            # If so, prompt user to complete missing fields
+            if self.device_config.created_from_scratch:
+                logger.info("=" * 80)
+                logger.info("📋 NEW DEVICE CONFIGURATION - User Input Required")
+                logger.info("=" * 80)
+                logger.info(f"   Device Serial: {device_serial or 'Unknown'}")
+                logger.info(f"   Config created with known info (serial, controller)")
+                logger.info(f"   Missing fields: LED model, fiber diameter")
+                logger.info("")
+                logger.info("Workflow:")
+                logger.info("   1. User fills device config dialog")
+                logger.info("   2. Trigger servo calibration (auto-detect S/P positions)")
+                logger.info("   3. Trigger LED calibration (calculate optimal intensities)")
+                logger.info("   4. Save complete config to JSON and EEPROM")
+                logger.info("=" * 80)
+
+                # Show popup to collect missing device configuration
+                self._prompt_device_config(device_serial)
+            else:
+                logger.info(f"✓ Device configuration loaded successfully")
+                if self.device_config.loaded_from_eeprom:
+                    logger.info(f"  Source: EEPROM → JSON (auto-saved)")
+                else:
+                    logger.info(f"  Source: JSON file")
 
             # Update UI with current values
             self._update_maintenance_display()
@@ -4711,12 +4923,12 @@ End of Debug Log
             from core.hardware_manager import HardwareManager
             # Try to get from main_window's hardware manager if available
             if hasattr(self, 'hardware_mgr') and self.hardware_mgr and self.hardware_mgr.ctrl:
-                ctrl_name = getattr(self.hardware_mgr.ctrl, 'name', '').lower()
+                ctrl_name = getattr(self.hardware_mgr.ctrl, 'device_name', '').lower()
                 if 'arduino' in ctrl_name or ctrl_name == 'p4spr':
                     return 'Arduino'
-                elif 'pico_p4spr' in ctrl_name:
+                elif 'pico_p4spr' in ctrl_name or 'picop4spr' in ctrl_name:
                     return 'PicoP4SPR'
-                elif 'pico_ezspr' in ctrl_name:
+                elif 'pico_ezspr' in ctrl_name or 'picoezspr' in ctrl_name:
                     return 'PicoEZSPR'
         except Exception as e:
             logger.debug(f"Could not determine controller type: {e}")
@@ -4752,8 +4964,19 @@ End of Debug Log
             # Detect controller type from hardware
             controller_type = self._get_controller_type_from_hardware()
 
-            # Create dialog
-            dialog = DeviceConfigDialog(self, device_serial, controller_type)
+            # Get controller reference for EEPROM operations
+            controller = None
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                controller = self.hardware_mgr.ctrl
+
+            # Create dialog with controller and device_config for EEPROM support
+            dialog = DeviceConfigDialog(
+                self,
+                device_serial,
+                controller_type,
+                controller=controller,
+                device_config=self.device_config
+            )
 
             # Pre-fill with existing values from config if available
             if self.device_config:
@@ -4837,19 +5060,226 @@ End of Debug Log
                     )
                 else:
                     logger.info("✅ All required fields are now present in config")
-                    from widgets.message import show_message
-                    show_message(
-                        "Device configuration saved successfully!\\n\\n"
-                        f"LED Model: {hw.get('led_pcb_model', 'N/A')}\\n"
-                        f"Controller: {hw.get('controller_type', 'N/A')}\\n"
-                        f"Fiber: {hw.get('optical_fiber_diameter_um', 'N/A')} µm\\n"
-                        f"Polarizer: {hw.get('polarizer_type', 'N/A')}",
-                        "Configuration Saved"
-                    )
+
+                    # Save configuration first (before calibrations)
+                    logger.info("💾 Saving device configuration to JSON...")
+
+                    # Notify application that device config is complete
+                    # This will trigger OEM calibration workflow
+                    logger.info("=" * 80)
+                    logger.info("🏭 Device Configuration Complete - Starting Calibration Workflow")
+                    logger.info("=" * 80)
+                    logger.info(f"LED Model: {hw.get('led_pcb_model', 'N/A')}")
+                    logger.info(f"Controller: {hw.get('controller_type', 'N/A')}")
+                    logger.info(f"Fiber: {hw.get('optical_fiber_diameter_um', 'N/A')} µm")
+                    logger.info(f"Polarizer: {hw.get('polarizer_type', 'N/A')}")
+                    logger.info("")
+                    logger.info("Next Steps:")
+                    logger.info("  1. Run servo calibration to find S/P positions")
+                    logger.info("  2. Run LED calibration to find optimal intensities")
+                    logger.info("  3. Push complete config to EEPROM")
+                    logger.info("=" * 80)
+
+                    # Set flag for application to check
+                    self.oem_config_just_completed = True
+
+                    # Trigger calibration workflow (has its own progress messages)
+                    self._start_oem_calibration_workflow()
             else:
                 logger.warning("Device configuration dialog cancelled")
         except Exception as e:
             logger.error(f"Failed to prompt for device configuration: {e}")
+
+    def _start_oem_calibration_workflow(self):
+        """Start OEM calibration workflow after device config is complete.
+
+        Workflow:
+        1. Run servo calibration to find optimal S/P positions
+        2. Pull S/P positions from calibration result and update device_config
+        3. Run LED calibration to find optimal intensities
+        4. Pull LED intensities from data_mgr and update device_config
+        5. Push complete config to EEPROM
+        """
+        logger.info("🏭 Starting OEM calibration workflow...")
+
+        # Check if hardware is ready
+        if not hasattr(self, 'app') or not self.app:
+            logger.error("Application not initialized")
+            from widgets.message import show_message
+            show_message(
+                "Cannot start calibration: Application not initialized",
+                msg_type="Error",
+                title="Calibration Error"
+            )
+            return
+
+        hardware_mgr = self.app.hardware_mgr
+        data_mgr = self.app.data_mgr
+
+        # Check for controller (always required)
+        if not hardware_mgr or not hardware_mgr.ctrl:
+            logger.error("Controller not connected")
+            from widgets.message import show_message
+            show_message(
+                "Cannot start calibration:\\n"
+                "Controller must be connected.\\n\\n"
+                "Please connect controller and try again.",
+                msg_type="Warning",
+                title="Hardware Not Ready"
+            )
+            return
+
+        # Check for spectrometer (required for calibrations)
+        if not hardware_mgr.detector:
+            logger.warning("Spectrometer not connected - waiting for connection")
+            from widgets.message import show_message
+            show_message(
+                "Device configuration saved!\\n\\n"
+                "Please connect the spectrometer to begin\\n"
+                "automatic calibration.\\n\\n"
+                "Calibration will start automatically\\n"
+                "when the spectrometer is detected.",
+                msg_type="Information",
+                title="Connect Spectrometer"
+            )
+            return
+
+        # Step 1: Run servo calibration
+        logger.info("Step 1/5: Running servo calibration...")
+        from widgets.message import show_message
+        show_message(
+            "Starting servo calibration...\\n\\n"
+            "This will automatically find optimal\\n"
+            "S and P polarizer positions.\\n\\n"
+            "Please ensure water is on the sensor.\\n"
+            "This takes about 1-2 minutes.",
+            msg_type="Information",
+            title="Servo Calibration"
+        )
+
+        # Trigger servo calibration in main app
+        if hasattr(self.app, '_run_servo_auto_calibration'):
+            # Run entire calibration workflow in a thread to avoid blocking UI
+            import threading
+            def oem_calibration_workflow():
+                try:
+                    # Step 1: Run servo calibration (this saves to device_config automatically if user accepts)
+                    logger.info("Running servo auto-calibration...")
+                    self.app._run_servo_auto_calibration()
+
+                    # Step 2: Verify servo positions were saved
+                    s_pos = self.device_config.config['hardware']['servo_s_position']
+                    p_pos = self.device_config.config['hardware']['servo_p_position']
+
+                    if s_pos == 10 and p_pos == 100:
+                        logger.warning("Servo positions not updated - using defaults")
+                        logger.warning("User may have declined servo calibration results")
+                    else:
+                        logger.info(f"✓ Servo positions confirmed: S={s_pos}, P={p_pos}")
+
+                    # Step 3: Run LED calibration
+                    logger.info("Step 2/5: Running LED calibration...")
+                    from widgets.message import show_message
+                    show_message(
+                        "Servo calibration complete!\\n\\n"
+                        "Now starting LED intensity calibration...\\n"
+                        "This takes about 30-60 seconds.",
+                        msg_type="Information",
+                        title="LED Calibration"
+                    )
+
+                    # Trigger simple LED calibration
+                    self.app._on_simple_led_calibration()
+
+                    # Wait for LED calibration to complete
+                    if hasattr(hardware_mgr, 'main_app') and hardware_mgr.main_app:
+                        if hasattr(hardware_mgr.main_app, 'calibration_thread'):
+                            hardware_mgr.main_app.calibration_thread.join()
+                            logger.info("LED calibration thread completed")
+
+                    # Step 4: Pull LED intensities from data_mgr and update config
+                    logger.info("Step 3/5: Updating LED intensities in device config...")
+                    import time
+                    time.sleep(2)  # Brief delay to ensure data_mgr is updated
+
+                    if data_mgr and hasattr(data_mgr, 'leds_calibrated') and data_mgr.leds_calibrated:
+                        led_a = data_mgr.leds_calibrated.get('a', 0)
+                        led_b = data_mgr.leds_calibrated.get('b', 0)
+                        led_c = data_mgr.leds_calibrated.get('c', 0)
+                        led_d = data_mgr.leds_calibrated.get('d', 0)
+
+                        if any([led_a, led_b, led_c, led_d]):
+                            self.device_config.config['calibration']['led_intensity_a'] = led_a
+                            self.device_config.config['calibration']['led_intensity_b'] = led_b
+                            self.device_config.config['calibration']['led_intensity_c'] = led_c
+                            self.device_config.config['calibration']['led_intensity_d'] = led_d
+                            self.device_config.config['calibration']['factory_calibrated'] = True
+                            self.device_config.save()
+                            logger.info(f"✓ LED intensities updated: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
+                        else:
+                            logger.warning("LED intensities are all zero - calibration may have failed")
+                    else:
+                        logger.warning("Failed to read LED intensities from data_mgr")
+
+                    # Step 5: Push complete config to EEPROM
+                    logger.info("Step 4/5: Pushing complete config to EEPROM...")
+                    if self.device_config.sync_to_eeprom(hardware_mgr.ctrl):
+                        logger.info("=" * 80)
+                        logger.info("✅ OEM CALIBRATION WORKFLOW COMPLETE!")
+                        logger.info("=" * 80)
+                        logger.info(f"   Servo Positions:")
+                        logger.info(f"   • S position: {s_pos}°")
+                        logger.info(f"   • P position: {p_pos}°")
+                        logger.info(f"   LED Intensities:")
+                        logger.info(f"   • Channel A: {self.device_config.config['calibration']['led_intensity_a']}")
+                        logger.info(f"   • Channel B: {self.device_config.config['calibration']['led_intensity_b']}")
+                        logger.info(f"   • Channel C: {self.device_config.config['calibration']['led_intensity_c']}")
+                        logger.info(f"   • Channel D: {self.device_config.config['calibration']['led_intensity_d']}")
+                        logger.info(f"   Configuration saved to:")
+                        logger.info(f"   • JSON: {self.device_config.config_path}")
+                        logger.info(f"   • EEPROM: Controller memory")
+                        logger.info("=" * 80)
+
+                        # Show success message
+                        from widgets.message import show_message
+                        show_message(
+                            "✅ OEM Calibration Complete!\\n\\n"
+                            "All calibrations finished successfully:\\n"
+                            f"• Servo S: {s_pos}°\\n"
+                            f"• Servo P: {p_pos}°\\n"
+                            f"• LED A: {self.device_config.config['calibration']['led_intensity_a']}\\n"
+                            f"• LED B: {self.device_config.config['calibration']['led_intensity_b']}\\n"
+                            f"• LED C: {self.device_config.config['calibration']['led_intensity_c']}\\n"
+                            f"• LED D: {self.device_config.config['calibration']['led_intensity_d']}\\n\\n"
+                            "Configuration saved to JSON and EEPROM.\\n"
+                            "Device is ready for use!",
+                            msg_type="Information",
+                            title="Calibration Success"
+                        )
+                    else:
+                        logger.error("Failed to push config to EEPROM")
+                        from widgets.message import show_message
+                        show_message(
+                            "Calibration completed but EEPROM sync failed.\\n\\n"
+                            "Configuration is saved to JSON file only.",
+                            msg_type="Warning",
+                            title="EEPROM Sync Failed"
+                        )
+                except Exception as e:
+                    logger.error(f"OEM calibration workflow failed: {e}")
+                    logger.exception("Full traceback:")
+                    from widgets.message import show_message
+                    show_message(
+                        f"Calibration workflow failed:\\n{str(e)}",
+                        msg_type="Error",
+                        title="Calibration Error"
+                    )
+
+            # Start workflow in background thread
+            workflow_thread = threading.Thread(target=oem_calibration_workflow, daemon=True)
+            workflow_thread.start()
+        else:
+            logger.error("Servo calibration method not found in application")
 
     def _update_maintenance_display(self):
         """Update the maintenance section with current values from device config."""

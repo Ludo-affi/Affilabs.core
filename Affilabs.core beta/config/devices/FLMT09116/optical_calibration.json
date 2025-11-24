@@ -1,150 +1,206 @@
 {
   "metadata": {
-    "created": "2025-11-22T03:57:23Z",
+    "created": "2025-11-24T01:48:25Z",
     "device_serial": "FLMT09116",
-    "pre_on_duration_s": 0.25,
+    "pre_on_duration_s": 0.2,
     "acquisition_duration_ms": 250,
     "integration_grid_ms": [
-      5.0,
       10.0,
-      15.0,
-      20.0,
-      30.0,
-      50.0,
-      100.0
-    ]
+      25.0,
+      40.0,
+      55.0,
+      70.0,
+      85.0
+    ],
+    "led_intensities_s_mode": {
+      "a": 187,
+      "b": 80,
+      "c": 70,
+      "d": 172
+    },
+    "polarization_mode": "s",
+    "aging_assessment": null
   },
   "channel_data": {
     "a": {
       "integration_time_data": [
         {
-          "integration_time_ms": 5.0,
-          "tau_ms": 15.24929579603146,
-          "amplitude": 726.382989291574,
-          "baseline": 3018.1363833138475,
-          "r_squared": 0.9738304939621131
-        },
-        {
           "integration_time_ms": 10.0,
-          "tau_ms": 11.16771148835432,
-          "amplitude": 2551.36982166328,
-          "baseline": 3053.048646689053,
-          "r_squared": 0.9793230745298174
+          "tau_ms": 62.934791663038474,
+          "amplitude": 114.25895765840309,
+          "baseline": -39.05083376667284,
+          "r_squared": 0.9943012561975098
         },
         {
-          "integration_time_ms": 15.0,
-          "tau_ms": 7.658037611469456,
-          "amplitude": 8541.420128899388,
-          "baseline": 3091.0263726725325,
-          "r_squared": 0.9947731870448578
+          "integration_time_ms": 25.0,
+          "tau_ms": 59.90575652465932,
+          "amplitude": 344.72535900813756,
+          "baseline": 13.503679786474377,
+          "r_squared": 0.9959942730155835
         },
         {
-          "integration_time_ms": 20.0,
-          "tau_ms": 36.64556949115158,
-          "amplitude": 856.3262153609187,
-          "baseline": 3075.119940278568,
-          "r_squared": 0.9911203175370933
+          "integration_time_ms": 40.0,
+          "tau_ms": 55.46168486867148,
+          "amplitude": 594.7342678708651,
+          "baseline": 70.42392006247007,
+          "r_squared": 0.9966645658261225
         },
         {
-          "integration_time_ms": 30.0,
-          "tau_ms": 13.599630270601645,
-          "amplitude": 18226.43052256211,
-          "baseline": 3160.8713526717206,
-          "r_squared": 0.9978182475270602
+          "integration_time_ms": 55.0,
+          "tau_ms": 67.03492254768341,
+          "amplitude": 754.746987764526,
+          "baseline": 111.19739593265822,
+          "r_squared": 0.9987032514039427
         },
         {
-          "integration_time_ms": 50.0,
-          "tau_ms": 64.40454717545255,
-          "amplitude": 906.9652105628636,
-          "baseline": 3159.6655625407943,
-          "r_squared": 0.9989050633752895
+          "integration_time_ms": 70.0,
+          "tau_ms": 79.50124614745047,
+          "amplitude": 671.8008418762472,
+          "baseline": 133.2382612490771,
+          "r_squared": 0.9985428070734887
         }
-      ]
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 630,
+        "peak_intensity": 14149.005137647373,
+        "integration_time_ms": 10.0,
+        "led_intensity": 187
+      }
     },
     "b": {
       "integration_time_data": [
         {
-          "integration_time_ms": 5.0,
-          "tau_ms": 9.903873183484311,
-          "amplitude": 1192.4974731407392,
-          "baseline": 3022.106838360323,
-          "r_squared": 0.981030553131267
-        },
-        {
           "integration_time_ms": 10.0,
-          "tau_ms": 23.339953108857785,
-          "amplitude": 789.8220308708238,
-          "baseline": 3038.882648969486,
-          "r_squared": 0.9809512714979527
+          "tau_ms": 56.72829568221763,
+          "amplitude": 138.36982673091268,
+          "baseline": -38.34726672142572,
+          "r_squared": 0.9941743070744918
         },
         {
-          "integration_time_ms": 15.0,
-          "tau_ms": 29.9770409984135,
-          "amplitude": 853.4372026120523,
-          "baseline": 3057.8444658005074,
-          "r_squared": 0.9873305518427434
+          "integration_time_ms": 25.0,
+          "tau_ms": 56.969525299366154,
+          "amplitude": 380.0418435069994,
+          "baseline": 14.544900932438088,
+          "r_squared": 0.9955227777724194
         },
         {
-          "integration_time_ms": 20.0,
-          "tau_ms": 36.63108813024343,
-          "amplitude": 852.2033699569901,
-          "baseline": 3074.6539110072154,
-          "r_squared": 0.9905690826392167
+          "integration_time_ms": 40.0,
+          "tau_ms": 68.8673260741616,
+          "amplitude": 455.21212054360655,
+          "baseline": 57.31253895220776,
+          "r_squared": 0.998177349421564
         },
         {
-          "integration_time_ms": 30.0,
-          "tau_ms": 18.546960683364066,
-          "amplitude": 7372.780635332843,
-          "baseline": 3149.9559873817807,
-          "r_squared": 0.9953119223121919
+          "integration_time_ms": 55.0,
+          "tau_ms": 61.119615345946656,
+          "amplitude": 780.4256367700123,
+          "baseline": 109.7930168672916,
+          "r_squared": 0.997651925763904
         },
         {
-          "integration_time_ms": 50.0,
-          "tau_ms": 39.82454931071844,
-          "amplitude": 3115.623749526725,
-          "baseline": 3201.816657017114,
-          "r_squared": 0.998209049944497
+          "integration_time_ms": 70.0,
+          "tau_ms": 71.28635718114396,
+          "amplitude": 907.9396250430008,
+          "baseline": 141.75283370489024,
+          "r_squared": 0.9986525658587706
         }
-      ]
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 658,
+        "peak_intensity": 13884.31948445342,
+        "integration_time_ms": 10.0,
+        "led_intensity": 80
+      }
     },
     "c": {
       "integration_time_data": [
         {
-          "integration_time_ms": 5.0,
-          "tau_ms": 8.547364992837927,
-          "amplitude": 1622.9328820302571,
-          "baseline": 3022.861799132898,
-          "r_squared": 0.9843493288366573
+          "integration_time_ms": 10.0,
+          "tau_ms": 58.94649796777041,
+          "amplitude": 128.6827226048605,
+          "baseline": -38.794591786854156,
+          "r_squared": 0.9945090438649145
         },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 55.0465188289062,
+          "amplitude": 392.37658863760686,
+          "baseline": 16.808377025497236,
+          "r_squared": 0.9954476645228544
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 69.42985778817315,
+          "amplitude": 460.6054084656835,
+          "baseline": 55.70786880104987,
+          "r_squared": 0.9977990416902831
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 62.09787642238804,
+          "amplitude": 792.0441863246637,
+          "baseline": 109.49712630812454,
+          "r_squared": 0.9974979879711986
+        },
+        {
+          "integration_time_ms": 70.0,
+          "tau_ms": 67.4763364615127,
+          "amplitude": 842.5703773090769,
+          "baseline": 147.13920410170186,
+          "r_squared": 0.9983081232752027
+        }
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 590,
+        "peak_intensity": 12159.970302616339,
+        "integration_time_ms": 10.0,
+        "led_intensity": 70
+      }
+    },
+    "d": {
+      "integration_time_data": [
         {
           "integration_time_ms": 10.0,
-          "tau_ms": 23.525176002098245,
-          "amplitude": 817.2403502574232,
-          "baseline": 3038.487977991687,
-          "r_squared": 0.9803383106987823
+          "tau_ms": 64.32595737689105,
+          "amplitude": 109.3349450997368,
+          "baseline": -41.372281493543746,
+          "r_squared": 0.994862521108347
         },
         {
-          "integration_time_ms": 15.0,
-          "tau_ms": 30.24641300329798,
-          "amplitude": 851.7986833178468,
-          "baseline": 3057.704991850738,
-          "r_squared": 0.9880561626943755
+          "integration_time_ms": 25.0,
+          "tau_ms": 60.08455814864201,
+          "amplitude": 343.28893189913134,
+          "baseline": 13.507218591063813,
+          "r_squared": 0.9951940003218449
         },
         {
-          "integration_time_ms": 20.0,
-          "tau_ms": 36.237490261833145,
-          "amplitude": 835.5574754972129,
-          "baseline": 3074.869523615721,
-          "r_squared": 0.9912280815814437
+          "integration_time_ms": 40.0,
+          "tau_ms": 77.0219834098517,
+          "amplitude": 363.7188694481873,
+          "baseline": 49.69998478044122,
+          "r_squared": 0.9984744581405541
         },
         {
-          "integration_time_ms": 30.0,
-          "tau_ms": 47.70328552186537,
-          "amplitude": 889.477035247749,
-          "baseline": 3103.57717849858,
-          "r_squared": 0.9950695649537257
+          "integration_time_ms": 55.0,
+          "tau_ms": 70.89034790006686,
+          "amplitude": 596.3453284557095,
+          "baseline": 98.17293853158644,
+          "r_squared": 0.9981529157394654
+        },
+        {
+          "integration_time_ms": 70.0,
+          "tau_ms": 81.67813172083154,
+          "amplitude": 623.8911530669424,
+          "baseline": 131.76238231492573,
+          "r_squared": 0.9987007401153396
         }
-      ]
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 21,
+        "peak_intensity": 11850.521634543997,
+        "integration_time_ms": 10.0,
+        "led_intensity": 172
+      }
     }
   }
 }

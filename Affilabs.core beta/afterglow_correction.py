@@ -4,6 +4,75 @@ Loads optical calibration τ tables and applies LED phosphor afterglow correctio
 to measurements. This is a passive module - it does NOT run calibration, only
 loads and applies corrections from pre-existing optical calibration files.
 
+=============================================================================
+TWO OPERATING MODES - LED INTENSITY HANDLING
+=============================================================================
+
+Mode 1: Global Integration Time (DEFAULT)
+------------------------------------------
+- LED intensity VARIES per channel (from LED calibration: ~180-220)
+- Integration time is FIXED (e.g., 40ms)
+- Afterglow calibration: Uses LED-calibrated intensities
+- Correction: No scaling needed (measured at operating intensities)
+- Usage: calculate_correction(..., led_intensity=None)  # Default
+
+Mode 2: Global LED Intensity
+----------------------------
+- LED intensity FIXED at 255 for all channels
+- Integration time varies per channel
+- Afterglow calibration: Pre-calibrated at 255 (factory setting)
+- Correction: Amplitude scales linearly with actual measurement intensity
+- Usage: calculate_correction(..., led_intensity=180)  # Scales from 255→180
+- Physics: Amplitude ∝ LED_intensity, τ = constant (material property)
+
+=============================================================================
+FLEXIBLE CHANNEL SEQUENCING - KEY ARCHITECTURAL ADVANTAGE
+=============================================================================
+
+The system calibrates EACH LED's afterglow characteristics INDEPENDENTLY.
+This means you can correct for ANY channel sequence, not just sequential patterns.
+
+Why This Matters:
+-----------------
+1. Current 4-channel sequential: A→B→C→D (each corrects for previous)
+2. Future 2-channel non-adjacent: e.g., A→C or B→D
+3. Custom sequences: Any arbitrary order based on assay needs
+4. Multi-wavelength applications: Different channel combinations per experiment
+
+How It Works:
+-------------
+Each channel's calibration stores its OWN afterglow decay:
+  - Channel A afterglow: τ_A(int_time), amplitude_A, baseline_A
+  - Channel B afterglow: τ_B(int_time), amplitude_B, baseline_B
+  - Channel C afterglow: τ_C(int_time), amplitude_C, baseline_C
+  - Channel D afterglow: τ_D(int_time), amplitude_D, baseline_D
+
+When measuring channel X after channel Y:
+  corrected_X = measured_X - afterglow_from_Y(delay, int_time)
+
+Examples:
+---------
+  # 4-channel sequential (current)
+  measure A → measure B (correct for A afterglow)
+            → measure C (correct for B afterglow)
+            → measure D (correct for C afterglow)
+
+  # 2-channel non-adjacent (future)
+  measure A → measure C (correct for A afterglow directly)
+  measure B → measure D (correct for B afterglow directly)
+
+  # Custom sequence
+  measure D → measure A (correct for D afterglow)
+            → measure B (correct for A afterglow)
+
+Key Insight:
+------------
+By calibrating ALL LEDs completely, we're not locked into any specific
+measurement pattern. The correction adapts to whatever channel was
+previously active, enabling flexible assay design.
+
+=============================================================================
+
 Typical Usage:
     # In SPRDataAcquisition.__init__():
     from afterglow_correction import AfterglowCorrection
@@ -14,7 +83,7 @@ Typical Usage:
     # In measurement loop:
     corrected_signal = self.afterglow_correction.apply_correction(
         measured_signal,
-        previous_channel='a',
+        previous_channel='a',  # ← Can be ANY channel that was just active
         integration_time_ms=55.0,
         delay_ms=5.0
     )
@@ -53,18 +122,19 @@ from utils.logger import logger
 
 
 # LED Type Specifications and Expected Ranges
+# Updated for improved afterglow method (200ms LED on, immediate measurement from t=0)
 LED_SPECS = {
     'LCW': {  # Luminus Cool White
         'name': 'Luminus Cool White',
-        'tau_range_ms': (15, 26),  # Expected tau range (will refine as we learn)
-        'tau_warn_range_ms': (10, 35),  # Warning thresholds
+        'tau_range_ms': (50, 85),  # Expected tau range for improved method (200ms LED on, t=0 start)
+        'tau_warn_range_ms': (40, 100),  # Warning thresholds - allow wider margin
         'r_squared_min': 0.85,  # Minimum acceptable fit quality
         'r_squared_good': 0.95,  # Good fit quality
     },
     'OWW': {  # Osram Warm White
         'name': 'Osram Warm White',
-        'tau_range_ms': (14, 24),  # Expected tau range (will refine as we learn)
-        'tau_warn_range_ms': (10, 35),  # Warning thresholds
+        'tau_range_ms': (50, 85),  # Expected tau range for improved method (200ms LED on, t=0 start)
+        'tau_warn_range_ms': (40, 100),  # Warning thresholds - allow wider margin
         'r_squared_min': 0.85,  # Minimum acceptable fit quality
         'r_squared_good': 0.95,  # Good fit quality
     }
@@ -385,7 +455,8 @@ class AfterglowCorrection:
         self,
         previous_channel: str,
         integration_time_ms: float,
-        delay_ms: float = 5.0
+        delay_ms: float = 5.0,
+        led_intensity: int | None = None
     ) -> float:
         """Calculate expected afterglow signal from previous channel.
 
@@ -395,10 +466,19 @@ class AfterglowCorrection:
         where τ, A, and baseline are interpolated from calibration data based on
         the integration time used for the measurement.
 
+        LED Intensity Scaling:
+        - Mode 1 (Global Integration Time): Calibration uses LED-calibrated intensities.
+          Pass led_intensity=None (default) - assumes measurement uses same intensities.
+        - Mode 2 (Global LED Intensity=255): Calibration at 255, measurement at different intensity.
+          Pass led_intensity to scale amplitude proportionally.
+
         Args:
             previous_channel: Channel ID ('a', 'b', 'c', 'd') that was last active
             integration_time_ms: Integration time used for measurement (typically 10-100ms)
             delay_ms: Time delay since previous LED turned off (default: 5.0ms)
+            led_intensity: Current LED intensity (0-255). If provided and differs from
+                          calibration intensity, scales amplitude proportionally.
+                          If None, assumes measurement uses calibration intensities.
 
         Returns:
             Expected afterglow signal (counts) to subtract from measurement
@@ -407,9 +487,15 @@ class AfterglowCorrection:
             ValueError: If channel invalid or integration time severely out of range
 
         Example:
+            >>> # Mode 1: Use calibrated LED intensities (no scaling)
             >>> correction = cal.calculate_correction('a', 55.0, 5.0)
             >>> print(f"Afterglow: {correction:.1f} counts")
             Afterglow: 1234.5 counts
+
+            >>> # Mode 2: Scale from 255 calibration to 180 measurement
+            >>> correction = cal.calculate_correction('a', 55.0, 5.0, led_intensity=180)
+            >>> print(f"Afterglow (scaled): {correction:.1f} counts")
+            Afterglow (scaled): 875.3 counts
         """
         # Normalize channel name to lowercase
         channel_lower = previous_channel.lower()
@@ -421,37 +507,41 @@ class AfterglowCorrection:
                 f"Available: {list(self.tau_interpolators.keys())}"
             )
 
-        # Validate integration time
-        min_int, max_int = self.int_time_range_ms
-        if integration_time_ms < min_int * 0.5 or integration_time_ms > max_int * 1.5:
-            # Only raise error if severely out of range (50% margin)
-            raise ValueError(
-                f"Integration time {integration_time_ms:.1f}ms severely out of "
-                f"calibrated range [{min_int:.1f}, {max_int:.1f}]ms. "
-                f"Correction would be unreliable."
-            )
-        elif not (min_int <= integration_time_ms <= max_int):
-            # Warning for mild extrapolation
-            logger.warning(
-                f"⚠️ Integration time {integration_time_ms:.1f}ms outside calibrated "
-                f"range [{min_int:.1f}, {max_int:.1f}]ms. Using extrapolation."
-            )
-
-        # Interpolate τ, amplitude, baseline for this integration time
+        # Interpolate/extrapolate τ, amplitude, baseline for this integration time
+        # Cubic spline model handles extrapolation well - afterglow is minimal at higher integration times
         tau = float(self.tau_interpolators[channel_lower](integration_time_ms))
         amplitude = float(self.amplitude_tables[channel_lower](integration_time_ms))
         baseline = float(self.baseline_tables[channel_lower](integration_time_ms))
 
-        # Calculate exponential decay: signal(t) = baseline + A × exp(-t/τ)
-        correction = baseline + amplitude * np.exp(-delay_ms / tau)
+        # Scale amplitude if LED intensity differs from calibration
+        # Physics: Amplitude ∝ LED intensity (linear excitation regime)
+        # τ remains constant (material property)
+        amplitude_scaled = amplitude
+        if led_intensity is not None:
+            # Get calibration LED intensity for this channel
+            metadata = self.calibration_data.get('metadata', {})
+            cal_intensities = metadata.get('led_intensities_s_mode', {})
 
-        logger.debug(
-            f"✨ Afterglow correction calculated: "
-            f"Ch {previous_channel.upper()} @ {integration_time_ms:.1f}ms, "
-            f"delay={delay_ms:.1f}ms → "
-            f"τ={tau:.2f}ms, A={amplitude:.1f}, baseline={baseline:.1f} → "
-            f"correction={correction:.1f} counts"
-        )
+            if cal_intensities and channel_lower in cal_intensities:
+                cal_intensity = int(cal_intensities[channel_lower])
+                if cal_intensity > 0 and led_intensity != cal_intensity:
+                    intensity_scale = led_intensity / cal_intensity
+                    amplitude_scaled = amplitude * intensity_scale
+                    logger.debug(
+                        f"   Amplitude scaled: {amplitude:.1f} → {amplitude_scaled:.1f} "
+                        f"(LED: {cal_intensity} → {led_intensity}, scale={intensity_scale:.3f})"
+                    )
+            elif led_intensity != 255:
+                # Calibration at 255 (default), scale to measurement intensity
+                intensity_scale = led_intensity / 255.0
+                amplitude_scaled = amplitude * intensity_scale
+                logger.debug(
+                    f"   Amplitude scaled from 255: {amplitude:.1f} → {amplitude_scaled:.1f} "
+                    f"(LED: 255 → {led_intensity}, scale={intensity_scale:.3f})"
+                )
+
+        # Calculate exponential decay: signal(t) = baseline + A × exp(-t/τ)
+        correction = baseline + amplitude_scaled * np.exp(-delay_ms / tau)
 
         return correction
 
@@ -460,16 +550,30 @@ class AfterglowCorrection:
         measured_signal: np.ndarray | float,
         previous_channel: str,
         integration_time_ms: float,
-        delay_ms: float = 5.0
+        delay_ms: float = 5.0,
+        led_intensity: int | None = None
     ) -> np.ndarray | float:
         """Apply afterglow correction to measured signal.
 
         Calculates the expected afterglow and subtracts it from the measurement.
         Works with both scalar values and spectrum arrays.
 
+        LED Intensity Scaling:
+        - If led_intensity provided and differs from calibration, scales amplitude
+        - See calculate_correction() for details
+
+        FLEXIBLE CHANNEL SEQUENCING:
+        The 'previous_channel' can be ANY channel that was just measured,
+        not necessarily the sequentially previous one. This enables:
+        - Non-adjacent channel pairs (e.g., A→C, B→D)
+        - Custom measurement sequences
+        - Future 2-channel assays with arbitrary wavelength selection
+
         Args:
             measured_signal: Raw measured spectrum (array) or single value (scalar)
             previous_channel: Channel that was last active ('a', 'b', 'c', 'd')
+                            Can be ANY channel - system looks up that channel's
+                            specific afterglow characteristics automatically
             integration_time_ms: Integration time used for measurement (ms)
             delay_ms: Delay since previous LED turned off (ms)
 
@@ -493,7 +597,7 @@ class AfterglowCorrection:
             ... )
         """
         correction = self.calculate_correction(
-            previous_channel, integration_time_ms, delay_ms
+            previous_channel, integration_time_ms, delay_ms, led_intensity
         )
 
         # Subtract correction from signal

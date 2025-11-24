@@ -69,16 +69,33 @@
 
 | Topic | Source Document | Status | Manual Section |
 |-------|----------------|--------|----------------|
+| Calibration sequence | `CALIBRATION_MASTER.md`, `led_calibration.py` | ✅ Complete | 4.0 Calibration Overview |
 | Afterglow correction | `CALIBRATION_SYSTEMS_SUMMARY.md` | ✅ Complete | 4.1 Afterglow Calibration |
 | S/P orientation validation | `CALIBRATION_SYSTEMS_SUMMARY.md` | ✅ Complete | 4.2 Polarizer Validation |
 | LED intensity optimization | `CALIBRATION_SYSTEMS_SUMMARY.md` | ✅ Complete | 4.3 LED Calibration |
 | Calibration workflow | `CALIBRATION_SYSTEMS_SUMMARY.md` | ✅ Complete | 4. Calibration Guide |
+| Servo position calibration | `SERVO_CALIBRATION_MASTER_REFERENCE.md` | ✅ Complete | 4.4 Servo Calibration |
+| Polarizer types | `S_POL_P_POL_SPR_MASTER_REFERENCE.md` | ✅ Complete | 4.5 Polarizer Types |
+
+**Calibration Sequence (User Flow)**:
+1. **Connect Hardware** → Device detected and identified
+2. **Load Configuration** → Check device_config.json for servo positions
+3. **Decision Point**:
+   - **If servo positions exist** → Fast path: LED calibration only (~30-60 seconds)
+   - **If servo positions missing** → Servo calibration first (method depends on polarizer type)
+     - Barrel: ~1.4 minutes (simple window detection)
+     - Circular: ~13 measurements (quadrant search, water required)
+4. **LED Calibration** → Common path for all polarizer types (~30-60 seconds)
+5. **Ready** → Press Start button to begin measurements
 
 **Key User-Facing Features:**
+- **Pre-Calibration Checklist**: Water/buffer required, prism installed, no bubbles, temperature stable
+- **Fast Path**: If device previously calibrated, skips servo calibration
 - **OEM Calibration**: Factory-level calibration with spectral reference
 - **Afterglow correction**: Compensates for LED phosphor decay
 - **S/P validation**: Fool-proof detection of correct polarizer orientation
 - **Auto-prompts**: Software suggests missing calibrations
+- **Progress Dialog**: Shows checklist and calibration status
 
 ---
 

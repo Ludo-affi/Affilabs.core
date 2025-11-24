@@ -36,6 +36,18 @@ class USB4000:
     def open(self):
         """Connect to spectrometer - SINGLE METHOD ONLY."""
         try:
+            # If already opened, verify connection is still valid
+            if self.opened and self._device is not None:
+                try:
+                    # Quick connection check - read integration time
+                    _ = self._device.integration_time_micros(0)
+                    logger.info("✅ USB4000 already connected and responding")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Existing connection invalid: {e} - reconnecting...")
+                    self.opened = False
+                    self._device = None
+
             logger.info("Connecting to USB4000...")
 
             # Import seabreeze only when actually opening (deferred to avoid blocking on import)
@@ -94,27 +106,40 @@ class USB4000:
                 self._device = Spectrometer.from_serial_number(target_serial)
             except Exception as e:
                 if "already opened" in str(e).lower():
-                    # Device is stuck open - try to close all and reopen
-                    logger.warning("Device already opened - attempting cleanup and retry...")
+                    # Device is stuck open - try to find and reuse existing connection
+                    logger.warning("Device already opened - attempting to reuse existing connection...")
                     try:
-                        # Close all open spectrometers
+                        # Try to get the existing open device
                         from seabreeze.spectrometers import list_devices, Spectrometer
                         for dev in list_devices():
-                            try:
-                                spec = Spectrometer(dev)
-                                spec.close()
-                                logger.debug(f"Closed stuck spectrometer: {dev.serial_number}")
-                            except:
-                                pass
+                            if dev.serial_number == target_serial:
+                                try:
+                                    # Try to instantiate from the device info
+                                    self._device = Spectrometer(dev)
+                                    logger.info("✅ Successfully reused existing open connection")
+                                    break
+                                except:
+                                    pass
 
-                        # Short delay for cleanup
-                        import time
-                        time.sleep(0.5)
+                        # If reuse failed, force close all and retry
+                        if self._device is None:
+                            logger.warning("Reuse failed - forcing cleanup and reconnect...")
+                            for dev in list_devices():
+                                try:
+                                    spec = Spectrometer(dev)
+                                    spec.close()
+                                    logger.debug(f"Closed stuck spectrometer: {dev.serial_number}")
+                                except:
+                                    pass
 
-                        # Retry connection
-                        logger.info("Retrying connection after cleanup...")
-                        self._device = Spectrometer.from_serial_number(target_serial)
-                        logger.info("✅ Successfully connected after cleanup")
+                            # Short delay for cleanup
+                            import time
+                            time.sleep(0.5)
+
+                            # Retry connection
+                            logger.info("Retrying connection after cleanup...")
+                            self._device = Spectrometer.from_serial_number(target_serial)
+                            logger.info("✅ Successfully connected after cleanup")
                     except Exception as retry_error:
                         logger.error(f"Cleanup and retry failed: {retry_error}")
                         raise
@@ -297,3 +322,29 @@ class USB4000:
             int: Target counts for S-mode calibration
         """
         return int(0.75 * self._max_counts)
+
+    def close(self):
+        """Close spectrometer connection safely."""
+        if not self.opened or self._device is None:
+            logger.debug("USB4000 close called but device not open")
+            return
+
+        try:
+            logger.info("Closing USB4000 connection...")
+            self._device.close()
+            logger.info("✅ USB4000 closed successfully")
+        except Exception as e:
+            logger.warning(f"Error closing USB4000: {e}")
+        finally:
+            self.opened = False
+            self._device = None
+            self.serial_number = None
+            self.spec = None
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        try:
+            if self.opened and self._device:
+                self._device.close()
+        except:
+            pass

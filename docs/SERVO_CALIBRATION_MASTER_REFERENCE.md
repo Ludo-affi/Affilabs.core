@@ -6,6 +6,66 @@ This document describes the complete servo/polarizer calibration system for find
 
 ---
 
+## 🔄 Calibration Flow Context
+
+### System Startup Sequence
+
+Servo calibration fits into the overall system startup sequence:
+
+```
+1. Connect Hardware
+   ↓
+   Detect device type, serial number
+
+2. Load Device Configuration (device_config.json)
+   ↓
+   Check for servo positions
+
+3. Decision Point: Are Servo Positions Populated?
+   ↓
+   ├─ YES → FAST PATH
+   │  ↓
+   │  Skip servo calibration
+   │  Proceed directly to LED calibration
+   │  Total time: ~30-60 seconds
+   │
+   └─ NO → FIRST-TIME SETUP
+      ↓
+      Run servo calibration (THIS MODULE)
+      ↓
+      Method depends on polarizer type:
+      • Barrel: ~1.4 minutes (window detection)
+      • Circular: ~13 measurements (quadrant search)
+      ↓
+      Save positions to device_config.json
+      ↓
+      Proceed to LED calibration
+      Total time: ~2-4 minutes
+
+4. LED Intensity Calibration
+   ↓
+   Common path (same for both polarizer types)
+   Uses servo positions from device_config
+   Total time: ~30-60 seconds
+
+5. Ready for Measurements
+```
+
+### When This Module Runs
+
+- **First device connection** (no device_config.json exists)
+- **After hardware changes** (polarizer replaced, fiber changed)
+- **Manual recalibration** (user requests via Advanced Settings)
+- **Config file deleted** (lost configuration)
+
+### When This Module Does NOT Run
+
+- **Normal operation** (device_config.json exists with valid servo positions)
+- **Daily usage** (configuration persists across sessions)
+- **Computer changes** (configuration portable via EEPROM or JSON file)
+
+---
+
 ## 📂 File Locations
 
 ### ✅ ACTIVE Implementation (Use These)

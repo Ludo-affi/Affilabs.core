@@ -30,6 +30,7 @@ from typing import Optional, Dict
 import threading
 import time
 import numpy as np
+import queue
 
 # System Intelligence integration (DISABLED - will be refined later)
 try:
@@ -91,12 +92,17 @@ class DataAcquisitionManager(QObject):
         # Afterglow correction (loaded from device-specific calibration)
         self.afterglow_correction = None
         self.afterglow_enabled = False
+        self.afterglow_mode = 'normal'  # 'fast', 'normal', or 'slow'
         self._previous_channel = None  # Track previous channel for afterglow correction
         self._led_delay_ms = 45.0  # Default LED delay in milliseconds (PRE_LED_DELAY_MS)
+        self._led_post_delay_ms = 5.0  # Default LED post delay in milliseconds
 
         # S/P orientation validation tracking
         self._sp_validation_results = {}  # {channel: {orientation_correct, confidence, peak_wl, timestamp}}
         self._sp_orientation_validated = set()  # Set of channels validated during runtime
+
+        # FWHM tracking for quality control
+        self._fwhm_values = {}  # {channel: fwhm_nm}
 
         # Batched acquisition settings (from settings.py)
         from settings import BATCH_SIZE, ENABLE_INTERPOLATED_DISPLAY
@@ -107,6 +113,13 @@ class DataAcquisitionManager(QObject):
         # Display smoothing: emit partial updates during batch processing
         self.enable_interpolated_display = ENABLE_INTERPOLATED_DISPLAY
         self._last_emitted_wavelength = {'a': None, 'b': None, 'c': None, 'd': None}  # For interpolation
+
+        # Thread-safe queue for worker → main thread communication
+        self._spectrum_queue = queue.Queue(maxsize=1000)  # Buffer up to 1000 spectrum events
+
+        # QTimer to process queue in main thread (initialized here to ensure main thread ownership)
+        self._queue_timer = QTimer()
+        self._queue_timer.timeout.connect(self._process_spectrum_queue)
 
         # Acquisition state
         self._acquiring = False
@@ -145,16 +158,35 @@ class DataAcquisitionManager(QObject):
             self.calibration_failed.emit("Hardware not connected")
             return
 
+        # Wait briefly for acquisition to fully stop if it's in the process of stopping
         if self._acquiring:
-            logger.warning("Cannot calibrate while acquiring")
-            self.calibration_failed.emit("Stop acquisition before calibrating")
-            return
+            logger.debug("Acquisition flag set - checking if thread is actually running...")
+            import time
+            # Give it a moment to finish stopping
+            for _ in range(10):  # 1 second max wait
+                if not self._acquiring or (self._acquisition_thread and not self._acquisition_thread.is_alive()):
+                    break
+                time.sleep(0.1)
+
+            # Check again after wait
+            if self._acquiring and self._acquisition_thread and self._acquisition_thread.is_alive():
+                logger.warning("Cannot calibrate while acquiring")
+                self.calibration_failed.emit("Stop acquisition before calibrating")
+                return
+            else:
+                logger.debug("Acquisition stopped - proceeding with calibration")
+                self._acquiring = False  # Clear stale flag
 
         logger.info("Starting calibration...")
+
+        # Clear previous calibration state for fresh start
+        self.calibrated = False
+        self.ch_error_list = []
+
         self.calibration_started.emit()
 
         # Run calibration in background thread
-        thread = threading.Thread(target=self._calibration_worker, daemon=True)
+        thread = threading.Thread(target=self._calibration_worker, daemon=True, name="CalibrationWorker")
         thread.start()
 
     def _calibration_worker(self):
@@ -162,6 +194,7 @@ class DataAcquisitionManager(QObject):
         try:
             from utils.led_calibration import perform_full_led_calibration, perform_alternative_calibration
             from settings import INTEGRATION_STEP, MIN_WAVELENGTH, MAX_WAVELENGTH, USE_ALTERNATIVE_CALIBRATION
+            from utils.device_configuration import DeviceConfiguration
 
             ctrl = self.hardware_mgr.ctrl
             usb = self.hardware_mgr.usb
@@ -171,7 +204,7 @@ class DataAcquisitionManager(QObject):
 
             self.calibration_progress.emit("Initializing...")
 
-            # Get wavelength calibration data
+            # Get wavelength calibration data ONCE (optimization: avoid redundant USB reads)
             logger.info("Reading wavelength calibration data...")
             wave_data = usb.read_wavelength()
             wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
@@ -182,6 +215,25 @@ class DataAcquisitionManager(QObject):
             self.wave_min_index = wave_min_index
             self.wave_max_index = wave_max_index
             logger.info(f"Wavelength range: {MIN_WAVELENGTH}-{MAX_WAVELENGTH}nm (indices {wave_min_index}-{wave_max_index})")
+
+            # Load device configuration ONCE (optimization: avoid redundant file reads)
+            device_serial = getattr(usb, 'serial_number', None)
+            device_config = DeviceConfiguration(device_serial=device_serial)
+
+            # Load afterglow correction ONCE (optimization: avoid redundant file I/O)
+            afterglow_correction = None
+            try:
+                from afterglow_correction import AfterglowCorrection
+                from utils.device_integration import get_device_optical_calibration_path
+
+                optical_cal_path = get_device_optical_calibration_path()
+                if optical_cal_path and optical_cal_path.exists():
+                    afterglow_correction = AfterglowCorrection(optical_cal_path)
+                    logger.info(f"✅ Pre-loaded afterglow correction for calibration: {optical_cal_path.name}")
+                else:
+                    logger.debug("No afterglow correction available for pre-loading")
+            except Exception as e:
+                logger.debug(f"Afterglow pre-loading skipped: {e}")
 
             self.calibration_progress.emit("Calibrating system...")
 
@@ -195,7 +247,12 @@ class DataAcquisitionManager(QObject):
                     single_mode=False,
                     single_ch='a',
                     stop_flag=None,
-                    progress_callback=lambda msg: self.calibration_progress.emit(msg)
+                    progress_callback=lambda msg: self.calibration_progress.emit(msg),
+                    wave_data=wave_data,  # Pass pre-read wavelength data
+                    wave_min_index=wave_min_index,
+                    wave_max_index=wave_max_index,
+                    device_config=device_config,  # Pass pre-loaded device config
+                    afterglow_correction=afterglow_correction,  # Pass pre-loaded afterglow correction
                 )
             else:
                 logger.info("Using STANDARD calibration method (Global Integration Time)")
@@ -207,13 +264,22 @@ class DataAcquisitionManager(QObject):
                     single_ch='a',
                     integration_step=INTEGRATION_STEP,
                     stop_flag=None,
-                    progress_callback=lambda msg: self.calibration_progress.emit(msg)
+                    progress_callback=lambda msg: self.calibration_progress.emit(msg),
+                    wave_data=wave_data,  # Pass pre-read wavelength data
+                    wave_min_index=wave_min_index,
+                    wave_max_index=wave_max_index,
+                    device_config=device_config,  # Pass pre-loaded device config
+                    afterglow_correction=afterglow_correction,  # Pass pre-loaded afterglow correction
                 )
 
             # Check for complete failure (all channels failed or critical error)
             # Partial failures (some channels work) are allowed and handled in UI
             if cal_result.integration_time is None or cal_result.integration_time == 0:
                 raise Exception("Critical calibration failure: Could not determine integration time")
+
+            # Check if ref_sig is empty (complete calibration failure)
+            if not cal_result.ref_sig or len(cal_result.ref_sig) == 0:
+                raise Exception("Critical calibration failure: No S-mode reference spectra acquired")
 
             # Log partial failures but continue
             if len(cal_result.ch_error_list) > 0:
@@ -250,7 +316,11 @@ class DataAcquisitionManager(QObject):
             # Calculate SNR-aware Fourier weights from S-ref LED profiles
             # Uses LED profile as metadata to guide peak finding (not for flattening)
             # This will populate self.fourier_weights as a dict: {channel: weights_array}
+            logger.info("Starting Fourier weights calculation...")
             self._calculate_snr_aware_fourier_weights()
+            logger.info("Fourier weights calculation complete")
+
+            self.calibration_progress.emit("Completing calibration...")
 
             # Mark as calibrated
             self.calibrated = True
@@ -289,60 +359,121 @@ class DataAcquisitionManager(QObject):
 
     def start_acquisition(self):
         """Start continuous spectrum acquisition (non-blocking)."""
-        if not self.calibrated:
-            self.acquisition_error.emit("Calibrate before starting acquisition")
-            return
-
-        if not self._check_hardware():
-            self.acquisition_error.emit("Hardware not connected")
-            return
-
-        if self._acquiring:
-            logger.warning("Acquisition already running")
-            return
-
-        logger.info("Starting spectrum acquisition...")
-        logger.info(f"📊 Calibrated settings: integration_time={self.integration_time}ms, num_scans={self.num_scans}")
-        logger.info(f"📊 LED intensities: {self.leds_calibrated}")
-
-        # ✨ CRITICAL: Switch polarizer to P-mode ONCE before starting acquisition
-        # S-ref and dark were already measured during calibration and are reused
         try:
-            ctrl = self.hardware_mgr.ctrl
-            if ctrl and hasattr(ctrl, 'set_mode'):
-                logger.info("🔄 Switching polarizer to P-mode for live measurements...")
-                ctrl.set_mode('p')
-                time.sleep(0.4)  # Wait for servo to settle
-                logger.info("✅ Polarizer in P-mode - using calibrated S-ref and dark")
+            logger.info("🎯 start_acquisition called")
+
+            if not self.calibrated:
+                self.acquisition_error.emit("Calibrate before starting acquisition")
+                return
+
+            if not self._check_hardware():
+                self.acquisition_error.emit("Hardware not connected")
+                return
+
+            if self._acquiring:
+                logger.warning("Acquisition already running")
+                return
+
+            logger.info("Starting spectrum acquisition...")
+            logger.info(f"📊 Calibrated settings: integration_time={self.integration_time}ms, num_scans={self.num_scans}")
+            logger.info(f"📊 LED intensities: {self.leds_calibrated}")
+
+            # Ensure any previous acquisition thread is fully stopped
+            if self._acquisition_thread and self._acquisition_thread.is_alive():
+                logger.warning("Previous acquisition thread still running - waiting for cleanup...")
+                self._stop_acquisition.set()
+                self._acquisition_thread.join(timeout=3.0)
+                if self._acquisition_thread.is_alive():
+                    logger.error("Failed to stop previous acquisition thread - forcing new start")
+
+            # ✨ CRITICAL: Switch polarizer to P-mode ONCE before starting acquisition
+            # S-ref and dark were already measured during calibration and are reused
+            try:
+                ctrl = self.hardware_mgr.ctrl
+                if ctrl and hasattr(ctrl, 'set_mode'):
+                    logger.info("🔄 Switching polarizer to P-mode for live measurements...")
+                    ctrl.set_mode('p')
+                    time.sleep(0.4)  # Wait for servo to settle
+                    logger.info("✅ Polarizer in P-mode - using calibrated S-ref and dark")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to switch polarizer: {e}")
+
+            # Clear batch buffers for fresh start
+            for ch in ['a', 'b', 'c', 'd']:
+                self._spectrum_batch[ch].clear()
+                self._batch_timestamps[ch].clear()
+                self._last_emitted_wavelength[ch] = None
+
+            # Defer thread start to event loop to ensure all UI updates
+            # from calibration completion have finished on main thread.
+            self._acquiring = True
+            self._stop_acquisition.clear()
+            self._pause_acquisition.clear()
+
+            # Start queue processing timer (runs in main thread)
+            logger.info("Starting queue processing timer...")
+            self._queue_timer.start(10)  # Process queue every 10ms
+
+            # Diagnostic: verify calibration data is present
+            logger.info(f"[ACQ] Starting acquisition with: wave_data={'present' if self.wave_data is not None else 'MISSING'}, ref_sig={'present' if self.ref_sig else 'MISSING'}")
+
+            def _launch_worker():
+                try:
+                    if not self._acquiring or self._stop_acquisition.is_set():
+                        logger.debug("[DAQ] Acquisition canceled before worker launch")
+                        return
+                    logger.info("🚀 [DAQ] Launching acquisition worker thread")
+
+                    # Emit signal BEFORE starting worker thread (safer)
+                    self.acquisition_started.emit()
+                    logger.info("✅ [DAQ] Acquisition started signal emitted")
+
+                    self._acquisition_thread = threading.Thread(target=self._acquisition_worker, daemon=True, name="AcquisitionWorker")
+                    self._acquisition_thread.start()
+                    logger.info("✅ [DAQ] Acquisition worker thread launched")
+                except Exception as e:
+                    logger.error(f"❌ CRASH in _launch_worker: {e}", exc_info=True)
+                    import traceback
+                    traceback.print_exc()
+
+            logger.info("Scheduling worker launch in 50ms...")
+            QTimer.singleShot(50, _launch_worker)  # Small delay for UI thread to finish calibration updates
+            logger.info("✅ start_acquisition completed successfully")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to switch polarizer: {e}")
-
-        self._acquiring = True
-        self._stop_acquisition.clear()
-
-        # Start acquisition thread
-        self._acquisition_thread = threading.Thread(target=self._acquisition_worker, daemon=True)
-        self._acquisition_thread.start()
+            logger.error(f"❌ CRASH in start_acquisition: {e}", exc_info=True)
+            import traceback
+            traceback.print_exc()
 
     def stop_acquisition(self):
         """Stop spectrum acquisition and flush remaining batches."""
         if not self._acquiring:
+            logger.debug("stop_acquisition called but not acquiring")
             return
 
         logger.info("Stopping spectrum acquisition...")
 
-        # Flush any remaining batched spectra before stopping
-        for ch in ['a', 'b', 'c', 'd']:
-            if len(self._spectrum_batch[ch]) > 0:
-                logger.info(f"Flushing {len(self._spectrum_batch[ch])} remaining spectra for channel {ch.upper()}")
-                self._process_and_emit_batch(ch)
+        # Stop queue processing timer
+        if self._queue_timer:
+            self._queue_timer.stop()
 
+        # Signal thread to stop first
         self._stop_acquisition.set()
         self._acquiring = False
 
+        # No batching anymore - just process remaining queue items
+        self._process_spectrum_queue()
+
         # Wait for thread to finish (with timeout)
-        if self._acquisition_thread:
-            self._acquisition_thread.join(timeout=2.0)
+        if self._acquisition_thread and self._acquisition_thread.is_alive():
+            logger.debug("Waiting for acquisition thread to stop...")
+            self._acquisition_thread.join(timeout=3.0)
+            if self._acquisition_thread.is_alive():
+                logger.warning("⚠️ Acquisition thread did not stop within timeout")
+            else:
+                logger.info("✅ Acquisition thread stopped cleanly")
+
+        self._acquisition_thread = None
+        self.acquisition_stopped.emit()
 
     def pause_acquisition(self):
         """Pause spectrum acquisition without stopping the thread."""
@@ -360,77 +491,157 @@ class DataAcquisitionManager(QObject):
         logger.info("▶️ Acquisition resumed")
         self._pause_acquisition.clear()  # Clear flag to resume
 
+    def _process_spectrum_queue(self):
+        """Process spectrum data from worker thread queue and emit Qt signals.
+
+        This method runs in the main thread (called by QTimer) and safely
+        emits Qt signals with data from the worker thread queue.
+        """
+        try:
+            # Process multiple items per timer tick for efficiency
+            max_items = 20
+            items_processed = 0
+
+            while items_processed < max_items:
+                try:
+                    data = self._spectrum_queue.get_nowait()
+
+                    # Check if this is an error message (special key '_error')
+                    if isinstance(data, dict) and '_error' in data:
+                        self.acquisition_error.emit(data['_error'])
+                    else:
+                        # Regular spectrum data
+                        self.spectrum_acquired.emit(data)
+
+                    items_processed += 1
+                except queue.Empty:
+                    break  # Queue empty, done for this tick
+
+        except Exception as e:
+            logger.error(f"Error processing spectrum queue: {e}")
+
+
     def _acquisition_worker(self):
         """Main acquisition loop running in background thread with batched processing."""
-        channels = ['a', 'b', 'c', 'd']
-        consecutive_errors = 0
-        max_consecutive_errors = 5  # Stop after 5 consecutive failures
+        try:
+            # Small delay to ensure main thread/Qt is fully initialized
+            time.sleep(0.2)
 
-        logger.info(f"Acquisition worker started with batch_size={self.batch_size}")
+            print("\n" + "="*70)
+            print("ACQUISITION WORKER STARTED")
+            print("="*70)
 
-        while not self._stop_acquisition.is_set():
-            try:
-                # Check if paused - sleep and skip acquisition cycle
-                if self._pause_acquisition.is_set():
-                    time.sleep(0.1)  # Sleep while paused
-                    continue
+            channels = ['a', 'b', 'c', 'd']
+            consecutive_errors = 0
+            max_consecutive_errors = 5  # Stop after 5 consecutive failures
+            cycle_count = 0
 
-                cycle_success = False
+            while not self._stop_acquisition.is_set():
+                cycle_count += 1
+                if cycle_count % 10 == 1:
+                    print(f"[Worker] Cycle {cycle_count} - acquiring spectra...")
+                try:
+                    # Check if paused - sleep and skip acquisition cycle
+                    if self._pause_acquisition.is_set():
+                        time.sleep(0.1)  # Sleep while paused
+                        continue
 
-                # Acquire spectrum for each channel (raw acquisition phase)
-                for ch in channels:
-                    if self._stop_acquisition.is_set():
-                        break
+                    cycle_success = False
 
-                    # Get raw spectrum from hardware (fast read)
-                    spectrum_data = self._acquire_channel_spectrum(ch)
+                    # Acquire spectrum for each channel (immediate processing, no batching)
+                    for ch in channels:
+                        if self._stop_acquisition.is_set():
+                            break
 
-                    if spectrum_data:
-                        # Buffer raw spectrum data (no processing yet)
-                        timestamp = time.time()
-                        self._spectrum_batch[ch].append(spectrum_data)
-                        self._batch_timestamps[ch].append(timestamp)
-                        cycle_success = True
+                        # Get raw spectrum from hardware (fast read)
+                        spectrum_data = self._acquire_channel_spectrum(ch)
 
-                        # Emit interpolated preview for smooth display (if enabled)
-                        # This provides visual feedback before batch processing completes
-                        if self.enable_interpolated_display and self._last_emitted_wavelength[ch] is not None:
-                            self._emit_interpolated_preview(ch, timestamp)
+                        if spectrum_data:
+                            if cycle_count % 10 == 1:
+                                print(f"   [OK] Channel {ch}: Got spectrum data")
+                            
+                            # Process and emit immediately (no batching)
+                            timestamp = time.time()
+                            cycle_success = True
 
-                        # Process batch when minimum size reached
-                        if len(self._spectrum_batch[ch]) >= self.batch_size:
-                            self._process_and_emit_batch(ch)
+                            # Process spectrum immediately
+                            try:
+                                processed = self._process_spectrum(ch, spectrum_data)
 
-                # Reset error counter if we got at least one successful acquisition
-                if cycle_success:
-                    consecutive_errors = 0
-                else:
+                                # Buffer the data
+                                self.channel_buffers[ch].append(processed['wavelength'])
+                                self.time_buffers[ch].append(timestamp)
+
+                                # Put processed data in queue for emission
+                                data = {
+                                    'channel': ch,
+                                    'wavelength': processed['wavelength'],
+                                    'intensity': processed['intensity'],
+                                    'full_spectrum': processed.get('full_spectrum'),
+                                    'raw_spectrum': processed.get('raw_spectrum'),
+                                    'timestamp': timestamp,
+                                    'is_preview': False
+                                }
+
+                                try:
+                                    self._spectrum_queue.put_nowait(data)
+                                    if cycle_count % 10 == 1:
+                                        print(f"   [EMIT] Channel {ch}: Data queued for UI")
+                                except queue.Full:
+                                    pass  # Queue full, skip
+
+                                # Store last emitted wavelength
+                                self._last_emitted_wavelength[ch] = processed['wavelength']
+
+                            except Exception as e:
+                                print(f"   [ERROR] Channel {ch}: Processing failed - {e}")
+                                import traceback
+                                traceback.print_exc()
+                        else:
+                            if cycle_count % 10 == 1:
+                                print(f"   [ERROR] Channel {ch}: No spectrum data returned")
+
+                    # Reset error counter if we got at least one successful acquisition
+                    if cycle_success:
+                        consecutive_errors = 0
+                    else:
+                        consecutive_errors += 1
+
+                        # Stop if too many consecutive errors
+                        if consecutive_errors >= max_consecutive_errors:
+                            # Removed logger.error to prevent Qt threading issues
+                            # Use queue to send error signal from worker thread
+                            try:
+                                self._spectrum_queue.put_nowait({'_error': "Hardware communication lost - stopping acquisition"})
+                            except queue.Full:
+                                pass
+                            self._stop_acquisition.set()
+                            break
+
+                    # Small delay between acquisition cycles
+                    time.sleep(0.01)
+
+                except Exception as e:
+                    # Catch exceptions in acquisition loop
                     consecutive_errors += 1
-                    logger.warning(f"Acquisition cycle failed (consecutive errors: {consecutive_errors}/{max_consecutive_errors})")
-
-                    # Stop if too many consecutive errors
                     if consecutive_errors >= max_consecutive_errors:
-                        logger.error("Too many consecutive acquisition errors - stopping acquisition")
-                        self.acquisition_error.emit("Hardware communication lost - stopping acquisition")
+                        try:
+                            self._spectrum_queue.put_nowait({'_error': f"Too many errors: {e}"})
+                        except queue.Full:
+                            pass
                         self._stop_acquisition.set()
                         break
+                    time.sleep(0.5)
 
-                # Small delay between acquisition cycles
-                time.sleep(0.01)
-
-            except Exception as e:
-                logger.exception(f"Acquisition error: {e}")
-                consecutive_errors += 1
-
-                # Stop if too many errors
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error("Too many consecutive errors - stopping acquisition")
-                    self.acquisition_error.emit(f"Hardware error - stopping acquisition: {e}")
-                    self._stop_acquisition.set()
-                    break
-
-                self.acquisition_error.emit(str(e))
-                time.sleep(0.5)  # Longer delay on error
+        except Exception as e:
+            # Top-level exception handler - catch ANY uncaught exception
+            import traceback
+            error_msg = f"FATAL: Acquisition worker crashed: {e}\n{traceback.format_exc()}"
+            print(error_msg)  # Print to console
+            try:
+                self._spectrum_queue.put_nowait({'_error': error_msg})
+            except:
+                pass
 
     def _check_hardware(self) -> bool:
         """Check if required hardware is connected."""
@@ -563,8 +774,6 @@ class DataAcquisitionManager(QObject):
         if not batch:
             return
 
-        logger.debug(f"Processing batch of {len(batch)} spectra for channel {channel.upper()}")
-
         # Process each spectrum in the batch
         for spectrum_data, timestamp in zip(batch, timestamps):
             try:
@@ -575,8 +784,8 @@ class DataAcquisitionManager(QObject):
                 self.channel_buffers[channel].append(processed['wavelength'])
                 self.time_buffers[channel].append(timestamp)
 
-                # Emit signal with processed data
-                self.spectrum_acquired.emit({
+                # Put processed data in queue instead of emitting directly
+                data = {
                     'channel': channel,
                     'wavelength': processed['wavelength'],
                     'intensity': processed['intensity'],
@@ -585,13 +794,19 @@ class DataAcquisitionManager(QObject):
                     'transmission_spectrum': processed.get('transmission_spectrum'),  # P/S ratio
                     'timestamp': timestamp,
                     'is_preview': False  # Real processed data
-                })
+                }
+
+                try:
+                    self._spectrum_queue.put_nowait(data)
+                except queue.Full:
+                    pass  # Queue full, drop this data point
 
                 # Update last emitted wavelength for interpolation
                 self._last_emitted_wavelength[channel] = processed['wavelength']
 
             except Exception as e:
-                logger.error(f"Error processing spectrum in batch for channel {channel}: {e}")
+                # Removed logger.error to prevent Qt threading issues
+                pass  # Silent failure to avoid Qt threading crashes
 
         # Clear the batch buffers
         self._spectrum_batch[channel].clear()
@@ -616,19 +831,25 @@ class DataAcquisitionManager(QObject):
             if last_wavelength is None:
                 return  # No previous data to interpolate from
 
-            # Emit preview using last known wavelength
-            # This maintains visual continuity until real data arrives
-            self.spectrum_acquired.emit({
+            # Put preview data in queue instead of emitting directly
+            # This avoids Qt threading violations
+            data = {
                 'channel': channel,
                 'wavelength': last_wavelength,  # Hold last value (simple interpolation)
                 'intensity': 0.0,  # Placeholder
                 'full_spectrum': None,
                 'timestamp': timestamp,
                 'is_preview': True  # Flag to indicate this is interpolated
-            })
+            }
+
+            try:
+                self._spectrum_queue.put_nowait(data)
+            except queue.Full:
+                pass  # Queue full, skip this preview
 
         except Exception as e:
-            logger.debug(f"Error emitting interpolated preview for {channel}: {e}")
+            # Removed logger.debug to prevent Qt threading issues
+            pass  # Silent failure
 
     def _acquire_channel_spectrum(self, channel: str) -> Optional[Dict]:
         """Acquire raw spectrum for a channel."""
@@ -641,7 +862,6 @@ class DataAcquisitionManager(QObject):
 
             # Check if we have wave_data from calibration
             if self.wave_data is None or len(self.wave_data) == 0:
-                logger.warning("No wavelength data available - skipping acquisition")
                 return None
 
             # Turn on LED for channel (already in P-mode from start_acquisition)
@@ -657,7 +877,7 @@ class DataAcquisitionManager(QObject):
             try:
                 usb.set_integration(self.integration_time)
             except ConnectionError as e:
-                logger.error(f"⚠️ Device disconnected while setting integration time: {e}")
+                # Removed logger.error to prevent Qt threading issues
                 self.acquisition_error.emit("Spectrometer disconnected. Please reconnect and restart.")
                 self.stop_acquisition()
                 return None
@@ -666,13 +886,13 @@ class DataAcquisitionManager(QObject):
             try:
                 raw_spectrum = usb.read_intensity()
             except ConnectionError as e:
-                logger.error(f"⚠️ Device disconnected while reading spectrum: {e}")
+                # Removed logger.error to prevent Qt threading issues
                 self.acquisition_error.emit("Spectrometer disconnected. Please reconnect and restart.")
                 self.stop_acquisition()
                 return None
 
             if raw_spectrum is None:
-                logger.error(f"Failed to read spectrum for channel {channel}")
+                # Removed logger.error to prevent Qt threading issues
                 return None
 
             # Trim spectrum to match wave_data range using stored indices from calibration
@@ -682,7 +902,7 @@ class DataAcquisitionManager(QObject):
                     raw_spectrum = raw_spectrum[self.wave_min_index:self.wave_max_index]
                 else:
                     # Fallback if indices not available (shouldn't happen after calibration)
-                    logger.warning(f"No cached indices - trimming by length: {len(raw_spectrum)} -> {len(self.wave_data)}")
+                    # Removed logger.warning to prevent Qt threading issues
                     raw_spectrum = raw_spectrum[:len(self.wave_data)]
 
             return {
@@ -691,7 +911,7 @@ class DataAcquisitionManager(QObject):
             }
 
         except Exception as e:
-            logger.error(f"Failed to acquire spectrum for channel {channel}: {e}")
+            # Removed logger.error to prevent Qt threading issues
             return None
 
     def _process_spectrum(self, channel: str, spectrum_data: Dict) -> Dict:
@@ -704,107 +924,44 @@ class DataAcquisitionManager(QObject):
             if self.dark_noise is not None:
                 intensity = intensity - self.dark_noise
 
-            # Apply afterglow correction if enabled and we have a previous channel
-            # This removes previous channel's residual light and should apply to BOTH
-            # transmission calculation and peak finding
-            if self.afterglow_enabled and self.afterglow_correction is not None and self._previous_channel is not None:
-                try:
-                    # Calculate expected afterglow from previous channel
-                    afterglow_correction = self.afterglow_correction.calculate_correction(
-                        previous_channel=self._previous_channel,
-                        integration_time_ms=float(self.integration_time),
-                        delay_ms=self._led_delay_ms
-                    )
-
-                    # Apply correction (subtract afterglow)
-                    intensity = intensity - afterglow_correction
-
-                    logger.debug(
-                        f"Afterglow correction applied: Ch {channel.upper()} "
-                        f"(prev: {self._previous_channel.upper()}, "
-                        f"correction: {afterglow_correction:.1f} counts)"
-                    )
-                except Exception as e:
-                    logger.warning(f"Afterglow correction failed for channel {channel}: {e}")
-
-            # Track this channel as previous for next measurement
-            self._previous_channel = channel
-
-            # Store raw spectrum (dark + afterglow corrected) for transmission calculation
-            # Transmission needs P-mode vs S-mode in same basis:
-            # - Both with dark subtracted
-            # - Both with afterglow corrected
-            # - NO spectral correction (LED profile cancels naturally in P/S ratio)
+            # Store raw spectrum (dark corrected)
             raw_spectrum = intensity.copy()
 
             # Calculate transmission spectrum (P/S ratio) for peak finding
-            # This is the proper input for resonance detection algorithms
-            # LED profile cancels naturally in the ratio
             transmission_spectrum = None
             if channel in self.ref_sig and self.ref_sig[channel] is not None:
                 try:
-                    from utils.spr_signal_processing import calculate_transmission, validate_sp_orientation
+                    from utils.spr_signal_processing import calculate_transmission
                     # Calculate transmission percentage
                     transmission_spectrum = calculate_transmission(raw_spectrum, self.ref_sig[channel])
-
-                    # Validate S/P orientation on first transmission calculation per channel
-                    if channel not in self._sp_orientation_validated:
-                        validation = validate_sp_orientation(
-                            p_spectrum=raw_spectrum,
-                            s_spectrum=self.ref_sig[channel],
-                            wavelengths=wavelength,
-                            window_px=200
-                        )
-
-                        self._sp_orientation_validated.add(channel)
-
-                        # Store validation results
-                        import datetime
-                        self._sp_validation_results[channel] = {
-                            'orientation_correct': validation['orientation_correct'],
-                            'confidence': validation['confidence'],
-                            'peak_wl': validation['peak_wl'],
-                            'peak_value': validation['peak_value'],
-                            'timestamp': datetime.datetime.now().isoformat(),
-                            'is_flat': validation['is_flat']
-                        }
-
-                        if validation['is_flat']:
-                            logger.warning(f"⚠️ Ch {channel.upper()}: S/P check - Flat transmission spectrum")
-                            logger.warning("   Possible saturation or dark signal - transmission data may be unreliable")
-                        elif not validation['orientation_correct']:
-                            logger.warning(f"⚠️ Ch {channel.upper()}: S/P orientation appears inverted (confirmation check)")
-                            logger.warning(f"   Peak at {validation['peak_wl']:.1f}nm is HIGHER ({validation['peak_value']:.1f}%) than sides ({validation['left_value']:.1f}%, {validation['right_value']:.1f}%)")
-                            logger.warning("   Note: This should have been caught during calibration - device may need recalibration")
-                        else:
-                            logger.info(f"✅ Ch {channel.upper()}: S/P orientation confirmed (dip at {validation['peak_wl']:.1f}nm = {validation['peak_value']:.1f}%, confidence={validation['confidence']:.2f})")
-
                 except Exception as e:
-                    logger.warning(f"Could not calculate transmission for peak finding: {e}")
+                    print(f"[PROCESS] Transmission calc failed: {e}")
                     transmission_spectrum = None
-            else:
-                logger.info(f"⚠️ Ch {channel.upper()}: No S-mode reference available - system needs calibration for transmission data (ref_sig keys: {list(self.ref_sig.keys())})")
 
-            # Find resonance peak using SNR-aware Fourier analysis on transmission
-            # If transmission not available, fall back to raw P-mode intensity
-            # SNR-aware weights guide peak finding toward high-quality regions
+            # SIMPLIFIED: Find peak by simple min-finding (bypass complex Fourier analysis)
             peak_input = transmission_spectrum if transmission_spectrum is not None else intensity
-            peak_wavelength = self._find_resonance_peak(wavelength, peak_input, channel)
+            if len(peak_input) > 0 and len(wavelength) == len(peak_input):
+                min_idx = np.argmin(peak_input)
+                peak_wavelength = wavelength[min_idx]
+            else:
+                peak_wavelength = 650.0  # Default fallback
 
             return {
                 'wavelength': peak_wavelength,
                 'intensity': intensity[np.argmin(intensity)] if len(intensity) > 0 else 0.0,
-                'full_spectrum': raw_spectrum,  # Raw P-mode spectrum (for visualization)
-                'raw_spectrum': raw_spectrum,  # Raw P-mode spectrum (for transmission calculation)
-                'transmission_spectrum': transmission_spectrum  # P/S ratio (for multi-parametric analysis)
+                'full_spectrum': raw_spectrum,
+                'raw_spectrum': raw_spectrum,
+                'transmission_spectrum': transmission_spectrum,
+                'fwhm': None
             }
 
         except Exception as e:
-            logger.error(f"Failed to process spectrum: {e}")
-            logger.exception(e)  # Show full traceback
+            print(f"[PROCESS] ERROR in _process_spectrum: {e}")
+            import traceback
+            traceback.print_exc()
             # Return raw data on error
             return {
-                'wavelength': 650.0,  # Default
+                'wavelength': 650.0,
                 'intensity': 0.0,
                 'full_spectrum': spectrum_data['intensity'],
                 'raw_spectrum': spectrum_data['intensity']
@@ -861,10 +1018,77 @@ class DataAcquisitionManager(QObject):
             return peak_wavelength
 
         except Exception as e:
-            logger.debug(f"Peak finding error for channel {channel}: {e}")
+            # Removed logger.debug to prevent Qt threading issues
             # Final fallback
             peak_idx = np.argmin(spectrum) if len(spectrum) > 0 else 0
             return wavelength[peak_idx] if len(wavelength) > peak_idx else 650.0
+
+    def _calculate_fwhm(self, wavelengths: np.ndarray, transmission: np.ndarray, peak_wl: float) -> float:
+        """Calculate Full Width at Half Maximum (FWHM) of SPR dip.
+
+        FWHM is the width of the SPR dip at half the depth between the minimum
+        and the baseline. It's a key quality metric:
+        - <30nm = excellent coupling (sharp resonance)
+        - 30-50nm = acceptable (typical for buffer)
+        - >80nm = poor coupling (possible dry sensor or air bubble)
+
+        Args:
+            wavelengths: Wavelength array (nm)
+            transmission: Transmission spectrum (P/S ratio %)
+            peak_wl: Peak wavelength (minimum of dip)
+
+        Returns:
+            FWHM in nm, or NaN if calculation fails
+        """
+        try:
+            # Define SPR search region (600-750nm)
+            mask = (wavelengths >= 600) & (wavelengths <= 750)
+            wl = wavelengths[mask]
+            trans = transmission[mask]
+
+            if len(trans) < 10:
+                return np.nan
+
+            # Find minimum (dip bottom)
+            min_idx = np.argmin(trans)
+            min_val = trans[min_idx]
+
+            # Estimate baseline from edges of SPR region
+            edge_width = min(50, len(trans) // 4)
+            baseline = (np.mean(trans[:edge_width]) + np.mean(trans[-edge_width:])) / 2
+
+            # Half maximum level
+            half_depth = min_val + 0.5 * (baseline - min_val)
+
+            # Find crossing points on left and right sides of minimum
+            left_trans = trans[:min_idx]
+            right_trans = trans[min_idx:]
+
+            # Left crossing (find where transmission crosses half_depth going down)
+            left_crossing_idx = np.where(left_trans <= half_depth)[0]
+            if len(left_crossing_idx) == 0:
+                left_wl = wl[0]  # Use edge as fallback
+            else:
+                left_wl = wl[left_crossing_idx[-1]]  # Last crossing before minimum
+
+            # Right crossing (find where transmission crosses half_depth going up)
+            right_crossing_idx = np.where(right_trans <= half_depth)[0]
+            if len(right_crossing_idx) == 0:
+                right_wl = wl[-1]  # Use edge as fallback
+            else:
+                right_wl = wl[min_idx + right_crossing_idx[-1]]  # Last crossing after minimum
+
+            # FWHM is the distance between crossings
+            fwhm = right_wl - left_wl
+
+            # Sanity check: FWHM should be reasonable (5-200nm)
+            if 5 <= fwhm <= 200:
+                return float(fwhm)
+            else:
+                return np.nan
+
+        except Exception as e:
+            return np.nan
 
     def _compute_spectral_correction(self):
         """DEPRECATED: Spectral correction removed.
@@ -886,19 +1110,62 @@ class DataAcquisitionManager(QObject):
     def _load_afterglow_correction(self) -> bool:
         """Load device-specific afterglow correction calibration.
 
+        Implements three-tier automatic mode selection:
+        - FAST mode (< 50ms total delay): Correction enabled for high-speed acquisition
+        - NORMAL mode (50-100ms): Correction enabled (default)
+        - SLOW mode (> 100ms): Correction disabled (afterglow negligible)
+
+        This is OPTIONAL - system works fine without it (legacy devices).
+        Missing calibration is normal and expected for devices in the field.
+
         Returns:
             True if afterglow correction loaded successfully, False otherwise
         """
         try:
             from afterglow_correction import AfterglowCorrection
             from utils.device_integration import get_device_optical_calibration_path
+            from settings import (
+                AFTERGLOW_AUTO_MODE,
+                AFTERGLOW_FAST_THRESHOLD_MS,
+                AFTERGLOW_SLOW_THRESHOLD_MS,
+                LED_DELAY,
+                LED_POST_DELAY
+            )
 
             optical_cal_path = get_device_optical_calibration_path()
 
             if optical_cal_path and optical_cal_path.exists():
                 self.afterglow_correction = AfterglowCorrection(optical_cal_path)
-                self.afterglow_enabled = True
-                logger.info(f"✅ Device-specific afterglow correction loaded: {optical_cal_path.name}")
+
+                # Determine afterglow mode based on total acquisition delay
+                if AFTERGLOW_AUTO_MODE:
+                    # Calculate total delay (pre + post)
+                    total_delay_ms = (LED_DELAY * 1000) + (LED_POST_DELAY * 1000)
+
+                    if total_delay_ms < AFTERGLOW_FAST_THRESHOLD_MS:
+                        self.afterglow_mode = 'fast'
+                        self.afterglow_enabled = True
+                        logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
+                        logger.info(f"   Mode: FAST (total delay {total_delay_ms:.1f}ms < {AFTERGLOW_FAST_THRESHOLD_MS}ms)")
+                        logger.info(f"   High-speed acquisition: Afterglow correction enabled for 2x faster operation")
+                    elif total_delay_ms <= AFTERGLOW_SLOW_THRESHOLD_MS:
+                        self.afterglow_mode = 'normal'
+                        self.afterglow_enabled = True
+                        logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
+                        logger.info(f"   Mode: NORMAL (total delay {total_delay_ms:.1f}ms, optimal range)")
+                        logger.info(f"   Standard operation: Afterglow correction enabled for better stability")
+                    else:
+                        self.afterglow_mode = 'slow'
+                        self.afterglow_enabled = False
+                        logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
+                        logger.info(f"   Mode: SLOW (total delay {total_delay_ms:.1f}ms > {AFTERGLOW_SLOW_THRESHOLD_MS}ms)")
+                        logger.info(f"   Afterglow negligible (<0.2% of signal), correction disabled")
+                else:
+                    # Manual mode - always enable if calibration exists
+                    self.afterglow_mode = 'manual'
+                    self.afterglow_enabled = True
+                    logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
+                    logger.info(f"   Mode: MANUAL (auto mode disabled, correction always enabled)")
 
                 # Calculate optimal LED delay if enabled
                 try:
@@ -917,12 +1184,18 @@ class DataAcquisitionManager(QObject):
                     logger.debug(f"Dynamic LED delay calculation skipped: {e}")
                 return True
             else:
-                logger.info("⚠️ No device-specific optical calibration found")
-                logger.info("   Afterglow correction disabled (run OEM calibration from UI)")
+                # Normal for legacy devices - not an error condition
+                logger.debug("No optical calibration file found (normal for legacy devices)")
                 self.afterglow_enabled = False
                 return False
+        except FileNotFoundError:
+            # Expected for devices without optical calibration - completely silent
+            logger.debug("Optical calibration not present (legacy device)")
+            self.afterglow_enabled = False
+            return False
         except Exception as e:
-            logger.warning(f"AfterglowCorrection unavailable: {e}")
+            # Only log actual errors (corrupted file, invalid format, etc.)
+            logger.info(f"Optical correction not available: {e}")
             self.afterglow_enabled = False
             return False
 

@@ -32,7 +32,7 @@ def get_version() -> str:
             return "4.0"  # Default fallback version
 
 
-DEV = False  # Set to True to enable developer features (afterglow measurement button, etc.)
+DEV = False  # Set to True to enable OEM/factory features (optical calibration button, etc.)
 SW_VERSION = f"Version {get_version()}"
 SW_APP_NAME = "ezControl"
 TARGET = "win"
@@ -91,10 +91,35 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.050  # led-stabilization delay (50ms - default, adjustable in Advanced Settings)
+LED_DELAY = 0.050  # LED stabilization delay (50ms - default, adjustable in Advanced Settings)
+                   # NOTE: Used for signal acquisition, NOT for afterglow measurement
+                   # Afterglow calibration uses immediate measurement after LED off (no delay)
 USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
 LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
 LED_POST_DELAY = 0.005  # additional dark time after LED off before switching channel (s)
+
+# === AUTOMATIC AFTERGLOW CORRECTION STRATEGY ===
+# Three-tier system based on total acquisition delay (PRE + POST):
+#
+# 1. FAST MODE: Total delay < 50ms (e.g., 25ms pre + 5ms post = 30ms total)
+#    - Afterglow correction: ENABLED (high-speed feature)
+#    - Rationale: Afterglow is 0.5-0.9% of signal at 25ms, needs correction
+#    - Benefit: 24% noise reduction, enables 2x faster acquisition
+#
+# 2. NORMAL MODE: 50ms ≤ Total delay ≤ 100ms (e.g., 45ms pre + 5ms post = 50ms)
+#    - Afterglow correction: ENABLED (default calibrated state)
+#    - Rationale: Afterglow is 0.3-0.5% of signal at 50ms, correction recommended
+#    - Benefit: Better stability for standard operation
+#
+# 3. SLOW MODE: Total delay > 100ms
+#    - Afterglow correction: DISABLED (afterglow negligible)
+#    - Rationale: Afterglow < 0.2% of signal, below noise floor
+#    - Benefit: Saves computation, avoids over-correction
+#
+# The system automatically determines mode based on LED_DELAY + LED_POST_DELAY
+AFTERGLOW_FAST_THRESHOLD_MS = 50.0   # Below this: high-speed mode (correction enabled)
+AFTERGLOW_SLOW_THRESHOLD_MS = 100.0  # Above this: slow mode (correction disabled)
+AFTERGLOW_AUTO_MODE = True  # Automatic mode selection (recommended, set False to force enable/disable)
 USE_DYNAMIC_POST_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation

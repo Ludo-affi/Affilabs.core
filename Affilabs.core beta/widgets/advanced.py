@@ -78,9 +78,13 @@ class P4SPRAdvMenu(QDialog):
         # Add session quality monitoring UI section
         self._setup_quality_monitoring_ui()
 
-        # Hidden advanced action: measure LED afterglow calibration
-        self.measure_afterglow_btn = QPushButton("Measure Afterglow…", self)
-        self.measure_afterglow_btn.setToolTip("Run optical afterglow calibration to model LED decay")
+        # Hidden OEM/factory feature: optical calibration (LED afterglow characterization)
+        # NOT exposed to end-users - this is factory/service terminology
+        self.measure_afterglow_btn = QPushButton("Run Optical Calibration…", self)
+        self.measure_afterglow_btn.setToolTip(
+            "[OEM/Factory Only] Characterize optical system response across integration times.\n"
+            "This measures LED phosphor decay characteristics for correction algorithms."
+        )
         # Add next to Update Settings button at the bottom
         try:
             self.ui.horizontalLayout.addWidget(self.measure_afterglow_btn)
@@ -105,7 +109,11 @@ class P4SPRAdvMenu(QDialog):
         self.delay_status.setVisible(False)
 
     def enable_afterglow_button(self: Self, visible: bool) -> None:
-        """Show or hide the afterglow measurement button."""
+        """Show or hide the optical calibration button (OEM/factory feature only).
+
+        Note: Despite method name 'afterglow', the button text is 'Optical Calibration'
+        to use customer-facing terminology instead of internal technical terms.
+        """
         self.measure_afterglow_btn.setVisible(bool(visible))
 
     def enable_delay_status(self: Self, visible: bool) -> None:

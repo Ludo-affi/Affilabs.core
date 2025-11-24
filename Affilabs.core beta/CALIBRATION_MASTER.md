@@ -57,6 +57,188 @@ The SPR calibration system determines optimal measurement parameters for the dev
 4. **On QC failure** - If fast validation detects drift
 5. **Manual request** - User-triggered recalibration
 
+### Calibration Sequence (System Startup)
+
+The complete calibration flow follows this logical sequence:
+
+```
+1. Connect Hardware
+   ↓
+   Detect device type and serial number
+
+2. Load Device Configuration
+   ↓
+   Look for device_config.json with servo positions
+
+3. Decision Point: Are Servo Positions Populated?
+   ↓
+   ├─ YES (device_config.json exists with servo positions)
+   │  ↓
+   │  FAST PATH: Skip to LED Calibration (Step 4)
+   │  Common path for all polarizer types
+   │
+   └─ NO (first-time setup or config not populated)
+      ↓
+      Must perform Servo Position Calibration FIRST
+      ↓
+      ├─ Barrel Polarizer: SIMPLE calibration (~1.4 minutes)
+      │  • Hardware: 2 fixed perpendicular windows at 90°
+      │  • Method: Sweep servo, find 2 transmission peaks
+      │  • Result: Store positions in device_config.json
+      │
+      └─ Circular Polarizer: COMPLEX calibration (~13 measurements)
+         • Hardware: Continuously rotating polarizer element
+         • Method: Quadrant search to find optimal angles
+         • Requires: Water on sensor for SPR detection
+         • Result: Store positions in device_config.json
+      ↓
+      Proceed to LED Calibration
+
+4. LED Intensity Calibration (THIS MODULE - Common Path)
+   ↓
+   Uses pre-calibrated servo positions from device_config
+   Process is IDENTICAL for both polarizer types
+   ↓
+   Steps:
+   • S-mode: Optimize LED intensities to reach target counts
+   • Analyze headroom: How much LED intensity was used
+   • P-mode: Boost LED intensities based on available headroom
+   ↓
+   Result: System ready for measurements
+```
+
+**Key Insight**: Polarizer type ONLY affects servo position calibration complexity (Step 3). Once servo positions are known (loaded from device_config), the rest of the path (LED calibration) is common for all polarizer types.
+
+---
+
+## Quality Control Philosophy: Two Distinct Calibration Phases
+
+**CRITICAL DISTINCTION**: LED calibration has TWO separate phases with DIFFERENT purposes and QC metrics:
+
+### Phase A: S-Mode Calibration - System Baseline (Detector + LED)
+
+**What it measures**: Optical system performance WITHOUT SPR
+- LED spectral emission profile
+- Detector response characteristics
+- Optical path transmission losses
+- System noise floor
+
+**What it DOES NOT measure**:
+- ❌ SPR coupling (no resonance in S-pol!)
+- ❌ Water presence (need transmission spectrum)
+- ❌ Sensor performance (need SPR dip analysis)
+
+**QC Metrics** (`validate_s_ref_quality`):
+| Check | Purpose | Pass/Fail Threshold |
+|-------|---------|-------------------|
+| Signal intensity | Prism presence detection | >5,000 counts = PASS |
+| Peak wavelength | LED profile validation | 550-650nm expected |
+| Spectral shape | Optical system health | Smooth profile expected |
+
+**Think of S-mode as**: "What can the LED and detector system deliver?"
+
+---
+
+### Phase B: P-Mode Calibration - Sensor Validation (SPR + Water)
+
+**What it measures**: SPR sensor performance WITH water/buffer
+- Water presence (SPR dip in transmission)
+- SPR coupling quality (dip depth)
+- Sensor sensitivity (FWHM analysis)
+- Polarizer orientation (dip vs peak)
+
+**What it DOES NOT measure**:
+- ❌ Cannot analyze individual P spectrum (LED profile contamination)
+- ❌ Cannot compare raw P vs S intensities (meaningless)
+- ✅ ONLY transmission spectrum (P/S ratio) contains SPR information
+
+**QC Metrics** (`verify_calibration`):
+| Check | Purpose | Pass/Fail Threshold |
+|-------|---------|-------------------|
+| Transmission spectrum | Calculate P/S ratio | Required for all checks below |
+| SPR dip depth | Water presence | >10% dip = PASS |
+| SPR dip wavelength | Resonance position | 590-670nm expected |
+| FWHM | Coupling quality | <30nm=Excellent, 30-50nm=Good, >80nm=FAIL |
+| Polarizer orientation | S/P swap detection | Dip (not peak) required |
+
+**Think of P-mode as**: "Can the sensor detect SPR resonance properly?"
+
+---
+
+### Why This Separation Matters
+
+1. **S-mode establishes optical baseline** - "System QC"
+   - Validates that light can reach detector properly
+   - Characterizes LED output and detector response
+   - NO information about sensor or SPR
+
+2. **P-mode validates sensor performance** - "Sensor QC"
+   - Proves water/buffer is present (SPR dip exists)
+   - Measures coupling quality (FWHM)
+   - Confirms polarizer orientation correct
+
+3. **Common mistakes to avoid**:
+   - ❌ Trying to detect water in S-mode (impossible - no SPR!)
+   - ❌ Analyzing SPR dip on raw P-spectrum (meaningless - LED profile mixed in)
+   - ❌ Comparing raw P vs S intensities (only valid in servo calibration)
+   - ✅ ONLY use transmission spectrum (P/S ratio) for SPR analysis
+
+**Remember**: S-mode = "System works?", P-mode = "Sensor works?"
+
+---
+
+## Connection to Live Monitoring
+
+**CRITICAL:** The S-mode/P-mode distinction established during calibration continues into live measurements.
+
+**During live acquisition:**
+- **S_ref (reference)** = S-mode spectrum from calibration (LED + detector baseline)
+- **P_live (signal)** = P-mode spectrum during measurement (SPR sensor + binding)
+- **Transmission** = P_live / S_ref (isolates SPR response from optics)
+
+**BUT:** This assumes S_ref remains valid (LED/detector haven't drifted).
+
+**Issue Attribution in Live Data:**
+
+When transmission changes during live measurement, it could be:
+
+1. **Optics drift** (device-specific):
+   - LED intensity degraded → All channels affected equally
+   - Detector noise increased → Baseline region noise increases
+   - Calibration stale (>2 hours) → S_ref no longer valid
+   - **Action:** Recalibrate system
+
+2. **SPR sensor change** (consumable-specific):
+   - Analyte binding → Peak position shifts (SIGNAL!)
+   - Water loss → Peak becomes shallow (CRITICAL)
+   - Sensor degradation → Peak broadens (FWHM increases)
+   - **Action:** Monitor, replace sensor, or stop measurement
+
+**Key Discriminator:** Multi-channel correlation
+- High correlation (all channels drift together) → **Optics issue**
+- Low correlation (single channel deviates) → **SPR sensor issue**
+
+**See:** `docs/analysis/LIVE_MONITORING_OPTICS_VS_SPR_SEPARATION.md` for complete ML strategy to distinguish these during real-time monitoring.
+
+**Why this matters:**
+- Incorrect attribution → Wrong action → Wasted time
+- "Replace sensor" when should "recalibrate LEDs" → Waste consumable
+- "Recalibrate system" when should "add water" → Damage sensor
+- ML monitoring must correctly identify source to provide actionable diagnostics
+
+**The 4-Way Attribution Challenge:**
+
+During live measurements, changes can come from:
+1. **DEVICE/OPTICS** (hardware): LED drift, detector noise → Recalibrate or fix hardware
+2. **SENSOR PHYSICAL** (consumable): Water loss, degradation → Replace or clean sensor
+3. **EXPERIMENTAL/BIOLOGY** (outside elements): Buffer, temperature, binding, chemistry → EXPECTED behavior!
+4. **CALIBRATION** (reference aging): S_ref >2h old → Refresh calibration
+
+**Critical insight:** The sensor is impacted by **everything above it** - buffer composition, pH, temperature, flow rate, analyte concentration, aggregates, chemical reactions. ML must distinguish between:
+- "Device broke" (hardware)
+- "Sensor broke" (consumable)
+- "Experiment is doing what it should" (biology/chemistry - this is the SIGNAL!)
+
 ---
 
 ## Calibration Paths

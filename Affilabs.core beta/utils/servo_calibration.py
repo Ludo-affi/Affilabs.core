@@ -38,6 +38,10 @@ MAX_RESONANCE_WL = 670  # Maximum valid resonance wavelength (nm)
 MAX_DETECTOR_COUNTS = 62000        # Flame-T maximum counts (not 65535)
 SATURATION_THRESHOLD = 0.95        # Warn if above 95% of max (58,900 counts)
 
+# Servo calibration target intensity
+# Use lower target (30% of max) to prevent saturation in S-mode while still having enough signal
+SERVO_CAL_TARGET_PERCENT = 0.30   # 30% of detector max (~18,600 counts for Flame-T)
+
 # Validation thresholds
 MIN_SEPARATION = 80                # Minimum S-P separation (degrees) for circular polarizer
 MAX_SEPARATION = 100               # Maximum S-P separation (degrees) for circular polarizer
@@ -66,6 +70,105 @@ def get_roi_intensity(spectrum: np.ndarray, wavelengths: np.ndarray) -> float:
     return float(roi_spectrum.max())
 
 
+def _calibrate_leds_for_servo(usb, ctrl, target_percent: float = SERVO_CAL_TARGET_PERCENT):
+    """Calibrate LEDs with lower target intensity specifically for servo calibration.
+
+    This prevents saturation during servo search when in S-mode (max transmission).
+    Uses a conservative target (30% of detector max) since we only need to find
+    the SPR dip position, not achieve optimal SNR.
+
+    Args:
+        usb: Spectrometer wrapper
+        ctrl: Controller wrapper
+        target_percent: Target as fraction of detector max (default: 0.30 = 30%)
+
+    Returns:
+        dict: Calibrated LED intensities for each channel
+    """
+    from utils.led_calibration import calibrate_led_channel
+
+    # Calculate target counts from detector specs
+    max_counts = getattr(usb, 'max_counts', MAX_DETECTOR_COUNTS)
+    target_counts = max_counts * target_percent
+
+    logger.info("=" * 80)
+    logger.info("LED CALIBRATION FOR SERVO SEARCH")
+    logger.info("=" * 80)
+    logger.info(f"Target: {target_counts:.0f} counts ({target_percent*100:.0f}% of detector max)")
+    logger.info(f"Detector max: {max_counts:.0f} counts")
+    logger.info("Reason: Lower target prevents saturation in S-mode (max transmission)")
+    logger.info("=" * 80)
+
+    calibrated_intensities = {}
+
+    try:
+        # Calibrate all channels
+        for ch in ['a', 'b', 'c', 'd']:
+            logger.info(f"Calibrating LED {ch.upper()}...")
+            intensity = calibrate_led_channel(
+                usb=usb,
+                ctrl=ctrl,
+                ch=ch,
+                target_counts=target_counts,
+                stop_flag=None
+            )
+            calibrated_intensities[ch] = intensity
+            logger.info(f"  ✓ LED {ch.upper()}: intensity = {intensity}")
+
+        logger.info("=" * 80)
+        logger.info("✅ LED CALIBRATION COMPLETE")
+        logger.info("=" * 80)
+
+        return calibrated_intensities
+
+    except Exception as e:
+        logger.error(f"LED calibration failed: {e}")
+        logger.warning("Falling back to default intensity (32)")
+        # Fallback to safe default
+        return {'a': 32, 'b': 32, 'c': 32, 'd': 32}
+
+
+def _set_reduced_led_intensity(ctrl, reduced_intensity: int = 32):
+    """Temporarily reduce LED intensity to prevent saturation during servo calibration.
+
+    Args:
+        ctrl: Controller wrapper
+        reduced_intensity: LED intensity to use (default: 64 = 25% of max)
+
+    Returns:
+        dict: Original LED intensities for restoration
+    """
+    original_intensities = {}
+    try:
+        logger.debug(f"Reducing LED intensity to {reduced_intensity} to prevent saturation...")
+        for ch in ['a', 'b', 'c', 'd']:
+            # Store current intensity (fallback to 128 if not available)
+            original_intensities[ch] = getattr(ctrl, f'_{ch}_intensity', 128)
+            # Set reduced intensity
+            ctrl.set_intensity(ch, reduced_intensity)
+        time.sleep(0.2)  # Allow LEDs to stabilize
+    except Exception as e:
+        logger.warning(f"Could not reduce LED intensity: {e}")
+
+    return original_intensities
+
+
+def _restore_led_intensity(ctrl, original_intensities: dict):
+    """Restore original LED intensities after servo calibration.
+
+    Args:
+        ctrl: Controller wrapper
+        original_intensities: Dictionary of original intensities to restore
+    """
+    try:
+        logger.debug("Restoring original LED intensities...")
+        for ch, intensity in original_intensities.items():
+            ctrl.set_intensity(ch, intensity)
+        time.sleep(0.2)  # Allow LEDs to stabilize
+    except Exception as e:
+        logger.warning(f"Could not restore LED intensities: {e}")
+
+
 def check_water_presence(usb, ctrl, s_pos: int, p_pos: int):
     """Check if water is present on sensor by analyzing transmission spectrum.
 
@@ -73,6 +176,8 @@ def check_water_presence(usb, ctrl, s_pos: int, p_pos: int):
     1. Transmission dip in SPR region (600-750nm)
     2. Transmission < 100% (P < S, no inversion)
     3. Dip depth >= 10% of maximum transmission
+
+    Uses reduced LED intensity to prevent saturation.
 
     Args:
         usb: Spectrometer wrapper
@@ -83,6 +188,9 @@ def check_water_presence(usb, ctrl, s_pos: int, p_pos: int):
     Returns:
         Tuple of (has_water, transmission_min, dip_depth_percent)
     """
+    # Use reduced LED intensity to prevent saturation
+    original_intensities = _set_reduced_led_intensity(ctrl)
+
     try:
         # Set positions and measure both modes
         ctrl.servo_set(s=s_pos, p=p_pos)
@@ -137,6 +245,9 @@ def check_water_presence(usb, ctrl, s_pos: int, p_pos: int):
     except Exception as e:
         logger.exception(f"Error checking water presence: {e}")
         return False, None, None
+    finally:
+        # Always restore original LED intensities
+        _restore_led_intensity(ctrl, original_intensities)
 
 
 def validate_positions_with_transmission(usb, ctrl, s_pos: int, p_pos: int):
@@ -336,13 +447,12 @@ def perform_quadrant_search(usb, ctrl):
     """Perform intelligent quadrant search to find optimal S and P positions.
 
     Uses a 3-phase approach:
-    1. Coarse 5-point search across servo range
-    2. Refinement around predicted P position (minimum)
-    3. Calculate S position exactly 90° from P
+    1. LED calibration with lower target (30% of max) to prevent saturation
+    2. Coarse 5-point search across servo range
+    3. Refinement around predicted P position (minimum)
+    4. Calculate S position exactly 90° from P
 
-    Total measurements: ~13 vs 33+ for full sweep
-
-    Assumes integration time is already set from LED calibration.
+    Total measurements: ~13 + LED calibration time
 
     Args:
         usb: Spectrometer wrapper
@@ -364,6 +474,16 @@ def perform_quadrant_search(usb, ctrl):
         use_roi = True
         logger.info(f"ROI: {ROI_MIN_WL}-{ROI_MAX_WL}nm (SPR resonance region)")
 
+    # STEP 1: Calibrate LEDs with lower target to prevent saturation
+    # This is device-specific and adapts to each system's characteristics
+    logger.info("")
+    logger.info("STEP 1: LED Calibration (low target for servo search)")
+    calibrated_intensities = _calibrate_leds_for_servo(usb, ctrl)
+    logger.info("")
+
+    # Store original intensities for later restoration (if needed)
+    original_led_intensity = calibrated_intensities.copy()
+
     # Store all measurements
     all_positions = []
     all_intensities = []
@@ -380,8 +500,8 @@ def perform_quadrant_search(usb, ctrl):
         all_intensities.append(intensity)
         return intensity
 
-    # PHASE 1: Coarse search - 5 positions across range
-    logger.info("Phase 1: Coarse search (5 positions)...")
+    # STEP 2: Coarse search - 5 positions across range
+    logger.info("STEP 2: Coarse search (5 positions)...")
     coarse_positions = [10, 50, 90, 130, 170]
     coarse_intensities = []
 
@@ -397,8 +517,8 @@ def perform_quadrant_search(usb, ctrl):
     logger.info(f"Approximate P position (minimum):")
     logger.info(f"   P ≈ {approx_p}° ({coarse_intensities[coarse_min_idx]:.0f} counts)")
 
-    # PHASE 2: Refine P position (minimum)
-    logger.info(f"Phase 2: Refining P position around {approx_p}°...")
+    # STEP 3: Refine P position (minimum)
+    logger.info(f"STEP 3: Refining P position around {approx_p}°...")
     p_search_positions = [
         max(MIN_ANGLE, approx_p - 20),
         max(MIN_ANGLE, approx_p - 10),
@@ -420,7 +540,7 @@ def perform_quadrant_search(usb, ctrl):
     p_intensity = p_intensities[p_pos]
     logger.info(f"✓ P position refined: {p_pos}° ({p_intensity:.0f} counts)")
 
-    # PHASE 3: Set S position exactly 90° from P
+    # STEP 4: Set S position exactly 90° from P
     # For circular polarizer: S = P ± 90° (EXACT)
     # Choose the option that's within servo range (10-170°)
     s_candidate_1 = p_pos - 90
@@ -428,10 +548,10 @@ def perform_quadrant_search(usb, ctrl):
 
     if MIN_ANGLE <= s_candidate_1 <= MAX_ANGLE:
         s_pos = s_candidate_1
-        logger.info(f"Phase 3: S position = P - 90° = {p_pos}° - 90° = {s_pos}°")
+        logger.info(f"STEP 4: S position = P - 90° = {p_pos}° - 90° = {s_pos}°")
     elif MIN_ANGLE <= s_candidate_2 <= MAX_ANGLE:
         s_pos = s_candidate_2
-        logger.info(f"Phase 3: S position = P + 90° = {p_pos}° + 90° = {s_pos}°")
+        logger.info(f"STEP 4: S position = P + 90° = {p_pos}° + 90° = {s_pos}°")
     else:
         # This shouldn't happen if P is 10-170, so ±90 should always be valid
         logger.error(f"❌ ERROR: Cannot place S position 90° from P={p_pos}°")
@@ -455,16 +575,11 @@ def perform_quadrant_search(usb, ctrl):
     logger.info(f"✅ Quadrant search complete")
     logger.info(f"Total measurements: {len(all_positions)} (vs 33+ for full sweep)")
 
+    # CRITICAL: Restore original LED intensities
+    _restore_led_intensity(ctrl, original_led_intensity)
+    logger.info("✅ LED intensities restored")
+
     return s_pos, p_pos
-
-    logger.info(f"✓ S position set: {s_pos}° ({s_intensity:.0f} counts)")
-    logger.info(f"✓ Separation enforced: |{s_pos}° - {p_pos}°| = {abs(s_pos - p_pos)}° (exactly 90°)")
-
-    logger.info(f"✅ Quadrant search complete")
-    logger.info(f"Total measurements: {len(all_positions)} (vs 33 for full sweep)")
-
-    # Return all measured data plus the found positions
-    return np.array(all_positions), np.array(all_intensities), p_pos, s_pos
 
 
 def find_resonance_wavelength(usb, ctrl, p_position):

@@ -458,12 +458,14 @@ class StartupCalibProgressDialog(QDialog):
 class DeviceConfigDialog(QDialog):
     """Dialog to collect missing device configuration information."""
 
-    def __init__(self, parent=None, device_serial=None, controller_type=''):
+    def __init__(self, parent=None, device_serial=None, controller_type='', controller=None, device_config=None):
         super().__init__(parent)
         self.setWindowTitle("Device Configuration Required")
         self.setFixedWidth(500)
         self.setModal(True)
         self.controller_type = controller_type
+        self.controller = controller  # For EEPROM sync
+        self.device_config = device_config  # DeviceConfiguration instance
 
         # Apply modern styling
         self.setStyleSheet(
@@ -500,6 +502,18 @@ class DeviceConfigDialog(QDialog):
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
+
+        # Config source indicator (EEPROM vs JSON)
+        self.config_source_label = QLabel()
+        self.config_source_label.setStyleSheet(
+            "font-size: 12px;"
+            "color: #86868B;"
+            "padding: 8px 12px;"
+            "background: #F5F5F7;"
+            "border-radius: 6px;"
+        )
+        self._update_config_source_indicator()
+        layout.addWidget(self.config_source_label)
 
         # Form layout
         form = QFormLayout()
@@ -647,6 +661,31 @@ class DeviceConfigDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 
+        # Push to EEPROM button (only show if controller connected)
+        if self.controller is not None:
+            eeprom_btn = QPushButton("Push to EEPROM")
+            eeprom_btn.setStyleSheet(
+                "QPushButton {"
+                "  padding: 8px 20px;"
+                "  background: #FF9500;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  font-size: 13px;"
+                "  font-weight: 600;"
+                "  color: #FFFFFF;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #FF8000;"
+                "}"
+                "QPushButton:disabled {"
+                "  background: #E5E5E7;"
+                "  color: #86868B;"
+                "}"
+            )
+            eeprom_btn.setToolTip("Save configuration to device EEPROM for portable backup")
+            eeprom_btn.clicked.connect(self._on_push_to_eeprom)
+            button_layout.addWidget(eeprom_btn)
+
         save_btn = QPushButton("Save Configuration")
         save_btn.setStyleSheet(
             "QPushButton {"
@@ -686,6 +725,86 @@ class DeviceConfigDialog(QDialog):
             self.polarizer_type_combo.setCurrentText('circle')
         elif self.controller_type == 'PicoEZSPR':
             self.polarizer_type_combo.setCurrentText('barrel')
+
+    def _update_config_source_indicator(self):
+        """Update the config source indicator label."""
+        if self.device_config is None:
+            self.config_source_label.setText("ℹ️ New configuration")
+            return
+
+        if hasattr(self.device_config, 'loaded_from_eeprom') and self.device_config.loaded_from_eeprom:
+            self.config_source_label.setText("📦 Configuration loaded from EEPROM")
+            self.config_source_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #FF9500;"
+                "padding: 8px 12px;"
+                "background: #FFF3E0;"
+                "border-radius: 6px;"
+            )
+        else:
+            self.config_source_label.setText("💾 Configuration loaded from JSON file")
+            self.config_source_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #34C759;"
+                "padding: 8px 12px;"
+                "background: #E8F5E9;"
+                "border-radius: 6px;"
+            )
+
+    def _on_push_to_eeprom(self):
+        """Push current form configuration to EEPROM."""
+        if self.controller is None:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "No Controller",
+                "Cannot push to EEPROM: No controller connected."
+            )
+            return
+
+        # Update device_config with current form values (if it exists)
+        if self.device_config is not None:
+            config_data = self.get_config_data()
+            self.device_config.set_hardware_config(
+                led_pcb_model=config_data['led_pcb_model'],
+                optical_fiber_diameter_um=config_data['optical_fiber_diameter_um'],
+                polarizer_type=config_data['polarizer_type']
+            )
+
+        # Sync to EEPROM
+        from utils.logger import logger
+        logger.info("Pushing configuration to EEPROM...")
+
+        if self.device_config is not None:
+            success = self.device_config.sync_to_eeprom(self.controller)
+        else:
+            # No device_config yet - create temporary EEPROM config from form
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Save First",
+                "Please save the configuration to JSON first, then push to EEPROM."
+            )
+            return
+
+        # Show result
+        from PySide6.QtWidgets import QMessageBox
+        if success:
+            QMessageBox.information(
+                self,
+                "EEPROM Sync Complete",
+                "✓ Configuration successfully pushed to device EEPROM.\n\n"
+                "The device can now be used on other computers without reconfiguration."
+            )
+            logger.info("✓ EEPROM sync successful")
+        else:
+            QMessageBox.warning(
+                self,
+                "EEPROM Sync Failed",
+                "Failed to push configuration to EEPROM.\n\n"
+                "Check the logs for details."
+            )
+            logger.error("✗ EEPROM sync failed")
 
     def get_config_data(self):
         """Get the configuration data from the form."""
@@ -4627,8 +4746,19 @@ End of Debug Log
             # Detect controller type from hardware
             controller_type = self._get_controller_type_from_hardware()
 
-            # Create dialog
-            dialog = DeviceConfigDialog(self, device_serial, controller_type)
+            # Get controller reference for EEPROM operations
+            controller = None
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                controller = self.hardware_mgr.ctrl
+
+            # Create dialog with controller and device_config for EEPROM support
+            dialog = DeviceConfigDialog(
+                self,
+                device_serial,
+                controller_type,
+                controller=controller,
+                device_config=self.device_config
+            )
 
             # Pre-fill with existing values from config if available
             if self.device_config:

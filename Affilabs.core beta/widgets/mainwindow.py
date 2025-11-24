@@ -3,7 +3,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMainWindow, QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame, QVBoxLayout, QSplitter, QStackedWidget
 
 from widgets.message import show_message
-from widgets.sidebar_modern import ModernSidebar
+from widgets.sidebar import ModernSidebar  # Updated to use refactored ModernSidebar with event bus
 from widgets.datawindow import DataWindow
 from widgets.advanced import P4SPRAdvMenu
 from widgets.analysis import AnalysisWindow
@@ -21,13 +21,14 @@ class MainWindow(QMainWindow):
     record_sig = Signal()
     pause_sig = Signal(bool)  # True = pause, False = resume
 
-    def __init__(self, app):
+    def __init__(self, app, event_bus=None):
         super(MainWindow, self).__init__()
         logger.info("MainWindow: Starting initialization")
         self.setWindowTitle("ezControl Software")
         self.setGeometry(100, 100, 1400, 900)
         logger.info("MainWindow: Basic properties set")
         self.app = app
+        self.event_bus = event_bus
         self.update_counter = 0
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
         self.device_config = {'ctrl': '', 'knx': ''}
@@ -71,7 +72,7 @@ class MainWindow(QMainWindow):
 
         logger.info("MainWindow._setup_ui: Creating sidebar")
         # Sidebar with EXACT prototype constraints
-        self.sidebar = ModernSidebar()
+        self.sidebar = ModernSidebar(event_bus=self.event_bus)
         self.sidebar.setMinimumWidth(55)  # EXACT prototype value
         self.sidebar.setMaximumWidth(800)  # EXACT prototype value
         self.splitter.addWidget(self.sidebar)

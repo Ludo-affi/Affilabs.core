@@ -16,7 +16,7 @@ Usage in main_simplified.py:
 """
 
 from typing import Optional, Dict, Any
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 
 
 class UIAdapter(QObject):
@@ -26,13 +26,36 @@ class UIAdapter(QObject):
     with the UI, insulating business logic from UI implementation changes.
     """
 
+    # UI request signals - forwarded from main window
+    power_on_requested = Signal()
+    power_off_requested = Signal()
+    recording_start_requested = Signal()
+    recording_stop_requested = Signal()
+    export_requested = Signal()
+    acquisition_pause_requested = Signal()
+
     def __init__(self, main_window):
         """Initialize adapter with reference to main window.
 
         Args:
-            main_window: Instance of MainWindowPrototype
+            main_window: Instance of AffilabsMainWindow
         """
         super().__init__()
+        self.ui = main_window
+
+        # Forward main window signals through adapter
+        if hasattr(self.ui, 'power_on_requested'):
+            self.ui.power_on_requested.connect(self.power_on_requested.emit)
+        if hasattr(self.ui, 'power_off_requested'):
+            self.ui.power_off_requested.connect(self.power_off_requested.emit)
+        if hasattr(self.ui, 'recording_start_requested'):
+            self.ui.recording_start_requested.connect(self.recording_start_requested.emit)
+        if hasattr(self.ui, 'recording_stop_requested'):
+            self.ui.recording_stop_requested.connect(self.recording_stop_requested.emit)
+        if hasattr(self.ui, 'export_requested'):
+            self.ui.export_requested.connect(self.export_requested.emit)
+        if hasattr(self.ui, 'acquisition_pause_requested'):
+            self.ui.acquisition_pause_requested.connect(self.acquisition_pause_requested.emit)
         self.ui = main_window
 
     # ==================== Power & Connection Control ====================
