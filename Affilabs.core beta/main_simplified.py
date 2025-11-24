@@ -253,6 +253,7 @@ class Application(QApplication):
 
         # Transmission spectrum dialog
         self._transmission_dialog = None
+        self._live_data_dialog = None  # Live Data Dialog for real-time spectra
 
         # Initialize data buffer manager
         self.buffer_mgr = DataBufferManager()
@@ -317,6 +318,10 @@ class Application(QApplication):
             self.main_window.tab_widget.currentChanged.connect(self._on_tab_changing)
         if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'tabs'):
             self.main_window.sidebar.tabs.currentChanged.connect(self._on_tab_changing)
+        
+        # Connect page change signal to manage live data dialog visibility
+        if hasattr(self.main_window, 'content_stack'):
+            self.main_window.content_stack.currentChanged.connect(self._on_page_changed)
 
         # Show window FIRST
         logger.info("🪟 Showing main window...")
@@ -1025,7 +1030,7 @@ class Application(QApplication):
         logger.info("📊 Opening live data dialog...")
         try:
             from live_data_dialog import LiveDataDialog
-            if not hasattr(self, '_live_data_dialog') or self._live_data_dialog is None:
+            if self._live_data_dialog is None:
                 self._live_data_dialog = LiveDataDialog(parent=self.main_window)
             self._live_data_dialog.show()
             self._live_data_dialog.raise_()
@@ -1661,11 +1666,22 @@ class Application(QApplication):
                 'wavelengths': self.data_mgr.wave_data
             }
 
-            # Update transmission dialog if open
-            if self._transmission_dialog is not None and self._transmission_dialog.isVisible():
-                wavelengths = self.data_mgr.wave_data
-                if wavelengths is not None:
+            wavelengths = self.data_mgr.wave_data
+            if wavelengths is not None:
+                # Update transmission dialog if open
+                if self._transmission_dialog is not None and self._transmission_dialog.isVisible():
                     self._transmission_dialog.update_spectrum(channel, wavelengths, transmission, raw_spectrum)
+                
+                # Update live data dialog if open (THREAD SAFE - called from processing thread)
+                if self._live_data_dialog is not None:
+                    try:
+                        # Update both transmission and raw data plots
+                        self._live_data_dialog.update_transmission_plot(channel, wavelengths, transmission)
+                        if raw_spectrum is not None:
+                            self._live_data_dialog.update_raw_data_plot(channel, wavelengths, raw_spectrum)
+                    except Exception as e:
+                        # Silently ignore dialog update errors (dialog may be closing)
+                        pass
 
     def _should_update_transmission(self):
         """Check if transmission plot updates are needed (lazy evaluation).
@@ -1682,6 +1698,19 @@ class Application(QApplication):
         if not hasattr(self.data_mgr, 'wave_data') or self.data_mgr.wave_data is None:
             return False
         return True
+
+    def _on_page_changed(self, page_index: int):
+        """Handle page changes - show/hide live data dialog for Live Data page (index 0)."""
+        # Page 0 is Live Data (sensorgram)
+        if page_index == 0:
+            # Show live data dialog if acquisition is running
+            if self.data_mgr and self.data_mgr.is_acquiring and self._live_data_dialog is not None:
+                self._live_data_dialog.show()
+                self._live_data_dialog.raise_()
+        else:
+            # Hide dialog when switching away from Live Data page
+            if self._live_data_dialog is not None:
+                self._live_data_dialog.hide()
 
     def _on_tab_changing(self, index):
         """Temporarily pause graph updates during tab transition.
