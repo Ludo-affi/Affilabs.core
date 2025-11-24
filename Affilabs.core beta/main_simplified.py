@@ -318,7 +318,7 @@ class Application(QApplication):
             self.main_window.tab_widget.currentChanged.connect(self._on_tab_changing)
         if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'tabs'):
             self.main_window.sidebar.tabs.currentChanged.connect(self._on_tab_changing)
-        
+
         # Connect page change signal to manage live data dialog visibility
         if hasattr(self.main_window, 'content_stack'):
             self.main_window.content_stack.currentChanged.connect(self._on_page_changed)
@@ -394,11 +394,8 @@ class Application(QApplication):
         self.event_bus.hardware_connection_progress.connect(self._on_connection_progress, Qt.QueuedConnection)
         self.event_bus.hardware_error.connect(self._on_hardware_error, Qt.QueuedConnection)
 
-        # Data acquisition events
-        # TEMPORARY DEBUG: Bypass event bus for spectrum_acquired to test if that fixes crash
-        logger.warning("🔧 DEBUG: Bypassing event bus for spectrum_acquired signal")
-        self.data_mgr.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
-        # self.event_bus.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)  # DISABLED FOR TESTING
+        # Data acquisition events (all routed through event bus for clean architecture)
+        self.event_bus.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
         self.event_bus.acquisition_started.connect(self._on_acquisition_started, Qt.QueuedConnection)
         self.event_bus.acquisition_stopped.connect(self._on_acquisition_stopped, Qt.QueuedConnection)
         self.event_bus.acquisition_error.connect(self._on_acquisition_error, Qt.QueuedConnection)
@@ -661,18 +658,18 @@ class Application(QApplication):
 
     def _debug_single_data_point(self):
         """Debug: Emit a single test data point (Ctrl+Shift+1).
-        
+
         Minimal test - just ONE data point, no loops, no timers.
         This isolates whether the crash is:
         - The data processing itself (crashes immediately)
         - The rate/accumulation (doesn't crash with one point)
         """
         import time
-        
+
         logger.info("=" * 80)
         logger.info("🧪 SINGLE DATA POINT TEST (Ctrl+Shift+1)")
         logger.info("=" * 80)
-        
+
         try:
             # Check if data_mgr exists
             if not hasattr(self, 'data_mgr') or self.data_mgr is None:
@@ -680,9 +677,9 @@ class Application(QApplication):
                 from widgets.message import show_message
                 show_message("Error: Data manager not initialized!", msg_type="Error")
                 return
-            
+
             logger.info("✅ Data manager found")
-            
+
             # Create a single data point
             data = {
                 'channel': 'a',
@@ -692,15 +689,15 @@ class Application(QApplication):
                 'is_preview': False,
                 'simulated': True
             }
-            
+
             logger.info(f"📤 Emitting single data point: {data}")
-            
+
             # Emit to spectrum_acquired signal
             self.data_mgr.spectrum_acquired.emit(data)
-            
+
             logger.info("✅ Single data point emitted")
             logger.info("⏳ Waiting 2 seconds to see if crash occurs...")
-            
+
             # Use QTimer to check status after delay
             from PySide6.QtCore import QTimer
             def check_status():
@@ -720,9 +717,9 @@ class Application(QApplication):
                     "- Accumulated state issues",
                     msg_type="Info"
                 )
-            
+
             QTimer.singleShot(2000, check_status)
-            
+
         except Exception as e:
             logger.exception(f"❌ Single data point test failed: {e}")
             from widgets.message import show_message
@@ -771,7 +768,7 @@ class Application(QApplication):
             def send_one():
                 try:
                     logger.info(f"[SIM-TRACK-1] send_one() ENTRY - cycle {spectrum_count[0]}")
-                    
+
                     # Generate fake SPR wavelength data for each channel
                     channels = ['a', 'b', 'c', 'd']
                     peak_positions = {'a': 650, 'b': 660, 'c': 655, 'd': 670}
@@ -782,7 +779,7 @@ class Application(QApplication):
 
                     for ch in channels:
                         logger.info(f"[SIM-TRACK-3] Generating data for channel {ch}")
-                        
+
                         # Generate realistic SPR peak wavelength with drift
                         base_wavelength = peak_positions[ch]
                         drift = 0.5 * np.sin(elapsed / 10)  # Slow oscillation
@@ -1491,13 +1488,13 @@ class Application(QApplication):
                 self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength)
                 logger.info(f"[CRASH-TRACK-2C] Buffer append SUCCESS")
                 print(f"[PROCESS] Channel {channel}: Buffer updated OK")
-                
+
                 # CRASH DEBUG: Check thread context
                 import threading
                 logger.info(f"[CRASH-DEBUG] Current thread: {threading.current_thread().name}")
                 logger.info(f"[CRASH-DEBUG] Is main thread: {threading.current_thread() is threading.main_thread()}")
                 print(f"[CRASH-DEBUG] Thread: {threading.current_thread().name}")
-                
+
             except Exception as e:
                 logger.exception(f"[CRASH-TRACK-2C-ERROR] Buffer append FAILED: {e}")
                 print(f"[PROCESS ERROR] Channel {channel}: Buffer append failed: {e}")
@@ -1525,7 +1522,7 @@ class Application(QApplication):
             # Qt widgets can ONLY be accessed from the main thread.
             # TODO: Implement cursor updates via signal to main thread if needed
             logger.info(f"[CRASH-TRACK-2F] Cursor update SKIPPED (thread safety)")
-            
+
             # # Auto-follow latest data with stop cursor (when Live Data is enabled)
             # # Only move cursor if not currently being dragged by user
             # try:
@@ -1567,7 +1564,7 @@ class Application(QApplication):
         # THREAD SAFETY: Always queue updates - main thread will check live_data_enabled
         try:
             logger.info(f"[CRASH-TRACK-3] Queueing graph update")
-            
+
             # Queue the update (main thread will check if live data is enabled)
             self._pending_graph_updates[channel] = {
                 'elapsed_time': elapsed_time,
@@ -1671,7 +1668,7 @@ class Application(QApplication):
                 # Update transmission dialog if open
                 if self._transmission_dialog is not None and self._transmission_dialog.isVisible():
                     self._transmission_dialog.update_spectrum(channel, wavelengths, transmission, raw_spectrum)
-                
+
                 # Update live data dialog if open (THREAD SAFE - called from processing thread)
                 if self._live_data_dialog is not None:
                     try:
@@ -2093,8 +2090,19 @@ class Application(QApplication):
         # Start tracking LED operation hours
         self.main_window.start_led_operation_tracking()
 
-        # Update UI recording indicator
-        self.ui.set_recording_state(True)
+        # Update UI recording indicator with filename
+        self.ui.set_recording_state(True, filename)
+        
+        # Update spectroscopy status
+        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
+            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+            status_label.setText("Recording...")
+            status_label.setStyleSheet(
+                "font-size: 13px;"
+                "color: #FF3B30;"  # Red for recording
+                "background: transparent;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
 
     def _on_recording_stopped(self):
         """Recording stopped."""
@@ -2105,6 +2113,19 @@ class Application(QApplication):
 
         # Update UI recording indicator
         self.ui.set_recording_state(False)
+        
+        # Update spectroscopy status back to "Running" (not recording)
+        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
+            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+            # Only update if acquisition is still running
+            if self.data_mgr.is_acquiring:
+                status_label.setText("Running")
+                status_label.setStyleSheet(
+                    "font-size: 13px;"
+                    "color: #34C759;"  # Green
+                    "background: transparent;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
 
     def _on_recording_error(self, error: str):
         """Recording error occurred."""
@@ -2129,6 +2150,24 @@ class Application(QApplication):
         """Live data acquisition has started - enable record and pause buttons."""
         logger.info("✅ Live acquisition started - enabling record/pause buttons")
         self.ui.enable_recording_controls()
+        
+        # Update spectroscopy status to "Running"
+        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
+            indicator = self.ui.sidebar.subunit_status['Spectroscopy']['indicator']
+            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+            indicator.setStyleSheet(
+                "font-size: 10px;"
+                "color: #34C759;"  # Green
+                "background: transparent;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+            status_label.setText("Running")
+            status_label.setStyleSheet(
+                "font-size: 13px;"
+                "color: #34C759;"  # Green
+                "background: transparent;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
 
         # Reset experiment start time for new acquisition
         self.experiment_start_time = None
@@ -2173,6 +2212,22 @@ class Application(QApplication):
             self.main_window.record_btn.setChecked(False)
         if self.main_window.pause_btn.isChecked():
             self.main_window.pause_btn.setChecked(False)
+        
+        # Update spectroscopy status to "Stopped"
+        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
+            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+            status_label.setText("Stopped")
+            status_label.setStyleSheet(
+                "font-size: 13px;"
+                "color: #86868B;"  # Gray
+                "background: transparent;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+        
+        # Stop recording if active
+        if self.recording_mgr.is_recording:
+            logger.info("📝 Stopping recording due to acquisition stop...")
+            self.recording_mgr.stop_recording()
 
     # === Kinetic Operations Callbacks ===
 
@@ -4160,7 +4215,7 @@ def main():
     import io
     import contextlib
     import atexit
-    
+
     # Install global exception hook to catch crashes
     def exception_hook(exc_type, exc_value, exc_traceback):
         """Catch all unhandled exceptions before they crash the app."""
@@ -4175,10 +4230,10 @@ def main():
         for line in tb_lines:
             logger.critical(line.rstrip())
         logger.critical("=" * 80)
-        
+
         # Call the default handler to actually crash
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
-    
+
     sys.excepthook = exception_hook
     logger.info("🛡️ Global exception hook installed")
 
