@@ -1691,11 +1691,6 @@ class AffilabsMainWindow(QMainWindow):
         self.ru_btn.toggled.connect(self._on_unit_changed)
         self.nm_btn.toggled.connect(self._on_unit_changed)
 
-        # Forward spectroscopy plots
-        self.transmission_plot = self.sidebar.transmission_plot
-        self.transmission_curves = self.sidebar.transmission_curves
-        self.raw_data_plot = self.sidebar.raw_data_plot
-        self.raw_data_curves = self.sidebar.raw_data_curves
         # Forward settings controls
         self.s_position_input = self.sidebar.s_position_input
         self.p_position_input = self.sidebar.p_position_input
@@ -2154,7 +2149,40 @@ class AffilabsMainWindow(QMainWindow):
         self.live_data_checkbox.toggled.connect(self._toggle_live_data)
         header_layout.addWidget(self.live_data_checkbox)
 
+        # Add spacing
+        header_layout.addSpacing(12)
+
+        # Transmission Spectrum button
+        spectrum_btn = QPushButton("📊 Spectrum")
+        spectrum_btn.setFixedHeight(32)
+        spectrum_btn.setToolTip("Show live transmission spectrum for all channels")
+        spectrum_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  padding: 0 12px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0051D5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #004BB8;"
+            "}"
+        )
+        spectrum_btn.clicked.connect(self._show_transmission_spectrum)
+        header_layout.addWidget(spectrum_btn)
+
         return header
+
+    def _show_transmission_spectrum(self):
+        """Show the transmission spectrum dialog."""
+        if hasattr(self, 'app') and self.app:
+            self.app.show_transmission_dialog()
 
     def _toggle_live_data(self, enabled: bool) -> None:
         """Toggle live data updates for graphs."""
@@ -4154,9 +4182,9 @@ class AffilabsMainWindow(QMainWindow):
             # Emit signal to trigger hardware connection (handled by Application class)
             if hasattr(self, 'power_on_requested'):
                 self.power_on_requested.emit()
-                print(f"[UI] ✅ Signal power_on_requested.emit() called!")
+                print(f"[UI] Signal power_on_requested.emit() called!")
             else:
-                print("[UI] ❌ ERROR: power_on_requested signal not defined!")
+                print("[UI] ERROR: power_on_requested signal not defined!")
 
             # Update UI state to searching
             self.power_btn.setProperty("powerState", "searching")
@@ -5965,24 +5993,30 @@ End of Debug Log
 
     def _handle_simple_led_calibration(self) -> None:
         """Handle Simple LED Calibration button click."""
-        logger.info("Simple LED Calibration initiated")
-        # TODO: Implement simple LED calibration workflow
-        QMessageBox.information(self, "Simple LED Calibration",
-                               "Simple LED Calibration workflow will be implemented here.")
+        logger.info("Simple LED Calibration button clicked")
+        # Emit signal to trigger calibration via application
+        if hasattr(self, 'app') and self.app:
+            self.app.calibration.start_calibration(mode='led_only')
+        else:
+            logger.warning("Application not connected - cannot start calibration")
 
     def _handle_full_calibration(self) -> None:
         """Handle Full Calibration button click."""
-        logger.info("Full Calibration initiated")
-        # TODO: Implement full calibration workflow
-        QMessageBox.information(self, "Full Calibration",
-                               "Full Calibration workflow will be implemented here.")
+        logger.info("Full Calibration button clicked")
+        # Emit signal to trigger full calibration via application
+        if hasattr(self, 'app') and self.app:
+            self.app.calibration.start_calibration(mode='full')
+        else:
+            logger.warning("Application not connected - cannot start calibration")
 
     def _handle_oem_led_calibration(self) -> None:
         """Handle OEM LED Calibration button click."""
-        logger.info("OEM LED Calibration initiated")
-        # TODO: Implement OEM LED calibration workflow
-        QMessageBox.information(self, "OEM LED Calibration",
-                               "OEM LED Calibration workflow will be implemented here.")
+        logger.info("OEM LED Calibration button clicked")
+        # Emit signal to trigger OEM calibration via application
+        if hasattr(self, 'app') and self.app:
+            self.app.calibration.start_calibration(mode='oem')
+        else:
+            logger.warning("Application not connected - cannot start calibration")
 
     def _connect_signals(self) -> None:
         """Connect UI signals."""

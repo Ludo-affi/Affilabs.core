@@ -81,6 +81,7 @@ class StaticTabBuilder:
         """Build intelligence bar section."""
         intel_section = QLabel("INTELLIGENCE BAR")
         intel_section.setStyleSheet(section_header_style())
+        intel_section.setFixedHeight(20)  # Reduced height from default 27 to 20
         intel_section.setToolTip("Real-time system status and guidance powered by AI diagnostics")
         tab_layout.addWidget(intel_section)
         tab_layout.addSpacing(8)

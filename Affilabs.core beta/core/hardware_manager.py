@@ -222,7 +222,7 @@ class HardwareManager(QObject):
 
             # Try Arduino-based controllers
             from utils.controller import ArduinoController
-            from settings import ARDUINO_VID, ARDUINO_PID, PICO_VID, PICO_PID
+            from settings.settings import ARDUINO_VID, ARDUINO_PID, PICO_VID, PICO_PID
 
             logger.info(f"\nLooking for Arduino (VID:PID = {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)})...")
             arduino = ArduinoController()

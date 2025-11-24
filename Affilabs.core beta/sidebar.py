@@ -145,6 +145,7 @@ class AffilabsSidebar(QWidget):
 
             # Title with subtitle
             title = QLabel(title_text)
+            title.setFixedHeight(27)
             title.setStyleSheet(title_style())
             tab_layout.addWidget(title)
 
@@ -153,6 +154,7 @@ class AffilabsSidebar(QWidget):
             # Subtitle helper text
             subtitle = QLabel(subtitle_text)
             subtitle.setWordWrap(True)
+            subtitle.setFixedHeight(20)
             subtitle.setStyleSheet(
                 f"font-size: 11px;"
                 f"color: {Colors.SECONDARY_TEXT};"
@@ -340,31 +342,6 @@ class AffilabsSidebar(QWidget):
         builder = SettingsTabBuilder(self)
         builder.build(tab_layout)
 
-    def _on_spectro_display_toggle(self, checked):
-        """Toggle visibility of spectroscopy graphs."""
-        self.graph_card.setVisible(checked)
-        if checked:
-            self.spectro_display_toggle_btn.setText("▼ Hide Graphs")
-        else:
-            self.spectro_display_toggle_btn.setText("▶ Show Graphs")
-
-    def _on_spectroscopy_toggle(self, checked):
-        """Toggle between transmission and raw data plots."""
-        if not checked:  # Button was unchecked (another button was selected)
-            return
-
-        # Show the selected plot/status and hide the other
-        if self.transmission_btn.isChecked():
-            self.transmission_plot.setVisible(True)
-            self.transmission_status_frame.setVisible(True)
-            self.raw_data_plot.setVisible(False)
-            self.raw_data_status_frame.setVisible(False)
-        elif self.raw_data_btn.isChecked():
-            self.transmission_plot.setVisible(False)
-            self.transmission_status_frame.setVisible(False)
-            self.raw_data_plot.setVisible(True)
-            self.raw_data_status_frame.setVisible(True)
-
     def toggle_polarizer_position(self):
         """Toggle polarizer between S and P positions and update button text."""
         if self.current_polarizer_position == 'S':
@@ -390,26 +367,6 @@ class AffilabsSidebar(QWidget):
 
         self.current_polarizer_position = position
         self.polarizer_toggle_btn.setText(f"Position: {position}")
-
-    def update_transmission_metrics(self, channel: int, fwhm: float | None = None, intensity: float | None = None):
-        """Update transmission metrics for a specific channel.
-
-        Args:
-            channel: Channel index (0-3)
-            fwhm: Full width at half maximum in nm (optional)
-            intensity: Peak intensity as percentage (optional)
-        """
-        if not hasattr(self, 'transmission_channel_metrics'):
-            return
-
-        if 0 <= channel < len(self.transmission_channel_metrics):
-            metrics = self.transmission_channel_metrics[channel]
-
-            if fwhm is not None:
-                metrics['fwhm'].setText(f"FWHM: {fwhm:.1f}nm")
-
-            if intensity is not None:
-                metrics['intensity'].setText(f"Int: {intensity:.0f}%")
 
     def update_spectroscopy_status(self, status: str, color: str = "#34C759"):
         """Update spectroscopy status indicator.
@@ -539,3 +496,49 @@ class AffilabsSidebar(QWidget):
         if hasattr(self, 'apply_settings_btn'):
             self.apply_settings_btn.setText("Apply Settings")
             self.apply_settings_btn.setStyleSheet(original_style)
+
+    def update_transmission_plot(self, channel: str, wavelength, transmission_spectrum):
+        """Update transmission plot with live data.
+
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+            wavelength: Wavelength array in nm
+            transmission_spectrum: Transmission percentage array
+        """
+        if not hasattr(self, 'transmission_curves'):
+            return
+
+        # Map channel to curve index
+        channel_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+        idx = channel_map.get(channel.lower())
+
+        if idx is not None and idx < len(self.transmission_curves):
+            try:
+                self.transmission_curves[idx].setData(wavelength, transmission_spectrum)
+                # Update status to show we're receiving data
+                self.update_spectroscopy_status("Acquiring", "#007AFF")
+            except Exception as e:
+                pass  # Silently ignore plotting errors
+
+    def update_raw_data_plot(self, channel: str, wavelength, raw_spectrum):
+        """Update raw data plot with live intensity data.
+
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+            wavelength: Wavelength array in nm
+            raw_spectrum: Raw intensity array (counts)
+        """
+        if not hasattr(self, 'raw_data_curves'):
+            return
+
+        # Map channel to curve index
+        channel_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+        idx = channel_map.get(channel.lower())
+
+        if idx is not None and idx < len(self.raw_data_curves):
+            try:
+                self.raw_data_curves[idx].setData(wavelength, raw_spectrum)
+                # Update status to show we're receiving data
+                self.update_spectroscopy_status("Acquiring", "#007AFF")
+            except Exception as e:
+                pass  # Silently ignore plotting errors

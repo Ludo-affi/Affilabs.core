@@ -8,9 +8,14 @@ Requirements:
 - seabreeze Python package installed
 """
 
+import threading
 from utils.logger import logger
 
 # Defer all seabreeze imports until open() is called to avoid blocking on import
+
+# CRITICAL: SeaBreeze USB operations are NOT thread-safe!
+# Protect ALL device access with a global lock to prevent segfaults
+_usb_device_lock = threading.RLock()
 
 
 class USB4000:
@@ -204,10 +209,12 @@ class USB4000:
             return False
 
     def close(self):
-        """Close connection."""
+        """Close connection - THREAD-SAFE."""
         try:
             if self._device:
-                self._device.close()
+                # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
+                with _usb_device_lock:
+                    self._device.close()
         except Exception as e:
             logger.warning(f"Error closing USB4000: {e}")
         finally:
@@ -224,7 +231,7 @@ class USB4000:
             pass
 
     def set_integration(self, time_ms):
-        """Set integration time.
+        """Set integration time - THREAD-SAFE.
 
         Args:
             time_ms: Integration time in milliseconds (matches settings.py)
@@ -235,8 +242,10 @@ class USB4000:
             # Convert milliseconds to microseconds for SeaBreeze API
             time_us = int(time_ms * 1000)
 
-            # Set the integration time (this is a setter only, returns None)
-            self._device.integration_time_micros(time_us)
+            # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
+            with _usb_device_lock:
+                # Set the integration time (this is a setter only, returns None)
+                self._device.integration_time_micros(time_us)
 
             # Store in seconds for internal use
             self._integration_time = time_ms / 1000.0
@@ -252,12 +261,14 @@ class USB4000:
             return False
 
     def read_intensity(self):
-        """Read intensities."""
+        """Read intensities - THREAD-SAFE."""
         if not self._device or not self.opened:
             return None
         try:
             import numpy as np
-            return np.array(self._device.intensities())
+            # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
+            with _usb_device_lock:
+                return np.array(self._device.intensities())
         except Exception as e:
             logger.error(f"read_intensity error: {e}")
             # Check if device was disconnected (errno 19)
@@ -270,12 +281,14 @@ class USB4000:
 
     @property
     def wavelengths(self):
-        """Get wavelengths."""
+        """Get wavelengths - THREAD-SAFE."""
         if self._wavelengths is not None:
             return self._wavelengths
         if self._device:
             try:
-                self._wavelengths = self._device.wavelengths()
+                # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
+                with _usb_device_lock:
+                    self._wavelengths = self._device.wavelengths()
                 return self._wavelengths
             except Exception as e:
                 logger.debug(f"Could not read wavelengths: {e}")
@@ -283,11 +296,13 @@ class USB4000:
 
     @property
     def min_integration(self):
-        """Get min integration time."""
+        """Get min integration time - THREAD-SAFE."""
         if self._device:
             try:
-                # SeaBreeze returns in microseconds, convert to seconds
-                return self._device.minimum_integration_time_micros / 1_000_000
+                # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
+                with _usb_device_lock:
+                    # SeaBreeze returns in microseconds, convert to seconds
+                    return self._device.minimum_integration_time_micros / 1_000_000
             except Exception as e:
                 logger.debug(f"Could not read min integration time: {e}")
         return 0.001

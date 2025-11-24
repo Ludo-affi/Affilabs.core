@@ -35,12 +35,20 @@ import io
 # === CRITICAL: Install sys.excepthook to catch Qt threading crashes ===
 def qt_exception_handler(exctype, value, tb):
     """Catch and suppress Qt threading exceptions that are false positives."""
-    error_msg = str(value)
-    if 'QTextDocument' in error_msg or 'different thread' in error_msg:
-        # This is the harmless Qt threading warning - suppress it
-        return
-    # For real exceptions, use default handler
-    sys.__excepthook__(exctype, value, tb)
+    # Check if stderr is still available
+    if not sys.stderr or not hasattr(sys.stderr, 'write'):
+        return  # Can't log, just return silently
+
+    try:
+        error_msg = str(value)
+        if 'QTextDocument' in error_msg or 'different thread' in error_msg:
+            # This is the harmless Qt threading warning - suppress it
+            return
+        # For real exceptions, use default handler
+        sys.__excepthook__(exctype, value, tb)
+    except (ValueError, OSError):
+        # stderr is closed, silently ignore
+        pass
 
 sys.excepthook = qt_exception_handler
 
@@ -57,18 +65,34 @@ class QtWarningFilter:
     def __init__(self, original_stderr):
         self.original = original_stderr
         self.buffer = io.StringIO()
+        self._closed = False
 
     def write(self, text):
-        # Suppress known false-positive Qt threading warnings
-        if any(s in text for s in self.SUPPRESSED):
-            return  # Silently drop
-        self.original.write(text)
+        # Check if stderr is still open
+        if self._closed or not self.original:
+            return
+        try:
+            # Suppress known false-positive Qt threading warnings
+            if any(s in text for s in self.SUPPRESSED):
+                return  # Silently drop
+            self.original.write(text)
+        except (ValueError, OSError):
+            # stderr is closed - stop trying to write
+            self._closed = True
 
     def flush(self):
-        self.original.flush()
+        if self._closed or not self.original:
+            return
+        try:
+            self.original.flush()
+        except (ValueError, OSError):
+            self._closed = True
 
     def fileno(self):
-        return self.original.fileno()
+        try:
+            return self.original.fileno()
+        except:
+            return -1
 
 # Install filter unless verbose mode requested
 if os.environ.get('AFFILABS_VERBOSE_QT', '0') in ('0', 'false', 'False'):
@@ -124,6 +148,7 @@ from utils.logger import logger
 from utils.session_quality_monitor import SessionQualityMonitor
 from utils.spr_signal_processing import calculate_transmission
 from utils.performance_profiler import get_profiler, measure
+from transmission_spectrum_dialog import TransmissionSpectrumDialog
 from settings import SW_VERSION, PROFILING_ENABLED, PROFILING_REPORT_INTERVAL
 from config import (
     LEAK_DETECTION_WINDOW, LEAK_THRESHOLD_RATIO, WAVELENGTH_TO_RU_CONVERSION,
@@ -226,6 +251,9 @@ class Application(QApplication):
         self._calibration_completed = False  # Track if calibration has completed to prevent re-triggering
         self._initial_connection_done = False  # Track if initial hardware connection completed
 
+        # Transmission spectrum dialog
+        self._transmission_dialog = None
+
         # Initialize data buffer manager
         self.buffer_mgr = DataBufferManager()
 
@@ -309,6 +337,9 @@ class Application(QApplication):
             self._update_cycle_of_interest_graph
         )
 
+        # Connect polarizer toggle button to servo control
+        self.main_window.polarizer_toggle_btn.clicked.connect(self._on_polarizer_toggle_clicked)
+
         # Connect mouse events for channel selection and flagging
         self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
             self._on_graph_clicked
@@ -359,7 +390,10 @@ class Application(QApplication):
         self.event_bus.hardware_error.connect(self._on_hardware_error, Qt.QueuedConnection)
 
         # Data acquisition events
-        self.event_bus.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
+        # TEMPORARY DEBUG: Bypass event bus for spectrum_acquired to test if that fixes crash
+        logger.warning("🔧 DEBUG: Bypassing event bus for spectrum_acquired signal")
+        self.data_mgr.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
+        # self.event_bus.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)  # DISABLED FOR TESTING
         self.event_bus.acquisition_started.connect(self._on_acquisition_started, Qt.QueuedConnection)
         self.event_bus.acquisition_stopped.connect(self._on_acquisition_stopped, Qt.QueuedConnection)
         self.event_bus.acquisition_error.connect(self._on_acquisition_error, Qt.QueuedConnection)
@@ -390,10 +424,42 @@ class Application(QApplication):
 
         # === DEBUG SHORTCUTS ===
         from PySide6.QtGui import QShortcut, QKeySequence
-        # Ctrl+Shift+T: Test acquisition worker threading (skip calibration)
-        debug_thread_shortcut = QShortcut(QKeySequence("Ctrl+Shift+T"), self.main_window)
-        debug_thread_shortcut.activated.connect(self._debug_test_acquisition_thread)
-        logger.info("🧪 Debug: Ctrl+Shift+T to test acquisition thread (skip cal)")
+
+        logger.info("=" * 80)
+        logger.info("🔧 REGISTERING DEBUG SHORTCUTS")
+        logger.info("=" * 80)
+
+        # Ctrl+Shift+C: Bypass calibration (mark system as calibrated without hardware)
+        bypass_calibration_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self.main_window)
+        bypass_calibration_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        bypass_calibration_shortcut.activated.connect(self._debug_bypass_calibration)
+        logger.info(f"✅ Ctrl+Shift+C registered: {bypass_calibration_shortcut}")
+        logger.info(f"   Context: {bypass_calibration_shortcut.context()}")
+        logger.info(f"   Key: {bypass_calibration_shortcut.key().toString()}")
+
+        # Ctrl+Shift+S: Start simulation mode (inject fake spectra)
+        simulation_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self.main_window)
+        simulation_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        simulation_shortcut.activated.connect(self._debug_start_simulation)
+        logger.info(f"✅ Ctrl+Shift+S registered: {simulation_shortcut}")
+        logger.info(f"   Context: {simulation_shortcut.context()}")
+        logger.info(f"   Key: {simulation_shortcut.key().toString()}")
+
+        # Ctrl+Shift+1: Single data point test (minimal test)
+        single_point_shortcut = QShortcut(QKeySequence("Ctrl+Shift+1"), self.main_window)
+        single_point_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        single_point_shortcut.activated.connect(self._debug_single_data_point)
+        logger.info(f"✅ Ctrl+Shift+1 registered: {single_point_shortcut}")
+        logger.info(f"   Context: {single_point_shortcut.context()}")
+        logger.info(f"   Key: {single_point_shortcut.key().toString()}")
+
+        logger.info("=" * 80)
+        logger.info("🔧 DEBUG: Ctrl+Shift+S to start spectrum simulation")
+
+        # Ctrl+Shift+T: Test acquisition worker threading (skip calibration) - DISABLED
+        # debug_thread_shortcut = QShortcut(QKeySequence("Ctrl+Shift+T"), self.main_window)
+        # debug_thread_shortcut.activated.connect(self._debug_test_acquisition_thread)
+        # logger.info("Debug: Ctrl+Shift+T to test acquisition thread (skip cal)")
 
         self.event_bus.acquisition_pause_requested.connect(self._on_acquisition_pause_requested)
         self.event_bus.export_requested.connect(self._on_export_requested)
@@ -507,6 +573,276 @@ class Application(QApplication):
         except Exception as e:
             logger.error(f'🧪 Debug: calibration simulation failed: {e}')
 
+    def _debug_bypass_calibration(self):
+        """Debug: Mark system as calibrated without running hardware calibration (Ctrl+Shift+C).
+
+        This is a lightweight bypass that:
+        1. Marks the data manager as calibrated
+        2. Injects minimal fake calibration data
+        3. Enables the Start button and UI controls
+
+        NO hardware interaction - pure UI state change for debugging.
+        """
+        try:
+            logger.info("=" * 80)
+            logger.info("🔧 DEBUG BYPASS: Marking system as calibrated (NO HARDWARE)")
+            logger.info("=" * 80)
+
+            # Inject minimal fake calibration data into data manager
+            import numpy as np
+            self.data_mgr.calibrated = True
+            self.data_mgr.integration_time = 40
+            self.data_mgr.num_scans = 5
+            self.data_mgr.leds_calibrated = {'a': 255, 'b': 150, 'c': 150, 'd': 255}
+            self.data_mgr.wave_data = np.linspace(400, 900, 2048)
+            self.data_mgr.ref_sig = {
+                'a': np.ones(2048) * 40000,
+                'b': np.ones(2048) * 40000,
+                'c': np.ones(2048) * 40000,
+                'd': np.ones(2048) * 40000
+            }
+            self.data_mgr.dark_noise = np.zeros(2048)
+            self.data_mgr.fourier_weights = {
+                'a': np.ones(2048 - 1),  # Derivative has n-1 points
+                'b': np.ones(2048 - 1),
+                'c': np.ones(2048 - 1),
+                'd': np.ones(2048 - 1)
+            }
+
+            logger.info("✅ Fake calibration data injected")
+
+            # Save LED intensities to device config so Settings dialog shows correct values
+            if self.main_window.device_config:
+                try:
+                    self.main_window.device_config.set_led_intensities(255, 150, 150, 255)
+                    self.main_window.device_config.set_calibration_settings(40, 5)
+                    self.main_window.device_config.save()
+                    logger.info("💾 Fake calibration saved to device config")
+                except Exception as e:
+                    logger.warning(f"Failed to save fake calibration to device config: {e}")
+
+            # Enable Start button in UI
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'start_cycle_btn'):
+                self.main_window.sidebar.start_cycle_btn.setEnabled(True)
+                self.main_window.sidebar.start_cycle_btn.setToolTip("Start Live Acquisition (Debug Mode)")
+                logger.info("✅ Start button enabled")
+
+            # Enable recording controls
+            self.ui.enable_recording_controls()
+            logger.info("✅ Recording controls enabled")            # Show success message
+            from widgets.message import show_message
+            show_message(
+                "Debug calibration bypass active!\n\n"
+                "• System marked as calibrated\n"
+                "• Start button enabled\n"
+                "• Recording controls enabled\n\n"
+                "Press 'Start' to test UI without hardware.",
+                msg_type="Info",
+                title="Calibration Bypassed (Debug)"
+            )
+
+            logger.info("=" * 80)
+            logger.info("✅ BYPASS COMPLETE - Press Start to test UI")
+            logger.info("=" * 80)
+
+        except Exception as e:
+            logger.exception(f"❌ Failed to bypass calibration: {e}")
+            from widgets.message import show_message
+            show_message(
+                f"Failed to bypass calibration:\n{e}",
+                msg_type="Error",
+                title="Bypass Failed"
+            )
+
+    def _debug_single_data_point(self):
+        """Debug: Emit a single test data point (Ctrl+Shift+1).
+        
+        Minimal test - just ONE data point, no loops, no timers.
+        This isolates whether the crash is:
+        - The data processing itself (crashes immediately)
+        - The rate/accumulation (doesn't crash with one point)
+        """
+        import time
+        
+        logger.info("=" * 80)
+        logger.info("🧪 SINGLE DATA POINT TEST (Ctrl+Shift+1)")
+        logger.info("=" * 80)
+        
+        try:
+            # Check if data_mgr exists
+            if not hasattr(self, 'data_mgr') or self.data_mgr is None:
+                logger.error("❌ No data_mgr found!")
+                from widgets.message import show_message
+                show_message("Error: Data manager not initialized!", msg_type="Error")
+                return
+            
+            logger.info("✅ Data manager found")
+            
+            # Create a single data point
+            data = {
+                'channel': 'a',
+                'wavelength': 650.0,
+                'intensity': 15000.0,
+                'timestamp': time.time(),
+                'is_preview': False,
+                'simulated': True
+            }
+            
+            logger.info(f"📤 Emitting single data point: {data}")
+            
+            # Emit to spectrum_acquired signal
+            self.data_mgr.spectrum_acquired.emit(data)
+            
+            logger.info("✅ Single data point emitted")
+            logger.info("⏳ Waiting 2 seconds to see if crash occurs...")
+            
+            # Use QTimer to check status after delay
+            from PySide6.QtCore import QTimer
+            def check_status():
+                logger.info("=" * 80)
+                logger.info("✅ SUCCESS - No crash after 2 seconds!")
+                logger.info("   Single data point was processed successfully.")
+                logger.info("   This means the crash is likely rate/accumulation related.")
+                logger.info("=" * 80)
+                from widgets.message import show_message
+                show_message(
+                    "Single Data Point Test: SUCCESS!\n\n"
+                    "✅ No crash detected\n"
+                    "✅ Data processing works\n\n"
+                    "The crash is likely caused by:\n"
+                    "- High data rate overwhelming Qt\n"
+                    "- Event queue flooding\n"
+                    "- Accumulated state issues",
+                    msg_type="Info"
+                )
+            
+            QTimer.singleShot(2000, check_status)
+            
+        except Exception as e:
+            logger.exception(f"❌ Single data point test failed: {e}")
+            from widgets.message import show_message
+            show_message(f"Single data point test FAILED:\n\n{e}", msg_type="Error")
+
+    def _debug_start_simulation(self):
+        """Debug: Start injecting simulated spectra (Ctrl+Shift+S).
+
+        Injects fake SPR spectra at 10 Hz continuously to test the complete
+        data pipeline: acquisition → processing → recording → UI.
+        """
+        from PySide6.QtCore import QTimer
+        import numpy as np
+        import time
+
+        logger.info("=" * 80)
+        logger.info("🎬 SIMULATION MODE ACTIVATED (Ctrl+Shift+S)")
+        logger.info("=" * 80)
+
+        try:
+            # Check if data_mgr exists
+            if not hasattr(self, 'data_mgr') or self.data_mgr is None:
+                logger.error("❌ No data_mgr found!")
+                from widgets.message import show_message
+                show_message(
+                    "Error: Data manager not initialized!\n\n"
+                    "Make sure the app has fully loaded.",
+                    msg_type="Error"
+                )
+                return
+
+            logger.info(f"✅ Data manager found: {self.data_mgr}")
+
+            # Check if acquisition is running
+            if hasattr(self.data_mgr, '_acquiring') and not self.data_mgr._acquiring:
+                logger.warning("⚠️ Acquisition not running - simulation works best with acquisition active")
+                logger.warning("   Press Ctrl+Shift+C then click Start first")
+
+            # Create timer to inject spectra at SLOW rate (2 Hz to prevent Qt flooding)
+            timer = QTimer()
+            timer.setInterval(500)  # 500ms = 2 Hz (much slower, safer)
+
+            spectrum_count = [0]  # Use list for mutable counter
+            start_time = [time.time()]  # Simulation start time
+
+            def send_one():
+                try:
+                    logger.info(f"[SIM-TRACK-1] send_one() ENTRY - cycle {spectrum_count[0]}")
+                    
+                    # Generate fake SPR wavelength data for each channel
+                    channels = ['a', 'b', 'c', 'd']
+                    peak_positions = {'a': 650, 'b': 660, 'c': 655, 'd': 670}
+                    intensities = {'a': 15000, 'b': 12000, 'c': 10000, 'd': 14000}
+
+                    elapsed = time.time() - start_time[0]
+                    logger.info(f"[SIM-TRACK-2] Elapsed time: {elapsed:.3f}s")
+
+                    for ch in channels:
+                        logger.info(f"[SIM-TRACK-3] Generating data for channel {ch}")
+                        
+                        # Generate realistic SPR peak wavelength with drift
+                        base_wavelength = peak_positions[ch]
+                        drift = 0.5 * np.sin(elapsed / 10)  # Slow oscillation
+                        noise = np.random.normal(0, 0.1)
+                        wavelength = base_wavelength + drift + noise
+
+                        # Generate intensity
+                        intensity = intensities[ch] + np.random.normal(0, 500)
+
+                        # Create data point matching real acquisition format
+                        data = {
+                            'channel': ch,
+                            'wavelength': float(wavelength),
+                            'intensity': float(intensity),
+                            'timestamp': time.time(),
+                            'elapsed_time': elapsed,
+                            'is_preview': False,
+                            'simulated': True
+                        }
+
+                        logger.info(f"[SIM-TRACK-4] Emitting data for channel {ch}")
+                        # Emit to spectrum_acquired signal
+                        if self.data_mgr and hasattr(self.data_mgr, 'spectrum_acquired'):
+                            self.data_mgr.spectrum_acquired.emit(data)
+                        logger.info(f"[SIM-TRACK-5] Channel {ch} emitted successfully")
+
+                    spectrum_count[0] += 1
+                    logger.info(f"[SIM-TRACK-6] Cycle {spectrum_count[0]} COMPLETE")
+
+                    # Log every 50 cycles (5 seconds)
+                    if spectrum_count[0] % 50 == 0:
+                        logger.info(f"📊 Injected {spectrum_count[0]} simulated data cycles ({spectrum_count[0] * 4} points)")
+
+                except Exception as e:
+                    logger.exception(f"[SIM-TRACK-FATAL] Simulation crashed: {e}")
+                    timer.stop()
+
+            timer.timeout.connect(send_one)
+            timer.start()
+
+            # Store timer reference to prevent garbage collection
+            self._sim_timer = timer
+
+            logger.info("✅ Simulation timer started at 10 Hz")
+            logger.info("   Generating 4 channels (A, B, C, D) per cycle")
+
+            from widgets.message import show_message
+            show_message(
+                "Simulation started!\n\n"
+                "📡 Sending fake SPR data at 10 Hz\n"
+                "   (4 channels per cycle)\n\n"
+                "Check logs to see injection status.\n"
+                "Watch the graph for updates!\n\n"
+                "Close the app to stop.",
+                msg_type="Info"
+            )
+
+        except Exception as e:
+            logger.exception(f"❌ Failed to start simulation: {e}")
+            from widgets.message import show_message
+            show_message(
+                f"Simulation failed:\n\n{e}",
+                msg_type="Error"
+            )
+
     def _debug_test_acquisition_thread(self):
         """Debug: Test acquisition worker thread without calibration (Ctrl+Shift+T).
 
@@ -572,13 +908,152 @@ class Application(QApplication):
             logger.error(traceback.format_exc())
 
     def _on_start_button_clicked(self):
-        """User clicked Start button - begin cycle/experiment."""
-        logger.info("🚀 User requested start cycle")
-        # Delegate to main window's start_cycle method which handles queue logic
-        if hasattr(self.main_window, 'start_cycle'):
-            self.main_window.start_cycle()
-        else:
-            logger.warning("start_cycle method not found in main window")
+        """User clicked Start button - begin live data acquisition."""
+        logger.info("🚀 User requested start - PHASE 4: Full acquisition + recording")
+
+        # ========================================================
+        # PHASE 4: FULL DATA ACQUISITION + RECORDING
+        # ========================================================
+        # Start acquisition thread AND recording to test complete pipeline
+        # ========================================================
+
+        # Check if already acquiring
+        if self.data_mgr and self.data_mgr._acquiring:
+            logger.warning("Acquisition already running")
+            from widgets.message import show_message
+            show_message("Acquisition is already running.", msg_type="Warning")
+            return
+
+        # PHASE 1: Validate hardware connection and calibration
+        logger.info("🔍 PHASE 1: Checking hardware status...")
+        try:
+            if self.hardware_mgr.ctrl:
+                logger.info("   ✅ Controller connected")
+            else:
+                logger.warning("   ⚠️ No controller found")
+
+            if self.hardware_mgr.usb:
+                logger.info("   ✅ Spectrometer connected")
+            else:
+                logger.warning("   ⚠️ No spectrometer found")
+
+            # Check if calibrated and get settings
+            if self.data_mgr and self.data_mgr.calibrated:
+                logger.info("   ✅ System calibrated")
+                integration_time = self.data_mgr.integration_time
+                led_intensities = self.data_mgr.leds_calibrated
+            else:
+                logger.info("   ℹ️ System not calibrated (using bypass mode defaults)")
+                integration_time = 40
+                led_intensities = {'a': 255, 'b': 150, 'c': 150, 'd': 255}
+
+            logger.info("✅ Hardware validation complete")
+        except Exception as e:
+            logger.exception(f"❌ Hardware validation failed: {e}")
+            from widgets.message import show_message
+            show_message(f"Hardware check failed:\n{e}", msg_type="Error")
+            return
+
+        # PHASE 2: Configure hardware
+        logger.info("🔧 PHASE 2: Configuring hardware...")
+
+        # 2A: Polarizer
+        try:
+            ctrl = self.hardware_mgr.ctrl
+            if ctrl and hasattr(ctrl, 'set_mode'):
+                logger.info("   Setting polarizer to P-mode...")
+                ctrl.set_mode('p')
+                import time
+                time.sleep(0.4)
+                logger.info("   ✅ Polarizer configured")
+            else:
+                logger.warning("   ⚠️ Controller not available")
+        except Exception as e:
+            logger.exception(f"❌ Polarizer configuration failed: {e}")
+
+        # 2B: Integration time
+        try:
+            usb = self.hardware_mgr.usb
+            if usb and hasattr(usb, 'set_integration'):
+                logger.info(f"   Setting integration time: {integration_time}ms...")
+                usb.set_integration(integration_time)
+                logger.info("   ✅ Integration time configured")
+            else:
+                logger.warning("   ⚠️ Spectrometer not available")
+        except Exception as e:
+            logger.exception(f"❌ Integration time configuration failed: {e}")
+
+        # 2C: LED intensities
+        try:
+            ctrl = self.hardware_mgr.ctrl
+            if ctrl and hasattr(ctrl, 'set_intensity'):
+                logger.info(f"   Setting LED intensities: {led_intensities}...")
+                for channel, intensity in led_intensities.items():
+                    ctrl.set_intensity(channel, intensity)
+                logger.info("   ✅ LED intensities configured")
+            else:
+                logger.warning("   ⚠️ Controller not available")
+        except Exception as e:
+            logger.exception(f"❌ LED configuration failed: {e}")
+
+        logger.info("✅ Hardware configuration complete")
+
+        # PHASE 3: Start data acquisition thread
+        logger.info("🚀 PHASE 3: Starting data acquisition thread...")
+        try:
+            # This is the critical step - starting the actual acquisition
+            self.data_mgr.start_acquisition()
+            logger.info("✅ Data acquisition thread started successfully")
+        except Exception as e:
+            logger.exception(f"❌ Failed to start acquisition: {e}")
+            from widgets.message import show_message
+            show_message(f"Failed to start acquisition:\n{e}", msg_type="Error")
+            return
+
+        # PHASE 4: Start recording
+        logger.info("🚀 PHASE 4: Starting recording...")
+        try:
+            self.recording_mgr.start_recording()
+            logger.info("✅ Recording started successfully")
+        except Exception as e:
+            logger.exception(f"❌ Failed to start recording: {e}")
+            from widgets.message import show_message
+            show_message(f"Failed to start recording:\n{e}", msg_type="Error")
+            return
+
+        # Step 4: Open live data dialog
+        logger.info("📊 Opening live data dialog...")
+        try:
+            from live_data_dialog import LiveDataDialog
+            if not hasattr(self, '_live_data_dialog') or self._live_data_dialog is None:
+                self._live_data_dialog = LiveDataDialog(parent=self.main_window)
+            self._live_data_dialog.show()
+            self._live_data_dialog.raise_()
+            self._live_data_dialog.activateWindow()
+            logger.info("✅ Live data dialog opened")
+        except Exception as e:
+            logger.exception(f"Failed to open live data dialog: {e}")
+
+        # Step 5: Update UI state
+        logger.info("🎭 Updating UI state...")
+        try:
+            self.ui.enable_recording_controls()
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'start_cycle_btn'):
+                self.main_window.sidebar.start_cycle_btn.setEnabled(True)
+            self._on_acquisition_started()
+            logger.info("✅ UI state updated")
+        except Exception as e:
+            logger.exception(f"Failed to update UI: {e}")
+
+        logger.info("=" * 80)
+        logger.info("✅ PHASE 4 COMPLETE - Acquisition + Recording running!")
+        logger.info("=" * 80)
+        from widgets.message import show_message
+        show_message(
+            "Phase 4 Complete!\n\n✅ Hardware configured\n✅ Acquisition thread started\n✅ Recording started\n✅ Live data flowing\n\nIf you see this without crash - SUCCESS!",
+            msg_type="Info",
+            title="Phase 4: Full Acquisition + Recording"
+        )
 
     def _on_scan_requested(self):
         """User clicked Scan button in UI."""
@@ -871,6 +1346,15 @@ class Application(QApplication):
             logger.info("Resetting power button state after connection error")
             self.ui.set_power_state("disconnected")
 
+    def show_transmission_dialog(self):
+        """Show the transmission spectrum dialog."""
+        if self._transmission_dialog is None:
+            self._transmission_dialog = TransmissionSpectrumDialog(self.main_window)
+
+        self._transmission_dialog.show()
+        self._transmission_dialog.raise_()
+        self._transmission_dialog.activateWindow()
+
     # === Data Acquisition Callbacks ===
 
     def _start_processing_thread(self):
@@ -946,21 +1430,32 @@ class Application(QApplication):
         This runs in the acquisition thread/callback and must be FAST.
         Only does timestamp calculation and queuing - all processing in worker thread.
         """
-        # Initialize experiment start time on first data point
-        if self.experiment_start_time is None:
-            self.experiment_start_time = data['timestamp']
-
-        # Calculate elapsed time (minimal work in acquisition thread)
-        data['elapsed_time'] = data['timestamp'] - self.experiment_start_time
-
-        # Queue for processing thread (non-blocking)
         try:
-            self._spectrum_queue.put_nowait(data)
-        except:
-            # Queue full - log and drop (prevents blocking acquisition)
-            self._queue_stats['dropped'] += 1
-            if self._queue_stats['dropped'] % 10 == 1:  # Log every 10th drop
-                logger.warning(f"⚠️ Spectrum queue full - {self._queue_stats['dropped']} frames dropped")
+            logger.info(f"[CRASH-TRACK-1] _on_spectrum_acquired ENTRY - channel={data.get('channel', '?')}")
+
+            # Initialize experiment start time on first data point
+            if self.experiment_start_time is None:
+                self.experiment_start_time = data['timestamp']
+                logger.info(f"[CRASH-TRACK-1A] Experiment start time set: {self.experiment_start_time}")
+
+            # Calculate elapsed time (minimal work in acquisition thread)
+            data['elapsed_time'] = data['timestamp'] - self.experiment_start_time
+            logger.info(f"[CRASH-TRACK-1B] Elapsed time calculated: {data['elapsed_time']:.3f}s")
+
+            # Queue for processing thread (non-blocking)
+            try:
+                self._spectrum_queue.put_nowait(data)
+                logger.info(f"[CRASH-TRACK-1C] Data queued successfully")
+            except:
+                # Queue full - log and drop (prevents blocking acquisition)
+                self._queue_stats['dropped'] += 1
+                if self._queue_stats['dropped'] % 10 == 1:  # Log every 10th drop
+                    logger.warning(f"⚠️ Spectrum queue full - {self._queue_stats['dropped']} frames dropped")
+
+            logger.info(f"[CRASH-TRACK-1D] _on_spectrum_acquired EXIT - SUCCESS")
+
+        except Exception as e:
+            logger.exception(f"[CRASH-TRACK-1-FATAL] _on_spectrum_acquired crashed: {e}")
 
     def _process_spectrum_data(self, data: dict):
         """Process spectrum data in dedicated worker thread (Phase 3 optimization).
@@ -969,6 +1464,7 @@ class Application(QApplication):
         This includes: intensity monitoring, transmission updates, buffer updates, etc.
         """
         try:
+            logger.info(f"[CRASH-TRACK-2] _process_spectrum_data ENTRY")
             import numpy as np
 
             channel = data['channel']  # 'a', 'b', 'c', 'd'
@@ -978,53 +1474,127 @@ class Application(QApplication):
             elapsed_time = data['elapsed_time']
             is_preview = data.get('is_preview', False)  # Interpolated preview vs real data
 
+            logger.info(f"[CRASH-TRACK-2A] Data parsed - ch={channel}, wave={wavelength:.1f}, int={intensity:.0f}")
+            print(f"[PROCESS] Channel {channel}: wave={wavelength:.1f}nm, int={intensity:.0f}, time={elapsed_time:.2f}s")
+
             # SIMPLIFIED: Just append to buffers and queue graph update
             # Skip intensity monitoring, transmission queueing, etc. for now
-            
-            # Append to timeline data buffers (RAW data - unfiltered)
-            self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength)
 
-            # Queue graph update instead of immediate update (throttled by timer)
-            # This prevents UI freezing from excessive redraws (40+ per second)
-            if self.main_window.live_data_enabled:
-                self._pending_graph_updates[channel] = {
-                    'elapsed_time': elapsed_time,
-                    'channel': channel
-                }
+            # Append to timeline data buffers (RAW data - unfiltered)
+            try:
+                logger.info(f"[CRASH-TRACK-2B] Calling buffer_mgr.append_timeline_point")
+                self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength)
+                logger.info(f"[CRASH-TRACK-2C] Buffer append SUCCESS")
+                print(f"[PROCESS] Channel {channel}: Buffer updated OK")
+                
+                # CRASH DEBUG: Check thread context
+                import threading
+                logger.info(f"[CRASH-DEBUG] Current thread: {threading.current_thread().name}")
+                logger.info(f"[CRASH-DEBUG] Is main thread: {threading.current_thread() is threading.main_thread()}")
+                print(f"[CRASH-DEBUG] Thread: {threading.current_thread().name}")
+                
+            except Exception as e:
+                logger.exception(f"[CRASH-TRACK-2C-ERROR] Buffer append FAILED: {e}")
+                print(f"[PROCESS ERROR] Channel {channel}: Buffer append failed: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # Queue transmission spectrum update (for dialog display) ONLY if we have full spectrum
+            # This prevents crashes from passing per-wavelength scalar data to dialog expecting arrays
+            if data.get('full_spectrum') is not None and data.get('transmission_spectrum') is not None:
+                try:
+                    logger.info(f"[CRASH-TRACK-2D] Calling _queue_transmission_update")
+                    print(f"[DEBUG] About to call _queue_transmission_update(channel={channel})")
+                    print(f"[DEBUG] self={type(self).__name__}, has_method={hasattr(self, '_queue_transmission_update')}")
+                    self._queue_transmission_update(channel, data)
+                    logger.info(f"[CRASH-TRACK-2E] Transmission queue SUCCESS")
+                    print(f"[PROCESS] Channel {channel}: Transmission queued")
+                except Exception as e:
+                    logger.exception(f"[CRASH-TRACK-2E-ERROR] Transmission queue FAILED: {e}")
+                    print(f"[PROCESS ERROR] Channel {channel}: Transmission queue failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            # DISABLED: Auto-follow cursor update (THREAD SAFETY FIX)
+            # This code was causing Qt crashes because it accesses widgets from background thread.
+            # Qt widgets can ONLY be accessed from the main thread.
+            # TODO: Implement cursor updates via signal to main thread if needed
+            logger.info(f"[CRASH-TRACK-2F] Cursor update SKIPPED (thread safety)")
+            
+            # # Auto-follow latest data with stop cursor (when Live Data is enabled)
+            # # Only move cursor if not currently being dragged by user
+            # try:
+            #     logger.info(f"[CRASH-TRACK-2F] Checking cursor update")
+            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] About to check live_data_enabled")
+            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] self.main_window type: {type(self.main_window)}")
+            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] Accessing live_data_enabled now...")
+            #     live_enabled = self.main_window.live_data_enabled
+            #     logger.info(f"[CRASH-TRACK-2F-DEBUG] live_data_enabled = {live_enabled}")
+            #     if live_enabled:
+            #         if (hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
+            #             self.main_window.full_timeline_graph.stop_cursor is not None):
+            #             stop_cursor = self.main_window.full_timeline_graph.stop_cursor
+            #
+            #             # Check if cursor is being dragged (don't auto-move during drag)
+            #             is_moving = getattr(stop_cursor, 'moving', False)
+            #
+            #             if not is_moving:
+            #                 # Move stop cursor to follow latest time point
+            #                 stop_cursor.setValue(elapsed_time)
+            #                 # Update label
+            #                 if hasattr(stop_cursor, 'label') and stop_cursor.label:
+            #                     stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
+            #     logger.info(f"[CRASH-TRACK-2G] Cursor update complete")
+            # except (AttributeError, RuntimeError) as e:
+            #     logger.warning(f"[CRASH-TRACK-2G-WARN] Cursor update failed (non-fatal): {e}")
+            #     print(f"[PROCESS ERROR] Channel {channel}: Cursor update failed: {e}")
+            #     pass  # Cursor not ready yet, skip this update
 
         except Exception as e:
-            print(f"[PROCESS_DATA] ERROR: {e}")
+            # TOP-LEVEL CATCH: Prevent any exception from killing the processing thread
+            logger.exception(f"[CRASH-TRACK-2-FATAL] _process_spectrum_data CRASHED: {e}")
+            print(f"[PROCESS FATAL] Channel {data.get('channel', '?')}: Unhandled exception: {e}")
             import traceback
             traceback.print_exc()
 
-            # Auto-follow latest data with stop cursor (like old software)
-            # Only move cursor if not currently being dragged by user
-            if (hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
-                self.main_window.full_timeline_graph.stop_cursor is not None):
-                stop_cursor = self.main_window.full_timeline_graph.stop_cursor
-
-                # Check moving attribute exists (defensive against initialization timing)
-                is_moving = getattr(stop_cursor, 'moving', False)
-
-                if not is_moving:
-                    # Move stop cursor to follow latest time point
-                    stop_cursor.setValue(elapsed_time)
-                    # Update label if it exists
-                    if hasattr(stop_cursor, 'label') and stop_cursor.label:
-                        stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
+        # Queue graph update instead of immediate update (throttled by timer)
+        # This prevents UI freezing from excessive redraws (40+ per second)
+        # THREAD SAFETY: Always queue updates - main thread will check live_data_enabled
+        try:
+            logger.info(f"[CRASH-TRACK-3] Queueing graph update")
+            
+            # Queue the update (main thread will check if live data is enabled)
+            self._pending_graph_updates[channel] = {
+                'elapsed_time': elapsed_time,
+                'channel': channel
+            }
+            logger.info(f"[CRASH-TRACK-3A] Graph update queued")
+        except Exception as e:
+            logger.exception(f"[CRASH-TRACK-3-ERROR] Graph queue FAILED: {e}")
 
         # Record data point if recording is active
-        if self.recording_mgr.is_recording:
-            # Build data point with all channels (use latest value for each)
-            data_point = {}
-            for ch in self._idx_to_channel:
-                latest_value = self.buffer_mgr.get_latest_value(ch)
-                data_point[f'channel_{ch}'] = latest_value if latest_value is not None else ''
+        try:
+            logger.info(f"[CRASH-TRACK-4] Checking recording - is_recording={self.recording_mgr.is_recording}")
+            if self.recording_mgr.is_recording:
+                logger.info(f"[CRASH-TRACK-4A] Building data point")
+                # Build data point with all channels (use latest value for each)
+                data_point = {}
+                for ch in self._idx_to_channel:
+                    latest_value = self.buffer_mgr.get_latest_value(ch)
+                    data_point[f'channel_{ch}'] = latest_value if latest_value is not None else ''
 
-            self.recording_mgr.record_data_point(data_point)
+                logger.info(f"[CRASH-TRACK-4B] Recording data point")
+                self.recording_mgr.record_data_point(data_point)
+                logger.info(f"[CRASH-TRACK-4C] Recording SUCCESS")
+        except Exception as e:
+            logger.exception(f"[CRASH-TRACK-4-ERROR] Recording FAILED: {e}")
 
-        # Update cycle of interest graph (bottom graph)
-        self._update_cycle_of_interest_graph()
+        logger.info(f"[CRASH-TRACK-5] _process_spectrum_data EXIT - COMPLETE")
+
+        # Update cycle of interest graph (bottom graph) - REMOVED
+        # This was causing crashes by running heavy processing 40+ times per second
+        # The cycle graph is now updated by the UI refresh timer at a reasonable rate
+        # self._update_cycle_of_interest_graph()
 
     def _handle_intensity_monitoring(self, channel: str, data: dict, timestamp: float):
         """Handle intensity monitoring and leak detection (extracted for clarity).
@@ -1090,6 +1660,12 @@ class Application(QApplication):
                 'raw_spectrum': raw_spectrum,
                 'wavelengths': self.data_mgr.wave_data
             }
+
+            # Update transmission dialog if open
+            if self._transmission_dialog is not None and self._transmission_dialog.isVisible():
+                wavelengths = self.data_mgr.wave_data
+                if wavelengths is not None:
+                    self._transmission_dialog.update_spectrum(channel, wavelengths, transmission, raw_spectrum)
 
     def _should_update_transmission(self):
         """Check if transmission plot updates are needed (lazy evaluation).
@@ -1193,6 +1769,16 @@ class Application(QApplication):
             with measure('transmission_batch_process'):
                 self._process_transmission_updates()
 
+            # === UPDATE CYCLE OF INTEREST GRAPH ===
+            # Update at throttled rate (10 FPS) instead of on every data point (40+ FPS)
+            # This prevents crashes from heavy processing (filtering, baseline calc, etc.)
+            try:
+                with measure('cycle_of_interest_update'):
+                    self._update_cycle_of_interest_graph()
+            except (AttributeError, RuntimeError, KeyError, IndexError, TypeError, ValueError) as e:
+                # Safely handle any initialization issues (cursors not ready, no data yet, etc.)
+                pass
+
     def _process_transmission_updates(self):
         """Process queued transmission spectrum updates in batch (Phase 2 optimization).
 
@@ -1255,77 +1841,111 @@ class Application(QApplication):
 
         Also triggers autosave when cycle region changes significantly.
         """
-        with measure('cycle_graph_update.total'):
+        # Safety checks - don't crash if cursors not initialized or no data yet
+        try:
+            if not hasattr(self.main_window.full_timeline_graph, 'start_cursor'):
+                return
+            if not hasattr(self.main_window.full_timeline_graph, 'stop_cursor'):
+                return
+            if self.main_window.full_timeline_graph.start_cursor is None:
+                return
+            if self.main_window.full_timeline_graph.stop_cursor is None:
+                return
+
+            # Additional safety - check if buffer manager is ready
+            if not hasattr(self, 'buffer_mgr') or self.buffer_mgr is None:
+                return
+            if not hasattr(self, '_channel_pairs') or not self._channel_pairs:
+                return
+
+            # Check if we have ANY data at all - if buffers are empty, skip update
+            has_data = False
+            for ch in ['a', 'b', 'c', 'd']:
+                if len(self.buffer_mgr.timeline_data[ch].time) > 0:
+                    has_data = True
+                    break
+            if not has_data:
+                return  # No data yet, nothing to display
+
+        except (AttributeError, RuntimeError):
+            return
+
+        try:
             import numpy as np
 
             # Get cursor positions from full timeline graph
             start_time = self.main_window.full_timeline_graph.start_cursor.value()
             stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
 
-        # Check if this is a new cycle region (for autosave)
-        cycle_changed = False
-        if not hasattr(self, '_last_cycle_bounds') or self._last_cycle_bounds is None:
-            self._last_cycle_bounds = (start_time, stop_time)
-            cycle_changed = True
-        else:
-            last_start, last_stop = self._last_cycle_bounds
-            # Consider it a new cycle if boundaries moved significantly (>5% of duration)
-            duration = stop_time - start_time
-            if (abs(start_time - last_start) > duration * 0.05 or
-                abs(stop_time - last_stop) > duration * 0.05):
-                cycle_changed = True
+            # Check if this is a new cycle region (for autosave)
+            cycle_changed = False
+            if not hasattr(self, '_last_cycle_bounds') or self._last_cycle_bounds is None:
                 self._last_cycle_bounds = (start_time, stop_time)
+                cycle_changed = True
+            else:
+                last_start, last_stop = self._last_cycle_bounds
+                # Consider it a new cycle if boundaries moved significantly (>5% of duration)
+                duration = stop_time - start_time
+                if (abs(start_time - last_start) > duration * 0.05 or
+                    abs(stop_time - last_stop) > duration * 0.05):
+                    cycle_changed = True
+                    self._last_cycle_bounds = (start_time, stop_time)
 
-        # Extract data within cursor range for each channel
-        for ch_letter, ch_idx in self._channel_pairs:
-            cycle_time, cycle_wavelength = self.buffer_mgr.extract_cycle_region(
-                ch_letter, start_time, stop_time
-            )
-
-            if len(cycle_time) == 0:
-                continue
-
-            # Apply filtering to CYCLE OF INTEREST (subset) - batch filtering for accuracy
-            # This is where we want high-quality filtering since it's used for analysis
-            if self._filter_enabled and len(cycle_wavelength) > 2:
-                cycle_wavelength = self._apply_smoothing(
-                    cycle_wavelength,
-                    self._filter_strength
+            # Extract data within cursor range for each channel
+            for ch_letter, ch_idx in self._channel_pairs:
+                cycle_time, cycle_wavelength = self.buffer_mgr.extract_cycle_region(
+                    ch_letter, start_time, stop_time
                 )
 
-            # Calculate Δ SPR (baseline is first point in cycle or calibrated baseline)
-            baseline = self.buffer_mgr.baseline_wavelengths[ch_letter]
-            if baseline is None:
-                # Use first point in cycle as baseline
-                baseline = cycle_wavelength[0] if len(cycle_wavelength) > 0 else 0
+                if len(cycle_time) == 0:
+                    continue
 
-            # Convert wavelength shift to RU (Response Units)
-            delta_spr = (cycle_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
+                # Apply filtering to CYCLE OF INTEREST (subset) - batch filtering for accuracy
+                # This is where we want high-quality filtering since it's used for analysis
+                if self._filter_enabled and len(cycle_wavelength) > 2:
+                    cycle_wavelength = self._apply_smoothing(
+                        cycle_wavelength,
+                        self._filter_strength
+                    )
 
-            # Store in buffer manager
-            self.buffer_mgr.update_cycle_data(ch_letter, cycle_time, cycle_wavelength, delta_spr)
+                # Calculate Δ SPR (baseline is first point in cycle or calibrated baseline)
+                baseline = self.buffer_mgr.baseline_wavelengths[ch_letter]
+                if baseline is None:
+                    # Use first point in cycle as baseline
+                    baseline = cycle_wavelength[0] if len(cycle_wavelength) > 0 else 0
 
-        # Apply reference subtraction if enabled
-        self._apply_reference_subtraction()
+                # Convert wavelength shift to RU (Response Units)
+                delta_spr = (cycle_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
 
-        # Update graph curves with potentially subtracted data
-        for ch_letter, ch_idx in self._channel_pairs:
-            cycle_time = self.buffer_mgr.cycle_data[ch_letter].time
-            delta_spr = self.buffer_mgr.cycle_data[ch_letter].spr
+                # Store in buffer manager
+                self.buffer_mgr.update_cycle_data(ch_letter, cycle_time, cycle_wavelength, delta_spr)
 
-            if len(cycle_time) == 0:
-                continue
+            # Apply reference subtraction if enabled
+            self._apply_reference_subtraction()
 
-            # Update cycle of interest graph
-            curve = self.main_window.cycle_of_interest_graph.curves[ch_idx]
-            curve.setData(cycle_time, delta_spr)
+            # Update graph curves with potentially subtracted data
+            for ch_letter, ch_idx in self._channel_pairs:
+                cycle_time = self.buffer_mgr.cycle_data[ch_letter].time
+                delta_spr = self.buffer_mgr.cycle_data[ch_letter].spr
 
-        # Autosave cycle data when boundaries change significantly
-        if cycle_changed and len(self.buffer_mgr.cycle_data['a'].time) > 10:
-            self._autosave_cycle_data(start_time, stop_time)
+                if len(cycle_time) == 0:
+                    continue
 
-        # Update Δ SPR display with current values
-        self._update_delta_display()
+                # Update cycle of interest graph
+                curve = self.main_window.cycle_of_interest_graph.curves[ch_idx]
+                curve.setData(cycle_time, delta_spr)
+
+            # Autosave cycle data when boundaries change significantly
+            if cycle_changed and len(self.buffer_mgr.cycle_data['a'].time) > 10:
+                self._autosave_cycle_data(start_time, stop_time)
+
+            # Update Δ SPR display with current values
+            self._update_delta_display()
+
+        except (AttributeError, RuntimeError, KeyError, IndexError, ValueError, TypeError) as e:
+            # Silently handle any errors during cycle update (data not ready, buffers empty, etc.)
+            # This prevents crashes while data is being populated
+            pass
 
     def _update_delta_display(self):
         """Update the Δ SPR display label with values at Stop cursor position."""
@@ -1391,6 +2011,50 @@ class Application(QApplication):
                 "Hardware Error"
             )
 
+    def _on_polarizer_toggle_clicked(self):
+        """Handle polarizer toggle button click - switch servo between S and P positions."""
+        try:
+            # Get current position from UI
+            current_position = self.main_window.sidebar.current_polarizer_position
+
+            # Toggle to opposite position
+            new_position = 'P' if current_position == 'S' else 'S'
+
+            # Send command to hardware
+            if self.hardware_mgr.controller is not None:
+                logger.info(f"🔄 Toggling polarizer: {current_position} → {new_position}")
+                success = self.hardware_mgr.controller.set_mode(new_position.lower())
+
+                if success:
+                    # Update UI to reflect new position
+                    self.main_window.sidebar.set_polarizer_position(new_position)
+                    logger.info(f"✅ Polarizer moved to position {new_position}")
+                else:
+                    logger.error(f"❌ Failed to move polarizer to position {new_position}")
+                    from widgets.message import show_message
+                    show_message(
+                        f"Failed to move polarizer to position {new_position}",
+                        "Polarizer Error",
+                        parent=self.main_window
+                    )
+            else:
+                logger.warning("⚠️ Controller not connected - cannot move polarizer")
+                from widgets.message import show_message
+                show_message(
+                    "Controller not connected. Please connect hardware first.",
+                    "Hardware Not Connected",
+                    parent=self.main_window
+                )
+
+        except Exception as e:
+            logger.error(f"❌ Error toggling polarizer: {e}")
+            from widgets.message import show_message
+            show_message(
+                f"Error toggling polarizer: {str(e)}",
+                "Polarizer Error",
+                parent=self.main_window
+            )
+
     # === Recording Callbacks ===
 
     def _on_recording_started(self, filename: str):
@@ -1436,6 +2100,36 @@ class Application(QApplication):
         """Live data acquisition has started - enable record and pause buttons."""
         logger.info("✅ Live acquisition started - enabling record/pause buttons")
         self.ui.enable_recording_controls()
+
+        # Reset experiment start time for new acquisition
+        self.experiment_start_time = None
+        logger.debug("🔄 Reset experiment_start_time for new acquisition")
+
+        # Clear data buffers for fresh start
+        self.buffer_mgr.clear_all()
+        logger.debug("🔄 Cleared all data buffers")
+
+        # Clear any pause/resume markers from previous runs (with thread safety)
+        try:
+            if hasattr(self.main_window, 'pause_markers') and hasattr(self.main_window, 'full_timeline_graph'):
+                # Schedule marker removal in main thread (Qt objects must be accessed from main thread)
+                from PySide6.QtCore import QTimer
+                def clear_markers():
+                    try:
+                        for marker in self.main_window.pause_markers:
+                            if 'line' in marker:
+                                try:
+                                    self.main_window.full_timeline_graph.removeItem(marker['line'])
+                                except RuntimeError:
+                                    pass  # Item already deleted
+                        self.main_window.pause_markers = []
+                    except Exception as e:
+                        logger.debug(f"Could not clear pause markers: {e}")
+
+                # Run in main thread after short delay to avoid conflicts with dialog closing
+                QTimer.singleShot(200, clear_markers)
+        except Exception as e:
+            logger.debug(f"Pause marker cleanup error: {e}")
 
     def _on_acquisition_stopped(self):
         """Live data acquisition has stopped - disable record and pause buttons."""
@@ -1968,15 +2662,27 @@ class Application(QApplication):
         Left click: Select channel closest to cursor
         Right click: Add flag/annotation at cursor position for selected channel
         """
-        import pyqtgraph as pg
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QInputDialog
+        try:
+            import pyqtgraph as pg
+            from PySide6.QtCore import Qt
+            from PySide6.QtWidgets import QInputDialog
 
-        # Get click position in data coordinates
-        pos = event.scenePos()
-        mouse_point = self.main_window.cycle_of_interest_graph.getPlotItem().vb.mapSceneToView(pos)
-        click_time = mouse_point.x()
-        click_value = mouse_point.y()
+            # Safety check - ensure graph is initialized
+            if not hasattr(self.main_window, 'cycle_of_interest_graph'):
+                return
+            if not hasattr(self.main_window.cycle_of_interest_graph, 'curves'):
+                return
+            if self.main_window.cycle_of_interest_graph.curves is None:
+                return
+
+            # Get click position in data coordinates
+            pos = event.scenePos()
+            mouse_point = self.main_window.cycle_of_interest_graph.getPlotItem().vb.mapSceneToView(pos)
+            click_time = mouse_point.x()
+            click_value = mouse_point.y()
+        except Exception as e:
+            # Silently ignore errors during graph initialization
+            return
 
         if event.button() == Qt.MouseButton.LeftButton:
             # Left click: Select nearest channel
@@ -2003,50 +2709,72 @@ class Application(QApplication):
 
     def _select_nearest_channel(self, click_time: float, click_value: float):
         """Select the channel whose curve is nearest to the click position."""
-        import numpy as np
+        try:
+            import numpy as np
 
-        # Find nearest channel by checking distance to each curve
-        min_distance = float('inf')
-        nearest_channel = None
+            # Safety check - ensure curves exist
+            if not hasattr(self.main_window, 'cycle_of_interest_graph'):
+                return
+            if not hasattr(self.main_window.cycle_of_interest_graph, 'curves'):
+                return
+            if self.main_window.cycle_of_interest_graph.curves is None:
+                return
 
-        for ch_idx in range(4):
-            curve = self.main_window.cycle_of_interest_graph.curves[ch_idx]
-            if not curve.isVisible():
-                continue
+            # Find nearest channel by checking distance to each curve
+            min_distance = float('inf')
+            nearest_channel = None
 
-            x_data, y_data = curve.getData()
-            if x_data is None or len(x_data) == 0:
-                continue
+            for ch_idx in range(4):
+                try:
+                    curve = self.main_window.cycle_of_interest_graph.curves[ch_idx]
+                    if not curve.isVisible():
+                        continue
 
-            # Find point on curve closest to click_time
-            idx = np.argmin(np.abs(x_data - click_time))
-            curve_value = y_data[idx]
+                    x_data, y_data = curve.getData()
+                    if x_data is None or len(x_data) == 0:
+                        continue
 
-            # Calculate distance (normalized by axis ranges for fair comparison)
-            distance = abs(curve_value - click_value)
+                    # Find point on curve closest to click_time
+                    idx = np.argmin(np.abs(x_data - click_time))
+                    curve_value = y_data[idx]
 
-            if distance < min_distance:
-                min_distance = distance
-                nearest_channel = ch_idx
+                    # Calculate distance (normalized by axis ranges for fair comparison)
+                    distance = abs(curve_value - click_value)
 
-        if nearest_channel is not None:
-            # Update selection
-            old_channel = self._selected_channel
-            self._selected_channel = nearest_channel
+                    if distance < min_distance:
+                        min_distance = distance
+                        nearest_channel = ch_idx
+                except Exception:
+                    # Skip this channel if there's an error
+                    continue
 
-            # Update visual feedback (make selected channel thicker)
-            if old_channel is not None:
-                old_curve = self.main_window.cycle_of_interest_graph.curves[old_channel]
-                old_pen = old_curve.opts['pen']
-                old_pen.setWidth(2)  # Normal width
-                old_curve.setPen(old_pen)
+            if nearest_channel is not None:
+                # Update selection
+                old_channel = self._selected_channel
+                self._selected_channel = nearest_channel
 
-            new_curve = self.main_window.cycle_of_interest_graph.curves[nearest_channel]
-            new_pen = new_curve.opts['pen']
-            new_pen.setWidth(4)  # Thicker for selected
-            new_curve.setPen(new_pen)
+                # Update visual feedback (make selected channel thicker)
+                if old_channel is not None:
+                    try:
+                        old_curve = self.main_window.cycle_of_interest_graph.curves[old_channel]
+                        old_pen = old_curve.opts['pen']
+                        old_pen.setWidth(2)  # Normal width
+                        old_curve.setPen(old_pen)
+                    except Exception:
+                        pass
 
-            logger.info(f"Selected Channel {chr(65 + nearest_channel)}")
+                try:
+                    new_curve = self.main_window.cycle_of_interest_graph.curves[nearest_channel]
+                    new_pen = new_curve.opts['pen']
+                    new_pen.setWidth(4)  # Thicker for selected
+                    new_curve.setPen(new_pen)
+                except Exception:
+                    pass
+
+                logger.info(f"Selected Channel {chr(65 + nearest_channel)}")
+        except Exception as e:
+            # Silently handle errors
+            logger.debug(f"Error selecting channel: {e}")
 
     def _add_flag(self, channel: int, time: float, annotation: str):
         """Add a flag marker to the graph and save to table."""
@@ -2559,9 +3287,9 @@ class Application(QApplication):
     def _on_power_on_requested(self):
         """User requested to power on (connect hardware)."""
         print("\n" + "="*60)
-        print("🔌 [APPLICATION] Power ON handler called!")
+        print("[APPLICATION] Power ON handler called!")
         print("="*60 + "\n")
-        logger.info("🔌 Power ON requested - starting hardware connection...")
+        logger.info("Power ON requested - starting hardware connection...")
 
         # Set to searching state
         self.main_window.set_power_state("searching")
@@ -3400,10 +4128,36 @@ class Application(QApplication):
 
 def main():
     """Launch the application with modern UI."""
-    # Suppress Qt's direct stderr warnings about threading
-    # Our logging system is properly thread-safe, Qt is just being overly cautious
     import io
     import contextlib
+    import atexit
+    
+    # Install global exception hook to catch crashes
+    def exception_hook(exc_type, exc_value, exc_traceback):
+        """Catch all unhandled exceptions before they crash the app."""
+        logger.critical("=" * 80)
+        logger.critical("💥 UNHANDLED EXCEPTION - APPLICATION CRASH")
+        logger.critical("=" * 80)
+        logger.critical(f"Exception Type: {exc_type.__name__}")
+        logger.critical(f"Exception Value: {exc_value}")
+        logger.critical("Traceback:")
+        import traceback
+        tb_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+        for line in tb_lines:
+            logger.critical(line.rstrip())
+        logger.critical("=" * 80)
+        
+        # Call the default handler to actually crash
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+    
+    sys.excepthook = exception_hook
+    logger.info("🛡️ Global exception hook installed")
+
+    class NullWriter:
+        """Null output that absorbs all writes."""
+        def write(self, text): pass
+        def flush(self): pass
+        def fileno(self): return -1
 
     class QtWarningFilter:
         """Filter to suppress Qt threading warnings while keeping other messages."""
@@ -3415,15 +4169,23 @@ def main():
             # Suppress known harmless Qt threading warnings
             if "QObject: Cannot create children" in text or \
                "parent's thread is" in text or \
-               "QTextDocument" in text:
+               "QTextDocument" in text or \
+               "I/O operation on closed file" in text:
                 return
-            self.stream.write(text)
+            try:
+                self.stream.write(text)
+            except (ValueError, OSError):
+                pass  # Stderr closed, ignore
 
         def flush(self):
-            self.stream.flush()
+            try:
+                self.stream.flush()
+            except (ValueError, OSError):
+                pass
 
     # Replace stderr with filtered version
     original_stderr = sys.stderr
+    original_stdout = sys.stdout
     sys.stderr = QtWarningFilter(original_stderr)
 
     dtnow = dt.datetime.now(TIME_ZONE)
@@ -3431,6 +4193,18 @@ def main():
     logger.info("AffiLabs.core - Surface Plasmon Resonance Analysis")
     logger.info(f"{SW_VERSION} | {dtnow.strftime('%Y-%m-%d %H:%M')}")
     logger.info("="*70)
+
+    # Install emergency cleanup on exit
+    def emergency_silence():
+        """Silence all output during final cleanup to prevent I/O errors."""
+        try:
+            null = NullWriter()
+            sys.stderr = null
+            sys.stdout = null
+        except:
+            pass
+
+    atexit.register(emergency_silence)
 
     # Create and run application
     app = Application(sys.argv)
@@ -3440,6 +4214,7 @@ def main():
 
     # Restore original stderr
     sys.stderr = original_stderr
+    sys.stdout = original_stdout
 
     sys.exit(exit_code)
 

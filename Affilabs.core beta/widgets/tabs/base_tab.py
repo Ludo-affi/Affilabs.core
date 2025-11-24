@@ -70,7 +70,7 @@ class BaseSidebarTab(QWidget):
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(12)
+        self.main_layout.setSpacing(4)
 
         # Title
         self.title_label = QLabel(self.title)
@@ -83,6 +83,8 @@ class BaseSidebarTab(QWidget):
             "letter-spacing: -0.3px;"
             "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
         )
+        self.title_label.setWordWrap(False)
+        self.title_label.setMaximumHeight(24)
         self.main_layout.addWidget(self.title_label)
 
         # Optional subtitle
@@ -94,6 +96,8 @@ class BaseSidebarTab(QWidget):
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
+            self.subtitle_label.setWordWrap(False)
+            self.subtitle_label.setMaximumHeight(16)
             self.main_layout.addWidget(self.subtitle_label)
 
         self.main_layout.addSpacing(12)

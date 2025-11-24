@@ -226,7 +226,10 @@ class Ui_mainWindow:
 
         self.horizontalLayout.addItem(self.horizontalSpacer_3)
 
-
+        # Define sizePolicy2 for rec_btn
+        sizePolicy2 = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        sizePolicy2.setHorizontalStretch(0)
+        sizePolicy2.setVerticalStretch(0)
 
         self.rec_btn = QPushButton(self.tool_bar)
         self.rec_btn.setObjectName("rec_btn")

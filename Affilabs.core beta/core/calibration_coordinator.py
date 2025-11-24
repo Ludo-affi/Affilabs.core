@@ -661,18 +661,18 @@ class CalibrationCoordinator(QObject):
         """Launch simple live acquisition window with real hardware."""
         try:
             from core.simple_acquisition import SimpleAcquisitionManager
-            
+
             logger.info("🚀 Creating simple live window...")
-            
+
             # Create simple live window
             self._simple_live_window = SimpleLiveWindow(
                 self.app.hardware_mgr,
                 self.app.data_mgr
             )
-            
+
             self._simple_live_window.show()
             logger.info("✅ Simple live window launched")
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to launch simple live window: {e}", exc_info=True)
             import traceback
@@ -681,79 +681,79 @@ class CalibrationCoordinator(QObject):
 
 class SimpleLiveWindow(QMainWindow):
     """Simple live data display window using real calibration data."""
-    
+
     def __init__(self, hardware_mgr, data_mgr):
         super().__init__()
         self.setWindowTitle("Live SPR Data - Simple Acquisition")
         self.resize(1200, 800)
-        
+
         # Hardware and managers
         self.hardware_mgr = hardware_mgr
         self.data_mgr = data_mgr
-        
+
         # Create simple acquisition manager
         from core.simple_acquisition import SimpleAcquisitionManager
         self.acq_mgr = SimpleAcquisitionManager(hardware_mgr)
-        
+
         # Connect signal
         self.acq_mgr.spectrum_ready.connect(self.on_spectrum)
-        
+
         # Spectrum counter
         self.spectrum_count = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-        
+
         # Setup UI
         self.setup_ui()
-        
+
         # Load calibration data from data_mgr
         self.load_calibration_from_data_mgr()
-        
+
     def setup_ui(self):
         """Build UI."""
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        
+
         # Buttons
         btn_layout = QHBoxLayout()
-        
+
         self.start_btn = QPushButton("Start Acquisition")
         self.start_btn.clicked.connect(self.start_acquisition)
         btn_layout.addWidget(self.start_btn)
-        
+
         self.stop_btn = QPushButton("Stop Acquisition")
         self.stop_btn.clicked.connect(self.stop_acquisition)
         self.stop_btn.setEnabled(False)
         btn_layout.addWidget(self.stop_btn)
-        
+
         layout.addLayout(btn_layout)
-        
+
         # Graphs - 2x2
         graph_container = QWidget()
         graph_layout = QVBoxLayout(graph_container)
-        
+
         top_row = QHBoxLayout()
         self.plot_a = self.create_plot("Channel A", "#e74c3c")
         self.plot_b = self.create_plot("Channel B", "#3498db")
         top_row.addWidget(self.plot_a['widget'])
         top_row.addWidget(self.plot_b['widget'])
         graph_layout.addLayout(top_row)
-        
+
         bottom_row = QHBoxLayout()
         self.plot_c = self.create_plot("Channel C", "#2ecc71")
         self.plot_d = self.create_plot("Channel D", "#f39c12")
         bottom_row.addWidget(self.plot_c['widget'])
         bottom_row.addWidget(self.plot_d['widget'])
         graph_layout.addLayout(bottom_row)
-        
+
         layout.addWidget(graph_container)
-        
+
         self.plots = {
             'a': self.plot_a,
             'b': self.plot_b,
             'c': self.plot_c,
             'd': self.plot_d
         }
-        
+
     def create_plot(self, title, color):
         """Create plot widget."""
         widget = pg.PlotWidget()
@@ -763,16 +763,16 @@ class SimpleLiveWindow(QMainWindow):
         widget.setLabel('bottom', 'Wavelength', units='nm')
         widget.showGrid(x=True, y=True, alpha=0.3)
         widget.setYRange(0, 1.2)
-        
+
         curve = widget.plot(pen=pg.mkPen(color=color, width=2))
-        
+
         return {'widget': widget, 'curve': curve}
-        
+
     def load_calibration_from_data_mgr(self):
         """Load calibration data from the main data manager."""
         try:
             logger.info("📥 Loading calibration data from data_mgr...")
-            
+
             # Get calibration data from data_mgr
             cal_data = {
                 'wavelengths': self.data_mgr.wave_data,
@@ -781,59 +781,59 @@ class SimpleLiveWindow(QMainWindow):
                 'led_intensities': self.data_mgr.leds_calibrated,  # Already a dict
                 'integration_time': self.data_mgr.integration_time
             }
-            
+
             # Set calibration data in simple acquisition manager
             self.acq_mgr.set_calibration_data(cal_data)
-            
+
             logger.info("✅ Calibration data loaded successfully")
             logger.info(f"   Wavelengths: {len(cal_data['wavelengths'])} points")
             logger.info(f"   Integration time: {cal_data['integration_time']} ms")
             logger.info(f"   LED intensities: {cal_data['led_intensities']}")
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to load calibration data: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
-            
+
     def start_acquisition(self):
         """Start acquisition."""
         logger.info("\n🚀 Starting simple acquisition...")
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        
+
         self.acq_mgr.start_acquisition()
-        
+
     def stop_acquisition(self):
         """Stop acquisition."""
         logger.info("\n⏹️ Stopping simple acquisition...")
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        
+
         self.acq_mgr.stop_acquisition()
-        
+
         total = sum(self.spectrum_count.values())
         logger.info(f"📊 Total spectra acquired: {total}")
-        
+
     def on_spectrum(self, data):
         """Handle spectrum data."""
         channel = data['channel']
         wavelength = data['wavelength']
         transmission = data['transmission']
-        
+
         if transmission is not None:
             # Update graph
             plot = self.plots[channel]
             plot['curve'].setData(wavelength, transmission)
-            
+
             # Update count
             self.spectrum_count[channel] += 1
-            
+
             # Update title
             plot['widget'].setTitle(
                 f"Channel {channel.upper()} - {self.spectrum_count[channel]} spectra",
                 color='k', size='11pt'
             )
-            
+
     def closeEvent(self, event):
         """Clean shutdown."""
         if self.acq_mgr._acquiring:
