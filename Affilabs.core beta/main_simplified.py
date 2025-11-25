@@ -1530,7 +1530,7 @@ class Application(QApplication):
             try:
                 if should_log:
                     logger.info(f"[CRASH-TRACK-2B] Calling buffer_mgr.append_timeline_point")
-                self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength)
+                self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength, timestamp)
                 if should_log:
                     logger.info(f"[CRASH-TRACK-2C] Buffer append SUCCESS")
                     print(f"[PROCESS] Channel {channel}: Buffer updated OK")
@@ -2075,7 +2075,7 @@ class Application(QApplication):
 
             # Extract data within cursor range for each channel
             for ch_letter, ch_idx in self._channel_pairs:
-                cycle_time, cycle_wavelength = self.buffer_mgr.extract_cycle_region(
+                cycle_time, cycle_wavelength, cycle_timestamp = self.buffer_mgr.extract_cycle_region(
                     ch_letter, start_time, stop_time
                 )
 
@@ -2101,8 +2101,8 @@ class Application(QApplication):
                 # Convert wavelength shift to RU (Response Units)
                 delta_spr = (cycle_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
 
-                # Store in buffer manager
-                self.buffer_mgr.update_cycle_data(ch_letter, cycle_time, cycle_wavelength, delta_spr)
+                # Store in buffer manager (with timestamps)
+                self.buffer_mgr.update_cycle_data(ch_letter, cycle_time, cycle_wavelength, delta_spr, cycle_timestamp)
 
             # Apply reference subtraction if enabled
             self._apply_reference_subtraction()

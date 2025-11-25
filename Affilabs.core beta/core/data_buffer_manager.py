@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 @dataclass
 class ChannelBuffer:
     """Buffer for a single channel's data."""
-    time: np.ndarray = field(default_factory=lambda: np.array([]))
+    time: np.ndarray = field(default_factory=lambda: np.array([]))  # Elapsed time (seconds)
+    timestamp: np.ndarray = field(default_factory=lambda: np.array([]))  # Absolute timestamp (seconds since epoch)
     wavelength: np.ndarray = field(default_factory=lambda: np.array([]))
     spr: np.ndarray = field(default_factory=lambda: np.array([]))  # Delta SPR in RU
 
@@ -64,17 +65,20 @@ class DataBufferManager:
             'd': IntensityBuffer()
         }
 
-    def append_timeline_point(self, channel: str, time: float, wavelength: float) -> None:
+    def append_timeline_point(self, channel: str, time: float, wavelength: float, timestamp: float = None) -> None:
         """Append a data point to the timeline buffer.
 
         Args:
             channel: Channel letter ('a', 'b', 'c', 'd')
             time: Elapsed time in seconds
             wavelength: Wavelength in nanometers
+            timestamp: Absolute timestamp (seconds since epoch), optional
         """
         buffer = self.timeline_data[channel]
         buffer.time = np.append(buffer.time, time)
         buffer.wavelength = np.append(buffer.wavelength, wavelength)
+        if timestamp is not None:
+            buffer.timestamp = np.append(buffer.timestamp, timestamp)
 
     def append_intensity_point(self, channel: str, timestamp: float, intensity: float) -> None:
         """Append an intensity measurement for leak detection.
@@ -133,20 +137,24 @@ class DataBufferManager:
         channel: str,
         cycle_time: np.ndarray,
         cycle_wavelength: np.ndarray,
-        delta_spr: np.ndarray
+        delta_spr: np.ndarray,
+        cycle_timestamp: np.ndarray = None
     ) -> None:
         """Update cycle data for a channel.
 
         Args:
             channel: Channel letter ('a', 'b', 'c', 'd')
-            cycle_time: Time array for cycle
+            cycle_time: Time array for cycle (elapsed time)
             cycle_wavelength: Wavelength array for cycle
             delta_spr: Delta SPR array in RU
+            cycle_timestamp: Absolute timestamp array (optional)
         """
         buffer = self.cycle_data[channel]
         buffer.time = cycle_time
         buffer.wavelength = cycle_wavelength
         buffer.spr = delta_spr
+        if cycle_timestamp is not None:
+            buffer.timestamp = cycle_timestamp
 
     def set_baseline(self, channel: str, wavelength: float) -> None:
         """Set baseline wavelength for a channel.
@@ -197,23 +205,24 @@ class DataBufferManager:
         channel: str,
         start_time: float,
         stop_time: float
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Extract data within time range from timeline buffer.
 
         Args:
             channel: Channel letter ('a', 'b', 'c', 'd')
-            start_time: Start time in seconds
-            stop_time: Stop time in seconds
+            start_time: Start time in seconds (elapsed)
+            stop_time: Stop time in seconds (elapsed)
 
         Returns:
-            Tuple of (time_array, wavelength_array) within range
+            Tuple of (time_array, wavelength_array, timestamp_array) within range
         """
         buffer = self.timeline_data[channel]
         if len(buffer.time) == 0:
-            return np.array([]), np.array([])
+            return np.array([]), np.array([]), np.array([])
 
         mask = (buffer.time >= start_time) & (buffer.time <= stop_time)
-        return buffer.time[mask], buffer.wavelength[mask]
+        timestamps = buffer.timestamp[mask] if len(buffer.timestamp) > 0 else np.array([])
+        return buffer.time[mask], buffer.wavelength[mask], timestamps
 
     def clear_all(self) -> None:
         """Clear all buffers (for new experiment)."""
