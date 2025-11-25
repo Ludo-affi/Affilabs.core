@@ -843,6 +843,8 @@ def calibrate_led_channel(
     detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
     wave_min_index: int = None,  # ROI start for saturation checking
     wave_max_index: int = None,  # ROI end for saturation checking
+    pre_led_delay_ms: float = 45.0,  # PRE LED delay (default 45ms)
+    post_led_delay_ms: float = 5.0,  # POST LED delay (default 5ms)
 ) -> int:
     """Calibrate a single LED channel to target count level.
 
@@ -1025,6 +1027,8 @@ def calibrate_p_mode_leds(
     stop_flag=None,
     detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
     headroom_analysis: dict[str, ChannelHeadroomAnalysis] = None,  # Optional: pre-computed headroom analysis
+    pre_led_delay_ms: float = 45.0,
+    post_led_delay_ms: float = 5.0,
 ) -> tuple[dict[str, int], dict[str, dict]]:
     """Calibrate LED intensities in P-mode to maximize signal without saturation.
 
