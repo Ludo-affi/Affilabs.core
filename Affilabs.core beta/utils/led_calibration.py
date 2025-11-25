@@ -554,6 +554,8 @@ def calibrate_integration_time(
     stop_flag=None,
     device_config=None,  # Optional: pre-loaded DeviceConfiguration (avoids redundant file reads)
     detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
+    pre_led_delay_ms: float = 45.0,
+    post_led_delay_ms: float = 5.0,
 ) -> tuple[int, int]:
     """Calibrate integration time to find optimal value for all channels.
 
@@ -1268,6 +1270,8 @@ def measure_dark_noise(
     wave_max_index: int,
     stop_flag=None,
     num_scans: int = None,  # Optional: pre-calculated scan count
+    pre_led_delay_ms: float = 45.0,
+    post_led_delay_ms: float = 5.0,
 ) -> np.ndarray:
     """Measure dark noise with all LEDs off.
 
@@ -1329,6 +1333,8 @@ def measure_reference_signals(
     stop_flag=None,
     afterglow_correction=None,
     num_scans: int = None,  # Optional: pre-calculated scan count
+    pre_led_delay_ms: float = 45.0,
+    post_led_delay_ms: float = 5.0,
 ) -> dict[str, np.ndarray]:
     """Measure reference signals in S-mode for each channel.
 
@@ -1886,6 +1892,8 @@ def perform_full_led_calibration(
     device_config=None,  # Optional: pre-loaded DeviceConfiguration (avoids redundant file reads)
     polarizer_type: str = None,  # Optional: polarizer type ('barrel' or 'round') - sets calibration expectations
     afterglow_correction=None,  # Optional: pre-loaded AfterglowCorrection (avoids redundant file I/O)
+    pre_led_delay_ms: float = 45.0,
+    post_led_delay_ms: float = 5.0,
 ) -> LEDCalibrationResult:
     """Perform complete LED calibration using STANDARD optical configuration.
 
