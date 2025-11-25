@@ -231,6 +231,8 @@ class Application(QApplication):
 
         # Track reference channel for subtraction (None, 'a', 'b', 'c', 'd')
         self._reference_channel = None
+        self._ref_subtraction_enabled = False  # Track if reference subtraction is enabled
+        self._ref_channel = None  # Reference channel for subtraction
 
         # Track data filtering settings (use config defaults)
         self._filter_enabled = DEFAULT_FILTER_ENABLED
