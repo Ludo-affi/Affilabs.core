@@ -96,6 +96,9 @@ class DataAcquisitionManager(QObject):
         self._previous_channel = None  # Track previous channel for afterglow correction
         self._led_delay_ms = 45.0  # Default LED delay in milliseconds (PRE_LED_DELAY_MS)
         self._led_post_delay_ms = 5.0  # Default LED post delay in milliseconds
+        # Initialize separate pre/post delay attributes (used in acquisition)
+        self._pre_led_delay_ms = 45.0  # PRE LED delay (device-specific)
+        self._post_led_delay_ms = 5.0  # POST LED delay (device-specific)
 
         # S/P orientation validation tracking
         self._sp_validation_results = {}  # {channel: {orientation_correct, confidence, peak_wl, timestamp}}
@@ -103,6 +106,7 @@ class DataAcquisitionManager(QObject):
 
         # FWHM tracking for quality control
         self._fwhm_values = {}  # {channel: fwhm_nm}
+        self._last_peak_wavelength = {}  # {channel: wavelength_nm} for continuity checking
 
         # Batched acquisition settings (from settings.py)
         from settings import BATCH_SIZE, ENABLE_INTERPOLATED_DISPLAY
@@ -253,6 +257,8 @@ class DataAcquisitionManager(QObject):
                     wave_max_index=wave_max_index,
                     device_config=device_config,  # Pass pre-loaded device config
                     afterglow_correction=afterglow_correction,  # Pass pre-loaded afterglow correction
+                    pre_led_delay_ms=self._pre_led_delay_ms,  # Use configured PRE LED delay
+                    post_led_delay_ms=self._post_led_delay_ms,  # Use configured POST LED delay
                 )
             else:
                 logger.info("Using STANDARD calibration method (Global Integration Time)")
@@ -270,6 +276,8 @@ class DataAcquisitionManager(QObject):
                     wave_max_index=wave_max_index,
                     device_config=device_config,  # Pass pre-loaded device config
                     afterglow_correction=afterglow_correction,  # Pass pre-loaded afterglow correction
+                    pre_led_delay_ms=self._pre_led_delay_ms,  # Use configured PRE LED delay
+                    post_led_delay_ms=self._post_led_delay_ms,  # Use configured POST LED delay
                 )
 
             # Check for complete failure (all channels failed or critical error)
@@ -607,45 +615,34 @@ class DataAcquisitionManager(QObject):
                                 if cycle_count % 10 == 1:
                                     print(f"   [OK] Channel {ch}: Got spectrum data")
 
-                                # Process and emit immediately (no batching)
+                                # Batch collection for vectorized processing
                                 timestamp = time.time()
                                 cycle_success = True
 
-                                # Process spectrum immediately
-                                try:
-                                    processed = self._process_spectrum(ch, spectrum_data)
+                                # Add to batch buffer
+                                self._spectrum_batch[ch].append(spectrum_data)
+                                self._batch_timestamps[ch].append(timestamp)
 
-                                    # Buffer the data
-                                    self.channel_buffers[ch].append(processed['wavelength'])
-                                    self.time_buffers[ch].append(timestamp)
-
-                                    # Put processed data in queue for emission
-                                    data = {
-                                        'channel': ch,
-                                        'wavelength': processed['wavelength'],
-                                        'intensity': processed['intensity'],
-                                        'full_spectrum': processed.get('full_spectrum'),
-                                        'raw_spectrum': processed.get('raw_spectrum'),
-                                        'transmission_spectrum': processed.get('transmission_spectrum'),
-                                        'wavelengths': self.wave_data,  # Wavelength array for plotting
-                                        'timestamp': timestamp,
-                                        'is_preview': False
-                                    }
-
+                                # Process batch when ready
+                                if len(self._spectrum_batch[ch]) >= self.batch_size:
                                     try:
-                                        self._spectrum_queue.put_nowait(data)
+                                        self._process_and_emit_batch(ch)
                                         if cycle_count % 10 == 1:
-                                            print(f"   [EMIT] Channel {ch}: Data queued for UI")
-                                    except queue.Full:
-                                        pass  # Queue full, skip
-
-                                    # Store last emitted wavelength
-                                    self._last_emitted_wavelength[ch] = processed['wavelength']
-
-                                except Exception as e:
-                                    print(f"   [ERROR] Channel {ch}: Processing failed - {e}")
-                                    import traceback
-                                    traceback.print_exc()
+                                            print(f"   [BATCH] Channel {ch}: Processed {self.batch_size} spectra")
+                                    except Exception as e:
+                                        print(f"   [ERROR] Channel {ch}: Batch processing failed - {e}")
+                                        import traceback
+                                        traceback.print_exc()
+                                        # Clear failed batch
+                                        self._spectrum_batch[ch].clear()
+                                        self._batch_timestamps[ch].clear()
+                                else:
+                                    # Emit interpolated preview for smooth display
+                                    if self.enable_interpolated_display:
+                                        try:
+                                            self._emit_interpolated_preview(ch, timestamp)
+                                        except Exception:
+                                            pass  # Non-critical
                             else:
                                 if cycle_count % 10 == 1:
                                     print(f"   [ERROR] Channel {ch}: No spectrum data returned")
@@ -932,8 +929,8 @@ class DataAcquisitionManager(QObject):
                 print(f"[ACQ ERROR] Channel {channel}: Failed to set LED intensity: {e}")
                 return None
 
-            # Use configured LED delay (default 45ms)
-            time.sleep(self._led_delay_ms / 1000.0)  # Convert ms to seconds
+            # PRE LED delay: Wait for LED to stabilize before measurement
+            time.sleep(self._pre_led_delay_ms / 1000.0)  # Convert ms to seconds
 
             # Set integration time
             try:
@@ -972,6 +969,16 @@ class DataAcquisitionManager(QObject):
                     # Fallback if indices not available (shouldn't happen after calibration)
                     raw_spectrum = raw_spectrum[:len(self.wave_data)]
 
+            # Turn off LED for this channel
+            try:
+                ctrl.set_intensity(ch=channel, raw_val=0)
+            except Exception:
+                pass  # Non-critical, continue
+
+            # POST LED delay: Allow afterglow to decay before switching to next channel
+            if self._post_led_delay_ms > 0:
+                time.sleep(self._post_led_delay_ms / 1000.0)  # Convert ms to seconds
+
             return {
                 'wavelength': self.wave_data.copy(),
                 'intensity': raw_spectrum
@@ -986,6 +993,102 @@ class DataAcquisitionManager(QObject):
         except Exception as e:
             # Removed logger.error to prevent Qt threading issues
             return None
+
+    def set_led_delays(self, pre_delay_ms: float, post_delay_ms: float) -> None:
+        """Set PRE and POST LED delays for spectrum acquisition.
+
+        Args:
+            pre_delay_ms: Settling time after LED on before measurement (0-200ms)
+            post_delay_ms: Dark time after LED off for afterglow decay (0-100ms)
+        """
+        self._pre_led_delay_ms = max(0.0, min(200.0, pre_delay_ms))
+        self._post_led_delay_ms = max(0.0, min(100.0, post_delay_ms))
+        logger.info(f"LED delays updated: PRE={self._pre_led_delay_ms:.1f}ms, POST={self._post_led_delay_ms:.1f}ms")
+
+    def _process_and_emit_batch(self, channel: str) -> None:
+        """Process batch of spectra with vectorized operations and emit sequentially.
+
+        Applies Savitzky-Golay filtering to entire batch for superior smoothing
+        while preserving peak shapes. Emits points sequentially for smooth display.
+
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+        """
+        import numpy as np
+        from scipy.signal import savgol_filter
+
+        batch = self._spectrum_batch[channel]
+        timestamps = self._batch_timestamps[channel]
+
+        if len(batch) == 0:
+            return
+
+        # Process each spectrum in batch (vectorized where possible)
+        wavelengths = []
+        intensities = []
+
+        for spectrum_data in batch:
+            try:
+                processed = self._process_spectrum(channel, spectrum_data)
+                wavelengths.append(processed['wavelength'])
+                intensities.append(processed['intensity'])
+            except Exception as e:
+                print(f"   [BATCH ERROR] Channel {channel}: Spectrum processing failed - {e}")
+                continue
+
+        if len(wavelengths) == 0:
+            self._spectrum_batch[channel].clear()
+            self._batch_timestamps[channel].clear()
+            return
+
+        # Convert to numpy array for vectorized filtering
+        wavelength_array = np.array(wavelengths)  # Shape: (batch_size,)
+
+        # Apply Savitzky-Golay filter if batch is large enough
+        # SG filter requires window_length <= data length and odd
+        if len(wavelength_array) >= 5:
+            try:
+                # Savitzky-Golay: polynomial smoothing that preserves peak shapes
+                # window_length=5, polyorder=2 gives excellent smoothing without distortion
+                filtered_wavelengths = savgol_filter(wavelength_array, window_length=5, polyorder=2)
+            except Exception as e:
+                print(f"   [SG FILTER FAILED] Channel {channel}: {e}, using raw data")
+                filtered_wavelengths = wavelength_array
+        else:
+            # Batch too small for SG filter, use raw data
+            filtered_wavelengths = wavelength_array
+
+        # Emit each point sequentially for smooth display
+        for i, (wl, timestamp) in enumerate(zip(filtered_wavelengths, timestamps)):
+            # Buffer the data
+            self.channel_buffers[channel].append(wl)
+            self.time_buffers[channel].append(timestamp)
+
+            # Queue for UI emission
+            data = {
+                'channel': channel,
+                'wavelength': float(wl),
+                'intensity': float(intensities[i]) if i < len(intensities) else 0.0,
+                'full_spectrum': batch[i].get('intensity') if i < len(batch) else None,
+                'raw_spectrum': batch[i].get('intensity') if i < len(batch) else None,
+                'transmission_spectrum': None,
+                'wavelengths': self.wave_data,
+                'timestamp': timestamp,
+                'is_preview': False,
+                'batch_filtered': True  # Mark as batch-filtered
+            }
+
+            try:
+                self._spectrum_queue.put_nowait(data)
+            except queue.Full:
+                pass  # Queue full, skip this point
+
+            # Update last emitted for interpolation
+            self._last_emitted_wavelength[channel] = float(wl)
+
+        # Clear batch buffers
+        self._spectrum_batch[channel].clear()
+        self._batch_timestamps[channel].clear()
 
     def _process_spectrum(self, channel: str, spectrum_data: Dict) -> Dict:
         """Process raw spectrum (filtering, afterglow correction, peak finding)."""
@@ -1013,6 +1116,11 @@ class DataAcquisitionManager(QObject):
             if channel in self.ref_sig and self.ref_sig[channel] is not None:
                 try:
                     from utils.spr_signal_processing import calculate_transmission
+                    from scipy.signal import savgol_filter
+
+                    # Get LED intensities for this channel (P-mode vs S-mode)
+                    p_led = self.leds_calibrated.get(channel) if isinstance(self.leds_calibrated, dict) else None
+                    s_led = self.ref_intensity.get(channel) if isinstance(self.ref_intensity, dict) else None
 
                     # ✨ CRITICAL: Check shape compatibility before transmission calculation
                     ref_spectrum = self.ref_sig[channel]
@@ -1023,24 +1131,60 @@ class DataAcquisitionManager(QObject):
                         min_len = min(len(raw_spectrum), len(ref_spectrum))
                         raw_spectrum_aligned = raw_spectrum[:min_len]
                         ref_spectrum_aligned = ref_spectrum[:min_len]
-                        transmission_spectrum = calculate_transmission(raw_spectrum_aligned, ref_spectrum_aligned)
+                        transmission_spectrum = calculate_transmission(
+                            raw_spectrum_aligned, ref_spectrum_aligned,
+                            p_led_intensity=p_led, s_led_intensity=s_led
+                        )
                         print(f"[PROCESS] Recovered by trimming to {min_len} points")
                     else:
-                        # Calculate transmission percentage
-                        transmission_spectrum = calculate_transmission(raw_spectrum, ref_spectrum)
+                        # Calculate transmission percentage with LED intensity correction
+                        transmission_spectrum = calculate_transmission(
+                            raw_spectrum, ref_spectrum,
+                            p_led_intensity=p_led, s_led_intensity=s_led
+                        )
+
+                        # Debug log LED correction (throttled)
+                        if p_led and s_led:
+                            correction = s_led / p_led
+                            if hasattr(self, '_transmission_debug_counter'):
+                                self._transmission_debug_counter += 1
+                            else:
+                                self._transmission_debug_counter = 1
+
+                            if self._transmission_debug_counter % 50 == 1:  # Log every 50th calculation
+                                print(f"[PROCESS] Ch {channel}: LED correction S={s_led}, P={p_led}, factor={correction:.3f}")
+
+                    # ✨ PIPELINE STEP 4: Apply Savitzky-Golay filter to denoise transmission
+                    # This is the STANDARD preprocessing before ANY peak finding method
+                    if transmission_spectrum is not None and len(transmission_spectrum) >= 21:
+                        transmission_spectrum = savgol_filter(transmission_spectrum, 21, 3)
+
                 except Exception as e:
                     print(f"[PROCESS] Transmission calc failed: {e}")
                     import traceback
                     traceback.print_exc()
                     transmission_spectrum = None
 
-            # SIMPLIFIED: Find peak by simple min-finding (bypass complex Fourier analysis)
+            # FWHM-VALIDATED PEAK FINDING: Find best SPR minimum with quality control
+            # This ensures we track the CORRECT dip, not just any local minimum
             peak_input = transmission_spectrum if transmission_spectrum is not None else intensity
+
             if len(peak_input) > 0 and len(wavelength) == len(peak_input):
-                min_idx = np.argmin(peak_input)
-                peak_wavelength = wavelength[min_idx]
+                # Find peak with FWHM validation (checks all candidates in SPR region)
+                peak_result = self._find_validated_peak(wavelength, peak_input, channel)
+                peak_wavelength = peak_result['wavelength']
+                fwhm_nm = peak_result['fwhm']
             else:
                 peak_wavelength = 650.0  # Default fallback
+                fwhm_nm = None
+
+            # ✨ SENSOR IQ: Classify data quality based on wavelength range and FWHM
+            from utils.sensor_iq import classify_spr_quality, log_sensor_iq, SensorIQLevel
+            sensor_iq = classify_spr_quality(peak_wavelength, fwhm_nm, channel)
+
+            # Log warnings for poor quality data (CRITICAL, POOR levels only)
+            if sensor_iq.iq_level in [SensorIQLevel.CRITICAL, SensorIQLevel.POOR]:
+                log_sensor_iq(sensor_iq, channel)
 
             return {
                 'wavelength': peak_wavelength,
@@ -1048,7 +1192,8 @@ class DataAcquisitionManager(QObject):
                 'full_spectrum': raw_spectrum,
                 'raw_spectrum': raw_spectrum,
                 'transmission_spectrum': transmission_spectrum,
-                'fwhm': None
+                'fwhm': fwhm_nm,
+                'sensor_iq': sensor_iq  # ✨ NEW: Quality classification
             }
 
         except Exception as e:
@@ -1062,6 +1207,239 @@ class DataAcquisitionManager(QObject):
                 'full_spectrum': spectrum_data['intensity'],
                 'raw_spectrum': spectrum_data['intensity']
             }
+
+    def _find_validated_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str) -> dict:
+        """Find and validate SPR peak using FWHM quality control.
+
+        Strategy:
+        1. Find ALL local minima in extended SPR region (590-750nm)
+        2. Calculate FWHM for each candidate
+        3. Reject candidates with invalid FWHM (too narrow/wide)
+        4. Apply wavelength range validation:
+           - Normal range: 590-670nm (preferred)
+           - Extended range: 670-750nm (allowed during gradual shifts)
+           - First peak >670nm = FLAG (potential issue)
+        5. FWHM quality thresholds:
+           - <30nm: Excellent
+           - 30-60nm: Good
+           - 60-80nm: Poor (warning)
+           - >80nm: Problem (strong penalty)
+        6. Select best candidate based on:
+           - FWHM quality (primary factor)
+           - Depth (stronger signal preferred)
+           - Wavelength range (prefer 590-670nm)
+           - Continuity (gradual shifts OK, jumps penalized)
+
+        Args:
+            wavelength: Wavelength array (nm)
+            spectrum: Transmission spectrum (P/S ratio %)
+            channel: Channel identifier for tracking history
+
+        Returns:
+            dict with:
+                - 'wavelength': Best validated peak wavelength (nm)
+                - 'fwhm': FWHM of validated peak (nm)
+                - 'quality': Quality score (0-1)
+                - 'candidates_found': Number of candidates evaluated
+                - 'warning': Optional warning message
+        """
+        from scipy.signal import find_peaks
+        from settings import FWHM_EXCELLENT_THRESHOLD_NM, FWHM_GOOD_THRESHOLD_NM
+
+        # Default fallback
+        default_result = {
+            'wavelength': 650.0,
+            'fwhm': None,
+            'quality': 0.0,
+            'candidates_found': 0,
+            'warning': None
+        }
+
+        try:
+            # Extended SPR region: 590-750nm (covers normal + drift range)
+            spr_mask = (wavelength >= 590) & (wavelength <= 750)
+            wl_spr = wavelength[spr_mask]
+            spec_spr = spectrum[spr_mask]
+
+            if len(wl_spr) < 20:
+                return default_result
+
+            # Find ALL local minima (potential SPR dips)
+            # Use inverted spectrum to find minima as peaks
+            minima_indices, properties = find_peaks(-spec_spr, prominence=1.0, width=3)
+
+            if len(minima_indices) == 0:
+                # No clear minima found, fall back to absolute minimum
+                min_idx = np.argmin(spec_spr)
+                peak_wl = wl_spr[min_idx]
+                fwhm = self._calculate_fwhm(wl_spr, spec_spr, peak_wl)
+
+                warning = None
+                if peak_wl > 670.0:
+                    warning = f"Peak at {peak_wl:.1f}nm (>670nm) with no clear dip structure"
+
+                return {
+                    'wavelength': peak_wl,
+                    'fwhm': fwhm,
+                    'quality': 0.3,  # Low quality - no clear dip structure
+                    'candidates_found': 0,
+                    'warning': warning
+                }
+
+            # Check if first peak found is >670nm (potential issue flag)
+            first_peak_flag = False
+            if channel not in self._last_peak_wavelength:
+                # First acquisition for this channel
+                first_candidate_wl = wl_spr[minima_indices[0]]
+                if first_candidate_wl > 670.0:
+                    first_peak_flag = True
+                    logger.warning(f"Channel {channel}: First peak detected at {first_candidate_wl:.1f}nm (>670nm) - potential calibration issue")
+
+            # Evaluate each candidate minimum
+            candidates = []
+            for idx in minima_indices:
+                candidate_wl = wl_spr[idx]
+                candidate_val = spec_spr[idx]
+
+                # Calculate FWHM for this candidate
+                fwhm = self._calculate_fwhm(wl_spr, spec_spr, candidate_wl)
+
+                # Skip if FWHM calculation failed
+                if fwhm is None or np.isnan(fwhm):
+                    continue
+
+                # FWHM quality criteria with your thresholds:
+                # <30nm = Excellent
+                # 30-60nm = Good
+                # 60-80nm = Poor (warning)
+                # >80nm = Problem (strong rejection)
+                if fwhm < 5.0:
+                    continue  # Too narrow = noise spike or artifact
+                if fwhm > 120.0:
+                    continue  # Way too wide = not a resonance
+
+                # Calculate quality score
+                depth = abs(candidate_val)  # Transmission dip depth
+
+                # FWHM scoring with updated thresholds
+                if fwhm < FWHM_EXCELLENT_THRESHOLD_NM:  # <30nm
+                    fwhm_score = 1.0  # Excellent
+                elif fwhm < FWHM_GOOD_THRESHOLD_NM:  # 30-60nm
+                    fwhm_score = 0.8  # Good
+                elif fwhm < 80.0:  # 60-80nm
+                    fwhm_score = 0.4  # Poor (warning level)
+                else:  # >80nm
+                    fwhm_score = 0.1  # Problem (strong penalty)
+
+                # Wavelength range scoring
+                # Prefer 590-670nm, allow 670-750nm with penalty
+                if 590.0 <= candidate_wl <= 670.0:
+                    wl_score = 1.0  # Normal range - no penalty
+                elif 670.0 < candidate_wl <= 750.0:
+                    # Extended range - allow but penalize
+                    # Check if it's a gradual shift from previous peak
+                    if channel in self._last_peak_wavelength:
+                        prev_wl = self._last_peak_wavelength[channel]
+                        shift = candidate_wl - prev_wl
+                        if shift > 0 and shift < 15.0:
+                            wl_score = 0.85  # Gradual shift - mild penalty
+                        else:
+                            wl_score = 0.6  # Jump or large shift - moderate penalty
+                    else:
+                        wl_score = 0.5  # First peak >670nm - strong penalty
+                else:
+                    wl_score = 0.3  # Outside expected range
+
+                # Combine: FWHM (50%), depth (30%), wavelength range (20%)
+                # FWHM is most important for validity
+                quality = 0.5 * fwhm_score + 0.3 * min(depth / 50.0, 1.0) + 0.2 * wl_score
+
+                # Continuity checking - prevent sudden jumps
+                if channel in self._last_peak_wavelength:
+                    prev_wl = self._last_peak_wavelength[channel]
+                    wl_diff = abs(candidate_wl - prev_wl)
+
+                    # Penalize sudden jumps (gradual shifts are OK)
+                    if wl_diff > 30.0:
+                        quality *= 0.3  # Very strong penalty for large jump
+                    elif wl_diff > 20.0:
+                        quality *= 0.5  # Strong penalty
+                    elif wl_diff > 15.0:
+                        quality *= 0.7  # Moderate penalty
+                    # wl_diff < 15nm = no penalty (gradual shift OK)
+
+                candidates.append({
+                    'wavelength': candidate_wl,
+                    'fwhm': fwhm,
+                    'quality': quality,
+                    'depth': depth,
+                    'fwhm_score': fwhm_score,
+                    'wl_score': wl_score
+                })
+
+            # Select best candidate
+            warning = None
+            if len(candidates) == 0:
+                # All candidates rejected, use absolute minimum as last resort
+                min_idx = np.argmin(spec_spr)
+                peak_wl = wl_spr[min_idx]
+                fwhm = self._calculate_fwhm(wl_spr, spec_spr, peak_wl)
+
+                # Generate warning based on issue
+                if fwhm is not None and fwhm > 80.0:
+                    warning = f"PROBLEM: FWHM={fwhm:.1f}nm (>80nm) - poor coupling or air bubble"
+                elif peak_wl > 670.0:
+                    warning = f"Peak at {peak_wl:.1f}nm (>670nm) - all candidates rejected"
+
+                result = {
+                    'wavelength': peak_wl,
+                    'fwhm': fwhm,
+                    'quality': 0.2,
+                    'candidates_found': len(minima_indices),
+                    'warning': warning
+                }
+            else:
+                # Choose highest quality candidate
+                best = max(candidates, key=lambda c: c['quality'])
+
+                # Generate warnings for problematic conditions
+                if best['fwhm'] > 80.0:
+                    warning = f"PROBLEM: FWHM={best['fwhm']:.1f}nm (>80nm) - poor coupling detected"
+                elif best['fwhm'] > 60.0:
+                    warning = f"Warning: FWHM={best['fwhm']:.1f}nm (60-80nm) - coupling quality poor"
+                elif first_peak_flag and best['wavelength'] > 670.0:
+                    warning = f"FLAG: First peak at {best['wavelength']:.1f}nm (>670nm) - verify sensor condition"
+                elif best['wavelength'] > 700.0:
+                    # Check if gradual shift
+                    if channel in self._last_peak_wavelength:
+                        prev_wl = self._last_peak_wavelength[channel]
+                        shift = best['wavelength'] - prev_wl
+                        if shift > 15.0:
+                            warning = f"Large shift: {prev_wl:.1f}nm → {best['wavelength']:.1f}nm (+{shift:.1f}nm)"
+                    else:
+                        warning = f"Peak at {best['wavelength']:.1f}nm (>700nm) - extended range"
+
+                result = {
+                    'wavelength': best['wavelength'],
+                    'fwhm': best['fwhm'],
+                    'quality': best['quality'],
+                    'candidates_found': len(candidates),
+                    'warning': warning
+                }
+
+            # Update tracking history
+            self._last_peak_wavelength[channel] = result['wavelength']
+            self._fwhm_values[channel] = result['fwhm']
+
+            # Log warnings if present
+            if warning:
+                logger.warning(f"Channel {channel}: {warning}")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Peak validation failed for channel {channel}: {e}")
+            return default_result
 
     def _find_resonance_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str) -> float:
         """Find resonance peak wavelength using SNR-aware Fourier analysis.
