@@ -166,16 +166,40 @@ class HardwareManager(QObject):
             # Get controller type
             ctrl_type = self._get_controller_type()
 
+            # VALIDATION: P4SPR/P4PRO require BOTH controller AND detector to show as connected
+            # Pumps (AffiPump) can be standalone
+            valid_hardware = []
+            
+            # Check SPR devices (P4SPR, P4PRO, ezSPR) - require controller + detector
+            if ctrl_type and self.ctrl and self.usb:
+                valid_hardware.append(ctrl_type)
+                logger.info(f"✅ Valid SPR device: {ctrl_type} (controller + detector)")
+            elif ctrl_type and self.ctrl and not self.usb:
+                logger.warning(f"⚠️ {ctrl_type} incomplete: controller found but detector missing")
+                ctrl_type = None  # Don't show controller without detector
+            
+            # Check kinetics (KNX) - can be standalone
+            knx_type = self._get_kinetic_type()
+            if knx_type and self.knx:
+                valid_hardware.append(knx_type)
+                logger.info(f"✅ Valid kinetic device: {knx_type}")
+            
+            # Check pump (AffiPump) - standalone
+            if self.pump:
+                valid_hardware.append('AffiPump')
+                logger.info(f"✅ Valid pump: AffiPump")
+
             # Emit final status
             status = {
-                'ctrl_type': ctrl_type,
-                'knx_type': self._get_kinetic_type(),
+                'ctrl_type': ctrl_type,  # Only set if controller + detector both present
+                'knx_type': knx_type if self.knx else None,
                 'pump_connected': self.pump is not None,
                 'spectrometer': self.usb is not None,
                 'spectrometer_serial': self.usb.serial_number if self.usb and hasattr(self.usb, 'serial_number') else None,
                 'sensor_ready': False,  # Will be set to True after calibration
                 'optics_ready': False,  # Will be set to True after calibration
-                'fluidics_ready': self.pump is not None  # Fluidics ready if pump connected
+                'fluidics_ready': self.pump is not None,  # Fluidics ready if pump connected
+                'scan_successful': len(valid_hardware) > 0  # True if any valid hardware found
             }
 
             # Log hardware detection results
@@ -186,18 +210,17 @@ class HardwareManager(QObject):
             logger.info(f"  • Kinetic:    {self.knx.name if self.knx else 'NOT FOUND'}")
             logger.info(f"  • Pump:       {'CONNECTED' if self.pump else 'NOT FOUND'}")
             logger.info(f"  • Spectro:    {'CONNECTED' if self.usb else 'NOT FOUND'}")
-            logger.info(f"  → Device Type: {ctrl_type if ctrl_type else 'UNKNOWN (no controller)'}")
+            logger.info(f"  → Valid Hardware: {', '.join(valid_hardware) if valid_hardware else 'NONE'}")
             logger.info("="*60)
 
-            # ALWAYS emit hardware_connected signal, even if nothing found
-            # This ensures UI gets updated and power button returns to disconnected state
-            if any([self.ctrl, self.knx, self.pump, self.usb]):
-                logger.info(f"✅ Hardware scan complete - emitting connection status")
+            # Emit status
+            if valid_hardware:
+                logger.info(f"✅ Hardware scan SUCCESSFUL - found {len(valid_hardware)} device(s)")
             else:
-                logger.info("⚠️ No hardware detected - returning to disconnected state")
-                self.connection_progress.emit("No hardware detected")
+                logger.warning("⚠️ Hardware scan FAILED - no valid hardware combinations")
+                self.connection_progress.emit("No valid hardware detected")
 
-            # Emit status regardless - UI will handle "no hardware" case
+            # ALWAYS emit signal - UI will handle success/failure
             self.hardware_connected.emit(status)
 
         except Exception as e:
@@ -366,13 +389,13 @@ class HardwareManager(QObject):
     def _get_controller_type(self) -> str:
         """Get the type of connected controller based on plugged hardware.
 
-        Device identification logic:
-        - Arduino OR PicoP4SPR alone = P4SPR
-        - PicoP4SPR + RPi kinetic controller = P4SPR+KNX or ezSPR (check serial number list)
-        - PicoEZSPR = P4PRO
-
-        The device type is ONLY determined by what is physically plugged in.
-        Serial number exceptions will be handled separately.
+        Returns standardized hardware names for UI display:
+        - P4SPR: Basic SPR controller (Arduino or PicoP4SPR)
+        - P4PRO: Advanced SPR controller (PicoEZSPR hardware)
+        - ezSPR: Standalone easy-to-use SPR controller
+        
+        Note: P4PRO is often paired with AffiPump.
+              P4SPR is often paired with KNX.
         """
         if self.ctrl is None:
             return ''  # No controller = no device type
@@ -385,35 +408,27 @@ class HardwareManager(QObject):
 
         # Pico-based P4SPR controller
         elif name == 'pico_p4spr':
-            # Check if kinetic controller is also connected
-            if self.knx is not None:
-                # PicoP4SPR + RPi = P4SPR+KNX or ezSPR
-                # TODO: Check serial number list to determine if ezSPR vs P4SPR+KNX
-                knx_name = getattr(self.knx, 'name', '')
-                if 'EZSPR' in knx_name.upper():
-                    return 'ezSPR'
-                elif 'KNX' in knx_name.upper():
-                    return 'P4SPR+KNX'
-                else:
-                    return 'P4SPR+KNX'  # Default to KNX if unclear
-            else:
-                # PicoP4SPR alone = P4SPR
-                return 'P4SPR'
+            return 'P4SPR'
 
-        # Pico-based ezSPR controller (P4PRO)
+        # Pico-based EZSPR hardware = P4PRO product
         elif name == 'pico_ezspr':
             return 'P4PRO'
 
         return ''
 
     def _get_kinetic_type(self) -> str:
-        """Get the type of connected kinetic controller."""
+        """Get the type of connected kinetic controller.
+        
+        Returns standardized hardware name for UI display:
+        - KNX: Kinetic controller (all variants map to "KNX")
+        """
         if self.knx is None:
             return ''
 
         name = getattr(self.knx, 'name', '')
-        if 'KNX' in name.upper():
-            return 'KNX2'
+        # All kinetic controllers display as "KNX"
+        if 'KNX' in name.upper() or 'KINETIC' in name.upper():
+            return 'KNX'
         return ''
 
     def _verify_sensor_and_optics(self):
@@ -771,36 +786,59 @@ class HardwareManager(QObject):
         logger.info(f"Hardware status update: sensor_ready={self._sensor_verified}, optics_ready={self._optics_verified}")
 
     def disconnect_all(self):
-        """Disconnect all hardware devices."""
+        """Disconnect all hardware devices gracefully."""
         logger.info("Disconnecting all hardware...")
 
+        # Turn off all LEDs before disconnecting (graceful exit)
         if self.ctrl:
             try:
+                logger.debug("Turning off all LEDs before disconnect...")
+                self.ctrl.turn_off_channels()
+                import time
+                time.sleep(0.1)  # Brief delay to ensure command executes
+                logger.debug("✅ LEDs turned off")
+            except Exception as e:
+                logger.warning(f"Could not turn off LEDs: {e}")
+
+        # Disconnect controller
+        if self.ctrl:
+            try:
+                logger.debug("Closing controller connection...")
                 self.ctrl.close()
+                logger.debug("✅ Controller closed")
             except Exception as e:
                 logger.error(f"Error closing controller: {e}")
             self.ctrl = None
 
+        # Disconnect kinetic controller
         if self.knx:
             try:
+                logger.debug("Closing kinetic controller...")
                 self.knx.close()
+                logger.debug("✅ Kinetic controller closed")
             except Exception as e:
                 logger.error(f"Error closing kinetic controller: {e}")
             self.knx = None
 
+        # Disconnect pump
         if self.pump:
             try:
+                logger.debug("Closing pump...")
                 self.pump.close()
+                logger.debug("✅ Pump closed")
             except Exception as e:
                 logger.error(f"Error closing pump: {e}")
             self.pump = None
 
+        # Disconnect spectrometer
         if self.usb:
             try:
+                logger.debug("Closing spectrometer...")
                 self.usb.close()
+                logger.debug("✅ Spectrometer closed")
             except Exception as e:
                 logger.error(f"Error closing spectrometer: {e}")
             self.usb = None
 
         self.hardware_disconnected.emit()
-        logger.info("All hardware disconnected")
+        logger.info("✅ All hardware disconnected gracefully")

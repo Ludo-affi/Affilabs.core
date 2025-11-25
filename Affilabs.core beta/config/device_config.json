@@ -19,6 +19,8 @@
     "servo_p_position": 100
   },
   "timing_parameters": {
+    "pre_led_delay_ms": 45.0,
+    "post_led_delay_ms": 5.0,
     "led_a_delay_ms": 0,
     "led_b_delay_ms": 0,
     "led_c_delay_ms": 0,

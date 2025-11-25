@@ -633,9 +633,9 @@ def calibrate_integration_time(
             break
 
         ctrl.set_intensity(ch=ch, raw_val=S_LED_INT)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
         int_array = usb.read_intensity()
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
         current_count = int_array.max()
         prism_check_readings.append(current_count)
         logger.debug(f"Ch {ch} initial reading at {integration}ms: {current_count:.0f} counts (target: {target_counts})")
@@ -754,7 +754,7 @@ def calibrate_integration_time(
             break
 
         ctrl.set_intensity(ch=ch, raw_val=S_LED_MIN)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         try:
             int_array = usb.read_intensity()
@@ -877,7 +877,7 @@ def calibrate_led_channel(
     # Start at maximum intensity
     intensity = P_LED_MAX
     ctrl.set_intensity(ch=ch, raw_val=intensity)
-    time.sleep(LED_DELAY)
+    time.sleep(pre_led_delay_ms / 1000.0)
 
     intensity_data = usb.read_intensity()
     if intensity_data is None:
@@ -917,7 +917,7 @@ def calibrate_led_channel(
 
         # Apply reduced intensity
         ctrl.set_intensity(ch=ch, raw_val=reduced_intensity)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         # Re-measure with reduced LED
         intensity_data = usb.read_intensity()
@@ -949,7 +949,7 @@ def calibrate_led_channel(
     ):
         intensity -= COARSE_ADJUST_STEP
         ctrl.set_intensity(ch=ch, raw_val=intensity)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         intensity_data = usb.read_intensity()
         if intensity_data is None:
@@ -974,7 +974,7 @@ def calibrate_led_channel(
     ):
         intensity += MEDIUM_ADJUST_STEP
         ctrl.set_intensity(ch=ch, raw_val=intensity)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         intensity_data = usb.read_intensity()
         if intensity_data is None:
@@ -993,7 +993,7 @@ def calibrate_led_channel(
     ):
         intensity -= FINE_ADJUST_STEP
         ctrl.set_intensity(ch=ch, raw_val=intensity)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         intensity_data = usb.read_intensity()
         if intensity_data is None:
@@ -1100,7 +1100,7 @@ def calibrate_p_mode_leds(
         logger.debug(f"   Starting P-mode at 50% of S-mode: LED={p_intensity} (S-mode was {ref_intensity[ch]})")
 
         ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         # Read initial intensity
         intensity_data = usb.read_intensity()
@@ -1119,7 +1119,7 @@ def calibrate_p_mode_leds(
         ):
             p_intensity += COARSE_ADJUST_STEP
             ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-            time.sleep(LED_DELAY)
+            time.sleep(pre_led_delay_ms / 1000.0)
 
             intensity_data = usb.read_intensity()
             if intensity_data is None:
@@ -1134,7 +1134,7 @@ def calibrate_p_mode_leds(
                 logger.warning(f"Ch {ch.upper()}: Unexpected saturation in coarse phase, backing off")
                 p_intensity = max(ref_intensity[ch], p_intensity - COARSE_ADJUST_STEP * 2)
                 ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                time.sleep(LED_DELAY)
+                time.sleep(pre_led_delay_ms / 1000.0)
                 intensity_data = usb.read_intensity()
                 if intensity_data is not None:
                     calibration_max = intensity_data.max()
@@ -1158,7 +1158,7 @@ def calibrate_p_mode_leds(
         ):
             p_intensity += FINE_ADJUST_STEP
             ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-            time.sleep(LED_DELAY)
+            time.sleep(pre_led_delay_ms / 1000.0)
 
             intensity_data = usb.read_intensity()
             if intensity_data is None:
@@ -1180,7 +1180,7 @@ def calibrate_p_mode_leds(
                 p_intensity -= FINE_ADJUST_STEP * 2
                 p_intensity = max(p_intensity, FINE_ADJUST_STEP)  # Don't go below minimum
                 ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                time.sleep(LED_DELAY)
+                time.sleep(pre_led_delay_ms / 1000.0)
                 intensity_data = usb.read_intensity()
                 if intensity_data is not None:
                     calibration_max = intensity_data.max()
@@ -1199,7 +1199,7 @@ def calibrate_p_mode_leds(
 
         # Final safety check: ensure we're truly below saturation threshold
         # Re-read spectrum one more time to verify final state
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
         final_check = usb.read_intensity()
         if final_check is not None:
             final_max = final_check.max()
@@ -1208,7 +1208,7 @@ def calibrate_p_mode_leds(
                 # Reduce LED by 10% to get safely below threshold
                 p_intensity = int(p_intensity * 0.90)
                 ctrl.set_intensity(ch=ch, raw_val=p_intensity)
-                time.sleep(LED_DELAY)
+                time.sleep(pre_led_delay_ms / 1000.0)
                 # Verify the reduction worked
                 verify_check = usb.read_intensity()
                 if verify_check is not None:
@@ -1282,7 +1282,7 @@ def measure_dark_noise(
     logger.debug("Measuring dark noise...")
 
     ctrl.turn_off_channels()
-    time.sleep(LED_DELAY)
+    time.sleep(pre_led_delay_ms / 1000.0)
 
     # Use provided scan count or calculate based on integration time
     if num_scans is None:
@@ -1382,7 +1382,7 @@ def measure_reference_signals(
         logger.debug(f"      Setting LED {ch.upper()} to intensity {ref_intensity[ch]}/255...")
         ctrl.set_intensity(ch=ch, raw_val=ref_intensity[ch])
         logger.debug(f"      LED command sent, waiting {LED_DELAY}s...")
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         ref_data_sum = np.zeros_like(dark_noise)
 
@@ -1605,7 +1605,7 @@ def verify_calibration(
         logger.debug(f"   Verifying ch {ch.upper()} at LED intensity {intensity}...")
 
         ctrl.set_intensity(ch=ch, raw_val=intensity)
-        time.sleep(LED_DELAY)
+        time.sleep(pre_led_delay_ms / 1000.0)
 
         intensity_data = usb.read_intensity()
         if intensity_data is None:
@@ -1681,7 +1681,7 @@ def verify_calibration(
 
             # Apply reduced intensity and re-measure
             ctrl.set_intensity(ch=ch, raw_val=new_intensity)
-            time.sleep(LED_DELAY)
+            time.sleep(pre_led_delay_ms / 1000.0)
 
             intensity_data = usb.read_intensity()
             if intensity_data is None:
@@ -2714,7 +2714,7 @@ def calibrate_integration_per_channel(
 
     # Set fixed LED intensity
     ctrl.set_intensity(ch=ch, raw_val=led_intensity)
-    time.sleep(LED_DELAY)
+    time.sleep(pre_led_delay_ms / 1000.0)
 
     # Start with minimum integration time
     integration = MIN_INTEGRATION
@@ -3213,3 +3213,6 @@ def perform_alternative_calibration(
         logger.exception(f"LED calibration failed (Global LED Intensity Method): {e}")
         result.success = False
         return result
+
+
+

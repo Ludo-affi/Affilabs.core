@@ -1391,34 +1391,34 @@ class AdvancedSettingsDialog(QDialog):
         sref_group.setLayout(sref_layout)
         scroll_layout.addWidget(sref_group)
 
-        # === FWHM & Peak Quality ===
-        fwhm_group = QGroupBox("📐 Peak Quality Metrics (FWHM)")
-        fwhm_group.setStyleSheet(cal_group.styleSheet())
-        fwhm_layout = QGridLayout()
-        fwhm_layout.setSpacing(12)
-        fwhm_layout.setColumnStretch(1, 1)
+        # === SENSOR IQ & DATA QUALITY ===
+        sensor_iq_group = QGroupBox("🎯 Sensor IQ - Data Quality Assessment")
+        sensor_iq_group.setStyleSheet(cal_group.styleSheet())
+        sensor_iq_layout = QGridLayout()
+        sensor_iq_layout.setSpacing(12)
+        sensor_iq_layout.setColumnStretch(1, 1)
 
-        fwhm_fields = [
-            ("Channel A FWHM:", "fwhm_a_diag"),
-            ("Channel B FWHM:", "fwhm_b_diag"),
-            ("Channel C FWHM:", "fwhm_c_diag"),
-            ("Channel D FWHM:", "fwhm_d_diag"),
-            ("FWHM Thresholds:", "fwhm_thresholds_diag"),
-            ("Session Avg FWHM:", "fwhm_session_avg_diag"),
+        sensor_iq_fields = [
+            ("Channel A IQ:", "sensor_iq_a_diag"),
+            ("Channel B IQ:", "sensor_iq_b_diag"),
+            ("Channel C IQ:", "sensor_iq_c_diag"),
+            ("Channel D IQ:", "sensor_iq_d_diag"),
+            ("Quality Zones:", "sensor_iq_zones_diag"),
+            ("FWHM Thresholds:", "sensor_iq_fwhm_diag"),
         ]
 
-        for row, (label_text, attr_name) in enumerate(fwhm_fields):
+        for row, (label_text, attr_name) in enumerate(sensor_iq_fields):
             label = QLabel(label_text)
             label.setStyleSheet("font-size: 12px; color: #86868B;")
             value = QLabel("N/A")
             value.setStyleSheet("font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;")
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             setattr(self, attr_name, value)
-            fwhm_layout.addWidget(label, row, 0, Qt.AlignmentFlag.AlignRight)
-            fwhm_layout.addWidget(value, row, 1)
+            sensor_iq_layout.addWidget(label, row, 0, Qt.AlignmentFlag.AlignRight)
+            sensor_iq_layout.addWidget(value, row, 1)
 
-        fwhm_group.setLayout(fwhm_layout)
-        scroll_layout.addWidget(fwhm_group)
+        sensor_iq_group.setLayout(sensor_iq_layout)
+        scroll_layout.addWidget(sensor_iq_group)
 
         # === System Status ===
         status_group = QGroupBox("⚙️ System Status")
@@ -4235,7 +4235,7 @@ class AffilabsMainWindow(QMainWindow):
             # Emit signal to trigger hardware connection (handled by Application class)
             logger.info(f"[UI] Checking for power_on_requested signal: {hasattr(self, 'power_on_requested')}")
             print(f"[UI] Has signal 'power_on_requested': {hasattr(self, 'power_on_requested')}")
-            
+
             if hasattr(self, 'power_on_requested'):
                 logger.info("[UI] Emitting power_on_requested signal...")
                 print("[UI] Emitting power_on_requested signal...")
@@ -4428,21 +4428,54 @@ class AffilabsMainWindow(QMainWindow):
                 - fluidics_ready: Boolean
         """
         # Build list of connected devices
+        # ONLY show the 5 valid hardware types: P4SPR, P4PRO, ezSPR, KNX, AffiPump
         devices = []
 
         ctrl_type = status.get('ctrl_type')
 
-        # Controller
+        # Map internal names to display names
+        # Valid hardware: P4SPR, P4PRO, ezSPR, KNX, AffiPump
+        # Common pairings: P4SPR+KNX, P4PRO+AffiPump
+        CONTROLLER_DISPLAY_NAMES = {
+            'PicoP4SPR': 'P4SPR',
+            'P4SPR': 'P4SPR',
+            'PicoP4PRO': 'P4PRO',
+            'P4PRO': 'P4PRO',
+            'PicoEZSPR': 'P4PRO',  # PicoEZSPR hardware = P4PRO product
+            'EZSPR': 'ezSPR',
+            'ezSPR': 'ezSPR'
+        }
+
+        KNX_DISPLAY_NAMES = {
+            'KNX': 'KNX',
+            'KNX2': 'KNX',
+            'PicoKNX2': 'KNX'
+        }
+
+        # Controller (P4SPR, P4PRO, ezSPR)
         if ctrl_type:
-            # Controller found = show device type
-            devices.append(f"Device: {ctrl_type}")
+            display_name = CONTROLLER_DISPLAY_NAMES.get(ctrl_type, None)
+            if display_name:
+                devices.append(display_name)
+            else:
+                # Unknown controller - log warning but don't display
+                from utils.logger import logger
+                logger.warning(f"⚠️ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected")
 
-        if status.get('knx_type'):
-            devices.append(f"Kinetic Controller: {status['knx_type']}")
+        # Kinetic Controller (KNX)
+        knx_type = status.get('knx_type')
+        if knx_type:
+            display_name = KNX_DISPLAY_NAMES.get(knx_type, None)
+            if display_name:
+                devices.append(display_name)
+            else:
+                # Unknown kinetic type - log warning but don't display
+                from utils.logger import logger
+                logger.warning(f"⚠️ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected")
 
-        # Pump status: only show if actually connected
+        # Pump (AffiPump)
         if status.get('pump_connected'):
-            devices.append("Pump: Connected")
+            devices.append("AffiPump")
 
         # Update device labels
         for i, label in enumerate(self.sidebar.hw_device_labels):
@@ -6076,7 +6109,7 @@ End of Debug Log
         logger.info("Simple LED Calibration button clicked")
         # Emit signal to trigger calibration via application
         if hasattr(self, 'app') and self.app:
-            self.app.calibration.start_calibration(mode='led_only')
+            self.app.calibration.start_calibration()
         else:
             logger.warning("Application not connected - cannot start calibration")
 
@@ -6085,7 +6118,7 @@ End of Debug Log
         logger.info("Full Calibration button clicked")
         # Emit signal to trigger full calibration via application
         if hasattr(self, 'app') and self.app:
-            self.app.calibration.start_calibration(mode='full')
+            self.app.calibration.start_calibration()
         else:
             logger.warning("Application not connected - cannot start calibration")
 

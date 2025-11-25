@@ -235,7 +235,8 @@ class Application(QApplication):
         # Track data filtering settings (use config defaults)
         self._filter_enabled = DEFAULT_FILTER_ENABLED
         self._filter_strength = DEFAULT_FILTER_STRENGTH
-        # Uses adaptive online filtering automatically (no method selection needed)
+        self._filter_method = 'median'  # Default: 'median' or 'kalman'
+        self._kalman_filters = {}  # Store Kalman filter instances per channel
 
         # Track selected channel for flagging (None, 0-3 for A-D)
         self._selected_channel = None
@@ -503,6 +504,10 @@ class Application(QApplication):
         ui.max_input.editingFinished.connect(self._on_manual_range_changed)
         ui.x_axis_btn.toggled.connect(self._on_axis_selected)
         ui.y_axis_btn.toggled.connect(self._on_axis_selected)
+
+        # --- Data Filtering Controls ---
+        ui.filter_enable.toggled.connect(self._on_filter_toggled)
+        ui.filter_slider.valueChanged.connect(self._on_filter_strength_changed)
 
         # Cursor movements for cycle graph updates (performance-critical)
         ui.full_timeline_graph.start_cursor.sigPositionChanged.connect(
@@ -1077,24 +1082,35 @@ class Application(QApplication):
         # Reset scan button state in UI
         self.main_window._on_hardware_scan_complete()
 
-        # Check if actual hardware was detected (controller, kinetic, pump, OR spectrometer)
-        # ANY hardware device should keep power button connected
-        hardware_detected = any([
-            status.get('ctrl_type'),
-            status.get('knx_type'),
-            status.get('pump_connected'),
-            status.get('spectrometer')  # Spectrometer counts as hardware
-        ])
+        # Check if scan was successful (valid hardware combinations found)
+        # Valid combinations:
+        # - P4SPR/P4PRO/ezSPR: controller + detector (both required)
+        # - KNX: standalone kinetic controller
+        # - AffiPump: standalone pump
+        scan_successful = status.get('scan_successful', False)
+        
+        # Validate hardware combinations
+        ctrl_type = status.get('ctrl_type')
+        knx_type = status.get('knx_type')
+        pump_connected = status.get('pump_connected')
+        
+        valid_hardware = []
+        if ctrl_type:  # SPR device (already validated as controller + detector)
+            valid_hardware.append(ctrl_type)
+        if knx_type:  # Kinetic controller (standalone)
+            valid_hardware.append(knx_type)
+        if pump_connected:  # Pump (standalone)
+            valid_hardware.append('AffiPump')
 
-        # Update power button based on whether hardware was found
-        if hardware_detected:
-            logger.info("✅ Hardware found - updating power button to CONNECTED (green)")
+        # Update power button based on scan success
+        if scan_successful and valid_hardware:
+            logger.info(f"✅ Scan SUCCESSFUL - found valid hardware: {', '.join(valid_hardware)}")
             self.main_window.set_power_state("connected")
         else:
-            logger.info("⚠️ NO hardware found - reverting power button to DISCONNECTED (gray)")
+            logger.warning("⚠️ Scan FAILED - no valid hardware combinations found")
             self.main_window.set_power_state("disconnected")
 
-            # Clear Device Status UI to remove any ghost hardware displays
+            # Clear Device Status UI
             empty_status = {
                 'ctrl_type': None,
                 'knx_type': None,
@@ -1106,13 +1122,16 @@ class Application(QApplication):
             }
             self._update_device_status_ui(empty_status)
 
+            # Show error message with specific details
+            ctrl_only = status.get('spectrometer') == False and ctrl_type
+            if ctrl_only:
+                error_msg = f"Incomplete hardware detected.\n\n{ctrl_type} controller found but detector missing.\n\nPlease connect USB4000 spectrometer."
+            else:
+                error_msg = "No devices found.\n\nPlease check:\n• USB connections\n• Device power\n• Driver installation"
+            
             from widgets.message import show_message
-            show_message(
-                "No devices found.\n\nPlease check:\n• USB connections\n• Device power\n• Driver installation",
-                msg_type="Warning",
-                title="Connection Failed"
-            )
-            return  # Exit early if no hardware detected
+            show_message(error_msg, msg_type="Warning", title="Connection Failed")
+            return  # Exit early if scan failed
 
         # Re-initialize device config with actual device serial number (ONLY on initial connection)
         device_serial = status.get('spectrometer_serial')
@@ -1542,6 +1561,11 @@ class Application(QApplication):
                         print(f"[DEBUG] self={type(self).__name__}, has_method={hasattr(self, '_queue_transmission_update')}")
                     self._queue_transmission_update(channel, data)
                     self._last_transmission_update[channel] = timestamp
+
+                    # Update Sensor IQ display if available
+                    if 'sensor_iq' in data:
+                        self._update_sensor_iq_display(channel, data['sensor_iq'])
+
                     if should_log:
                         logger.info(f"[CRASH-TRACK-2E] Transmission queue SUCCESS")
                         print(f"[PROCESS] Channel {channel}: Transmission queued")
@@ -1716,6 +1740,52 @@ class Application(QApplication):
                     except Exception as e:
                         # Silently ignore dialog update errors (dialog may be closing)
                         pass
+
+    def _update_sensor_iq_display(self, channel: str, sensor_iq):
+        """Update Sensor IQ display in diagnostics panel.
+
+        Args:
+            channel: Channel letter ('a', 'b', 'c', 'd')
+            sensor_iq: SensorIQMetrics object from utils.sensor_iq
+        """
+        try:
+            from utils.sensor_iq import (
+                SENSOR_IQ_ICONS,
+                SENSOR_IQ_COLORS,
+                ZONE_BOUNDARIES_DISPLAY,
+                FWHM_THRESHOLDS_DISPLAY
+            )
+
+            # Get the appropriate label widget for this channel
+            label_attr = f"sensor_iq_{channel}_diag"
+            if not hasattr(self.main_window, label_attr):
+                return
+
+            label = getattr(self.main_window, label_attr)
+
+            # Get icon and color from centralized constants
+            iq_level_key = sensor_iq.iq_level.value
+            icon = SENSOR_IQ_ICONS.get(iq_level_key, "❓")
+            color = SENSOR_IQ_COLORS.get(iq_level_key, "#86868B")
+
+            # Build display text
+            fwhm_text = f"{sensor_iq.fwhm:.1f}nm" if sensor_iq.fwhm else "N/A"
+            display_text = f"{icon} {sensor_iq.iq_level.value.upper()} | λ={sensor_iq.wavelength:.1f}nm, FWHM={fwhm_text}, Score={sensor_iq.quality_score:.2f}"
+
+            # Update label with styled text
+            label.setText(display_text)
+            label.setStyleSheet(f"font-size: 12px; color: {color}; font-weight: bold; font-family: 'Consolas', 'Courier New', monospace;")
+
+            # Update static info labels (only once per cycle, not per channel)
+            if channel == 'a':
+                if hasattr(self.main_window, 'sensor_iq_zones_diag'):
+                    self.main_window.sensor_iq_zones_diag.setText(ZONE_BOUNDARIES_DISPLAY)
+                if hasattr(self.main_window, 'sensor_iq_fwhm_diag'):
+                    self.main_window.sensor_iq_fwhm_diag.setText(FWHM_THRESHOLDS_DISPLAY)
+
+        except Exception as e:
+            # Silently fail - non-critical display update
+            pass
 
     def _should_update_transmission(self):
         """Check if transmission plot updates are needed (lazy evaluation).
@@ -2012,10 +2082,12 @@ class Application(QApplication):
 
                 # Apply filtering to CYCLE OF INTEREST (subset) - batch filtering for accuracy
                 # This is where we want high-quality filtering since it's used for analysis
+                # Kalman is optimal for historical/COI analysis (smooth trajectories)
                 if self._filter_enabled and len(cycle_wavelength) > 2:
                     cycle_wavelength = self._apply_smoothing(
                         cycle_wavelength,
-                        self._filter_strength
+                        self._filter_strength,
+                        ch_letter  # Pass channel for Kalman filter state
                     )
 
                 # Calculate Δ SPR (baseline is first point in cycle or calibrated baseline)
@@ -2289,7 +2361,7 @@ class Application(QApplication):
     def _on_acquisition_stopped(self):
         """Live data acquisition has stopped - disable record and pause buttons."""
         logger.info("⏹ Live acquisition stopped - disabling record/pause buttons")
-        self.main_window.disable_controls()
+        self.main_window.record_btn.setEnabled(False)
         self.main_window.pause_btn.setEnabled(False)
         self.main_window.record_btn.setToolTip("Start Recording\n(Enabled after calibration)")
         self.main_window.pause_btn.setToolTip("Pause Live Acquisition\n(Enabled after calibration)")
@@ -2586,13 +2658,19 @@ class Application(QApplication):
         from utils.spr_data_processor import KalmanFilter
 
         # Map strength to Kalman noise parameters
-        # Lower strength = more filtering (higher measurement noise, lower process noise)
-        # Higher strength = less filtering (lower measurement noise, higher process noise)
-        # Strength 1: R=0.5, Q=0.01 (heavy filtering)
-        # Strength 5: R=0.1, Q=0.05 (moderate)
-        # Strength 10: R=0.01, Q=0.1 (light filtering)
-        measurement_noise = 0.5 / self._filter_strength  # Higher strength = trust data more
-        process_noise = 0.01 * self._filter_strength  # Higher strength = allow more change
+        # Strength controls trust in measurements vs model:
+        # Lower strength (1) = heavy filtering: high R, low Q → trust model, smooth heavily
+        # Higher strength (10) = light filtering: low R, high Q → trust data, track closely
+        #
+        # R (measurement_noise): Variance of sensor noise
+        # Q (process_noise): Variance of system dynamics
+        # Kalman gain K = P / (P + R), so higher R → lower K → less weight on measurements
+        #
+        # Strength 1: R=0.10, Q=0.001 (heavy smoothing for noisy historical data)
+        # Strength 5: R=0.02, Q=0.005 (balanced)
+        # Strength 10: R=0.005, Q=0.01 (light smoothing for clean live data)
+        measurement_noise = 0.1 / self._filter_strength  # Lower strength → higher R → more filtering
+        process_noise = 0.001 * self._filter_strength  # Lower strength → lower Q → steadier model
 
         self._kalman_filters = {}
         for ch in self._idx_to_channel:
@@ -2601,17 +2679,16 @@ class Application(QApplication):
                 measurement_noise=measurement_noise
             )
 
-    def _apply_smoothing(self, data, strength: int):
-        """Apply median smoothing filter to data (optimized for SPR).
+        logger.info(f"Kalman filters initialized (R={measurement_noise:.4f}, Q={process_noise:.4f})")
 
-        Uses median filtering which is robust to outliers and preserves
-        sharp features (binding events) better than alternatives.
+    def _apply_smoothing(self, data, strength: int, channel: str = None, method: str = None):
+        """Apply smoothing filter to data (median or Kalman).
 
         Args:
             data: Input data array
             strength: Smoothing strength (1-10)
-                     Strength 1 = minimal smoothing (window 3)
-                     Strength 10 = maximum smoothing (window 21)
+            channel: Channel identifier ('a', 'b', 'c', 'd') - required for Kalman
+            method: Filter method override ('median' or 'kalman'), uses self._filter_method if None
 
         Returns:
             Smoothed data array
@@ -2621,8 +2698,28 @@ class Application(QApplication):
         if len(data) < 3:
             return data
 
+        # Use instance method if not overridden
+        filter_method = method if method is not None else self._filter_method
+
+        if filter_method == 'kalman':
+            # Kalman filter - optimal for smooth trajectories
+            if channel is None:
+                logger.warning("Kalman filter requires channel ID, falling back to median")
+                filter_method = 'median'
+            elif channel not in self._kalman_filters:
+                logger.warning(f"No Kalman filter for channel {channel}, initializing...")
+                self._init_kalman_filters()
+
+            if filter_method == 'kalman':  # Check again after fallback
+                # Reset filter state for new data sequence
+                self._kalman_filters[channel].reset()
+                # Apply Kalman filter
+                smoothed = self._kalman_filters[channel].filter_array(data)
+                return smoothed
+
+        # Median filter (default) - fast and preserves sharp features
         # Map strength (1-10) to window size (3-21)
-        # Strength 1 = minimal smoothing (window 3) - matches old software MED_FILT_WIN = 3
+        # Strength 1 = minimal smoothing (window 3)
         # Strength 10 = maximum smoothing (window 21)
         window_size = 2 * strength + 1  # Creates odd window: 3, 5, 7, ..., 21
         window_size = min(window_size, len(data))  # Don't exceed data length
@@ -2693,7 +2790,7 @@ class Application(QApplication):
 
         if len(data) <= ONLINE_FILTER_WINDOW:
             # Small dataset, filter everything normally
-            return self._apply_smoothing(data, strength)
+            return self._apply_smoothing(data, strength, channel)
         else:
             # Large dataset: filter only recent window
             # Keep most of timeline unfiltered for speed (preview quality)
@@ -2706,7 +2803,7 @@ class Application(QApplication):
             overlap = 20
             filter_start = max(0, split_point - overlap)
             recent_data = data[filter_start:]
-            filtered_recent = self._apply_smoothing(recent_data, strength)
+            filtered_recent = self._apply_smoothing(recent_data, strength, channel)
 
             # Replace recent portion with filtered version
             result[filter_start:] = filtered_recent
@@ -2725,7 +2822,7 @@ class Application(QApplication):
             # Apply smoothing if enabled
             display_data = wavelength_data
             if self._filter_enabled:
-                display_data = self._apply_smoothing(wavelength_data, self._filter_strength)
+                display_data = self._apply_smoothing(wavelength_data, self._filter_strength, ch_letter)
 
             # Update curve
             curve = self.main_window.full_timeline_graph.curves[ch_idx]
@@ -3033,7 +3130,7 @@ class Application(QApplication):
             logger.warning("Hardware not connected - cannot toggle polarizer")
 
     def _on_apply_settings(self):
-        """Apply polarizer positions and LED intensities to hardware.
+        """Apply polarizer positions, LED intensities, and LED delays to hardware.
 
         Note: Servo positions are saved to device config file (not EEPROM).
         The OEM provides the device config file with factory servo positions,
@@ -3047,6 +3144,15 @@ class Application(QApplication):
             led_b = int(self.main_window.channel_b_input.text() or "0")
             led_c = int(self.main_window.channel_c_input.text() or "0")
             led_d = int(self.main_window.channel_d_input.text() or "0")
+
+            # Get LED delay values from Advanced Settings if available
+            pre_led_delay = 45  # Default
+            post_led_delay = 5  # Default
+            if hasattr(self.main_window, 'advanced_menu') and self.main_window.advanced_menu:
+                if hasattr(self.main_window.advanced_menu, 'led_delay_input'):
+                    pre_led_delay = self.main_window.advanced_menu.led_delay_input.value()
+                if hasattr(self.main_window.advanced_menu, 'post_led_delay_input'):
+                    post_led_delay = self.main_window.advanced_menu.post_led_delay_input.value()
 
             # Validate ranges
             if not (0 <= s_pos <= 180 and 0 <= p_pos <= 180):
@@ -3068,6 +3174,11 @@ class Application(QApplication):
                 self.hardware_mgr.ctrl.set_intensity('b', led_b)
                 self.hardware_mgr.ctrl.set_intensity('c', led_c)
                 self.hardware_mgr.ctrl.set_intensity('d', led_d)
+
+                # Apply LED delays to data acquisition manager
+                if self.data_mgr:
+                    self.data_mgr.set_led_delays(pre_led_delay, post_led_delay)
+                    logger.info(f"Applied LED delays: PRE={pre_led_delay}ms, POST={post_led_delay}ms")
 
                 # Save servo positions and LED intensities to device config file
                 # The device config file is provided by OEM with factory positions
@@ -3901,8 +4012,8 @@ class Application(QApplication):
     def _autosave_cycle_data(self, start_time: float, stop_time: float):
         """Automatically save cycle data to session folder.
 
-        Creates timestamped cycle exports for later analysis.
-        Users can review these without cluttering the live view.
+        Overwrites a single "current_cycle.csv" file instead of creating multiple timestamped files.
+        This prevents file spam while still preserving the current cycle selection.
         """
         import numpy as np
         from datetime import datetime
@@ -3922,9 +4033,8 @@ class Application(QApplication):
 
                 self._session_cycles_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename with timestamp and cycle bounds
-            timestamp = datetime.now().strftime("%H%M%S")
-            filename = f"cycle_{timestamp}_t{start_time:.1f}-{stop_time:.1f}s.csv"
+            # Use a single filename that gets overwritten (no timestamp spam)
+            filename = "current_cycle.csv"
             filepath = self._session_cycles_dir / filename
 
             # Determine which channels have data
@@ -3989,7 +4099,7 @@ class Application(QApplication):
                 # Write DataFrame (vectorized)
                 df.to_csv(f, index=False, float_format='%.4f')
 
-            logger.info(f"💾 Cycle autosaved: {filename} ({len(active_channels)} channels, {len(df)} points)")
+            logger.debug(f"💾 Cycle autosaved to {filename} ({len(active_channels)} channels, {len(df)} points)")
 
         except Exception as e:
             logger.debug(f"Cycle autosave failed: {e}")
