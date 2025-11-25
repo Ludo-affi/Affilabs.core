@@ -66,8 +66,10 @@ class USB4000:
                 logger.error("Install with: pip install seabreeze pyusb")
                 return False
 
-            # Discover devices (NEW software method) with timeout
-            logger.debug("Scanning for Ocean Optics devices (5s timeout)...")
+            # Discover devices with configurable timeout
+            from core.hardware_manager import HARDWARE_DEBUG, CONNECTION_TIMEOUT
+            if HARDWARE_DEBUG:
+                logger.debug(f"Scanning for Ocean Optics devices ({CONNECTION_TIMEOUT}s timeout)...")
 
             # Use threading with timeout to prevent indefinite blocking
             import threading
@@ -83,17 +85,18 @@ class USB4000:
 
             scan_thread = threading.Thread(target=scan_devices, daemon=True)
             scan_thread.start()
-            scan_thread.join(timeout=5.0)
+            scan_thread.join(timeout=CONNECTION_TIMEOUT)
 
             if scan_thread.is_alive():
-                logger.warning("USB device scan timed out after 5 seconds - no spectrometer connected")
+                logger.warning(f"USB device scan timed out after {CONNECTION_TIMEOUT}s - no spectrometer")
                 return False
 
             if exception[0]:
                 logger.error(f"USB device scan failed: {exception[0]}")
                 return False
 
-            logger.debug(f"SeaBreeze found {len(devices)} device(s)")
+            if HARDWARE_DEBUG:
+                logger.debug(f"SeaBreeze found {len(devices)} device(s)")
 
             if not devices:
                 logger.warning("No USB4000 devices found")

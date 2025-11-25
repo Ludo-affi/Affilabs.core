@@ -1,7 +1,7 @@
 # 🚀 Ready for Hardware Testing!
 
-**Date:** November 24, 2025  
-**Branch:** v4.0-ui-improvements  
+**Date:** November 24, 2025
+**Branch:** v4.0-ui-improvements
 **Status:** ✅ All features complete and validated with simulation
 
 ---
@@ -117,7 +117,7 @@
 - [ ] Switch back to Live Data page (Dialog should reappear)
 - [ ] Watch spectroscopy status: Should show green "Running"
 
-**Expected:** 
+**Expected:**
 - ✅ No crash (critical!)
 - ✅ Live Data Dialog updates smoothly
 - ✅ Cursor follows data
@@ -189,9 +189,9 @@ All operations logged to console with timestamps:
 ## ⚠️ Potential Issues & Solutions
 
 ### Issue: Calibration Fails
-**Symptom:** "Calibration failed" message, Start button stays disabled  
-**Cause:** Hardware not connected properly or detector issues  
-**Solution:** 
+**Symptom:** "Calibration failed" message, Start button stays disabled
+**Cause:** Hardware not connected properly or detector issues
+**Solution:**
 1. Check USB cable connection
 2. Press Power button again
 3. Check detector counts (should be >5,000)
@@ -200,9 +200,9 @@ All operations logged to console with timestamps:
 ---
 
 ### Issue: No Wavelength Data Error
-**Symptom:** `[HARDWARE ERROR] No wavelength data for channel X!`  
-**Cause:** Wavelength calibration data not loaded from detector  
-**This is GOOD:** Error detection working! (Not masking with fake data)  
+**Symptom:** `[HARDWARE ERROR] No wavelength data for channel X!`
+**Cause:** Wavelength calibration data not loaded from detector
+**This is GOOD:** Error detection working! (Not masking with fake data)
 **Solution:**
 1. Check if `data_mgr.wave_data` is populated after calibration
 2. Verify detector EEPROM has wavelength calibration stored
@@ -211,7 +211,7 @@ All operations logged to console with timestamps:
 ---
 
 ### Issue: Live Data Dialog Not Updating
-**Symptom:** Dialog opens but plots are empty/frozen  
+**Symptom:** Dialog opens but plots are empty/frozen
 **Possible Causes:**
 1. No spectrum data coming from hardware (check logs)
 2. Wavelength array is None (see error above)
@@ -225,8 +225,8 @@ All operations logged to console with timestamps:
 ---
 
 ### Issue: Crash After Start
-**Symptom:** App crashes seconds after clicking Start  
-**This would be BAD:** Thread safety fix failed!  
+**Symptom:** App crashes seconds after clicking Start
+**This would be BAD:** Thread safety fix failed!
 **Debug:**
 1. Check error logs for Qt threading warnings
 2. Look for widget access from wrong thread
@@ -258,8 +258,8 @@ All operations logged to console with timestamps:
 
 ## 🎯 What We're Testing
 
-**Primary Goal:** Verify the 40-hour crash bug is FIXED  
-**Secondary Goals:** Validate all restored features with real hardware  
+**Primary Goal:** Verify the 40-hour crash bug is FIXED
+**Secondary Goals:** Validate all restored features with real hardware
 **Confidence Level:** 🟢 HIGH - All features tested with simulation
 
 ### What Changed Since Crash Bug
@@ -312,6 +312,6 @@ All software development is complete. The application has been:
 
 ---
 
-**Last Simulation Test:** 50+ cycles @ 2 Hz, 25+ seconds, ZERO crashes  
-**Next Step:** Connect hardware and run Phase 1-6 checklist  
+**Last Simulation Test:** 50+ cycles @ 2 Hz, 25+ seconds, ZERO crashes
+**Next Step:** Connect hardware and run Phase 1-6 checklist
 **Expected Outcome:** Everything works perfectly! 🤞

@@ -9,6 +9,7 @@ from utils.pipelines.fourier_pipeline import FourierPipeline
 from utils.pipelines.centroid_pipeline import CentroidPipeline
 from utils.pipelines.polynomial_pipeline import PolynomialPipeline
 from utils.pipelines.adaptive_multifeature_pipeline import AdaptiveMultiFeaturePipeline
+from utils.pipelines.consensus_pipeline import ConsensusPipeline
 from utils.logger import logger
 
 
@@ -24,6 +25,7 @@ def initialize_pipelines():
     registry.register('centroid', CentroidPipeline)
     registry.register('polynomial', PolynomialPipeline)
     registry.register('adaptive', AdaptiveMultiFeaturePipeline)
+    registry.register('consensus', ConsensusPipeline)
 
     # Set default pipeline
     registry.set_active_pipeline('fourier')

@@ -1034,7 +1034,9 @@ class DeviceConfiguration:
         s_ref_wavelengths: Optional[np.ndarray] = None,
         live_boost_integration_ms: Optional[int] = None,
         live_boost_led_intensities: Optional[Dict[str, int]] = None,
-        live_boost_factor: Optional[float] = None
+        live_boost_factor: Optional[float] = None,
+        calibration_method: str = 'standard',
+        per_channel_integration_times: Optional[Dict[str, int]] = None
     ) -> None:
         """
         Save LED calibration baseline to device_config.json (single source of truth).
@@ -1042,20 +1044,45 @@ class DeviceConfiguration:
         This stores calibrated LED intensities, integration time, and S-mode reference
         spectra for quick QC validation. Replaces any existing calibration data.
 
+        OPTICAL SYSTEM MODE HANDLING:
+        ==============================
+        STANDARD Mode (Global Integration Time):
+          - integration_time_ms: Single value used by ALL channels (e.g., 93 ms)
+          - s_mode_intensities: VARIABLE per channel (e.g., {'a': 187, 'b': 203, 'c': 195, 'd': 178})
+          - p_mode_intensities: VARIABLE per channel (e.g., {'a': 238, 'b': 255, 'c': 245, 'd': 229})
+          - per_channel_integration_times: None (not used)
+          - Interpretation: All channels share SAME integration time, but DIFFERENT LED intensities
+
+        ALTERNATIVE Mode (Global LED Intensity):
+          - integration_time_ms: MAX integration time across all channels (e.g., 120 ms)
+          - s_mode_intensities: FIXED at 255 for all channels ({'a': 255, 'b': 255, 'c': 255, 'd': 255})
+          - p_mode_intensities: FIXED at 255 for all channels ({'a': 255, 'b': 255, 'c': 255, 'd': 255})
+          - per_channel_integration_times: Dict per channel (e.g., {'a': 85, 'b': 95, 'c': 120, 'd': 110})
+          - Interpretation: All channels use SAME LED intensity (255), but DIFFERENT integration times
+
         CRITICAL FOR QC VALIDATION:
         The S-ref spectra saved here are captured AFTER live mode boost optimization.
         This ensures QC validation compares against the actual live running parameters,
         not the calibration baseline.
 
         Args:
-            integration_time_ms: Calibrated integration time in milliseconds (S-mode baseline)
-            s_mode_intensities: S-mode LED intensities per channel {'A': 128, ...}
-            p_mode_intensities: P-mode LED intensities per channel {'A': 172, ...}
+            integration_time_ms: Calibrated integration time in milliseconds
+                                 STANDARD mode: global value for all channels
+                                 ALTERNATIVE mode: maximum integration time across channels
+            s_mode_intensities: S-mode LED intensities per channel {'a': 128, ...}
+                                STANDARD mode: variable per channel
+                                ALTERNATIVE mode: all set to 255
+            p_mode_intensities: P-mode LED intensities per channel {'a': 172, ...}
+                                STANDARD mode: variable per channel
+                                ALTERNATIVE mode: all set to 255
             s_ref_spectra: S-mode reference spectra per channel (AFTER boost if provided)
             s_ref_wavelengths: Optional wavelength array (stored separately if provided)
             live_boost_integration_ms: Optional boosted integration time for live mode (P-mode)
             live_boost_led_intensities: Optional boosted LED intensities for live mode
             live_boost_factor: Optional boost factor applied (e.g., 1.5× for 50% → 75%)
+            calibration_method: 'standard' or 'alternative' - indicates which calibration mode was used
+            per_channel_integration_times: Optional dict of integration times per channel (ALTERNATIVE mode only)
+                                           e.g., {'a': 85, 'b': 95, 'c': 120, 'd': 110}
         """
         try:
             logger.info("💾 Saving LED calibration to device_config.json (single source of truth)")
@@ -1063,6 +1090,7 @@ class DeviceConfiguration:
             # Create/update led_calibration section
             self.config['led_calibration'] = {
                 'calibration_date': datetime.now().isoformat(),
+                'calibration_method': calibration_method,  # 'standard' or 'alternative'
                 'integration_time_ms': int(integration_time_ms),
                 's_mode_intensities': {ch: int(val) for ch, val in s_mode_intensities.items()},
                 'p_mode_intensities': {ch: int(val) for ch, val in p_mode_intensities.items()},
@@ -1073,6 +1101,13 @@ class DeviceConfiguration:
                     ch: float(np.max(spec)) for ch, spec in s_ref_spectra.items()
                 }
             }
+
+            # Save per-channel integration times for ALTERNATIVE mode
+            if calibration_method == 'alternative' and per_channel_integration_times:
+                self.config['led_calibration']['per_channel_integration_times'] = {
+                    ch: int(val) for ch, val in per_channel_integration_times.items()
+                }
+                logger.info(f"   Per-channel integration times: {per_channel_integration_times}")
 
             # Store live mode boost parameters (for QC validation)
             if live_boost_integration_ms is not None:
@@ -1101,8 +1136,12 @@ class DeviceConfiguration:
             self.save()
 
             logger.info("✅ LED calibration saved successfully")
+            logger.info(f"   Calibration method: {calibration_method.upper()}")
             logger.info(f"   Calibration baseline:")
-            logger.info(f"      Integration time: {integration_time_ms} ms")
+            if calibration_method == 'standard':
+                logger.info(f"      Integration time: {integration_time_ms} ms (global)")
+            else:
+                logger.info(f"      Integration time: {integration_time_ms} ms (max across channels)")
             logger.info(f"      S-mode LEDs: {s_mode_intensities}")
             logger.info(f"      P-mode LEDs: {p_mode_intensities}")
             if live_boost_integration_ms:
@@ -1122,9 +1161,11 @@ class DeviceConfiguration:
         Returns:
             Dictionary containing calibration data:
             - calibration_date: ISO timestamp
-            - integration_time_ms: int
-            - s_mode_intensities: dict
-            - p_mode_intensities: dict
+            - calibration_method: 'standard' or 'alternative'
+            - integration_time_ms: int (global for standard, max for alternative)
+            - s_mode_intensities: dict (variable for standard, all 255 for alternative)
+            - p_mode_intensities: dict (variable for standard, all 255 for alternative)
+            - per_channel_integration_times: dict (only for alternative mode)
             - s_ref_baseline: dict of numpy arrays
             - s_ref_max_intensity: dict of float
             - s_ref_wavelengths: numpy array (if available)

@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2025-11-21T10:19:32.590056",
-    "last_modified": "2025-11-24T12:06:30.793813",
+    "last_modified": "2025-11-24T18:08:36.267931",
     "device_id": "FLMT09116"
   },
   "hardware": {
@@ -42,12 +42,12 @@
     "factory_calibrated": false,
     "user_calibrated": false,
     "preferred_calibration_mode": "global",
-    "integration_time_ms": 35,
-    "num_scans": 5,
-    "led_intensity_a": 255,
-    "led_intensity_b": 178,
-    "led_intensity_c": 165,
-    "led_intensity_d": 252
+    "integration_time_ms": 95,
+    "num_scans": 2,
+    "led_intensity_a": 26,
+    "led_intensity_b": 28,
+    "led_intensity_c": 31,
+    "led_intensity_d": 36
   },
   "maintenance": {
     "last_maintenance_date": null,

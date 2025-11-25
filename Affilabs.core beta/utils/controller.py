@@ -196,18 +196,42 @@ class ArduinoController(StaticController):
         self._ser = None
 
     def open(self):
+        """Open Arduino controller - STRICT VID/PID matching only to prevent hijacking."""
+        # Only try VID/PID match - no fallback to prevent connecting to wrong devices
         for dev in serial.tools.list_ports.comports():
             if dev.pid == ARDUINO_PID and dev.vid == ARDUINO_VID:
-            # if dev.vid == ADAFRUIT_VID:
-                logger.info(f"Found an Arduino board - {dev}")
-                # logger.info(f"Found a Feather board - {dev}")
+                logger.info(f"Found Arduino with correct VID/PID - {dev.device}")
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=3, write_timeout=2)
-                    return True
+                    logger.info(f"Trying Arduino on {dev.device}")
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.5, write_timeout=0.5)
+
+                    # Validate it's actually a P4SPR controller by testing basic commands
+                    try:
+                        self._ser.write(b'i')  # Turn off channels command
+                        response = self._ser.read(1)
+                        if response == b'i':
+                            logger.info(f"Arduino P4SPR validated on {dev.device}")
+                            return True
+                        else:
+                            logger.warning(f"Device on {dev.device} doesn't respond like P4SPR (got {response})")
+                            self._ser.close()
+                            self._ser = None
+                    except Exception as val_err:
+                        logger.warning(f"Failed to validate device on {dev.device}: {val_err}")
+                        self._ser.close()
+                        self._ser = None
+
                 except Exception as e:
-                    logger.error(f"Failed to open Arduino - {e}")
-                    self._ser.close()
-                    return False
+                    logger.error(f"Failed to open Arduino on {dev.device}: {e}")
+                    if self._ser is not None:
+                        try:
+                            self._ser.close()
+                        except:
+                            pass
+                        self._ser = None
+
+        # STRICT: No fallback - only connect to devices with correct VID/PID AND validation
+        logger.debug(f"No Arduino P4SPR found with VID:PID {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)}")
         return False
 
     def turn_on_channel(self, ch='a'):
@@ -753,10 +777,14 @@ class PicoP4SPR(StaticController):
                 pass
             self._ser = None
 
+        # Try VID/PID match first (preferred method)
+        logger.info(f"PicoP4SPR.open() - Looking for VID={hex(PICO_VID)} PID={hex(PICO_PID)}")
         for dev in serial.tools.list_ports.comports():
+            logger.debug(f"  Found port: {dev.device} VID={hex(dev.vid) if dev.vid else 'None'} PID={hex(dev.pid) if dev.pid else 'None'}")
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=3, write_timeout=5)
+                    logger.info(f"MATCH! Trying PicoP4SPR on {dev.device}")
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.5, write_timeout=1)
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
@@ -766,15 +794,16 @@ class PicoP4SPR(StaticController):
                     import time
                     time.sleep(0.1)  # Increased delay for Pico to respond
                     reply = self._ser.readline()[0:5].decode()
-                    logger.debug(f"Pico P4SPR reply - {reply}")
+                    logger.info(f"Pico P4SPR ID reply: '{reply}'")
                     if reply == 'P4SPR':
                         cmd = f"iv\n"
                         self._ser.write(cmd.encode())
                         time.sleep(0.1)
                         self.version = self._ser.readline()[0:4].decode()
-                        logger.debug(f" Pico P4SPR Fw: {self.version}")
+                        logger.info(f"Pico P4SPR Fw version: {self.version}")
                         return True
                     else:
+                        logger.warning(f"ID mismatch - expected 'P4SPR', got '{reply}'")
                         try:
                             self._ser.close()
                         except Exception as close_err:
@@ -782,7 +811,7 @@ class PicoP4SPR(StaticController):
                         finally:
                             self._ser = None
                 except Exception as e:
-                    logger.error(f"Failed to open Pico - {e}")
+                    logger.error(f"Failed to open Pico on {dev.device}: {e}")
                     if self._ser is not None:
                         try:
                             self._ser.close()
@@ -790,6 +819,58 @@ class PicoP4SPR(StaticController):
                             logger.error(f"Error closing port after exception: {close_err}")
                         finally:
                             self._ser = None
+        
+        logger.warning("No PicoP4SPR found with VID/PID match")
+
+        # FALLBACK: If VID/PID enumeration failed, try all COM ports blindly
+        # This fixes Device Manager detection issues on Windows
+        # BUT: Skip ports that might be Arduino boards to prevent hijacking
+        logger.info("VID/PID match failed - trying fallback COM port scan (Arduino excluded)...")
+
+        # Build exclusion list: ports with Arduino VID/PID
+        excluded_ports = set()
+        for dev in serial.tools.list_ports.comports():
+            if dev.pid == ARDUINO_PID and dev.vid == ARDUINO_VID:
+                excluded_ports.add(dev.device)
+                logger.debug(f"Excluding {dev.device} (Arduino detected)")
+
+        for dev in serial.tools.list_ports.comports():
+            # Skip excluded ports
+            if dev.device in excluded_ports:
+                continue
+
+            try:
+                logger.info(f"Trying PicoP4SPR fallback on {dev.device}")
+                self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.3, write_timeout=0.5)
+                self._ser.reset_input_buffer()
+                self._ser.reset_output_buffer()
+
+                cmd = f"id\n"
+                self._ser.write(cmd.encode())
+                import time
+                time.sleep(0.05)  # Reduced from 0.15s
+                reply = self._ser.readline()[0:5].decode()
+
+                if reply == 'P4SPR':
+                    logger.info(f"Found Pico P4SPR on {dev.device} (fallback method)")
+                    cmd = f"iv\n"
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.1)
+                    self.version = self._ser.readline()[0:4].decode()
+                    logger.debug(f" Pico P4SPR Fw: {self.version}")
+                    return True
+                else:
+                    self._ser.close()
+                    self._ser = None
+            except Exception as e:
+                logger.debug(f"   {dev.device} not a Pico P4SPR: {e}")
+                if self._ser is not None:
+                    try:
+                        self._ser.close()
+                    except:
+                        pass
+                    self._ser = None
+
         return False
 
     def turn_on_channel(self, ch='a'):
@@ -1403,6 +1484,8 @@ class PicoEZSPR(FlowController):
         return self._ser is not None and self._ser.is_open or self.open()
 
     def open(self):
+        """Open Pico EZSPR controller with VID/PID match + fallback to blind enumeration."""
+        # Try VID/PID match first (preferred method)
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
@@ -1424,7 +1507,7 @@ class PicoEZSPR(FlowController):
                         finally:
                             self._ser = None
                 except Exception as e:
-                    logger.error(f"Failed to open Pico - {e}")
+                    logger.error(f"Failed to open Pico via VID/PID - {e}")
                     if self._ser is not None:
                         try:
                             self._ser.close()
@@ -1432,7 +1515,42 @@ class PicoEZSPR(FlowController):
                             logger.error(f"Error closing port after exception: {close_err}")
                         finally:
                             self._ser = None
-                return False
+
+        # FALLBACK: Try all COM ports if VID/PID match failed
+        logger.info("🔧 Pico EZSPR VID/PID match failed - trying all COM ports...")
+        for dev in serial.tools.list_ports.comports():
+            try:
+                logger.debug(f"   Trying {dev.device}...")
+                self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=2)
+                self._ser.reset_input_buffer()
+                self._ser.reset_output_buffer()
+
+                cmd = f"id\n"
+                self._ser.write(cmd.encode())
+                import time
+                time.sleep(0.15)
+                reply = self._ser.readline()[0:5].decode()
+
+                if reply == 'EZSPR':
+                    logger.info(f"✅ Found Pico EZSPR on {dev.device} (fallback method)")
+                    cmd = f"iv\n"
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.1)
+                    self.version = self._ser.readline()[0:4].decode()
+                    return True
+                else:
+                    self._ser.close()
+                    self._ser = None
+            except Exception as e:
+                logger.debug(f"   {dev.device} not a Pico EZSPR: {e}")
+                if self._ser is not None:
+                    try:
+                        self._ser.close()
+                    except:
+                        pass
+                    self._ser = None
+
+        return False
 
     def update_firmware(self, firmware):
         if not (self.valid() and self.version in self.UPDATABLE_VERSIONS):

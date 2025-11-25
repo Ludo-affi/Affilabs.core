@@ -2154,40 +2154,84 @@ class AffilabsMainWindow(QMainWindow):
         self.live_data_checkbox.toggled.connect(self._toggle_live_data)
         header_layout.addWidget(self.live_data_checkbox)
 
-        # Add spacing
-        header_layout.addSpacing(12)
-
-        # Transmission Spectrum button
-        spectrum_btn = QPushButton("📊 Spectrum")
-        spectrum_btn.setFixedHeight(32)
-        spectrum_btn.setToolTip("Show live transmission spectrum for all channels")
-        spectrum_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  padding: 0 12px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #004BB8;"
-            "}"
-        )
-        spectrum_btn.clicked.connect(self._show_transmission_spectrum)
-        header_layout.addWidget(spectrum_btn)
-
         return header
 
     def _show_transmission_spectrum(self):
         """Show the transmission spectrum dialog."""
         if hasattr(self, 'app') and self.app:
             self.app.show_transmission_dialog()
+
+    def _on_pipeline_changed(self, index: int):
+        """Handle data processing pipeline selection change."""
+        if not hasattr(self.sidebar, 'pipeline_selector'):
+            return
+
+        pipeline_id = self.sidebar.pipeline_selector.itemData(index)
+
+        # Update active pipeline in registry
+        try:
+            from utils.processing_pipeline import get_pipeline_registry
+
+            registry = get_pipeline_registry()
+            registry.set_active_pipeline(pipeline_id)
+
+            print(f"Data processing pipeline changed to: {pipeline_id}")
+
+        except Exception as e:
+            print(f"Error updating pipeline configuration: {e}")
+
+    def _update_pipeline_description(self, index: int):
+        """Update the pipeline description label based on selection."""
+        if not hasattr(self.sidebar, 'pipeline_selector') or not hasattr(self.sidebar, 'pipeline_description'):
+            return
+
+        pipeline_id = self.sidebar.pipeline_selector.itemData(index)
+
+        descriptions = {
+            "fourier": "Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.",
+            "centroid": "Centroid Detection: Center-of-mass calculation of inverted transmission dip. Simple and robust for symmetric peaks.",
+            "polynomial": "Polynomial Fit: Fits polynomial to dip region and finds minimum. Good for smooth, well-defined peaks.",
+            "adaptive": "Adaptive Multi-Feature: Combines multiple detection methods with adaptive weighting. Best for challenging signals.",
+            "consensus": "Consensus: Combines 3 methods (centroid, parabolic, fourier) for robust multi-method validation."
+        }
+
+        description = descriptions.get(pipeline_id, "Unknown pipeline selected.")
+        self.sidebar.pipeline_description.setText(description)
+
+    def _init_pipeline_selector(self):
+        """Initialize the pipeline selector to match current active pipeline."""
+        if not hasattr(self.sidebar, 'pipeline_selector'):
+            return
+
+        try:
+            from utils.processing_pipeline import get_pipeline_registry
+
+            registry = get_pipeline_registry()
+            active_pipeline_id = registry.active_pipeline_id
+
+            # Find index of active pipeline
+            pipeline_map = {
+                'fourier': 0,
+                'centroid': 1,
+                'polynomial': 2,
+                'adaptive': 3,
+                'consensus': 4
+            }
+
+            index = pipeline_map.get(active_pipeline_id, 0)  # Default to Fourier
+
+            # Block signals while setting to avoid recursive calls
+            self.sidebar.pipeline_selector.blockSignals(True)
+            self.sidebar.pipeline_selector.setCurrentIndex(index)
+            self.sidebar.pipeline_selector.blockSignals(False)
+
+            # Update description
+            self._update_pipeline_description(index)
+
+            print(f"Pipeline selector initialized to: {active_pipeline_id} (index {index})")
+
+        except Exception as e:
+            print(f"Error initializing pipeline selector: {e}")
 
     def _toggle_live_data(self, enabled: bool) -> None:
         """Toggle live data updates for graphs."""
@@ -4179,21 +4223,33 @@ class AffilabsMainWindow(QMainWindow):
         """
         current_state = self.power_btn.property("powerState")
         logger.info(f"Power button clicked: current_state={current_state}")
+        print(f"\n{'='*80}")
+        print(f"[UI] Power button clicked! Current state: {current_state}")
+        print(f"{'='*80}\n")
 
         if current_state == "disconnected":
             # Start hardware connection
+            logger.info("[UI] Power ON: Starting hardware connection...")
             print("[UI] Power ON: Starting hardware connection...")
 
             # Emit signal to trigger hardware connection (handled by Application class)
+            logger.info(f"[UI] Checking for power_on_requested signal: {hasattr(self, 'power_on_requested')}")
+            print(f"[UI] Has signal 'power_on_requested': {hasattr(self, 'power_on_requested')}")
+            
             if hasattr(self, 'power_on_requested'):
+                logger.info("[UI] Emitting power_on_requested signal...")
+                print("[UI] Emitting power_on_requested signal...")
                 self.power_on_requested.emit()
-                print(f"[UI] Signal power_on_requested.emit() called!")
+                logger.info("[UI] Signal power_on_requested.emit() completed!")
+                print("[UI] Signal emitted successfully!")
             else:
+                logger.error("[UI] ERROR: power_on_requested signal not defined!")
                 print("[UI] ERROR: power_on_requested signal not defined!")
 
             # Update UI state to searching
             self.power_btn.setProperty("powerState", "searching")
             self._update_power_button_style()
+            logger.info("[UI] Power button state updated to 'searching'")
 
         elif current_state == "searching":
             # Cancel hardware connection in progress
@@ -4376,8 +4432,7 @@ class AffilabsMainWindow(QMainWindow):
 
         ctrl_type = status.get('ctrl_type')
 
-        # Only controller counts as a real device connection
-        # Spectrometer is a subunit, NOT a device
+        # Controller
         if ctrl_type:
             # Controller found = show device type
             devices.append(f"Device: {ctrl_type}")
@@ -4908,6 +4963,23 @@ End of Debug Log
 
             # Update UI with current values
             self._update_maintenance_display()
+
+            # Auto-load hardware settings into Settings sidebar
+            if self.device_config:
+                try:
+                    s_pos, p_pos = self.device_config.get_servo_positions()
+                    led_intensities = self.device_config.get_led_intensities()
+                    self.sidebar.load_hardware_settings(
+                        s_pos=s_pos,
+                        p_pos=p_pos,
+                        led_a=led_intensities.get('a', 0),
+                        led_b=led_intensities.get('b', 0),
+                        led_c=led_intensities.get('c', 0),
+                        led_d=led_intensities.get('d', 0)
+                    )
+                    logger.info(f"Auto-loaded hardware settings to sidebar: S={s_pos}, P={p_pos}")
+                except Exception as e:
+                    logger.warning(f"Could not auto-load hardware settings: {e}")
 
             if device_serial:
                 logger.info(f"Device configuration initialized for S/N: {device_serial}")
@@ -5846,6 +5918,9 @@ End of Debug Log
                 )
 
                 logger.info(f"Loaded current settings: S={s_pos}, P={p_pos}, LEDs={led_intensities}")
+
+                # Initialize pipeline selector to current configuration
+                self._init_pipeline_selector()
             else:
                 logger.warning("Device config not available - cannot load current settings")
                 QMessageBox.warning(
@@ -6033,6 +6108,10 @@ End of Debug Log
         power_shortcut = QShortcut(QKeySequence("Ctrl+P"), self)
         power_shortcut.activated.connect(self._handle_power_click)
 
+        # Demo data loader (Ctrl+Shift+D) for promotional screenshots
+        demo_data_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        demo_data_shortcut.activated.connect(self._load_demo_data)
+
         # Connect cycle management buttons
         self.sidebar.start_cycle_btn.clicked.connect(self.start_cycle)
         self.sidebar.add_to_queue_btn.clicked.connect(self.add_cycle_to_queue)
@@ -6050,6 +6129,15 @@ End of Debug Log
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)
         self.sidebar.load_current_settings_btn.clicked.connect(self._load_current_settings)
         self.sidebar.apply_settings_btn.clicked.connect(self._apply_settings)
+        self.sidebar.spectrum_btn.clicked.connect(self._show_transmission_spectrum)
+
+        # Connect pipeline selector
+        if hasattr(self.sidebar, 'pipeline_selector'):
+            self.sidebar.pipeline_selector.currentIndexChanged.connect(self._on_pipeline_changed)
+            # Update description on change
+            self.sidebar.pipeline_selector.currentIndexChanged.connect(self._update_pipeline_description)
+            # Initialize to current configuration
+            self._init_pipeline_selector()
 
         # Install event filter for Control+10-click detection on advanced settings button
         self.sidebar.advanced_settings_btn.installEventFilter(self)
@@ -6061,6 +6149,112 @@ End of Debug Log
 
         # Install element inspector for right-click inspection
         ElementInspector.install_inspector(self)
+
+    def _load_demo_data(self):
+        """Load demo SPR kinetics data for promotional screenshots.
+
+        Keyboard shortcut: Ctrl+Shift+D
+        Generates realistic binding curves with association/dissociation phases.
+        """
+        try:
+            from utils.demo_data_generator import generate_demo_cycle_data
+
+            # Generate 3 cycles of demo data with increasing responses
+            time_array, channel_data, cycle_boundaries = generate_demo_cycle_data(
+                num_cycles=3,
+                cycle_duration=600,
+                sampling_rate=2.0,
+                responses=[20, 40, 65],  # Progressive concentration series
+                seed=42,
+            )
+
+            # Check if app instance is available (it should be set by main_simplified)
+            if not hasattr(self, 'app') or self.app is None:
+                print("⚠️  Demo data: No app instance available")
+                print("   Demo data can only be loaded when running through main_simplified.py")
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Demo Data Unavailable",
+                    "Demo data can only be loaded when the application is fully initialized.\n\n"
+                    "Please ensure you're running through main_simplified.py"
+                )
+                return
+
+            # Access the data manager through the app instance
+            data_mgr = self.app.data_mgr
+
+            # Load demo data into buffers using the proper buffer update mechanism
+            # The data manager will handle converting to the right format
+            for i, time_point in enumerate(time_array):
+                # Update time buffer
+                if i == 0:
+                    # Initialize
+                    data_mgr.time_buffer = []
+                    data_mgr.wavelength_buffer_a = []
+                    data_mgr.wavelength_buffer_b = []
+                    data_mgr.wavelength_buffer_c = []
+                    data_mgr.wavelength_buffer_d = []
+
+                data_mgr.time_buffer.append(time_point)
+                data_mgr.wavelength_buffer_a.append(channel_data['a'][i])
+                data_mgr.wavelength_buffer_b.append(channel_data['b'][i])
+                data_mgr.wavelength_buffer_c.append(channel_data['c'][i])
+                data_mgr.wavelength_buffer_d.append(channel_data['d'][i])
+
+            # Now update the timeline data in buffer manager
+            import numpy as np
+            for ch in ['a', 'b', 'c', 'd']:
+                if hasattr(self.app, 'buffer_mgr') and hasattr(self.app.buffer_mgr, 'timeline_data'):
+                    self.app.buffer_mgr.timeline_data[ch].time = np.array(time_array)
+                    self.app.buffer_mgr.timeline_data[ch].wavelength = np.array(channel_data[ch])
+
+            # Trigger graph updates for both full timeline and cycle of interest
+            # Update full timeline graph
+            if hasattr(self, 'full_timeline_graph'):
+                for ch_idx, ch in enumerate(['a', 'b', 'c', 'd']):
+                    if ch_idx < len(self.full_timeline_graph.curves):
+                        curve = self.full_timeline_graph.curves[ch_idx]
+                        curve.setData(time_array, channel_data[ch])
+
+            # Update cycle of interest graph
+            if hasattr(self.app, '_update_cycle_of_interest_graph'):
+                self.app._update_cycle_of_interest_graph()
+
+            print(f"✅ Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles")
+            print("   Use this view for promotional screenshots")
+
+            # Show confirmation message
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Demo Data Loaded",
+                f"Loaded {len(cycle_boundaries)} cycles of demo SPR kinetics data.\n\n"
+                "The sensorgram now shows realistic binding curves for promotional use.\n"
+                f"Total duration: {time_array[-1]:.0f} seconds\n"
+                f"Data points: {len(time_array)}\n\n"
+                "Tip: Navigate to different views to capture various screenshots."
+            )
+
+        except ImportError as e:
+            print(f"❌ Error importing demo data generator: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"Could not import demo data generator:\n{e}"
+            )
+        except Exception as e:
+            print(f"❌ Error loading demo data: {e}")
+            import traceback
+            traceback.print_exc()
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Error Loading Demo Data",
+                f"An error occurred while loading demo data:\n\n{str(e)}\n\n"
+                "Please check the console for details."
+            )
 
 
 # Main entry point

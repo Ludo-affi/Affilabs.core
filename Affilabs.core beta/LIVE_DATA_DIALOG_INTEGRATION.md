@@ -12,7 +12,7 @@ The **Live Data Dialog** now shows real-time transmission and raw intensity spec
 self._live_data_dialog = None  # Live Data Dialog for real-time spectra
 ```
 
-### 2. **Dialog Opening on Start** 
+### 2. **Dialog Opening on Start**
 When clicking Start button → Phase 4:
 ```python
 # Opens dialog alongside recording:
@@ -106,7 +106,7 @@ def _on_page_changed(self, page_index: int):
 The dialog is fully integrated! Test it:
 
 1. Connect hardware
-2. Run calibration  
+2. Run calibration
 3. Click **Start**
 4. Watch the dialog show real-time spectra! 🎉
 

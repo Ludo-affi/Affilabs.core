@@ -143,7 +143,6 @@ from core.data_buffer_manager import DataBufferManager
 from core.calibration_coordinator import CalibrationCoordinator
 from core.graph_coordinator import GraphCoordinator
 from core.cycle_coordinator import CycleCoordinator
-from core.event_bus import EventBus
 from utils.logger import logger
 from utils.session_quality_monitor import SessionQualityMonitor
 from utils.spr_signal_processing import calculate_transmission
@@ -216,21 +215,13 @@ class Application(QApplication):
             session_id=None  # Auto-generated
         )
 
-        # Initialize centralized event bus for signal routing (before creating UI)
-        logger.info("Creating event bus...")
-        self.event_bus = EventBus(debug_mode=False)  # Set to True to log all events
-
         # Create main window (production AffiLabs.core UI)
         logger.info("Creating main window...")
-        self.main_window = AffilabsMainWindow(event_bus=self.event_bus)
+        self.main_window = AffilabsMainWindow(event_bus=None)
 
         # Store reference to app in window for easy access to managers
         self.main_window.app = self
-
-        # Create UI adapter for clean interface between app and UI
-        from ui_adapter import UIAdapter
-        self.ui = UIAdapter(self.main_window)
-        logger.info("✅ UI adapter initialized")
+        logger.info("✅ Main window initialized")
 
         # Track selected axis for manual/auto scaling (default X)
         self._selected_axis = 'x'
@@ -298,7 +289,7 @@ class Application(QApplication):
         from PySide6.QtCore import QTimer
         self._ui_update_timer = QTimer()
         self._ui_update_timer.timeout.connect(self._process_pending_ui_updates)
-        self._ui_update_timer.setInterval(100)  # 100ms = 10 FPS (smooth but not excessive)
+        self._ui_update_timer.setInterval(1000)  # 1000ms = 1 second update rate for live sensorgram
         self._pending_graph_updates = {'a': None, 'b': None, 'c': None, 'd': None}  # Store latest data per channel
         self._pending_transmission_updates = {'a': None, 'b': None, 'c': None, 'd': None}  # Batch transmission updates
         self._skip_graph_updates = False  # Skip updates during tab transitions to prevent freezing
@@ -374,61 +365,41 @@ class Application(QApplication):
         atexit.register(self._emergency_cleanup)
 
     def _connect_signals(self):
-        """Connect all signals using centralized event bus.
+        """Connect all manager signals directly to application handlers."""
+        # === HARDWARE MANAGER SIGNALS ===
+        # Queued connections for thread safety (hardware manager runs in worker thread)
+        self.hardware_mgr.hardware_connected.connect(self._on_hardware_connected, Qt.QueuedConnection)
+        self.hardware_mgr.hardware_disconnected.connect(self._on_hardware_disconnected, Qt.QueuedConnection)
+        self.hardware_mgr.connection_progress.connect(self._on_connection_progress, Qt.QueuedConnection)
+        self.hardware_mgr.error_occurred.connect(self._on_hardware_error, Qt.QueuedConnection)
 
-        Architecture:
-        - Managers → EventBus (source events)
-        - EventBus → Coordinators/Application (handle events)
-        - UI → EventBus → Application (user requests)
+        # === DATA ACQUISITION MANAGER SIGNALS ===
+        # Queued connections for thread safety (data manager runs in worker thread)
+        self.data_mgr.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
+        self.data_mgr.acquisition_started.connect(self._on_acquisition_started, Qt.QueuedConnection)
+        self.data_mgr.acquisition_stopped.connect(self._on_acquisition_stopped, Qt.QueuedConnection)
+        self.data_mgr.acquisition_error.connect(self._on_acquisition_error, Qt.QueuedConnection)
 
-        Benefits:
-        - Single source of truth for signal routing
-        - Easy to debug (all connections in event_bus.py)
-        - Decoupled components (easier to test)
-        """
-        # === CONNECT MANAGERS TO EVENT BUS ===
-        self.event_bus.connect_hardware_manager(self.hardware_mgr)
-        self.event_bus.connect_data_acquisition_manager(self.data_mgr)
-        self.event_bus.connect_recording_manager(self.recording_mgr)
-        self.event_bus.connect_kinetic_manager(self.kinetic_mgr)
-        self.event_bus.connect_ui_signals(self.ui)
+        # === RECORDING MANAGER SIGNALS ===
+        self.recording_mgr.recording_started.connect(self._on_recording_started)
+        self.recording_mgr.recording_stopped.connect(self._on_recording_stopped)
+        self.recording_mgr.recording_error.connect(self._on_recording_error)
+        self.recording_mgr.event_logged.connect(self._on_event_logged)
 
-        # === CONNECT EVENT BUS TO APPLICATION HANDLERS ===
-        # Hardware events (Queued to ensure GUI-thread execution when emitted from worker threads)
-        self.event_bus.hardware_connected.connect(self._on_hardware_connected, Qt.QueuedConnection)
-        self.event_bus.hardware_disconnected.connect(self._on_hardware_disconnected, Qt.QueuedConnection)
-        self.event_bus.hardware_connection_progress.connect(self._on_connection_progress, Qt.QueuedConnection)
-        self.event_bus.hardware_error.connect(self._on_hardware_error, Qt.QueuedConnection)
+        # === KINETIC MANAGER SIGNALS ===
+        self.kinetic_mgr.pump_initialized.connect(self._on_pump_initialized)
+        self.kinetic_mgr.pump_error.connect(self._on_pump_error)
+        self.kinetic_mgr.pump_state_changed.connect(self._on_pump_state_changed)
+        self.kinetic_mgr.valve_switched.connect(self._on_valve_switched)
 
-        # Data acquisition events (all routed through event bus for clean architecture)
-        self.event_bus.spectrum_acquired.connect(self._on_spectrum_acquired, Qt.QueuedConnection)
-        self.event_bus.acquisition_started.connect(self._on_acquisition_started, Qt.QueuedConnection)
-        self.event_bus.acquisition_stopped.connect(self._on_acquisition_stopped, Qt.QueuedConnection)
-        self.event_bus.acquisition_error.connect(self._on_acquisition_error, Qt.QueuedConnection)
-
-        # Calibration events → Route to CalibrationCoordinator
-        self.event_bus.calibration_started.connect(self.calibration.on_calibration_started, Qt.QueuedConnection)
-        self.event_bus.calibration_complete.connect(self.calibration.on_calibration_complete, Qt.QueuedConnection)
-        self.event_bus.calibration_failed.connect(self.calibration.on_calibration_failed, Qt.QueuedConnection)
-        self.event_bus.calibration_progress.connect(self.calibration.on_calibration_progress, Qt.QueuedConnection)
-
-        # Recording events
-        self.event_bus.recording_started.connect(self._on_recording_started)
-        self.event_bus.recording_stopped.connect(self._on_recording_stopped)
-        self.event_bus.recording_error.connect(self._on_recording_error)
-        self.event_bus.event_logged.connect(self._on_event_logged)
-
-        # Kinetic events
-        self.event_bus.pump_initialized.connect(self._on_pump_initialized)
-        self.event_bus.pump_error.connect(self._on_pump_error)
-        self.event_bus.pump_state_changed.connect(self._on_pump_state_changed)
-        self.event_bus.valve_switched.connect(self._on_valve_switched)
-
-        # User request events
-        self.event_bus.power_on_requested.connect(self._on_power_on_requested)
-        self.event_bus.power_off_requested.connect(self._on_power_off_requested)
-        self.event_bus.recording_start_requested.connect(self._on_recording_start_requested)
-        self.event_bus.recording_stop_requested.connect(self._on_recording_stop_requested)
+        # === UI SIGNALS (user requests) ===
+        self.main_window.power_on_requested.connect(self._on_power_on_requested)
+        logger.info("Connected: main_window.power_on_requested -> _on_power_on_requested")
+        print("[INIT] Power ON signal connected!")
+        
+        self.main_window.power_off_requested.connect(self._on_power_off_requested)
+        self.main_window.recording_start_requested.connect(self._on_recording_start_requested)
+        self.main_window.recording_stop_requested.connect(self._on_recording_stop_requested)
 
         # === DEBUG SHORTCUTS ===
         from PySide6.QtGui import QShortcut, QKeySequence
@@ -469,13 +440,13 @@ class Application(QApplication):
         # debug_thread_shortcut.activated.connect(self._debug_test_acquisition_thread)
         # logger.info("Debug: Ctrl+Shift+T to test acquisition thread (skip cal)")
 
-        self.event_bus.acquisition_pause_requested.connect(self._on_acquisition_pause_requested)
-        self.event_bus.export_requested.connect(self._on_export_requested)
+        self.main_window.acquisition_pause_requested.connect(self._on_acquisition_pause_requested)
+        self.main_window.export_requested.connect(self._on_export_requested)
 
         # === UI CONTROL SIGNALS (direct connections - not through event bus) ===
         self._connect_ui_control_signals()
 
-        logger.info("✅ All signal connections registered via event bus")
+        logger.info("✅ All signal connections registered")
 
     def _connect_hardware_signals(self):
         """DEPRECATED: Now handled by event bus.
@@ -576,8 +547,8 @@ class Application(QApplication):
                 'afterglow_available': False,
                 'sp_validation_results': {}
             }
-            self.event_bus.calibration_complete.emit(calibration_data)
-            logger.info('🧪 Debug: emitted calibration_complete (debug)')
+            # Debug bypass complete - calibration manager not used
+            logger.info('🧪 Debug: calibration bypassed (no signal emitted)')
         except Exception as e:
             logger.error(f'🧪 Debug: calibration simulation failed: {e}')
 
@@ -636,7 +607,7 @@ class Application(QApplication):
                 logger.info("✅ Start button enabled")
 
             # Enable recording controls
-            self.ui.enable_recording_controls()
+            self.main_window.enable_controls()
             logger.info("✅ Recording controls enabled")            # Show success message
             from widgets.message import show_message
             show_message(
@@ -813,6 +784,7 @@ class Application(QApplication):
                             'wavelength': float(peak_wavelength),  # Resonance peak for timeline
                             'intensity': float(intensities[ch]),    # Average intensity
                             'raw_spectrum': raw_spectrum,           # Full raw spectrum array
+                            'full_spectrum': raw_spectrum,          # Alias for compatibility
                             'transmission_spectrum': transmission_spectrum,  # Full transmission array
                             'wavelengths': wavelengths,             # Wavelength array for plots
                             'timestamp': time.time(),
@@ -1060,7 +1032,7 @@ class Application(QApplication):
         # Step 5: Update UI state
         logger.info("🎭 Updating UI state...")
         try:
-            self.ui.enable_recording_controls()
+            self.main_window.enable_controls()
             if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'start_cycle_btn'):
                 self.main_window.sidebar.start_cycle_btn.setEnabled(True)
             self._on_acquisition_started()
@@ -1091,12 +1063,13 @@ class Application(QApplication):
         # Reset scan button state in UI
         self.main_window._on_hardware_scan_complete()
 
-        # Check if actual DEVICE hardware was detected (controller, kinetic, or pump)
-        # Spectrometer is a subunit, NOT a device - don't count it for power button
+        # Check if actual hardware was detected (controller, kinetic, pump, OR spectrometer)
+        # ANY hardware device should keep power button connected
         hardware_detected = any([
             status.get('ctrl_type'),
             status.get('knx_type'),
-            status.get('pump_connected')
+            status.get('pump_connected'),
+            status.get('spectrometer')  # Spectrometer counts as hardware
         ])
 
         # Update power button based on whether hardware was found
@@ -1352,7 +1325,7 @@ class Application(QApplication):
             'optics_ready': False,
             'fluidics_ready': False
         }
-        self.ui.update_hardware_status(empty_status)
+        self.main_window.update_hardware_status(empty_status)
 
     def _on_connection_progress(self, message: str):
         """Hardware connection progress update."""
@@ -1365,9 +1338,10 @@ class Application(QApplication):
         show_message(error, "Hardware Error", parent=self.main_window)
 
         # If error occurs during connection, reset power button
-        if self.ui.get_power_state() == "searching":
+        if self.main_window.power_btn and self.main_window.power_btn.property("powerState") == "searching":
             logger.info("Resetting power button state after connection error")
-            self.ui.set_power_state("disconnected")
+            self.main_window._set_power_button_state("disconnected")
+            self.main_window._update_power_button_style()
 
     def show_transmission_dialog(self):
         """Show the transmission spectrum dialog."""
@@ -1524,7 +1498,11 @@ class Application(QApplication):
 
             # Queue transmission spectrum update (for dialog display) ONLY if we have full spectrum
             # This prevents crashes from passing per-wavelength scalar data to dialog expecting arrays
-            if data.get('full_spectrum') is not None and data.get('transmission_spectrum') is not None:
+            # Check for either 'raw_spectrum' or 'full_spectrum' (both are valid)
+            has_raw_data = data.get('raw_spectrum') is not None or data.get('full_spectrum') is not None
+            has_transmission = data.get('transmission_spectrum') is not None
+
+            if has_raw_data and has_transmission:
                 try:
                     logger.info(f"[CRASH-TRACK-2D] Calling _queue_transmission_update")
                     print(f"[DEBUG] About to call _queue_transmission_update(channel={channel})")
@@ -1641,7 +1619,10 @@ class Application(QApplication):
             data: Spectrum data dictionary containing transmission_spectrum and raw_spectrum
         """
         transmission = data.get('transmission_spectrum', None)
-        raw_spectrum = data.get('raw_spectrum', None)
+        # Get raw spectrum - check both field names for compatibility
+        raw_spectrum = data.get('raw_spectrum')
+        if raw_spectrum is None:
+            raw_spectrum = data.get('full_spectrum')
 
         # Fallback: calculate transmission if not provided
         if transmission is None and raw_spectrum is not None and len(raw_spectrum) > 0:
@@ -1657,7 +1638,7 @@ class Application(QApplication):
             if wavelengths is None and data.get('simulated', False):
                 wavelengths = np.linspace(640, 690, len(transmission))
                 logger.debug(f"[SIMULATION] Generated wavelength array for channel {channel}")
-            
+
             # Safety check: Real hardware data should NEVER hit this path
             if wavelengths is None and not data.get('simulated', False):
                 logger.error(f"[HARDWARE ERROR] No wavelength data for channel {channel}! "
@@ -1707,7 +1688,7 @@ class Application(QApplication):
         # Page 0 is Live Data (sensorgram)
         if page_index == 0:
             # Show live data dialog if acquisition is running
-            if self.data_mgr and self.data_mgr.is_acquiring and self._live_data_dialog is not None:
+            if self.data_mgr and hasattr(self.data_mgr, 'is_acquiring') and self.data_mgr.is_acquiring and self._live_data_dialog is not None:
                 self._live_data_dialog.show()
                 self._live_data_dialog.raise_()
         else:
@@ -1734,7 +1715,7 @@ class Application(QApplication):
 
         During LIVE acquisition: Shows all data with simple downsampling for performance.
         During POST-RUN: Full resolution available for detailed analysis.
-        
+
         Note: Graph updates continue even when "Live Data" checkbox is unchecked.
         The checkbox only controls cursor auto-follow behavior.
         """
@@ -1873,12 +1854,12 @@ class Application(QApplication):
 
         This slot is called from the cursor_update_signal emitted by the
         processing thread. It safely updates the cursor on the main Qt thread.
-        
+
         Behavior:
         - Only updates cursor if "Live Data" checkbox is enabled
         - Respects user drag interaction (pauses during drag)
         - Cycle of interest graph always updates regardless of checkbox state
-        
+
         Args:
             elapsed_time: Time value to set cursor to
         """
@@ -1892,7 +1873,7 @@ class Application(QApplication):
             stop_cursor = self.main_window.full_timeline_graph.stop_cursor
             if stop_cursor is None:
                 return
-            
+
             # Check if "Live Data" checkbox is enabled (controls cursor auto-follow)
             if not hasattr(self.main_window, 'live_data_enabled'):
                 return
@@ -2093,8 +2074,11 @@ class Application(QApplication):
     def _on_polarizer_toggle_clicked(self):
         """Handle polarizer toggle button click - switch servo between S and P positions."""
         try:
+            logger.info("🔘 Polarizer toggle button clicked")
+
             # Get current position from UI
             current_position = self.main_window.sidebar.current_polarizer_position
+            logger.info(f"   Current position: {current_position}")
 
             # Toggle to opposite position
             new_position = 'P' if current_position == 'S' else 'S'
@@ -2144,11 +2128,11 @@ class Application(QApplication):
         self.main_window.start_led_operation_tracking()
 
         # Update UI recording indicator with filename
-        self.ui.set_recording_state(True, filename)
+        self.main_window.set_recording_state(True, filename)
 
         # Update spectroscopy status
-        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
-            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'subunit_status') and 'Spectroscopy' in self.main_window.sidebar.subunit_status:
+            status_label = self.main_window.sidebar.subunit_status['Spectroscopy']['status_label']
             status_label.setText("Recording...")
             status_label.setStyleSheet(
                 "font-size: 13px;"
@@ -2165,11 +2149,11 @@ class Application(QApplication):
         self.main_window.stop_led_operation_tracking()
 
         # Update UI recording indicator
-        self.ui.set_recording_state(False)
+        self.main_window.set_recording_state(False)
 
         # Update spectroscopy status back to "Running" (not recording)
-        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
-            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'subunit_status') and 'Spectroscopy' in self.main_window.sidebar.subunit_status:
+            status_label = self.main_window.sidebar.subunit_status['Spectroscopy']['status_label']
             # Only update if acquisition is still running
             if self.data_mgr.is_acquiring:
                 status_label.setText("Running")
@@ -2202,12 +2186,12 @@ class Application(QApplication):
     def _on_acquisition_started(self):
         """Live data acquisition has started - enable record and pause buttons."""
         logger.info("✅ Live acquisition started - enabling record/pause buttons")
-        self.ui.enable_recording_controls()
+        self.main_window.enable_controls()
 
         # Update spectroscopy status to "Running"
-        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
-            indicator = self.ui.sidebar.subunit_status['Spectroscopy']['indicator']
-            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'subunit_status') and 'Spectroscopy' in self.main_window.sidebar.subunit_status:
+            indicator = self.main_window.sidebar.subunit_status['Spectroscopy']['indicator']
+            status_label = self.main_window.sidebar.subunit_status['Spectroscopy']['status_label']
             indicator.setStyleSheet(
                 "font-size: 10px;"
                 "color: #34C759;"  # Green
@@ -2255,7 +2239,7 @@ class Application(QApplication):
     def _on_acquisition_stopped(self):
         """Live data acquisition has stopped - disable record and pause buttons."""
         logger.info("⏹ Live acquisition stopped - disabling record/pause buttons")
-        self.ui.disable_recording_controls()
+        self.main_window.disable_controls()
         self.main_window.pause_btn.setEnabled(False)
         self.main_window.record_btn.setToolTip("Start Recording\n(Enabled after calibration)")
         self.main_window.pause_btn.setToolTip("Pause Live Acquisition\n(Enabled after calibration)")
@@ -2267,15 +2251,16 @@ class Application(QApplication):
             self.main_window.pause_btn.setChecked(False)
 
         # Update spectroscopy status to "Stopped"
-        if hasattr(self.ui.sidebar, 'subunit_status') and 'Spectroscopy' in self.ui.sidebar.subunit_status:
-            status_label = self.ui.sidebar.subunit_status['Spectroscopy']['status_label']
-            status_label.setText("Stopped")
-            status_label.setStyleSheet(
-                "font-size: 13px;"
-                "color: #86868B;"  # Gray
-                "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            )
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'subunit_status'):
+            if 'Spectroscopy' in self.main_window.sidebar.subunit_status:
+                status_label = self.main_window.sidebar.subunit_status['Spectroscopy']['status_label']
+                status_label.setText("Stopped")
+                status_label.setStyleSheet(
+                    "font-size: 13px;"
+                    "color: #86868B;"  # Gray
+                    "background: transparent;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
 
         # Stop recording if active
         if self.recording_mgr.is_recording:
@@ -3046,7 +3031,7 @@ class Application(QApplication):
                     logger.warning("⚠️ Device config not available - settings not saved")
 
                 # Show visual feedback in UI
-                self.ui.show_settings_applied_feedback()
+                self.main_window.show_settings_applied_feedback()
 
                 logger.info("✅ Settings applied and saved to EEPROM")
             else:
@@ -3154,10 +3139,10 @@ class Application(QApplication):
         # Check if hardware is ready
         if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
             logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            self.ui.show_message(
-                "Hardware Not Ready",
+            from widgets.message import show_message
+            show_message(
                 "Please connect the controller and spectrometer first.",
-                "Warning"
+                "Hardware Not Ready"
             )
             return
 
@@ -3171,10 +3156,10 @@ class Application(QApplication):
         # Check if hardware is ready
         if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
             logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            self.ui.show_message(
-                "Hardware Not Ready",
+            from widgets.message import show_message
+            show_message(
                 "Please connect the controller and spectrometer first.",
-                "Warning"
+                "Hardware Not Ready"
             )
             return
 
@@ -3190,10 +3175,10 @@ class Application(QApplication):
         # Check if hardware is ready
         if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
             logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            self.ui.show_message(
-                "Hardware Not Ready",
+            from widgets.message import show_message
+            show_message(
                 "Please connect the controller and spectrometer first.",
-                "Warning"
+                "Hardware Not Ready"
             )
             return
 
@@ -3238,7 +3223,7 @@ class Application(QApplication):
             """Triggered when LED calibration completes successfully."""
             # Disconnect this one-shot handler
             try:
-                self.event_bus.calibration_complete.disconnect(on_led_calibration_complete)
+                self.calibration.manager.calibration_complete.disconnect(on_led_calibration_complete)
             except:
                 pass
 
@@ -3262,7 +3247,7 @@ class Application(QApplication):
             self._run_afterglow_calibration(calibration_data.get('leds_calibrated'))
 
         # Connect one-shot handler
-        self.event_bus.calibration_complete.connect(
+        self.calibration.manager.calibration_complete.connect(
             on_led_calibration_complete,
             Qt.ConnectionType.QueuedConnection
         )
@@ -3429,10 +3414,15 @@ class Application(QApplication):
         logger.info("Power ON requested - starting hardware connection...")
 
         # Set to searching state
+        logger.info("Setting power button to 'searching' state...")
         self.main_window.set_power_state("searching")
+        logger.info("Power button state updated")
 
         # Start hardware scan and connection
+        logger.info("Calling hardware_mgr.scan_and_connect()...")
+        print("[APPLICATION] Calling hardware_mgr.scan_and_connect()...")
         self.hardware_mgr.scan_and_connect()
+        logger.info("scan_and_connect() call completed (scanning in background thread)")
 
     def _on_power_off_requested(self):
         """User requested to power off (disconnect hardware)."""
@@ -3532,7 +3522,7 @@ class Application(QApplication):
         logger.info("Updating Device Status UI...")
 
         # Forward status to main window for UI update
-        self.ui.update_hardware_status(status)
+        self.main_window.update_hardware_status(status)
 
         # Log hardware summary
         logger.info(f"  Controller: {status.get('ctrl_type', 'None')}")

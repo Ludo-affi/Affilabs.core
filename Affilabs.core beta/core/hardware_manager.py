@@ -13,6 +13,13 @@ from PySide6.QtCore import QObject, Signal, QThread
 from utils.logger import logger
 from typing import Optional
 import threading
+import time
+
+# ============================================================================
+# DEBUG FLAGS - Set to True for detailed troubleshooting output
+# ============================================================================
+HARDWARE_DEBUG = True  # Enable detailed connection timing and device scan logs
+CONNECTION_TIMEOUT = 2.0  # Seconds to wait for USB device discovery (2s fast, 5s safe)
 
 
 class HardwareManager(QObject):
@@ -66,68 +73,92 @@ class HardwareManager(QObject):
     def scan_and_connect(self):
         """Scan for and connect to all available hardware (non-blocking).
 
-        IMPORTANT: If hardware is already connected, this method will:
-        - Report current hardware status
-        - NOT disconnect existing connections
-        - NOT re-scan USB devices
-        - Return immediately
+        Always performs a fresh scan to ensure both controller and spectrometer are detected.
+        If hardware is already connected, it will be detected again (idempotent operation).
 
-        This ensures that clicking "Scan for Hardware" or pressing the power button
-        while hardware is connected is SAFE and will not interrupt operations.
+        CRITICAL SAFEGUARDS TO PREVENT CONTROLLER HIJACKING:
+
+        1. Priority Order: PicoP4SPR → Arduino → PicoEZSPR
+           - Modern Pico controllers checked first
+           - Search stops immediately when first controller found
+
+        2. Strict VID/PID Matching:
+           - Arduino: Only connects to exact VID/PID match
+           - PicoP4SPR: VID/PID + device identity validation ("id\\n" → "P4SPR")
+
+        3. No Dangerous Fallbacks:
+           - Arduino: NO fallback COM port enumeration
+           - PicoP4SPR: Fallback excludes Arduino VID/PID ports
+
+        4. Reconnection Prevention:
+           - If self.ctrl already exists, skip controller scan
+           - Prevents hijacking by different device during session
+
+        5. Identity Validation:
+           - Arduino validates with "turn_off_channels" command
+           - Pico validates with "id" command returning device name
 
         See: README_HARDWARE_BEHAVIOR.md for complete documentation
         """
+        print("\n" + "="*80)
+        print("[HARDWARE_MANAGER] scan_and_connect() called!")
+        print("="*80 + "\n")
+        logger.info("HardwareManager.scan_and_connect() called")
+        
         if self._connecting:
-            logger.warning("Connection already in progress")
+            logger.warning("Connection already in progress - ignoring duplicate call")
+            print("[HARDWARE_MANAGER] Connection already in progress!")
             return
 
-        # Check if hardware is already connected
-        if any([self.ctrl, self.knx, self.pump, self.usb]):
-            logger.info("Hardware already connected - reporting current status without re-scanning")
-            # Just report current status without disconnecting
-            status = {
-                'ctrl_type': self._get_controller_type(),
-                'knx_type': self._get_kinetic_type(),
-                'pump_connected': self.pump is not None,
-                'spectrometer': self.usb is not None,
-                'spectrometer_serial': self.usb.serial_number if self.usb and hasattr(self.usb, 'serial_number') else None,
-                'sensor_ready': self._sensor_verified,
-                'optics_ready': self._optics_verified,
-                'fluidics_ready': self.pump is not None
-            }
-            self.hardware_connected.emit(status)
-            return
-
+        logger.info("Starting new hardware scan...")
+        print("[HARDWARE_MANAGER] Starting hardware scan in background thread...")
+        
         self._connecting = True
         self.connection_progress.emit("Scanning for hardware...")
 
         # Run connection in background thread
         self._connection_thread = threading.Thread(
             target=self._connection_worker,
-            daemon=True
+            daemon=True,
+            name="HardwareScanner"
         )
         self._connection_thread.start()
+        logger.info("Background scan thread started")
+        print("[HARDWARE_MANAGER] Background thread started!")
 
     def _connection_worker(self):
         """Worker thread that scans for hardware."""
         try:
-            logger.info("Starting hardware scan...")
+            scan_start = time.time()
+            logger.info("[SCAN] Starting hardware scan...")
 
             # Step 1: Try to connect to spectrometer
             self.connection_progress.emit("Looking for spectrometer...")
+            t0 = time.time()
             self._connect_spectrometer()
+            if HARDWARE_DEBUG:
+                logger.info(f"[SCAN] Spectrometer scan: {time.time()-t0:.2f}s")
 
             # Step 2: Try to connect to SPR controller
             self.connection_progress.emit("Looking for SPR controller...")
+            t0 = time.time()
             self._connect_controller()
+            if HARDWARE_DEBUG:
+                logger.info(f"[SCAN] Controller scan: {time.time()-t0:.2f}s")
 
             # Step 3: Try to connect to kinetic controller
             self.connection_progress.emit("Looking for kinetic controller...")
+            t0 = time.time()
             self._connect_kinetic()
+            if HARDWARE_DEBUG:
+                logger.info(f"[SCAN] Kinetic scan: {time.time()-t0:.2f}s")
 
             # Step 4: Try to connect to pump
             self.connection_progress.emit("Looking for pump...")
+            t0 = time.time()
             self._connect_pump()
+            if HARDWARE_DEBUG:
+                logger.info(f"[SCAN] Pump scan: {time.time()-t0:.2f}s")
 
             # Don't verify sensor/optics here - they should only be marked ready after calibration
             # Initial status is False (not ready) until calibration completes
@@ -148,8 +179,9 @@ class HardwareManager(QObject):
             }
 
             # Log hardware detection results
+            total_time = time.time() - scan_start
             logger.info("="*60)
-            logger.info("HARDWARE DETECTION SUMMARY:")
+            logger.info(f"HARDWARE SCAN COMPLETE ({total_time:.2f}s)")
             logger.info(f"  • Controller: {self.ctrl.name if self.ctrl else 'NOT FOUND'}")
             logger.info(f"  • Kinetic:    {self.knx.name if self.knx else 'NOT FOUND'}")
             logger.info(f"  • Pump:       {'CONNECTED' if self.pump else 'NOT FOUND'}")
@@ -184,86 +216,111 @@ class HardwareManager(QObject):
             config = get_config()
             if config is None:
                 config = {}
-            logger.info("Attempting to connect to spectrometer...")
+            if HARDWARE_DEBUG:
+                logger.info("="*60)
+                logger.info("SCANNING FOR SPECTROMETER...")
+                logger.info("="*60)
+            logger.info("Connecting to spectrometer...")
             self.usb = create_detector(None, config)
 
             if self.usb:
-                logger.info("✅ Spectrometer connected")
+                logger.info(f"Spectrometer connected: {self.usb.serial_number if hasattr(self.usb, 'serial_number') else 'Unknown S/N'}")
+
+                # Log detailed info only in debug mode
+                if HARDWARE_DEBUG:
+                    if hasattr(self.usb, 'name'):
+                        logger.info(f"   Model: {self.usb.name}")
+                    if hasattr(self.usb, 'get_info'):
+                        try:
+                            info = self.usb.get_info()
+                            logger.info(f"   Info: {info}")
+                        except Exception as e:
+                            logger.debug(f"   Could not get spectrometer info: {e}")
 
                 # Initialize device-specific configuration
                 device_dir = initialize_device_on_connection(self.usb)
-                if device_dir:
-                    logger.info(f"📁 Device configuration loaded from: {device_dir}")
+                if device_dir and HARDWARE_DEBUG:
+                    logger.info(f"   Device config: {device_dir}")
             else:
-                logger.info("No spectrometer detected")
+                logger.warning("No spectrometer detected")
+                if HARDWARE_DEBUG:
+                    logger.info("   Check: USB cable, drivers, power")
 
         except Exception as e:
             logger.error(f"Spectrometer connection failed: {e}")
+            if HARDWARE_DEBUG:
+                import traceback
+                logger.debug(traceback.format_exc())
             self.usb = None
 
     def _connect_controller(self):
         """Attempt to connect to SPR controller."""
-        try:
-            logger.info("="*60)
-            logger.info("SCANNING FOR CONTROLLERS...")
-            logger.info("="*60)
+        # CRITICAL SAFEGUARD: Prevent reconnection if controller already connected
+        if self.ctrl is not None:
+            try:
+                controller_name = self.ctrl.name if hasattr(self.ctrl, 'name') else type(self.ctrl).__name__
+                logger.warning(f"Controller already connected ({controller_name}) - skipping scan")
+                return
+            except:
+                pass  # If we can't check name, proceed with connection attempt
 
-            # First check what serial ports are available via pyserial
-            import serial.tools.list_ports
-            available_ports = list(serial.tools.list_ports.comports())
-            logger.info(f"PySerial detected {len(available_ports)} accessible serial port(s):")
-            if available_ports:
+        try:
+            if HARDWARE_DEBUG:
+                logger.info("="*60)
+                logger.info("SCANNING FOR CONTROLLERS...")
+                logger.info("="*60)
+
+            # Check available serial ports only in debug mode
+            if HARDWARE_DEBUG:
+                import serial.tools.list_ports
+                available_ports = list(serial.tools.list_ports.comports())
+                logger.info(f"Serial ports: {len(available_ports)}")
                 for port in available_ports:
                     vid_str = f"0x{port.vid:04X}" if port.vid else "None"
                     pid_str = f"0x{port.pid:04X}" if port.pid else "None"
-                    logger.info(f"  • {port.device}: VID={vid_str} PID={pid_str} - {port.description}")
-            else:
-                logger.debug("  PySerial enumeration found no ports (this is normal - direct connection will still be attempted)")
+                    logger.info(f"  {port.device}: VID={vid_str} PID={pid_str} - {port.description}")
 
-            # Try Arduino-based controllers
-            from utils.controller import ArduinoController
+            # Try controllers in priority order: Pico first (more modern), then Arduino
+            from utils.controller import ArduinoController, PicoP4SPR, PicoEZSPR
             from settings.settings import ARDUINO_VID, ARDUINO_PID, PICO_VID, PICO_PID
 
-            logger.info(f"\nLooking for Arduino (VID:PID = {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)})...")
-            arduino = ArduinoController()
-            if arduino.open():
-                logger.info("✅ Arduino P4SPR controller connected")
-                self.ctrl = arduino
-                return
-
-            logger.info(f"Looking for PicoP4SPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
-            # Try Pico-based controllers
-            from utils.controller import PicoP4SPR
+            # Try PicoP4SPR first (highest priority)
+            if HARDWARE_DEBUG:
+                logger.info(f"Trying PicoP4SPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
             pico_p4spr = PicoP4SPR()
             if pico_p4spr.open():
-                logger.info("✅ Pico P4SPR controller connected")
+                logger.info(f"Controller connected: {pico_p4spr.name}")
                 self.ctrl = pico_p4spr
                 return
 
-            logger.info(f"Looking for PicoEZSPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
-            from utils.controller import PicoEZSPR
+            # Try Arduino as fallback
+            if HARDWARE_DEBUG:
+                logger.info(f"Trying Arduino P4SPR (VID:PID = {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)})...")
+            arduino = ArduinoController()
+            if arduino.open():
+                logger.info(f"Controller connected: {arduino.name}")
+                self.ctrl = arduino
+                return
+
+            # Try PicoEZSPR
+            if HARDWARE_DEBUG:
+                logger.info(f"Trying PicoEZSPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
             pico_ezspr = PicoEZSPR()
             if pico_ezspr.open():
-                logger.info("✅ Pico EZSPR controller connected")
+                logger.info(f"Controller connected: {pico_ezspr.name}")
                 self.ctrl = pico_ezspr
                 return
 
-            logger.warning("\n❌ NO SPR CONTROLLER FOUND")
-            logger.warning("   Checked for:")
-            logger.warning(f"   • Arduino (VID:PID = {hex(ARDUINO_VID)}:{hex(ARDUINO_PID)})")
-            logger.warning(f"   • PicoP4SPR/PicoEZSPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})")
-            logger.warning("\n   Troubleshooting steps:")
-            logger.warning("   1. Check if driver is installed (Device Manager should show 'OK' status)")
-            logger.warning("   2. Try unplugging and replugging the USB cable")
-            logger.warning("   3. Try a different USB port")
-            logger.warning("   4. Close any other programs that might be using the serial port")
-            logger.warning("   5. Reinstall USB Serial drivers (e.g., CH340, CP210x, or Pico CDC)")
-            logger.info("="*60)
+            logger.warning("No SPR controller found")
+            if HARDWARE_DEBUG:
+                logger.info(f"   Checked: Arduino ({hex(ARDUINO_VID)}:{hex(ARDUINO_PID)}), Pico ({hex(PICO_VID)}:{hex(PICO_PID)})")
+                logger.info("   Check: drivers, USB cable, port, other programs")
             self.ctrl = None
 
         except Exception as e:
-            logger.error(f"❌ Controller connection failed: {e}")
-            logger.exception("Full exception details:")
+            logger.error(f"Controller connection failed: {e}")
+            if HARDWARE_DEBUG:
+                logger.exception("Full exception details:")
             self.ctrl = None
 
     def _connect_kinetic(self):

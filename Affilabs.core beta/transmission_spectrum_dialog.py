@@ -71,8 +71,8 @@ class TransmissionSpectrumDialog(QDialog):
         self.transmission_plot.setLabel('bottom', 'Wavelength', units='nm')
         self.transmission_plot.setTitle("Transmission Spectra (4 Channels)")
 
-        # Set axis ranges
-        self.transmission_plot.setXRange(400, 1000, padding=0.02)
+        # Set axis ranges (detector wavelength range: 560-720 nm)
+        self.transmission_plot.setXRange(560, 720, padding=0.02)
         self.transmission_plot.setYRange(0, 100, padding=0.05)
 
         # Create curves for each channel
@@ -103,8 +103,8 @@ class TransmissionSpectrumDialog(QDialog):
         self.raw_data_plot.setLabel('bottom', 'Wavelength', units='nm')
         self.raw_data_plot.setTitle("Raw Data Spectra (4 Channels)")
 
-        # Set axis ranges
-        self.raw_data_plot.setXRange(400, 1000, padding=0.02)
+        # Set axis ranges (detector wavelength range: 560-720 nm)
+        self.raw_data_plot.setXRange(560, 720, padding=0.02)
         self.raw_data_plot.setYRange(0, 65535, padding=0.05)  # 16-bit range
 
         # Create curves for each channel

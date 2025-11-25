@@ -343,7 +343,11 @@ class AffilabsSidebar(QWidget):
         builder.build(tab_layout)
 
     def toggle_polarizer_position(self):
-        """Toggle polarizer between S and P positions and update button text."""
+        """Toggle polarizer between S and P positions and update button text.
+
+        Note: This only updates the UI. The actual hardware movement is handled
+        by main_simplified.py via the clicked signal connection.
+        """
         if self.current_polarizer_position == 'S':
             self.current_polarizer_position = 'P'
             self.polarizer_toggle_btn.setText("Position: P")

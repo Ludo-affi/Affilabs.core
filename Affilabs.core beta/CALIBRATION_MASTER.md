@@ -243,32 +243,109 @@ During live measurements, changes can come from:
 
 ## Calibration Paths
 
-The system supports **two calibration paths**:
+**SINGLE SOURCE OF TRUTH: device_config.json**
 
-### Path 1: Fast QC Validation (~10 seconds)
-- Checks if stored calibration is still valid
-- Measures fresh S-ref spectra
-- Compares intensity (±10%) and shape (>0.90 correlation)
-- **If PASS**: Uses stored values (saves 2-3 minutes)
-- **If FAIL**: Runs full calibration
+The system supports **two calibration modes** based EXCLUSIVELY on `device_config.json`:
 
-### Path 2: Full 8-Step Calibration (~2-3 minutes)
-- Measures from scratch
-- Optimizes all parameters
-- Validates hardware thoroughly
-- Saves new baseline for future QC
+---
 
-**Decision Logic**:
+### Mode 1: Fast-Track Calibration (~20-30 seconds)
+
+**Trigger**: `device_config.json` contains valid LED calibration data
+
+**Process**:
+1. **Load saved LED intensities** from device_config.json
+   - S-mode LED values per channel (0-255)
+   - P-mode LED values per channel (0-255)
+   - Reference spectra baselines
+
+2. **ALWAYS calibrate integration time** (hardware-dependent, cannot cache)
+   - Depends on current temperature, optical coupling, water contact
+   - Binary search to find optimal value (~10-20 seconds)
+
+3. **Validate each saved LED value on real hardware**
+   - Set LED → Measure signal → Verify in range (30-80% of detector max)
+   - ✅ If valid → Use saved value (fast!)
+   - ❌ If invalid → Re-calibrate that channel from scratch
+
+4. **Hardware validation checks**
+   - Pre-flight: Verify detector responds
+   - Per-channel: Signal >500 counts (not noise)
+   - Post-calibration: All channels produce expected signal
+
+**Time Savings**: ~80% faster if LED values still valid
+
+**Common Scenarios**:
+- Daily startup (same hardware, stable environment)
+- After brief power cycle
+- Routine measurements on stable system
+
+---
+
+### Mode 2: Full Calibration (~2-3 minutes)
+
+**Trigger**: `device_config.json` missing LED calibration data OR data invalid
+
+**Process**:
+1. **Calibrate integration time** from scratch
+   - Binary search to find optimal value
+
+2. **Calibrate LED intensities** from scratch
+   - Binary search per channel to find optimal LED value
+   - No cached or default values used
+   - All measurements done on real hardware
+
+3. **Same hardware validation** as Fast-Track mode
+   - Pre-flight checks
+   - Signal validation
+   - Post-calibration verification
+
+**Common Scenarios**:
+- First-time device setup
+- After hardware changes (LED PCB, fiber, sensor)
+- device_config.json deleted or corrupted
+- Fast-Track validation detected significant drift
+
+---
+
+### Decision Logic (LOCKED):
+
 ```
-Check device_config.json
+Start Calibration
     ↓
-Stored calibration found?
-    ↓ YES                        ↓ NO
-Run QC Validation          Run Full Calibration
-    ↓                              ↓
-PASS? → Use stored           Save to config
-FAIL? → Full calibration     Enable QC for next time
+Check device_config.json for saved LED calibration
+(Method: device_config.load_led_calibration())
+    ↓
+    ├─── Found valid LED data?
+    │         ↓ YES
+    │    FAST-TRACK MODE
+    │    • Load saved LEDs
+    │    • Calibrate integration time (always)
+    │    • Validate each LED on hardware
+    │    • Re-calibrate if validation fails
+    │         ↓
+    │    Save results to device_config.json
+    │
+    └─── No valid data?
+              ↓ YES
+         FULL CALIBRATION MODE
+         • Calibrate integration time from scratch
+         • Find optimal LEDs from scratch
+         • All hardware measurements
+              ↓
+         Save results to device_config.json
+              ↓
+         (Next calibration will use Fast-Track)
 ```
+
+**Critical Rules**:
+- ❌ NO other files used for calibration decision (optical cal files, caches, etc.)
+- ✅ device_config.json is the ONLY source of truth
+- ✅ Integration time is ALWAYS calibrated (never cached)
+- ✅ All LED values validated on real hardware before use
+- ✅ Results ALWAYS saved to device_config.json after success
+
+**See**: `CALIBRATION_LOGIC_LOCKED.md` for complete specification
 
 ---
 
@@ -1680,9 +1757,20 @@ if weak_channels and integration_time < MAX_INTEGRATION_BUDGET:
 
 ## Data Persistence
 
-### Primary Storage: device_config.json
+**SINGLE SOURCE OF TRUTH: device_config.json**
+
+### Primary Storage: device_config.json ⭐ NORTH STAR
 
 **Location**: `config/devices/<serial>/device_config.json`
+
+**Purpose**:
+- ✅ **Calibration decision**: Fast-Track vs Full calibration
+- ✅ **LED intensities**: S-mode and P-mode per channel
+- ✅ **Integration time**: Optimized detector timing
+- ✅ **Reference spectra**: Baseline for QC validation
+- ✅ **Hardware config**: Servo positions, LED PCB model, polarizer type
+
+**Critical**: This is the ONLY file used for calibration mode decision. No other files, caches, or defaults are consulted.
 
 **Structure**:
 ```json
@@ -1705,7 +1793,6 @@ if weak_channels and integration_time < MAX_INTEGRATION_BUDGET:
   "led_calibration": {
     "calibration_date": "2025-11-23T09:47:10.592Z",
     "integration_time_ms": 93,
-    "num_scans": 2,
     "s_mode_intensities": {
       "a": 187,
       "b": 203,
@@ -1719,10 +1806,10 @@ if weak_channels and integration_time < MAX_INTEGRATION_BUDGET:
       "d": 229
     },
     "s_ref_baseline": {
-      "a": [/* array */],
-      "b": [/* array */],
-      "c": [/* array */],
-      "d": [/* array */]
+      "a": [/* numpy array - reference spectrum */],
+      "b": [/* numpy array */],
+      "c": [/* numpy array */],
+      "d": [/* numpy array */]
     },
     "s_ref_max_intensity": {
       "a": 25000.0,
@@ -1730,15 +1817,39 @@ if weak_channels and integration_time < MAX_INTEGRATION_BUDGET:
       "c": 22000.0,
       "d": 26000.0
     },
-    "wavelengths": [/* 400-900nm array */],
-    "pre_qc_dark_snapshot": [/* array */]
+    "s_ref_wavelengths": [/* 400-900nm array */]
   }
 }
 ```
 
-### Secondary Storage: EEPROM (Controller Flash)
+**API Methods**:
+```python
+# Load calibration (for Fast-Track decision)
+cal_data = device_config.load_led_calibration()
+# Returns: None if missing, or dict with all calibration data
 
-**Purpose**: Portable device configuration backup
+# Save calibration (after successful calibration)
+device_config.save_led_calibration(
+    integration_time_ms=93,
+    s_mode_intensities={'a': 187, 'b': 203, 'c': 195, 'd': 178},
+    p_mode_intensities={'a': 238, 'b': 255, 'c': 245, 'd': 229},
+    s_ref_spectra={/* numpy arrays */},
+    s_ref_wavelengths=wave_array
+)
+```
+
+**Location in Code**:
+- Definition: `utils/device_configuration.py`
+- Load: `led_calibration.py` line ~1915
+- Save: `calibration_coordinator.py::_save_calibration_to_device_config()` line ~563
+
+---
+
+### Secondary Storage: EEPROM (Controller Flash) - DEPRECATED
+
+**Status**: ⚠️ No longer used for calibration decisions
+
+**Purpose**: Historical backup on controller
 **Capacity**: 20 bytes
 **Location**: Controller flash memory
 
@@ -1756,16 +1867,16 @@ Byte 14-18: Reserved
 Byte 19:   Checksum
 ```
 
-**When synced**:
-- After successful calibration (optional)
-- Manual "Push to EEPROM" button (planned)
-- Device configuration changes
+**Why deprecated**:
+- Limited capacity (cannot store reference spectra)
+- Not used for Fast-Track decision
+- device_config.json is more reliable and complete
 
-**Use case**: Move controller to different computer, config follows
+---
 
-### Tertiary Storage: optical_calibration.json
+### Tertiary Storage: optical_calibration.json - SEPARATE PURPOSE
 
-**Purpose**: Afterglow correction curves (OEM calibration)
+**Purpose**: Afterglow correction curves ONLY (not calibration decision)
 **Location**: `config/devices/<serial>/optical_calibration.json`
 
 **Structure**:
@@ -1787,6 +1898,9 @@ Byte 19:   Checksum
 
 **When created**: Manual OEM calibration only (5-10 minute process)
 **When loaded**: Automatically during calibration if file exists
+**Use**: Apply afterglow correction to measurements (separate from LED calibration)
+
+**Critical**: This file is NOT used for Fast-Track vs Full calibration decision. Only device_config.json matters.
 
 ---
 

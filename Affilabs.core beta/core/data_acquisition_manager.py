@@ -627,6 +627,7 @@ class DataAcquisitionManager(QObject):
                                         'full_spectrum': processed.get('full_spectrum'),
                                         'raw_spectrum': processed.get('raw_spectrum'),
                                         'transmission_spectrum': processed.get('transmission_spectrum'),
+                                        'wavelengths': self.wave_data,  # Wavelength array for plotting
                                         'timestamp': timestamp,
                                         'is_preview': False
                                     }

@@ -8,7 +8,7 @@ Author: Affilabs
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QFrame, QLabel, QHBoxLayout, QPushButton,
-    QLineEdit
+    QLineEdit, QComboBox
 )
 
 # Import sections from central location
@@ -50,6 +50,7 @@ class SettingsTabBuilder:
         tab_layout.addSpacing(8)
 
         intel_bar = QFrame()
+        intel_bar.setGeometry(20, 142, 411, 37)
         intel_bar.setStyleSheet(
             "QFrame {"
             "  background: transparent;"
@@ -126,6 +127,8 @@ class SettingsTabBuilder:
         # Build sections
         self._build_polarizer_settings(polarizer_led_card_layout)
         self._add_separator(polarizer_led_card_layout)
+        self._build_pipeline_selector(polarizer_led_card_layout)
+        self._add_separator(polarizer_led_card_layout)
         self._build_led_settings(polarizer_led_card_layout)
         self._add_separator(polarizer_led_card_layout)
         self._build_settings_buttons(polarizer_led_card_layout)
@@ -201,8 +204,118 @@ class SettingsTabBuilder:
         self.sidebar.current_polarizer_position = 'S'
         polarizer_row.addWidget(self.sidebar.polarizer_toggle_btn)
 
+        polarizer_row.addSpacing(16)
+
+        # Spectrum Button
+        self.sidebar.spectrum_btn = QPushButton("📊 Spectrum")
+        self.sidebar.spectrum_btn.setFixedWidth(110)
+        self.sidebar.spectrum_btn.setFixedHeight(28)
+        self.sidebar.spectrum_btn.setToolTip("Show live transmission spectrum for all channels")
+        self.sidebar.spectrum_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "  padding: 4px 8px;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0071E3;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #0063CC;"
+            "}"
+        )
+        polarizer_row.addWidget(self.sidebar.spectrum_btn)
+
         polarizer_row.addStretch()
         layout.addLayout(polarizer_row)
+
+    def _build_pipeline_selector(self, layout: QVBoxLayout):
+        """Build processing pipeline selector."""
+
+        pipeline_label = QLabel("Processing Pipeline:")
+        pipeline_label.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        layout.addWidget(pipeline_label)
+
+        pipeline_row = QHBoxLayout()
+        pipeline_row.setSpacing(12)
+
+        # Pipeline selector dropdown
+        self.sidebar.pipeline_selector = QComboBox()
+        self.sidebar.pipeline_selector.setFixedHeight(32)
+        self.sidebar.pipeline_selector.setMinimumWidth(200)
+        self.sidebar.pipeline_selector.setToolTip("Select data processing pipeline method")
+        self.sidebar.pipeline_selector.setStyleSheet(
+            "QComboBox {"
+            "  background: white;"
+            "  color: #1D1D1F;"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 6px;"
+            "  padding: 6px 12px;"
+            "  font-size: 12px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QComboBox:hover {"
+            "  border: 1px solid rgba(0, 122, 255, 0.5);"
+            "}"
+            "QComboBox::drop-down {"
+            "  border: none;"
+            "  width: 20px;"
+            "}"
+            "QComboBox::down-arrow {"
+            "  image: none;"
+            "  border-left: 4px solid transparent;"
+            "  border-right: 4px solid transparent;"
+            "  border-top: 5px solid #86868B;"
+            "  margin-right: 8px;"
+            "}"
+            "QComboBox QAbstractItemView {"
+            "  background: white;"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 6px;"
+            "  selection-background-color: #007AFF;"
+            "  selection-color: white;"
+            "  padding: 4px;"
+            "}"
+        )
+
+        # Add pipeline options
+        self.sidebar.pipeline_selector.addItem("Fourier Transform (Default)", "fourier")
+        self.sidebar.pipeline_selector.addItem("Centroid Detection", "centroid")
+        self.sidebar.pipeline_selector.addItem("Polynomial Fit", "polynomial")
+        self.sidebar.pipeline_selector.addItem("Adaptive Multi-Feature", "adaptive")
+        self.sidebar.pipeline_selector.addItem("Consensus", "consensus")
+
+        # Set default to Fourier
+        self.sidebar.pipeline_selector.setCurrentIndex(0)
+
+        pipeline_row.addWidget(self.sidebar.pipeline_selector)
+        pipeline_row.addStretch()
+
+        layout.addLayout(pipeline_row)
+
+        # Add description label
+        self.sidebar.pipeline_description = QLabel("Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.")
+        self.sidebar.pipeline_description.setWordWrap(True)
+        self.sidebar.pipeline_description.setStyleSheet(
+            "font-size: 11px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-style: italic;"
+            "margin: 4px 0px 8px 0px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        layout.addWidget(self.sidebar.pipeline_description)
 
     def _build_led_settings(self, layout: QVBoxLayout):
         """Build LED intensity settings for channels A, B, C, D."""
@@ -386,10 +499,9 @@ class SettingsTabBuilder:
         calibration_section.add_content_widget(calibration_card)
         tab_layout.addWidget(calibration_section)
 
-        # Connect button signals
-        self.sidebar.polarizer_toggle_btn.clicked.connect(self.sidebar.toggle_polarizer_position)
-        # Note: advanced_settings_btn and other calibration buttons should be connected
-        # by the parent window to access the full application context
+        # Note: polarizer_toggle_btn.clicked and calibration buttons should be connected
+        # by the parent window (main_simplified.py) to access the full application context
+        # and handle hardware communication properly
 
     def _add_calibration_option(self, layout: QVBoxLayout, title: str, description: str,
                                   button_text: str, button_ref: str, primary: bool = False):

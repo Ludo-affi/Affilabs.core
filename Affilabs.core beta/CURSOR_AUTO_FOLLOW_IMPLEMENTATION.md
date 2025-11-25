@@ -1,7 +1,7 @@
 # Cursor Auto-Follow Implementation
 
-**Date:** January 2025  
-**Status:** ✅ Complete  
+**Date:** January 2025
+**Status:** ✅ Complete
 **Branch:** v4.0-ui-improvements
 
 ## Overview
@@ -68,7 +68,7 @@ cursor_update_signal.emit() ──→ _update_stop_cursor_position()
 ```python
 class Application(QApplication):
     """Main application class that coordinates UI and hardware."""
-    
+
     # Signal for thread-safe cursor updates (emitted from processing thread)
     cursor_update_signal = Signal(float)  # elapsed_time
 ```
@@ -89,10 +89,10 @@ self.cursor_update_signal.connect(self._update_stop_cursor_position)
 ```python
 def _update_stop_cursor_position(self, elapsed_time: float):
     """Update stop cursor position on main thread (thread-safe).
-    
-    This slot is called from the cursor_update_signal emitted by the 
+
+    This slot is called from the cursor_update_signal emitted by the
     processing thread. It safely updates the cursor on the main Qt thread.
-    
+
     Args:
         elapsed_time: Time value to set cursor to
     """
@@ -102,23 +102,23 @@ def _update_stop_cursor_position(self, elapsed_time: float):
             return
         if not hasattr(self.main_window.full_timeline_graph, 'stop_cursor'):
             return
-        
+
         stop_cursor = self.main_window.full_timeline_graph.stop_cursor
         if stop_cursor is None:
             return
-        
+
         # Check if user is currently dragging the cursor
         is_moving = getattr(stop_cursor, 'moving', False)
         if is_moving:
             return  # Don't auto-move while user is dragging
-        
+
         # Update cursor position
         stop_cursor.setValue(elapsed_time)
-        
+
         # Update label if it exists
         if hasattr(stop_cursor, 'label') and stop_cursor.label:
             stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
-            
+
     except (AttributeError, RuntimeError) as e:
         # Cursor not ready yet, skip this update silently
         pass

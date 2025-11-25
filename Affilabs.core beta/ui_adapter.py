@@ -32,7 +32,7 @@ class UIAdapter(QObject):
     recording_start_requested = Signal()
     recording_stop_requested = Signal()
     export_requested = Signal()
-    acquisition_pause_requested = Signal()
+    acquisition_pause_requested = Signal(bool)  # True=pause, False=resume
 
     def __init__(self, main_window):
         """Initialize adapter with reference to main window.
