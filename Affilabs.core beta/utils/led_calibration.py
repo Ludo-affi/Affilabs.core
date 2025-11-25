@@ -841,6 +841,8 @@ def calibrate_led_channel(
     target_counts: float = None,
     stop_flag=None,
     detector_params: DetectorParams = None,  # Optional: pre-read detector parameters
+    wave_min_index: int = None,  # ROI start for saturation checking
+    wave_max_index: int = None,  # ROI end for saturation checking
 ) -> int:
     """Calibrate a single LED channel to target count level.
 
@@ -851,6 +853,9 @@ def calibrate_led_channel(
         target_counts: Target detector count level (if None, uses detector_params or reads from detector)
         stop_flag: Optional threading event to check for cancellation
         detector_params: Optional pre-read detector parameters
+
+        wave_min_index: Start index of wavelength ROI for saturation checking (560nm)
+        wave_max_index: End index of wavelength ROI for saturation checking (720nm)
 
     Returns:
         Calibrated LED intensity value (0-255)

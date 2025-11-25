@@ -109,6 +109,9 @@ class CalibrationCoordinator(QObject):
     def _on_calibration_complete(self, calibration_data: Dict[str, Any]) -> None:
         """Handle calibration completion.
 
+        Shows post-calibration dialog and waits for user to click Start
+        before transferring to live view. Does NOT auto-start.
+
         Args:
             calibration_data: Dictionary containing calibration results
         """
@@ -116,22 +119,85 @@ class CalibrationCoordinator(QObject):
 
         self._calibration_completed = True
 
-        # Update dialog
+        # Close the progress dialog
         if self._calibration_dialog:
-            self._calibration_dialog.update_title("✅ Calibration Complete")
-            self._calibration_dialog.set_progress(100, 100)
+            self._calibration_dialog.close()
+            self._calibration_dialog = None
 
-        # Show QC report
-        self._show_qc_report()
+        # Check for afterglow calibration
+        from utils.calibration_ui_transfer import check_and_run_afterglow_calibration
+        check_and_run_afterglow_calibration(
+            device_config=self.app.data_mgr.device_config if hasattr(self.app.data_mgr, 'device_config') else None,
+            usb=self.app.hardware_mgr.usb,
+            ctrl=self.app.hardware_mgr.ctrl,
+            calibration_result=self.app.data_mgr.get_calibration_result() if hasattr(self.app.data_mgr, 'get_calibration_result') else None
+        )
 
-        # Save to device config
-        self._save_calibration_to_device_config(calibration_data)
+        # Show post-calibration dialog (NEW - waits for user to click Start)
+        logger.info("=" * 80)
+        logger.info("SHOWING POST-CALIBRATION DIALOG")
+        logger.info("=" * 80)
+        logger.info("User must click 'Start' button to transfer to live view")
+        logger.info("Transfer does NOT happen automatically")
+        logger.info("=" * 80)
 
-        # Update UI LED intensities
-        self._update_led_intensities_in_ui()
+        from utils.calibration_ui_transfer import PostCalibrationDialog, transfer_calibration_to_live_view
 
-        # Close dialog and start acquisition
-        QTimer.singleShot(1000, lambda: self._close_dialog_and_start_acquisition())
+        # Get calibration result from data manager
+        cal_result = self.app.data_mgr.get_calibration_result() if hasattr(self.app.data_mgr, 'get_calibration_result') else None
+
+        if not cal_result:
+            # Build a simple result object from calibration_data
+            class SimpleCalResult:
+                def __init__(self, data):
+                    self.success = not bool(data.get('ch_error_list'))
+                    self.ref_intensity = data.get('ref_intensity', {})
+                    self.p_mode_intensity = data.get('p_mode_intensity', {})
+                    self.integration_time = data.get('integration_time', 50)
+                    self.num_scans = data.get('num_scans', 1)
+                    self.ch_error_list = data.get('ch_error_list', [])
+                    self.wave_data = None
+                    self.dark_noise = None
+                    self.s_ref_sig = {}
+                    self.verification = data.get('verification', {})
+                    self.calibration_method = data.get('calibration_method', 'standard')
+
+            cal_result = SimpleCalResult(calibration_data)
+
+        # Create and show post-calibration dialog
+        post_cal_dialog = PostCalibrationDialog(cal_result, parent=self.app.main_window)
+
+        # Connect signals
+        def on_start_clicked():
+            """User clicked Start - transfer to live view."""
+            logger.info("✅ User clicked Start - transferring to live view")
+
+            # Transfer calibration to live acquisition
+            success = transfer_calibration_to_live_view(
+                calibration_result=cal_result,
+                data_acquisition_manager=self.app.data_mgr,
+                device_config=self.app.data_mgr.device_config if hasattr(self.app.data_mgr, 'device_config') else None
+            )
+
+            if success:
+                logger.info("✅ Transfer complete - starting live view")
+                # Close dialog
+                post_cal_dialog.close()
+            else:
+                logger.error("❌ Transfer failed")
+                from widgets.message import show_message
+                show_message("Failed to transfer calibration to live view", "Error")
+
+        def on_cancel_clicked():
+            """User clicked Cancel - return to calibration menu."""
+            logger.info("User cancelled - returning to calibration menu")
+            post_cal_dialog.close()
+
+        post_cal_dialog.start_clicked.connect(on_start_clicked)
+        post_cal_dialog.cancel_clicked.connect(on_cancel_clicked)
+
+        # Show dialog (BLOCKS until user clicks Start or Cancel)
+        post_cal_dialog.exec()
 
     def _on_calibration_failed(self, error: str) -> None:
         """Handle calibration failure.

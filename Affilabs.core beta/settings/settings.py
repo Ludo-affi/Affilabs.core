@@ -91,12 +91,12 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.050  # LED stabilization delay (50ms - default, adjustable in Advanced Settings)
+LED_DELAY = 0.070  # LED stabilization delay (70ms - optimized for signal stability)
                    # NOTE: Used for signal acquisition, NOT for afterglow measurement
                    # Afterglow calibration uses immediate measurement after LED off (no delay)
 USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
 LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
-LED_POST_DELAY = 0.005  # additional dark time after LED off before switching channel (s)
+LED_POST_DELAY = 0.010  # additional dark time after LED off before switching channel (10ms)
 
 # === AUTOMATIC AFTERGLOW CORRECTION STRATEGY ===
 # Three-tier system based on total acquisition delay (PRE + POST):

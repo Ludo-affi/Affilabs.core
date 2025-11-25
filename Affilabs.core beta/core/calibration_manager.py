@@ -52,10 +52,10 @@ class CalibrationManager(QObject):
             print("="*70)
             print("CALIBRATION MANAGER: _run_calibration() STARTED")
             print("="*70)
-            
+
             # Get hardware directly
             self.calibration_progress.emit("Initializing...", 5)
-            
+
             hardware_mgr = self.app.hardware_mgr
             ctrl = hardware_mgr.ctrl
             usb = hardware_mgr.usb
@@ -69,7 +69,7 @@ class CalibrationManager(QObject):
 
             if not ctrl:
                 raise RuntimeError("Controller not connected. Please connect the P4SPR controller.")
-            
+
             if not usb:
                 raise RuntimeError("Spectrometer not connected. Please connect the USB4000.")
 
@@ -78,31 +78,31 @@ class CalibrationManager(QObject):
                 print("Testing controller...")
                 print(f"  Controller type: {type(ctrl).__name__}")
                 print(f"  Controller methods: {[m for m in dir(ctrl) if not m.startswith('_')][:10]}")
-                
+
                 logger.info("Testing controller communication...")
-                
+
                 # Try turning off channels
                 result = ctrl.turn_off_channels()
                 print(f"  turn_off_channels() returned: {result}")
-                
+
                 # Try turning on LED A
                 print("  Testing LED A activation...")
                 result = ctrl.turn_on_channel('a')
                 print(f"  turn_on_channel('a') returned: {result}")
-                
+
                 import time
                 time.sleep(0.5)
-                
+
                 # Try setting intensity
                 print("  Testing LED A intensity...")
                 result = ctrl.set_intensity('a', 200)
                 print(f"  set_intensity('a', 200) returned: {result}")
-                
+
                 time.sleep(0.5)
-                
+
                 # Turn off
                 ctrl.turn_off_channels()
-                
+
                 print("✅ Controller OK")
                 logger.info("✅ Controller responding to commands")
             except Exception as e:
@@ -142,46 +142,101 @@ class CalibrationManager(QObject):
             except Exception as e:
                 logger.debug(f"Afterglow correction not available: {e}")
 
-            # Step 5: Run calibration (this is the working backend code)
-            logger.info("🚀 Starting LED calibration backend...")
-            from utils.led_calibration import perform_full_led_calibration
+            # Step 5: Run calibration using NEW 6-step flow
+            logger.info("🚀 Starting 6-step LED calibration flow...")
+
+            # Check if we should use fast-track mode
+            use_fast_track = False
+            try:
+                cal_data = device_config.load_led_calibration()
+                if cal_data and 's_mode_intensities' in cal_data:
+                    logger.info("Found previous calibration - checking fast-track eligibility...")
+                    use_fast_track = True
+            except Exception as e:
+                logger.debug(f"No previous calibration found: {e}")
 
             def progress_update(msg):
                 """Map backend messages to progress percentages."""
-                if "integration" in msg.lower():
+                if "step 1" in msg.lower() or "hardware" in msg.lower():
+                    self.calibration_progress.emit(msg, 10)
+                elif "step 2" in msg.lower() or "quick dark" in msg.lower():
+                    self.calibration_progress.emit(msg, 15)
+                elif "step 3" in msg.lower() or "initializ" in msg.lower():
+                    self.calibration_progress.emit(msg, 20)
+                elif "step 4" in msg.lower() or "oem position" in msg.lower():
                     self.calibration_progress.emit(msg, 25)
-                elif "calibrating led a" in msg.lower():
+                elif "step 5a" in msg.lower() or "led optimization" in msg.lower():
                     self.calibration_progress.emit(msg, 35)
-                elif "calibrating led b" in msg.lower():
-                    self.calibration_progress.emit(msg, 45)
-                elif "calibrating led c" in msg.lower():
-                    self.calibration_progress.emit(msg, 55)
-                elif "calibrating led d" in msg.lower():
-                    self.calibration_progress.emit(msg, 65)
-                elif "dark noise" in msg.lower():
+                elif "step 5b" in msg.lower() or "integration time" in msg.lower():
+                    self.calibration_progress.emit(msg, 50)
+                elif "step 5c" in msg.lower() or "saturation check" in msg.lower():
+                    self.calibration_progress.emit(msg, 60)
+                elif "step 5d" in msg.lower() or "s-mode ref" in msg.lower():
                     self.calibration_progress.emit(msg, 70)
-                elif "reference signal" in msg.lower():
+                elif "step 5e" in msg.lower() or "final dark" in msg.lower():
                     self.calibration_progress.emit(msg, 75)
-                elif "p-mode" in msg.lower():
+                elif "step 6a" in msg.lower() or "p-mode led" in msg.lower():
+                    self.calibration_progress.emit(msg, 80)
+                elif "step 6b" in msg.lower() or "polarity" in msg.lower():
                     self.calibration_progress.emit(msg, 85)
+                elif "step 6c" in msg.lower() or "qc metric" in msg.lower():
+                    self.calibration_progress.emit(msg, 90)
+                elif "fast-track" in msg.lower() or "validat" in msg.lower():
+                    self.calibration_progress.emit(msg, 40)
                 else:
                     logger.info(f"Progress: {msg}")
 
-            cal_result = perform_full_led_calibration(
-                usb=usb,
-                ctrl=ctrl,
-                device_type='P4SPR',
-                single_mode=False,
-                single_ch='a',
-                integration_step=INTEGRATION_STEP,
-                stop_flag=None,
-                progress_callback=progress_update,
-                wave_data=wave_data,
-                wave_min_index=wave_min_index,
-                wave_max_index=wave_max_index,
-                device_config=device_config,
-                afterglow_correction=afterglow_correction
+            # Import the new 6-step calibration
+            from utils.calibration_6step import (
+                run_full_6step_calibration,
+                run_fast_track_calibration,
+                run_global_led_calibration
             )
+            from settings import USE_ALTERNATIVE_CALIBRATION
+
+            # Determine which calibration mode to use
+            if USE_ALTERNATIVE_CALIBRATION:
+                logger.info("Using GLOBAL LED MODE (LED=255, variable integration)")
+                cal_result = run_global_led_calibration(
+                    usb=usb,
+                    ctrl=ctrl,
+                    device_type='P4SPR',
+                    device_config=device_config,
+                    detector_serial=device_serial,
+                    single_mode=False,
+                    single_ch='a',
+                    stop_flag=None,
+                    progress_callback=progress_update,
+                    afterglow_correction=afterglow_correction
+                )
+            elif use_fast_track:
+                logger.info("Using FAST-TRACK MODE (±10% validation)")
+                cal_result = run_fast_track_calibration(
+                    usb=usb,
+                    ctrl=ctrl,
+                    device_type='P4SPR',
+                    device_config=device_config,
+                    detector_serial=device_serial,
+                    single_mode=False,
+                    single_ch='a',
+                    stop_flag=None,
+                    progress_callback=progress_update,
+                    afterglow_correction=afterglow_correction
+                )
+            else:
+                logger.info("Using FULL 6-STEP CALIBRATION MODE")
+                cal_result = run_full_6step_calibration(
+                    usb=usb,
+                    ctrl=ctrl,
+                    device_type='P4SPR',
+                    device_config=device_config,
+                    detector_serial=device_serial,
+                    single_mode=False,
+                    single_ch='a',
+                    stop_flag=None,
+                    progress_callback=progress_update,
+                    afterglow_correction=afterglow_correction
+                )
 
             # Step 6: Validate results
             self.calibration_progress.emit("Validating results...", 90)
