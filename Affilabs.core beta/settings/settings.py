@@ -91,12 +91,19 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.070  # LED stabilization delay (70ms - optimized for signal stability)
-                   # NOTE: Used for signal acquisition, NOT for afterglow measurement
-                   # Afterglow calibration uses immediate measurement after LED off (no delay)
+
+# LED Timing Configuration (in milliseconds)
+# PRE_LED_DELAY_MS: Settling time after LED turn-on before measurement
+# POST_LED_DELAY_MS: Dark time after LED turn-off before channel switch (for afterglow decay)
+PRE_LED_DELAY_MS = 45  # LED stabilization delay before measurement (default 45ms, configurable 0-200ms)
+POST_LED_DELAY_MS = 5  # Additional dark time after LED off (default 5ms, configurable 0-100ms)
+
+# Legacy support (kept for backward compatibility with old code)
+LED_DELAY = PRE_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
+LED_POST_DELAY = POST_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
+
 USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
 LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
-LED_POST_DELAY = 0.010  # additional dark time after LED off before switching channel (10ms)
 
 # === AUTOMATIC AFTERGLOW CORRECTION STRATEGY ===
 # Three-tier system based on total acquisition delay (PRE + POST):
@@ -133,6 +140,12 @@ MAX_INTEGRATION = 100  # maximum detector integration time in milliseconds
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
 MAX_NUM_SCANS = 25
 
+# === SESSION QUALITY MONITORING (FWHM-Based QC System) ===
+# Quality thresholds for FWHM-based grading (nm)
+FWHM_EXCELLENT_THRESHOLD_NM = 30.0   # Green:  FWHM < 30nm
+FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
+                                      # Red:    FWHM ≥ 60nm
+
 # === CALIBRATION METHOD SELECTION ===
 # Two calibration methods available:
 # 1. STANDARD (Default): Global integration time, variable LED intensity per channel
@@ -158,11 +171,12 @@ MED_FILT_WIN = 3  # default median filter window size
 
 # === Display Smoothing Settings ===
 ENABLE_INTERPOLATED_DISPLAY = True  # Emit preview points during batch processing for smooth visualization
-BATCH_SIZE = 8  # Number of raw spectra to buffer before processing (balances throughput vs latency)
-                # Recommended values:
-                # - 4: Lower latency (~1.3s), good throughput
-                # - 8: Medium latency (~2.6s), better throughput (recommended for smooth display)
-                # - 16: Higher latency (~5.2s), maximum throughput (research/batch mode)
+BATCH_SIZE = 12  # Number of raw spectra to buffer before vectorized processing (balances quality vs latency)
+                 # Batch size 12 provides ~300ms processing window for advanced filtering
+                 # Recommended values:
+                 # - 8: Fast mode (~200ms window), good for monitoring
+                 # - 12: Quality mode (~300ms window), Savitzky-Golay filtering (RECOMMENDED)
+                 # - 16: Research mode (~400ms window), maximum quality
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
