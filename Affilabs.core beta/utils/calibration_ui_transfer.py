@@ -132,8 +132,11 @@ class PostCalibrationDialog(QDialog):
         if self.calibration_result.ch_error_list:
             log_lines.append(f"Channels with Errors: {', '.join(self.calibration_result.ch_error_list)}\n")
 
-        log_lines.append(f"\nWavelength Range: {len(self.calibration_result.wave_data)} pixels\n")
-        log_lines.append(f"Dark Noise Max: {max(self.calibration_result.dark_noise):.1f} counts\n")
+        if self.calibration_result.wave_data is not None:
+            log_lines.append(f"\nWavelength Range: {len(self.calibration_result.wave_data)} pixels\n")
+
+        if self.calibration_result.dark_noise is not None:
+            log_lines.append(f"Dark Noise Max: {max(self.calibration_result.dark_noise):.1f} counts\n")
 
         if self.calibration_result.s_ref_sig:
             log_lines.append("\nS-Mode Reference Signals:\n")
@@ -322,9 +325,9 @@ def save_calibration_to_device_config(
         # Full arrays (not just metrics)
         's_ref_signals': {
             ch: sig.tolist() for ch, sig in calibration_result.s_ref_sig.items()
-        },
-        'dark_noise': calibration_result.dark_noise.tolist(),
-        'wavelengths': calibration_result.wave_data.tolist(),
+        } if calibration_result.s_ref_sig else {},
+        'dark_noise': calibration_result.dark_noise.tolist() if calibration_result.dark_noise is not None else [],
+        'wavelengths': calibration_result.wave_data.tolist() if calibration_result.wave_data is not None else [],
 
         # Indices for ROI
         'wave_min_index': calibration_result.wave_min_index,

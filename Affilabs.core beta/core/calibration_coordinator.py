@@ -68,11 +68,48 @@ class CalibrationCoordinator(QObject):
         logger.info("✅ Calibration dialog displayed")
 
     def _on_start_button_clicked(self) -> None:
-        """Handle Start button click - begin calibration."""
+        """Handle Start button click - begin calibration or transfer to live view."""
         if self._calibration_completed:
-            # Already complete - start acquisition
-            logger.info("✅ Calibration complete - starting acquisition")
+            # Calibration complete - transfer to live acquisition
+            logger.info("✅ User clicked Start - transferring to live view")
+
+            # Get calibration result
+            from utils.calibration_ui_transfer import transfer_calibration_to_live_view, save_calibration_to_device_config
+
+            # Build result object from data_mgr
+            class SimpleCalResult:
+                def __init__(self, data_mgr):
+                    self.success = True
+                    self.ref_intensity = data_mgr.ref_intensity
+                    self.p_mode_intensity = getattr(data_mgr, 'p_mode_intensity', data_mgr.leds_calibrated)
+                    self.integration_time = data_mgr.integration_time
+                    self.num_scans = data_mgr.num_scans
+                    self.wave_data = data_mgr.wave_data
+                    self.dark_noise = data_mgr.dark_noise
+                    self.s_ref_sig = data_mgr.ref_sig
+                    self.ch_error_list = data_mgr.ch_error_list
+                    self.wave_min_index = data_mgr.wave_min_index
+                    self.wave_max_index = data_mgr.wave_max_index
+                    self.s_ref_qc = getattr(data_mgr, 's_ref_qc_results', {})
+                    self.verification = {}
+                    self.calibration_method = 'standard'
+
+            cal_result = SimpleCalResult(self.app.data_mgr)
+
+            # Save calibration to device config
+            try:
+                save_calibration_to_device_config(
+                    calibration_result=cal_result,
+                    device_config=self.app.data_mgr.device_config if hasattr(self.app.data_mgr, 'device_config') else None
+                )
+                logger.info("✅ Calibration saved to device config")
+            except Exception as e:
+                logger.error(f"Failed to save calibration: {e}")
+
+            # Close dialog
             self._close_dialog()
+
+            # Start acquisition
             self._start_acquisition()
             return
 
@@ -119,85 +156,38 @@ class CalibrationCoordinator(QObject):
 
         self._calibration_completed = True
 
-        # Close the progress dialog
+        # Show QC graphs dialog
+        from widgets.calibration_qc_dialog import CalibrationQCDialog
+
+        # Build QC data from data_mgr
+        qc_data = {
+            's_pol_spectra': self.app.data_mgr.ref_sig,
+            'p_pol_spectra': getattr(self.app.data_mgr, 'p_pol_spectra', {}),
+            'dark_scan': {'all': self.app.data_mgr.dark_noise} if self.app.data_mgr.dark_noise is not None else {},
+            'afterglow_curves': getattr(self.app.data_mgr, 'afterglow_curves', {}),
+            'transmission_spectra': getattr(self.app.data_mgr, 'transmission_spectra', {}),
+            'wavelengths': self.app.data_mgr.wave_data,
+            'integration_time': self.app.data_mgr.integration_time,
+            'led_intensities': self.app.data_mgr.ref_intensity,
+        }
+
+        qc_dialog = CalibrationQCDialog(parent=self.app.main_window, calibration_data=qc_data)
+        qc_dialog.exec()  # Show QC graphs and wait for user to close
+
+        # Keep progress dialog open and show completion with Start button
         if self._calibration_dialog:
-            self._calibration_dialog.close()
-            self._calibration_dialog = None
+            self._calibration_dialog.update_title("✅ Calibration Complete!")
+            self._calibration_dialog.update_status("Calibration successful! Click Start to begin live acquisition.")
+            self._calibration_dialog.hide_progress_bar()
 
-        # Check for afterglow calibration
-        from utils.calibration_ui_transfer import check_and_run_afterglow_calibration
-        check_and_run_afterglow_calibration(
-            device_config=self.app.data_mgr.device_config if hasattr(self.app.data_mgr, 'device_config') else None,
-            usb=self.app.hardware_mgr.usb,
-            ctrl=self.app.hardware_mgr.ctrl,
-            calibration_result=self.app.data_mgr.get_calibration_result() if hasattr(self.app.data_mgr, 'get_calibration_result') else None
-        )
+            # Re-enable Start button for transfer to live view
+            if self._calibration_dialog.start_button:
+                self._calibration_dialog.start_button.setEnabled(True)
+                self._calibration_dialog.start_button.setText("Start")
 
-        # Show post-calibration dialog (NEW - waits for user to click Start)
         logger.info("=" * 80)
-        logger.info("SHOWING POST-CALIBRATION DIALOG")
+        logger.info("Calibration complete - waiting for user to click Start")
         logger.info("=" * 80)
-        logger.info("User must click 'Start' button to transfer to live view")
-        logger.info("Transfer does NOT happen automatically")
-        logger.info("=" * 80)
-
-        from utils.calibration_ui_transfer import PostCalibrationDialog, transfer_calibration_to_live_view
-
-        # Get calibration result from data manager
-        cal_result = self.app.data_mgr.get_calibration_result() if hasattr(self.app.data_mgr, 'get_calibration_result') else None
-
-        if not cal_result:
-            # Build a simple result object from calibration_data
-            class SimpleCalResult:
-                def __init__(self, data):
-                    self.success = not bool(data.get('ch_error_list'))
-                    self.ref_intensity = data.get('ref_intensity', {})
-                    self.p_mode_intensity = data.get('p_mode_intensity', {})
-                    self.integration_time = data.get('integration_time', 50)
-                    self.num_scans = data.get('num_scans', 1)
-                    self.ch_error_list = data.get('ch_error_list', [])
-                    self.wave_data = None
-                    self.dark_noise = None
-                    self.s_ref_sig = {}
-                    self.verification = data.get('verification', {})
-                    self.calibration_method = data.get('calibration_method', 'standard')
-
-            cal_result = SimpleCalResult(calibration_data)
-
-        # Create and show post-calibration dialog
-        post_cal_dialog = PostCalibrationDialog(cal_result, parent=self.app.main_window)
-
-        # Connect signals
-        def on_start_clicked():
-            """User clicked Start - transfer to live view."""
-            logger.info("✅ User clicked Start - transferring to live view")
-
-            # Transfer calibration to live acquisition
-            success = transfer_calibration_to_live_view(
-                calibration_result=cal_result,
-                data_acquisition_manager=self.app.data_mgr,
-                device_config=self.app.data_mgr.device_config if hasattr(self.app.data_mgr, 'device_config') else None
-            )
-
-            if success:
-                logger.info("✅ Transfer complete - starting live view")
-                # Close dialog
-                post_cal_dialog.close()
-            else:
-                logger.error("❌ Transfer failed")
-                from widgets.message import show_message
-                show_message("Failed to transfer calibration to live view", "Error")
-
-        def on_cancel_clicked():
-            """User clicked Cancel - return to calibration menu."""
-            logger.info("User cancelled - returning to calibration menu")
-            post_cal_dialog.close()
-
-        post_cal_dialog.start_clicked.connect(on_start_clicked)
-        post_cal_dialog.cancel_clicked.connect(on_cancel_clicked)
-
-        # Show dialog (BLOCKS until user clicks Start or Cancel)
-        post_cal_dialog.exec()
 
     def _on_calibration_failed(self, error: str) -> None:
         """Handle calibration failure.

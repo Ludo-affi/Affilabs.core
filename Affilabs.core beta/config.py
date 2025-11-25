@@ -42,3 +42,10 @@ CONTROLLER_RETRY_ATTEMPTS = 3  # Number of retries for controller connection
 # === UI Update Intervals ===
 STATUS_UPDATE_INTERVAL_MS = 100  # milliseconds between status bar updates
 PROGRESS_BAR_UPDATE_MS = 100  # milliseconds between progress bar updates
+
+# === Live Data Performance Settings ===
+DEBUG_LOG_THROTTLE_FACTOR = 10  # Log debug messages every Nth acquisition (1=all, 10=every 10th)
+TRANSMISSION_UPDATE_INTERVAL = 1.0  # seconds between transmission spectrum updates
+SENSORGRAM_DOWNSAMPLE_FACTOR = 2  # Update sensorgram every Nth point (1=all, 2=half, 4=quarter)
+ENABLE_TRANSMISSION_UPDATES_DEFAULT = True  # Default state for transmission spectrum updates
+ENABLE_RAW_SPECTRUM_UPDATES_DEFAULT = True  # Default state for raw spectrum updates

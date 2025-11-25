@@ -153,7 +153,10 @@ from config import (
     LEAK_DETECTION_WINDOW, LEAK_THRESHOLD_RATIO, WAVELENGTH_TO_RU_CONVERSION,
     DEFAULT_FILTER_ENABLED, DEFAULT_FILTER_STRENGTH,
     OPTICS_LEAK_DETECTION_TIME, OPTICS_LEAK_THRESHOLD,
-    OPTICS_MAX_DETECTOR_COUNTS, OPTICS_MAINTENANCE_INTENSITY_THRESHOLD
+    OPTICS_MAX_DETECTOR_COUNTS, OPTICS_MAINTENANCE_INTENSITY_THRESHOLD,
+    DEBUG_LOG_THROTTLE_FACTOR, TRANSMISSION_UPDATE_INTERVAL,
+    SENSORGRAM_DOWNSAMPLE_FACTOR, ENABLE_TRANSMISSION_UPDATES_DEFAULT,
+    ENABLE_RAW_SPECTRUM_UPDATES_DEFAULT
 )
 
 # Import TIME_ZONE from settings
@@ -278,6 +281,17 @@ class Application(QApplication):
         self._processing_active = False
         self._queue_stats = {'dropped': 0, 'processed': 0, 'max_size': 0}  # Performance monitoring
 
+        # Performance: Debug log throttling (log every Nth acquisition)
+        self._acquisition_counter = 0  # Count acquisitions for throttling
+
+        # Performance: Transmission update throttling (update every N seconds)
+        self._last_transmission_update = {'a': 0, 'b': 0, 'c': 0, 'd': 0}  # Timestamp per channel
+        self._transmission_updates_enabled = ENABLE_TRANSMISSION_UPDATES_DEFAULT
+        self._raw_spectrum_updates_enabled = ENABLE_RAW_SPECTRUM_UPDATES_DEFAULT
+
+        # Performance: Sensorgram downsampling counter
+        self._sensorgram_update_counter = 0
+
         # Pre-cache attribute checks for performance (called frequently)
         self._has_stop_cursor = (hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
                                 self.main_window.full_timeline_graph.stop_cursor is not None)
@@ -396,7 +410,7 @@ class Application(QApplication):
         self.main_window.power_on_requested.connect(self._on_power_on_requested)
         logger.info("Connected: main_window.power_on_requested -> _on_power_on_requested")
         print("[INIT] Power ON signal connected!")
-        
+
         self.main_window.power_off_requested.connect(self._on_power_off_requested)
         self.main_window.recording_start_requested.connect(self._on_recording_start_requested)
         self.main_window.recording_stop_requested.connect(self._on_recording_stop_requested)
@@ -1428,28 +1442,37 @@ class Application(QApplication):
         Only does timestamp calculation and queuing - all processing in worker thread.
         """
         try:
-            logger.info(f"[CRASH-TRACK-1] _on_spectrum_acquired ENTRY - channel={data.get('channel', '?')}")
+            # Increment acquisition counter for throttling
+            self._acquisition_counter += 1
+            should_log = (self._acquisition_counter % DEBUG_LOG_THROTTLE_FACTOR == 0)
+
+            if should_log:
+                logger.info(f"[CRASH-TRACK-1] _on_spectrum_acquired ENTRY - channel={data.get('channel', '?')} (#{self._acquisition_counter})")
 
             # Initialize experiment start time on first data point
             if self.experiment_start_time is None:
                 self.experiment_start_time = data['timestamp']
-                logger.info(f"[CRASH-TRACK-1A] Experiment start time set: {self.experiment_start_time}")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-1A] Experiment start time set: {self.experiment_start_time}")
 
             # Calculate elapsed time (minimal work in acquisition thread)
             data['elapsed_time'] = data['timestamp'] - self.experiment_start_time
-            logger.info(f"[CRASH-TRACK-1B] Elapsed time calculated: {data['elapsed_time']:.3f}s")
+            if should_log:
+                logger.info(f"[CRASH-TRACK-1B] Elapsed time calculated: {data['elapsed_time']:.3f}s")
 
             # Queue for processing thread (non-blocking)
             try:
                 self._spectrum_queue.put_nowait(data)
-                logger.info(f"[CRASH-TRACK-1C] Data queued successfully")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-1C] Data queued successfully")
             except:
                 # Queue full - log and drop (prevents blocking acquisition)
                 self._queue_stats['dropped'] += 1
                 if self._queue_stats['dropped'] % 10 == 1:  # Log every 10th drop
                     logger.warning(f"⚠️ Spectrum queue full - {self._queue_stats['dropped']} frames dropped")
 
-            logger.info(f"[CRASH-TRACK-1D] _on_spectrum_acquired EXIT - SUCCESS")
+            if should_log:
+                logger.info(f"[CRASH-TRACK-1D] _on_spectrum_acquired EXIT - SUCCESS")
 
         except Exception as e:
             logger.exception(f"[CRASH-TRACK-1-FATAL] _on_spectrum_acquired crashed: {e}")
@@ -1461,7 +1484,11 @@ class Application(QApplication):
         This includes: intensity monitoring, transmission updates, buffer updates, etc.
         """
         try:
-            logger.info(f"[CRASH-TRACK-2] _process_spectrum_data ENTRY")
+            # Throttled logging (only log every Nth acquisition)
+            should_log = (self._acquisition_counter % DEBUG_LOG_THROTTLE_FACTOR == 0)
+
+            if should_log:
+                logger.info(f"[CRASH-TRACK-2] _process_spectrum_data ENTRY")
             import numpy as np
 
             channel = data['channel']  # 'a', 'b', 'c', 'd'
@@ -1471,24 +1498,28 @@ class Application(QApplication):
             elapsed_time = data['elapsed_time']
             is_preview = data.get('is_preview', False)  # Interpolated preview vs real data
 
-            logger.info(f"[CRASH-TRACK-2A] Data parsed - ch={channel}, wave={wavelength:.1f}, int={intensity:.0f}")
-            print(f"[PROCESS] Channel {channel}: wave={wavelength:.1f}nm, int={intensity:.0f}, time={elapsed_time:.2f}s")
+            if should_log:
+                logger.info(f"[CRASH-TRACK-2A] Data parsed - ch={channel}, wave={wavelength:.1f}, int={intensity:.0f}")
+                print(f"[PROCESS] Channel {channel}: wave={wavelength:.1f}nm, int={intensity:.0f}, time={elapsed_time:.2f}s")
 
             # SIMPLIFIED: Just append to buffers and queue graph update
             # Skip intensity monitoring, transmission queueing, etc. for now
 
             # Append to timeline data buffers (RAW data - unfiltered)
             try:
-                logger.info(f"[CRASH-TRACK-2B] Calling buffer_mgr.append_timeline_point")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-2B] Calling buffer_mgr.append_timeline_point")
                 self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength)
-                logger.info(f"[CRASH-TRACK-2C] Buffer append SUCCESS")
-                print(f"[PROCESS] Channel {channel}: Buffer updated OK")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-2C] Buffer append SUCCESS")
+                    print(f"[PROCESS] Channel {channel}: Buffer updated OK")
 
-                # CRASH DEBUG: Check thread context
-                import threading
-                logger.info(f"[CRASH-DEBUG] Current thread: {threading.current_thread().name}")
-                logger.info(f"[CRASH-DEBUG] Is main thread: {threading.current_thread() is threading.main_thread()}")
-                print(f"[CRASH-DEBUG] Thread: {threading.current_thread().name}")
+                # CRASH DEBUG: Check thread context (throttled)
+                if should_log:
+                    import threading
+                    logger.info(f"[CRASH-DEBUG] Current thread: {threading.current_thread().name}")
+                    logger.info(f"[CRASH-DEBUG] Is main thread: {threading.current_thread() is threading.main_thread()}")
+                    print(f"[CRASH-DEBUG] Thread: {threading.current_thread().name}")
 
             except Exception as e:
                 logger.exception(f"[CRASH-TRACK-2C-ERROR] Buffer append FAILED: {e}")
@@ -1497,19 +1528,23 @@ class Application(QApplication):
                 traceback.print_exc()
 
             # Queue transmission spectrum update (for dialog display) ONLY if we have full spectrum
-            # This prevents crashes from passing per-wavelength scalar data to dialog expecting arrays
-            # Check for either 'raw_spectrum' or 'full_spectrum' (both are valid)
+            # THROTTLED: Only update every N seconds per channel
             has_raw_data = data.get('raw_spectrum') is not None or data.get('full_spectrum') is not None
             has_transmission = data.get('transmission_spectrum') is not None
+            time_since_last_update = timestamp - self._last_transmission_update.get(channel, 0)
+            should_update_transmission = (time_since_last_update >= TRANSMISSION_UPDATE_INTERVAL)
 
-            if has_raw_data and has_transmission:
+            if has_raw_data and has_transmission and should_update_transmission:
                 try:
-                    logger.info(f"[CRASH-TRACK-2D] Calling _queue_transmission_update")
-                    print(f"[DEBUG] About to call _queue_transmission_update(channel={channel})")
-                    print(f"[DEBUG] self={type(self).__name__}, has_method={hasattr(self, '_queue_transmission_update')}")
+                    if should_log:
+                        logger.info(f"[CRASH-TRACK-2D] Calling _queue_transmission_update")
+                        print(f"[DEBUG] About to call _queue_transmission_update(channel={channel})")
+                        print(f"[DEBUG] self={type(self).__name__}, has_method={hasattr(self, '_queue_transmission_update')}")
                     self._queue_transmission_update(channel, data)
-                    logger.info(f"[CRASH-TRACK-2E] Transmission queue SUCCESS")
-                    print(f"[PROCESS] Channel {channel}: Transmission queued")
+                    self._last_transmission_update[channel] = timestamp
+                    if should_log:
+                        logger.info(f"[CRASH-TRACK-2E] Transmission queue SUCCESS")
+                        print(f"[PROCESS] Channel {channel}: Transmission queued")
                 except Exception as e:
                     logger.exception(f"[CRASH-TRACK-2E-ERROR] Transmission queue FAILED: {e}")
                     print(f"[PROCESS ERROR] Channel {channel}: Transmission queue failed: {e}")
@@ -1531,38 +1566,48 @@ class Application(QApplication):
             traceback.print_exc()
 
         # Queue graph update instead of immediate update (throttled by timer)
-        # This prevents UI freezing from excessive redraws (40+ per second)
-        # THREAD SAFETY: Always queue updates - main thread will check live_data_enabled
-        try:
-            logger.info(f"[CRASH-TRACK-3] Queueing graph update")
+        # DOWNSAMPLED: Only queue every Nth update
+        self._sensorgram_update_counter += 1
+        should_update_graph = (self._sensorgram_update_counter % SENSORGRAM_DOWNSAMPLE_FACTOR == 0)
 
-            # Queue the update (main thread will check if live data is enabled)
-            self._pending_graph_updates[channel] = {
-                'elapsed_time': elapsed_time,
-                'channel': channel
-            }
-            logger.info(f"[CRASH-TRACK-3A] Graph update queued")
-        except Exception as e:
-            logger.exception(f"[CRASH-TRACK-3-ERROR] Graph queue FAILED: {e}")
+        if should_update_graph:
+            try:
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-3] Queueing graph update")
+
+                # Queue the update (main thread will check if live data is enabled)
+                self._pending_graph_updates[channel] = {
+                    'elapsed_time': elapsed_time,
+                    'channel': channel
+                }
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-3A] Graph update queued")
+            except Exception as e:
+                logger.exception(f"[CRASH-TRACK-3-ERROR] Graph queue FAILED: {e}")
 
         # Record data point if recording is active
         try:
-            logger.info(f"[CRASH-TRACK-4] Checking recording - is_recording={self.recording_mgr.is_recording}")
+            if should_log:
+                logger.info(f"[CRASH-TRACK-4] Checking recording - is_recording={self.recording_mgr.is_recording}")
             if self.recording_mgr.is_recording:
-                logger.info(f"[CRASH-TRACK-4A] Building data point")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-4A] Building data point")
                 # Build data point with all channels (use latest value for each)
                 data_point = {}
                 for ch in self._idx_to_channel:
                     latest_value = self.buffer_mgr.get_latest_value(ch)
                     data_point[f'channel_{ch}'] = latest_value if latest_value is not None else ''
 
-                logger.info(f"[CRASH-TRACK-4B] Recording data point")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-4B] Recording data point")
                 self.recording_mgr.record_data_point(data_point)
-                logger.info(f"[CRASH-TRACK-4C] Recording SUCCESS")
+                if should_log:
+                    logger.info(f"[CRASH-TRACK-4C] Recording SUCCESS")
         except Exception as e:
             logger.exception(f"[CRASH-TRACK-4-ERROR] Recording FAILED: {e}")
 
-        logger.info(f"[CRASH-TRACK-5] _process_spectrum_data EXIT - COMPLETE")
+        if should_log:
+            logger.info(f"[CRASH-TRACK-5] _process_spectrum_data EXIT - COMPLETE")
 
         # Update cycle of interest graph (bottom graph) - REMOVED
         # This was causing crashes by running heavy processing 40+ times per second
@@ -1618,6 +1663,10 @@ class Application(QApplication):
             channel: Channel letter ('a', 'b', 'c', 'd')
             data: Spectrum data dictionary containing transmission_spectrum and raw_spectrum
         """
+        # Skip if updates are disabled (performance optimization)
+        if not self._transmission_updates_enabled and not self._raw_spectrum_updates_enabled:
+            return
+
         transmission = data.get('transmission_spectrum', None)
         # Get raw spectrum - check both field names for compatibility
         raw_spectrum = data.get('raw_spectrum')
@@ -1652,16 +1701,17 @@ class Application(QApplication):
             }
 
             if wavelengths is not None:
-                # Update transmission dialog if open
-                if self._transmission_dialog is not None and self._transmission_dialog.isVisible():
+                # Update transmission dialog if open (only if enabled)
+                if self._transmission_updates_enabled and self._transmission_dialog is not None and self._transmission_dialog.isVisible():
                     self._transmission_dialog.update_spectrum(channel, wavelengths, transmission, raw_spectrum)
 
                 # Update live data dialog if open (THREAD SAFE - called from processing thread)
                 if self._live_data_dialog is not None:
                     try:
-                        # Update both transmission and raw data plots
-                        self._live_data_dialog.update_transmission_plot(channel, wavelengths, transmission)
-                        if raw_spectrum is not None:
+                        # Update both transmission and raw data plots (respect enable flags)
+                        if self._transmission_updates_enabled:
+                            self._live_data_dialog.update_transmission_plot(channel, wavelengths, transmission)
+                        if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
                             self._live_data_dialog.update_raw_data_plot(channel, wavelengths, raw_spectrum)
                     except Exception as e:
                         # Silently ignore dialog update errors (dialog may be closing)
@@ -3886,16 +3936,37 @@ class Application(QApplication):
             if not active_channels:
                 return
 
+            # Find maximum length across all channels (for padding)
+            max_len = max(len(self.buffer_mgr.cycle_data[ch].time) for ch in active_channels)
+
+            if max_len == 0:
+                return
+
             # Vectorized export using pandas DataFrame
             import pandas as pd
 
             # Build DataFrame with time and wavelength/SPR for each channel
             first_ch = active_channels[0]
-            df_data = {'Time (s)': self.buffer_mgr.cycle_data[first_ch].time}
+
+            # Pad time array to max_len with NaN
+            time_array = self.buffer_mgr.cycle_data[first_ch].time
+            if len(time_array) < max_len:
+                time_array = np.pad(time_array, (0, max_len - len(time_array)), constant_values=np.nan)
+
+            df_data = {'Time (s)': time_array}
 
             for ch in active_channels:
-                df_data[f'Ch {ch.upper()} Wavelength (nm)'] = self.buffer_mgr.cycle_data[ch].wavelength
-                df_data[f'Ch {ch.upper()} SPR (RU)'] = self.buffer_mgr.cycle_data[ch].spr
+                # Pad wavelength and SPR arrays to match max_len
+                wave_array = self.buffer_mgr.cycle_data[ch].wavelength
+                spr_array = self.buffer_mgr.cycle_data[ch].spr
+
+                if len(wave_array) < max_len:
+                    wave_array = np.pad(wave_array, (0, max_len - len(wave_array)), constant_values=np.nan)
+                if len(spr_array) < max_len:
+                    spr_array = np.pad(spr_array, (0, max_len - len(spr_array)), constant_values=np.nan)
+
+                df_data[f'Ch {ch.upper()} Wavelength (nm)'] = wave_array
+                df_data[f'Ch {ch.upper()} SPR (RU)'] = spr_array
 
             df = pd.DataFrame(df_data)
 
