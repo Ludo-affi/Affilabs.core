@@ -88,14 +88,14 @@ class PolarizerCalibrator:
        - Only 2 viable positions where windows align with beam
        - Servo rotates barrel to select which window is used
        - Most positions BLOCK light (very low signal ~50-100 counts)
-       - Typical S/P ratio: 1.5-2.5× (limited by fixed window orientation)
+       - Typical P/S ratio: 0.4-0.67 (P dimmer than S, limited by fixed window orientation)
 
     **2. Round Polarizer (Continuous Rotation)**:
        - Continuously rotating polarizer element
        - Light intensity changes smoothly at every angle
        - Many viable positions with varying transmission
        - Need to find global max (S-mode) and min (P-mode) positions
-       - Typical S/P ratio: 3.0-15.0× (optimizable orientation)
+       - Typical P/S ratio: 0.07-0.33 (P significantly dimmer than S, optimizable orientation)
 
     Physics Background:
     -------------------
@@ -487,7 +487,7 @@ class PolarizerCalibrator:
             'p_position': int(actual_p_position),
             's_intensity': float(s_intensity),
             'p_intensity': float(p_intensity),
-            'sp_ratio': float(sp_ratio),  # S/P ratio (higher is better)
+            'sp_ratio': float(sp_ratio),  # P/S ratio (lower is better, should be < 1.0)
             'hardware_s_position': int(pos1),
             'hardware_p_position': int(pos2),
             'labels_inverted': bool(labels_inverted)
@@ -804,7 +804,7 @@ class DeviceProfileManager:
             logger.info(f"✅ Updated device_config.json with OEM calibration:")
             logger.info(f"   S position: {polarizer_results['s_position']}")
             logger.info(f"   P position: {polarizer_results['p_position']}")
-            logger.info(f"   S/P ratio: {polarizer_results.get('sp_ratio', 0.0):.2f}")
+            logger.info(f"   P/S ratio: {polarizer_results.get('sp_ratio', 0.0):.3f}")
 
         except Exception as e:
             logger.error(f"❌ Failed to update device_config.json: {e}")
@@ -1047,8 +1047,8 @@ def main():
             logger.info(f"  S position: {polarizer_results['s_position']}° (HIGH transmission)")
             logger.info(f"  P position: {polarizer_results['p_position']}° (LOW transmission)")
             sp_ratio = polarizer_results['sp_ratio']
-            status = "✅ EXCELLENT" if sp_ratio >= 3.0 else "✅ GOOD" if sp_ratio >= 2.5 else "✅ ACCEPTABLE" if sp_ratio >= 1.5 else "⚠️ LOW"
-            logger.info(f"  S/P ratio: {sp_ratio:.2f}× ({status})")
+            status = "✅ EXCELLENT" if sp_ratio <= 0.4 else "✅ GOOD" if sp_ratio <= 0.7 else "✅ ACCEPTABLE" if sp_ratio <= 0.9 else "⚠️ HIGH"
+            logger.info(f"  P/S ratio: {sp_ratio:.3f} ({status})")
 
         if afterglow_results:
             logger.info(f"\nAfterglow:")

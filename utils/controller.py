@@ -180,30 +180,41 @@ class KineticController(ControllerBase):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == CP210X_PID and dev.vid == CP210X_VID:
                 logger.info(f"Found a KNX2 board - {dev}, trying to connect...")
-                try:
-                    self._ser = serial.Serial(
-                        port=dev.device, baudrate=BAUD_RATE, timeout=3
-                    )
-                    info = self.get_info()
-                    if info is not None:
-                        if info["fw ver"].startswith("KNX2"):
-                            if info["fw ver"].startswith("KNX2 V1.1"):
+                # Try up to 3 times to connect to this device
+                for attempt in range(3):
+                    try:
+                        self._ser = serial.Serial(
+                            port=dev.device, baudrate=BAUD_RATE, timeout=3
+                        )
+                        info = self.get_info()
+                        if info is not None:
+                            if info["fw ver"].startswith("KNX2"):
+                                if info["fw ver"].startswith("KNX2 V1.1"):
+                                    self.version = "1.1"
+                                return True
+                            if info["fw ver"].startswith("KNX1"):
+                                self.name = "KNX"
                                 self.version = "1.1"
-                            return True
-                        if info["fw ver"].startswith("KNX1"):
-                            self.name = "KNX"
-                            self.version = "1.1"
-                            return True
-                        logger.debug("dev is not KNX2")
+                                return True
+                            logger.debug("dev is not KNX2")
+                            self._ser.close()
+                            return False
+                        logger.debug(f"Error during get info, returned: {info}")
                         self._ser.close()
-                        return False
-                    logger.debug(f"Error during get info, returned: {info}")
-                    self._ser.close()
-                    return False
-                except Exception as e:
-                    logger.error(f"Failed to open KNX2 - {e}")
-                    self._ser = None
-                    return False
+                        if attempt < 2:  # Don't sleep on last attempt
+                            time.sleep(0.2)
+                    except Exception as e:
+                        logger.error(f"Failed to open KNX2 (attempt {attempt+1}/3) - {e}")
+                        if self._ser is not None:
+                            try:
+                                self._ser.close()
+                            except Exception:
+                                pass
+                        self._ser = None
+                        if attempt < 2:  # Don't sleep on last attempt
+                            time.sleep(0.2)
+                # All 3 attempts failed for this port
+                return False
         return False
 
     def _send_command(
@@ -362,9 +373,9 @@ class PicoP4SPR(ControllerBase):
                         self._ser.reset_input_buffer()
                         self._ser.reset_output_buffer()
 
-                    # Try ID up to 5 times
+                    # Try ID up to 3 times
                     ok = False
-                    for _ in range(5):
+                    for _ in range(3):
                         # Some firmwares expect CRLF
                         self._ser.write(b"id\r\n")
                         time.sleep(0.15)
@@ -748,24 +759,34 @@ class PicoEZSPR(ControllerBase):
     def open(self) -> bool:
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
-                try:
-                    self._ser = serial.Serial(
-                        port=dev.device, baudrate=115200, timeout=5
-                    )
-                    cmd = "id\n"
-                    self._ser.write(cmd.encode())
-                    reply = self._ser.readline()[0:5].decode()
-                    logger.debug(f"Pico EZSPR reply - {reply}")
-                    if reply == "EZSPR":
-                        cmd = "iv\n"
+                # Try up to 3 times to connect to this device
+                for attempt in range(3):
+                    try:
+                        self._ser = serial.Serial(
+                            port=dev.device, baudrate=115200, timeout=5
+                        )
+                        cmd = "id\n"
                         self._ser.write(cmd.encode())
-                        self.version = self._ser.readline()[0:4].decode()
-                        return True
-                    self._ser.close()
-                except Exception as e:
-                    logger.error(f"Failed to open Pico - {e}")
-                    if self._ser is not None:
+                        reply = self._ser.readline()[0:5].decode()
+                        logger.debug(f"Pico EZSPR reply - {reply} (attempt {attempt+1}/3)")
+                        if reply == "EZSPR":
+                            cmd = "iv\n"
+                            self._ser.write(cmd.encode())
+                            self.version = self._ser.readline()[0:4].decode()
+                            return True
                         self._ser.close()
+                        if attempt < 2:  # Don't sleep on last attempt
+                            time.sleep(0.2)
+                    except Exception as e:
+                        logger.error(f"Failed to open Pico EZSPR (attempt {attempt+1}/3) - {e}")
+                        if self._ser is not None:
+                            try:
+                                self._ser.close()
+                            except Exception:
+                                pass
+                        self._ser = None
+                        if attempt < 2:  # Don't sleep on last attempt
+                            time.sleep(0.2)
         return False
 
     def update_firmware(self, firmware):

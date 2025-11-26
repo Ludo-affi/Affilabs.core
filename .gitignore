@@ -24,12 +24,21 @@ affinite_ezspr.uf2
 docs/**/*.html
 docs/**/*.js
 
-# Python
+# Python cache and bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+*.pyc
+*.pyo
+*.pyd
+
+# Python cache in all subdirectories
+src/**/__pycache__/
+tools/**/__pycache__/
+tests/**/__pycache__/
+**/Affilabs.core beta/__pycache__/
 
 # Build artifacts (but allow build/*.spec files)
 build/*.exe

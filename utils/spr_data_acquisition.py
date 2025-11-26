@@ -1069,12 +1069,17 @@ Data Flow:
         self.processing_active = False
 
         if self.processing_thread is not None:
-            # Wait for processing thread to finish (max 5 seconds)
-            self.processing_thread.join(timeout=5.0)
-            if self.processing_thread.is_alive():
-                logger.warning("⚠️ PIPELINE: Processing thread did not stop cleanly")
+            # SAFETY: Only join if we're NOT the processing thread itself
+            # (prevents "cannot join current thread" error if shutdown triggered from processing thread)
+            if threading.current_thread() != self.processing_thread:
+                # Wait for processing thread to finish (max 5 seconds)
+                self.processing_thread.join(timeout=5.0)
+                if self.processing_thread.is_alive():
+                    logger.warning("⚠️ PIPELINE: Processing thread did not stop cleanly")
+                else:
+                    logger.info("✨ PIPELINE: Processing thread stopped successfully")
             else:
-                logger.info("✨ PIPELINE: Processing thread stopped successfully")
+                logger.warning("⚠️ PIPELINE: Shutdown called from processing thread - skipping join()")
 
         # Clear any remaining items in queue
         try:

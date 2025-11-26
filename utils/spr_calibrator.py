@@ -2219,7 +2219,7 @@ class SPRCalibrator:
         - S-mode (perpendicular): HIGH transmission - flat reference spectrum
         - P-mode (parallel): LOWER transmission - shows resonance dip
 
-        This validates that S/P ratio is correct (S should be significantly higher than P).
+        This validates that P/S ratio is correct (P should be significantly lower than S).
 
         Also reads and stores the actual servo positions being used for
         S and P modes to ensure they're consistently applied throughout calibration.
@@ -2227,7 +2227,7 @@ class SPRCalibrator:
         Expected behavior in SPR:
         - S-mode: High transmission (reference, no resonance)
         - P-mode: Lower transmission (measurement, resonance dip)
-        - Ratio: S-mode should be 3-15× higher than P-mode
+        - Ratio: P/S should be 0.1-0.75 (P is dimmer than S)
 
         Returns:
             True if polarizer positions are valid, False otherwise
@@ -2305,35 +2305,44 @@ class SPRCalibrator:
             # Turn off LED
             self.ctrl.turn_off_channels()
 
-            # Calculate ratio (S/P - should be > 2 in SPR, typically 3-15×)
-            ratio = s_max / p_max if p_max > 0 else 0.0
+            # Calculate ratio (P/S - should be < 1.0 since S has HIGH transmission, P has LOWER)
+            ratio = p_max / s_max if s_max > 0 else 0.0
 
             # Store validated ratio in state for reference
-            self.state.polarizer_sp_ratio = ratio  # Measured S/P ratio (correct for SPR)
+            self.state.polarizer_sp_ratio = ratio  # Measured P/S ratio (< 1.0 for correct SPR)
+
+            # Initialize per-channel validation storage (will be populated during per-channel calibration)
+            if not hasattr(self.state, 'transmission_validation'):
+                self.state.transmission_validation = {}
 
             logger.info(f"   S-mode intensity: {s_max:.1f} counts (HIGH expected - reference)")
             logger.info(f"   P-mode intensity: {p_max:.1f} counts (LOWER expected - resonance)")
-            logger.info(f"   Measured S/P ratio: {ratio:.2f}x")
+            logger.info(f"   Measured P/S ratio: {ratio:.3f} (expect < 1.0)")
             if sp_ratio_config:
-                logger.info(f"   Expected S/P ratio: {sp_ratio_config:.2f}x (from OEM calibration)")
+                logger.info(f"   Expected P/S ratio: {sp_ratio_config:.3f} (from OEM calibration)")
 
-            # Validate: S-mode should be significantly higher than P-mode (SPR behavior)
-            MIN_RATIO = 1.05  # Minimum ratio to detect obvious problems
-            IDEAL_RATIO_MIN = 1.33
-            IDEAL_RATIO_MAX = 15.0
+            # ========================================================================
+            # PART 1: P/S INTENSITY RATIO VALIDATION
+            # ========================================================================
+            # Validate: P-mode should be significantly lower than S-mode (SPR behavior)
+            MAX_RATIO = 0.95  # Maximum ratio (P should be clearly lower than S)
+            IDEAL_RATIO_MAX = 0.75  # Ideal upper bound
+            IDEAL_RATIO_MIN = 0.10   # Ideal lower bound (P not too weak)
+            MIN_RATIO = 0.01  # Minimum ratio threshold
 
+            ratio_valid = True
             if ratio < MIN_RATIO:
                 # ⚠️ Low ratio could be saturation, not polarizer error
                 # OEM positions are already validated, so treat as WARNING not ERROR
                 logger.warning("=" * 80)
-                logger.warning("⚠️ LOW S/P RATIO DETECTED (POSSIBLE SATURATION)")
+                logger.warning("⚠️ LOW P/S RATIO DETECTED (POSSIBLE SATURATION)")
                 logger.warning("=" * 80)
                 logger.warning(f"   S-mode intensity: {s_max:.1f} counts")
                 logger.warning(f"   P-mode intensity: {p_max:.1f} counts")
-                logger.warning(f"   Measured ratio: {ratio:.2f}x (expected: >{MIN_RATIO}x)")
+                logger.warning(f"   Measured P/S ratio: {ratio:.3f} (expected: >{MIN_RATIO})")
                 logger.warning(f"   OEM positions: S={s_pos}, P={p_pos} (validated)")
                 if sp_ratio_config:
-                    logger.warning(f"   Expected ratio: {sp_ratio_config:.2f}x (from OEM calibration)")
+                    logger.warning(f"   Expected P/S ratio: {sp_ratio_config:.3f} (from OEM calibration)")
                 logger.warning("")
 
                 # Check if both are saturated (integration time too high)
@@ -2347,30 +2356,280 @@ class SPRCalibrator:
                     logger.warning("   3. Polarizer not properly aligned")
 
                 logger.warning("")
-                logger.warning("   ✅ Continuing calibration with OEM-validated positions")
+                logger.warning("   ⚠️ Continuing to transmission dip validation...")
                 logger.warning("=" * 80)
-                return True  # Continue calibration - positions are from validated OEM config
+                ratio_valid = False
             elif ratio < IDEAL_RATIO_MIN:
                 logger.warning("=" * 80)
-                logger.warning("⚠️ POLARIZER POSITION WARNING")
+                logger.warning("⚠️ POLARIZER POSITION WARNING (P/S RATIO)")
                 logger.warning("=" * 80)
-                logger.warning(f"   S/P ratio ({ratio:.2f}x) is lower than ideal ({IDEAL_RATIO_MIN}-{IDEAL_RATIO_MAX}x)")
+                logger.warning(f"   P/S ratio ({ratio:.3f}) is lower than ideal ({IDEAL_RATIO_MIN}-{IDEAL_RATIO_MAX})")
                 logger.warning(f"   Servo positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
-                logger.warning("   Calibration will continue, but consider running auto-polarization")
-                logger.warning("   (Available in Settings menu)")
+                logger.warning("   ⚠️ Continuing to transmission dip validation...")
                 logger.warning("=" * 80)
-                return True  # Allow calibration to continue with warning
-            elif ratio > IDEAL_RATIO_MAX:
-                logger.warning(f"⚠️ S/P ratio ({ratio:.2f}x) is higher than typical ({IDEAL_RATIO_MAX}x)")
-                logger.warning("   This may indicate P-mode is blocking too much light")
-                logger.info(f"✅ Polarizer positions are valid: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
-                logger.info("=" * 80)
-                return True
+                ratio_valid = False
+            elif ratio > MAX_RATIO:
+                logger.warning("=" * 80)
+                logger.warning("⚠️ POLARIZER POSITION WARNING (P/S RATIO)")
+                logger.warning("=" * 80)
+                logger.warning(f"   P/S ratio ({ratio:.3f}) is higher than maximum ({MAX_RATIO})")
+                logger.warning("   This may indicate P-mode is blocking too much light OR positions are swapped")
+                logger.warning(f"   Servo positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.warning("   ⚠️ Continuing to transmission dip validation...")
+                logger.warning("=" * 80)
+                ratio_valid = False
             else:
-                logger.info(f"✅ Polarizer positions VALIDATED (ratio: {ratio:.2f}x is ideal)")
-                logger.info(f"   Servo positions confirmed: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.info(f"✅ P/S intensity ratio VALIDATED ({ratio:.3f} is within {IDEAL_RATIO_MIN}-{IDEAL_RATIO_MAX})")
+
+            # ========================================================================
+            # PART 2: TRANSMISSION DIP SHAPE VALIDATION (SPR-RELEVANT RANGE)
+            # ========================================================================
+            logger.info("")
+            logger.info("   Validating transmission dip shape (SPR range: 580-720nm)...")
+
+            # Calculate transmission spectrum (P / S)
+            transmission = p_spectrum / (s_spectrum + 1e-10)  # Add small epsilon to avoid division by zero
+
+            # Get wavelength indices for SPR range (580-720nm)
+            wave_data = self.state.wavelengths
+            spr_start_idx = np.argmin(np.abs(wave_data - 580.0))
+            spr_end_idx = np.argmin(np.abs(wave_data - 720.0))
+
+            # Extract SPR region
+            spr_transmission = transmission[spr_start_idx:spr_end_idx+1]
+            spr_wavelengths = wave_data[spr_start_idx:spr_end_idx+1]
+
+            # Find minimum in transmission dip
+            min_idx_local = np.argmin(spr_transmission)
+            min_idx_global = spr_start_idx + min_idx_local
+            min_transmission = spr_transmission[min_idx_local]
+            min_wavelength = spr_wavelengths[min_idx_local]
+
+            logger.info(f"      Transmission dip minimum: {min_transmission:.3f} at {min_wavelength:.1f} nm")
+
+            # Validate dip shape: check that minimum is actually a dip (surrounded by higher values)
+            # Use relaxed tolerance for slope (user requested "more relaxed")
+            SLOPE_TOLERANCE = 0.10  # Relaxed: 10% slope tolerance (can tune later)
+            DIP_MARGIN_PIXELS = 5   # Check 5 pixels on each side
+
+            dip_valid = True
+            dip_reason = ""
+
+            # Check left side: should be higher than minimum
+            if min_idx_local >= DIP_MARGIN_PIXELS:
+                left_values = spr_transmission[min_idx_local - DIP_MARGIN_PIXELS:min_idx_local]
+                left_mean = np.mean(left_values)
+                if left_mean <= min_transmission * (1.0 + SLOPE_TOLERANCE):
+                    dip_valid = False
+                    dip_reason = f"Left side not higher (mean={left_mean:.3f}, min={min_transmission:.3f})"
+                    logger.warning(f"      ⚠️ {dip_reason}")
+            else:
+                logger.warning(f"      ⚠️ Dip too close to left edge (cannot validate left side)")
+                dip_valid = False
+                dip_reason = "Dip at left edge"
+
+            # Check right side: should be higher than minimum
+            if min_idx_local + DIP_MARGIN_PIXELS < len(spr_transmission):
+                right_values = spr_transmission[min_idx_local + 1:min_idx_local + 1 + DIP_MARGIN_PIXELS]
+                right_mean = np.mean(right_values)
+                if right_mean <= min_transmission * (1.0 + SLOPE_TOLERANCE):
+                    dip_valid = False
+                    dip_reason = f"Right side not higher (mean={right_mean:.3f}, min={min_transmission:.3f})"
+                    logger.warning(f"      ⚠️ {dip_reason}")
+            else:
+                logger.warning(f"      ⚠️ Dip too close to right edge (cannot validate right side)")
+                dip_valid = False
+                dip_reason = "Dip at right edge"
+
+            # Check slope at minimum: should be near zero (local minimum)
+            if min_idx_local > 0 and min_idx_local < len(spr_transmission) - 1:
+                left_slope = spr_transmission[min_idx_local] - spr_transmission[min_idx_local - 1]
+                right_slope = spr_transmission[min_idx_local + 1] - spr_transmission[min_idx_local]
+
+                # At a true minimum: left_slope should be negative, right_slope should be positive
+                if left_slope >= 0 or right_slope <= 0:
+                    dip_valid = False
+                    dip_reason = f"Slope not consistent with minimum (left={left_slope:.4f}, right={right_slope:.4f})"
+                    logger.warning(f"      ⚠️ {dip_reason}")
+                else:
+                    logger.info(f"      ✅ Slope at minimum: left={left_slope:.4f}, right={right_slope:.4f} (valid dip)")
+
+            # ========================================================================
+            # PART 3: FWHM CALCULATION (Only if dip is valid)
+            # ========================================================================
+            fwhm_nm = None
+            fwhm_valid = False
+
+            if dip_valid:
+                logger.info("")
+                logger.info("   Calculating FWHM (Full Width at Half Maximum)...")
+
+                # Calculate half-maximum level
+                # FWHM is measured from baseline to minimum
+                # Baseline estimate: mean of points far from minimum (edges of SPR range)
+                baseline_left = np.mean(spr_transmission[:10])  # First 10 points
+                baseline_right = np.mean(spr_transmission[-10:])  # Last 10 points
+                baseline = (baseline_left + baseline_right) / 2.0
+
+                # Half maximum = halfway between baseline and minimum
+                half_max = baseline - (baseline - min_transmission) / 2.0
+
+                logger.info(f"      Baseline: {baseline:.3f}, Minimum: {min_transmission:.3f}, Half-max: {half_max:.3f}")
+
+                # Find left crossing point (descending to half-max)
+                left_crossing_idx = None
+                for i in range(min_idx_local - 1, -1, -1):
+                    if spr_transmission[i] >= half_max:
+                        # Interpolate between i and i+1 for sub-pixel accuracy
+                        if i + 1 < len(spr_transmission):
+                            # Linear interpolation
+                            x1, y1 = spr_wavelengths[i], spr_transmission[i]
+                            x2, y2 = spr_wavelengths[i + 1], spr_transmission[i + 1]
+                            if y2 != y1:
+                                left_crossing_wl = x1 + (half_max - y1) * (x2 - x1) / (y2 - y1)
+                                left_crossing_idx = i
+                                break
+
+                # Find right crossing point (ascending from half-max)
+                right_crossing_idx = None
+                for i in range(min_idx_local + 1, len(spr_transmission)):
+                    if spr_transmission[i] >= half_max:
+                        # Interpolate between i-1 and i for sub-pixel accuracy
+                        if i - 1 >= 0:
+                            # Linear interpolation
+                            x1, y1 = spr_wavelengths[i - 1], spr_transmission[i - 1]
+                            x2, y2 = spr_wavelengths[i], spr_transmission[i]
+                            if y2 != y1:
+                                right_crossing_wl = x1 + (half_max - y1) * (x2 - x1) / (y2 - y1)
+                                right_crossing_idx = i
+                                break
+
+                # Calculate FWHM if both crossing points found
+                if left_crossing_idx is not None and right_crossing_idx is not None:
+                    fwhm_nm = right_crossing_wl - left_crossing_wl
+                    fwhm_valid = True
+                    logger.info(f"      ✅ FWHM calculated: {fwhm_nm:.2f} nm")
+                    logger.info(f"         Left crossing: {left_crossing_wl:.2f} nm")
+                    logger.info(f"         Right crossing: {right_crossing_wl:.2f} nm")
+
+                    # Store FWHM in state for QC report
+                    self.state.polarizer_fwhm = fwhm_nm
+                else:
+                    logger.warning(f"      ⚠️ Could not calculate FWHM (crossing points not found)")
+                    logger.warning(f"         Left crossing: {'found' if left_crossing_idx is not None else 'NOT FOUND'}")
+                    logger.warning(f"         Right crossing: {'found' if right_crossing_idx is not None else 'NOT FOUND'}")
+                    fwhm_valid = False
+
+            # ========================================================================
+            # COMBINED VALIDATION RESULT & CORRECTIVE ACTION
+            # ========================================================================
+            if ratio_valid and dip_valid:
+                logger.info("")
                 logger.info("=" * 80)
+                logger.info("✅ POLARIZER VALIDATION COMPLETE - ALL CHECKS PASSED")
+                logger.info("=" * 80)
+                logger.info(f"   ✅ P/S intensity ratio: {ratio:.3f} (valid)")
+                logger.info(f"   ✅ Transmission dip shape: VALID")
+                if fwhm_valid:
+                    logger.info(f"   ✅ FWHM: {fwhm_nm:.2f} nm at {min_wavelength:.1f} nm")
+                logger.info(f"   Servo positions: S={self.state.polarizer_s_position}, P={self.state.polarizer_p_position} (0-255 scale)")
+                logger.info("=" * 80)
+
+                # Store validation metrics for global validation (used by all channels)
+                self.state.transmission_validation['global'] = {
+                    'ratio': ratio,
+                    'ratio_valid': ratio_valid,
+                    'dip_valid': dip_valid,
+                    'min_wavelength': min_wavelength,
+                    'min_transmission': min_transmission,
+                    'fwhm_nm': fwhm_nm if fwhm_valid else None,
+                    'left_slope': left_slope if 'left_slope' in locals() else None,
+                    'right_slope': right_slope if 'right_slope' in locals() else None,
+                    'passed': True
+                }
+
                 return True
+
+            elif not ratio_valid or not dip_valid:
+                # At least one validation failed - take corrective action based on polarizer type
+                logger.warning("")
+                logger.warning("=" * 80)
+                logger.warning("❌ POLARIZER VALIDATION FAILED")
+                logger.warning("=" * 80)
+                if not ratio_valid:
+                    logger.warning(f"   ❌ P/S intensity ratio: {ratio:.3f} (out of range)")
+                if not dip_valid:
+                    logger.warning(f"   ❌ Transmission dip shape: INVALID ({dip_reason})")
+                logger.warning("")
+
+                # Get polarizer type from device config
+                from utils.device_configuration import DeviceConfig
+                device_config_obj = DeviceConfig()
+                polarizer_type = device_config_obj.get_polarizer_type()
+                logger.warning(f"   Polarizer type: {polarizer_type}")
+                logger.warning("")
+
+                if polarizer_type == 'barrel':
+                    # BARREL POLARIZER: Swap S/P positions in device config
+                    logger.warning("   🔄 CORRECTIVE ACTION: Swapping S/P positions (barrel polarizer)")
+                    logger.warning(f"      Before: S={s_pos}, P={p_pos}")
+
+                    # Swap positions in device config
+                    device_config_obj.set('oem_calibration', 's_position', p_pos)
+                    device_config_obj.set('oem_calibration', 'p_position', s_pos)
+                    device_config_obj.save()
+
+                    logger.warning(f"      After:  S={p_pos}, P={s_pos} (swapped)")
+                    logger.warning("")
+                    logger.warning("   ✅ Positions swapped in device config")
+                    logger.warning("   ⚠️ Please RESTART calibration to apply corrected positions")
+                    logger.warning("=" * 80)
+
+                    # Store failed validation metrics
+                    self.state.transmission_validation['global'] = {
+                        'ratio': ratio,
+                        'ratio_valid': ratio_valid,
+                        'dip_valid': dip_valid,
+                        'min_wavelength': min_wavelength if 'min_wavelength' in locals() else None,
+                        'min_transmission': min_transmission if 'min_transmission' in locals() else None,
+                        'fwhm_nm': fwhm_nm if fwhm_valid else None,
+                        'left_slope': left_slope if 'left_slope' in locals() else None,
+                        'right_slope': right_slope if 'right_slope' in locals() else None,
+                        'passed': False,
+                        'failure_reason': dip_reason if not dip_valid else 'P/S ratio out of range'
+                    }
+
+                    return False  # Force user to restart calibration with corrected positions
+
+                else:  # circular or round polarizer
+                    # CIRCULAR POLARIZER: Full OEM recalibration required
+                    logger.error("   ❌ CORRECTIVE ACTION REQUIRED: Full OEM recalibration")
+                    logger.error("")
+                    logger.error("   Circular polarizer positions cannot be simply swapped.")
+                    logger.error("   The polarizer needs to be re-characterized using OEM calibration tool.")
+                    logger.error("")
+                    logger.error("   To run OEM calibration:")
+                    logger.error("   1. Close this calibration dialog")
+                    logger.error("   2. Go to Settings → Run OEM Calibration")
+                    logger.error("   3. Follow the OEM calibration wizard")
+                    logger.error("   4. Return to LED calibration after OEM calibration is complete")
+                    logger.error("=" * 80)
+
+                    # Store failed validation metrics
+                    self.state.transmission_validation['global'] = {
+                        'ratio': ratio,
+                        'ratio_valid': ratio_valid,
+                        'dip_valid': dip_valid,
+                        'min_wavelength': min_wavelength if 'min_wavelength' in locals() else None,
+                        'min_transmission': min_transmission if 'min_transmission' in locals() else None,
+                        'fwhm_nm': fwhm_nm if fwhm_valid else None,
+                        'left_slope': left_slope if 'left_slope' in locals() else None,
+                        'right_slope': right_slope if 'right_slope' in locals() else None,
+                        'passed': False,
+                        'failure_reason': dip_reason if not dip_valid else 'P/S ratio out of range'
+                    }
+
+                    return False  # Block calibration - must run OEM calibration first
 
         except Exception as e:
             logger.exception(f"Error validating polarizer positions: {e}")

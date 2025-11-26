@@ -1,0 +1,8 @@
+============================================================
+EXCEPTION CAUGHT: ValueError
+Traceback (most recent call last):
+  File "C:\Users\ludol\ezControl-AI\Affilabs.core beta\run_with_full_errors.py", line 35, in <module>
+    print(f.read())
+ValueError: I/O operation on closed file.
+============================================================
+
