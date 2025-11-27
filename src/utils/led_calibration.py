@@ -1313,44 +1313,44 @@ def calibrate_p_mode_leds(
     logger.info(f"📊 APPLYING WEAKEST LED RULE FOR P-MODE (Signal Balance)")
     logger.info(f"=" * 80)
     logger.info(f"NOTE: P-mode balancing occurs after individual channel optimization")
-    
+
     # Find weakest channel (lowest signal, not lowest LED)
     weakest_ch = None
     weakest_signal = float('inf')
-    
+
     for ch in ch_list:
         ch_signal = channel_performance[ch]['max_counts']
         if ch_signal < weakest_signal:
             weakest_signal = ch_signal
             weakest_ch = ch
-    
+
     weakest_led = leds_calibrated[weakest_ch]
-    
+
     logger.info(f"Weakest channel: {weakest_ch.upper()}")
     logger.info(f"   Signal: {weakest_signal:.0f} counts")
     logger.info(f"   LED: {weakest_led}/255")
     logger.info(f"")
     logger.info(f"Balancing all channels to match weakest channel signal level...")
-    
+
     # Equalize all other channels to match weakest channel's signal
     for ch in ch_list:
         if ch == weakest_ch:
             logger.info(f"   Ch {ch.upper()}: {weakest_signal:.0f} counts @ LED={weakest_led} (weakest - no change)")
             continue
-        
+
         current_signal = channel_performance[ch]['max_counts']
         current_led = leds_calibrated[ch]
-        
+
         # Calculate target LED to match weakest signal
         # signal is proportional to LED, so: target_led = current_led * (weakest_signal / current_signal)
         target_led = int(current_led * (weakest_signal / current_signal))
         target_led = max(S_LED_MIN, min(target_led, P_LED_MAX))  # Clamp to valid range
-        
+
         logger.info(f"   Ch {ch.upper()}: {current_signal:.0f} → {weakest_signal:.0f} counts, LED {current_led} → {target_led}")
-        
+
         # Update LED intensity
         leds_calibrated[ch] = target_led
-        
+
         # Verify the adjustment
         ctrl.set_intensity(ch=ch, raw_val=target_led)
         time.sleep(pre_led_delay_ms / 1000.0)
@@ -1361,7 +1361,7 @@ def calibrate_p_mode_leds(
             # Update performance metrics
             channel_performance[ch]['max_counts'] = float(verify_max)
             channel_performance[ch]['led_intensity'] = int(target_led)
-    
+
     logger.info(f"")
     logger.info(f"✅ All channels balanced to weakest channel signal level")
     logger.info(f"=" * 80)
@@ -3268,6 +3268,14 @@ def perform_alternative_calibration(
 
         if stop_flag and stop_flag.is_set():
             return result
+
+        # CRITICAL: Set spectrometer to GLOBAL integration time before verification
+        # During per-channel optimization, each channel got its own integration time
+        # But verify_calibration needs ALL channels measured with the SAME global integration time
+        # Otherwise P-ref QC measurements won't match live data (which uses global integration)
+        logger.info(f"   Setting global P-mode integration time: {result.integration_time}ms (for all channels)")
+        usb.set_integration(result.integration_time)
+        time.sleep(0.1)  # Brief delay for spectrometer to update
 
         print("\n🔍 DEBUG: About to call verify_calibration...")
         print("\n🔍 DEBUG: About to call verify_calibration...")

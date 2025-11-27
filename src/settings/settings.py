@@ -147,20 +147,30 @@ FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
                                       # Red:    FWHM ≥ 60nm
 
 # === CALIBRATION METHOD SELECTION ===
-# Two calibration methods available:
-# 1. STANDARD (Default): Global integration time, variable LED intensity per channel
-#    - Optimizes integration time globally for all channels
-#    - Then calibrates LED intensity per channel to reach target signal
-#    - Best for general use, well-tested and stable
+# Method selection ONLY affects calibration behavior.
+# Live acquisition is METHOD-AGNOSTIC - it executes whatever parameters
+# calibration provides, regardless of which method was used.
 #
-# 2. ALTERNATIVE: Global LED intensity (255), variable integration time per channel
-#    - Sets all LEDs to maximum intensity (255)
-#    - Calibrates integration time per channel to reach target signal
-#    - Benefits: Better frequency, excellent SNR, more LED consistency at max current
-#    - Trade-offs: Variable integration time per channel, may hit timing budget on weak channels
+# GLOBAL LED INTENSITY METHOD (ENFORCED AS DEFAULT):
+# - All LEDs fixed at 255 (S-mode and P-mode)
+# - Optimizes global integration time (max across channels)
+# - Single scan per spectrum (num_scans=1)
 #
-# IMPORTANT: Keep ALTERNATIVE method DISABLED until thoroughly tested
-USE_ALTERNATIVE_CALIBRATION = False  # Set to True to use Global LED Intensity method (EXPERIMENTAL)
+# Benefits:
+# - Maximum SNR (highest LED intensity)
+# - Excellent LED consistency (always at max current)
+# - Faster acquisition (optimized integration time)
+#
+# Live Acquisition Behavior:
+# - Uses integration_time from calibration
+# - Uses leds_calibrated per channel from calibration
+# - Uses num_scans from calibration
+# - Uses dark_noise baseline from calibration
+# - Method-agnostic: Just executes calibration parameters
+#
+# CRITICAL: Calibration determines the parameters, live view executes them.
+# This ensures perfect consistency between calibration QC and live data.
+USE_ALTERNATIVE_CALIBRATION = True  # ENFORCED: Global LED Intensity method
 
 # === TRANSMISSION BASELINE CORRECTION ===
 # Corrects spectral tilt in transmission spectra caused by LED/detector spectral response
@@ -176,8 +186,8 @@ FILTERING_ON = True  # enabled/disable filtering
 MED_FILT_WIN = 3  # default median filter window size
 
 # === Display Smoothing Settings ===
-ENABLE_INTERPOLATED_DISPLAY = True  # Emit preview points during batch processing for smooth visualization
-BATCH_SIZE = 12  # Number of raw spectra to buffer before vectorized processing (balances quality vs latency)
+# Batch-only processing - no interpolation previews
+BATCH_SIZE = 1  # DISABLED: Set to 1 for immediate processing (was 12 for batching)
                  # Batch size 12 provides ~300ms processing window for advanced filtering
                  # Recommended values:
                  # - 8: Fast mode (~200ms window), good for monitoring

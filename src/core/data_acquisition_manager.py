@@ -8,11 +8,36 @@ This class manages:
 - Signal processing (Fourier weights, median filtering)
 - Spectral correction (normalizes LED profile differences per channel)
 
-Key Processing Steps (applied in sequence):
-1. Dark noise subtraction
-2. Spectral correction (LED profile normalization)
-3. Afterglow correction (residual LED decay from previous channel)
-4. Weighted Fourier peak finding (accounts for SPR signal shape)
+SINGLE BATCH-ONLY PROCESSING PATH:
+All spectra are processed through the batch path for consistency:
+1. Acquire raw spectrum from detector
+2. Buffer in batch (size configurable, default 12)
+3. Process batch:
+   a. Dark noise subtraction (same as S-ref/P-ref measurements)
+   b. Afterglow correction (residual LED decay from previous channel)
+   c. Transmission calculation with LED intensity correction
+   d. Baseline correction (polynomial flattening, matches QC report)
+   e. Savitzky-Golay smoothing (window=21, polynomial=3 for denoising)
+   f. Peak finding with FWHM validation
+4. Apply SG filter to batch wavelengths for sensorgram smoothing
+5. Emit processed data sequentially for smooth display
+
+Key Processing Steps (applied to each spectrum in batch):
+1. Dark noise subtraction (same as S-ref/P-ref measurements)
+2. Afterglow correction (residual LED decay from previous channel)
+3. Transmission calculation with LED intensity correction
+4. Baseline correction (polynomial flattening, matches QC report)
+5. Savitzky-Golay smoothing (window=21, polynomial=3 for denoising)
+6. Spectral correction (LED profile normalization for peak finding)
+7. Weighted Fourier peak finding (accounts for SPR signal shape)
+
+CRITICAL PRE-PROCESSING CONSISTENCY:
+- Live P-pol data MUST receive the same dark/afterglow corrections as P-ref
+- Transmission = (P-live - dark - afterglow) / (S-ref - dark - afterglow) × LED_correction
+- Baseline correction applied to flatten spectral tilt (matches QC report exactly)
+- Savitzky-Golay smoothing for noise reduction (preserves peak shape)
+- This ensures live transmission matches QC report visualization EXACTLY
+- NO preview/interpolation paths - all data goes through batch processing
 
 The spectral correction system addresses the challenge that different LED
 channels have wildly different spectral profiles (intensity distribution
@@ -65,18 +90,34 @@ class DataAcquisitionManager(QObject):
         # Reference to hardware manager
         self.hardware_mgr = hardware_mgr
 
-        # Calibration state
+        # ===================================================================
+        # CALIBRATION PARAMETERS - METHOD AGNOSTIC
+        # ===================================================================
+        # Live acquisition is METHOD-AGNOSTIC: It simply executes whatever
+        # parameters calibration provides, regardless of calibration method.
+        #
+        # Calibration provides:
+        # - integration_time: Integration time in ms (global or per-channel max)
+        # - num_scans: Number of scans to average per spectrum
+        # - ref_intensity: S-mode LED intensities per channel
+        # - leds_calibrated: P-mode LED intensities per channel
+        # - dark_noise: Dark noise baseline
+        # - ref_sig: S-mode reference spectra per channel
+        # - wave_data: Wavelength calibration
+        #
+        # CRITICAL: Live acquisition MUST use these parameters EXACTLY as
+        # provided to ensure consistency with calibration QC report.
+        # ===================================================================
         self.calibrated = False
-        self.integration_time = 15  # ms (global in standard method, max in alternative method)
-        self.num_scans = 5
-        self.ref_intensity = 255
-        self.leds_calibrated = {}  # {channel: intensity}
-        self.ch_error_list = []  # List of failed channels from calibration
+        self.integration_time = None  # ms - Set by calibration
+        self.num_scans = None  # Set by calibration
+        self.ref_intensity = {}  # S-mode LED intensities (set by calibration)
+        self.leds_calibrated = {}  # P-mode LED intensities (set by calibration)
+        self.ch_error_list = []  # Failed channels from calibration
 
-        # Calibration method tracking
-        self.calibration_method = 'standard'  # 'standard' or 'alternative'
-        self.per_channel_integration = {}  # {channel: integration_time_ms} for alternative method
-        self.per_channel_dark_noise = {}  # {channel: dark_noise_array} for alternative method
+        # Optional per-channel parameters (if calibration provides them)
+        self.per_channel_integration = {}  # {channel: integration_time_ms}
+        self.per_channel_dark_noise = {}  # {channel: dark_noise_array}
 
         # Spectrum data
         self.wave_data = None  # Wavelength array
@@ -116,14 +157,10 @@ class DataAcquisitionManager(QObject):
         self._last_peak_wavelength = {}  # {channel: wavelength_nm} for continuity checking
 
         # Batched acquisition settings (from settings.py)
-        from settings import BATCH_SIZE, ENABLE_INTERPOLATED_DISPLAY
+        from settings import BATCH_SIZE
         self.batch_size = BATCH_SIZE  # Minimum raw spectra to buffer before processing (reduces USB overhead)
         self._spectrum_batch = {'a': [], 'b': [], 'c': [], 'd': []}  # Batch buffers per channel
         self._batch_timestamps = {'a': [], 'b': [], 'c': [], 'd': []}  # Timestamp buffers
-
-        # Display smoothing: emit partial updates during batch processing
-        self.enable_interpolated_display = ENABLE_INTERPOLATED_DISPLAY
-        self._last_emitted_wavelength = {'a': None, 'b': None, 'c': None, 'd': None}  # For interpolation
 
         # Thread-safe queue for worker → main thread communication
         self._spectrum_queue = queue.Queue(maxsize=1000)  # Buffer up to 1000 spectrum events
@@ -214,9 +251,18 @@ class DataAcquisitionManager(QObject):
                 logger.warning("Acquisition already running")
                 return
 
-            logger.info("Starting spectrum acquisition...")
-            logger.info(f"📊 Calibrated settings: integration_time={self.integration_time}ms, num_scans={self.num_scans}")
-            logger.info(f"📊 LED intensities: {self.leds_calibrated}")
+            logger.info("=" * 80)
+            logger.info("🚀 STARTING LIVE ACQUISITION")
+            logger.info("=" * 80)
+            logger.info("Using calibration parameters (method-agnostic):")
+            logger.info(f"  Integration Time: {self.integration_time}ms")
+            logger.info(f"  Scans per Spectrum: {self.num_scans}")
+            logger.info(f"  P-mode LED Intensities: {self.leds_calibrated}")
+            logger.info(f"  S-mode LED Intensities: {self.ref_intensity}")
+            logger.info("")
+            logger.info("CONSISTENCY GUARANTEE: Live data will match calibration QC")
+            logger.info("=" * 80)
+            logger.info("")
 
             # Ensure any previous acquisition thread is fully stopped
             if self._acquisition_thread and self._acquisition_thread.is_alive():
@@ -242,7 +288,6 @@ class DataAcquisitionManager(QObject):
             for ch in ['a', 'b', 'c', 'd']:
                 self._spectrum_batch[ch].clear()
                 self._batch_timestamps[ch].clear()
-                self._last_emitted_wavelength[ch] = None
 
             # Defer thread start to event loop to ensure all UI updates
             # from calibration completion have finished on main thread.
@@ -431,13 +476,8 @@ class DataAcquisitionManager(QObject):
                                         # Clear failed batch
                                         self._spectrum_batch[ch].clear()
                                         self._batch_timestamps[ch].clear()
-                                else:
-                                    # Emit interpolated preview for smooth display
-                                    if self.enable_interpolated_display:
-                                        try:
-                                            self._emit_interpolated_preview(ch, timestamp)
-                                        except Exception:
-                                            pass  # Non-critical
+                                # Note: Interpolated preview disabled - batch-only processing
+                                # All data now goes through batch path for consistent processing
                             else:
                                 if cycle_count % 10 == 1:
                                     print(f"   [ERROR] Channel {ch}: No spectrum data returned")
@@ -649,9 +689,6 @@ class DataAcquisitionManager(QObject):
                 except queue.Full:
                     pass  # Queue full, drop this data point
 
-                # Update last emitted wavelength for interpolation
-                self._last_emitted_wavelength[channel] = processed['wavelength']
-
             except Exception as e:
                 # Removed logger.error to prevent Qt threading issues
                 pass  # Silent failure to avoid Qt threading crashes
@@ -659,45 +696,6 @@ class DataAcquisitionManager(QObject):
         # Clear the batch buffers
         self._spectrum_batch[channel].clear()
         self._batch_timestamps[channel].clear()
-
-    def _emit_interpolated_preview(self, channel: str, timestamp: float) -> None:
-        """Emit interpolated preview point for smooth display during batch accumulation.
-
-        While waiting for batch to fill, emit preview points that interpolate
-        between last known wavelength and current timestamp. This creates smooth
-        visual feedback without compromising data accuracy.
-
-        The actual processed data will overwrite these preview points when batch completes.
-
-        Args:
-            channel: Channel identifier ('a', 'b', 'c', 'd')
-            timestamp: Current acquisition timestamp
-        """
-        try:
-            last_wavelength = self._last_emitted_wavelength[channel]
-
-            if last_wavelength is None:
-                return  # No previous data to interpolate from
-
-            # Put preview data in queue instead of emitting directly
-            # This avoids Qt threading violations
-            data = {
-                'channel': channel,
-                'wavelength': last_wavelength,  # Hold last value (simple interpolation)
-                'intensity': 0.0,  # Placeholder
-                'full_spectrum': None,
-                'timestamp': timestamp,
-                'is_preview': True  # Flag to indicate this is interpolated
-            }
-
-            try:
-                self._spectrum_queue.put_nowait(data)
-            except queue.Full:
-                pass  # Queue full, skip this preview
-
-        except Exception as e:
-            # Removed logger.debug to prevent Qt threading issues
-            pass  # Silent failure
 
     def _acquire_channel_spectrum(self, channel: str) -> Optional[Dict]:
         """Acquire raw spectrum for a channel."""
@@ -714,8 +712,13 @@ class DataAcquisitionManager(QObject):
                 print(f"[ACQ ERROR] Channel {channel}: No wavelength data from calibration")
                 return None
 
+            # Get LED intensity from calibration (method-agnostic)
+            led_intensity = self.leds_calibrated.get(channel)
+            if led_intensity is None:
+                print(f"[ACQ ERROR] Channel {channel}: No LED intensity from calibration")
+                return None
+            
             # Turn on LED for channel (already in P-mode from start_acquisition)
-            led_intensity = self.leds_calibrated.get(channel, 180) if isinstance(self.leds_calibrated, dict) else 180
             # NOTE: Polarizer is already in P-mode (set once at start_acquisition)
             # No need to call set_mode('p') here - that would cause unnecessary servo rotation
             try:
@@ -727,7 +730,11 @@ class DataAcquisitionManager(QObject):
             # PRE LED delay: Wait for LED to stabilize before measurement
             time.sleep(self._pre_led_delay_ms / 1000.0)  # Convert ms to seconds
 
-            # Set integration time
+            # Set integration time from calibration
+            if not self.integration_time or self.integration_time <= 0:
+                print(f"[ACQ ERROR] Channel {channel}: Invalid integration time from calibration: {self.integration_time}ms")
+                return None
+            
             try:
                 usb.set_integration(self.integration_time)
             except ConnectionError as e:
@@ -764,6 +771,32 @@ class DataAcquisitionManager(QObject):
                     # Fallback if indices not available (shouldn't happen after calibration)
                     raw_spectrum = raw_spectrum[:len(self.wave_data)]
 
+            # ✨ CRITICAL: Apply dark noise subtraction (same as S-ref/P-ref measurements)
+            # This ensures live P-pol data is on the same basis as calibration references
+            if self.dark_noise is not None and len(raw_spectrum) == len(self.dark_noise):
+                raw_spectrum = raw_spectrum - self.dark_noise
+
+            # ✨ CRITICAL: Apply afterglow correction if available (same as S-ref/P-ref measurements)
+            # This ensures live P-pol data is on the same basis as calibration references
+            # Afterglow correction removes residual signal from previous channel
+            if self.afterglow_correction is not None and self._previous_channel is not None:
+                try:
+                    # Calculate afterglow from previous channel
+                    # Use POST_LED_DELAY as the decay time (time between LED off and next read)
+                    afterglow_value = self.afterglow_correction.calculate_correction(
+                        previous_channel=self._previous_channel,
+                        integration_time_ms=float(self.integration_time),
+                        delay_ms=self._post_led_delay_ms  # Already in ms
+                    )
+                    # Subtract afterglow (scalar value applies uniformly to spectrum)
+                    raw_spectrum = raw_spectrum - afterglow_value
+                except Exception as e:
+                    # Silent fail - don't break acquisition for afterglow issues
+                    pass
+
+            # Track this channel for next iteration's afterglow correction
+            self._previous_channel = channel
+
             # Turn off LED for this channel
             try:
                 ctrl.set_intensity(ch=channel, raw_val=0)
@@ -788,6 +821,45 @@ class DataAcquisitionManager(QObject):
         except Exception as e:
             # Removed logger.error to prevent Qt threading issues
             return None
+
+    def _apply_baseline_correction(self, transmission: np.ndarray, degree: int = 2) -> np.ndarray:
+        """Apply polynomial baseline correction for live transmission visualization.
+
+        This flattens spectral tilt in transmission for better visualization.
+        Uses the same algorithm as QC report for consistency.
+
+        Args:
+            transmission: Raw transmission spectrum (with LED correction already applied)
+            degree: Polynomial degree (2=quadratic)
+
+        Returns:
+            Baseline-corrected transmission spectrum
+        """
+        try:
+            # Create x-axis for polynomial fit (normalized 0-1)
+            x = np.linspace(0, 1, len(transmission))
+
+            # Fit polynomial to transmission
+            coeffs = np.polyfit(x, transmission, degree)
+            baseline = np.polyval(coeffs, x)
+
+            # Avoid division by very small baseline values
+            baseline = np.where(baseline < 1.0, 1.0, baseline)
+
+            # Divide transmission by baseline to remove tilt
+            corrected = transmission / baseline
+
+            # Re-scale to maintain similar transmission range
+            original_mean = np.nanmean(transmission)
+            corrected_mean = np.nanmean(corrected)
+            if corrected_mean > 0:
+                corrected = corrected * (original_mean / corrected_mean)
+
+            return corrected
+
+        except Exception as e:
+            # Silent fail - return uncorrected transmission
+            return transmission
 
     def set_led_delays(self, pre_delay_ms: float, post_delay_ms: float) -> None:
         """Set PRE and POST LED delays for spectrum acquisition.
@@ -821,12 +893,14 @@ class DataAcquisitionManager(QObject):
         # Process each spectrum in batch (vectorized where possible)
         wavelengths = []
         intensities = []
+        processed_results = []  # Store full processed results
 
         for spectrum_data in batch:
             try:
                 processed = self._process_spectrum(channel, spectrum_data)
                 wavelengths.append(processed['wavelength'])
                 intensities.append(processed['intensity'])
+                processed_results.append(processed)  # Store for reuse
             except Exception as e:
                 print(f"   [BATCH ERROR] Channel {channel}: Spectrum processing failed - {e}")
                 continue
@@ -859,14 +933,23 @@ class DataAcquisitionManager(QObject):
             self.channel_buffers[channel].append(wl)
             self.time_buffers[channel].append(timestamp)
 
+            # Get pre-calculated transmission and raw spectrum from processed results
+            # This avoids redundant calculation (already done in _process_spectrum)
+            if i < len(processed_results):
+                transmission_spectrum = processed_results[i].get('transmission_spectrum')
+                raw_spectrum = processed_results[i].get('raw_spectrum')
+            else:
+                transmission_spectrum = None
+                raw_spectrum = None
+
             # Queue for UI emission
             data = {
                 'channel': channel,
                 'wavelength': float(wl),
                 'intensity': float(intensities[i]) if i < len(intensities) else 0.0,
-                'full_spectrum': batch[i].get('intensity') if i < len(batch) else None,
-                'raw_spectrum': batch[i].get('intensity') if i < len(batch) else None,
-                'transmission_spectrum': None,
+                'full_spectrum': raw_spectrum,
+                'raw_spectrum': raw_spectrum,
+                'transmission_spectrum': transmission_spectrum,  # Reused from _process_spectrum
                 'wavelengths': self.wave_data,
                 'timestamp': timestamp,
                 'is_preview': False,
@@ -877,9 +960,6 @@ class DataAcquisitionManager(QObject):
                 self._spectrum_queue.put_nowait(data)
             except queue.Full:
                 pass  # Queue full, skip this point
-
-            # Update last emitted for interpolation
-            self._last_emitted_wavelength[channel] = float(wl)
 
         # Clear batch buffers
         self._spectrum_batch[channel].clear()
@@ -938,6 +1018,9 @@ class DataAcquisitionManager(QObject):
                             p_led_intensity=p_led, s_led_intensity=s_led
                         )
 
+                        # Apply baseline correction (matches QC report visualization)
+                        transmission_spectrum = self._apply_baseline_correction(transmission_spectrum)
+
                         # Debug log LED correction (throttled)
                         if p_led and s_led:
                             correction = s_led / p_led
@@ -960,18 +1043,47 @@ class DataAcquisitionManager(QObject):
                     traceback.print_exc()
                     transmission_spectrum = None
 
-            # FWHM-VALIDATED PEAK FINDING: Find best SPR minimum with quality control
-            # This ensures we track the CORRECT dip, not just any local minimum
+            # ═══════════════════════════════════════════════════════════════════════════
+            # PEAK FINDING: Fourier Transform Method
+            # ═══════════════════════════════════════════════════════════════════════════
+            
             peak_input = transmission_spectrum if transmission_spectrum is not None else intensity
 
+            # Calculate minimum hint from smoothed transmission to guide Fourier method
+            # CRITICAL: Only search in SPR-relevant region (600-690nm) to avoid edge artifacts
+            minimum_hint_nm = None
+            if transmission_spectrum is not None and len(transmission_spectrum) > 0 and len(wavelength) == len(transmission_spectrum):
+                # Find indices for SPR region
+                spr_mask = (wavelength >= 600.0) & (wavelength <= 690.0)
+                if np.any(spr_mask):
+                    # Find minimum ONLY within SPR region (ignores edge curvature)
+                    spr_transmission = transmission_spectrum[spr_mask]
+                    spr_wavelengths = wavelength[spr_mask]
+                    min_idx_in_region = np.argmin(spr_transmission)
+                    minimum_hint_nm = spr_wavelengths[min_idx_in_region]
+
+            # Find peak using selected pipeline method (Fourier/Centroid/Polynomial/etc.)
             if len(peak_input) > 0 and len(wavelength) == len(peak_input):
-                # Find peak with FWHM validation (checks all candidates in SPR region)
-                peak_result = self._find_validated_peak(wavelength, peak_input, channel)
-                peak_wavelength = peak_result['wavelength']
-                fwhm_nm = peak_result['fwhm']
+                peak_wavelength = self._find_resonance_peak(wavelength, peak_input, channel,
+                                                           minimum_hint_nm=minimum_hint_nm)
             else:
                 peak_wavelength = 650.0  # Default fallback
+
+            # ═══════════════════════════════════════════════════════════════════════════
+            # QUALITY CONTROL: Independent validation (runs for every spectrum)
+            # ═══════════════════════════════════════════════════════════════════════════
+            
+            # Calculate FWHM and quality metrics (does NOT affect peak position)
+            if len(peak_input) > 0 and len(wavelength) == len(peak_input):
+                qc_result = self._find_validated_peak(wavelength, peak_input, channel, 
+                                                      minimum_hint_nm=minimum_hint_nm)
+                fwhm_nm = qc_result['fwhm']
+                qc_quality = qc_result['quality']
+                qc_warning = qc_result.get('warning')
+            else:
                 fwhm_nm = None
+                qc_quality = 0.0
+                qc_warning = None
 
             # ✨ SENSOR IQ: Classify data quality based on wavelength range and FWHM
             from utils.sensor_iq import classify_spr_quality, log_sensor_iq, SensorIQLevel
@@ -980,15 +1092,22 @@ class DataAcquisitionManager(QObject):
             # Log warnings for poor quality data (CRITICAL, POOR levels only)
             if sensor_iq.iq_level in [SensorIQLevel.CRITICAL, SensorIQLevel.POOR]:
                 log_sensor_iq(sensor_iq, channel)
+            
+            # Log QC warnings if present
+            if qc_warning:
+                print(f"[QC] Channel {channel}: {qc_warning}")
 
             return {
-                'wavelength': peak_wavelength,
+                'wavelength': peak_wavelength,  # Fourier transform result
                 'intensity': intensity[np.argmin(intensity)] if len(intensity) > 0 else 0.0,
                 'full_spectrum': raw_spectrum,
                 'raw_spectrum': raw_spectrum,
-                'transmission_spectrum': transmission_spectrum,
-                'fwhm': fwhm_nm,
-                'sensor_iq': sensor_iq  # ✨ NEW: Quality classification
+                'transmission_spectrum': transmission_spectrum,  # Already baseline-corrected and SG-filtered
+                'fwhm': fwhm_nm,  # QC pipeline result
+                'qc_quality': qc_quality,  # QC pipeline quality score
+                'qc_warning': qc_warning,  # QC pipeline warning message
+                'minimum_hint_nm': minimum_hint_nm,  # Hint from smoothed transmission (for diagnostics)
+                'sensor_iq': sensor_iq  # ✨ Quality classification
             }
 
         except Exception as e:
@@ -1003,23 +1122,26 @@ class DataAcquisitionManager(QObject):
                 'raw_spectrum': spectrum_data['intensity']
             }
 
-    def _find_validated_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str) -> dict:
-        """Find and validate SPR peak using FWHM quality control.
+    def _find_validated_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str,
+                            minimum_hint_nm: float = None) -> dict:
+        """Find and validate SPR peak using FWHM quality control with optional minimum hint.
 
         Strategy:
-        1. Find ALL local minima in extended SPR region (590-750nm)
-        2. Calculate FWHM for each candidate
-        3. Reject candidates with invalid FWHM (too narrow/wide)
-        4. Apply wavelength range validation:
+        1. If minimum_hint_nm provided: prioritize candidates near the hint
+        2. Find ALL local minima in extended SPR region (590-750nm)
+        3. Calculate FWHM for each candidate
+        4. Reject candidates with invalid FWHM (too narrow/wide)
+        5. Apply wavelength range validation:
            - Normal range: 590-670nm (preferred)
            - Extended range: 670-750nm (allowed during gradual shifts)
            - First peak >670nm = FLAG (potential issue)
-        5. FWHM quality thresholds:
+        6. FWHM quality thresholds:
            - <30nm: Excellent
            - 30-60nm: Good
            - 60-80nm: Poor (warning)
            - >80nm: Problem (strong penalty)
-        6. Select best candidate based on:
+        7. Select best candidate based on:
+           - Proximity to hint (if provided - strong preference)
            - FWHM quality (primary factor)
            - Depth (stronger signal preferred)
            - Wavelength range (prefer 590-670nm)
@@ -1029,6 +1151,7 @@ class DataAcquisitionManager(QObject):
             wavelength: Wavelength array (nm)
             spectrum: Transmission spectrum (P/S ratio %)
             channel: Channel identifier for tracking history
+            minimum_hint_nm: Optional hint from smoothed transmission minimum (nm)
 
         Returns:
             dict with:
@@ -1145,9 +1268,21 @@ class DataAcquisitionManager(QObject):
                 else:
                     wl_score = 0.3  # Outside expected range
 
-                # Combine: FWHM (50%), depth (30%), wavelength range (20%)
-                # FWHM is most important for validity
-                quality = 0.5 * fwhm_score + 0.3 * min(depth / 50.0, 1.0) + 0.2 * wl_score
+                # Proximity to hint bonus (if hint provided)
+                # This guides peak finding to the smoothed transmission minimum
+                hint_bonus = 0.0
+                if minimum_hint_nm is not None:
+                    distance_to_hint = abs(candidate_wl - minimum_hint_nm)
+                    if distance_to_hint < 5.0:  # Within 5nm of hint
+                        hint_bonus = 0.3  # Strong preference
+                    elif distance_to_hint < 10.0:  # Within 10nm of hint
+                        hint_bonus = 0.15  # Moderate preference
+                    elif distance_to_hint < 20.0:  # Within 20nm of hint
+                        hint_bonus = 0.05  # Mild preference
+
+                # Combine: FWHM (50%), depth (30%), wavelength range (20%) + hint bonus
+                # FWHM is most important for validity, hint guides initial selection
+                quality = 0.5 * fwhm_score + 0.3 * min(depth / 50.0, 1.0) + 0.2 * wl_score + hint_bonus
 
                 # Continuity checking - prevent sudden jumps
                 if channel in self._last_peak_wavelength:
@@ -1236,61 +1371,113 @@ class DataAcquisitionManager(QObject):
             logger.warning(f"Peak validation failed for channel {channel}: {e}")
             return default_result
 
-    def _find_resonance_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str) -> float:
-        """Find resonance peak wavelength using SNR-aware Fourier analysis.
+    def _find_resonance_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str, 
+                            minimum_hint_nm: float = None) -> float:
+        """Find resonance peak wavelength using selected pipeline method.
 
-        Uses the Fourier transform method with SNR-aware weights to find
-        the resonance dip minimum. The Fourier approach:
-        1. Denoises spectrum in frequency domain
-        2. Calculates derivative via IDCT
-        3. Finds zero-crossing (dip minimum)
-
-        The SNR-aware weights guide the algorithm toward high-quality regions
-        of the spectrum (high LED intensity = high SNR).
+        Dispatches to the active pipeline method selected in UI:
+        - Fourier Transform (default): DST → IDCT → Zero-crossing
+        - Centroid: Center of mass calculation with double filtering
+        - Polynomial: Curve fitting with analytical minimum
+        - Adaptive Multi-Feature: Advanced multi-parameter analysis
+        - Consensus: Multi-method voting
 
         Args:
             wavelength: Wavelength array
-            spectrum: Transmission spectrum (P/S ratio %) or P-mode intensity
-            channel: Channel identifier for accessing channel-specific SNR weights
+            spectrum: Transmission spectrum (P/S ratio %) - already SG-filtered
+            channel: Channel identifier for accessing channel-specific weights
+            minimum_hint_nm: Pre-calculated minimum position hint (optional)
 
         Returns:
             Resonance wavelength in nm
-
-        Note:
-            This output can feed both processing pipelines:
-            - Pipeline 1: Zero-finding method (this Fourier approach)
-            - Pipeline 2: Multi-parametric approach (centroid, width, etc.)
         """
         try:
-            from utils.spr_signal_processing import find_resonance_wavelength_fourier
+            from utils.processing_pipeline import get_pipeline_registry
 
-            # Get channel-specific SNR-aware Fourier weights if available
-            weights = self.fourier_weights.get(channel) if isinstance(self.fourier_weights, dict) else self.fourier_weights
+            # Get active pipeline from registry (selected in UI)
+            registry = get_pipeline_registry()
+            active_pipeline_id = registry.active_pipeline_id
 
-            if weights is not None and len(weights) > 0:
-                # Use SNR-aware Fourier analysis (frequency-domain denoising + zero-finding)
-                peak_wavelength = find_resonance_wavelength_fourier(
-                    transmission_spectrum=spectrum,
+            # Dispatch to selected pipeline
+            if active_pipeline_id == 'centroid':
+                # Centroid method: Center of mass with double filtering
+                from utils.pipelines.centroid_pipeline import CentroidPipeline
+                pipeline = CentroidPipeline()
+                peak_wavelength = pipeline.find_resonance_wavelength(
+                    transmission=spectrum,
                     wavelengths=wavelength,
-                    fourier_weights=weights
+                    minimum_hint_nm=minimum_hint_nm  # Pass hint for fast path
                 )
-
-                # Validate result
-                if not np.isnan(peak_wavelength) and wavelength[0] <= peak_wavelength <= wavelength[-1]:
-                    return peak_wavelength
+            
+            elif active_pipeline_id == 'polynomial':
+                # Polynomial fitting method
+                from utils.pipelines.polynomial_pipeline import PolynomialPipeline
+                pipeline = PolynomialPipeline()
+                peak_wavelength = pipeline.find_resonance_wavelength(
+                    transmission=spectrum,
+                    wavelengths=wavelength,
+                    minimum_hint_nm=minimum_hint_nm
+                )
+            
+            elif active_pipeline_id == 'adaptive':
+                # Adaptive multi-feature method with temporal filtering
+                from utils.pipelines.adaptive_multifeature_pipeline import AdaptiveMultiFeaturePipeline
+                pipeline = AdaptiveMultiFeaturePipeline()
+                import time
+                peak_wavelength, metadata = pipeline.find_resonance_wavelength(
+                    transmission=spectrum,
+                    wavelengths=wavelength,
+                    timestamp=time.time(),  # Pass timestamp for Kalman filtering
+                    minimum_hint_nm=minimum_hint_nm  # Pass hint for fast path
+                )
+                # Note: metadata contains FWHM, depth, confidence, jitter_flag, slopes, etc.
+            
+            elif active_pipeline_id == 'consensus':
+                # Consensus method (multi-algorithm voting)
+                from utils.pipelines.consensus_pipeline import ConsensusPipeline
+                pipeline = ConsensusPipeline()
+                peak_wavelength = pipeline.find_resonance_wavelength(
+                    transmission=spectrum,
+                    wavelengths=wavelength,
+                    minimum_hint_nm=minimum_hint_nm
+                )
+            
+            else:
+                # Default: Fourier Transform (active_pipeline_id == 'fourier' or unknown)
+                from utils.spr_signal_processing import find_resonance_wavelength_fourier
+                
+                # Get channel-specific SNR-aware Fourier weights if available
+                weights = self.fourier_weights.get(channel) if isinstance(self.fourier_weights, dict) else self.fourier_weights
+                
+                if weights is not None and len(weights) > 0:
+                    # Use SNR-aware Fourier analysis
+                    peak_wavelength = find_resonance_wavelength_fourier(
+                        transmission_spectrum=spectrum,
+                        wavelengths=wavelength,
+                        fourier_weights=weights
+                    )
+                    
+                    # Validate result
+                    if np.isnan(peak_wavelength) or peak_wavelength < wavelength[0] or peak_wavelength > wavelength[-1]:
+                        # Fourier failed, use hint or minimum
+                        peak_wavelength = minimum_hint_nm if minimum_hint_nm is not None else wavelength[np.argmin(spectrum)]
                 else:
-                    pass  # Fourier method failed, using fallback
+                    # No weights available, use hint or minimum
+                    peak_wavelength = minimum_hint_nm if minimum_hint_nm is not None else wavelength[np.argmin(spectrum)]
 
-            # Fallback to simple minimum finding (proven reliable main code pipeline)
-            peak_idx = np.argmin(spectrum)
-            peak_wavelength = wavelength[peak_idx]
-            return peak_wavelength
+            # Final validation
+            if np.isnan(peak_wavelength) or peak_wavelength < wavelength[0] or peak_wavelength > wavelength[-1]:
+                # All methods failed, use hint or minimum
+                peak_wavelength = minimum_hint_nm if minimum_hint_nm is not None else wavelength[np.argmin(spectrum)]
+
+            return float(peak_wavelength)
 
         except Exception as e:
-            # Removed logger.debug to prevent Qt threading issues
-            # Final fallback
+            # Fallback on any error
+            if minimum_hint_nm is not None:
+                return float(minimum_hint_nm)
             peak_idx = np.argmin(spectrum) if len(spectrum) > 0 else 0
-            return wavelength[peak_idx] if len(wavelength) > peak_idx else 650.0
+            return float(wavelength[peak_idx]) if len(wavelength) > peak_idx else 650.0
 
     def _calculate_fwhm(self, wavelengths: np.ndarray, transmission: np.ndarray, peak_wl: float) -> float:
         """Calculate Full Width at Half Maximum (FWHM) of SPR dip.

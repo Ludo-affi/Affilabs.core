@@ -2,6 +2,47 @@
 Simplified Calibration Manager - Direct path from UI to backend.
 
 This replaces the fragmented calibration system with a single, clean interface.
+
+CALIBRATION MODES:
+------------------
+
+1. FULL 6-STEP CALIBRATION (run_full_6step_calibration)
+   When to use:
+   - Initial device setup
+   - After optical path changes (fiber, polarizer, detector)
+   - If fast-track fails validation
+
+   What it does:
+   - Optimizes integration time (Step 5A)
+   - Binary search for optimal LED intensities (Step 5B)
+   - Multi-pass saturation validation (Step 5C)
+   - Measures reference spectra (Step 5D)
+   - Calibrates P-mode LEDs (Step 6A)
+   - QC metrics and validation (Step 6C)
+
+   Result: ALL parameters locked and transferred to live acquisition
+
+2. FAST-TRACK CALIBRATION (run_fast_track_calibration)
+   When to use:
+   - Sensor/prism swap (optical coupling changes slightly)
+   - LED intensity drift compensation
+   - Quick validation after maintenance
+
+   What it does:
+   - Validates previous calibration (±10% tolerance)
+   - Updates ONLY LED intensities for failed channels
+   - Keeps integration time LOCKED from previous calibration
+   - ~80% faster than full calibration
+
+   Result: Only LED intensities updated (typically 5-15% tweaks)
+
+PARAMETER LOCKING:
+------------------
+After full calibration, parameters are transferred to data_mgr and LOCKED:
+- Integration time, num_scans, dark_noise, wavelength_data, S-ref, P-ref
+
+Only LED intensities can be updated via fast-track on sensor change.
+Live acquisition uses these locked parameters for all measurements.
 """
 
 import threading
@@ -49,10 +90,6 @@ class CalibrationManager(QObject):
     def _run_calibration(self):
         """Main calibration routine (runs in background thread)."""
         try:
-            print("="*70)
-            print("CALIBRATION MANAGER: _run_calibration() STARTED")
-            print("="*70)
-
             # Get hardware directly
             self.calibration_progress.emit("Initializing...", 5)
 
@@ -60,12 +97,7 @@ class CalibrationManager(QObject):
             ctrl = hardware_mgr.ctrl
             usb = hardware_mgr.usb
 
-            print(f"Hardware check:")
-            print(f"  ctrl = {ctrl}")
-            print(f"  usb = {usb}")
-            logger.info(f"🔍 Hardware check:")
-            logger.info(f"   ctrl = {ctrl} (type: {type(ctrl).__name__ if ctrl else 'None'})")
-            logger.info(f"   usb = {usb} (type: {type(usb).__name__ if usb else 'None'})")
+            logger.info(f"Hardware check: ctrl={type(ctrl).__name__ if ctrl else 'None'}, usb={type(usb).__name__ if usb else 'None'}")
 
             if not ctrl:
                 raise RuntimeError("Controller not connected. Please connect the P4SPR controller.")
@@ -74,46 +106,21 @@ class CalibrationManager(QObject):
                 raise RuntimeError("Spectrometer not connected. Please connect the USB4000.")
 
             # Test controller communication
+            logger.info("Testing controller communication...")
             try:
-                print("Testing controller...")
-                print(f"  Controller type: {type(ctrl).__name__}")
-                print(f"  Controller methods: {[m for m in dir(ctrl) if not m.startswith('_')][:10]}")
-
-                logger.info("Testing controller communication...")
-
-                # Try turning off channels
-                result = ctrl.turn_off_channels()
-                print(f"  turn_off_channels() returned: {result}")
-
-                # Try turning on LED A
-                print("  Testing LED A activation...")
-                result = ctrl.turn_on_channel('a')
-                print(f"  turn_on_channel('a') returned: {result}")
-
+                ctrl.turn_off_channels()
+                ctrl.turn_on_channel('a')
                 import time
                 time.sleep(0.5)
-
-                # Try setting intensity
-                print("  Testing LED A intensity...")
-                result = ctrl.set_intensity('a', 200)
-                print(f"  set_intensity('a', 200) returned: {result}")
-
+                ctrl.set_intensity('a', 200)
                 time.sleep(0.5)
-
-                # Turn off
                 ctrl.turn_off_channels()
-
-                print("✅ Controller OK")
                 logger.info("✅ Controller responding to commands")
             except Exception as e:
-                print(f"❌ Controller test failed: {e}")
-                logger.error(f"❌ Controller test failed: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.error(f"Controller communication error: {e}")
                 raise RuntimeError(f"Controller communication error: {e}")
 
-            print("✅ Hardware ready")
-            logger.info(f"✅ Hardware ready - proceeding with calibration")
+            logger.info("✅ Hardware ready - proceeding with calibration")
 
             # Load configuration
             self.calibration_progress.emit("Loading configuration...", 10)
@@ -142,19 +149,8 @@ class CalibrationManager(QObject):
             except Exception as e:
                 logger.debug(f"Afterglow correction not available: {e}")
 
-            # Step 5: Run calibration using NEW 6-step flow
+            # Step 5: Run calibration using 6-step flow
             logger.info("🚀 Starting 6-step LED calibration flow...")
-
-            # Check if we should use fast-track mode
-            # TEMPORARY: Disable fast-track to test full P-mode calibration
-            use_fast_track = False
-            # try:
-            #     cal_data = device_config.load_led_calibration()
-            #     if cal_data and 's_mode_intensities' in cal_data:
-            #         logger.info("Found previous calibration - checking fast-track eligibility...")
-            #         use_fast_track = True
-            # except Exception as e:
-            #     logger.debug(f"No previous calibration found: {e}")
 
             def progress_update(msg):
                 """Map backend messages to progress percentages."""
@@ -187,56 +183,44 @@ class CalibrationManager(QObject):
                 else:
                     logger.info(f"Progress: {msg}")
 
-            # Import the new 6-step calibration
-            from utils.calibration_6step import (
-                run_full_6step_calibration,
-                run_fast_track_calibration,
-                run_global_led_calibration
-            )
-            from settings import USE_ALTERNATIVE_CALIBRATION, PRE_LED_DELAY_MS, POST_LED_DELAY_MS
+            # Import calibration functions (Global LED Intensity method ONLY)
+            from utils.led_calibration import perform_alternative_calibration  # Global LED Int method
+            from utils.calibration_6step import run_fast_track_calibration  # Fast-track only
+            from settings import PRE_LED_DELAY_MS, POST_LED_DELAY_MS
+            from datetime import datetime, timedelta
 
-            print("="*70)
-            print("🔍 CALIBRATION MODE CHECK:")
-            print(f"   USE_ALTERNATIVE_CALIBRATION = {USE_ALTERNATIVE_CALIBRATION}")
-            print(f"   use_fast_track = {use_fast_track}")
-            print("="*70)
+            # Check if fast-track is possible
+            use_fast_track = False
+            cal_data = device_config.load_led_calibration()
 
-            logger.info(f"🔍 CALIBRATION MODE CHECK:")
-            logger.info(f"   USE_ALTERNATIVE_CALIBRATION = {USE_ALTERNATIVE_CALIBRATION}")
-            logger.info(f"   use_fast_track = {use_fast_track}")
+            if cal_data and 's_mode_intensities' in cal_data:
+                # Check consecutive use count (max 5)
+                fast_track_count = cal_data.get('fast_track_count', 0)
 
-            # Determine which calibration mode to use
-            print(f"🔍 About to check if USE_ALTERNATIVE_CALIBRATION...")
-            if USE_ALTERNATIVE_CALIBRATION:
-                print("✅ YES - USE_ALTERNATIVE_CALIBRATION is True")
-                print(f"🔍 About to call run_global_led_calibration...")
-                print(f"   Function: {run_global_led_calibration}")
-                print(f"   usb: {usb}")
-                print(f"   ctrl: {ctrl}")
-                logger.info("✅ Using GLOBAL LED MODE (LED=255, variable integration)")
+                # Check calibration age (max 30 days)
+                cal_date_str = cal_data.get('calibration_date')
+                calibration_age_ok = False
+                if cal_date_str:
+                    try:
+                        cal_date = datetime.fromisoformat(cal_date_str.replace('Z', '+00:00'))
+                        age_days = (datetime.now() - cal_date).days
+                        calibration_age_ok = age_days <= 30
+                        logger.info(f"Previous calibration age: {age_days} days")
+                    except:
+                        logger.warning("Could not parse calibration date")
 
-                print("⏳ CALLING run_global_led_calibration NOW...")
-                cal_result = run_global_led_calibration(
-                    usb=usb,
-                    ctrl=ctrl,
-                    device_type='P4SPR',
-                    device_config=device_config,
-                    detector_serial=device_serial,
-                    single_mode=False,
-                    single_ch='a',
-                    stop_flag=None,
-                    progress_callback=progress_update,
-                    afterglow_correction=afterglow_correction,
-                    pre_led_delay_ms=PRE_LED_DELAY_MS,
-                    post_led_delay_ms=POST_LED_DELAY_MS
-                )
-                print(f"✅ run_global_led_calibration RETURNED: {cal_result}")
-                print(f"   result.success = {cal_result.success}")
-                print(f"   result.error = {getattr(cal_result, 'error', 'N/A')}")
-            elif use_fast_track:
-                logger.info("Using FAST-TRACK MODE (±10% validation)")
-                logger.debug(f"🔍 DEBUG: About to call run_fast_track_calibration")
-                logger.debug(f"   afterglow_correction={afterglow_correction is not None}")
+                # Decide if fast-track is allowed
+                if fast_track_count >= 5:
+                    logger.info(f"⚠️ Fast-track limit reached ({fast_track_count}/5) - forcing full calibration")
+                elif not calibration_age_ok:
+                    logger.info(f"⚠️ Calibration too old (>30 days) - forcing full calibration")
+                else:
+                    use_fast_track = True
+                    logger.info(f"✅ Attempting fast-track calibration (validates GLOBAL integration time, use {fast_track_count + 1}/5)")
+
+            # Run calibration (GLOBAL LED INTENSITY METHOD ONLY)
+            if use_fast_track:
+                logger.info("✅ Using fast-track validation (validates GLOBAL integration time)")
                 cal_result = run_fast_track_calibration(
                     usb=usb,
                     ctrl=ctrl,
@@ -252,20 +236,16 @@ class CalibrationManager(QObject):
                     post_led_delay_ms=POST_LED_DELAY_MS
                 )
             else:
-                logger.info("Using FULL 6-STEP CALIBRATION MODE")
-                logger.debug(f"🔍 DEBUG: About to call run_full_6step_calibration")
-                logger.debug(f"   afterglow_correction={afterglow_correction is not None}")
-                cal_result = run_full_6step_calibration(
+                logger.info("✅ Using GLOBAL LED INTENSITY calibration (All LEDs=255, global integration time)")
+                cal_result = perform_alternative_calibration(
                     usb=usb,
                     ctrl=ctrl,
                     device_type='P4SPR',
-                    device_config=device_config,
-                    detector_serial=device_serial,
                     single_mode=False,
                     single_ch='a',
                     stop_flag=None,
                     progress_callback=progress_update,
-                    afterglow_correction=afterglow_correction,
+                    device_config=device_config,
                     pre_led_delay_ms=PRE_LED_DELAY_MS,
                     post_led_delay_ms=POST_LED_DELAY_MS
                 )
@@ -295,18 +275,49 @@ class CalibrationManager(QObject):
 
             logger.info("✅ Calibration backend completed successfully")
 
-            # Step 7: Store results in data_mgr
+            # ===================================================================
+            # STEP 7: STORE CALIBRATION RESULTS
+            # ===================================================================
+            # Transfer calibration parameters to data acquisition manager.
+            # Live acquisition will use these parameters EXACTLY as provided.
+            #
+            # CRITICAL: Calibration method determines these parameters.
+            # Live acquisition is method-agnostic - it just executes them.
+            # ===================================================================
             self.calibration_progress.emit("Storing results...", 95)
 
             data_mgr = self.app.data_mgr
-            data_mgr.integration_time = cal_result.integration_time
-            data_mgr.num_scans = cal_result.num_scans
-            data_mgr.ref_intensity = cal_result.ref_intensity
-            data_mgr.leds_calibrated = cal_result.leds_calibrated
-            data_mgr.dark_noise = cal_result.dark_noise
-            data_mgr.wave_data = cal_result.wave_data
-            data_mgr.ref_sig = cal_result.ref_sig
-            data_mgr.p_ref_sig = getattr(cal_result, 'p_ref_sig', {})  # P-mode reference spectra
+
+            # Core acquisition parameters
+            data_mgr.integration_time = cal_result.integration_time  # Integration time (ms)
+            data_mgr.num_scans = cal_result.num_scans                # Scans per spectrum
+            data_mgr.dark_noise = cal_result.dark_noise              # Dark noise baseline
+            data_mgr.wave_data = cal_result.wave_data                # Wavelength calibration
+            data_mgr.ref_sig = cal_result.ref_sig                    # S-mode reference spectra
+            data_mgr.p_ref_sig = getattr(cal_result, 'p_ref_sig', {})  # P-mode reference (if available)
+
+            # LED intensities per channel
+            data_mgr.ref_intensity = cal_result.ref_intensity        # S-mode LED intensities
+            data_mgr.leds_calibrated = cal_result.leds_calibrated    # P-mode LED intensities
+
+            # Validate critical parameters exist
+            if not data_mgr.integration_time or data_mgr.integration_time <= 0:
+                logger.error(f"❌ INVALID: integration_time={data_mgr.integration_time}ms")
+                raise ValueError(f"Invalid integration time from calibration: {data_mgr.integration_time}ms")
+            
+            if not data_mgr.leds_calibrated or not isinstance(data_mgr.leds_calibrated, dict):
+                logger.error(f"❌ INVALID: leds_calibrated={data_mgr.leds_calibrated}")
+                raise ValueError("Invalid LED calibration data")
+            
+            logger.info("")
+            logger.info("✅ Calibration parameters stored successfully:")
+            logger.info(f"   Integration Time: {data_mgr.integration_time}ms")
+            logger.info(f"   Scans per Spectrum: {data_mgr.num_scans}")
+            logger.info(f"   P-mode LEDs: {data_mgr.leds_calibrated}")
+            logger.info(f"   S-mode LEDs: {data_mgr.ref_intensity}")
+            logger.info("")
+
+            # Quality control and diagnostic data:
             data_mgr.ch_error_list = cal_result.ch_error_list.copy()
             data_mgr.s_ref_qc_results = getattr(cal_result, 's_ref_qc_results', {})
             data_mgr.channel_performance = getattr(cal_result, 'channel_performance', {})
@@ -321,7 +332,7 @@ class CalibrationManager(QObject):
             if data_mgr.p_ref_sig:
                 logger.info(f"✅ P-ref data stored: {len(data_mgr.p_ref_sig)} channels")
             else:
-                logger.warning("⚠️ No P-ref data in calibration result")
+                logger.debug("ℹ️ No P-ref data in calibration result")
 
             # Store wavelength indices
             data_mgr.wave_min_index = wave_min_index
@@ -345,6 +356,9 @@ class CalibrationManager(QObject):
             logger.info("✅ Calibration data stored in data_mgr")
 
             # Step 8: Prepare calibration data for UI
+            # Detect if fast-track was used (has fast_track_passed attribute)
+            is_fast_track = hasattr(cal_result, 'fast_track_passed') and cal_result.fast_track_passed
+
             calibration_data = {
                 'integration_time': cal_result.integration_time,
                 'num_scans': cal_result.num_scans,
@@ -353,8 +367,10 @@ class CalibrationManager(QObject):
                 'ch_error_list': cal_result.ch_error_list.copy(),
                 's_ref_qc_results': data_mgr.s_ref_qc_results,
                 'channel_performance': data_mgr.channel_performance,
-                'calibration_type': 'full',
-                'afterglow_available': afterglow_available
+                'calibration_type': 'fast_track' if is_fast_track else 'full',
+                'afterglow_available': afterglow_available,
+                'skip_qc_dialog': is_fast_track,  # Skip QC for fast-track
+                'optics_ready': len(cal_result.ch_error_list) == 0  # Set optics ready if all channels passed
             }
 
             # Complete
@@ -362,6 +378,8 @@ class CalibrationManager(QObject):
             self.calibration_complete.emit(calibration_data)
 
             logger.info("✅ Calibration complete - all channels calibrated")
+            if len(cal_result.ch_error_list) == 0:
+                logger.info("✅ Optics ready: All channels passed calibration")
 
         except Exception as e:
             # Print full traceback immediately to console before any dialog handling
