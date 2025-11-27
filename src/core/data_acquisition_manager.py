@@ -55,6 +55,9 @@ from typing import Optional, Dict
 import threading
 import gc
 
+# Calibration data model
+from core.calibration_data import CalibrationData
+
 # ✅ OPTIMIZATION: Disable automatic GC to eliminate random 10-50ms pauses
 # Manual GC will be called periodically during safe times
 gc.disable()
@@ -96,67 +99,38 @@ class DataAcquisitionManager(QObject):
         self.hardware_mgr = hardware_mgr
 
         # ===================================================================
-        # CALIBRATION PARAMETERS - METHOD AGNOSTIC
+        # CALIBRATION DATA (Single Source of Truth)
         # ===================================================================
-        # Live acquisition is METHOD-AGNOSTIC: It simply executes whatever
-        # parameters calibration provides, regardless of calibration method.
+        # All calibration parameters stored in immutable CalibrationData model.
+        # Access via: self.calibration_data.integration_time, etc.
         #
-        # Calibration provides:
-        # - integration_time: Integration time in ms (global or per-channel max)
-        # - num_scans: Number of scans to average per spectrum
-        # - ref_intensity: S-mode LED intensities per channel
-        # - leds_calibrated: P-mode LED intensities per channel
-        # - dark_noise: Dark noise baseline
-        # - ref_sig: S-mode reference spectra per channel
-        # - wave_data: Wavelength calibration
-        #
-        # CRITICAL: Live acquisition MUST use these parameters EXACTLY as
-        # provided to ensure consistency with calibration QC report.
+        # CRITICAL: Live acquisition uses calibration_data directly.
+        # No duplication, no conflicts, single source of truth.
         # ===================================================================
         self.calibrated = False
-        self.integration_time = None  # ms - Set by calibration
-        self.num_scans = None  # Set by calibration
-        self.ref_intensity = {}  # S-mode LED intensities (set by calibration)
-        self.leds_calibrated = {}  # P-mode LED intensities (set by calibration)
+        self.calibration_data = None  # CalibrationData instance (set by apply_calibration)
+
+        # Derived/computed data (not part of calibration)
+        self.fourier_weights = {}  # {channel: weights_array} - computed from calibration
+        self.spectral_correction = {}  # {channel: correction_weights} - computed
+
+        # Runtime state (acquisition-specific, not calibration)
         self.ch_error_list = []  # Failed channels from calibration
+        self._previous_channel = None  # Track previous channel for afterglow correction
 
-        # Optional per-channel parameters (if calibration provides them)
-        self.per_channel_integration = {}  # {channel: integration_time_ms}
-        self.per_channel_dark_noise = {}  # {channel: dark_noise_array}
-
-        # Spectrum data
-        self.wave_data = None  # Wavelength array
-        self.wave_min_index = 0
-        self.wave_max_index = -1
-        self.dark_noise = None
-        self.ref_spectrum = None
-
-        # Fourier weights for peak finding
-        self.fourier_weights = {}  # {channel: weights_array}
-
-        # S-mode reference spectra (LED profiles per channel)
-        self.ref_sig = {}  # {channel: S-mode reference_spectrum}
-        self.p_ref_sig = {}  # {channel: P-mode reference_spectrum}
-        self.afterglow_curves = {}  # {channel: afterglow_correction_curve}
-
-        # Spectral correction weights (computed from ref_sig)
-        self.spectral_correction = {}  # {channel: correction_weights}
-
-        # Afterglow correction (loaded from device-specific calibration)
+        # Afterglow correction instance (loaded separately)
         self.afterglow_correction = None
         self.afterglow_enabled = False
         self.afterglow_mode = 'normal'  # 'fast', 'normal', or 'slow'
-        self._previous_channel = None  # Track previous channel for afterglow correction
-        self._led_delay_ms = 45.0  # Default LED delay in milliseconds (PRE_LED_DELAY_MS)
+
+        # LED timing (from device config, can override calibration_data)
+        self._pre_led_delay_ms = None  # PRE LED delay (device-specific, loaded from config)
+        self._post_led_delay_ms = None  # POST LED delay (device-specific, loaded from config)
 
         # Timing jitter tracking for SNR optimization
         self._timing_jitter_stats = {ch: [] for ch in ['a', 'b', 'c', 'd']}
         self._jitter_window_size = 100  # Track last 100 measurements per channel
         self._last_jitter_report = 0  # Time of last jitter statistics report
-        self._led_post_delay_ms = 5.0  # Default LED post delay in milliseconds
-        # LED delays will be loaded from device config (set by _load_led_delays_from_config)
-        self._pre_led_delay_ms = None  # PRE LED delay (device-specific, loaded from config)
-        self._post_led_delay_ms = None  # POST LED delay (device-specific, loaded from config)
 
         # S/P orientation validation tracking
         self._sp_validation_results = {}  # {channel: {orientation_correct, confidence, peak_wl, timestamp}}
@@ -245,6 +219,98 @@ class DataAcquisitionManager(QObject):
         self.batch_size = batch_size
         logger.info(f"Batch size changed: {old_batch_size} -> {batch_size}")
 
+    def apply_calibration(self, calibration_data: CalibrationData) -> None:
+        """Apply calibration data to acquisition manager.
+        
+        This is the single entry point for setting calibration parameters.
+        Replaces old pattern of setting 40+ individual attributes.
+        
+        Args:
+            calibration_data: Immutable CalibrationData instance from calibration service.
+        
+        CRITICAL: This method must be called after successful calibration to enable
+        live acquisition. It:
+        1. Stores calibration_data reference (single source of truth)
+        2. Computes derived data (Fourier weights, spectral correction)
+        3. Sets calibrated=True to enable start_acquisition()
+        
+        All calibration parameters (integration times, LED intensities, spectra, etc.)
+        are accessed via self.calibration_data.* throughout acquisition.
+        """
+        try:
+            logger.info("=" * 80)
+            logger.info("📊 APPLYING CALIBRATION DATA")
+            logger.info("=" * 80)
+            
+            # Validate input
+            if calibration_data is None:
+                raise ValueError("calibration_data cannot be None")
+            
+            # Validate calibration data integrity
+            if not calibration_data.validate():
+                raise ValueError("Calibration data validation failed")
+            
+            # Store calibration data (single source of truth)
+            self.calibration_data = calibration_data
+            
+            # Log key parameters
+            logger.info(f"  Integration Time: {calibration_data.s_mode_integration_time}ms")
+            logger.info(f"  Scans per Spectrum: {calibration_data.num_scans}")
+            logger.info(f"  Calibrated Channels: {calibration_data.get_channels()}")
+            logger.info(f"  Wavelength Range: {calibration_data.wavelength_min:.1f}-{calibration_data.wavelength_max:.1f}nm")
+            logger.info(f"  SPR Range Indices: {calibration_data.wave_min_index}-{calibration_data.wave_max_index}")
+            
+            # Compute Fourier weights for each channel (derived from ref_sig)
+            logger.info("Computing Fourier weights for peak finding...")
+            self.fourier_weights = {}
+            for ch in calibration_data.get_channels():
+                ref_spectrum = calibration_data.s_pol_ref.get(ch)
+                if ref_spectrum is not None:
+                    try:
+                        # Use SPR region for Fourier analysis
+                        spr_spectrum = ref_spectrum[calibration_data.wave_min_index:calibration_data.wave_max_index]
+                        weights = np.fft.rfft(spr_spectrum)
+                        self.fourier_weights[ch] = np.abs(weights)
+                        logger.debug(f"  Channel {ch}: Fourier weights computed (shape={weights.shape})")
+                    except Exception as e:
+                        logger.warning(f"  Channel {ch}: Failed to compute Fourier weights: {e}")
+                        self.fourier_weights[ch] = None
+            
+            # Compute spectral correction weights (normalize LED profiles)
+            logger.info("Computing spectral correction weights...")
+            self.spectral_correction = {}
+            for ch in calibration_data.get_channels():
+                ref_spectrum = calibration_data.s_pol_ref.get(ch)
+                if ref_spectrum is not None:
+                    try:
+                        # Normalize to mean=1 for correction
+                        spr_spectrum = ref_spectrum[calibration_data.wave_min_index:calibration_data.wave_max_index]
+                        mean_intensity = np.mean(spr_spectrum)
+                        if mean_intensity > 0:
+                            correction = spr_spectrum / mean_intensity
+                            self.spectral_correction[ch] = correction
+                            logger.debug(f"  Channel {ch}: Spectral correction computed")
+                        else:
+                            logger.warning(f"  Channel {ch}: Zero mean intensity, skipping correction")
+                            self.spectral_correction[ch] = None
+                    except Exception as e:
+                        logger.warning(f"  Channel {ch}: Failed to compute spectral correction: {e}")
+                        self.spectral_correction[ch] = None
+            
+            # Mark as calibrated (enables start_acquisition)
+            self.calibrated = True
+            
+            logger.info("✅ Calibration data applied successfully")
+            logger.info(f"✅ Acquisition manager ready for live measurements")
+            logger.info("=" * 80)
+            logger.info("")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to apply calibration data: {e}", exc_info=True)
+            self.calibrated = False
+            self.calibration_data = None
+            raise
+
     # ========================================================================
     # LEGACY CALIBRATION REMOVED
     # ========================================================================
@@ -268,22 +334,27 @@ class DataAcquisitionManager(QObject):
                 return
 
             # ✨ CRITICAL: Validate calibration data before starting acquisition
-            if not self.ref_sig or len(self.ref_sig) == 0:
-                logger.error("❌ FATAL: ref_sig is empty or None - cannot start acquisition")
+            if not self.calibration_data:
+                logger.error("❌ FATAL: calibration_data is None - cannot start acquisition")
                 self.acquisition_error.emit("Calibration data missing. Please recalibrate.")
                 return
 
-            if self.wave_data is None or len(self.wave_data) == 0:
-                logger.error("❌ FATAL: wave_data is empty or None - cannot start acquisition")
+            if not self.calibration_data.s_pol_ref or len(self.calibration_data.s_pol_ref) == 0:
+                logger.error("❌ FATAL: S-pol reference spectra are empty - cannot start acquisition")
+                self.acquisition_error.emit("S-pol reference data missing. Please recalibrate.")
+                return
+
+            if self.calibration_data.wavelengths is None or len(self.calibration_data.wavelengths) == 0:
+                logger.error("❌ FATAL: wavelength data is empty - cannot start acquisition")
                 self.acquisition_error.emit("Wavelength calibration missing. Please recalibrate.")
                 return
 
-            # Validate ref_sig shapes match wave_data
+            # Validate ref_sig shapes match wavelength data
             invalid_channels = []
-            for ch, ref_spectrum in self.ref_sig.items():
-                if ref_spectrum is None or len(ref_spectrum) != len(self.wave_data):
+            for ch, ref_spectrum in self.calibration_data.s_pol_ref.items():
+                if ref_spectrum is None or len(ref_spectrum) != len(self.calibration_data.wavelengths):
                     invalid_channels.append(ch)
-                    logger.error(f"❌ Channel {ch}: Invalid ref_sig (len={len(ref_spectrum) if ref_spectrum is not None else 'None'} vs wave={len(self.wave_data)})")
+                    logger.error(f"❌ Channel {ch}: Invalid ref_sig (len={len(ref_spectrum) if ref_spectrum is not None else 'None'} vs wave={len(self.calibration_data.wavelengths)})")
 
             if invalid_channels:
                 logger.error(f"❌ FATAL: Invalid calibration data for channels: {invalid_channels}")
@@ -300,10 +371,10 @@ class DataAcquisitionManager(QObject):
             logger.info("🚀 STARTING LIVE ACQUISITION")
             logger.info("=" * 80)
             logger.info("Using calibration parameters (method-agnostic):")
-            logger.info(f"  Integration Time: {self.integration_time}ms")
-            logger.info(f"  Scans per Spectrum: {self.num_scans}")
-            logger.info(f"  P-mode LED Intensities: {self.leds_calibrated}")
-            logger.info(f"  S-mode LED Intensities: {self.ref_intensity}")
+            logger.info(f"  Integration Time: {self.calibration_data.s_mode_integration_time}ms")
+            logger.info(f"  Scans per Spectrum: {self.calibration_data.num_scans}")
+            logger.info(f"  P-mode LED Intensities: {self.calibration_data.p_mode_intensities}")
+            logger.info(f"  S-mode LED Intensities: {self.calibration_data.s_mode_intensities}")
             logger.info("")
             logger.info("CONSISTENCY GUARANTEE: Live data will match calibration QC")
             logger.info("=" * 80)
@@ -345,7 +416,7 @@ class DataAcquisitionManager(QObject):
             self._queue_timer.start(10)  # Process queue every 10ms
 
             # Diagnostic: verify calibration data is present
-            logger.info(f"[ACQ] Starting acquisition with: wave_data={'present' if self.wave_data is not None else 'MISSING'}, ref_sig={'present' if self.ref_sig else 'MISSING'}")
+            logger.info(f"[ACQ] Starting acquisition with: wave_data={'present' if self.calibration_data and self.calibration_data.wavelengths is not None else 'MISSING'}, ref_sig={'present' if self.calibration_data and self.calibration_data.s_pol_ref else 'MISSING'}")
 
             def _launch_worker():
                 try:
@@ -510,25 +581,26 @@ class DataAcquisitionManager(QObject):
 
             # Pre-flight check
             print(f"[Worker] Hardware check: ctrl={self.hardware_mgr.ctrl is not None}, usb={self.hardware_mgr.usb is not None}")
-            print(f"[Worker] Calibration check: wave_data={self.wave_data is not None}, leds={len(self.leds_calibrated)} channels")
+            print(f"[Worker] Calibration check: calibration_data={'present' if self.calibration_data else 'MISSING'}, channels={len(self.calibration_data.p_mode_intensities) if self.calibration_data else 0}")
             print(f"[Worker] Batch size: {BATCH_SIZE} spectra (3 cycles × 4 channels)")
             print(f"[Worker] TIMING JITTER OPTIMIZATION: Pre-armed integration, high-res timestamps, batch LEDs")
 
             # Prepare LED intensities for batch command
-            led_a = self.leds_calibrated.get('a', 0)
-            led_b = self.leds_calibrated.get('b', 0)
-            led_c = self.leds_calibrated.get('c', 0)
-            led_d = self.leds_calibrated.get('d', 0)
+            led_a = self.calibration_data.p_mode_intensities.get('a', 0)
+            led_b = self.calibration_data.p_mode_intensities.get('b', 0)
+            led_c = self.calibration_data.p_mode_intensities.get('c', 0)
+            led_d = self.calibration_data.p_mode_intensities.get('d', 0)
             print(f"[Worker] LED intensities: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
 
             # ✅ JITTER REDUCTION: Pre-arm detector integration time once at start
             # Eliminates 3ms USB delay from every acquisition cycle
-            if self.integration_time and self.integration_time > 0:
+            integration_time = self.calibration_data.s_mode_integration_time
+            if integration_time and integration_time > 0:
                 try:
                     usb = self.hardware_mgr.usb
                     if usb:
-                        usb.set_integration(self.integration_time)
-                        print(f"[Worker] Pre-armed integration time: {self.integration_time}ms (cached for all acquisitions)")
+                        usb.set_integration(integration_time)
+                        print(f"[Worker] Pre-armed integration time: {integration_time}ms (cached for all acquisitions)")
                 except Exception as e:
                     print(f"[Worker] Warning: Could not pre-arm integration time: {e}")
 
@@ -830,22 +902,23 @@ class DataAcquisitionManager(QObject):
                 return None
 
             # Validate calibration data
-            if self.wave_data is None or len(self.wave_data) == 0:
+            if not self.calibration_data or not self.calibration_data.wavelengths or len(self.calibration_data.wavelengths) == 0:
                 return None
 
-            led_intensity = self.leds_calibrated.get(channel)
+            led_intensity = self.calibration_data.p_mode_intensities.get(channel)
             if led_intensity is None:
                 return None
 
             # ✅ JITTER REDUCTION #1: Pre-arm integration time BEFORE LED control
             # This eliminates 3ms USB delay from the critical timing path
             # Integration time only needs to be set once, not every acquisition
-            if not self.integration_time or self.integration_time <= 0:
+            integration_time = self.calibration_data.s_mode_integration_time
+            if not integration_time or integration_time <= 0:
                 return None
 
             try:
                 # Pre-arm detector with integration time (cached internally if unchanged)
-                usb.set_integration(self.integration_time)
+                usb.set_integration(integration_time)
             except ConnectionError:
                 self.acquisition_error.emit("Spectrometer disconnected. Please reconnect and restart.")
                 self.stop_acquisition()
@@ -894,7 +967,7 @@ class DataAcquisitionManager(QObject):
             detector_read_start = time.perf_counter()
 
             # Read spectrum with averaging
-            num_scans = self.num_scans if self.num_scans and self.num_scans > 0 else 1
+            num_scans = self.calibration_data.num_scans if self.calibration_data.num_scans and self.calibration_data.num_scans > 0 else 1
 
             try:
                 if num_scans > 1:
@@ -937,22 +1010,22 @@ class DataAcquisitionManager(QObject):
                 return None
 
             # Trim spectrum to calibrated range
-            if len(raw_spectrum) != len(self.wave_data):
-                if hasattr(self, 'wave_min_index') and hasattr(self, 'wave_max_index'):
-                    raw_spectrum = raw_spectrum[self.wave_min_index:self.wave_max_index]
+            if len(raw_spectrum) != len(self.calibration_data.wavelengths):
+                if self.calibration_data.wave_min_index and self.calibration_data.wave_max_index:
+                    raw_spectrum = raw_spectrum[self.calibration_data.wave_min_index:self.calibration_data.wave_max_index]
                 else:
-                    raw_spectrum = raw_spectrum[:len(self.wave_data)]
+                    raw_spectrum = raw_spectrum[:len(self.calibration_data.wavelengths)]
 
             # Apply dark noise subtraction
-            if self.dark_noise is not None and len(raw_spectrum) == len(self.dark_noise):
-                raw_spectrum = raw_spectrum - self.dark_noise
+            if self.calibration_data.dark_noise is not None and len(raw_spectrum) == len(self.calibration_data.dark_noise):
+                raw_spectrum = raw_spectrum - self.calibration_data.dark_noise
 
             # Apply afterglow correction
             if self.afterglow_correction is not None and self._previous_channel is not None:
                 try:
                     afterglow_value = self.afterglow_correction.calculate_correction(
                         previous_channel=self._previous_channel,
-                        integration_time_ms=float(self.integration_time),
+                        integration_time_ms=float(integration_time),
                         delay_ms=self._post_led_delay_ms
                     )
                     raw_spectrum = raw_spectrum - afterglow_value
@@ -972,7 +1045,7 @@ class DataAcquisitionManager(QObject):
 
             return {
                 'raw_spectrum': raw_spectrum,
-                'wavelength': self.wave_data.copy(),
+                'wavelength': self.calibration_data.wavelengths.copy(),
                 'timestamp': time.time()
             }
 
@@ -1031,13 +1104,13 @@ class DataAcquisitionManager(QObject):
                 print(f"[ACQ ERROR] Channel {channel}: Hardware not available (ctrl={ctrl is not None}, usb={usb is not None})")
                 return None
 
-            # Check if we have wave_data from calibration
-            if self.wave_data is None or len(self.wave_data) == 0:
+            # Check if we have calibration data
+            if not self.calibration_data or not self.calibration_data.wavelengths or len(self.calibration_data.wavelengths) == 0:
                 print(f"[ACQ ERROR] Channel {channel}: No wavelength data from calibration")
                 return None
 
             # Get LED intensity from calibration (method-agnostic)
-            led_intensity = self.leds_calibrated.get(channel)
+            led_intensity = self.calibration_data.p_mode_intensities.get(channel)
             if led_intensity is None:
                 print(f"[ACQ ERROR] Channel {channel}: No LED intensity from calibration")
                 return None
@@ -1065,12 +1138,13 @@ class DataAcquisitionManager(QObject):
             time.sleep(self._pre_led_delay_ms / 1000.0)  # Convert ms to seconds
 
             # Set integration time from calibration
-            if not self.integration_time or self.integration_time <= 0:
-                print(f"[ACQ ERROR] Channel {channel}: Invalid integration time from calibration: {self.integration_time}ms")
+            integration_time = self.calibration_data.s_mode_integration_time
+            if not integration_time or integration_time <= 0:
+                print(f"[ACQ ERROR] Channel {channel}: Invalid integration time from calibration: {integration_time}ms")
                 return None
 
             try:
-                usb.set_integration(self.integration_time)
+                usb.set_integration(integration_time)
             except ConnectionError as e:
                 print(f"[ACQ ERROR] Channel {channel}: Spectrometer disconnected during integration set")
                 self.acquisition_error.emit("Spectrometer disconnected. Please reconnect and restart.")
@@ -1082,7 +1156,7 @@ class DataAcquisitionManager(QObject):
 
             # Read spectrum intensities with averaging (same as calibration)
             # Use num_scans from calibration to match reference signal quality
-            num_scans = self.num_scans if self.num_scans and self.num_scans > 0 else 1
+            num_scans = self.calibration_data.num_scans if self.calibration_data.num_scans and self.calibration_data.num_scans > 0 else 1
 
             try:
                 if num_scans > 1:
@@ -1115,18 +1189,18 @@ class DataAcquisitionManager(QObject):
                 return None
 
             # Trim spectrum to match wave_data range using stored indices from calibration
-            if len(raw_spectrum) != len(self.wave_data):
+            if len(raw_spectrum) != len(self.calibration_data.wavelengths):
                 # Use indices stored during calibration (eliminates expensive USB read)
-                if hasattr(self, 'wave_min_index') and hasattr(self, 'wave_max_index'):
-                    raw_spectrum = raw_spectrum[self.wave_min_index:self.wave_max_index]
+                if self.calibration_data.wave_min_index and self.calibration_data.wave_max_index:
+                    raw_spectrum = raw_spectrum[self.calibration_data.wave_min_index:self.calibration_data.wave_max_index]
                 else:
                     # Fallback if indices not available (shouldn't happen after calibration)
-                    raw_spectrum = raw_spectrum[:len(self.wave_data)]
+                    raw_spectrum = raw_spectrum[:len(self.calibration_data.wavelengths)]
 
             # ✨ CRITICAL: Apply dark noise subtraction (same as S-ref/P-ref measurements)
             # This ensures live P-pol data is on the same basis as calibration references
-            if self.dark_noise is not None and len(raw_spectrum) == len(self.dark_noise):
-                raw_spectrum = raw_spectrum - self.dark_noise
+            if self.calibration_data.dark_noise is not None and len(raw_spectrum) == len(self.calibration_data.dark_noise):
+                raw_spectrum = raw_spectrum - self.calibration_data.dark_noise
 
             # ✨ CRITICAL: Apply afterglow correction if available (same as S-ref/P-ref measurements)
             # This ensures live P-pol data is on the same basis as calibration references
@@ -1137,7 +1211,7 @@ class DataAcquisitionManager(QObject):
                     # Use POST_LED_DELAY as the decay time (time between LED off and next read)
                     afterglow_value = self.afterglow_correction.calculate_correction(
                         previous_channel=self._previous_channel,
-                        integration_time_ms=float(self.integration_time),
+                        integration_time_ms=float(integration_time),
                         delay_ms=self._post_led_delay_ms  # Already in ms
                     )
                     # Subtract afterglow (scalar value applies uniformly to spectrum)
@@ -1170,7 +1244,7 @@ class DataAcquisitionManager(QObject):
                 time.sleep(self._post_led_delay_ms / 1000.0)  # Convert ms to seconds
 
             return {
-                'wavelength': self.wave_data,  # ✅ Reference (read-only, saves 2ms copy)
+                'wavelength': self.calibration_data.wavelengths,  # ✅ Reference (read-only, saves 2ms copy)
                 'intensity': raw_spectrum
             }
 
@@ -1312,7 +1386,7 @@ class DataAcquisitionManager(QObject):
                 'full_spectrum': raw_spectrum,
                 'raw_spectrum': raw_spectrum,
                 'transmission_spectrum': transmission_spectrum,  # Reused from _process_spectrum
-                'wavelengths': self.wave_data,
+                'wavelengths': self.calibration_data.wavelengths,
                 'timestamp': timestamp,
                 'is_preview': False,
                 'batch_filtered': True  # Mark as batch-filtered
@@ -1347,10 +1421,10 @@ class DataAcquisitionManager(QObject):
             #    - Clipping to 0-100% range
             #    - Savitzky-Golay filtering (window=11, poly=3)
             transmission_spectrum = None
-            if channel in self.ref_sig and self.ref_sig[channel] is not None:
+            if channel in self.calibration_data.s_pol_ref and self.calibration_data.s_pol_ref[channel] is not None:
                 try:
                     # ✨ CRITICAL: Check shape compatibility
-                    ref_spectrum = self.ref_sig[channel]
+                    ref_spectrum = self.calibration_data.s_pol_ref[channel]
                     if len(raw_spectrum) != len(ref_spectrum):
                         print(f"[PROCESS] ERROR: Shape mismatch - raw({len(raw_spectrum)}) vs ref({len(ref_spectrum)})")
                         print(f"[PROCESS] This should never happen! Calibration data may be corrupted.")
@@ -1359,22 +1433,22 @@ class DataAcquisitionManager(QObject):
                         raw_spectrum = raw_spectrum[:min_len]
                         ref_spectrum = ref_spectrum[:min_len]
                         print(f"[PROCESS] Recovered by trimming to {min_len} points")
-                    
+
                     # Step 1: Raw P-pol (dark already removed in acquisition, afterglow if enabled)
                     p_pol_clean = raw_spectrum
-                    
+
                     # Step 2: Calculate transmission (P / S)
                     s_pol_safe = np.where(ref_spectrum < 1, 1, ref_spectrum)
                     raw_transmission = (p_pol_clean / s_pol_safe) * 100.0
-                    
+
                     # Step 3: LED boost correction (P_LED / S_LED)
-                    p_led = self.leds_calibrated.get(channel) if isinstance(self.leds_calibrated, dict) else None
-                    s_led = self.ref_intensity.get(channel) if isinstance(self.ref_intensity, dict) else None
-                    
+                    p_led = self.calibration_data.p_mode_intensities.get(channel)
+                    s_led = self.calibration_data.s_mode_intensities.get(channel)
+
                     if p_led and s_led and p_led > 0:
                         led_boost_factor = p_led / s_led
                         transmission_spectrum = raw_transmission / led_boost_factor
-                        
+
                         # Debug log LED correction (throttled)
                         if hasattr(self, '_transmission_debug_counter'):
                             self._transmission_debug_counter += 1
@@ -1384,14 +1458,14 @@ class DataAcquisitionManager(QObject):
                             print(f"[PROCESS] Ch {channel}: LED boost S={s_led}, P={p_led}, factor={led_boost_factor:.3f}")
                     else:
                         transmission_spectrum = raw_transmission
-                    
+
                     # Step 4: 95th percentile baseline correction (matches LiveRtoT_QC)
                     baseline = np.percentile(transmission_spectrum, 95)
                     transmission_spectrum = transmission_spectrum - baseline + 100.0
-                    
+
                     # Step 5: Clip to valid range
                     transmission_spectrum = np.clip(transmission_spectrum, 0, 100)
-                    
+
                     # Step 6: Savitzky-Golay filtering (window=11, poly=3 - matches LiveRtoT_QC)
                     if len(transmission_spectrum) >= 11:
                         from scipy.signal import savgol_filter
@@ -1995,8 +2069,12 @@ class DataAcquisitionManager(QObject):
                 self.afterglow_correction = AfterglowCorrection(optical_cal_path)
 
                 # Generate afterglow curves for QC report (at LED_DELAY timing)
-                if self.wave_data is not None and len(self.wave_data) > 0 and self.ref_sig:
-                    ch_list = list(self.ref_sig.keys())
+                if (self.calibration_data and 
+                    self.calibration_data.wavelengths is not None and 
+                    len(self.calibration_data.wavelengths) > 0 and 
+                    self.calibration_data.s_pol_ref):
+                    
+                    ch_list = list(self.calibration_data.s_pol_ref.keys())
                     self.afterglow_curves = {}
                     for i, ch in enumerate(ch_list):
                         if i > 0:  # First channel has no previous channel
@@ -2005,18 +2083,18 @@ class DataAcquisitionManager(QObject):
                                 # Calculate scalar afterglow correction value
                                 correction_value = self.afterglow_correction.calculate_correction(
                                     previous_channel=prev_ch,
-                                    integration_time_ms=float(self.integration_time),
+                                    integration_time_ms=float(self.calibration_data.s_mode_integration_time),
                                     delay_ms=LED_DELAY * 1000,  # Convert to ms
                                 )
                                 # Create flat array (afterglow is uniform across wavelengths)
-                                self.afterglow_curves[ch] = np.full_like(self.wave_data, correction_value, dtype=float)
+                                self.afterglow_curves[ch] = np.full_like(self.calibration_data.wavelengths, correction_value, dtype=float)
                                 logger.debug(f"Afterglow for ch {ch.upper()} from {prev_ch.upper()}: {correction_value:.1f} counts")
                             except Exception as e:
                                 logger.debug(f"Could not calculate afterglow for ch {ch}: {e}")
-                                self.afterglow_curves[ch] = np.zeros_like(self.wave_data)
+                                self.afterglow_curves[ch] = np.zeros_like(self.calibration_data.wavelengths)
                         else:
                             # First channel has no previous channel - no afterglow
-                            self.afterglow_curves[ch] = np.zeros_like(self.wave_data)
+                            self.afterglow_curves[ch] = np.zeros_like(self.calibration_data.wavelengths)
                     logger.info(f"✅ Afterglow curves generated for QC report")
 
                 # Determine afterglow mode based on total acquisition delay

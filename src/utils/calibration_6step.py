@@ -2466,7 +2466,7 @@ def run_full_6step_calibration(
                 # No afterglow correction - zeros for all channels
                 for ch in ch_list:
                     afterglow_curves[ch] = np.zeros_like(result.wave_data)
-            
+
             result.afterglow_curves = afterglow_curves
 
             logger.info("\n" + "=" * 80)

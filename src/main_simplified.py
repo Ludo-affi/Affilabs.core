@@ -140,7 +140,7 @@ from core.data_acquisition_manager import DataAcquisitionManager
 from core.recording_manager import RecordingManager
 from core.kinetic_manager import KineticManager
 from core.data_buffer_manager import DataBufferManager
-from core.calibration_coordinator import CalibrationCoordinator
+from core.calibration_service import CalibrationService
 from core.graph_coordinator import GraphCoordinator
 from core.cycle_coordinator import CycleCoordinator
 from utils.logger import logger
@@ -273,7 +273,8 @@ class Application(QApplication):
 
         # Initialize coordinators for better separation of concerns
         logger.info("Creating coordinators...")
-        self.calibration = CalibrationCoordinator(self)
+        self.calibration = CalibrationService(self)
+        self.calibration.calibration_complete.connect(self._on_calibration_complete)
         self.graphs = GraphCoordinator(self)
         self.cycles = CycleCoordinator(self)
 
@@ -452,6 +453,39 @@ class Application(QApplication):
 
         except Exception as e:
             logger.error(f"❌ Failed to update optics_ready status: {e}", exc_info=True)
+
+    def _on_calibration_complete(self, calibration_data):
+        """Handler for calibration_complete signal from CalibrationService.
+        
+        This is called when CalibrationService completes calibration and provides
+        the immutable CalibrationData model. We apply it to the acquisition manager
+        to enable live measurements.
+        
+        Args:
+            calibration_data: CalibrationData instance with all calibration parameters
+        """
+        try:
+            logger.info("=" * 80)
+            logger.info("📊 CALIBRATION COMPLETE - APPLYING TO ACQUISITION MANAGER")
+            logger.info("=" * 80)
+            
+            # Apply calibration data to acquisition manager (single entry point)
+            self.data_mgr.apply_calibration(calibration_data)
+            
+            logger.info("✅ Calibration data applied successfully")
+            logger.info("✅ System ready for live acquisition")
+            logger.info("=" * 80)
+            logger.info("")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to apply calibration data: {e}", exc_info=True)
+            # Show error dialog to user
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self.main_window,
+                "Calibration Error",
+                f"Failed to apply calibration data:\n{e}\n\nPlease try calibration again."
+            )
 
     def _connect_ui_signals(self):
         """Connect UI signals after handler method is defined."""

@@ -336,7 +336,7 @@ class CalibrationManager(QObject):
             data_mgr.orientation_validation = getattr(cal_result, 'orientation_validation', {})  # Orientation validation for QC report
             data_mgr.transmission_validation = getattr(cal_result, 'transmission_validation', {})  # Transmission validation for QC report
             data_mgr.weakest_channel = getattr(cal_result, 'weakest_channel', None)  # Hardware characteristic
-            
+
             # QC display data from finalcalibQC (Step 6) - ORIGINAL PROCESSED DATA
             # ⚠️ PRIORITY: Always use this original data for QC graphs (not re-calculated!)
             # - transmission_spectra: From LiveRtoT_QC (Step 6 Part C) with full pipeline:
@@ -344,7 +344,7 @@ class CalibrationManager(QObject):
             # - afterglow_curves: Same predict_afterglow() used during processing
             data_mgr.transmission_spectra = getattr(cal_result, 'transmission', {})
             data_mgr.afterglow_curves = getattr(cal_result, 'afterglow_curves', {})
-            
+
             if data_mgr.transmission_spectra:
                 logger.info(f"✅ Transmission spectra stored from LiveRtoT_QC: {len(data_mgr.transmission_spectra)} channels")
             if data_mgr.afterglow_curves:
