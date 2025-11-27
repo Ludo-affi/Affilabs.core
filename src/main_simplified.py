@@ -246,9 +246,16 @@ class Application(QApplication):
         self._filter_method = 'median'  # Default: 'median' or 'kalman'
         self._kalman_filters = {}  # Store Kalman filter instances per channel
 
+        # Three-zone filtering cache (historical, cycle, live)
+        self._cached_zone1_filtered = {}  # Cached historical filtering per channel
+        self._cached_zone1_bounds = {}  # Track cursor position for cache invalidation
+
         # Track selected channel for flagging (None, 0-3 for A-D)
         self._selected_channel = None
         self._flag_data = []  # List of {channel, time, annotation} dicts
+
+        # LED status monitoring timer (V1.1+ firmware)
+        self._led_status_timer = None
 
         # Calibration progress dialog
         self._calibration_dialog = None
@@ -1088,6 +1095,16 @@ class Application(QApplication):
             from live_data_dialog import LiveDataDialog
             if self._live_data_dialog is None:
                 self._live_data_dialog = LiveDataDialog(parent=self.main_window)
+
+            # Load reference spectra from calibration into the dialog
+            if hasattr(self.data_mgr, 'ref_sig') and self.data_mgr.ref_sig:
+                if hasattr(self.data_mgr, 'wave_data') and self.data_mgr.wave_data is not None:
+                    self._live_data_dialog.set_reference_spectra(
+                        self.data_mgr.ref_sig,
+                        self.data_mgr.wave_data
+                    )
+                    logger.info(f"✅ Loaded S-mode reference spectra: {list(self.data_mgr.ref_sig.keys())}")
+
             self._live_data_dialog.show()
             self._live_data_dialog.raise_()
             self._live_data_dialog.activateWindow()
@@ -1277,6 +1294,10 @@ class Application(QApplication):
         logger.debug(f"🔍 Calling _update_device_status_ui with optics_ready={status.get('optics_ready')}, sensor_ready={status.get('sensor_ready')}")
         self._update_device_status_ui(status)
 
+        # Start LED status monitoring timer (V1.1+ firmware)
+        if not self._device_config_initialized:
+            self._start_led_status_monitoring()
+
         # Load servo positions and LED intensities from device config (only on initial connection)
         if self._device_config_initialized:
             logger.debug("Hardware status update received (not initial connection) - skipping device settings reload")
@@ -1412,6 +1433,9 @@ class Application(QApplication):
         """Hardware disconnected."""
         logger.info("Hardware disconnected")
 
+        # Stop LED status monitoring
+        self._stop_led_status_monitoring()
+
         # Reset calibration completed flag
         self._calibration_completed = False
         self._initial_connection_done = False  # Reset for next connection
@@ -1430,6 +1454,53 @@ class Application(QApplication):
             'fluidics_ready': False
         }
         self.main_window.update_hardware_status(empty_status)
+
+    def _start_led_status_monitoring(self):
+        """Start periodic LED status monitoring timer (V1.1+ firmware)."""
+        if self._led_status_timer is not None:
+            return  # Already running
+
+        # Check if hardware supports LED queries
+        if not self.hardware_mgr or not self.hardware_mgr.ctrl:
+            return
+
+        if not hasattr(self.hardware_mgr.ctrl, 'get_all_led_intensities'):
+            logger.debug("LED status monitoring not available (firmware < V1.1)")
+            return
+
+        from PyQt5.QtCore import QTimer
+        self._led_status_timer = QTimer()
+        self._led_status_timer.timeout.connect(self._update_led_status_display)
+        self._led_status_timer.start(2000)  # Update every 2 seconds
+        logger.info("✅ LED status monitoring started (2s interval)")
+
+    def _stop_led_status_monitoring(self):
+        """Stop LED status monitoring timer."""
+        if self._led_status_timer is not None:
+            self._led_status_timer.stop()
+            self._led_status_timer.deleteLater()
+            self._led_status_timer = None
+            logger.info("LED status monitoring stopped")
+
+    def _update_led_status_display(self):
+        """Query hardware for LED intensities and update UI display."""
+        try:
+            if not self.hardware_mgr or not self.hardware_mgr.ctrl:
+                return
+
+            # Get current LED intensities from hardware
+            led_intensities = self.hardware_mgr.ctrl.get_all_led_intensities()
+
+            if led_intensities:
+                # Update device status widget
+                if hasattr(self.main_window, 'sidebar'):
+                    if hasattr(self.main_window.sidebar, 'device_widget'):
+                        if hasattr(self.main_window.sidebar.device_widget, 'device_status_widget'):
+                            self.main_window.sidebar.device_widget.device_status_widget.update_led_status(led_intensities)
+
+        except Exception as e:
+            # Silent fail - don't disrupt normal operation
+            logger.debug(f"LED status update failed: {e}")
 
     def _on_connection_progress(self, message: str):
         """Hardware connection progress update."""
@@ -2309,10 +2380,10 @@ class Application(QApplication):
             # Toggle to opposite position
             new_position = 'P' if current_position == 'S' else 'S'
 
-            # Send command to hardware
-            if self.hardware_mgr.controller is not None:
+            # Send command to hardware (FIX: ctrl not controller)
+            if self.hardware_mgr.ctrl is not None:
                 logger.info(f"🔄 Toggling polarizer: {current_position} → {new_position}")
-                success = self.hardware_mgr.controller.set_mode(new_position.lower())
+                success = self.hardware_mgr.ctrl.set_mode(new_position.lower())
 
                 if success:
                     # Update UI to reflect new position
@@ -2321,28 +2392,16 @@ class Application(QApplication):
                 else:
                     logger.error(f"❌ Failed to move polarizer to position {new_position}")
                     from widgets.message import show_message
-                    show_message(
-                        f"Failed to move polarizer to position {new_position}",
-                        "Polarizer Error",
-                        parent=self.main_window
-                    )
+                    show_message(f"Failed to move polarizer to position {new_position}\\n\\nCheck hardware connection.")
             else:
                 logger.warning("⚠️ Controller not connected - cannot move polarizer")
                 from widgets.message import show_message
-                show_message(
-                    "Controller not connected. Please connect hardware first.",
-                    "Hardware Not Connected",
-                    parent=self.main_window
-                )
+                show_message("Controller not connected.\\n\\nPlease connect hardware first.")
 
         except Exception as e:
             logger.error(f"❌ Error toggling polarizer: {e}")
             from widgets.message import show_message
-            show_message(
-                f"Error toggling polarizer: {str(e)}",
-                "Polarizer Error",
-                parent=self.main_window
-            )
+            show_message(f"Error toggling polarizer: {str(e)}")
 
     # === Recording Callbacks ===
 
@@ -2740,6 +2799,10 @@ class Application(QApplication):
         # Redraw full timeline graph with/without filtering
         self._redraw_timeline_graph()
 
+        # IMMEDIATE REFRESH: Also update cycle of interest graph
+        self._update_cycle_of_interest_graph()
+        logger.info("✅ Filter toggle complete - both timeline and cycle graphs refreshed")
+
     def _on_filter_strength_changed(self, value: int):
         """Filter strength slider changed."""
         self._filter_strength = value
@@ -2784,6 +2847,127 @@ class Application(QApplication):
             )
 
         logger.info(f"Kalman filters initialized (R={measurement_noise:.4f}, Q={process_noise:.4f})")
+
+    def _filter_zone1_historical(self, data, strength: int):
+        """Light filtering for historical data (Zone 1).
+
+        For large datasets, downsample first to maintain responsiveness.
+        Uses median filter for speed.
+        """
+        import numpy as np
+        from scipy.ndimage import median_filter
+
+        n = len(data)
+        if n == 0:
+            return data
+        elif n < 1000:
+            # Small history: filter normally
+            window_size = 2 * strength + 1
+            return median_filter(data, size=window_size, mode='nearest')
+        else:
+            # Large history: downsample first (keep ~1000 points)
+            downsample_factor = max(1, n // 1000)
+            downsampled = data[::downsample_factor]
+            window_size = 2 * strength + 1
+            filtered = median_filter(downsampled, size=window_size, mode='nearest')
+            return filtered
+
+    def _filter_zone2_cycle(self, data, strength: int, channel: str):
+        """High-quality filtering for cycle of interest (Zone 2).
+
+        Uses Kalman for small cycles (<500 pts) for smoothest trajectories.
+        Uses median for large cycles (>500 pts) for speed.
+        """
+        import numpy as np
+        from scipy.ndimage import median_filter
+
+        n = len(data)
+        if n < 3:
+            return data  # Too small to filter
+        elif n < 500:
+            # Small cycle: use Kalman for best quality
+            if channel not in self._kalman_filters:
+                self._init_kalman_filters()
+            self._kalman_filters[channel].reset()
+            return self._kalman_filters[channel].filter_array(data)
+        else:
+            # Large cycle: use median for speed
+            window_size = 2 * strength + 1
+            return median_filter(data, size=window_size, mode='nearest')
+
+    def _filter_zone3_live(self, data, strength: int):
+        """Light filtering for live data (Zone 3).
+
+        Uses median filter on recent window only.
+        """
+        import numpy as np
+        from scipy.ndimage import median_filter
+
+        n = len(data)
+        if n < 3:
+            return data
+
+        # Filter only recent window (last 100 points or all if less)
+        window_size = 2 * strength + 1
+        return median_filter(data, size=window_size, mode='nearest')
+
+    def _apply_three_zone_filtering(self, data, time, strength: int, channel: str):
+        """Apply zone-specific filtering based on cursor positions.
+
+        Zone 1 (Historical): Before cycle start - downsampled + light filtering
+        Zone 2 (Cycle): Between cursors - high-quality filtering (frozen)
+        Zone 3 (Live): After cycle end - light filtering for recent data
+        """
+        import numpy as np
+
+        # Get cursor positions
+        try:
+            start_time = self.main_window.full_timeline_graph.start_cursor.value()
+            stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
+        except (AttributeError, RuntimeError):
+            # Cursors not ready - fallback to normal filtering
+            return self._apply_smoothing(data, strength, channel)
+
+        # Create zone masks
+        zone1_mask = time < start_time  # Historical
+        zone2_mask = (time >= start_time) & (time <= stop_time)  # Cycle
+        zone3_mask = time > stop_time  # Live
+
+        # Copy input data
+        result = np.copy(data)
+
+        # Zone 1: Historical (cached for performance)
+        if np.any(zone1_mask):
+            # Check if cache is valid
+            cache_key = f"{channel}_{start_time}"
+            if cache_key in self._cached_zone1_filtered:
+                # Use cached result (fast path)
+                cached_filtered = self._cached_zone1_filtered[cache_key]
+                # Ensure cache matches current data size
+                if len(cached_filtered) == np.sum(zone1_mask):
+                    result[zone1_mask] = cached_filtered
+                else:
+                    # Cache size mismatch - recompute
+                    zone1_filtered = self._filter_zone1_historical(data[zone1_mask], strength)
+                    result[zone1_mask] = zone1_filtered
+                    self._cached_zone1_filtered[cache_key] = zone1_filtered
+            else:
+                # Compute and cache
+                zone1_filtered = self._filter_zone1_historical(data[zone1_mask], strength)
+                result[zone1_mask] = zone1_filtered
+                self._cached_zone1_filtered[cache_key] = zone1_filtered
+
+        # Zone 2: Cycle of Interest (high-quality)
+        if np.any(zone2_mask):
+            zone2_filtered = self._filter_zone2_cycle(data[zone2_mask], strength, channel)
+            result[zone2_mask] = zone2_filtered
+
+        # Zone 3: Live (light filtering)
+        if np.any(zone3_mask):
+            zone3_filtered = self._filter_zone3_live(data[zone3_mask], strength)
+            result[zone3_mask] = zone3_filtered
+
+        return result
 
     def _apply_smoothing(self, data, strength: int, channel: str = None, method: str = None):
         """Apply smoothing filter to data (median or Kalman).
@@ -2926,7 +3110,13 @@ class Application(QApplication):
             # Apply smoothing if enabled
             display_data = wavelength_data
             if self._filter_enabled:
-                display_data = self._apply_smoothing(wavelength_data, self._filter_strength, ch_letter)
+                # Use three-zone filtering for timeline
+                display_data = self._apply_three_zone_filtering(
+                    wavelength_data,
+                    time_data,
+                    self._filter_strength,
+                    ch_letter
+                )
 
             # Update curve
             curve = self.main_window.full_timeline_graph.curves[ch_idx]
@@ -3284,14 +3474,15 @@ class Application(QApplication):
                     self.data_mgr.set_led_delays(pre_led_delay, post_led_delay)
                     logger.info(f"Applied LED delays: PRE={pre_led_delay}ms, POST={post_led_delay}ms")
 
-                # Save servo positions and LED intensities to device config file
+                # Save servo positions, LED intensities, and LED timing delays to device config file
                 # The device config file is provided by OEM with factory positions
                 if self.main_window.device_config:
                     logger.info("💾 Saving settings to device config file...")
                     self.main_window.device_config.set_servo_positions(s_pos, p_pos)
                     self.main_window.device_config.set_led_intensities(led_a, led_b, led_c, led_d)
+                    self.main_window.device_config.set_pre_post_led_delays(pre_led_delay, post_led_delay)
                     self.main_window.device_config.save()
-                    logger.info("✅ Settings saved to device config file")
+                    logger.info("✅ Settings saved to device config file (including LED timing delays)")
                 else:
                     logger.warning("⚠️ Device config not available - settings not saved")
 
@@ -3399,7 +3590,7 @@ class Application(QApplication):
 
     def _on_simple_led_calibration(self):
         """Start simple LED intensity calibration.
-        
+
         Identical to OEM calibration - measures both S-pol and P-pol reference spectra.
         The term 'simple' is historical; functionality is the same as full calibration.
         """
@@ -3421,7 +3612,7 @@ class Application(QApplication):
 
     def _on_full_calibration(self):
         """Start full calibration.
-        
+
         Identical to simple/OEM calibration - measures both S-pol and P-pol reference spectra.
         All calibration types now use the same unified workflow.
         """

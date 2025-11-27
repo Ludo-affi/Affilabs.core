@@ -82,11 +82,11 @@ def create_mock_spectrum(wavelength_nm):
 
 def test_pipeline(pipeline_name, pipeline_class, wavelength_data, config=None, batch_size=20, window_length=11, polyorder=2):
     """Test a single pipeline on the baseline data with BATCH POST-PROCESSING
-    
+
     Fair comparison: All pipelines get the same batch smoothing treatment
     1. Process individual points through the pipeline
     2. Apply Savitzky-Golay smoothing to the resulting wavelength time series
-    
+
     Args:
         pipeline_name: Name of the pipeline
         pipeline_class: Pipeline class to instantiate
@@ -174,7 +174,7 @@ def test_pipeline(pipeline_name, pipeline_class, wavelength_data, config=None, b
 
 def test_batch_savgol_pipeline(wavelength_data, batch_size=20):
     """Test Batch Savitzky-Golay - uses batching INTERNALLY in the pipeline
-    
+
     This is different from other pipelines - it buffers raw wavelengths
     and applies smoothing before returning them.
     """
@@ -256,7 +256,7 @@ def main():
     # Batch smoothing parameters (applied to ALL pipelines for fair comparison)
     WINDOW_LENGTH = 11  # ~275ms at 40Hz
     POLYORDER = 2
-    
+
     print(f"\n📦 BATCH POST-PROCESSING (Applied to ALL Pipelines):")
     print(f"   Savitzky-Golay window: {WINDOW_LENGTH} points")
     print(f"   Polynomial order: {POLYORDER}")

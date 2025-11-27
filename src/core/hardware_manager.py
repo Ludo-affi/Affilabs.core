@@ -512,6 +512,50 @@ class HardwareManager(QObject):
             if pico_p4spr.open():
                 logger.info(f"Controller connected: {pico_p4spr.name}")
                 self.ctrl = pico_p4spr
+
+                # Check and update firmware if needed
+                try:
+                    from utils.firmware_updater import PicoFirmwareUpdater
+                    from utils.device_integration import update_firmware_version
+                    updater = PicoFirmwareUpdater(pico_p4spr._ser.port)
+
+                    # Get current version
+                    current_version = updater.get_current_version(pico_p4spr._ser)
+                    if current_version and updater.needs_update(current_version):
+                        logger.warning(f"Firmware needs update: {current_version} -> {updater.EXPECTED_VERSION}")
+
+                        # Close current connection before update
+                        pico_p4spr.close()
+
+                        # Perform automatic update
+                        logger.info("Starting automatic firmware update...")
+                        if updater.update_firmware():
+                            logger.info("✅ Firmware updated successfully - reconnecting...")
+                            # Reconnect after update
+                            pico_p4spr = PicoP4SPR()
+                            if pico_p4spr.open():
+                                self.ctrl = pico_p4spr
+                                logger.info(f"Controller reconnected with updated firmware")
+                                # Save updated firmware version to device config
+                                new_version = updater.get_current_version(pico_p4spr._ser)
+                                if new_version:
+                                    update_firmware_version(new_version)
+                            else:
+                                logger.error("Failed to reconnect after firmware update")
+                                self.ctrl = None
+                        else:
+                            logger.error("❌ Firmware update failed - continuing with old version")
+                            # Try to reconnect with old firmware
+                            pico_p4spr = PicoP4SPR()
+                            if pico_p4spr.open():
+                                self.ctrl = pico_p4spr
+                    elif current_version:
+                        logger.info(f"Firmware version OK: {current_version}")
+                        # Save current firmware version to device config
+                        update_firmware_version(current_version)
+                except Exception as e:
+                    logger.warning(f"Firmware check failed (continuing anyway): {e}")
+
                 return  # Found controller - stop searching
 
             # Priority 2: Try PicoEZSPR (P4PRO hardware)

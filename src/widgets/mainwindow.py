@@ -309,6 +309,29 @@ class MainWindow(QMainWindow):
         self.pause_btn.hide()
         nav_layout.addWidget(self.pause_btn)
 
+        # Emergency Stop button
+        self.emergency_stop_btn = QPushButton("⏹")
+        self.emergency_stop_btn.setFixedSize(40, 40)
+        self.emergency_stop_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(220, 38, 38, 0.1);"
+            "  color: #DC2626;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  font-size: 20px;"
+            "  font-weight: bold;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(220, 38, 38, 0.2);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(220, 38, 38, 0.3);"
+            "}"
+        )
+        self.emergency_stop_btn.setToolTip("Emergency Stop - Immediately turn off all LEDs")
+        self.emergency_stop_btn.clicked.connect(self._emergency_stop)
+        nav_layout.addWidget(self.emergency_stop_btn)
+
         # Power button
         self.power_btn = QPushButton("⏻")
         self.power_btn.setCheckable(True)
@@ -812,6 +835,31 @@ class MainWindow(QMainWindow):
         # Device is connected - gracefully exit the application
         if show_message(msg_type="Warning", msg="Exit application?", yes_no=True):
             self.close()  # This will trigger closeEvent which handles shutdown
+
+    def _emergency_stop(self):
+        """Emergency stop - immediately turn off all LEDs."""
+        try:
+            from utils.logger import logger
+
+            # Get controller from hardware manager
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                ctrl = self.hardware_mgr.ctrl
+                if ctrl and hasattr(ctrl, 'emergency_shutdown'):
+                    if ctrl.emergency_shutdown():
+                        logger.info("✅ Emergency stop executed - all LEDs off")
+                        show_message(msg_type="Success", msg="Emergency stop executed!\nAll LEDs turned off.")
+                    else:
+                        logger.error("❌ Emergency stop failed")
+                        show_message(msg_type="Error", msg="Emergency stop command failed.")
+                else:
+                    logger.warning("Controller doesn't support emergency shutdown (needs V1.1+ firmware)")
+                    show_message(msg_type="Warning", msg="Emergency shutdown not available.\nController needs V1.1+ firmware.")
+            else:
+                show_message(msg_type="Warning", msg="No hardware connected.")
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"Emergency stop error: {e}")
+            show_message(msg_type="Error", msg=f"Emergency stop error: {e}")
 
     def set_recording(self, state):
         """Update recording status indicator."""

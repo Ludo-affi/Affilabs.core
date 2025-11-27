@@ -180,7 +180,7 @@ P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 64000  # DEPRECATED: Use profile.max_intensity_counts (62,000 for Flame-T)
 P_COUNT_THRESHOLD = 3000  # minimum p-polarized count for successful calibration (adjusted for real hardware sensitivity)
 MIN_INTEGRATION = 5  # DEPRECATED: Use profile.min_integration_time_ms
-MAX_INTEGRATION = 100  # DEPRECATED: Use profile.max_integration_time_ms (200 ms for Flame-T!)
+MAX_INTEGRATION = 70  # DEPRECATED: Use profile.max_integration_time_ms (70ms for 3-scan budget)
 
 # Percentage-based calibration (NEW APPROACH - Development Mode)
 DEVELOPMENT_MODE = True  # When True, skip validation thresholds to allow testing/fixing
@@ -192,21 +192,34 @@ MAX_INTENSITY_PERCENT = 70  # % - maximum acceptable intensity during calibratio
 DETECTOR_MAX_COUNTS = 65535  # Maximum detector counts (16-bit ADC)
 
 # ============================================================================
-# STEP 4: INTEGRATION TIME OPTIMIZATION (TRUE ORIGINAL - SINGLE CONSTRAINT)
+# STEP 4: INTEGRATION TIME OPTIMIZATION (CONSTRAINED DUAL OPTIMIZATION)
 # ============================================================================
-# TRUE ORIGINAL CALIBRATION SEQUENCE:
-# Step 3: Find weakest LED → Set to 255
-# Step 4: Find integration time where weakest @ 255 reaches 50-75% detector max
+# OPTIMIZED CALIBRATION SEQUENCE:
+# Step 3: Find weakest LED → Rank all LEDs by brightness
+# Step 4: Constrained dual optimization:
+#   PRIMARY GOAL: Maximize weakest LED signal (60-80% @ LED=255)
+#   CONSTRAINT 1: Strongest LED must not saturate (<95% @ predicted LED)
+#   CONSTRAINT 2: Integration time ≤ 70ms (allows 3 scans: 70ms × 3 = 210ms budget)
 # Step 5: Re-measure dark noise
-# Step 6: Calibrate other LEDs (REDUCE intensity to match weakest, keep integration FIXED)
+# Step 6: Apply LED calibration from Step 4 validation
 #
-# This is SEQUENTIAL, not dual-optimization:
-# - Step 4: ONLY optimize integration time for weakest LED
-# - Step 6: ONLY optimize LED intensities for other channels
+# TIMING BUDGET CONSTRAINTS:
+# - Target: ~1Hz per channel (4 channels = ~1.2Hz system rate)
+# - Per-channel budget: 210ms (integration + readout + processing)
+# - Max integration: 70ms per scan (allows 3 scans minimum)
+# - Total cycle: 4 channels × 210ms = 840ms ≈ 1.19Hz
 #
-WEAKEST_TARGET_PERCENT = 75  # % - target for weakest LED at LED=255 (50,000 counts for 65535 max)
-WEAKEST_MIN_PERCENT = 50  # % - minimum acceptable for weakest LED (~32,768 counts)
-WEAKEST_MAX_PERCENT = 80  # % - maximum acceptable for weakest LED (~52,428 counts)
+# SIGNAL TARGETS (with P-mode headroom):
+WEAKEST_TARGET_PERCENT = 70  # % - target for weakest LED at LED=255 (ideal: ~45,900 counts)
+WEAKEST_MIN_PERCENT = 60  # % - minimum acceptable (realistic: ~39,321 counts)
+WEAKEST_MAX_PERCENT = 80  # % - maximum (leaves headroom: ~52,428 counts)
+STRONGEST_MAX_PERCENT = 95  # % - strongest LED must stay below this (prevent saturation)
+STRONGEST_MIN_LED = 25  # Minimum LED intensity for strongest channel (ensures some headroom)
+
+# ACCEPTANCE CRITERIA:
+# - Weakest LED ≥ 60% is acceptable (even if others are at 80%)
+# - Don't over-optimize if marginal gains
+# - Prioritize leaving LED headroom for P-mode boost
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment

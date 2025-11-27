@@ -65,7 +65,7 @@ There are TWO modes, controlled by settings.USE_ALTERNATIVE_CALIBRATION:
 
 MODE 1: STANDARD (Global Integration Time) - DEFAULT [USE_ALTERNATIVE_CALIBRATION = False]
 --------------------------------------------------------------------------------------------
-Philosophy: ONE integration time, VARIABLE LED intensities per channel
+Philosophy: ONE global integration time, VARIABLE LED intensities per channel
 
 Calibration Process:
   - Step 1: Find single optimal integration time (works for all channels)
@@ -78,22 +78,23 @@ Recorded in device_config.json:
   - p_mode_intensities: {'a': 238, 'b': 255, 'c': 245, 'd': 229} (VARIABLE per channel)
 
 Best for: Circular polarizers where LED intensity affects polarization coupling
-Timing: ~200ms/channel (integration + 50ms hardware overhead) ≈ 1Hz per channel
+Timing: ~210ms/channel (integration + 50ms hardware overhead) ≈ 1Hz per channel
 
-MODE 2: ALTERNATIVE (Global LED Intensity) - EXPERIMENTAL [USE_ALTERNATIVE_CALIBRATION = True]
+MODE 2: ALTERNATIVE (Fixed LED, Per-Channel Integration) - EXPERIMENTAL [USE_ALTERNATIVE_CALIBRATION = True]
 ------------------------------------------------------------------------------------------------
-Philosophy: FIXED LED intensity (255), VARIABLE integration time per channel
+Philosophy: FIXED LED intensity (255), Per-channel integration calibration → MAX used as global
 
 Calibration Process:
   - Step 1: Set ALL LEDs to maximum (255) for consistency and max SNR
-  - Step 2: Optimize integration time PER CHANNEL to reach target signal
-  - Result: All channels use SAME LED intensity (255), but DIFFERENT integration times
+  - Step 2: Calibrate integration time PER CHANNEL (3ms→70ms sweep) to reach target signal
+  - Step 3: Take MAX integration time across all channels as global value
+  - Result: All channels use SAME LED (255), SAME global integration (max), but calibrated per-channel
 
 Recorded in device_config.json:
-  - integration_time_ms: 120 (stores MAX integration time across all channels)
+  - integration_time_ms: 120 (MAX integration time across all channels - used globally)
   - s_mode_intensities: {'a': 255, 'b': 255, 'c': 255, 'd': 255} (FIXED - all same)
   - p_mode_intensities: {'a': 255, 'b': 255, 'c': 255, 'd': 255} (FIXED - all same)
-  - per_channel_integration_times: {'a': 85, 'b': 95, 'c': 120, 'd': 110} (VARIABLE per channel)
+  - per_channel_integration_times: {'a': 85, 'b': 95, 'c': 120, 'd': 110} (diagnostic only - not used)
 
 Benefits: Better frequency, excellent SNR, LED consistency at max current
 Trade-offs: Variable integration per channel, requires per-channel timing during acquisition
@@ -112,12 +113,12 @@ STANDARD Method (Global Integration Time) - DEFAULT:
   - Used for circular polarizers where LED intensity affects polarization
   - Steps: wavelength → global integration → S-mode LED/channel → dark → S-ref → S-QC → P-mode LED/channel → P-QC
   - S-mode LED analysis predicts P-mode boost potential (headroom intelligence for LED-polarization coupling)
-  - Timing budget: 200ms/channel (integration + 50ms hardware overhead) ≈ 1Hz per channel
+  - Timing budget: 210ms/channel (integration + 50ms hardware overhead) ≈ 1Hz per channel
 
-ALTERNATIVE Method (Global LED Intensity) - EXPERIMENTAL (Disabled by default):
+ALTERNATIVE Method (Fixed LED, Per-Channel Integration) - EXPERIMENTAL (Disabled by default):
   - All LEDs fixed at maximum intensity (255) for both S-mode and P-mode
-  - S-mode: Variable integration time per channel to reach target signal
-  - P-mode: Same LEDs (255), same integration time, but uses 1 scan per spectrum
+  - S-mode: Per-channel integration calibration → MAX used as global integration time
+  - P-mode: Same LEDs (255), same global integration time, uses 1 scan per spectrum
   - Benefits: Better frequency, excellent SNR, more LED consistency at max current
   - Steps: wavelength → S-mode integration/channel (LEDs at 255) → dark → S-ref → S-QC → P-mode (same config) → P-QC
   - Trade-offs: Variable integration per channel in S-mode, P-mode inherits S-mode timing
@@ -220,12 +221,12 @@ MEDIUM_ADJUST_STEP = 5   # Medium refinement
 FINE_ADJUST_STEP = 1     # Final precision adjustment
 
 # Integration time threshold for scan count adjustment
-INTEGRATION_THRESHOLD_MS = 50  # Below this, use full scan count; above, use half
+INTEGRATION_THRESHOLD_MS = 70  # Below this, use full scan count; above, use half
 
-# System timing budget constraints (for ~1Hz per channel acquisition)
-# 4 channels × 200ms budget = 800ms total cycle time ≈ 1.25Hz system rate
-TARGET_CHANNEL_BUDGET_MS = 200  # Total time budget per channel (integration + overhead)
-MAX_INTEGRATION_BUDGET_MS = 100  # Maximum integration time (leave 100ms for readout/processing)
+# System timing budget constraints (optimized for integration time with 3 scans minimum)
+# 4 channels × 210ms budget = 840ms total cycle time ≈ 1.19Hz system rate
+TARGET_CHANNEL_BUDGET_MS = 210  # Total time budget per channel (integration + overhead)
+MAX_INTEGRATION_BUDGET_MS = 70  # Maximum integration time per scan (allows 3 scans: 70ms × 3 = 210ms)
 SYSTEM_ACQUISITION_TARGET_HZ = 1.0  # Target acquisition frequency per channel
 
 # Hardware acquisition overhead (decoupled from processing time shown on graph)
@@ -325,8 +326,8 @@ def calculate_scan_counts(integration_time_ms: int) -> ScanConfig:
     """Calculate scan counts based on integration time.
 
     Centralized scan count logic - single source of truth.
-    Below 50ms: use full scan counts for better averaging
-    Above 50ms: use half scan counts to keep total acquisition time reasonable
+    Below 70ms: use full scan counts for better averaging
+    Above 70ms: use half scan counts to keep total acquisition time reasonable
 
     Args:
         integration_time_ms: Integration time in milliseconds
@@ -340,10 +341,13 @@ def calculate_scan_counts(integration_time_ms: int) -> ScanConfig:
         ref_scans = REF_SCANS
         num_scans = min(int(MAX_READ_TIME / integration_time_ms), MAX_NUM_SCANS)
     else:
-        # Long integration: reduce scan counts to keep acquisition time reasonable
+        # Long integration: reduce scan counts but ensure minimum of 3 scans
         dark_scans = int(DARK_NOISE_SCANS / 2)
         ref_scans = int(REF_SCANS / 2)
         num_scans = min(int(MAX_READ_TIME / integration_time_ms), MAX_NUM_SCANS)
+
+    # Ensure minimum of 3 scans per spectrum for adequate averaging
+    num_scans = max(3, num_scans)
 
     logger.debug(f"Scan counts for {integration_time_ms}ms integration: dark={dark_scans}, ref={ref_scans}, live={num_scans}")
 
@@ -354,7 +358,7 @@ def calculate_scan_counts(integration_time_ms: int) -> ScanConfig:
     )
 
 
-def switch_mode_safely(ctrl: ControllerBase, mode: str, turn_off_leds: bool = True) -> None:
+def switch_mode_safely(ctrl: ControllerBase, mode: str, turn_off_leds: bool = True, verify: bool = True) -> None:
     """Switch polarizer mode with proper settling and optional LED cleanup.
 
     Centralized mode switching logic - consistent timing and behavior.
@@ -363,12 +367,21 @@ def switch_mode_safely(ctrl: ControllerBase, mode: str, turn_off_leds: bool = Tr
         ctrl: Controller instance
         mode: Target mode ('s' or 'p')
         turn_off_leds: If True, turn off LEDs and wait for afterglow decay
+        verify: If True, verify hardware state after mode switch
     """
     logger.debug(f"🔄 switch_mode_safely called: mode={mode.upper()}, turn_off_leds={turn_off_leds}, controller={type(ctrl).__name__}")
 
     if turn_off_leds:
         logger.debug(f"   Turning off all channels...")
         ctrl.turn_off_channels()
+
+        # Verify LEDs are off (V1.1 firmware)
+        if verify:
+            verify_hardware_state(
+                ctrl,
+                expected_leds={'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            )
+
         logger.debug(f"   Channels off, waiting {LED_DELAY * 3:.2f}s for afterglow decay...")
         time.sleep(LED_DELAY * 3)  # Extra delay for afterglow decay (~60ms total)
 
@@ -380,7 +393,88 @@ def switch_mode_safely(ctrl: ControllerBase, mode: str, turn_off_leds: bool = Tr
     logger.debug(f"   Mode set, waiting {delay}s for settling...")
     time.sleep(delay)
 
+    # Query servo position after mode switch (diagnostic)
+    if verify:
+        verify_hardware_state(
+            ctrl,
+            expected_mode=mode,
+            check_servo=True
+        )
+
     logger.debug(f"✅ Mode switch complete: {mode.upper()}-mode active (delay: {delay}s, LEDs off: {turn_off_leds})")
+
+
+def verify_hardware_state(
+    ctrl: ControllerBase,
+    expected_leds: dict = None,
+    expected_mode: str = None,
+    check_servo: bool = False,
+    tolerance: int = 5
+) -> bool:
+    """Verify hardware is in expected state before measurement.
+
+    This is CRITICAL during calibration where we move hardware frequently.
+    Ensures LEDs, servo positions match what we think we commanded.
+
+    Args:
+        ctrl: Controller instance
+        expected_leds: Dict of channel->intensity (e.g., {'a': 200, 'b': 0, 'c': 0, 'd': 0})
+                       Use {'a': 0, 'b': 0, 'c': 0, 'd': 0} to verify all off
+        expected_mode: Expected polarizer mode ('s' or 'p')
+        check_servo: If True, query servo positions (for diagnostic - no validation yet)
+        tolerance: Acceptable LED intensity deviation (default 5)
+
+    Returns:
+        bool: True if hardware state matches expectations, False otherwise
+    """
+    try:
+        all_verified = True
+
+        # Verify LED intensities (V1.1 firmware)
+        if expected_leds is not None:
+            if hasattr(ctrl, 'get_all_led_intensities'):
+                actual_leds = ctrl.get_all_led_intensities()
+
+                if actual_leds is None:
+                    logger.debug("LED query returned None (V1.0 firmware or query failed) - skipping verification")
+                    # Don't fail - gracefully skip verification for V1.0 firmware
+                else:
+                    for ch, expected_val in expected_leds.items():
+                        actual_val = actual_leds.get(ch, -1)
+                        deviation = abs(actual_val - expected_val)
+
+                        if deviation > tolerance:
+                            logger.error(
+                                f"❌ LED verification FAILED: Channel {ch.upper()} "
+                                f"expected={expected_val}, actual={actual_val}, deviation={deviation}"
+                            )
+                            all_verified = False
+                        else:
+                            logger.debug(
+                                f"✅ LED {ch.upper()} verified: {actual_val} "
+                                f"(expected {expected_val}, deviation {deviation})"
+                            )
+            else:
+                logger.debug("LED query not available (V1.0 firmware) - skipping LED verification")
+
+        # Query servo positions (diagnostic - for now just log, no validation)
+        if check_servo:
+            if hasattr(ctrl, 'servo_get'):
+                servo_pos = ctrl.servo_get()
+                logger.debug(f"📍 Servo positions: S={servo_pos.get('s', 'unknown')}, P={servo_pos.get('p', 'unknown')}")
+            else:
+                logger.debug("Servo query not available")
+
+        # Mode verification would require firmware support (not currently available)
+        # Just log what we expect
+        if expected_mode is not None:
+            logger.debug(f"📍 Expected polarizer mode: {expected_mode.upper()}-mode")
+
+        return all_verified
+
+    except Exception as e:
+        logger.error(f"Hardware verification error: {e}")
+        return False
 
 
 def get_calibration_expectations(polarizer_type: str) -> dict[str, any]:
@@ -515,19 +609,31 @@ class LEDCalibrationResult:
     def __init__(self):
         """Initialize calibration result."""
         self.success = False
-        self.integration_time = MIN_INTEGRATION
+        self.s_integration_time = MIN_INTEGRATION  # S-mode integration time (Step 4)
         self.num_scans = 1
         self.ref_intensity = {}  # S-mode LED intensities
         self.leds_calibrated = {}  # P-mode LED intensities
         self.dark_noise = None
         self.ref_sig = {}
         self.wave_data = None
+        self.wavelengths = None  # Alias for wave_data (GitHub compatibility)
+        self.full_wavelengths = None  # Full detector wavelength array (before SPR filtering)
         self.wave_min_index = 0
         self.wave_max_index = 0
+        self.detector_max_counts = 65535  # Detector maximum counts (detector-specific)
+        self.detector_saturation_threshold = 58900  # Detector saturation threshold (detector-specific)
         self.ch_error_list = []
         self.fourier_weights = None
         self.s_ref_qc_results = {}  # QC validation results for each channel
         self.spr_fwhm = {}  # SPR dip FWHM for each channel (sensor quality indicator)
+        self.is_calibrated = False  # Overall calibration status
+
+        # P-mode verification results (populated by verify_calibration)
+        self.orientation_validation = {}  # {ch: {'p_s_ratio': float, 'expected_range': tuple, 'status': str}}
+        self.transmission_validation = {}  # {ch: {'fwhm': float, 'dip_depth': float, 'status': str}}
+        self.p_ref_sig = {}  # P-mode reference spectra (measured during verification)
+        self.p_mode_intensity = {}  # P-mode LED intensities (optimized in Step 5)
+        self.p_integration_time = MIN_INTEGRATION  # P-mode integration time (Step 5, may be up to +10% of S-mode)
 
         # Per-channel performance metrics (for ML system intelligence)
         self.channel_performance = {}  # {ch: {'max_counts', 'utilization_pct', 'snr_estimate', 'optical_limit'}}
@@ -536,7 +642,16 @@ class LEDCalibrationResult:
         # LED headroom analysis (computed once after S-mode, reused in P-mode)
         self.headroom_analysis = {}  # {ch: ChannelHeadroomAnalysis}
 
-        # Alternative method specific (Global LED Intensity method)
+        # Step 3: LED brightness ranking (weakest → strongest)
+        self.led_ranking = []  # [(channel, (mean, max, saturated)), ...] sorted by brightness
+        self.weakest_channel = None  # Weakest channel ID (str) - will be fixed at LED=255
+
+        # Polarizer positions (loaded at initialization via fail-fast)
+        self.polarizer_s_position = None  # S-mode servo position (0-255)
+        self.polarizer_p_position = None  # P-mode servo position (0-255)
+        self.polarizer_sp_ratio = None    # S/P transmission ratio (optional)
+
+        # Alternative method specific (Fixed LED, Per-Channel Integration method)
         self.per_channel_integration = {}  # {ch: integration_time_ms} - for variable integration per channel
         self.per_channel_dark_noise = {}   # {ch: dark_noise_array} - dark noise at each channel's integration time
         self.calibration_method = "standard"  # "standard" or "alternative"
@@ -561,13 +676,13 @@ def calibrate_integration_time(
 
     SYSTEM TIMING CONSTRAINTS:
     - Target: ~1Hz acquisition frequency per channel (for 4 channels)
-    - Per-channel budget: 200ms (integration + readout + processing)
-    - Max integration time: 100ms (leaves 100ms for overhead)
-    - Total cycle time: 4 channels × 200ms = 800ms ≈ 1.25Hz system rate
+    - Per-channel budget: 210ms (integration + readout + processing)
+    - Max integration time: 70ms per scan (allows 3 scans minimum)
+    - Total cycle time: 4 channels × 210ms = 840ms ≈ 1.19Hz system rate
 
     This function balances signal strength with timing requirements:
-    - If optimal integration > 100ms → CONSTRAIN to 100ms, will need higher LED intensity
-    - If optimal integration < 100ms → USE optimal value, LED has more headroom for P-mode
+    - If optimal integration > 70ms → CONSTRAIN to 70ms, will need higher LED intensity
+    - If optimal integration < 70ms → USE optimal value, LED has more headroom for P-mode
 
     Args:
         usb: Spectrometer instance
@@ -982,6 +1097,12 @@ def calibrate_led_channel(
         ctrl.set_intensity(ch=ch, raw_val=intensity)
         time.sleep(pre_led_delay_ms / 1000.0)
 
+        # Verify LED state during iteration (every 5th iteration to avoid spam)
+        if coarse_iterations % 5 == 0:
+            expected_state = {ch_: 0 for ch_ in ['a', 'b', 'c', 'd']}
+            expected_state[ch] = intensity
+            verify_hardware_state(ctrl, expected_leds=expected_state)
+
         intensity_data = usb.read_intensity()
         if intensity_data is None:
             raise RuntimeError(f"Spectrometer read failed during coarse adjustment")
@@ -1383,6 +1504,9 @@ def measure_dark_noise(
 ) -> np.ndarray:
     """Measure dark noise with all LEDs off.
 
+    CRITICAL: Uses V1.1 firmware LED query to VERIFY LEDs are off before measuring.
+    This prevents contaminated dark measurements if LEDs fail to turn off.
+
     Args:
         usb: Spectrometer instance
         ctrl: Controller instance
@@ -1397,7 +1521,60 @@ def measure_dark_noise(
     """
     logger.debug("Measuring dark noise...")
 
+    # Step 1: Turn off all LEDs
+    logger.debug("Turning off all LEDs for dark measurement...")
     ctrl.turn_off_channels()
+
+    # Step 2: VERIFY LEDs are off using V1.1 firmware query (CRITICAL!)
+    logger.debug("Verifying LEDs are off...")
+    max_retries = 5
+    led_verified = False
+    has_led_query = hasattr(ctrl, 'get_all_led_intensities')
+
+    if has_led_query:
+        for attempt in range(max_retries):
+            time.sleep(0.01)  # Wait 10ms for command to process
+
+            # Query LED state (V1.1 firmware feature)
+            led_state = ctrl.get_all_led_intensities()
+
+            if led_state is None:
+                logger.debug(f"LED query failed (attempt {attempt+1}/{max_retries}) - falling back to timing")
+                # Fall back to timing-based approach
+                has_led_query = False
+                break
+
+            # Check if all LEDs are off (0 intensity)
+            all_off = all(intensity == 0 for intensity in led_state.values())
+
+            if all_off:
+                logger.debug(f"✅ All LEDs confirmed OFF: {led_state}")
+                led_verified = True
+                break
+            else:
+                logger.warning(f"⚠️ LEDs still on (attempt {attempt+1}/{max_retries}): {led_state}")
+                # Retry turn-off command
+                ctrl.turn_off_channels()
+                time.sleep(0.05)  # Extra delay for stubborn LEDs
+
+        if not led_verified and has_led_query:
+            # Max retries exceeded - LEDs still not off
+            final_state = ctrl.get_all_led_intensities()
+            logger.error(f"❌ Failed to turn off LEDs after {max_retries} attempts")
+            logger.error(f"   Final LED state: {final_state}")
+            raise RuntimeError(
+                f"Cannot measure dark noise - LEDs failed to turn off. "
+                f"Current state: {final_state}. Check hardware connections."
+            )
+
+    if not has_led_query:
+        # V1.0 firmware or LED query unavailable - use timing-based approach
+        logger.debug("LED query not available - using timing-based verification")
+        time.sleep(0.05)  # Extra settling time for V1.0 firmware
+        led_verified = True
+
+    # Step 3: Additional delay for LED physical decay
+    logger.debug(f"Waiting {pre_led_delay_ms}ms for complete LED decay...")
     time.sleep(pre_led_delay_ms / 1000.0)
 
     # Use provided scan count or calculate based on integration time
@@ -1409,6 +1586,8 @@ def measure_dark_noise(
     else:
         dark_scans = num_scans
 
+    # Step 4: Measure dark (now safe!)
+    logger.debug(f"Measuring dark noise ({dark_scans} scans at {integration}ms integration)...")
     dark_noise_sum = np.zeros(wave_max_index - wave_min_index)
 
     for _scan in range(dark_scans):
@@ -1424,7 +1603,41 @@ def measure_dark_noise(
         dark_noise_sum += dark_noise_single
 
     dark_noise = dark_noise_sum / dark_scans
-    logger.debug(f"✅ Dark noise measured: max counts = {max(dark_noise):.0f}")
+
+    # Step 5: Validate dark noise is reasonable
+    max_dark = np.max(dark_noise)
+    mean_dark = np.mean(dark_noise)
+    min_dark = np.min(dark_noise)
+    logger.debug(f"✅ Dark noise measured: max = {max_dark:.0f}, mean = {mean_dark:.0f}, min = {min_dark:.0f} counts")
+
+    # Detector-agnostic validation: Check for anomalies, not absolute values
+    # Different detectors have different dark baselines (e.g., Ocean Optics ~3000, Phase Photonics different)
+    #
+    # What we're checking:
+    # 1. Spatial uniformity: max/min ratio should be reasonable (not huge spikes)
+    # 2. If we see 2-3x the typical detector range, LEDs are likely contaminating
+    #
+    # Use dynamic range as indicator:
+    dark_range = max_dark - min_dark
+    dark_ratio = max_dark / max(mean_dark, 1)  # Avoid division by zero
+
+    # If max is >2x mean, we likely have LED contamination or saturation
+    if dark_ratio > 2.0:
+        logger.error(
+            f"❌ CRITICAL: Dark noise has anomalous peaks (max={max_dark:.0f}, mean={mean_dark:.0f}, ratio={dark_ratio:.2f}). "
+            f"Expected ratio < 2.0. LEDs may be on or detector saturated!"
+        )
+        raise RuntimeError(
+            f"Dark noise measurement failed: max/mean ratio {dark_ratio:.2f} (expected < 2.0). "
+            f"LEDs may not be turning off correctly or detector issue. Check hardware."
+        )
+    elif dark_ratio > 1.5:
+        logger.warning(
+            f"⚠️ WARNING: Dark noise variability elevated (max/mean ratio={dark_ratio:.2f}). "
+            f"Expected < 1.5. Monitor for LED or detector issues."
+        )
+
+    logger.debug(f"   Dark uniformity check: ratio={dark_ratio:.2f}, range={dark_range:.0f} counts")
 
     return dark_noise
 
@@ -1477,6 +1690,11 @@ def measure_reference_signals(
     logger.debug(f"   LED intensities: {ref_intensity}")
     logger.debug(f"   Integration time: {integration}ms")
 
+    # Set integration time on spectrometer BEFORE measuring
+    logger.debug(f"   Setting spectrometer integration time to {integration}ms...")
+    usb.set_integration(integration)
+    logger.debug(f"   ✅ Integration time set")
+
     if not preserve_mode:
         logger.debug("   Switching to S-mode...")
         switch_mode_safely(ctrl, "s", turn_off_leds=False)  # Use centralized mode switching
@@ -1505,8 +1723,17 @@ def measure_reference_signals(
         logger.info(f"   Measuring channel {ch.upper()}...")
         logger.debug(f"      Setting LED {ch.upper()} to intensity {ref_intensity[ch]}/255...")
         ctrl.set_intensity(ch=ch, raw_val=ref_intensity[ch])
-        logger.debug(f"      LED command sent, waiting {LED_DELAY}s...")
+        logger.debug(f"      LED command sent, waiting {pre_led_delay_ms}ms...")
         time.sleep(pre_led_delay_ms / 1000.0)
+
+        # VERIFY hardware state before measurement (V1.1 firmware)
+        expected_state = {ch_: 0 for ch_ in ['a', 'b', 'c', 'd']}
+        expected_state[ch] = ref_intensity[ch]
+        verify_hardware_state(
+            ctrl,
+            expected_leds=expected_state,
+            expected_mode='s' if not preserve_mode else None
+        )
 
         ref_data_sum = np.zeros_like(dark_noise)
 
@@ -2013,7 +2240,7 @@ def perform_full_led_calibration(
 ) -> LEDCalibrationResult:
     """Perform complete LED calibration using STANDARD optical configuration.
 
-    OPTICAL SYSTEM MODE: STANDARD (Global Integration Time)
+    OPTICAL SYSTEM MODE: STANDARD (Global Integration Time, Variable LED)
     ========================================================
     This function implements MODE 1: ONE integration time, VARIABLE LED intensities
 
@@ -2810,7 +3037,7 @@ def perform_full_led_calibration(
 
 
 # =============================================================================
-# ALTERNATIVE CALIBRATION PATH - GLOBAL LED INTENSITY METHOD
+# ALTERNATIVE CALIBRATION PATH - FIXED LED (PER-CHANNEL INTEGRATION) METHOD
 # =============================================================================
 
 def calibrate_integration_per_channel(
@@ -2823,8 +3050,8 @@ def calibrate_integration_per_channel(
 ) -> tuple[int, int]:
     """Calibrate integration time for a single channel at fixed LED intensity.
 
-    Used in Global LED Intensity method where all LEDs are at max (255) and
-    integration time varies per channel to reach target signal.
+    Used in Fixed LED (Per-Channel Integration) method where all LEDs are at max (255).
+    Integration time calibrated per channel, then MAX used as global integration time.
 
     Args:
         usb: Spectrometer instance
@@ -2912,22 +3139,22 @@ def perform_alternative_calibration(
     pre_led_delay_ms: float = 45.0,  # PRE LED delay: settling time after LED on (default 45ms)
     post_led_delay_ms: float = 5.0,  # POST LED delay: dark time after LED off (default 5ms)
 ) -> LEDCalibrationResult:
-    """Perform LED calibration using ALTERNATIVE optical configuration (Global LED Intensity).
+    """Perform LED calibration using ALTERNATIVE optical configuration (Fixed LED, Per-Channel Integration).
 
-    OPTICAL SYSTEM MODE: ALTERNATIVE (Global LED Intensity)
+    OPTICAL SYSTEM MODE: ALTERNATIVE (Fixed LED, Per-Channel Integration)
     ========================================================
     This function implements MODE 2: FIXED LED intensity (255), VARIABLE integration time
 
     Recorded to device_config.json:
-      - integration_time_ms: 120 (MAX integration time across all channels)
+      - integration_time_ms: 120 (MAX integration time across all channels - used globally)
       - s_mode_intensities: {'a': 255, 'b': 255, 'c': 255, 'd': 255} (FIXED - all same)
       - p_mode_intensities: {'a': 255, 'b': 255, 'c': 255, 'd': 255} (FIXED - all same)
-      - per_channel_integration_times: {'a': 85, 'b': 95, 'c': 120, 'd': 110} (VARIABLE per channel)
+      - per_channel_integration_times: {'a': 85, 'b': 95, 'c': 120, 'd': 110} (diagnostic - shows per-channel calibration results)
 
-    Alternative Path: Global LED Intensity Method
-    =============================================
-    This method uses FIXED LED intensity (all at max = 255) and VARIABLE integration
-    time per channel. This approach typically provides:
+    Alternative Path: Fixed LED (Per-Channel Integration) Method
+    =============================================================
+    Calibrates integration time per channel (3ms→70ms sweep), then uses MAX globally.
+    All LEDs fixed at 255. This approach typically provides:
 
     Benefits:
     - Better frequency (faster acquisition with optimized integration per channel)
@@ -2965,7 +3192,7 @@ def perform_alternative_calibration(
     result = LEDCalibrationResult()
 
     try:
-        logger.info("=== Starting LED Calibration (Global LED Intensity Method) ===")
+        logger.info("=== Starting LED Calibration (Fixed LED, Per-Channel Integration Method) ===")
         logger.info("Method: Fixed LED intensity (255), variable integration time per channel")
 
         # Mark this as alternative method for downstream processing

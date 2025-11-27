@@ -775,6 +775,7 @@ class PicoP4SPR(StaticController):
         self._ser = None
         self.version = ''
         self._lock = threading.Lock()
+        self._channels_enabled = set()  # Track which LED channels have been enabled
 
     def open(self):
         # Close existing connection if any
@@ -784,6 +785,9 @@ class PicoP4SPR(StaticController):
             except:
                 pass
             self._ser = None
+
+        # Reset channel tracking on new connection
+        self._channels_enabled = set()
 
         # Try VID/PID match first (preferred method)
         logger.info(f"PicoP4SPR.open() - Looking for VID={hex(PICO_VID)} PID={hex(PICO_PID)}")
@@ -885,13 +889,28 @@ class PicoP4SPR(StaticController):
         try:
             if ch not in {'a', 'b', 'c', 'd'}:
                 raise ValueError("Invalid Channel!")
+
+            # Skip if already enabled (optimization)
+            if ch in self._channels_enabled:
+                logger.debug(f"LED {ch.upper()} already enabled - skipping command")
+                return True
+
             cmd = f"l{ch}\n"
             if self._ser is not None or self.open():
                 with self._lock:
+                    self._ser.reset_input_buffer()  # Clear any leftover data
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b'1'
+                    time.sleep(0.02)  # Wait for response
+                    response = self._ser.read(10)  # Read up to 10 bytes
+                    success = b'1' in response
+                    if success:
+                        self._channels_enabled.add(ch)
+                        logger.debug(f"✅ LED {ch.upper()} enabled via 'l{ch}' command")
+                    else:
+                        logger.warning(f"❌ LED {ch.upper()} enable failed - no '1' response (got: {response})")
+                    return success
         except Exception as e:
-            logger.debug(f"error turning off channels {e}")
+            logger.error(f"Error turning on channel {ch}: {e}")
             return False
 
     def get_temp(self):
@@ -911,15 +930,115 @@ class PicoP4SPR(StaticController):
             # Silently ignore temp read errors - not critical
         return temp
 
+    def get_led_intensity(self, ch='a'):
+        """Query current LED intensity from firmware (V1.1+).
+
+        Args:
+            ch: LED channel ('a', 'b', 'c', or 'd')
+
+        Returns:
+            int: Current intensity (0-255), or -1 on error
+        """
+        try:
+            if ch not in {'a', 'b', 'c', 'd'}:
+                logger.error(f"Invalid channel: {ch}")
+                return -1
+
+            if self._ser is not None or self.open():
+                with self._lock:
+                    cmd = f"i{ch}\n"
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.02)
+                    response = self._ser.readline().decode().strip()
+                    try:
+                        intensity = int(response)
+                        return intensity
+                    except ValueError:
+                        logger.error(f"Invalid intensity response: {response}")
+                        return -1
+        except Exception as e:
+            logger.debug(f"Error reading LED intensity: {e}")
+            return -1
+
+    def get_all_led_intensities(self):
+        """Query all LED intensities (V1.1+).
+
+        Returns:
+            dict: {'a': int, 'b': int, 'c': int, 'd': int} or None on error
+        """
+        intensities = {}
+        for ch in ['a', 'b', 'c', 'd']:
+            intensity = self.get_led_intensity(ch)
+            if intensity < 0:
+                return None
+            intensities[ch] = intensity
+        return intensities
+
+    def verify_led_state(self, expected: dict, tolerance: int = 5) -> bool:
+        """Verify LEDs are in expected state (V1.1+).
+
+        Args:
+            expected: Dictionary of channel->expected_intensity
+            tolerance: Acceptable deviation (default 5)
+
+        Returns:
+            bool: True if all LEDs within tolerance, False otherwise
+        """
+        try:
+            actual = self.get_all_led_intensities()
+            if actual is None:
+                return False
+
+            for ch, expected_val in expected.items():
+                actual_val = actual.get(ch, -1)
+                if abs(actual_val - expected_val) > tolerance:
+                    logger.warning(f"LED {ch.upper()} mismatch: expected={expected_val}, actual={actual_val}")
+                    return False
+            return True
+        except Exception as e:
+            logger.error(f"Error verifying LED state: {e}")
+            return False
+
+    def emergency_shutdown(self):
+        """Turn off all LEDs immediately (V1.1+).
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    cmd = "i0\n"
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.02)
+                    response = self._ser.read(10)
+                    success = b'1' in response
+                    if success:
+                        # Clear enabled channels tracking
+                        self._channels_enabled.clear()
+                        logger.info("Emergency shutdown executed - all LEDs off")
+                    return success
+        except Exception as e:
+            logger.error(f"Error during emergency shutdown: {e}")
+            return False
+
     def turn_off_channels(self):
         try:
             if self._ser is not None or self.open():
                 with self._lock:
                     cmd = f"lx\n"
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b'1'
+                    success = self._ser.read() == b'1'
+                    if success:
+                        self._channels_enabled.clear()
+                        logger.debug("✅ All LED channels turned OFF via 'lx' command")
+                    else:
+                        logger.warning("⚠️ Turn off channels command may have failed")
+                    return success
         except Exception as e:
-            logger.debug(f"error turning off channels {e}")
+            logger.error(f"Error turning off channels: {e}")
             return False
 
     def set_intensity(self, ch='a', raw_val=1):
@@ -949,12 +1068,20 @@ class PicoP4SPR(StaticController):
                     except Exception:
                         pass
 
+                    # CRITICAL: Enable channel FIRST, then set intensity
+                    # Firmware only applies PWM if channel is enabled (led_x_enabled=true)
+                    self.turn_on_channel(ch=ch)
+
                     with self._lock:
                         self._ser.write(cmd.encode())
                         time.sleep(0.05)  # device processing
                         ok = self._ser.read() == b'1'
-                    # Ensure LED channel is on (no-op if already on)
-                    self.turn_on_channel(ch=ch)
+
+                    if ok:
+                        logger.debug(f"✅ LED {ch.upper()} intensity set to {raw_val}")
+                    else:
+                        logger.warning(f"⚠️ LED {ch.upper()} intensity command may have failed")
+
                     return ok
                 except Exception as e:
                     if attempt < max_retries - 1:
@@ -969,11 +1096,10 @@ class PicoP4SPR(StaticController):
             return False
 
     def set_batch_intensities(self, a=0, b=0, c=0, d=0):
-        """Set all LED intensities in a single batch command.
+        """Set all LED intensities in a single batch command (V1.1+).
 
-        This method uses the Pico's batch command format to set all 4 LED
-        intensities simultaneously, providing ~15x speedup over sequential
-        individual commands.
+        V1.1 firmware properly handles channel enable/disable in the batch command,
+        making this much simpler and more reliable than sequential individual commands.
 
         Args:
             a: Intensity for LED A (0-255)
@@ -995,6 +1121,11 @@ class PicoP4SPR(StaticController):
             Sequential commands: ~12ms for 4 LEDs
             Batch command: ~0.8ms for 4 LEDs
             Speedup: 15x faster
+
+        Note:
+            V1.1 firmware handles channel on/off automatically:
+            - Non-zero intensity: Turns channel ON and sets intensity
+            - Zero intensity: Turns channel OFF (disables PWM)
         """
         try:
             # Clamp values to valid range (0-255)
@@ -1007,11 +1138,24 @@ class PicoP4SPR(StaticController):
             cmd = f"batch:{a},{b},{c},{d}\n"
 
             if self._ser is not None or self.open():
-                self._ser.write(cmd.encode())
-                time.sleep(0.02)  # Small delay for processing
-                # Batch command executes successfully even with minimal response
-                logger.debug(f"Batch LED command sent: {cmd.strip()}")
-                return True
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.05)  # Wait for firmware to process all 4 channels
+                    response = self._ser.read(10)
+                    success = b'1' in response
+
+                if success:
+                    # Update enabled channels tracking
+                    self._channels_enabled.clear()
+                    for ch, intensity in [('a', a), ('b', b), ('c', c), ('d', d)]:
+                        if intensity > 0:
+                            self._channels_enabled.add(ch)
+                    logger.debug(f"Batch LED command successful: A={a}, B={b}, C={c}, D={d}")
+                    return True
+                else:
+                    logger.warning(f"Batch LED command failed - response: {response}")
+                    return False
             else:
                 logger.error(f"pico serial port not valid for batch command")
                 return False
@@ -1019,6 +1163,112 @@ class PicoP4SPR(StaticController):
         except Exception as e:
             logger.error(f"error while setting batch LED intensities: {e}")
             return False
+
+    def led_rank_sequence(self, test_intensity=128, settling_ms=45, dark_ms=5, timeout_s=10.0):
+        """Execute firmware-side LED ranking sequence for fast calibration (V1.2+).
+
+        This command triggers the firmware to sequence through all 4 LEDs automatically,
+        with precise timing control. Python reads spectra when signaled by firmware.
+
+        Protocol:
+            1. Send: "rank:XXX,SSSS,DDD\n" where XXX=intensity, SSSS=settling_ms, DDD=dark_ms
+            2. Firmware responds: "START\n"
+            3. For each channel (a, b, c, d):
+               - Firmware: "X:READY\n" (LED turning on)
+               - Firmware: wait settling_ms
+               - Firmware: "X:READ\n" (signal Python to read spectrum NOW)
+               - Python: Read spectrum while LED is on
+               - Firmware: Turn off LED, wait dark_ms
+               - Firmware: "X:DONE\n" (measurement complete)
+            4. Firmware responds: "END\n"
+
+        Args:
+            test_intensity: LED test brightness (0-255, default 128 = 50%)
+            settling_ms: LED settling time in ms (default 45ms)
+            dark_ms: Dark time between channels in ms (default 5ms)
+            timeout_s: Maximum time to wait for sequence (default 10s)
+
+        Yields:
+            tuple: (channel, signal) where signal is 'READY', 'READ', or 'DONE'
+
+        Returns:
+            Generator that yields (channel, signal) tuples
+
+        Example:
+            ```python
+            channel_data = {}
+
+            for ch, signal in ctrl.led_rank_sequence(test_intensity=128):
+                if signal == 'READ':
+                    # Firmware has LED on and stable - read spectrum NOW
+                    spectrum = usb.read_spectrum()
+                    channel_data[ch] = analyze_spectrum(spectrum)
+                elif signal == 'DONE':
+                    # Measurement complete for this channel
+                    logger.info(f"Channel {ch} complete")
+
+            # All 4 channels measured, rank them
+            ranked = rank_channels(channel_data)
+            ```
+
+        Performance:
+            Old method (Python control): ~600ms (4 channels × 150ms each)
+            New method (firmware control): ~220ms (4 channels × 55ms each)
+            Speedup: 2.7x faster, more deterministic timing
+        """
+        try:
+            # Clamp values
+            test_intensity = max(0, min(255, int(test_intensity)))
+            settling_ms = max(0, min(1000, int(settling_ms)))
+            dark_ms = max(0, min(100, int(dark_ms)))
+
+            # Format: rank:XXX,SSSS,DDD\n
+            cmd = f"rank:{test_intensity},{settling_ms},{dark_ms}\n"
+
+            if self._ser is None and not self.open():
+                logger.error("Serial port not available for rank command")
+                return
+
+            with self._lock:
+                self._ser.reset_input_buffer()
+                self._ser.write(cmd.encode())
+                time.sleep(0.01)
+
+                # Wait for START signal
+                start_time = time.time()
+                while time.time() - start_time < timeout_s:
+                    line = self._ser.readline().decode().strip()
+                    if line == "START":
+                        logger.debug("Rank sequence started")
+                        break
+                    if time.time() - start_time > 1.0:
+                        logger.error(f"Timeout waiting for START, got: {line}")
+                        return
+
+                # Process channel signals
+                while time.time() - start_time < timeout_s:
+                    line = self._ser.readline().decode().strip()
+
+                    if line == "END":
+                        logger.debug("Rank sequence complete")
+                        break
+
+                    # Parse channel signal: "a:READY", "b:READ", etc.
+                    if ':' in line:
+                        ch, signal = line.split(':', 1)
+                        if ch in ['a', 'b', 'c', 'd'] and signal in ['READY', 'READ', 'DONE']:
+                            yield (ch, signal)
+                        else:
+                            logger.warning(f"Unexpected signal format: {line}")
+                    elif line:
+                        logger.debug(f"Firmware message: {line}")
+
+                if time.time() - start_time >= timeout_s:
+                    logger.error("Rank sequence timeout!")
+
+        except Exception as e:
+            logger.error(f"Error in LED rank sequence: {e}")
+            return
 
     def set_mode(self, mode='s'):
         try:
@@ -1714,6 +1964,12 @@ class PicoEZSPR(FlowController):
             b = max(0, min(255, int(b)))
             c = max(0, min(255, int(c)))
             d = max(0, min(255, int(d)))
+
+            # CRITICAL: Enable LED channels before setting intensity (EZSPR)
+            # The Pico firmware requires channels to be turned ON before they respond to intensity commands
+            for ch, intensity in [('a', a), ('b', b), ('c', c), ('d', d)]:
+                if intensity > 0:  # Only enable channels that will be used
+                    self.turn_on_channel(ch=ch)
 
             # Format: batch:A,B,C,D\n
             cmd = f"batch:{a},{b},{c},{d}\n"

@@ -47,11 +47,11 @@ def load_baseline_data():
 def detect_wavelengths(wavelength_data, pipeline_class):
     pipeline = pipeline_class()
     detected = []
-    
+
     for true_wl in wavelength_data:
         transmission, wavelengths = create_mock_spectrum(true_wl)
         detected_wl = pipeline.find_resonance_wavelength(transmission, wavelengths)
-        
+
         if detected_wl is None:
             detected.append(np.nan)
         else:
@@ -60,7 +60,7 @@ def detect_wavelengths(wavelength_data, pipeline_class):
                 detected.append(float(detected_wl[0]))
             else:
                 detected.append(float(detected_wl))
-    
+
     return np.array(detected, dtype=float)[~np.isnan(np.array(detected, dtype=float))]
 
 
@@ -98,7 +98,7 @@ def kalman_filter(data, process_var, measurement_var):
     estimate = data[0]
     estimate_error = 1.0
     result = []
-    
+
     for measurement in data:
         prediction = estimate
         prediction_error = estimate_error + process_var
@@ -106,7 +106,7 @@ def kalman_filter(data, process_var, measurement_var):
         estimate = prediction + kalman_gain * (measurement - prediction)
         estimate_error = (1 - kalman_gain) * prediction_error
         result.append(estimate)
-    
+
     return np.array(result)
 
 
@@ -136,45 +136,45 @@ def main():
     print("\n" + "="*80)
     print("🚀 EXTREME OPTIMIZATION - TESTING ALL COMBINATIONS")
     print("="*80)
-    
+
     wavelength_data = load_baseline_data()
     if wavelength_data is None:
         return
-    
+
     print(f"✅ Loaded {len(wavelength_data)} baseline points")
     print(f"📊 Raw: P2P={np.ptp(wavelength_data)*1000:.3f} pm\n")
-    
+
     # Test pipelines
     pipelines = [
         ("Fourier", FourierPipeline),
         ("Direct", DirectArgminPipeline),
         ("Adaptive", AdaptiveMultiFeaturePipeline),
     ]
-    
+
     all_results = []
-    
+
     for pipeline_name, pipeline_class in pipelines:
         print(f"Testing {pipeline_name} pipeline...")
-        
+
         try:
             detected = detect_wavelengths(wavelength_data, pipeline_class)
             print(f"  ✓ Detected {len(detected)} wavelengths")
-            
+
             # Raw
             all_results.append(calculate_stats(detected, f"{pipeline_name}"))
-            
+
             # Batch sizes
             for batch_size in [2, 3, 4, 5]:
                 # Batch methods
                 for batch_method in ['mean', 'median', 'weighted']:
                     batched = batch_process(detected, batch_size, batch_method)
-                    
+
                     # Just batched
                     all_results.append(calculate_stats(
-                        batched, 
+                        batched,
                         f"{pipeline_name}+Batch{batch_size}_{batch_method}"
                     ))
-                    
+
                     # Batch + Savgol
                     for savgol_win in [3, 5, 7, 9, 11]:
                         if len(batched) >= savgol_win:
@@ -183,7 +183,7 @@ def main():
                                 smoothed,
                                 f"{pipeline_name}+B{batch_size}_{batch_method}+SG{savgol_win}"
                             ))
-                            
+
                             # Triple: Batch + Savgol + Exponential
                             for alpha in [0.1, 0.2, 0.3]:
                                 triple = exponential_smooth(smoothed, alpha)
@@ -191,7 +191,7 @@ def main():
                                     triple,
                                     f"{pipeline_name}+B{batch_size}+SG{savgol_win}+Exp{alpha}"
                                 ))
-            
+
             # Kalman variants on raw
             for pv, mv in [(1e-6, 1e-4), (1e-6, 5e-5), (5e-7, 1e-4), (1e-7, 5e-5)]:
                 kalman = kalman_filter(detected, pv, mv)
@@ -199,7 +199,7 @@ def main():
                     kalman,
                     f"{pipeline_name}+Kalman(pv={pv:.0e},mv={mv:.0e})"
                 ))
-            
+
             # Hybrid: Savgol then Kalman
             for savgol_win in [7, 9, 11]:
                 if len(detected) >= savgol_win:
@@ -210,30 +210,30 @@ def main():
                             kalman,
                             f"{pipeline_name}+SG{savgol_win}+Kalman"
                         ))
-            
+
         except Exception as e:
             print(f"  ✗ Error: {e}")
-    
+
     # Filter None results
     all_results = [r for r in all_results if r is not None]
-    
+
     # Sort and display
     print(f"\n{'='*80}")
     print(f"🏆 TOP 20 CONFIGURATIONS (from {len(all_results)} tested)")
     print('='*80)
-    
+
     df = pd.DataFrame(all_results)
     df_sorted = df.sort_values('p2p_pm')
-    
+
     print("\nRank  P2P (pm)  Std (pm)  Points  Configuration")
     print("-" * 80)
     for idx, (i, row) in enumerate(df_sorted.head(20).iterrows(), 1):
         print(f"{idx:3d}.  {row['p2p_pm']:7.3f}  {row['std_pm']:7.3f}  {row['points']:4d}   {row['name']}")
-    
+
     # Best overall
     best = df_sorted.iloc[0]
     raw_fourier = df[df['name'] == 'Fourier'].iloc[0]
-    
+
     print(f"\n{'='*80}")
     print("🥇 ABSOLUTE BEST")
     print('='*80)
@@ -243,12 +243,12 @@ def main():
     print(f"Output Points: {int(best['points'])}")
     print(f"\nImprovement: {(raw_fourier['p2p_pm']-best['p2p_pm'])/raw_fourier['p2p_pm']*100:.1f}%")
     print(f"Reduction:   {raw_fourier['p2p_pm']/best['p2p_pm']:.1f}x")
-    
+
     # Best per pipeline
     print(f"\n{'='*80}")
     print("📊 BEST PER PIPELINE")
     print('='*80)
-    
+
     for pipeline_name in ['Fourier', 'Direct', 'Adaptive']:
         pipeline_results = df_sorted[df_sorted['name'].str.startswith(pipeline_name)]
         if len(pipeline_results) > 0:
@@ -256,7 +256,7 @@ def main():
             print(f"\n{pipeline_name}:")
             print(f"  {best_pipeline['name']}")
             print(f"  P2P: {best_pipeline['p2p_pm']:.3f} pm")
-    
+
     # Save
     df_sorted.to_csv('extreme_optimization_results.csv', index=False)
     print(f"\n💾 Full results saved to: extreme_optimization_results.csv")

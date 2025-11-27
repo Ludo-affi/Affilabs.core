@@ -628,19 +628,19 @@ class CalibrationQCDialog(QDialog):
         # Calculate S-pol and P-pol max counts
         s_pol_spectra = data.get('s_pol_spectra', {})
         p_pol_spectra = data.get('p_pol_spectra', {})
-        
+
         s_max_str_parts = []
         p_max_str_parts = []
-        
+
         for ch in ['a', 'b', 'c', 'd']:
             if ch in s_pol_spectra and s_pol_spectra[ch] is not None:
                 s_max = np.max(s_pol_spectra[ch])
                 s_max_str_parts.append(f"Ch {ch.upper()}: {s_max:.0f}")
-            
+
             if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
                 p_max = np.max(p_pol_spectra[ch])
                 p_max_str_parts.append(f"Ch {ch.upper()}: {p_max:.0f}")
-        
+
         s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
         p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
 
@@ -738,7 +738,7 @@ class CalibrationQCDialog(QDialog):
             'a': (0, 0, 0, 200),        # Black
             'b': (255, 0, 81, 200),     # Red
             'c': (0, 174, 255, 200),    # Blue
-            'd': (0, 230, 65, 200)      # Green
+            'd': (0, 150, 80, 200)      # Green (matches main UI)
         }
 
         # Get data based on type

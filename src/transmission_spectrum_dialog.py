@@ -29,6 +29,7 @@ class TransmissionSpectrumDialog(QDialog):
         self.latest_wavelengths = None
         self.latest_transmission = {'a': None, 'b': None, 'c': None, 'd': None}
         self.latest_raw_data = {'a': None, 'b': None, 'c': None, 'd': None}
+        self.reference_spectra = {}  # S-mode reference spectra from calibration
 
         # Main layout
         layout = QVBoxLayout(self)
@@ -107,16 +108,27 @@ class TransmissionSpectrumDialog(QDialog):
         self.raw_data_plot.setXRange(560, 720, padding=0.02)
         self.raw_data_plot.setYRange(0, 65535, padding=0.05)  # 16-bit range
 
-        # Create curves for each channel
+        # Create curves for each channel (live P-mode data)
         self.raw_data_curves = {}
         for channel in ['a', 'b', 'c', 'd']:
             color = self.channel_colors[channel]
             pen = pg.mkPen(color=color, width=2)
             curve = self.raw_data_plot.plot(
                 pen=pen,
-                name=f'Channel {channel.upper()}'
+                name=f'Ch {channel.upper()} (Live P-mode)'
             )
             self.raw_data_curves[channel] = curve
+
+        # Create reference curves (S-mode reference from calibration)
+        self.reference_curves = {}
+        for channel in ['a', 'b', 'c', 'd']:
+            color = self.channel_colors[channel]
+            pen = pg.mkPen(color=color, width=1, style=pg.QtCore.Qt.DashLine)  # Dashed line for reference
+            curve = self.raw_data_plot.plot(
+                pen=pen,
+                name=f'Ch {channel.upper()} (S-ref)'
+            )
+            self.reference_curves[channel] = curve
 
         # Add legend
         self.raw_data_plot.addLegend()
@@ -150,6 +162,22 @@ class TransmissionSpectrumDialog(QDialog):
         if raw_data is not None and wavelengths is not None:
             if len(wavelengths) == len(raw_data):
                 self.raw_data_curves[channel].setData(wavelengths, raw_data)
+
+    def set_reference_spectra(self, ref_sig: dict, wavelengths: np.ndarray):
+        """Set S-mode reference spectra from calibration.
+
+        Args:
+            ref_sig: Dictionary of reference spectra {channel: spectrum_array}
+            wavelengths: Wavelength array corresponding to spectra
+        """
+        self.reference_spectra = ref_sig
+
+        # Update reference curves
+        if wavelengths is not None:
+            for channel, ref_spectrum in ref_sig.items():
+                if channel in self.reference_curves and ref_spectrum is not None:
+                    if len(wavelengths) == len(ref_spectrum):
+                        self.reference_curves[channel].setData(wavelengths, ref_spectrum)
 
     def clear_channel(self, channel: str):
         """Clear transmission and raw data spectra for a specific channel."""

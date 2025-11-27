@@ -84,6 +84,8 @@ class DeviceConfiguration:
             'servo_p_position': 100,  # P-mode polarizer position (0-255, ~1°/step, covers ~250°)
         },
         'timing_parameters': {
+            'pre_led_delay_ms': 45.0,  # LED stabilization time before acquisition
+            'post_led_delay_ms': 5.0,  # Afterglow decay time after acquisition
             'led_a_delay_ms': 0,
             'led_b_delay_ms': 0,
             'led_c_delay_ms': 0,
@@ -604,6 +606,26 @@ class DeviceConfiguration:
             if channel in ['a', 'b', 'c', 'd']:
                 tp[f'led_{channel}_delay_ms'] = delay
         logger.info(f"LED delays updated: {delays}")
+
+    def get_pre_led_delay_ms(self) -> float:
+        """Get PRE LED delay (stabilization time before acquisition)."""
+        return self.config['timing_parameters'].get('pre_led_delay_ms', 45.0)
+
+    def get_post_led_delay_ms(self) -> float:
+        """Get POST LED delay (afterglow decay time after acquisition)."""
+        return self.config['timing_parameters'].get('post_led_delay_ms', 5.0)
+
+    def set_pre_post_led_delays(self, pre_ms: float, post_ms: float):
+        """Set PRE/POST LED delays and save to config.
+
+        Args:
+            pre_ms: PRE LED delay in milliseconds (LED stabilization time)
+            post_ms: POST LED delay in milliseconds (afterglow decay time)
+        """
+        self.config['timing_parameters']['pre_led_delay_ms'] = pre_ms
+        self.config['timing_parameters']['post_led_delay_ms'] = post_ms
+        self.save()
+        logger.info(f"LED timing delays saved: PRE={pre_ms}ms, POST={post_ms}ms")
 
     def get_frequency_limits(self, num_leds: int) -> Dict[str, float]:
         """

@@ -33,6 +33,7 @@ class USB4000:
         self.use_seabreeze = True  # Always True - single connection method
         self._wavelengths = None
         self._integration_time = 0.1
+        self._current_integration_ms = None  # Cache for skipping redundant USB calls
 
         # Detector specifications (set during open())
         self._max_counts = 65535  # 16-bit ADC default for USB4000
@@ -241,6 +242,11 @@ class USB4000:
         """
         if not self._device or not self.opened:
             return False
+
+        # ✅ OPTIMIZATION: Skip redundant USB call if already set to this value
+        if self._current_integration_ms is not None and self._current_integration_ms == time_ms:
+            return True  # Already set, saves ~3ms USB overhead
+
         try:
             # Convert milliseconds to microseconds for SeaBreeze API
             time_us = int(time_ms * 1000)
@@ -252,6 +258,7 @@ class USB4000:
 
             # Store in seconds for internal use
             self._integration_time = time_ms / 1000.0
+            self._current_integration_ms = time_ms  # Cache for future comparisons
             return True
         except Exception as e:
             logger.error(f"set_integration error: {e}")

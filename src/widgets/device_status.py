@@ -311,6 +311,106 @@ class DeviceStatusWidget(QWidget):
 
         main_layout.addWidget(mode_card)
 
+        main_layout.addSpacing(16)
+
+        # Section 4: LED Status (V1.1+ firmware)
+        led_section = QLabel("LED STATUS")
+        led_section.setStyleSheet(
+            "font-size: 11px;"
+            "font-weight: 700;"
+            "color: #86868B;"
+            "background: transparent;"
+            "letter-spacing: 0.5px;"
+            "margin-left: 4px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        main_layout.addWidget(led_section)
+
+        main_layout.addSpacing(8)
+
+        # Card container for LED status
+        self.led_status_card = QFrame()
+        self.led_status_card.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 0, 0, 0.03);"
+            "  border-radius: 8px;"
+            "}"
+        )
+        led_card_layout = QVBoxLayout(self.led_status_card)
+        led_card_layout.setContentsMargins(12, 10, 12, 10)
+        led_card_layout.setSpacing(8)
+
+        # LED channels: A, B, C, D
+        self.led_status = {}
+        led_channels = ["A", "B", "C", "D"]
+
+        for i, channel in enumerate(led_channels):
+            # Container for each LED
+            led_row = QHBoxLayout()
+            led_row.setSpacing(10)
+            led_row.setContentsMargins(0, 0, 0, 0)
+
+            # Status indicator (circle)
+            status_indicator = QLabel("●")
+            status_indicator.setFixedWidth(12)
+            status_indicator.setStyleSheet(
+                "font-size: 14px;"
+                "color: #86868B;"  # Gray for off
+                "background: transparent;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+            led_row.addWidget(status_indicator)
+
+            # LED name
+            name_label = QLabel(f"LED {channel}")
+            name_label.setStyleSheet(
+                "font-size: 13px;"
+                "color: #1D1D1F;"
+                "background: transparent;"
+                "font-weight: 500;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+            led_row.addWidget(name_label)
+
+            led_row.addStretch()
+
+            # Intensity value
+            intensity_label = QLabel("0")
+            intensity_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #86868B;"
+                "background: transparent;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+            led_row.addWidget(intensity_label)
+
+            # Store references
+            self.led_status[channel] = {
+                'indicator': status_indicator,
+                'intensity_label': intensity_label
+            }
+
+            # Add to card layout
+            led_container = QWidget()
+            led_container.setLayout(led_row)
+            led_card_layout.addWidget(led_container)
+
+            # Add separator between items (not after last)
+            if i < len(led_channels) - 1:
+                separator = QFrame()
+                separator.setFrameShape(QFrame.Shape.HLine)
+                separator.setStyleSheet(
+                    "background: rgba(0, 0, 0, 0.06);"
+                    "max-height: 1px;"
+                    "margin: 4px 0px;"
+                )
+                led_card_layout.addWidget(separator)
+
+        main_layout.addWidget(self.led_status_card)
+
+        # Hide LED status by default (shown when V1.1+ firmware detected)
+        self.led_status_card.setVisible(False)
+
         main_layout.addStretch()
 
     @Slot()
@@ -550,6 +650,49 @@ class DeviceStatusWidget(QWidget):
     def get_connect_button(self):
         """Return the connect button for external manipulation."""
         return self.ui.spr_connect_btn
+
+    def update_led_status(self, led_intensities: dict):
+        """Update LED status display (V1.1+ firmware).
+
+        Args:
+            led_intensities: Dict with keys 'a', 'b', 'c', 'd' and intensity values 0-255
+                            or None to hide LED status
+        """
+        if led_intensities is None:
+            # Hide LED status section (firmware doesn't support it)
+            self.led_status_card.setVisible(False)
+            return
+
+        # Show LED status section
+        self.led_status_card.setVisible(True)
+
+        # Update each LED channel
+        for channel_lower, intensity in led_intensities.items():
+            channel_upper = channel_lower.upper()
+            if channel_upper in self.led_status:
+                # Update intensity label
+                self.led_status[channel_upper]['intensity_label'].setText(str(intensity))
+
+                # Update indicator color based on intensity
+                if intensity > 0:
+                    # LED is ON - use green with brightness based on intensity
+                    alpha = int((intensity / 255) * 100) + 30  # 30-130% brightness
+                    color = f"rgba(52, 199, 89, {min(alpha, 100)/100})"  # Green
+                else:
+                    # LED is OFF - gray
+                    color = "#86868B"
+
+                self.led_status[channel_upper]['indicator'].setStyleSheet(
+                    f"font-size: 14px; color: {color}; background: transparent; "
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
+
+                # Update intensity label color
+                intensity_color = "#34C759" if intensity > 0 else "#86868B"
+                self.led_status[channel_upper]['intensity_label'].setStyleSheet(
+                    f"font-size: 12px; color: {intensity_color}; background: transparent; "
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
 
     def move_connect_button_to_layout(self, layout, position=-1):
         """

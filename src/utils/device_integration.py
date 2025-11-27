@@ -231,6 +231,48 @@ def get_device_config_dict() -> Optional[Dict[str, Any]]:
         return None
 
 
+def update_firmware_version(firmware_version: str) -> bool:
+    """Update firmware version in device config.
+
+    Call this after successful firmware update or when firmware version is detected.
+
+    Args:
+        firmware_version: Firmware version string (e.g., "V1.1")
+
+    Returns:
+        True if config updated successfully, False otherwise
+
+    Example:
+        # In hardware_manager after firmware update:
+        from utils.device_integration import update_firmware_version
+
+        current_version = controller.get_version()
+        update_firmware_version(current_version)
+    """
+    try:
+        device_manager = get_device_manager()
+
+        if device_manager.current_device_serial is None:
+            logger.warning("⚠️ No device set - cannot update firmware version")
+            return False
+
+        # Update hardware section with firmware version
+        if 'hardware' not in device_manager.device_config:
+            device_manager.device_config['hardware'] = {}
+
+        device_manager.device_config['hardware']['controller_firmware_version'] = firmware_version
+
+        # Save config
+        device_manager._save_device_config()
+
+        logger.info(f"✅ Updated firmware version in device config: {firmware_version}")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Failed to update firmware version: {e}")
+        return False
+
+
 def list_all_devices() -> list[str]:
     """List all devices with configuration files.
 

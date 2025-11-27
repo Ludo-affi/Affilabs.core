@@ -422,42 +422,54 @@ class CalibrationCoordinator(QObject):
             # P-pol spectra (from Step 6A P-mode reference signal measurement)
             p_pol_spectra = getattr(data_mgr, 'p_ref_sig', {})
 
-            # Dark scan
+            # Dark scan (duplicate for all channels for consistent display)
             dark_scan = {}
             if hasattr(data_mgr, 'dark_noise') and data_mgr.dark_noise is not None:
                 for ch in s_pol_spectra.keys():
                     dark_scan[ch] = data_mgr.dark_noise
 
-            # Afterglow curves (extracted from afterglow_correction if available)
+            # Afterglow curves (from finalcalibQC Step 6 - original data)
+            # Generated using the same predict_afterglow() used during processing
             afterglow_curves = getattr(data_mgr, 'afterglow_curves', {})
-            if not afterglow_curves:
-                # Fallback to zeros if not available
+            if afterglow_curves:
+                logger.info(f"✅ Using original afterglow curves from calibration ({len(afterglow_curves)} channels)")
+            else:
+                # Fallback to zeros if not available (old calibration data)
+                logger.warning("⚠️ No afterglow curves in calibration data, using zeros")
                 afterglow_curves = {}
                 for ch in s_pol_spectra.keys():
                     afterglow_curves[ch] = np.zeros_like(wavelengths)
 
-            # Transmission spectra
-            # Use the same calculation as live acquisition for consistency
-            transmission_spectra = {}
-            if p_pol_spectra:  # Only calculate if P-mode data exists
-                from utils.spr_signal_processing import calculate_transmission
+            # Transmission spectra (from LiveRtoT_QC in Step 6 Part C - original data)
+            # ⚠️ CRITICAL: LiveRtoT_QC applies full processing pipeline:
+            #    - Dark noise removal, afterglow correction, LED boost correction
+            #    - 95th percentile baseline correction, clipping, Savitzky-Golay filtering
+            # Always use this original processed data for QC display consistency!
+            transmission_spectra = getattr(data_mgr, 'transmission_spectra', {})
+            if transmission_spectra:
+                logger.info(f"✅ Using original LiveRtoT_QC transmission data ({len(transmission_spectra)} channels)")
+            else:
+                # ⚠️ FALLBACK ONLY for old calibration data (missing LiveRtoT_QC processing)
+                # Note: This simplified calculation is NOT equivalent to LiveRtoT_QC!
+                # Missing: afterglow correction, 95th percentile baseline, SG filtering
+                logger.warning("⚠️ No transmission spectra from LiveRtoT_QC - using simplified fallback calculation")
+                logger.warning("   This may show different results than original calibration processing!")
+                transmission_spectra = {}
+                if p_pol_spectra:
+                    from utils.spr_signal_processing import calculate_transmission
 
-                for ch in s_pol_spectra.keys():
-                    if ch in p_pol_spectra:
-                        # Get LED intensities for this channel (same as live acquisition)
-                        p_led = data_mgr.leds_calibrated.get(ch) if hasattr(data_mgr, 'leds_calibrated') and isinstance(data_mgr.leds_calibrated, dict) else None
-                        s_led = data_mgr.ref_intensity.get(ch) if hasattr(data_mgr, 'ref_intensity') and isinstance(data_mgr.ref_intensity, dict) else None
+                    for ch in s_pol_spectra.keys():
+                        if ch in p_pol_spectra:
+                            p_led = data_mgr.leds_calibrated.get(ch) if hasattr(data_mgr, 'leds_calibrated') and isinstance(data_mgr.leds_calibrated, dict) else None
+                            s_led = data_mgr.ref_intensity.get(ch) if hasattr(data_mgr, 'ref_intensity') and isinstance(data_mgr.ref_intensity, dict) else None
 
-                        # Calculate transmission with LED correction (matches live acquisition)
-                        transmission = calculate_transmission(
-                            p_pol_spectra[ch], s_pol_spectra[ch],
-                            p_led_intensity=p_led,
-                            s_led_intensity=s_led
-                        )
-
-                        # Apply baseline correction for QC visualization
-                        transmission = self._apply_qc_baseline_correction(transmission)
-                        transmission_spectra[ch] = transmission
+                            transmission = calculate_transmission(
+                                p_pol_spectra[ch], s_pol_spectra[ch],
+                                p_led_intensity=p_led,
+                                s_led_intensity=s_led
+                            )
+                            transmission = self._apply_qc_baseline_correction(transmission)
+                            transmission_spectra[ch] = transmission
 
             # Get transmission validation from either spr_calibrator or data_mgr (fallback)
             transmission_validation = {}

@@ -183,11 +183,15 @@ class CalibrationManager(QObject):
                 else:
                     logger.info(f"Progress: {msg}")
 
-            # Import calibration functions (Global LED Intensity method ONLY)
-            from utils.led_calibration import perform_alternative_calibration  # Global LED Int method
+            # Import calibration functions (Standard method - Global Integration Time)
+            from utils.led_calibration import perform_full_led_calibration  # Standard method: Global Integration, Variable LED
             from utils.calibration_6step import run_fast_track_calibration  # Fast-track only
-            from settings import PRE_LED_DELAY_MS, POST_LED_DELAY_MS
             from datetime import datetime, timedelta
+
+            # Get LED timing delays from device config (device-specific, user-configurable)
+            pre_led_delay_ms = device_config.get_pre_led_delay_ms()
+            post_led_delay_ms = device_config.get_post_led_delay_ms()
+            logger.info(f"📊 Using LED timing from device config: PRE={pre_led_delay_ms}ms, POST={post_led_delay_ms}ms")
 
             # Check if fast-track is possible
             use_fast_track = False
@@ -232,12 +236,12 @@ class CalibrationManager(QObject):
                     stop_flag=None,
                     progress_callback=progress_update,
                     afterglow_correction=afterglow_correction,
-                    pre_led_delay_ms=PRE_LED_DELAY_MS,
-                    post_led_delay_ms=POST_LED_DELAY_MS
+                    pre_led_delay_ms=pre_led_delay_ms,
+                    post_led_delay_ms=post_led_delay_ms
                 )
             else:
-                logger.info("✅ Using GLOBAL LED INTENSITY calibration (All LEDs=255, global integration time)")
-                cal_result = perform_alternative_calibration(
+                logger.info("✅ Using STANDARD calibration (Global Integration Time, Variable LED per channel)")
+                cal_result = perform_full_led_calibration(
                     usb=usb,
                     ctrl=ctrl,
                     device_type='P4SPR',
@@ -246,8 +250,8 @@ class CalibrationManager(QObject):
                     stop_flag=None,
                     progress_callback=progress_update,
                     device_config=device_config,
-                    pre_led_delay_ms=PRE_LED_DELAY_MS,
-                    post_led_delay_ms=POST_LED_DELAY_MS
+                    pre_led_delay_ms=pre_led_delay_ms,
+                    post_led_delay_ms=post_led_delay_ms
                 )
 
             # Step 6: Validate results
@@ -300,6 +304,10 @@ class CalibrationManager(QObject):
             data_mgr.ref_intensity = cal_result.ref_intensity        # S-mode LED intensities
             data_mgr.leds_calibrated = cal_result.leds_calibrated    # P-mode LED intensities
 
+            # LED timing delays (ensure live acquisition uses same delays as calibration)
+            data_mgr._pre_led_delay_ms = pre_led_delay_ms
+            data_mgr._post_led_delay_ms = post_led_delay_ms
+
             # Validate critical parameters exist
             if not data_mgr.integration_time or data_mgr.integration_time <= 0:
                 logger.error(f"❌ INVALID: integration_time={data_mgr.integration_time}ms")
@@ -315,6 +323,7 @@ class CalibrationManager(QObject):
             logger.info(f"   Scans per Spectrum: {data_mgr.num_scans}")
             logger.info(f"   P-mode LEDs: {data_mgr.leds_calibrated}")
             logger.info(f"   S-mode LEDs: {data_mgr.ref_intensity}")
+            logger.info(f"   LED Delays: PRE={data_mgr._pre_led_delay_ms}ms, POST={data_mgr._post_led_delay_ms}ms")
             logger.info("")
 
             # Quality control and diagnostic data:
@@ -327,6 +336,19 @@ class CalibrationManager(QObject):
             data_mgr.orientation_validation = getattr(cal_result, 'orientation_validation', {})  # Orientation validation for QC report
             data_mgr.transmission_validation = getattr(cal_result, 'transmission_validation', {})  # Transmission validation for QC report
             data_mgr.weakest_channel = getattr(cal_result, 'weakest_channel', None)  # Hardware characteristic
+            
+            # QC display data from finalcalibQC (Step 6) - ORIGINAL PROCESSED DATA
+            # ⚠️ PRIORITY: Always use this original data for QC graphs (not re-calculated!)
+            # - transmission_spectra: From LiveRtoT_QC (Step 6 Part C) with full pipeline:
+            #   dark removal, afterglow correction, LED boost, 95th percentile baseline, SG filtering
+            # - afterglow_curves: Same predict_afterglow() used during processing
+            data_mgr.transmission_spectra = getattr(cal_result, 'transmission', {})
+            data_mgr.afterglow_curves = getattr(cal_result, 'afterglow_curves', {})
+            
+            if data_mgr.transmission_spectra:
+                logger.info(f"✅ Transmission spectra stored from LiveRtoT_QC: {len(data_mgr.transmission_spectra)} channels")
+            if data_mgr.afterglow_curves:
+                logger.info(f"✅ Afterglow curves stored: {len(data_mgr.afterglow_curves)} channels")
 
             # DEBUG: Log P-ref data transfer
             if data_mgr.p_ref_sig:
@@ -364,13 +386,25 @@ class CalibrationManager(QObject):
                 'num_scans': cal_result.num_scans,
                 'ref_intensity': cal_result.ref_intensity,
                 'leds_calibrated': cal_result.leds_calibrated.copy(),
+                'led_intensities': cal_result.ref_intensity.copy(),  # For QC summary display
                 'ch_error_list': cal_result.ch_error_list.copy(),
                 's_ref_qc_results': data_mgr.s_ref_qc_results,
                 'channel_performance': data_mgr.channel_performance,
                 'calibration_type': 'fast_track' if is_fast_track else 'full',
                 'afterglow_available': afterglow_available,
                 'skip_qc_dialog': is_fast_track,  # Skip QC for fast-track
-                'optics_ready': len(cal_result.ch_error_list) == 0  # Set optics ready if all channels passed
+                'optics_ready': len(cal_result.ch_error_list) == 0,  # Set optics ready if all channels passed
+
+                # Spectral data for QC graphs
+                's_pol_spectra': cal_result.ref_sig.copy() if cal_result.ref_sig else {},  # S-mode reference spectra
+                'p_pol_spectra': data_mgr.p_ref_sig.copy() if data_mgr.p_ref_sig else {},  # P-mode reference spectra
+                'dark_scan': {'combined': cal_result.dark_noise} if cal_result.dark_noise is not None else {},  # Dark noise
+                'wavelengths': cal_result.wave_data if cal_result.wave_data is not None else np.array([]),  # Wavelength array
+
+                # QC validation results
+                'orientation_validation': data_mgr.orientation_validation,
+                'spr_fwhm': data_mgr.spr_fwhm,
+                'transmission_validation': data_mgr.transmission_validation,
             }
 
             # Complete
