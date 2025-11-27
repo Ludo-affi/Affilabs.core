@@ -77,7 +77,7 @@ except ImportError:
 class DataAcquisitionManager(QObject):
     """Manages spectrum acquisition and processing.
 
-    Note: Calibration is handled by CalibrationManager/CalibrationCoordinator.
+    Note: Calibration is handled by CalibrationService.
     DataAcquisitionManager only handles live spectrum acquisition after calibration.
     """
 
@@ -315,9 +315,9 @@ class DataAcquisitionManager(QObject):
     # LEGACY CALIBRATION REMOVED
     # ========================================================================
     # The start_calibration() and _calibration_worker() methods were removed
-    # as they are now handled by CalibrationManager and CalibrationCoordinator.
-    # Calibration now flows through: CalibrationCoordinator → CalibrationManager
-    # instead of through DataAcquisitionManager.
+    # as they are now handled by CalibrationService.
+    # Calibration now flows through: CalibrationService → apply_calibration()
+    # CalibrationService emits CalibrationData which is applied via apply_calibration().
     # ========================================================================
 
     def start_acquisition(self):

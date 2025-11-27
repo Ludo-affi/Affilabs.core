@@ -181,7 +181,7 @@ class EventBus(QObject):
 
         NOTE: EventBus is currently UNUSED in the application architecture.
         Signals are connected directly between components:
-        - CalibrationManager → CalibrationCoordinator → Application
+        - CalibrationService → Application (via calibration_complete signal)
         - DataAcquisitionManager → Application (direct references)
 
         This method exists for legacy compatibility but is not actively used.
