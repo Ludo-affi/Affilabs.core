@@ -304,11 +304,11 @@ class CalibrationManager(QObject):
             if not data_mgr.integration_time or data_mgr.integration_time <= 0:
                 logger.error(f"❌ INVALID: integration_time={data_mgr.integration_time}ms")
                 raise ValueError(f"Invalid integration time from calibration: {data_mgr.integration_time}ms")
-            
+
             if not data_mgr.leds_calibrated or not isinstance(data_mgr.leds_calibrated, dict):
                 logger.error(f"❌ INVALID: leds_calibrated={data_mgr.leds_calibrated}")
                 raise ValueError("Invalid LED calibration data")
-            
+
             logger.info("")
             logger.info("✅ Calibration parameters stored successfully:")
             logger.info(f"   Integration Time: {data_mgr.integration_time}ms")

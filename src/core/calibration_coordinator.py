@@ -1,6 +1,28 @@
 """Calibration Coordinator - Simplified UI interface to CalibrationManager.
 
 Handles UI interactions and delegates actual calibration to CalibrationManager.
+
+DATA PROCESSING ALIGNMENT:
+--------------------------
+The QC dialog transmission calculation MUST match live acquisition processing:
+
+1. Transmission Calculation (with LED intensity correction):
+   - QC:   calculate_transmission(p_ref, s_ref, p_led, s_led)
+   - Live: calculate_transmission(p_spectrum, s_ref, p_led, s_led)
+   ✅ IDENTICAL formula with LED correction
+
+2. Baseline Correction (polynomial detrending):
+   - QC:   Always applied via _apply_qc_baseline_correction()
+   - Live: Optional via FourierPipeline (TRANSMISSION_BASELINE_CORRECTION setting)
+   ✅ IDENTICAL algorithm (degree-2 polynomial)
+
+3. Savitzky-Golay Smoothing:
+   - QC:   Not applied (shows raw corrected transmission)
+   - Live: Always applied (21-point, order 3) before peak finding
+   ⚠️  DIFFERENCE: Live has additional smoothing for robustness
+
+This ensures the QC dialog shows transmission as it will appear in live
+acquisition, providing accurate preview of calibration quality.
 """
 
 import numpy as np
@@ -36,41 +58,41 @@ class CalibrationCoordinator(QObject):
 
     def _apply_qc_baseline_correction(self, transmission: np.ndarray, degree: int = 2) -> np.ndarray:
         """Apply polynomial baseline correction for QC visualization.
-        
+
         This flattens spectral tilt in transmission for better visualization.
-        Applied only to QC dialog, not to live acquisition.
-        
+        Uses the same algorithm as FourierPipeline for consistency with live acquisition.
+
         Args:
-            transmission: Raw transmission spectrum
+            transmission: Raw transmission spectrum (with LED correction already applied)
             degree: Polynomial degree (2=quadratic)
-            
+
         Returns:
             Baseline-corrected transmission spectrum
         """
         try:
             # Create x-axis for polynomial fit (normalized 0-1)
             x = np.linspace(0, 1, len(transmission))
-            
+
             # Fit polynomial to transmission
             coeffs = np.polyfit(x, transmission, degree)
             baseline = np.polyval(coeffs, x)
-            
+
             # Avoid division by very small baseline values
             baseline = np.where(baseline < 1.0, 1.0, baseline)
-            
+
             # Divide transmission by baseline to remove tilt
             corrected = transmission / baseline
-            
+
             # Re-scale to maintain similar transmission range
             original_mean = np.nanmean(transmission)
             corrected_mean = np.nanmean(corrected)
             if corrected_mean > 0:
                 corrected = corrected * (original_mean / corrected_mean)
-            
+
             logger.debug(f"QC baseline correction: mean {original_mean:.1f}% → {np.nanmean(corrected):.1f}%")
-            
+
             return corrected
-            
+
         except Exception as e:
             logger.warning(f"QC baseline correction failed: {e}, using raw transmission")
             return transmission
@@ -200,6 +222,8 @@ class CalibrationCoordinator(QObject):
         Shows post-calibration dialog and waits for user to click Start
         before transferring to live view. Does NOT auto-start.
 
+        For fast-track calibrations, skips QC dialog and shows simple success message.
+
         Args:
             calibration_data: Dictionary containing calibration results
         """
@@ -207,25 +231,56 @@ class CalibrationCoordinator(QObject):
 
         self._calibration_completed = True
 
-        # Show QC graphs dialog
+        # Check if this is a fast-track calibration (Priority 1)
+        skip_qc = calibration_data.get('skip_qc_dialog', False)
+
+        if skip_qc:
+            # Fast-track: Simple success message, no QC dialog
+            logger.info("⚡ Fast-track calibration complete (GLOBAL integration time validated)")
+
+            if self._calibration_dialog:
+                self._calibration_dialog.update_title("✅ Fast-Track Calibration Complete!")
+                self._calibration_dialog.update_status("Global integration time validated! Click Start to begin live acquisition.")
+                self._calibration_dialog.hide_progress_bar()
+
+                # Re-enable Start button for transfer to live view
+                if self._calibration_dialog.start_button:
+                    self._calibration_dialog.start_button.setEnabled(True)
+                    self._calibration_dialog.start_button.setText("Start")
+
+            logger.info("=" * 80)
+            logger.info("Fast-track calibration complete - waiting for user to click Start")
+            logger.info("=" * 80)
+            return
+
+        # Full calibration: Show QC graphs dialog
         from widgets.calibration_qc_dialog import CalibrationQCDialog
 
         # Build QC data from data_mgr
         data_mgr = self.app.data_mgr
 
         # Calculate transmission spectra if we have both S and P reference data
-        # Apply baseline correction directly for QC visualization
+        # Use the same calculation as live acquisition for consistency
         transmission_spectra = {}
         if hasattr(data_mgr, 'p_ref_sig') and data_mgr.p_ref_sig and data_mgr.ref_sig:
+            from utils.spr_signal_processing import calculate_transmission
+
             for ch in data_mgr.ref_sig.keys():
                 if ch in data_mgr.p_ref_sig:
                     s_ref = data_mgr.ref_sig[ch]
                     p_ref = data_mgr.p_ref_sig[ch]
-                    
-                    # Calculate raw transmission
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        transmission = np.where(s_ref > 0, (p_ref / s_ref) * 100.0, 0.0)
-                    
+
+                    # Get LED intensities for this channel (same as live acquisition)
+                    p_led = data_mgr.leds_calibrated.get(ch) if hasattr(data_mgr, 'leds_calibrated') and isinstance(data_mgr.leds_calibrated, dict) else None
+                    s_led = data_mgr.ref_intensity.get(ch) if hasattr(data_mgr, 'ref_intensity') and isinstance(data_mgr.ref_intensity, dict) else None
+
+                    # Calculate transmission with LED correction (matches live acquisition)
+                    transmission = calculate_transmission(
+                        p_ref, s_ref,
+                        p_led_intensity=p_led,
+                        s_led_intensity=s_led
+                    )
+
                     # Apply baseline correction for QC visualization
                     transmission = self._apply_qc_baseline_correction(transmission)
                     transmission_spectra[ch] = transmission
@@ -382,19 +437,24 @@ class CalibrationCoordinator(QObject):
                     afterglow_curves[ch] = np.zeros_like(wavelengths)
 
             # Transmission spectra
-            # Apply baseline correction directly for QC visualization
+            # Use the same calculation as live acquisition for consistency
             transmission_spectra = {}
             if p_pol_spectra:  # Only calculate if P-mode data exists
+                from utils.spr_signal_processing import calculate_transmission
+
                 for ch in s_pol_spectra.keys():
                     if ch in p_pol_spectra:
-                        # Calculate raw transmission
-                        with np.errstate(divide='ignore', invalid='ignore'):
-                            transmission = np.where(
-                                s_pol_spectra[ch] > 0,
-                                (p_pol_spectra[ch] / s_pol_spectra[ch]) * 100.0,
-                                0.0
-                            )
-                        
+                        # Get LED intensities for this channel (same as live acquisition)
+                        p_led = data_mgr.leds_calibrated.get(ch) if hasattr(data_mgr, 'leds_calibrated') and isinstance(data_mgr.leds_calibrated, dict) else None
+                        s_led = data_mgr.ref_intensity.get(ch) if hasattr(data_mgr, 'ref_intensity') and isinstance(data_mgr.ref_intensity, dict) else None
+
+                        # Calculate transmission with LED correction (matches live acquisition)
+                        transmission = calculate_transmission(
+                            p_pol_spectra[ch], s_pol_spectra[ch],
+                            p_led_intensity=p_led,
+                            s_led_intensity=s_led
+                        )
+
                         # Apply baseline correction for QC visualization
                         transmission = self._apply_qc_baseline_correction(transmission)
                         transmission_spectra[ch] = transmission

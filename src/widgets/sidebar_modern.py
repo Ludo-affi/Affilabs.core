@@ -540,8 +540,146 @@ class ModernSidebar(QWidget):
         tab_layout.addWidget(QLabel("(Graphic Control content placeholder)"))
 
     def _create_settings_tab(self, tab_layout):
-        """Create Settings tab content"""
-        tab_layout.addWidget(QLabel("(Settings content placeholder)"))
+        """Create Settings tab content with calibration buttons."""
+        # Calibration section
+        calib_label = QLabel("🔬 Calibration")
+        calib_label.setStyleSheet(
+            "font-size: 15px;"
+            "font-weight: 600;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "margin-top: 12px;"
+            "margin-bottom: 8px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        tab_layout.addWidget(calib_label)
+
+        # Description
+        calib_desc = QLabel("Run LED intensity calibration to measure S-pol and P-pol reference spectra:")
+        calib_desc.setWordWrap(True)
+        calib_desc.setStyleSheet(
+            "font-size: 12px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "margin-bottom: 12px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        tab_layout.addWidget(calib_desc)
+
+        # Button style
+        button_style = (
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 10px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "  min-height: 36px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0051D5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #003D99;"
+            "}"
+        )
+
+        # Simple LED Calibration button
+        self.simple_led_calibration_btn = QPushButton("📊 Simple LED Calibration")
+        self.simple_led_calibration_btn.setToolTip(
+            "Standard calibration routine:\n"
+            "• Measures S-pol reference spectra (high transmission)\n"
+            "• Measures P-pol reference spectra (low transmission)\n"
+            "• Optimizes LED intensities for all channels\n"
+            "• Takes ~30-60 seconds"
+        )
+        self.simple_led_calibration_btn.setStyleSheet(button_style)
+        tab_layout.addWidget(self.simple_led_calibration_btn)
+
+        # Full Calibration button
+        self.full_calibration_btn = QPushButton("🎯 Full Calibration")
+        self.full_calibration_btn.setToolTip(
+            "Complete calibration routine (same as Simple):\n"
+            "• Measures S-pol reference spectra\n"
+            "• Measures P-pol reference spectra\n"
+            "• Optimizes LED intensities\n"
+            "• Takes ~30-60 seconds"
+        )
+        self.full_calibration_btn.setStyleSheet(button_style)
+        tab_layout.addWidget(self.full_calibration_btn)
+
+        # OEM LED Calibration button
+        self.oem_led_calibration_btn = QPushButton("🏭 OEM Calibration")
+        self.oem_led_calibration_btn.setToolTip(
+            "OEM/Factory calibration (same as Simple):\n"
+            "• Measures S-pol reference spectra\n"
+            "• Measures P-pol reference spectra\n"
+            "• Optimizes LED intensities\n"
+            "• Takes ~30-60 seconds"
+        )
+        self.oem_led_calibration_btn.setStyleSheet(button_style)
+        tab_layout.addWidget(self.oem_led_calibration_btn)
+
+        # Add spacing
+        tab_layout.addSpacing(20)
+
+        # Polarizer Calibration section
+        polar_label = QLabel("🔄 Polarizer Alignment")
+        polar_label.setStyleSheet(
+            "font-size: 15px;"
+            "font-weight: 600;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "margin-top: 12px;"
+            "margin-bottom: 8px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        tab_layout.addWidget(polar_label)
+
+        # Description
+        polar_desc = QLabel("Calibrate servo polarizer positions (run once during setup):")
+        polar_desc.setWordWrap(True)
+        polar_desc.setStyleSheet(
+            "font-size: 12px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "margin-bottom: 12px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        tab_layout.addWidget(polar_desc)
+
+        # Polarizer Calibration button
+        self.polarizer_calibration_btn = QPushButton("⚙️ Polarizer Calibration")
+        self.polarizer_calibration_btn.setToolTip(
+            "Find optimal S and P polarizer positions:\n"
+            "• Scans servo angles to find peak transmission\n"
+            "• Validates 90° phase relationship\n"
+            "• Saves positions to device config\n"
+            "• Takes ~1-2 minutes (run once during setup)"
+        )
+        self.polarizer_calibration_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #FF9500;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 10px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "  min-height: 36px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #FF8C00;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #E67E00;"
+            "}"
+        )
+        tab_layout.addWidget(self.polarizer_calibration_btn)
 
     def _create_static_tab(self, tab_layout):
         """Create Static tab content"""

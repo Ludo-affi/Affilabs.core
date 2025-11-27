@@ -90,9 +90,13 @@
         "**/generated-files/**": true,
         "**/logs/**": true,
         "**/*.pyc": true,
+        "**/*.pyo": true,
+        "**/*.pyd": true,
         "**/.pytest_cache/**": true,
         "**/.mypy_cache/**": true,
-        "**/.ruff_cache/**": true
+        "**/.ruff_cache/**": true,
+        "**/src/__pycache__/**": true,
+        "**/Affilabs.core beta/__pycache__/**": true
     },
 
     // Search exclusions - faster searches
@@ -103,9 +107,12 @@
         "**/generated-files": true,
         "**/logs": true,
         "**/*.pyc": true,
+        "**/*.pyo": true,
+        "**/*.pyd": true,
         "**/.pytest_cache": true,
         "**/.mypy_cache": true,
-        "**/.ruff_cache": true
+        "**/.ruff_cache": true,
+        "**/Affilabs.core beta/__pycache__": true
     },
 
     // Disable code lens to reduce overhead

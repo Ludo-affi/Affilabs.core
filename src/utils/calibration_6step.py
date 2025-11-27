@@ -1,6 +1,6 @@
-"""6-Step Startup Calibration Flow - Exact Implementation as Discussed
+"""6-Step Startup Calibration Flow
 
-This module implements the exact 6-step calibration flow discussed:
+This module implements the 6-step calibration flow for SPR systems.
 
 STEP 1: Hardware Discovery & Connection
   - Detect controller and spectrometer
@@ -53,16 +53,9 @@ STEP 6: P-Mode Calibration
       - LED health baseline
       - Save full arrays to device config
 
-FAST-TRACK MODE:
-  - Check device_config.json for previous calibration
-  - If found and within ±10% tolerance: skip Steps 1-6 optimization
-  - Only validate that previous settings still work
-  - Auto-recalibrate any channels that fail validation
-
-GLOBAL LED MODE:
-  - Alternative mode: LED=255 fixed for all channels
-  - Only optimize integration time per channel
-  - Controlled by settings.USE_ALTERNATIVE_CALIBRATION flag
+This implementation serves as the template for:
+  - Fast-track calibration (with ±10% validation)
+  - Global LED mode (LED=255 fixed, variable integration)
 
 TRANSFER TO LIVE VIEW:
   - After Step 6C completes: Show post-calibration dialog
@@ -486,11 +479,11 @@ def optimize_s_mode_leds(
     logger.info(f"NOTE: This balancing occurs before S-ref capture to ensure")
     logger.info(f"      all reference signals have consistent intensity levels")
     logger.info(f"=" * 80)
-    
+
     # Find weakest channel (lowest signal)
     weakest_ch_signal = None
     weakest_signal = float('inf')
-    
+
     for ch in ch_list:
         # Measure current signal for this channel
         ctrl.set_intensity(ch=ch, raw_val=led_intensities[ch])
@@ -502,35 +495,35 @@ def optimize_s_mode_leds(
                 weakest_signal = ch_signal
                 weakest_ch_signal = ch
         ctrl.set_intensity(ch=ch, raw_val=0)
-    
+
     logger.info(f"Weakest S-mode channel: {weakest_ch_signal.upper()}")
     logger.info(f"   Signal: {weakest_signal:.0f} counts")
     logger.info(f"   LED: {led_intensities[weakest_ch_signal]}/255")
     logger.info(f"")
     logger.info(f"Balancing all S-mode channels to match weakest channel signal level...")
-    
+
     # Balance all other channels to match weakest
     for ch in ch_list:
         if ch == weakest_ch_signal:
             logger.info(f"   Ch {ch.upper()}: {weakest_signal:.0f} counts @ LED={led_intensities[ch]} (weakest - no change)")
             continue
-        
+
         # Measure current signal
         ctrl.set_intensity(ch=ch, raw_val=led_intensities[ch])
         time.sleep(LED_DELAY)
         spectrum = usb.read_intensity()
         if spectrum is None:
             continue
-        
+
         current_signal = spectrum[wave_min_index:wave_max_index].max()
         current_led = led_intensities[ch]
-        
+
         # Calculate target LED to match weakest signal
         target_led = int(current_led * (weakest_signal / current_signal))
         target_led = max(10, min(target_led, 255))
-        
+
         logger.info(f"   Ch {ch.upper()}: {current_signal:.0f} → {weakest_signal:.0f} counts, LED {current_led} → {target_led}")
-        
+
         # Update and verify
         led_intensities[ch] = target_led
         ctrl.set_intensity(ch=ch, raw_val=target_led)
@@ -539,9 +532,9 @@ def optimize_s_mode_leds(
         if verify_spectrum is not None:
             verify_signal = verify_spectrum[wave_min_index:wave_max_index].max()
             logger.debug(f"      Verification: {verify_signal:.0f} counts")
-        
+
         ctrl.set_intensity(ch=ch, raw_val=0)
-    
+
     logger.info(f"")
     logger.info(f"✅ All S-mode channels balanced to weakest channel signal level")
     logger.info(f"=" * 80)
@@ -810,14 +803,6 @@ def run_full_6step_calibration(
     Returns:
         LEDCalibrationResult with all calibration data
     """
-    logger.debug(f"🔍 DEBUG: run_full_6step_calibration called")
-    logger.debug(f"🔍 DEBUG: Parameters received:")
-    logger.debug(f"   device_type={device_type}")
-    logger.debug(f"   single_mode={single_mode}")
-    logger.debug(f"   afterglow_correction={afterglow_correction is not None}")
-    logger.debug(f"   pre_led_delay_ms={'MISSING' if 'pre_led_delay_ms' not in locals() else locals().get('pre_led_delay_ms', 'UNDEFINED')}")
-    logger.debug(f"   post_led_delay_ms={'MISSING' if 'post_led_delay_ms' not in locals() else locals().get('post_led_delay_ms', 'UNDEFINED')}")
-
     result = LEDCalibrationResult()
 
     try:
@@ -994,30 +979,16 @@ def run_full_6step_calibration(
         if progress_callback:
             progress_callback("Step 6A: Optimizing P-mode LEDs...")
 
-        logger.debug(f"🔍 DEBUG: About to call calibrate_p_mode_leds")
-        logger.debug(f"   PRE_LED_DELAY_MS={PRE_LED_DELAY_MS}")
-        logger.debug(f"   POST_LED_DELAY_MS={POST_LED_DELAY_MS}")
-
         from utils.led_calibration import analyze_channel_headroom
         headroom_analysis = analyze_channel_headroom(led_intensities)
 
-        logger.info("🔍 DEBUG-START: About to call calibrate_p_mode_leds")
-        logger.info(f"🔍 DEBUG: PRE_LED_DELAY_MS={PRE_LED_DELAY_MS}, POST_LED_DELAY_MS={POST_LED_DELAY_MS}")
-        logger.info("🔍 DEBUG: Calling calibrate_p_mode_leds...")
-        try:
-            p_mode_intensities, p_performance = calibrate_p_mode_leds(
-                usb, ctrl, ch_list, led_intensities,
-                stop_flag, detector_params=detector_params,
-                headroom_analysis=headroom_analysis,
-                pre_led_delay_ms=PRE_LED_DELAY_MS,
-                post_led_delay_ms=POST_LED_DELAY_MS
-            )
-            logger.info("🔍 DEBUG: calibrate_p_mode_leds returned successfully")
-            logger.info(f"🔍 DEBUG: p_mode_intensities={p_mode_intensities}")
-        except Exception as e:
-            logger.error(f"🔍 DEBUG-ERROR: calibrate_p_mode_leds FAILED: {e}")
-            logger.exception("Traceback:")
-            raise
+        p_mode_intensities, p_performance = calibrate_p_mode_leds(
+            usb, ctrl, ch_list, led_intensities,
+            stop_flag, detector_params=detector_params,
+            headroom_analysis=headroom_analysis,
+            pre_led_delay_ms=PRE_LED_DELAY_MS,
+            post_led_delay_ms=POST_LED_DELAY_MS
+        )
 
         result.p_mode_intensity = p_mode_intensities
 
@@ -1099,8 +1070,6 @@ def run_full_6step_calibration(
         original_integration_time = integration_time
 
         # Capture P-mode reference spectra for QC report
-        logger.info("🔍 DEBUG-1: About to capture P-mode reference spectra")
-        logger.info(f"🔍 DEBUG-2: ch_list={ch_list}, p_mode_intensities={p_mode_intensities}")
         logger.info("Capturing P-mode reference spectra (verifying NO saturation)...")
 
         try:
@@ -1304,7 +1273,7 @@ def run_full_6step_calibration(
                 old_integration = integration_time
                 integration_time = proposed_integration
                 integration_ratio = old_integration / integration_time  # e.g., 50ms -> 60ms = 0.833
-                
+
                 logger.info(f"   Pre-scaling S-mode LEDs by {integration_ratio:.3f}x to prevent P-mode saturation...")
                 scaled_led_intensities = {}
                 for ch in ch_list:
@@ -1312,7 +1281,7 @@ def run_full_6step_calibration(
                     scaled_led = max(10, int(old_led * integration_ratio))  # Min LED = 10
                     scaled_led_intensities[ch] = scaled_led
                     logger.debug(f"      Ch {ch.upper()}: {old_led} -> {scaled_led}")
-                
+
                 usb.set_integration(integration_time)
                 time.sleep(0.1)
 
@@ -1433,18 +1402,76 @@ def run_full_6step_calibration(
             s_ref_signals=result.s_ref_sig
         )
 
+        # Calculate transmission validation from P-ref and S-ref signals
+        transmission_validation = {}
+        if result.p_ref_sig and result.s_ref_sig:
+            from utils.spr_signal_processing import calculate_transmission
+            
+            for ch in CH_LIST:
+                if ch in result.p_ref_sig and ch in result.s_ref_sig:
+                    try:
+                        # Calculate transmission spectrum (P/S × 100%)
+                        p_spectrum = result.p_ref_sig[ch]
+                        s_spectrum = result.s_ref_sig[ch]
+                        transmission = calculate_transmission(
+                            p_spectrum, s_spectrum,
+                            p_led_intensity=p_mode_intensities.get(ch),
+                            s_led_intensity=result.ref_intensity.get(ch)
+                        )
+                        
+                        # Find minimum transmission %
+                        trans_min = float(np.min(transmission))
+                        
+                        # Find SPR dip
+                        dip_idx = np.argmin(transmission)
+                        dip_wl = wave_data[wave_min_index:wave_max_index][dip_idx] if dip_idx < len(wave_data[wave_min_index:wave_max_index]) else 0
+                        
+                        # Get FWHM from orientation_validation if available
+                        fwhm = orientation_validation.get(ch, 0.0)
+                        
+                        # Calculate P/S ratio at dip
+                        ratio = trans_min / 100.0
+                        
+                        # Determine if dip is detected (trans < 95%)
+                        dip_detected = trans_min < 95.0
+                        
+                        # Status determination
+                        if dip_detected and ratio < 0.95 and fwhm > 0 and fwhm < 60:
+                            status = "✅ PASS"
+                        elif not dip_detected:
+                            status = "❌ FAIL - No SPR dip"
+                        elif ratio >= 0.95:
+                            status = "❌ FAIL - Ratio too high"
+                        elif fwhm >= 60:
+                            status = "⚠️ WARN - FWHM > 60nm"
+                        else:
+                            status = "✅ PASS"
+                        
+                        transmission_validation[ch] = {
+                            'transmission_min': trans_min,
+                            'ratio': ratio,
+                            'dip_detected': dip_detected,
+                            'dip_wavelength': float(dip_wl),
+                            'fwhm': fwhm,
+                            'status': status
+                        }
+                        
+                        logger.debug(f"Ch {ch.upper()} transmission: min={trans_min:.1f}%, ratio={ratio:.3f}, FWHM={fwhm:.1f}nm")
+                    except Exception as e:
+                        logger.warning(f"Failed to calculate transmission validation for ch {ch.upper()}: {e}")
+
         verification_result = {
             'success': len(ch_error_list) == 0,
             'ch_error_list': ch_error_list,
             'orientation_validation': orientation_validation,
-            'transmission_validation': {},  # Not returned by verify_calibration
+            'transmission_validation': transmission_validation,
             'polarizer_swap_detected': polarizer_swap_detected
         }
 
         result.verification = verification_result
         result.ch_error_list = ch_error_list
         result.orientation_validation = orientation_validation
-        result.transmission_validation = {}  # Not returned by verify_calibration
+        result.transmission_validation = transmission_validation
         result.success = len(ch_error_list) == 0
 
         if polarizer_swap_detected:
@@ -1459,6 +1486,7 @@ def run_full_6step_calibration(
 
         # Copy S-mode reference signals to ref_sig for compatibility with calibration manager
         result.ref_sig = result.s_ref_sig
+        result.leds_calibrated = result.p_mode_intensity  # For compatibility with data_mgr
 
         logger.info("\n" + "=" * 80)
         logger.info("✅ 6-STEP CALIBRATION COMPLETE")
@@ -1518,11 +1546,38 @@ def run_fast_track_calibration(
 ) -> LEDCalibrationResult:
     """Fast-track calibration with ±10% validation.
 
-    Loads previous calibration from device_config.json and validates
-    that it still works within ±10% tolerance. If valid, skips the
-    full 6-step optimization and uses cached values.
+    USE CASE: Sensor/prism replacement or LED drift compensation
+    ------------------------------------------------------------
+    When a sensor/prism is swapped, the optical coupling changes slightly,
+    requiring LED intensity tweaks (typically 5-15% adjustment, not vastly different).
 
-    Any channels that fail validation are automatically recalibrated.
+    Fast-track validates that previous calibration still works within ±10%.
+    If valid, it reuses LOCKED parameters and only updates LED intensities.
+
+    PARAMETER LOCKING STRATEGY:
+    ---------------------------
+    LOCKED (reused from full calibration):
+    - Integration time (ms)          → Fixed, optimized during full calibration
+    - Number of scans                → Derived from integration time
+    - Wavelength calibration         → Fixed to detector
+
+    UPDATED (remeasured for sensor change):
+    - S-mode LED intensities         → Tweaked to maintain 70% detector target
+    - P-mode LED intensities         → Recalculated based on S-mode headroom
+    - Dark noise baseline            → Remeasured (may drift with temperature)
+    - S-ref signals                  → Remeasured with updated LED intensities
+
+    WORKFLOW:
+    1. Load previous calibration from device_config.json
+    2. Validate each channel at saved LED intensity (±10% tolerance)
+    3. If ALL pass → fast-track complete (~80% time savings)
+    4. If ANY fail → recalibrate only failed channels
+    5. Recalculate P-mode LEDs based on updated S-mode
+
+    This is much faster than full calibration because:
+    - Skip integration time optimization (locked)
+    - Skip binary search (use cached LED ±10% adjust)
+    - Skip multi-pass validation (trust previous calibration)
 
     Args:
         Same as run_full_6step_calibration
@@ -1570,15 +1625,16 @@ def run_fast_track_calibration(
 
         logger.info(f"Previous calibration date: {cal_data.get('calibration_date', 'unknown')}")
         logger.info(f"Saved S-mode LEDs: {saved_s_leds}")
-        logger.info(f"Saved integration time: {saved_integration}ms\n")
+        logger.info(f"🎯 GLOBAL integration time: {saved_integration}ms (testing all channels at this time)\n")
 
-        # Validate each channel
-        logger.info("Validating channels (±10% tolerance)...\n")
+        # Validate each channel at the GLOBAL integration time
+        logger.info("Validating channels at GLOBAL integration time (±10% tolerance)...")
+        logger.info("This mirrors Step 5C QC: verifying no saturation and 70% target\n")
 
         validated_leds = {}
         failed_channels = []
 
-        # Switch to S-mode
+        # Switch to S-mode and set GLOBAL integration time
         switch_mode_safely(ctrl, "s", turn_off_leds=True)
         usb.set_integration(saved_integration)
         time.sleep(0.1)
@@ -1623,11 +1679,12 @@ def run_fast_track_calibration(
         # If all channels passed, use fast-track
         if len(failed_channels) == 0:
             logger.info("\n" + "=" * 80)
-            logger.info("✅ FAST-TRACK VALIDATION PASSED")
+            logger.info("✅ FAST-TRACK VALIDATION PASSED (GLOBAL INTEGRATION TIME)")
             logger.info("=" * 80)
-            logger.info("All channels within ±10% tolerance")
-            logger.info("Using cached calibration values")
-            logger.info(f"Estimated time saved: ~80% (skipped Steps 1-6 optimization)")
+            logger.info(f"All channels within ±10% tolerance at {saved_integration}ms integration time")
+            logger.info("Using cached GLOBAL integration time calibration values")
+            logger.info(f"QC validated: No saturation, 70% target met (mirrors Step 5C)")
+            logger.info(f"Estimated time saved: ~80% (skipped Steps 5A-5C optimization)")
             logger.info("=" * 80 + "\n")
 
             # Build result from cached data
@@ -1638,19 +1695,20 @@ def run_fast_track_calibration(
             result.wave_max_index = wave_max_index
 
             # Still need to measure dark and refs at current temperature
-            num_scans = calculate_scan_counts(saved_integration).s_scans
+            scan_config = calculate_scan_counts(saved_integration)
+            num_scans = scan_config.num_scans
 
             result.dark_noise = measure_dark_noise(
                 usb, ctrl, saved_integration,
                 wave_min_index, wave_max_index,
-                stop_flag, num_scans=num_scans
+                stop_flag, num_scans=scan_config.dark_scans
             )
 
             result.s_ref_sig = measure_reference_signals(
                 usb, ctrl, ch_list, validated_leds, result.dark_noise,
                 saved_integration, wave_min_index, wave_max_index,
                 stop_flag, afterglow_correction, num_scans=num_scans,
-                mode='s'  # Explicitly specify S-mode
+                preserve_mode=False  # Use default S-mode behavior
             )
 
             # Load P-mode from cache or recalibrate
@@ -1683,6 +1741,17 @@ def run_fast_track_calibration(
             result.success = True
             result.num_scans = num_scans
             result.ref_sig = result.s_ref_sig  # Copy for calibration manager compatibility
+            result.leds_calibrated = result.p_mode_intensity  # CRITICAL: Set leds_calibrated for data_mgr validation
+            result.fast_track_passed = True  # Mark as fast-track success
+
+            logger.info("\n" + "=" * 80)
+            logger.info("✅ FAST-TRACK CALIBRATION COMPLETE (GLOBAL INTEGRATION TIME)")
+            logger.info("=" * 80)
+            logger.info(f"Validation: All channels passed at {saved_integration}ms integration time (±10%)")
+            logger.info(f"QC criteria: No saturation, 70% target, mirrors full calibration Step 5C")
+            logger.info(f"Time saved: ~80% (skipped integration time optimization Steps 5A-5C)")
+            logger.info(f"Validated LEDs: {validated_leds}")
+            logger.info("=" * 80 + "\n")
 
             return result
 
@@ -1715,29 +1784,39 @@ def run_fast_track_calibration(
             validated_leds[ch] = led_val
             logger.info(f"✅ Channel {ch.upper()}: {led_val}/255\n")
 
-        # Build result with mix of cached and recalibrated
-        result.ref_intensity = validated_leds
-        result.integration_time = saved_integration
+        # Build result with mix of cached and recalibrated LED intensities
+        # PARAMETER LOCKING STRATEGY:
+        # - Integration time: LOCKED (use saved value from full calibration)
+        # - Num scans: LOCKED (calculated from integration time)
+        # - Dark noise: RE-MEASURED (may drift with temperature)
+        # - S-ref signals: RE-MEASURED (with updated LED intensities)
+        # - LED intensities: UPDATED (only failed channels recalibrated)
+        # - P-mode LEDs: RE-CALCULATED (based on updated S-mode LEDs)
+
+        result.ref_intensity = validated_leds  # Updated S-mode LED intensities
+        result.integration_time = saved_integration  # LOCKED from full calibration
         result.wave_data = wave_data[wave_min_index:wave_max_index]
         result.wave_min_index = wave_min_index
         result.wave_max_index = wave_max_index
 
-        num_scans = calculate_scan_counts(saved_integration).num_scans
+        num_scans = calculate_scan_counts(saved_integration).num_scans  # LOCKED (derived from integration)
 
+        # Re-measure dark noise (may have drifted)
         result.dark_noise = measure_dark_noise(
             usb, ctrl, saved_integration,
             wave_min_index, wave_max_index,
             stop_flag, num_scans=num_scans
         )
 
+        # Re-measure S-ref with updated LED intensities
         result.s_ref_sig = measure_reference_signals(
             usb, ctrl, ch_list, validated_leds, result.dark_noise,
             saved_integration, wave_min_index, wave_max_index,
             stop_flag, afterglow_correction, num_scans=num_scans,
-            mode='s'  # Explicitly specify S-mode
+            preserve_mode=False  # Switch to S-mode (default behavior)
         )
 
-        # Calibrate P-mode
+        # Re-calibrate P-mode LEDs based on updated S-mode headroom
         switch_mode_safely(ctrl, "p", turn_off_leds=True)
         from utils.led_calibration import calibrate_p_mode_leds, analyze_channel_headroom
         headroom = analyze_channel_headroom(validated_leds)
@@ -1748,6 +1827,8 @@ def run_fast_track_calibration(
             pre_led_delay_ms=PRE_LED_DELAY_MS,
             post_led_delay_ms=POST_LED_DELAY_MS
         )
+
+        result.leds_calibrated = result.p_mode_intensity  # For compatibility with data_mgr
 
         result.success = True
         result.num_scans = num_scans

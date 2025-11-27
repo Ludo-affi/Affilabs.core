@@ -43,10 +43,10 @@ class GraphCoordinator(QObject):
         self._setup_update_timer()
 
     def _setup_update_timer(self) -> None:
-        """Setup throttled UI update timer (10 FPS)."""
+        """Setup throttled UI update timer (1 Hz for spectroscopy plots)."""
         self._ui_update_timer = QTimer()
         self._ui_update_timer.timeout.connect(self.process_pending_ui_updates)
-        self._ui_update_timer.setInterval(100)  # 100ms = 10 FPS
+        self._ui_update_timer.setInterval(1000)  # 1000ms = 1 Hz
         self._ui_update_timer.start()
 
     def queue_graph_update(self, channel: str, elapsed_time: float) -> None:
@@ -79,7 +79,7 @@ class GraphCoordinator(QObject):
         }
 
     def process_pending_ui_updates(self) -> None:
-        """Process queued graph updates at throttled rate (10 FPS)."""
+        """Process queued graph updates at throttled rate (1 Hz)."""
         with measure('ui_update_timer'):
             if not self.app.main_window.live_data_enabled:
                 return

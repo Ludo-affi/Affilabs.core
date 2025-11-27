@@ -185,6 +185,20 @@ AUTO_POLARIZE_ENABLE = False  # enable/disable auto-polarization during calibrat
 FILTERING_ON = True  # enabled/disable filtering
 MED_FILT_WIN = 3  # default median filter window size
 
+# Signal processing parameters - Fourier Transform Method
+# CRITICAL: alpha=9000 achieves 2nm baseline (original implementation)
+FOURIER_ALPHA = 9000  # Fourier smoothing strength (9000 = 4.5x more smoothing than 2000)
+FOURIER_WINDOW_SIZE = 165  # Zero-crossing refinement window (points)
+
+# EMA Pre-smoothing (Cascaded Filtering Stage 1)
+# Based on baseline noise analysis: EMA with α=0.1 reduces std by 13.3%
+# Targets low-frequency thermal/mechanical drift (0.003 Hz, 5-min period)
+EMA_ENABLED = True  # Enable EMA pre-smoothing before Fourier transform
+EMA_ALPHA = 0.1  # Smoothing factor (0.1 = aggressive, 0.2 = moderate, 0.5 = light)
+                  # Lower alpha = more smoothing, higher latency
+                  # Equivalent time constant τ = 1/alpha samples
+                  # 0.1 → τ=10 samples, 0.2 → τ=5 samples
+
 # === Display Smoothing Settings ===
 # Batch-only processing - no interpolation previews
 BATCH_SIZE = 1  # DISABLED: Set to 1 for immediate processing (was 12 for batching)

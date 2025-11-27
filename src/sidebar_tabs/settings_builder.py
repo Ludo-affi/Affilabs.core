@@ -38,6 +38,9 @@ class SettingsTabBuilder:
         tab_layout.addSpacing(12)
 
         self._build_calibration_controls(tab_layout)
+        tab_layout.addSpacing(12)
+
+        self._build_spectroscopy_plots(tab_layout)
         tab_layout.addSpacing(20)
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
@@ -204,33 +207,6 @@ class SettingsTabBuilder:
         self.sidebar.current_polarizer_position = 'S'
         polarizer_row.addWidget(self.sidebar.polarizer_toggle_btn)
 
-        polarizer_row.addSpacing(16)
-
-        # Spectrum Button
-        self.sidebar.spectrum_btn = QPushButton("📊 Spectrum")
-        self.sidebar.spectrum_btn.setFixedWidth(110)
-        self.sidebar.spectrum_btn.setFixedHeight(28)
-        self.sidebar.spectrum_btn.setToolTip("Show live transmission spectrum for all channels")
-        self.sidebar.spectrum_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  padding: 4px 8px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0071E3;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #0063CC;"
-            "}"
-        )
-        polarizer_row.addWidget(self.sidebar.spectrum_btn)
-
         polarizer_row.addStretch()
         layout.addLayout(polarizer_row)
 
@@ -291,8 +267,8 @@ class SettingsTabBuilder:
 
         # Add pipeline options
         self.sidebar.pipeline_selector.addItem("Fourier Transform (Default)", "fourier")
-        self.sidebar.pipeline_selector.addItem("Centroid Detection", "centroid")
-        self.sidebar.pipeline_selector.addItem("Polynomial Fit", "polynomial")
+        self.sidebar.pipeline_selector.addItem("Batch Savitzky-Golay (GOLD STANDARD)", "batch_savgol")
+        self.sidebar.pipeline_selector.addItem("Direct ArgMin (Simple & Fast)", "direct")
         self.sidebar.pipeline_selector.addItem("Adaptive Multi-Feature", "adaptive")
         self.sidebar.pipeline_selector.addItem("Consensus", "consensus")
 
@@ -486,6 +462,18 @@ class SettingsTabBuilder:
 
         calibration_card_layout.addSpacing(12)
 
+        # Polarizer Calibration
+        self._add_calibration_option(
+            calibration_card_layout,
+            title="Polarizer Calibration",
+            description="Find optimal servo positions for S and P modes (~90° apart, 1.4 min)",
+            button_text="Calibrate Polarizer",
+            button_ref="polarizer_calibration_btn",
+            primary=False
+        )
+
+        calibration_card_layout.addSpacing(12)
+
         # OEM LED Calibration
         self._add_calibration_option(
             calibration_card_layout,
@@ -584,6 +572,122 @@ class SettingsTabBuilder:
         # Store button reference on sidebar
         setattr(self.sidebar, button_ref, button)
         layout.addWidget(button)
+
+    def _build_spectroscopy_plots(self, tab_layout: QVBoxLayout):
+        """Build spectroscopy plots section with transmission and raw data graphs (collapsible, starts expanded)."""
+        from plot_helpers import create_spectroscopy_plot, add_channel_curves
+
+        spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
+
+        spectro_help = QLabel("Real-time transmission and raw detector spectrum display")
+        spectro_help.setStyleSheet(
+            "font-size: 11px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-style: italic;"
+            "margin: 4px 0px 8px 0px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        spectro_section.content_layout.addWidget(spectro_help)
+
+        # Card container
+        spectro_card = QFrame()
+        spectro_card.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 0, 0, 0.03);"
+            "  border-radius: 8px;"
+            "}"
+        )
+        spectro_card_layout = QVBoxLayout(spectro_card)
+        spectro_card_layout.setContentsMargins(12, 8, 12, 8)
+        spectro_card_layout.setSpacing(8)
+
+        # Transmission Plot
+        trans_label = QLabel("Transmission Spectrum (%):")
+        trans_label.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        spectro_card_layout.addWidget(trans_label)
+
+        # Create transmission plot
+        self.sidebar.transmission_plot = create_spectroscopy_plot(
+            left_label="Transmission (%)",
+            bottom_label="Wavelength (nm)"
+        )
+        self.sidebar.transmission_plot.setMinimumHeight(200)
+        self.sidebar.transmission_plot.setMaximumHeight(300)
+        spectro_card_layout.addWidget(self.sidebar.transmission_plot)
+
+        # Add channel curves to transmission plot
+        self.sidebar.transmission_curves = add_channel_curves(self.sidebar.transmission_plot)
+
+        # Add "Record Baseline Data" button
+        record_baseline_btn = QPushButton("🔴 Record 5-Min Baseline Data")
+        record_baseline_btn.setFixedHeight(36)
+        record_baseline_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E02020, stop:1 #C01818);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: #D1D1D6;"
+            "  color: #86868B;"
+            "}"
+        )
+        record_baseline_btn.setToolTip(
+            "Record 5 minutes of transmission data for baseline noise optimization analysis.\n"
+            "Ensure stable baseline (no injections) before clicking."
+        )
+        self.sidebar.record_baseline_btn = record_baseline_btn
+        spectro_card_layout.addWidget(record_baseline_btn)
+
+        spectro_card_layout.addSpacing(12)
+
+        # Raw Data Plot
+        raw_label = QLabel("Raw Detector Signal (counts):")
+        raw_label.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        spectro_card_layout.addWidget(raw_label)
+
+        # Create raw data plot
+        self.sidebar.raw_data_plot = create_spectroscopy_plot(
+            left_label="Intensity (counts)",
+            bottom_label="Wavelength (nm)"
+        )
+        self.sidebar.raw_data_plot.setMinimumHeight(200)
+        self.sidebar.raw_data_plot.setMaximumHeight(300)
+        spectro_card_layout.addWidget(self.sidebar.raw_data_plot)
+
+        # Add channel curves to raw data plot
+        self.sidebar.raw_data_curves = add_channel_curves(self.sidebar.raw_data_plot)
+
+        spectro_section.add_content_widget(spectro_card)
+        tab_layout.addWidget(spectro_section)
+
+        # Log successful creation
+        from utils.logger import logger
+        logger.info(f"✅ Spectroscopy plots created: {len(self.sidebar.transmission_curves)} curves each")
 
     # Helper methods for consistent styling
 

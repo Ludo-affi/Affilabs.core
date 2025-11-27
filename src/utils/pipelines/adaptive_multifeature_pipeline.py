@@ -125,13 +125,25 @@ class AdaptiveMultiFeaturePipeline:
         transmission: np.ndarray,
         wavelengths: np.ndarray,
         timestamp: Optional[float] = None,
+        **kwargs
     ) -> Tuple[float, Dict]:
         """Find resonance wavelength using multi-feature analysis.
 
+        OPTIMIZED Algorithm (uses pre-calculated data):
+        1. SKIP first SG filter (transmission already SG-filtered in pipeline)
+        2. Apply light Gaussian filter for additional smoothing
+        3. Use minimum_hint_nm if provided, else extract features
+        4. Refine peak using asymmetric Gaussian model
+        5. Apply temporal Kalman filtering (if timestamp provided)
+        6. Detect jitter via temporal coherence
+        7. Return wavelength + comprehensive metadata
+
         Args:
-            transmission: Transmission spectrum (%)
+            transmission: Transmission spectrum (already SG-filtered in pipeline)
             wavelengths: Wavelength array (nm)
             timestamp: Optional timestamp for temporal filtering
+            **kwargs: Additional parameters:
+                - minimum_hint_nm: Pre-calculated minimum position (optional, skips search)
 
         Returns:
             Tuple of (resonance_wavelength, metadata_dict)
@@ -141,20 +153,34 @@ class AdaptiveMultiFeaturePipeline:
         if len(transmission) != len(wavelengths):
             raise ValueError("Data length mismatch")
 
-        # Step 1: Double filtering
-        filtered = self._double_filter(transmission)
+        # Get minimum hint if provided
+        minimum_hint_nm = kwargs.get('minimum_hint_nm', None)
 
-        # Step 2: Extract 3 features
-        peak_wavelength, peak_fwhm, peak_depth = self._extract_features(
-            filtered, wavelengths
+        # Step 1: Light Gaussian filtering (transmission already SG-filtered)
+        # OPTIMIZED: Skip heavy SG filter, only apply light Gaussian for weight smoothing
+        filtered = gaussian_filter1d(transmission, sigma=1.5)
+
+        # Step 2: Extract 3 features (use hint for fast path)
+        if minimum_hint_nm is not None:
+            # FAST PATH: Use hint instead of searching
+            min_idx = np.argmin(np.abs(wavelengths - minimum_hint_nm))
+            peak_wavelength = minimum_hint_nm
+        else:
+            # SLOW PATH: Find minimum
+            min_idx = np.argmin(filtered)
+            peak_wavelength = wavelengths[min_idx]
+
+        # Extract FWHM and depth
+        peak_fwhm, peak_depth = self._extract_features_fast(
+            filtered, wavelengths, min_idx
         )
 
-        # Step 3: Peak refinement
+        # Step 3: Peak refinement using asymmetric model
         refined_wavelength, left_slope, right_slope = self._refine_peak(
             filtered, wavelengths, peak_wavelength
         )
 
-        # Step 4: Temporal filtering
+        # Step 4: Temporal filtering (Kalman filter for smooth trajectory)
         if timestamp is not None:
             filtered_wavelength, filtered_fwhm, filtered_depth, confidence = \
                 self._temporal_filter(
@@ -172,7 +198,7 @@ class AdaptiveMultiFeaturePipeline:
         # Step 6: Calculate temporal coherence score
         temporal_coherence = self._calculate_temporal_coherence()
 
-        # Construct metadata
+        # Construct comprehensive metadata
         metadata = {
             'fwhm': float(filtered_fwhm),
             'depth': float(filtered_depth),
@@ -183,55 +209,27 @@ class AdaptiveMultiFeaturePipeline:
             'temporal_coherence': float(temporal_coherence),
             'raw_wavelength': float(refined_wavelength),
             'kalman_filtered': timestamp is not None,
+            'used_hint': minimum_hint_nm is not None,
         }
 
         return filtered_wavelength, metadata
 
-    def _double_filter(self, transmission: np.ndarray) -> np.ndarray:
-        """Apply double filtering: Savitzky-Golay + Gaussian.
-
-        Args:
-            transmission: Raw transmission data
-
-        Returns:
-            Double-filtered transmission
-        """
-        # First filter: Savitzky-Golay (preserves peak shape, removes high-freq noise)
-        try:
-            window_length = min(21, len(transmission) // 4)
-            if window_length % 2 == 0:
-                window_length += 1
-            if window_length < 5:
-                window_length = 5
-
-            filtered1 = savgol_filter(transmission, window_length=window_length, polyorder=3)
-        except Exception as e:
-            logger.warning(f"Stage 1 filter error: {e}, using raw data")
-            filtered1 = transmission
-
-        # Second filter: Gaussian (additional smoothing, wavelength-adaptive)
-        sigma = 2.0  # Could be wavelength-dependent in future
-        filtered2 = gaussian_filter1d(filtered1, sigma=sigma)
-
-        return filtered2
-
-    def _extract_features(
+    def _extract_features_fast(
         self,
         transmission: np.ndarray,
         wavelengths: np.ndarray,
-    ) -> Tuple[float, float, float]:
-        """Extract 3 key features: peak position, FWHM, depth.
+        min_idx: int,
+    ) -> Tuple[float, float]:
+        """Extract FWHM and depth features (OPTIMIZED - minimum already known).
 
         Args:
             transmission: Filtered transmission spectrum
             wavelengths: Wavelength array
+            min_idx: Index of minimum (already calculated)
 
         Returns:
-            Tuple of (peak_wavelength, fwhm, depth)
+            Tuple of (fwhm, depth)
         """
-        # Find minimum (resonance dip)
-        min_idx = np.argmin(transmission)
-        peak_wavelength = wavelengths[min_idx]
         peak_depth = transmission[min_idx]
 
         # Calculate FWHM using derivative zero-crossings
@@ -248,6 +246,15 @@ class AdaptiveMultiFeaturePipeline:
             right_idx += 1
 
         # Calculate FWHM
+        if left_idx < min_idx < right_idx:
+            fwhm = wavelengths[right_idx] - wavelengths[left_idx]
+        else:
+            fwhm = 30.0  # Default fallback
+
+        # Apply physical constraints
+        fwhm = np.clip(fwhm, self.min_fwhm, self.max_fwhm)
+
+        return fwhm, peak_depth
         if left_idx < min_idx < right_idx:
             fwhm = wavelengths[right_idx] - wavelengths[left_idx]
         else:

@@ -446,9 +446,10 @@ class CalibrationQCDialog(QDialog):
         layout.addWidget(title)
 
         table = QTableWidget()
-        table.setColumnCount(5)
+        table.setColumnCount(6)
         table.setHorizontalHeaderLabels([
             "Channel",
+            "Min Trans %",
             "P/S Ratio",
             "Dip Detected",
             "FWHM (nm)",
@@ -494,6 +495,22 @@ class CalibrationQCDialog(QDialog):
             if ch in transmission_validation:
                 ch_data = transmission_validation[ch]
 
+                # Min Transmission %
+                trans_min = ch_data.get('transmission_min')
+                if trans_min is not None:
+                    trans_item = QTableWidgetItem(f"{trans_min:.1f}%")
+                    trans_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    # Color code: green if <20% (good SPR), yellow if 20-40%, red if >40%
+                    if trans_min < 20:
+                        trans_item.setForeground(QColor("#34C759"))
+                    elif trans_min < 40:
+                        trans_item.setForeground(QColor("#FF9500"))
+                    else:
+                        trans_item.setForeground(QColor("#FF3B30"))
+                    table.setItem(idx, 1, trans_item)
+                else:
+                    table.setItem(idx, 1, QTableWidgetItem("N/A"))
+
                 # P/S Ratio
                 ratio = ch_data.get('ratio')
                 if ratio is not None:
@@ -506,9 +523,9 @@ class CalibrationQCDialog(QDialog):
                         ratio_item.setForeground(QColor("#FF9500"))
                     else:
                         ratio_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 1, ratio_item)
+                    table.setItem(idx, 2, ratio_item)
                 else:
-                    table.setItem(idx, 1, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
                 # Dip Detected
                 dip_detected = ch_data.get('dip_detected', False)
@@ -519,7 +536,7 @@ class CalibrationQCDialog(QDialog):
                     dip_item.setForeground(QColor("#34C759"))
                 else:
                     dip_item.setForeground(QColor("#FF3B30"))
-                table.setItem(idx, 2, dip_item)
+                table.setItem(idx, 3, dip_item)
 
                 # FWHM
                 fwhm = ch_data.get('fwhm')
@@ -533,11 +550,11 @@ class CalibrationQCDialog(QDialog):
                         fwhm_item.setForeground(QColor("#FF9500"))
                     else:
                         fwhm_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 3, fwhm_item)
+                    table.setItem(idx, 4, fwhm_item)
                 else:
-                    table.setItem(idx, 3, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 4, QTableWidgetItem("N/A"))
 
-                # Status (now column 4 after removing reserved columns)
+                # Status (now column 5 after adding Min Trans %)
                 status = ch_data.get('status', 'INDETERMINATE')
                 status_item = QTableWidgetItem(status)
                 status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -547,10 +564,10 @@ class CalibrationQCDialog(QDialog):
                     status_item.setForeground(QColor("#FF3B30"))
                 else:
                     status_item.setForeground(QColor("#FF9500"))
-                table.setItem(idx, 4, status_item)
+                table.setItem(idx, 5, status_item)
             else:
                 # No data for this channel
-                for col in range(1, 5):
+                for col in range(1, 6):
                     item = QTableWidgetItem("N/A")
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     table.setItem(idx, col, item)
@@ -559,10 +576,11 @@ class CalibrationQCDialog(QDialog):
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(False)
         table.setColumnWidth(0, 100)  # Channel
-        table.setColumnWidth(1, 100)  # P/S Ratio
-        table.setColumnWidth(2, 120)  # Dip Detected
-        table.setColumnWidth(3, 100)  # FWHM
-        table.horizontalHeader().setSectionResizeMode(4, table.horizontalHeader().ResizeMode.Stretch)  # Status
+        table.setColumnWidth(1, 100)  # Min Trans %
+        table.setColumnWidth(2, 100)  # P/S Ratio
+        table.setColumnWidth(3, 120)  # Dip Detected
+        table.setColumnWidth(4, 100)  # FWHM
+        table.horizontalHeader().setSectionResizeMode(5, table.horizontalHeader().ResizeMode.Stretch)  # Status
         table.setMinimumHeight(180)
         table.setMaximumHeight(220)
         layout.addWidget(table)
@@ -607,9 +625,30 @@ class CalibrationQCDialog(QDialog):
 
         led_str = ", ".join([f"Ch {ch.upper()}: {led_intensities.get(ch, 0)}" for ch in ['a', 'b', 'c', 'd']])
 
+        # Calculate S-pol and P-pol max counts
+        s_pol_spectra = data.get('s_pol_spectra', {})
+        p_pol_spectra = data.get('p_pol_spectra', {})
+        
+        s_max_str_parts = []
+        p_max_str_parts = []
+        
+        for ch in ['a', 'b', 'c', 'd']:
+            if ch in s_pol_spectra and s_pol_spectra[ch] is not None:
+                s_max = np.max(s_pol_spectra[ch])
+                s_max_str_parts.append(f"Ch {ch.upper()}: {s_max:.0f}")
+            
+            if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
+                p_max = np.max(p_pol_spectra[ch])
+                p_max_str_parts.append(f"Ch {ch.upper()}: {p_max:.0f}")
+        
+        s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
+        p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
+
         summary_text = (
             f"<b>Integration Time:</b> {integration_time:.2f} ms  |  "
-            f"<b>LED Intensities:</b> {led_str}"
+            f"<b>LED Intensities:</b> {led_str}<br>"
+            f"<b>S-pol Max (75% target):</b> {s_max_str}<br>"
+            f"<b>P-pol Max (81% target):</b> {p_max_str}"
         )
 
         summary_label = QLabel(summary_text)

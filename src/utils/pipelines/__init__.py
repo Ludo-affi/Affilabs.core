@@ -6,8 +6,8 @@ convenience functions for pipeline management.
 
 from utils.processing_pipeline import get_pipeline_registry
 from utils.pipelines.fourier_pipeline import FourierPipeline
-from utils.pipelines.centroid_pipeline import CentroidPipeline
-from utils.pipelines.polynomial_pipeline import PolynomialPipeline
+from utils.pipelines.batch_savgol_pipeline import BatchSavgolPipeline  # GOLD STANDARD (replaces centroid)
+from utils.pipelines.direct_argmin_pipeline import DirectArgminPipeline  # Simple & Fast (replaces polynomial)
 from utils.pipelines.adaptive_multifeature_pipeline import AdaptiveMultiFeaturePipeline
 from utils.pipelines.consensus_pipeline import ConsensusPipeline
 from utils.logger import logger
@@ -19,13 +19,13 @@ def initialize_pipelines():
     This should be called once at application startup.
     """
     from settings import TRANSMISSION_BASELINE_CORRECTION, TRANSMISSION_BASELINE_DEGREE
-    
+
     registry = get_pipeline_registry()
 
     # Register pipeline classes
     registry.register('fourier', FourierPipeline)
-    registry.register('centroid', CentroidPipeline)
-    registry.register('polynomial', PolynomialPipeline)
+    registry.register('batch_savgol', BatchSavgolPipeline)  # GOLD STANDARD - replaces centroid
+    registry.register('direct', DirectArgminPipeline)  # Simple & Fast - replaces polynomial
     registry.register('adaptive', AdaptiveMultiFeaturePipeline)
     registry.register('consensus', ConsensusPipeline)
 

@@ -546,3 +546,11 @@ class AffilabsSidebar(QWidget):
                 self.update_spectroscopy_status("Acquiring", "#007AFF")
             except Exception as e:
                 pass  # Silently ignore plotting errors
+
+
+# ===================================================================
+# COMPATIBILITY ALIAS
+# ===================================================================
+# LL_UI_v1_0.py imports "SidebarPrototype" but we renamed to "AffilabsSidebar"
+# This alias maintains backward compatibility without changing all imports
+SidebarPrototype = AffilabsSidebar

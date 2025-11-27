@@ -309,6 +309,20 @@ def save_calibration_to_device_config(
     """
     logger.info("Saving calibration to device_config.json...")
 
+    # Load existing calibration to check for fast-track counter
+    existing_cal = device_config.load_led_calibration()
+    is_fast_track = hasattr(calibration_result, 'fast_track_passed') and calibration_result.fast_track_passed
+
+    # Update fast-track counter
+    if is_fast_track:
+        # Increment counter for fast-track
+        fast_track_count = existing_cal.get('fast_track_count', 0) + 1
+        logger.info(f"✅ Fast-track calibration #{fast_track_count}/5")
+    else:
+        # Reset counter for full calibration
+        fast_track_count = 0
+        logger.info("✅ Full calibration - fast-track counter reset")
+
     # Build calibration data structure
     cal_data = {
         # LED intensities
@@ -321,6 +335,9 @@ def save_calibration_to_device_config(
 
         # Calibration method
         'calibration_method': getattr(calibration_result, 'calibration_method', 'standard'),
+
+        # Fast-track tracking (Priority 1)
+        'fast_track_count': fast_track_count,
 
         # Full arrays (not just metrics)
         's_ref_signals': {

@@ -81,16 +81,16 @@ data_mgr.ref_intensity = cal_result.ref_intensity
 def _acquire_channel_spectrum(self, channel: str):
     # Get LED intensity from calibration
     led_intensity = self.leds_calibrated.get(channel)
-    
+
     # Set LED
     ctrl.set_intensity(ch=channel, raw_val=led_intensity)
-    
+
     # Set integration time from calibration
     usb.set_integration(self.integration_time)
-    
+
     # Acquire
     raw_spectrum = usb.read_intensity()
-    
+
     # Process (dark subtraction, afterglow, transmission)
     # ...
 ```

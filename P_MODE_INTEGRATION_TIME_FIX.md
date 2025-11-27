@@ -48,13 +48,13 @@ time.sleep(0.1)  # Brief delay for spectrometer to update
 ```
 Calibration per-channel optimization:
 - Channel A: optimize at 35ms → measure reference
-- Channel B: optimize at 38ms → measure reference  
+- Channel B: optimize at 38ms → measure reference
 - Channel C: optimize at 40ms → measure reference
 - Channel D: optimize at 42ms → measure reference
 - [Spectrometer now at 42ms from last channel]
 - verify_calibration():
   - Channel A: measured at 42ms ❌ WRONG (should be 35ms or global 42ms)
-  - Channel B: measured at 42ms ❌ WRONG  
+  - Channel B: measured at 42ms ❌ WRONG
   - Channel C: measured at 42ms ❌ WRONG
   - Channel D: measured at 42ms ✓ (accidentally correct)
 

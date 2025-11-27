@@ -63,7 +63,7 @@ class GraphicControlTabBuilder:
 
         # Enable filtering checkbox
         self.sidebar.filter_enable = QCheckBox("Enable data filtering")
-        self.sidebar.filter_enable.setChecked(True)
+        self.sidebar.filter_enable.setChecked(False)  # DISABLED for troubleshooting
         self.sidebar.filter_enable.setStyleSheet(checkbox_style())
         self.sidebar.filter_enable.setToolTip("Apply smoothing filter to reduce noise in real-time data")
         gc_layout.addWidget(self.sidebar.filter_enable)

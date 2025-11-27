@@ -1487,11 +1487,14 @@ class MainWindowPrototype(QMainWindow):
         self.ru_btn.toggled.connect(self._on_unit_changed)
         self.nm_btn.toggled.connect(self._on_unit_changed)
 
-        # Forward spectroscopy plots
-        self.transmission_plot = self.sidebar.transmission_plot
-        self.transmission_curves = self.sidebar.transmission_curves
-        self.raw_data_plot = self.sidebar.raw_data_plot
-        self.raw_data_curves = self.sidebar.raw_data_curves
+        # Forward spectroscopy plots (if they exist - may not be initialized in sidebar)
+        if hasattr(self.sidebar, 'transmission_plot'):
+            self.transmission_plot = self.sidebar.transmission_plot
+            self.transmission_curves = self.sidebar.transmission_curves
+        if hasattr(self.sidebar, 'raw_data_plot'):
+            self.raw_data_plot = self.sidebar.raw_data_plot
+            self.raw_data_curves = self.sidebar.raw_data_curves
+
         # Forward settings controls
         self.s_position_input = self.sidebar.s_position_input
         self.p_position_input = self.sidebar.p_position_input
@@ -5255,7 +5258,7 @@ End of Debug Log
 if __name__ == "__main__":
     # Initialize processing pipelines before creating UI
     import utils.pipelines  # Auto-initializes on import
-    
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindowPrototype()

@@ -40,7 +40,7 @@ Dark Noise:       Measured at global integration time
 During calibration, P-mode integration times were optimized per-channel (e.g., A=35ms, B=38ms, C=40ms, D=42ms). The spectrometer was left with the **last channel's integration time** (42ms), so `verify_calibration()` measured:
 - Channel A: 42ms ❌ (should be global 42ms, was accidentally correct but for wrong reason)
 - Channel B: 42ms ❌
-- Channel C: 42ms ❌  
+- Channel C: 42ms ❌
 - Channel D: 42ms ✓ (accidentally correct)
 
 Live acquisition correctly used global maximum (42ms) for all channels, causing **mismatch** between calibration QC intensities and live intensities.
@@ -97,7 +97,7 @@ Added explicit `usb.set_integration(result.integration_time)` before `verify_cal
 
 ### Calibration → Live Data
 ✅ **Integration Time**: Global maximum used in both QC and live
-✅ **LED Intensity**: All LEDs=255 in both QC and live  
+✅ **LED Intensity**: All LEDs=255 in both QC and live
 ✅ **Dark Noise**: Same baseline used (measured at global integration)
 ✅ **Afterglow**: Same correction applied per-channel
 ✅ **Transmission Calculation**: Identical formula and preprocessing

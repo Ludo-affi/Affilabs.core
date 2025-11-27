@@ -59,7 +59,7 @@ for ch in channels:
 
 print()
 
-# Calculate transmission spectra: T = (S - Dark_s) / (P - Dark_p)
+# Calculate transmission spectra: T = (P - Dark_p) / (S - Dark_s)
 print("Calculating transmission spectra per channel...")
 print()
 

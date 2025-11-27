@@ -3209,19 +3209,29 @@ def perform_alternative_calibration(
 
         logger.info(f"   P-mode target: {p_target_counts:.0f} counts (80% of {detector_params.max_counts:.0f} max)")
 
+        # DEBUG: Check initial state
+        logger.info(f"🔍 DEBUG: Channel list = {ch_list}")
+        logger.info(f"🔍 DEBUG: leds_calibrated BEFORE loop = {result.leds_calibrated}")
+
         p_integration_times = {}
 
         for ch in ch_list:
+            logger.info(f"🔍 DEBUG: Processing P-mode channel {ch}")
+
             if stop_flag and stop_flag.is_set():
+                logger.warning(f"🔍 DEBUG: Stop flag detected during P-mode calibration at channel {ch}")
                 break
 
             # Optimize integration time for this channel in P-mode
+            logger.info(f"🔍 DEBUG: Calling calibrate_integration_per_channel for ch={ch}")
             p_integration_times[ch], _ = calibrate_integration_per_channel(
                 usb, ctrl, ch, led_intensity=255, target_counts=p_target_counts, stop_flag=stop_flag
             )
+            logger.info(f"🔍 DEBUG: P-mode integration for ch {ch} = {p_integration_times[ch]}ms")
 
             # Store LED intensity (always 255)
             result.leds_calibrated[ch] = 255
+            logger.info(f"🔍 DEBUG: Set leds_calibrated[{ch}] = 255, dict now = {result.leds_calibrated}")
 
             # Calculate performance metrics with P-mode integration boost
             s_int = s_integration_times[ch]
@@ -3251,6 +3261,13 @@ def perform_alternative_calibration(
             }
 
             logger.info(f"   Channel {ch}: S={s_int}ms → P={p_int}ms (boost: {integration_boost:.2f}x, headroom: {integration_headroom_ms}ms)")
+
+        # DEBUG: Verify leds_calibrated after loop completes
+        logger.info(f"\n🔍 DEBUG: P-mode loop completed")
+        logger.info(f"🔍 DEBUG: leds_calibrated AFTER loop = {result.leds_calibrated}")
+        logger.info(f"🔍 DEBUG: Type of leds_calibrated = {type(result.leds_calibrated)}")
+        logger.info(f"🔍 DEBUG: Is dict? {isinstance(result.leds_calibrated, dict)}")
+        logger.info(f"🔍 DEBUG: Empty? {not result.leds_calibrated}")
 
         # Store P-mode integration times (overwrite S-mode values in result)
         result.per_channel_integration = p_integration_times

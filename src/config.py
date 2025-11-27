@@ -8,7 +8,7 @@ LEAK_THRESHOLD_RATIO = 1.5  # intensity must be > dark_noise * ratio to be valid
 WAVELENGTH_TO_RU_CONVERSION = 1000.0  # 1 nm wavelength shift ≈ 1000 RU (Response Units)
 
 # === Filtering Defaults ===
-DEFAULT_FILTER_ENABLED = True  # Filtering ON by default (matches old software)
+DEFAULT_FILTER_ENABLED = False  # DISABLED: Filtering OFF for troubleshooting (was True)
 DEFAULT_FILTER_STRENGTH = 1  # Strength 1 = minimal smoothing, 10 = maximum smoothing
 # Uses adaptive online filtering: windowed for live display, batch for cycle analysis
 
@@ -46,6 +46,6 @@ PROGRESS_BAR_UPDATE_MS = 100  # milliseconds between progress bar updates
 # === Live Data Performance Settings ===
 DEBUG_LOG_THROTTLE_FACTOR = 10  # Log debug messages every Nth acquisition (1=all, 10=every 10th)
 TRANSMISSION_UPDATE_INTERVAL = 1.0  # seconds between transmission spectrum updates
-SENSORGRAM_DOWNSAMPLE_FACTOR = 2  # Update sensorgram every Nth point (1=all, 2=half, 4=quarter)
+SENSORGRAM_DOWNSAMPLE_FACTOR = 1  # DISABLED: Show all points (was 2 for half-rate)
 ENABLE_TRANSMISSION_UPDATES_DEFAULT = True  # Default state for transmission spectrum updates
 ENABLE_RAW_SPECTRUM_UPDATES_DEFAULT = True  # Default state for raw spectrum updates

@@ -717,7 +717,7 @@ class DataAcquisitionManager(QObject):
             if led_intensity is None:
                 print(f"[ACQ ERROR] Channel {channel}: No LED intensity from calibration")
                 return None
-            
+
             # Turn on LED for channel (already in P-mode from start_acquisition)
             # NOTE: Polarizer is already in P-mode (set once at start_acquisition)
             # No need to call set_mode('p') here - that would cause unnecessary servo rotation
@@ -734,7 +734,7 @@ class DataAcquisitionManager(QObject):
             if not self.integration_time or self.integration_time <= 0:
                 print(f"[ACQ ERROR] Channel {channel}: Invalid integration time from calibration: {self.integration_time}ms")
                 return None
-            
+
             try:
                 usb.set_integration(self.integration_time)
             except ConnectionError as e:
@@ -746,9 +746,27 @@ class DataAcquisitionManager(QObject):
                 print(f"[ACQ ERROR] Channel {channel}: Failed to set integration time: {e}")
                 return None
 
-            # Read spectrum intensities
+            # Read spectrum intensities with averaging (same as calibration)
+            # Use num_scans from calibration to match reference signal quality
+            num_scans = self.num_scans if self.num_scans and self.num_scans > 0 else 1
+
             try:
-                raw_spectrum = usb.read_intensity()
+                if num_scans > 1:
+                    # Average multiple scans (same as calibration)
+                    spectra = []
+                    for _ in range(num_scans):
+                        spectrum = usb.read_intensity()
+                        if spectrum is not None:
+                            spectra.append(spectrum)
+
+                    if len(spectra) == 0:
+                        print(f"[ACQ ERROR] Channel {channel}: All scans returned None")
+                        return None
+
+                    raw_spectrum = np.mean(spectra, axis=0)
+                else:
+                    # Single scan mode
+                    raw_spectrum = usb.read_intensity()
             except ConnectionError as e:
                 print(f"[ACQ ERROR] Channel {channel}: Spectrometer disconnected during read")
                 self.acquisition_error.emit("Spectrometer disconnected. Please reconnect and restart.")
@@ -971,19 +989,9 @@ class DataAcquisitionManager(QObject):
             wavelength = spectrum_data['wavelength']
             intensity = spectrum_data['intensity']
 
-            # Subtract dark noise
-            if self.dark_noise is not None:
-                # ✨ CRITICAL: Check shape compatibility before subtraction
-                if len(intensity) != len(self.dark_noise):
-                    print(f"[PROCESS] WARNING: Shape mismatch - intensity({len(intensity)}) vs dark({len(self.dark_noise)})")
-                    print(f"[PROCESS] Using first {min(len(intensity), len(self.dark_noise))} elements")
-                    min_len = min(len(intensity), len(self.dark_noise))
-                    intensity = intensity[:min_len] - self.dark_noise[:min_len]
-                    wavelength = wavelength[:min_len]
-                else:
-                    intensity = intensity - self.dark_noise
-
-            # Store raw spectrum (dark corrected)
+            # ✨ FIXED: Dark noise already subtracted in _acquire_channel_spectrum()
+            # Don't subtract again here to avoid double subtraction!
+            # Store raw spectrum (already dark-corrected from acquisition)
             raw_spectrum = intensity.copy()
 
             # Calculate transmission spectrum (P/S ratio) for peak finding
@@ -1046,7 +1054,7 @@ class DataAcquisitionManager(QObject):
             # ═══════════════════════════════════════════════════════════════════════════
             # PEAK FINDING: Fourier Transform Method
             # ═══════════════════════════════════════════════════════════════════════════
-            
+
             peak_input = transmission_spectrum if transmission_spectrum is not None else intensity
 
             # Calculate minimum hint from smoothed transmission to guide Fourier method
@@ -1072,10 +1080,10 @@ class DataAcquisitionManager(QObject):
             # ═══════════════════════════════════════════════════════════════════════════
             # QUALITY CONTROL: Independent validation (runs for every spectrum)
             # ═══════════════════════════════════════════════════════════════════════════
-            
+
             # Calculate FWHM and quality metrics (does NOT affect peak position)
             if len(peak_input) > 0 and len(wavelength) == len(peak_input):
-                qc_result = self._find_validated_peak(wavelength, peak_input, channel, 
+                qc_result = self._find_validated_peak(wavelength, peak_input, channel,
                                                       minimum_hint_nm=minimum_hint_nm)
                 fwhm_nm = qc_result['fwhm']
                 qc_quality = qc_result['quality']
@@ -1092,7 +1100,7 @@ class DataAcquisitionManager(QObject):
             # Log warnings for poor quality data (CRITICAL, POOR levels only)
             if sensor_iq.iq_level in [SensorIQLevel.CRITICAL, SensorIQLevel.POOR]:
                 log_sensor_iq(sensor_iq, channel)
-            
+
             # Log QC warnings if present
             if qc_warning:
                 print(f"[QC] Channel {channel}: {qc_warning}")
@@ -1187,9 +1195,24 @@ class DataAcquisitionManager(QObject):
             minima_indices, properties = find_peaks(-spec_spr, prominence=1.0, width=3)
 
             if len(minima_indices) == 0:
-                # No clear minima found, fall back to absolute minimum
-                min_idx = np.argmin(spec_spr)
-                peak_wl = wl_spr[min_idx]
+                # No clear minima found, use minimum_hint_nm if available, else absolute minimum
+                if minimum_hint_nm is not None and 600.0 <= minimum_hint_nm <= 690.0:
+                    # Use the hint calculated from smoothed transmission in SPR region
+                    peak_wl = minimum_hint_nm
+                    logger.debug(f"QC: No minima found, using minimum_hint_nm={peak_wl:.1f}nm")
+                else:
+                    # Fallback: find minimum in CORE SPR region (600-690nm)
+                    core_spr_mask = (wl_spr >= 600.0) & (wl_spr <= 690.0)
+                    if np.any(core_spr_mask):
+                        core_spec = spec_spr[core_spr_mask]
+                        core_wl = wl_spr[core_spr_mask]
+                        min_idx = np.argmin(core_spec)
+                        peak_wl = core_wl[min_idx]
+                        logger.debug(f"QC: No minima found, using minimum in core SPR region: {peak_wl:.1f}nm")
+                    else:
+                        min_idx = np.argmin(spec_spr)
+                        peak_wl = wl_spr[min_idx]
+
                 fwhm = self._calculate_fwhm(wl_spr, spec_spr, peak_wl)
 
                 warning = None
@@ -1310,9 +1333,25 @@ class DataAcquisitionManager(QObject):
             # Select best candidate
             warning = None
             if len(candidates) == 0:
-                # All candidates rejected, use absolute minimum as last resort
-                min_idx = np.argmin(spec_spr)
-                peak_wl = wl_spr[min_idx]
+                # All candidates rejected, use minimum_hint_nm if available, else absolute minimum
+                if minimum_hint_nm is not None and 600.0 <= minimum_hint_nm <= 690.0:
+                    # Use the hint calculated from smoothed transmission in SPR region
+                    peak_wl = minimum_hint_nm
+                    logger.debug(f"QC: All candidates rejected, using minimum_hint_nm={peak_wl:.1f}nm")
+                else:
+                    # Fallback: find absolute minimum in CORE SPR region (600-690nm, not 590-750nm)
+                    core_spr_mask = (wl_spr >= 600.0) & (wl_spr <= 690.0)
+                    if np.any(core_spr_mask):
+                        core_spec = spec_spr[core_spr_mask]
+                        core_wl = wl_spr[core_spr_mask]
+                        min_idx = np.argmin(core_spec)
+                        peak_wl = core_wl[min_idx]
+                        logger.debug(f"QC: Using minimum in core SPR region (600-690nm): {peak_wl:.1f}nm")
+                    else:
+                        min_idx = np.argmin(spec_spr)
+                        peak_wl = wl_spr[min_idx]
+                        logger.debug(f"QC: Using absolute minimum: {peak_wl:.1f}nm")
+
                 fwhm = self._calculate_fwhm(wl_spr, spec_spr, peak_wl)
 
                 # Generate warning based on issue
@@ -1371,7 +1410,7 @@ class DataAcquisitionManager(QObject):
             logger.warning(f"Peak validation failed for channel {channel}: {e}")
             return default_result
 
-    def _find_resonance_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str, 
+    def _find_resonance_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str,
                             minimum_hint_nm: float = None) -> float:
         """Find resonance peak wavelength using selected pipeline method.
 
@@ -1408,7 +1447,7 @@ class DataAcquisitionManager(QObject):
                     wavelengths=wavelength,
                     minimum_hint_nm=minimum_hint_nm  # Pass hint for fast path
                 )
-            
+
             elif active_pipeline_id == 'polynomial':
                 # Polynomial fitting method
                 from utils.pipelines.polynomial_pipeline import PolynomialPipeline
@@ -1418,7 +1457,7 @@ class DataAcquisitionManager(QObject):
                     wavelengths=wavelength,
                     minimum_hint_nm=minimum_hint_nm
                 )
-            
+
             elif active_pipeline_id == 'adaptive':
                 # Adaptive multi-feature method with temporal filtering
                 from utils.pipelines.adaptive_multifeature_pipeline import AdaptiveMultiFeaturePipeline
@@ -1431,7 +1470,7 @@ class DataAcquisitionManager(QObject):
                     minimum_hint_nm=minimum_hint_nm  # Pass hint for fast path
                 )
                 # Note: metadata contains FWHM, depth, confidence, jitter_flag, slopes, etc.
-            
+
             elif active_pipeline_id == 'consensus':
                 # Consensus method (multi-algorithm voting)
                 from utils.pipelines.consensus_pipeline import ConsensusPipeline
@@ -1441,29 +1480,39 @@ class DataAcquisitionManager(QObject):
                     wavelengths=wavelength,
                     minimum_hint_nm=minimum_hint_nm
                 )
-            
+
             else:
                 # Default: Fourier Transform (active_pipeline_id == 'fourier' or unknown)
-                from utils.spr_signal_processing import find_resonance_wavelength_fourier
-                
-                # Get channel-specific SNR-aware Fourier weights if available
-                weights = self.fourier_weights.get(channel) if isinstance(self.fourier_weights, dict) else self.fourier_weights
-                
-                if weights is not None and len(weights) > 0:
-                    # Use SNR-aware Fourier analysis
-                    peak_wavelength = find_resonance_wavelength_fourier(
-                        transmission_spectrum=spectrum,
-                        wavelengths=wavelength,
-                        fourier_weights=weights
-                    )
-                    
-                    # Validate result
-                    if np.isnan(peak_wavelength) or peak_wavelength < wavelength[0] or peak_wavelength > wavelength[-1]:
-                        # Fourier failed, use hint or minimum
-                        peak_wavelength = minimum_hint_nm if minimum_hint_nm is not None else wavelength[np.argmin(spectrum)]
-                else:
-                    # No weights available, use hint or minimum
-                    peak_wavelength = minimum_hint_nm if minimum_hint_nm is not None else wavelength[np.argmin(spectrum)]
+                from utils.pipelines.fourier_pipeline import FourierPipeline
+                from settings.settings import FOURIER_ALPHA, FOURIER_WINDOW_SIZE, EMA_ENABLED, EMA_ALPHA
+
+                # Use FourierPipeline with EMA pre-smoothing and optimized parameters
+                pipeline = FourierPipeline(config={
+                    'alpha': FOURIER_ALPHA,  # 9000 = original 2nm baseline performance
+                    'window_size': FOURIER_WINDOW_SIZE,  # 165 points
+                    'ema_enabled': EMA_ENABLED,  # Cascaded filtering stage 1
+                    'ema_alpha': EMA_ALPHA,  # 0.1 = 13.3% noise reduction
+                })
+                peak_wavelength = pipeline.find_resonance_wavelength(
+                    transmission=spectrum,
+                    wavelengths=wavelength,
+                    fourier_weights=self.fourier_weights.get(channel) if isinstance(self.fourier_weights, dict) else self.fourier_weights
+                )
+
+                # Validate result - must be within SPR region (600-690nm) to avoid edge artifacts
+                if np.isnan(peak_wavelength) or peak_wavelength < 600.0 or peak_wavelength > 690.0:
+                    # Fourier failed or found edge artifact, use hint or minimum in SPR region
+                    if minimum_hint_nm is not None and 600.0 <= minimum_hint_nm <= 690.0:
+                        peak_wavelength = minimum_hint_nm
+                    else:
+                        # Find minimum in SPR region only
+                        spr_mask = (wavelength >= 600.0) & (wavelength <= 690.0)
+                        if np.any(spr_mask):
+                            spr_spectrum = spectrum[spr_mask]
+                            spr_wavelengths = wavelength[spr_mask]
+                            peak_wavelength = spr_wavelengths[np.argmin(spr_spectrum)]
+                        else:
+                            peak_wavelength = 650.0  # Fallback to center
 
             # Final validation
             if np.isnan(peak_wavelength) or peak_wavelength < wavelength[0] or peak_wavelength > wavelength[-1]:

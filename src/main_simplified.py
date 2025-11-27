@@ -226,6 +226,12 @@ class Application(QApplication):
         self.main_window.app = self
         logger.info("✅ Main window initialized")
 
+        # Verify spectroscopy plots are available
+        if hasattr(self.main_window, 'transmission_curves'):
+            logger.info(f"✅ Spectroscopy plots initialized: {len(self.main_window.transmission_curves)} transmission curves")
+        else:
+            logger.warning("⚠️ Spectroscopy plots NOT found in main window - graphs will not display")
+
         # Track selected axis for manual/auto scaling (default X)
         self._selected_axis = 'x'
 
@@ -397,6 +403,11 @@ class Application(QApplication):
         self.data_mgr.acquisition_stopped.connect(self._on_acquisition_stopped, Qt.QueuedConnection)
         self.data_mgr.acquisition_error.connect(self._on_acquisition_error, Qt.QueuedConnection)
 
+        # === CALIBRATION MANAGER SIGNALS ===
+        # Connect to calibration_complete to update optics_ready status
+        self.calibration.manager.calibration_complete.connect(self._on_calibration_complete_status_update, Qt.QueuedConnection)
+        logger.info("Connected: calibration.manager.calibration_complete -> _on_calibration_complete_status_update")
+
         # === RECORDING MANAGER SIGNALS ===
         self.recording_mgr.recording_started.connect(self._on_recording_started)
         self.recording_mgr.recording_stopped.connect(self._on_recording_stopped)
@@ -409,6 +420,37 @@ class Application(QApplication):
         self.kinetic_mgr.pump_state_changed.connect(self._on_pump_state_changed)
         self.kinetic_mgr.valve_switched.connect(self._on_valve_switched)
 
+    def _on_calibration_complete_status_update(self, calibration_data: dict):
+        """Handler for calibration completion - updates optics_ready status.
+
+        Args:
+            calibration_data: Dict with calibration result including 'optics_ready' flag
+        """
+        try:
+            optics_ready = calibration_data.get('optics_ready', False)
+            logger.info(f"📡 Calibration complete signal received - optics_ready={optics_ready}")
+
+            if optics_ready:
+                # Update device status UI to show optics as ready
+                self._update_device_status_ui({'optics_ready': True})
+
+                # Mark calibration as completed (used by power-on workflow)
+                self._calibration_completed = True
+
+                logger.info("✅ Optics status updated to READY in UI")
+            else:
+                # Calibration failed - optics not ready
+                logger.warning("⚠️ Calibration completed but optics not ready (some channels failed)")
+                self._update_device_status_ui({'optics_ready': False})
+
+        except Exception as e:
+            logger.error(f"❌ Failed to update optics_ready status: {e}", exc_info=True)
+
+    def _connect_ui_signals(self):
+        """Connect UI signals after handler method is defined."""
+
+    def _connect_ui_signals(self):
+        """Connect UI signals after handler method is defined."""
         # === UI SIGNALS (user requests) ===
         self.main_window.power_on_requested.connect(self._on_power_on_requested)
         logger.info("Connected: main_window.power_on_requested -> _on_power_on_requested")
@@ -523,6 +565,9 @@ class Application(QApplication):
         ui.cycle_of_interest_graph.scene().sigMouseClicked.connect(
             self._on_graph_clicked
         )
+
+        # Polarizer Calibration button
+        ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
 
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
@@ -1579,6 +1624,13 @@ class Application(QApplication):
             time_since_last_update = timestamp - self._last_transmission_update.get(channel, 0)
             should_update_transmission = (time_since_last_update >= TRANSMISSION_UPDATE_INTERVAL)
 
+            # Debug log (only once per session) - ALWAYS PRINT
+            if not hasattr(self, '_trans_check_logged'):
+                msg = f"[TRANS-UPDATE] Condition check: has_raw={has_raw_data}, has_trans={has_transmission}, should_update={should_update_transmission}, keys={list(data.keys())}"
+                logger.info(msg)
+                print(msg)  # FORCE PRINT
+                self._trans_check_logged = True
+
             if has_raw_data and has_transmission and should_update_transmission:
                 try:
                     if should_log:
@@ -1713,6 +1765,11 @@ class Application(QApplication):
             channel: Channel letter ('a', 'b', 'c', 'd')
             data: Spectrum data dictionary containing transmission_spectrum and raw_spectrum
         """
+        # Debug log (only once per session)
+        if not hasattr(self, '_queue_trans_entry_logged'):
+            logger.info(f"[TRANS-UPDATE] _queue_transmission_update() called - enabled flags: trans={self._transmission_updates_enabled}, raw={self._raw_spectrum_updates_enabled}")
+            self._queue_trans_entry_logged = True
+
         # Skip if updates are disabled (performance optimization)
         if not self._transmission_updates_enabled and not self._raw_spectrum_updates_enabled:
             return
@@ -1726,7 +1783,20 @@ class Application(QApplication):
         # Fallback: calculate transmission if not provided
         if transmission is None and raw_spectrum is not None and len(raw_spectrum) > 0:
             ref_spectrum = self.data_mgr.ref_sig[channel]
-            transmission = calculate_transmission(raw_spectrum, ref_spectrum)
+
+            # Get LED intensities for this channel (same as QC calculation)
+            p_led = self.data_mgr.leds_calibrated.get(channel) if hasattr(self.data_mgr, 'leds_calibrated') and isinstance(self.data_mgr.leds_calibrated, dict) else None
+            s_led = self.data_mgr.ref_intensity.get(channel) if hasattr(self.data_mgr, 'ref_intensity') and isinstance(self.data_mgr.ref_intensity, dict) else None
+
+            # Calculate transmission with LED correction (matches QC calculation exactly)
+            transmission = calculate_transmission(
+                raw_spectrum, ref_spectrum,
+                p_led_intensity=p_led, s_led_intensity=s_led
+            )
+
+            # Apply baseline correction (matches QC report visualization exactly)
+            if hasattr(self.data_mgr, '_apply_baseline_correction'):
+                transmission = self.data_mgr._apply_baseline_correction(transmission)
 
         # Queue for batch update if we have valid data
         if transmission is not None and len(transmission) > 0:
@@ -1749,6 +1819,7 @@ class Application(QApplication):
                 'raw_spectrum': raw_spectrum,
                 'wavelengths': wavelengths
             }
+            logger.debug(f"[TRANS-UPDATE] Queued ch {channel}: {len(transmission)} points, λ={wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm")
 
             if wavelengths is not None:
                 # Update transmission dialog if open (only if enabled)
@@ -1854,7 +1925,7 @@ class Application(QApplication):
         QTimer.singleShot(200, lambda: setattr(self, '_skip_graph_updates', False))
 
     def _process_pending_ui_updates(self):
-        """Process queued graph updates at throttled rate (10 FPS).
+        """Process queued graph updates at throttled rate (1 Hz).
 
         This prevents UI freezing from excessive redraws when data arrives
         at 40+ spectra per second across 4 channels.
@@ -1902,15 +1973,16 @@ class Application(QApplication):
                     else:
                         display_wavelength = raw_wavelength
 
-                    # Simple downsampling for performance during live acquisition
-                    # Keep graph responsive by limiting total points displayed
-                    MAX_PLOT_POINTS = 2000  # Sufficient for smooth rendering at 10 FPS
-                    if len(raw_time) > MAX_PLOT_POINTS:
-                        step = len(raw_time) // MAX_PLOT_POINTS
-                        display_time = raw_time[::step]
-                        display_wavelength = display_wavelength[::step]
-                    else:
-                        display_time = raw_time
+                    # Simple downsampling DISABLED - show all raw data for troubleshooting
+                    # MAX_PLOT_POINTS = 2000  # Sufficient for smooth rendering at 1 Hz
+                    # if len(raw_time) > MAX_PLOT_POINTS:
+                    #     step = len(raw_time) // MAX_PLOT_POINTS
+                    #     display_time = raw_time[::step]
+                    #     display_wavelength = display_wavelength[::step]
+                    # else:
+                    #     display_time = raw_time
+                    display_time = raw_time
+                    display_wavelength = raw_wavelength  # Show all points unfiltered
 
                     # Update graph
                     with measure('graph_update.setData'):
@@ -1929,7 +2001,7 @@ class Application(QApplication):
                 self._process_transmission_updates()
 
             # === UPDATE CYCLE OF INTEREST GRAPH ===
-            # Update at throttled rate (10 FPS) instead of on every data point (40+ FPS)
+            # Update at throttled rate (1 Hz) instead of on every data point (40+ FPS)
             # This prevents crashes from heavy processing (filtering, baseline calc, etc.)
             try:
                 with measure('cycle_of_interest_update'):
@@ -1941,11 +2013,17 @@ class Application(QApplication):
     def _process_transmission_updates(self):
         """Process queued transmission spectrum updates in batch (Phase 2 optimization).
 
-        This runs in the UI timer (10 FPS) instead of the acquisition thread,
+        This runs in the UI timer (1 Hz) instead of the acquisition thread,
         preventing blocking calls to setData() from delaying spectrum acquisition.
         """
         if not hasattr(self.main_window, 'transmission_curves'):
             return
+
+        # Debug log (only once per session)
+        if not hasattr(self, '_proc_trans_logged'):
+            num_queued = len([v for v in self._pending_transmission_updates.values() if v is not None])
+            logger.info(f"[TRANS-UPDATE] Processing batch: {num_queued} channels queued")
+            self._proc_trans_logged = True
 
         for channel, update_data in self._pending_transmission_updates.items():
             if update_data is None:
@@ -3320,7 +3398,11 @@ class Application(QApplication):
         logger.info("✅ Graph colors updated successfully")
 
     def _on_simple_led_calibration(self):
-        """Start simple LED intensity calibration (no auto-align)."""
+        """Start simple LED intensity calibration.
+        
+        Identical to OEM calibration - measures both S-pol and P-pol reference spectra.
+        The term 'simple' is historical; functionality is the same as full calibration.
+        """
         logger.info("🔧 Starting Simple LED Calibration...")
 
         # Check if hardware is ready
@@ -3333,12 +3415,17 @@ class Application(QApplication):
             )
             return
 
-        # Start LED calibration
-        self.data_mgr.start_calibration()
+        # Start LED calibration using the unified calibration coordinator
+        # This measures both S-pol reference AND P-pol reference automatically
+        self.calibration.start_calibration()
 
     def _on_full_calibration(self):
-        """Start full calibration with auto-align and polarizer calibration."""
-        logger.info("🔧 Starting Full Calibration (with auto-align)...")
+        """Start full calibration.
+        
+        Identical to simple/OEM calibration - measures both S-pol and P-pol reference spectra.
+        All calibration types now use the same unified workflow.
+        """
+        logger.info("🔧 Starting Full Calibration...")
 
         # Check if hardware is ready
         if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
@@ -3350,10 +3437,160 @@ class Application(QApplication):
             )
             return
 
-        # Start LED calibration
-        # TODO: The difference between simple/full/OEM needs to be passed as a parameter
-        # For now, all use the same data_mgr.start_calibration()
-        self.data_mgr.start_calibration()
+        # Start LED calibration using the unified calibration coordinator
+        # This measures both S-pol reference AND P-pol reference automatically
+        self.calibration.start_calibration()
+
+    def _on_polarizer_calibration(self):
+        """Run polarizer servo calibration to find optimal S and P positions."""
+        logger.info("🔧 Starting Polarizer Calibration...")
+
+        # Check if hardware is ready
+        if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
+            logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
+            from widgets.message import show_message
+            show_message(
+                "Please connect the controller and spectrometer first.",
+                "Hardware Not Ready"
+            )
+            return
+
+        # Get polarizer type from device config
+        polarizer_type = "circular"  # Default
+        if self.main_window.device_config:
+            polarizer_type = self.main_window.device_config.get_polarizer_type()
+
+        logger.info(f"📋 Polarizer type: {polarizer_type}")
+
+        # Import polarizer calibration function
+        from utils.servo_calibration import auto_calibrate_polarizer
+        import threading
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import Qt, QTimer, Signal, QObject
+
+        # Create signal emitter for thread-safe UI updates
+        class CalibrationSignals(QObject):
+            finished = Signal(object)  # Emits result dict or None
+            error = Signal(str)  # Emits error message
+
+        signals = CalibrationSignals()
+
+        # Create progress dialog
+        progress = QProgressDialog(
+            f"Running {polarizer_type} polarizer calibration...\n\n"
+            f"{'This will take ~1-2 minutes.' if polarizer_type == 'circular' else 'This will take ~30-60 seconds.'}\n\n"
+            f"Please ensure water/buffer is on the sensor.",
+            "Cancel", 0, 100, self.main_window
+        )
+        progress.setWindowTitle("Polarizer Calibration")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        def run_calibration():
+            """Background thread function - NO direct UI access allowed."""
+            try:
+                # Run calibration with water requirement
+                result = auto_calibrate_polarizer(
+                    self.hardware_mgr.usb,
+                    self.hardware_mgr.ctrl,
+                    require_water=True,
+                    polarizer_type=polarizer_type
+                )
+
+                if result and result.get('success'):
+                    s_pos = result['s_pos']
+                    p_pos = result['p_pos']
+                    sp_ratio = result.get('sp_ratio', 0)
+
+                    logger.info(f"✅ Polarizer calibration complete!")
+                    logger.info(f"   S position: {s_pos}°")
+                    logger.info(f"   P position: {p_pos}°")
+                    logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
+
+                    # Update device config (thread-safe - file I/O only)
+                    if self.main_window.device_config:
+                        self.main_window.device_config.data['hardware']['servo_s_position'] = s_pos
+                        self.main_window.device_config.data['hardware']['servo_p_position'] = p_pos
+                        self.main_window.device_config.save()
+                        logger.info("✅ Positions saved to device_config.json")
+
+                    # Apply to hardware (thread-safe - USB I/O only)
+                    self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
+                    logger.info("✅ Positions applied to hardware")
+
+                    # Signal success to main thread
+                    signals.finished.emit(result)
+                else:
+                    logger.error("❌ Polarizer calibration failed")
+                    error_msg = "Polarizer calibration failed.\n\n"
+                    if result:
+                        error_msg += f"Reason: {result.get('error', 'Unknown error')}"
+                    else:
+                        error_msg += "Check logs for details."
+                    signals.error.emit(error_msg)
+
+            except Exception as e:
+                logger.exception(f"❌ Polarizer calibration error: {e}")
+                signals.error.emit(f"Calibration error: {e}")
+
+        def on_calibration_finished(result):
+            """Main thread handler for successful calibration."""
+            timer.stop()
+            progress.close()
+
+            from widgets.message import show_message
+
+            s_pos = result['s_pos']
+            p_pos = result['p_pos']
+            sp_ratio = result.get('sp_ratio', 0)
+
+            msg = f"Polarizer calibration successful!\n\n"
+            msg += f"Type: {polarizer_type.upper()}\n"
+            msg += f"S position: {s_pos}° (HIGH transmission)\n"
+            msg += f"P position: {p_pos}° (LOW transmission)\n"
+            msg += f"S/P ratio: {sp_ratio:.2f}×\n\n"
+
+            if 'dip_depth_percent' in result:
+                msg += f"SPR dip depth: {result['dip_depth_percent']:.1f}%\n"
+            if 'resonance_wavelength' in result:
+                msg += f"Resonance λ: {result['resonance_wavelength']:.1f}nm\n"
+
+            msg += "\n✅ Positions saved to device_config.json"
+
+            show_message(msg, "Success")
+
+        def on_calibration_error(error_msg):
+            """Main thread handler for calibration error."""
+            timer.stop()
+            progress.close()
+
+            from widgets.message import show_message
+            show_message(error_msg, "Error")
+
+        # Connect signals to main thread handlers
+        signals.finished.connect(on_calibration_finished)
+        signals.error.connect(on_calibration_error)
+
+        # Run in background thread
+        thread = threading.Thread(target=run_calibration, daemon=True)
+        thread.start()
+
+        # Update progress periodically
+        timer = QTimer()
+        elapsed = [0]
+
+        def update_progress():
+            elapsed[0] += 100
+            max_time = 120000 if polarizer_type == "circular" else 60000  # ms
+            progress_percent = min(95, int(elapsed[0] / max_time * 100))
+            progress.setValue(progress_percent)
+            if not thread.is_alive():
+                timer.stop()
+                progress.setValue(100)
+
+        timer.timeout.connect(update_progress)
+        timer.start(100)  # Update every 100ms
 
     def _on_oem_led_calibration(self):
         """Start OEM LED calibration with full afterglow measurement."""

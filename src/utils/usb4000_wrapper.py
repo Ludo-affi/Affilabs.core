@@ -335,7 +335,7 @@ class USB4000:
     @property
     def target_counts(self):
         """Get recommended target counts for calibration.
-        
+
         Target is optimized for LED intensity ~220 for weakest channel.
         This provides good headroom for P-mode boost to LED=255.
 

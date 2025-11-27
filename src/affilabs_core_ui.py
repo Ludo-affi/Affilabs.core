@@ -143,6 +143,7 @@ from sidebar import AffilabsSidebar
 from plot_helpers import create_time_plot, add_channel_curves, create_spectroscopy_plot
 from diagnostics_dialog import DiagnosticsDialog
 from inspector import ElementInspector
+from utils.baseline_data_recorder import BaselineDataRecorder
 
 
 
@@ -1701,10 +1702,33 @@ class AffilabsMainWindow(QMainWindow):
         self.channel_d_input = self.sidebar.channel_d_input
         self.apply_settings_btn = self.sidebar.apply_settings_btn
 
+        # Forward spectroscopy plots (if they exist)
+        if hasattr(self.sidebar, 'transmission_plot'):
+            self.transmission_plot = self.sidebar.transmission_plot
+            self.transmission_curves = self.sidebar.transmission_curves
+            logger.info(f"✅ Forwarded transmission plot with {len(self.transmission_curves)} curves from sidebar")
+        else:
+            logger.warning("⚠️ transmission_plot NOT found in sidebar - plots will not work")
+
+        if hasattr(self.sidebar, 'raw_data_plot'):
+            self.raw_data_plot = self.sidebar.raw_data_plot
+            self.raw_data_curves = self.sidebar.raw_data_curves
+            logger.info(f"✅ Forwarded raw data plot with {len(self.raw_data_curves)} curves from sidebar")
+        else:
+            logger.warning("⚠️ raw_data_plot NOT found in sidebar - plots will not work")
+
         # Forward calibration buttons
         self.simple_led_calibration_btn = self.sidebar.simple_led_calibration_btn
         self.full_calibration_btn = self.sidebar.full_calibration_btn
+        self.polarizer_calibration_btn = self.sidebar.polarizer_calibration_btn
         self.oem_led_calibration_btn = self.sidebar.oem_led_calibration_btn
+
+        # Forward baseline data recording button
+        if hasattr(self.sidebar, 'record_baseline_btn'):
+            self.record_baseline_btn = self.sidebar.record_baseline_btn
+            logger.info("✅ Forwarded record baseline button from sidebar")
+        else:
+            logger.warning("⚠️ record_baseline_btn NOT found in sidebar")
 
         right_widget = QWidget()
         right_widget.setMinimumWidth(300)  # Allow main content to compress so sidebar can expand more
@@ -2189,8 +2213,8 @@ class AffilabsMainWindow(QMainWindow):
 
         descriptions = {
             "fourier": "Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.",
-            "centroid": "Centroid Detection: Center-of-mass calculation of inverted transmission dip. Simple and robust for symmetric peaks.",
-            "polynomial": "Polynomial Fit: Fits polynomial to dip region and finds minimum. Good for smooth, well-defined peaks.",
+            "batch_savgol": "Batch Savitzky-Golay (GOLD STANDARD): Hardware averaging + batch processing + SG filtering. Achieves 0.008nm baseline.",
+            "direct": "Direct ArgMin: Simplest method, finds minimum in SPR range. Fastest execution, optimal for clean signals.",
             "adaptive": "Adaptive Multi-Feature: Combines multiple detection methods with adaptive weighting. Best for challenging signals.",
             "consensus": "Consensus: Combines 3 methods (centroid, parabolic, fourier) for robust multi-method validation."
         }
@@ -2212,8 +2236,8 @@ class AffilabsMainWindow(QMainWindow):
             # Find index of active pipeline
             pipeline_map = {
                 'fourier': 0,
-                'centroid': 1,
-                'polynomial': 2,
+                'batch_savgol': 1,
+                'direct': 2,
                 'adaptive': 3,
                 'consensus': 4
             }
@@ -4232,24 +4256,30 @@ class AffilabsMainWindow(QMainWindow):
             logger.info("[UI] Power ON: Starting hardware connection...")
             print("[UI] Power ON: Starting hardware connection...")
 
-            # Emit signal to trigger hardware connection (handled by Application class)
-            logger.info(f"[UI] Checking for power_on_requested signal: {hasattr(self, 'power_on_requested')}")
-            print(f"[UI] Has signal 'power_on_requested': {hasattr(self, 'power_on_requested')}")
-
-            if hasattr(self, 'power_on_requested'):
-                logger.info("[UI] Emitting power_on_requested signal...")
-                print("[UI] Emitting power_on_requested signal...")
-                self.power_on_requested.emit()
-                logger.info("[UI] Signal power_on_requested.emit() completed!")
-                print("[UI] Signal emitted successfully!")
-            else:
-                logger.error("[UI] ERROR: power_on_requested signal not defined!")
-                print("[UI] ERROR: power_on_requested signal not defined!")
-
-            # Update UI state to searching
+            # Update UI state to searching FIRST
             self.power_btn.setProperty("powerState", "searching")
             self._update_power_button_style()
             logger.info("[UI] Power button state updated to 'searching'")
+
+            # Direct call to hardware manager (more robust than signal/slot)
+            # This matches the "Scan for Hardware" button behavior
+            if hasattr(self, 'app') and self.app:
+                logger.info("[UI] Calling hardware_mgr.scan_and_connect() directly...")
+                print("[UI] Calling hardware_mgr.scan_and_connect() directly...")
+                self.app.hardware_mgr.scan_and_connect()
+                logger.info("[UI] Hardware scan initiated")
+            else:
+                # Fallback: try signal-based approach if no app reference
+                logger.warning("[UI] No app reference - falling back to signal")
+                if hasattr(self, 'power_on_requested'):
+                    logger.info("[UI] Emitting power_on_requested signal...")
+                    print("[UI] Emitting power_on_requested signal...")
+                    self.power_on_requested.emit()
+                    logger.info("[UI] Signal power_on_requested.emit() completed!")
+                    print("[UI] Signal emitted successfully!")
+                else:
+                    logger.error("[UI] ERROR: No app reference AND no signal!")
+                    print("[UI] ERROR: Cannot trigger hardware connection!")
 
         elif current_state == "searching":
             # Cancel hardware connection in progress
@@ -6068,37 +6098,124 @@ End of Debug Log
 
             logger.info("Advanced settings applied")
 
+    def _toggle_polarizer_mode(self):
+        """Toggle polarizer between S and P modes."""
+        try:
+            if not hasattr(self, 'app') or not self.app:
+                logger.warning("Application not connected")
+                return
+
+            if not self.app.hardware_mgr or not self.app.hardware_mgr.ctrl:
+                logger.warning("Controller not connected")
+                return
+
+            ctrl = self.app.hardware_mgr.ctrl
+
+            # Get current mode from button text
+            current_text = self.polarizer_toggle_btn.text()
+
+            if "S" in current_text:
+                # Currently in S, switch to P
+                ctrl.set_mode("p")
+                self.polarizer_toggle_btn.setText("Position: P")
+                logger.info("✅ Switched to P-mode")
+            else:
+                # Currently in P, switch to S
+                ctrl.set_mode("s")
+                self.polarizer_toggle_btn.setText("Position: S")
+                logger.info("✅ Switched to S-mode")
+
+        except Exception as e:
+            logger.error(f"Failed to toggle polarizer: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to toggle polarizer: {e}")
+
     def _apply_settings(self):
         """Apply polarizer and LED settings from the Settings tab."""
         try:
             # Get polarizer positions
-            s_pos = self.s_position_input.text()
-            p_pos = self.p_position_input.text()
+            s_pos_text = self.s_position_input.text()
+            p_pos_text = self.p_position_input.text()
 
             # Get LED intensities
-            led_a = self.channel_a_input.text()
-            led_b = self.channel_b_input.text()
-            led_c = self.channel_c_input.text()
-            led_d = self.channel_d_input.text()
+            led_a_text = self.channel_a_input.text()
+            led_b_text = self.channel_b_input.text()
+            led_c_text = self.channel_c_input.text()
+            led_d_text = self.channel_d_input.text()
 
-            # Validate inputs
-            values = []
-            for val in [s_pos, p_pos, led_a, led_b, led_c, led_d]:
-                if val:
-                    try:
-                        num = int(val)
-                        if not (0 <= num <= 255):
-                            raise ValueError("Value must be between 0 and 255")
-                        values.append(num)
-                    except ValueError as e:
-                        QMessageBox.warning(self, "Invalid Input",
-                                          f"Please enter valid numbers (0-255): {e}")
-                        return
+            # Parse and validate
+            try:
+                s_pos = int(s_pos_text) if s_pos_text else None
+                p_pos = int(p_pos_text) if p_pos_text else None
+                led_a = int(led_a_text) if led_a_text else None
+                led_b = int(led_b_text) if led_b_text else None
+                led_c = int(led_c_text) if led_c_text else None
+                led_d = int(led_d_text) if led_d_text else None
+            except ValueError as e:
+                QMessageBox.warning(self, "Invalid Input", f"Please enter valid integers: {e}")
+                return
 
-            # TODO: Actually apply these settings to hardware
-            logger.info(f"Applying settings - S:{s_pos}, P:{p_pos}, LEDs:[{led_a},{led_b},{led_c},{led_d}]")
-            QMessageBox.information(self, "Settings Applied",
-                                   "Settings have been applied successfully.")
+            # Validate ranges
+            if s_pos is not None and not (0 <= s_pos <= 255):
+                QMessageBox.warning(self, "Invalid Range", "S position must be 0-255")
+                return
+            if p_pos is not None and not (0 <= p_pos <= 255):
+                QMessageBox.warning(self, "Invalid Range", "P position must be 0-255")
+                return
+
+            for led_val, name in [(led_a, 'A'), (led_b, 'B'), (led_c, 'C'), (led_d, 'D')]:
+                if led_val is not None and not (0 <= led_val <= 255):
+                    QMessageBox.warning(self, "Invalid Range", f"LED {name} must be 0-255")
+                    return
+
+            # Apply to hardware via application
+            if not hasattr(self, 'app') or not self.app:
+                QMessageBox.warning(self, "Error", "Application not connected")
+                return
+
+            if not self.app.hardware_mgr or not self.app.hardware_mgr.ctrl:
+                QMessageBox.warning(self, "Error", "Controller not connected")
+                return
+
+            ctrl = self.app.hardware_mgr.ctrl
+
+            # Apply polarizer positions
+            if s_pos is not None or p_pos is not None:
+                # Get current positions if only one is being changed
+                current = ctrl.servo_get()
+                if s_pos is None:
+                    s_pos = int(current['s'][:3])  # First 3 digits
+                if p_pos is None:
+                    p_pos = int(current['p'][:3])  # First 3 digits
+
+                logger.info(f"Setting servo positions: S={s_pos}, P={p_pos}")
+                ctrl.servo_set(s=s_pos, p=p_pos)
+
+                # Update device config
+                if self.app.main_window.device_config:
+                    self.app.main_window.device_config.data['hardware']['servo_s_position'] = s_pos
+                    self.app.main_window.device_config.data['hardware']['servo_p_position'] = p_pos
+                    self.app.main_window.device_config.save()
+
+            # Apply LED intensities
+            led_updates = []
+            if led_a is not None:
+                ctrl.set_intensity('a', led_a)
+                led_updates.append(f"A={led_a}")
+            if led_b is not None:
+                ctrl.set_intensity('b', led_b)
+                led_updates.append(f"B={led_b}")
+            if led_c is not None:
+                ctrl.set_intensity('c', led_c)
+                led_updates.append(f"C={led_c}")
+            if led_d is not None:
+                ctrl.set_intensity('d', led_d)
+                led_updates.append(f"D={led_d}")
+
+            if led_updates:
+                logger.info(f"Set LED intensities: {', '.join(led_updates)}")
+
+            logger.info(f"✅ Settings applied successfully")
+            QMessageBox.information(self, "Success", "Settings applied to hardware and saved to config")
 
         except Exception as e:
             logger.error(f"Failed to apply settings: {e}")
@@ -6122,14 +6239,169 @@ End of Debug Log
         else:
             logger.warning("Application not connected - cannot start calibration")
 
+    def _handle_polarizer_calibration(self) -> None:
+        """Handle Polarizer Calibration button click."""
+        logger.info("Polarizer Calibration button clicked")
+        # Forward to application's polarizer calibration handler
+        if hasattr(self, 'app') and self.app and hasattr(self.app, '_on_polarizer_calibration'):
+            self.app._on_polarizer_calibration()
+        else:
+            logger.warning("Application not connected or polarizer calibration not available")
+
     def _handle_oem_led_calibration(self) -> None:
         """Handle OEM LED Calibration button click."""
         logger.info("OEM LED Calibration button clicked")
         # Emit signal to trigger OEM calibration via application
         if hasattr(self, 'app') and self.app:
-            self.app.calibration.start_calibration(mode='oem')
+            self.app.calibration.start_calibration()
         else:
             logger.warning("Application not connected - cannot start calibration")
+
+    def _handle_record_baseline(self) -> None:
+        """Handle Record Baseline Data button click."""
+        logger.info("Record Baseline Data button clicked")
+
+        if not hasattr(self, 'app') or not self.app:
+            logger.warning("Application not connected")
+            return
+
+        # Check if already recording
+        if hasattr(self, '_baseline_recorder') and self._baseline_recorder.is_recording():
+            logger.info("Stopping baseline recording...")
+            self._baseline_recorder.stop_recording()
+            return
+
+        # Create recorder if not exists
+        if not hasattr(self, '_baseline_recorder'):
+            # Get data manager (try both attribute names for compatibility)
+            data_mgr = None
+            if hasattr(self, 'app') and self.app:
+                data_mgr = getattr(self.app, 'data_mgr', None) or getattr(self.app, 'data_acquisition', None)
+
+            if not data_mgr:
+                QMessageBox.warning(self, "Not Ready", "Data acquisition system not initialized.")
+                return
+
+            self._baseline_recorder = BaselineDataRecorder(data_mgr, parent=self)
+
+            # Connect signals
+            self._baseline_recorder.recording_started.connect(self._on_recording_started)
+            self._baseline_recorder.recording_progress.connect(self._on_recording_progress)
+            self._baseline_recorder.recording_complete.connect(self._on_recording_complete)
+            self._baseline_recorder.recording_error.connect(self._on_recording_error)
+
+        # Confirm with user
+        reply = QMessageBox.question(
+            self,
+            "Record Baseline Data",
+            "This will record 5 minutes of transmission data for noise optimization analysis.\n\n"
+            "⚠️ Ensure stable baseline (no sample injections) during recording.\n\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self._baseline_recorder.start_recording(duration_minutes=5.0)
+
+    def _on_recording_started(self) -> None:
+        """Handle recording started signal."""
+        if hasattr(self, 'record_baseline_btn'):
+            self.record_baseline_btn.setText("⏹️ Stop Recording")
+            self.record_baseline_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E08000);"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  padding: 8px 16px;"
+                "  font-size: 13px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFA520, stop:1 #F09000);"
+                "}"
+                "QPushButton:pressed {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E08000, stop:1 #C07000);"
+                "}"
+            )
+        logger.info("📊 Baseline recording started")
+
+    def _on_recording_progress(self, progress: Dict) -> None:
+        """Handle recording progress update."""
+        elapsed = progress['elapsed']
+        remaining = progress['remaining']
+        count = progress['count']
+        percent = progress['percent']
+
+        if hasattr(self, 'record_baseline_btn'):
+            self.record_baseline_btn.setText(f"⏹️ Recording... {int(percent)}% ({int(remaining)}s)")
+
+    def _on_recording_complete(self, filepath: str) -> None:
+        """Handle recording complete signal."""
+        if hasattr(self, 'record_baseline_btn'):
+            self.record_baseline_btn.setText("🔴 Record 5-Min Baseline Data")
+            self.record_baseline_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  padding: 8px 16px;"
+                "  font-size: 13px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
+                "}"
+                "QPushButton:pressed {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E02020, stop:1 #C01818);"
+                "}"
+                "QPushButton:disabled {"
+                "  background: #D1D1D6;"
+                "  color: #86868B;"
+                "}"
+            )
+
+        QMessageBox.information(
+            self,
+            "Recording Complete",
+            f"✅ Baseline data successfully recorded!\n\n"
+            f"Saved to: {filepath}\n\n"
+            f"You can now send this data for offline noise optimization analysis."
+        )
+        logger.info(f"✅ Baseline recording complete: {filepath}")
+
+    def _on_recording_error(self, error_msg: str) -> None:
+        """Handle recording error signal."""
+        if hasattr(self, 'record_baseline_btn'):
+            self.record_baseline_btn.setText("🔴 Record 5-Min Baseline Data")
+            self.record_baseline_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  padding: 8px 16px;"
+                "  font-size: 13px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
+                "}"
+                "QPushButton:pressed {"
+                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E02020, stop:1 #C01818);"
+                "}"
+                "QPushButton:disabled {"
+                "  background: #D1D1D6;"
+                "  color: #86868B;"
+                "}"
+            )
+
+        QMessageBox.critical(self, "Recording Error", f"❌ {error_msg}")
+        logger.error(f"❌ Baseline recording error: {error_msg}")
 
     def _connect_signals(self) -> None:
         """Connect UI signals."""
@@ -6162,7 +6434,11 @@ End of Debug Log
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)
         self.sidebar.load_current_settings_btn.clicked.connect(self._load_current_settings)
         self.sidebar.apply_settings_btn.clicked.connect(self._apply_settings)
-        self.sidebar.spectrum_btn.clicked.connect(self._show_transmission_spectrum)
+        self.sidebar.polarizer_toggle_btn.clicked.connect(self._toggle_polarizer_mode)
+
+        # Connect spectrum button if it exists (may be removed)
+        if hasattr(self.sidebar, 'spectrum_btn'):
+            self.sidebar.spectrum_btn.clicked.connect(self._show_transmission_spectrum)
 
         # Connect pipeline selector
         if hasattr(self.sidebar, 'pipeline_selector'):
@@ -6178,7 +6454,13 @@ End of Debug Log
         # Connect calibration buttons
         self.simple_led_calibration_btn.clicked.connect(self._handle_simple_led_calibration)
         self.full_calibration_btn.clicked.connect(self._handle_full_calibration)
+        if hasattr(self, 'polarizer_calibration_btn'):
+            self.polarizer_calibration_btn.clicked.connect(self._handle_polarizer_calibration)
         self.oem_led_calibration_btn.clicked.connect(self._handle_oem_led_calibration)
+
+        # Connect baseline data recording button
+        if hasattr(self, 'record_baseline_btn'):
+            self.record_baseline_btn.clicked.connect(self._handle_record_baseline)
 
         # Install element inspector for right-click inspection
         ElementInspector.install_inspector(self)

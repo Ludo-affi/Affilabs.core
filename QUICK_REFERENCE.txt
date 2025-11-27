@@ -1,0 +1,84 @@
+# 🚀 ezControl - Quick Reference Card
+
+## Start the Application
+
+### ⭐ Best Method (Recommended)
+```powershell
+.\run_app.ps1
+```
+**Does everything automatically:** Clears cache, checks processes, runs clean.
+
+### Alternative Methods
+```powershell
+# No-cache session mode
+.\run_no_cache.ps1
+
+# Manual with -B flag
+cd src ; python -B main_simplified.py
+
+# With cache diagnostics
+cd src ; python clear_cache.py ; python -B main_simplified.py
+```
+
+## Common Tasks
+
+### Made Code Changes?
+1. Close application
+2. Run: `.\run_app.ps1`
+3. Done! ✅
+
+### Having Cache Issues?
+```powershell
+# Kill any running Python
+Get-Process python | Stop-Process -Force
+
+# Clear cache manually
+cd src ; python clear_cache.py
+
+# Run fresh
+cd .. ; .\run_app.ps1
+```
+
+### Check for Running Processes
+```powershell
+Get-Process python -ErrorAction SilentlyContinue
+```
+
+### Clear Cache Manually
+```powershell
+Get-ChildItem -Path src -Include __pycache__ -Recurse -Force -Directory | Remove-Item -Recurse -Force
+```
+
+## File Locations
+
+- **Application:** `src/` directory
+- **Old location:** `Affilabs.core beta/` (backup, can be deleted)
+- **Tools:** `tools/` directory
+- **Docs:** See `CACHE_SOLUTION_COMPLETE.md`
+
+## Workspace Structure
+```
+ezControl-AI/
+├── src/              # Main application (USE THIS)
+├── run_app.ps1       # Start script (USE THIS)
+├── tools/            # Debug/diagnostic tools
+└── docs/             # Documentation
+```
+
+## Remember
+
+✅ **Always use:** `.\run_app.ps1`
+✅ **Close app before restarting** after code changes
+✅ **Cache is automatic** - don't think about it
+✅ **Old folder kept** as backup (safe to delete after testing)
+
+## Need Help?
+
+See complete guides:
+- `CACHE_SOLUTION_COMPLETE.md` - Full solution overview
+- `CACHE_PREVENTION_GUIDE.md` - Technical details
+- `START_HERE_NEW_STRUCTURE.md` - New workspace guide
+
+---
+
+**TL;DR:** Just run `.\run_app.ps1` and everything works! 🎉
