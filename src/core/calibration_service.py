@@ -134,6 +134,12 @@ class CalibrationService(QObject):
             self._calibration_dialog.show_progress_bar()
             self._calibration_dialog.update_status("Running LED intensity calibration...")
 
+        # Launch calibration in background thread
+        self._running = True
+        self._thread = threading.Thread(target=self._run_calibration, daemon=True)
+        self._thread.start()
+        self.calibration_started.emit()
+
     def _run_calibration(self) -> None:
         """Main calibration routine (runs in background thread)."""
         try:
