@@ -184,3 +184,23 @@ class CalibrationData:
             List of channel identifiers ['a', 'b', 'c', 'd']
         """
         return sorted(self.s_pol_ref.keys())
+
+    # Property aliases for clearer semantics
+    @property
+    def s_mode_integration_time(self) -> float:
+        """Alias for integration_time (S-mode)."""
+        return self.integration_time
+
+    @property
+    def wavelength_min(self) -> float:
+        """Get minimum wavelength in SPR range."""
+        if len(self.wavelengths) > self.wave_min_index:
+            return self.wavelengths[self.wave_min_index]
+        return self.wavelengths[0] if len(self.wavelengths) > 0 else 0.0
+
+    @property
+    def wavelength_max(self) -> float:
+        """Get maximum wavelength in SPR range."""
+        if len(self.wavelengths) > self.wave_max_index:
+            return self.wavelengths[self.wave_max_index]
+        return self.wavelengths[-1] if len(self.wavelengths) > 0 else 0.0

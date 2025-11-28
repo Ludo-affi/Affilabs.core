@@ -254,7 +254,7 @@ class DataAcquisitionManager(QObject):
             self.calibration_data = calibration_data
             
             # Log key parameters
-            logger.info(f"  Integration Time: {calibration_data.s_mode_integration_time}ms")
+            logger.info(f"  Integration Time: {calibration_data.integration_time}ms")
             logger.info(f"  Scans per Spectrum: {calibration_data.num_scans}")
             logger.info(f"  Calibrated Channels: {calibration_data.get_channels()}")
             logger.info(f"  Wavelength Range: {calibration_data.wavelength_min:.1f}-{calibration_data.wavelength_max:.1f}nm")
@@ -371,7 +371,7 @@ class DataAcquisitionManager(QObject):
             logger.info("🚀 STARTING LIVE ACQUISITION")
             logger.info("=" * 80)
             logger.info("Using calibration parameters (method-agnostic):")
-            logger.info(f"  Integration Time: {self.calibration_data.s_mode_integration_time}ms")
+            logger.info(f"  Integration Time: {self.calibration_data.integration_time}ms")
             logger.info(f"  Scans per Spectrum: {self.calibration_data.num_scans}")
             logger.info(f"  P-mode LED Intensities: {self.calibration_data.p_mode_intensities}")
             logger.info(f"  S-mode LED Intensities: {self.calibration_data.s_mode_intensities}")
