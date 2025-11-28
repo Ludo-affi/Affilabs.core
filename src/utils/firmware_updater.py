@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class PicoFirmwareUpdater:
     """Handles automatic firmware updates for Pico-based controllers."""
 
-    EXPECTED_VERSION = "V1.1"
+    EXPECTED_VERSION = "V1.2"
     BOOTLOADER_VID = 0x2E8A
     BOOTLOADER_PID = 0x0003
 
