@@ -6,11 +6,13 @@ Handles UI interaction, threading, progress, and QC display.
 """
 
 import threading
+import time
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 from typing import Optional
 from utils.logger import logger
 from core.calibration_data import CalibrationData
+from core.ml_qc_intelligence import MLQCIntelligence
 
 
 class CalibrationService(QObject):
@@ -45,39 +47,39 @@ class CalibrationService(QObject):
         self._calibration_completed: bool = False
         self._current_calibration_data: Optional[CalibrationData] = None
 
+        # ML QC Intelligence (initialized lazily when device connects)
+        self._ml_intelligence: Optional[MLQCIntelligence] = None
+
     def start_calibration(self) -> bool:
-        """Start calibration in background thread.
+        """Start calibration dialog (does NOT start calibration thread).
+
+        The actual calibration begins when user clicks Start button in dialog.
 
         Returns:
-            True if calibration started, False if already running
+            True if dialog shown, False if already running
         """
         if self._running:
             logger.warning("Calibration already in progress")
             return False
 
         logger.info("=" * 80)
-        logger.info("🎬 CALIBRATION SERVICE: Starting calibration...")
+        logger.info("🎬 CALIBRATION SERVICE: Showing calibration dialog...")
         logger.info("=" * 80)
 
         # Reset state
         self._calibration_completed = False
         self._current_calibration_data = None
-        self._running = True
 
-        # Show progress dialog
+        # Show progress dialog (user must click Start to begin)
         self._show_progress_dialog()
 
-        # Emit started signal
-        self.calibration_started.emit()
-
-        # Run in background thread
-        self._thread = threading.Thread(
-            target=self._run_calibration,
-            daemon=True,
-            name="CalibrationService"
-        )
-        self._thread.start()
+        logger.info("✅ Waiting for user to click Start button...")
         return True
+
+    @property
+    def dialog(self):
+        """Get the calibration progress dialog (read-only property for external status updates)."""
+        return self._calibration_dialog
 
     def _show_progress_dialog(self) -> None:
         """Show calibration progress dialog."""
@@ -89,7 +91,14 @@ class CalibrationService(QObject):
             "  ✓  Water or buffer applied to prism\n"
             "  ✓  No air bubbles visible\n"
             "  ✓  Temperature stabilized (10 min after power-on)\n\n"
-            "Calibration takes approximately 30-60 seconds."
+            "6-Step Calibration Process:\n"
+            "  1. Hardware Validation & LED Verification\n"
+            "  2. Wavelength Calibration\n"
+            "  3. LED Brightness Ranking\n"
+            "  4. S-Mode Integration Time Optimization\n"
+            "  5. P-Mode Optimization (Transfer + Boost)\n"
+            "  6. S-Mode Reference Signals + QC\n\n"
+            "Takes approximately 30-60 seconds."
         )
 
         self._calibration_dialog = StartupCalibProgressDialog(
@@ -101,30 +110,152 @@ class CalibrationService(QObject):
 
         # Connect dialog signals
         self._calibration_dialog.start_clicked.connect(self._on_start_button_clicked)
+
+        # Connect calibration service signals to update dialog
+        self.calibration_progress.connect(self._update_dialog_progress)
+        self.calibration_failed.connect(self._on_calibration_failed_dialog)
+
         self._calibration_dialog.hide_progress_bar()
         self._calibration_dialog.show()
         self._calibration_dialog.enable_start_button_pre_calib()
 
         logger.info("✅ Calibration dialog displayed")
 
+    def _progress_callback(self, message: str, progress: int = 0) -> None:
+        """Progress callback for calibration routines.
+
+        This method is passed to run_full_6step_calibration() to receive
+        progress updates during the calibration process.
+
+        Args:
+            message: Progress message to display
+            progress: Progress percentage (0-100)
+        """
+        self.calibration_progress.emit(message, progress)
+
+    def _update_dialog_progress(self, message: str, progress: int) -> None:
+        """Update calibration dialog with progress information.
+
+        Args:
+            message: Progress message to display
+            progress: Progress percentage (0-100)
+        """
+        if self._calibration_dialog:
+            self._calibration_dialog.update_status(message)
+            self._calibration_dialog.set_progress(progress)  # Use set_progress, not update_progress
+
+    def _on_calibration_failed_dialog(self, error_message: str) -> None:
+        """Handle calibration failure in dialog.
+
+        Args:
+            error_message: Error message to display
+        """
+        if self._calibration_dialog:
+            self._calibration_dialog.update_title("❌ Calibration Failed")
+            self._calibration_dialog.update_status(f"Error: {error_message}")
+            self._calibration_dialog.hide_progress_bar()
+
     def _on_start_button_clicked(self) -> None:
         """Handle Start button click - begin calibration or transfer to live view."""
         if self._calibration_completed:
             # Calibration complete - transfer to live acquisition
+            logger.info("=" * 80)
             logger.info("✅ User clicked Start - transferring to live view")
+            logger.info("=" * 80)
 
-            # Close calibration dialog
-            if self._calibration_dialog:
-                self._calibration_dialog.accept()
-                self._calibration_dialog = None
+            # Verify calibration data is available
+            if not self._current_calibration_data:
+                logger.error("❌ FATAL: No calibration data available!")
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    self._calibration_dialog if self._calibration_dialog else None,
+                    "Calibration Error",
+                    "No calibration data available. Please recalibrate."
+                )
+                return
 
-            # Start live acquisition
+            # Start live acquisition FIRST
             if hasattr(self.app, 'data_mgr'):
-                self.app.data_mgr.start_acquisition()
+                try:
+                    logger.info("📊 Verifying acquisition manager is ready...")
+                    if not self.app.data_mgr.calibrated:
+                        logger.error("❌ Acquisition manager reports not calibrated!")
+                        raise RuntimeError("Acquisition manager not calibrated. Calibration data may not have been applied.")
 
+                    logger.info("🚀 Starting live acquisition...")
+                    self.app.data_mgr.start_acquisition()
+                    logger.info("✅ Live acquisition started successfully")
+                except Exception as e:
+                    logger.error(f"❌ Failed to start acquisition: {e}", exc_info=True)
+                    # Show error but don't close dialog yet
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.critical(
+                        self._calibration_dialog if self._calibration_dialog else None,
+                        "Acquisition Error",
+                        f"Failed to start live acquisition:\n{e}\n\nPlease check the logs and try again."
+                    )
+                    return
+            else:
+                logger.error("❌ FATAL: data_mgr not found in app!")
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    self._calibration_dialog if self._calibration_dialog else None,
+                    "System Error",
+                    "Acquisition manager not found. Please restart the application."
+                )
+                return
+
+            # Close calibration dialog AFTER acquisition starts successfully
+            if self._calibration_dialog:
+                # Use QTimer to defer dialog close to ensure acquisition thread starts
+                # and allow Qt event loop to process properly
+                from PySide6.QtCore import QTimer
+                def close_dialog():
+                    if self._calibration_dialog:
+                        try:
+                            logger.info("🔄 Closing calibration dialog...")
+
+                            # Store reference to overlay before clearing dialog reference
+                            overlay_to_cleanup = None
+                            if hasattr(self._calibration_dialog, 'overlay'):
+                                overlay_to_cleanup = self._calibration_dialog.overlay
+                                self._calibration_dialog.overlay = None  # Clear reference first
+
+                            # Close dialog first (this will trigger closeEvent)
+                            logger.info("   Closing dialog window...")
+                            self._calibration_dialog.accept()
+                            self._calibration_dialog = None
+                            logger.info("   ✅ Dialog closed")
+
+                            # Clean up overlay AFTER dialog is closed
+                            if overlay_to_cleanup:
+                                try:
+                                    logger.info("   Cleaning up overlay...")
+                                    overlay_to_cleanup.hide()
+                                    overlay_to_cleanup.deleteLater()
+                                    logger.info("   ✅ Overlay cleaned up")
+                                except RuntimeError as e:
+                                    logger.debug(f"   Overlay already deleted: {e}")
+                                except Exception as e:
+                                    logger.warning(f"   Error cleaning overlay: {e}")
+
+                            logger.info("✅ Calibration dialog and overlay closed successfully")
+                        except Exception as e:
+                            logger.error(f"⚠️ Error closing dialog: {e}", exc_info=True)
+
+                QTimer.singleShot(150, close_dialog)  # Slightly longer delay for safety
+                logger.info("📋 Dialog close scheduled in 150ms")
+
+            logger.info("=" * 80)
+            logger.info("✅ Calibration-to-live transfer completed")
+            logger.info("=" * 80)
             return
 
-        # Start calibration
+        # Start calibration (first time only)
+        if self._running:
+            logger.warning("Calibration thread already running - ignoring duplicate click")
+            return
+
         logger.info("🔄 User clicked Start - beginning calibration")
 
         # Update dialog
@@ -134,11 +265,16 @@ class CalibrationService(QObject):
             self._calibration_dialog.show_progress_bar()
             self._calibration_dialog.update_status("Running LED intensity calibration...")
 
-        # Launch calibration in background thread
+        # Launch calibration in background thread (ONLY PLACE IT STARTS)
         self._running = True
-        self._thread = threading.Thread(target=self._run_calibration, daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_calibration,
+            daemon=True,
+            name="CalibrationService"
+        )
         self._thread.start()
         self.calibration_started.emit()
+        logger.info("✅ Calibration thread started")
 
     def _run_calibration(self) -> None:
         """Main calibration routine (runs in background thread)."""
@@ -155,24 +291,36 @@ class CalibrationService(QObject):
             if not usb:
                 raise RuntimeError("Spectrometer not connected")
 
+            # CRITICAL FIX: Clear USB device buffer with dummy reads
+            # [Errno 10060] Operation timed out = USB buffer has stale data from hardware scan
+            # Solution: Perform 2-3 dummy reads to flush the buffer before calibration
+            logger.info("🔄 Clearing USB buffer with dummy reads...")
+            try:
+                # Set short integration time for fast dummy reads
+                usb.set_integration(10)  # 10ms minimum
+                time.sleep(0.1)
+
+                # Perform 3 dummy reads to flush any stale data
+                for i in range(3):
+                    dummy = usb.read_intensity(timeout_seconds=2.0)
+                    if dummy is not None:
+                        logger.info(f"   Dummy read {i+1}/3: Success ({len(dummy)} pixels)")
+                    else:
+                        logger.warning(f"   Dummy read {i+1}/3: Timeout (expected, continuing...)")
+                    time.sleep(0.05)
+
+                logger.info("✅ USB buffer cleared")
+            except Exception as e:
+                logger.warning(f"⚠️ USB buffer clear had issues (continuing anyway): {e}")
+
             logger.info("✅ Hardware ready")
 
             # Load configuration
             self.calibration_progress.emit("Loading configuration...", 10)
-            from settings import MIN_WAVELENGTH, MAX_WAVELENGTH
             from utils.device_configuration import DeviceConfiguration
 
             device_serial = getattr(usb, 'serial_number', None)
             device_config = DeviceConfiguration(device_serial=device_serial)
-
-            # Get wavelength data
-            self.calibration_progress.emit("Reading wavelength data...", 15)
-            wave_data = usb.read_wavelength()
-            wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
-            wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
-
-            # Load afterglow correction
-            afterglow_correction = self._load_afterglow_correction()
 
             # Get LED timing from device config
             pre_led_delay_ms = device_config.get_pre_led_delay_ms()
@@ -180,25 +328,61 @@ class CalibrationService(QObject):
             logger.info(f"📊 LED timing: PRE={pre_led_delay_ms}ms, POST={post_led_delay_ms}ms")
 
             # Run calibration
-            from utils.led_calibration import perform_full_led_calibration
+            from utils.calibration_6step import run_full_6step_calibration
 
             logger.info("🚀 Starting 6-step calibration...")
 
-            cal_result = perform_full_led_calibration(
-                ctrl=ctrl,
+            # Get device type from controller
+            device_type = type(ctrl).__name__
+
+            cal_result = run_full_6step_calibration(
                 usb=usb,
-                afterglow_correction=afterglow_correction,
+                ctrl=ctrl,
+                device_type=device_type,
+                device_config=device_config,
+                detector_serial=device_serial,
                 pre_led_delay_ms=pre_led_delay_ms,
                 post_led_delay_ms=post_led_delay_ms,
                 progress_callback=self._progress_callback
             )
 
+            print(f"DEBUG: run_full_6step_calibration returned: {cal_result}")
+            print(f"DEBUG: cal_result is None: {cal_result is None}")
+            if cal_result:
+                print(f"DEBUG: cal_result.success: {cal_result.success}")
+                if hasattr(cal_result, 'error_message'):
+                    print(f"DEBUG: cal_result.error_message: {cal_result.error_message}")
+
             if not cal_result or not cal_result.success:
-                raise RuntimeError("Calibration failed")
+                error_msg = "Calibration failed"
+                # Check both 'error' and 'error_message' attributes
+                if cal_result:
+                    if hasattr(cal_result, 'error') and cal_result.error:
+                        error_msg = cal_result.error
+                    elif hasattr(cal_result, 'error_message') and cal_result.error_message:
+                        error_msg = cal_result.error_message
+                print(f"ERROR DEBUG: Calibration failed - {error_msg}")
+                raise RuntimeError(error_msg)
 
             # Create immutable CalibrationData
             self.calibration_progress.emit("Storing results...", 95)
 
+            print("DEBUG: Starting CalibrationData creation...")
+            logger.info("DEBUG: Starting CalibrationData creation...")
+            print(f"DEBUG: cal_result attributes: {dir(cal_result)}")
+            logger.info(f"DEBUG: cal_result attributes: {dir(cal_result)}")
+            print(f"DEBUG: cal_result.success = {cal_result.success}")
+            logger.info(f"DEBUG: cal_result.success = {cal_result.success}")
+            print(f"DEBUG: cal_result.s_mode_intensity = {getattr(cal_result, 's_mode_intensity', 'MISSING')}")
+            logger.info(f"DEBUG: cal_result.s_mode_intensity = {getattr(cal_result, 's_mode_intensity', 'MISSING')}")
+            print(f"DEBUG: cal_result.p_mode_intensity = {getattr(cal_result, 'p_mode_intensity', 'MISSING')}")
+            logger.info(f"DEBUG: cal_result.p_mode_intensity = {getattr(cal_result, 'p_mode_intensity', 'MISSING')}")
+            print(f"DEBUG: cal_result.s_pol_ref = {type(getattr(cal_result, 's_pol_ref', None))}")
+            logger.info(f"DEBUG: cal_result.s_pol_ref = {type(getattr(cal_result, 's_pol_ref', None))}")
+            print(f"DEBUG: cal_result.p_pol_ref = {type(getattr(cal_result, 'p_pol_ref', None))}")
+            logger.info(f"DEBUG: cal_result.p_pol_ref = {type(getattr(cal_result, 'p_pol_ref', None))}")
+
+            print("DEBUG: Building device_info dict...")
             device_info = {
                 'device_type': type(ctrl).__name__,
                 'detector_serial': device_serial or 'N/A',
@@ -206,35 +390,82 @@ class CalibrationService(QObject):
                 'pre_led_delay_ms': pre_led_delay_ms,
                 'post_led_delay_ms': post_led_delay_ms
             }
+            print(f"DEBUG: device_info built: {device_info}")
 
-            # Add wavelength indices to result
-            cal_result.wave_min_index = wave_min_index
-            cal_result.wave_max_index = wave_max_index
+            # Get wavelength indices from calibration result (already calculated in Step 2)
+            print("DEBUG: Using wavelength indices from cal_result...")
+            wave_min_index = cal_result.wave_min_index
+            wave_max_index = cal_result.wave_max_index
+            print(f"DEBUG: Wavelength indices from calibration (min={wave_min_index}, max={wave_max_index})")
 
-            calibration_data = CalibrationData.from_calibration_result(
-                cal_result,
-                device_info=device_info
-            )
+            # CalibrationData is now just a type alias for LEDCalibrationResult
+            # No conversion needed - just use cal_result directly
+            print("DEBUG: Using LEDCalibrationResult directly (CalibrationData is type alias)...")
+            logger.info("DEBUG: Using LEDCalibrationResult directly (CalibrationData is type alias)...")
+            calibration_data = cal_result  # No conversion needed!
+            print("DEBUG: calibration_data assigned!")
+            logger.info("DEBUG: calibration_data assigned!")
 
+            print("DEBUG: Validating calibration_data...")
             if not calibration_data.validate():
                 raise RuntimeError("Calibration data validation failed")
+            print("DEBUG: calibration_data validated successfully!")
 
             logger.info("✅ Calibration data created and validated")
 
             # Store calibration data
+            print("DEBUG: Storing calibration data to instance...")
             self._current_calibration_data = calibration_data
             self._calibration_completed = True
-            self._running = False
+            # _running flag will be reset in finally block
+            print("DEBUG: Calibration data stored to instance")
+
+            # Update sensor_ready status based on transmission QC
+            print("DEBUG: Evaluating sensor_ready status...")
+            sensor_ready = self._evaluate_sensor_ready(calibration_data)
+            print(f"DEBUG: sensor_ready = {sensor_ready}")
+            if sensor_ready:
+                hardware_mgr._sensor_verified = True
+                logger.info("✅ SENSOR READY: Transmission QC passed")
+            else:
+                logger.warning("⚠️  SENSOR NOT READY: Transmission QC did not pass")
 
             # Emit completion signal
+            print("DEBUG: Emitting calibration_complete signal...")
             self.calibration_complete.emit(calibration_data)
+            print("DEBUG: calibration_complete signal emitted")
 
-            # Handle post-calibration UI
-            self._on_calibration_complete_ui(calibration_data)
+            # Handle post-calibration UI - KEEP DIALOG OPEN and ENABLE START BUTTON
+            print("DEBUG: Updating calibration dialog for post-calibration state...")
+            if self._calibration_dialog:
+                print("DEBUG: Dialog exists, updating title and enabling Start button...")
+                self._calibration_dialog.update_title("✅ Calibration Complete!")
+                self._calibration_dialog.update_status(
+                    "Review QC results, then click Start to begin live data acquisition."
+                )
+                self._calibration_dialog.set_progress(100, 100)
+                # CRITICAL: Enable the Start button so user can start live data
+                self._calibration_dialog.enable_start_button()
+                print("DEBUG: Start button enabled in calibration dialog")
+                logger.info("✅ Calibration dialog updated - Start button enabled for live data")
+
+            # Some builds may not include the UI hook; guard the call
+            if hasattr(self, "_on_calibration_complete_ui"):
+                self._on_calibration_complete_ui(calibration_data)
+            else:
+                logger.debug("_on_calibration_complete_ui not defined; skipping UI hook")
+            print("DEBUG: Post-calibration UI handling completed")
 
         except Exception as e:
             logger.error(f"❌ Calibration failed: {e}", exc_info=True)
-            self._running = False
+            print(f"ERROR EXCEPTION: {type(e).__name__}: {e}")
+            import traceback
+            print("ERROR TRACEBACK:")
+            try:
+                tb_string = traceback.format_exc()
+                print(tb_string)
+            except Exception as tb_error:
+                print(f"Unable to format traceback: {tb_error}")
             self.calibration_failed.emit(str(e))
 
             if self._calibration_dialog:
@@ -242,91 +473,46 @@ class CalibrationService(QObject):
                 self._calibration_dialog.update_status(f"Error: {e}")
                 self._calibration_dialog.hide_progress_bar()
 
-    def _load_afterglow_correction(self):
-        """Load afterglow correction if available."""
-        try:
-            from afterglow_correction import AfterglowCorrection
-            from utils.device_integration import get_device_optical_calibration_path
+        finally:
+            # ALWAYS reset running flag to re-enable UI
+            print("DEBUG: Finally block - resetting _running flag")
+            self._running = False
+            logger.info("Calibration service reset - UI should be re-enabled")
 
-            optical_cal_path = get_device_optical_calibration_path()
-            if optical_cal_path and optical_cal_path.exists():
-                afterglow_correction = AfterglowCorrection(optical_cal_path)
-                logger.info(f"✅ Loaded afterglow correction: {optical_cal_path.name}")
-                return afterglow_correction
-        except Exception as e:
-            logger.debug(f"Afterglow correction not available: {e}")
-
-        return None
-
-    def _progress_callback(self, message: str) -> None:
-        """Map calibration progress messages to percentages."""
-        msg_lower = message.lower()
-
-        if "step 1" in msg_lower:
-            self.calibration_progress.emit(message, 20)
-        elif "step 2" in msg_lower:
-            self.calibration_progress.emit(message, 25)
-        elif "step 3" in msg_lower:
-            self.calibration_progress.emit(message, 35)
-        elif "step 4" in msg_lower:
-            self.calibration_progress.emit(message, 50)
-        elif "step 5" in msg_lower:
-            self.calibration_progress.emit(message, 70)
-        elif "step 6" in msg_lower:
-            self.calibration_progress.emit(message, 85)
-        else:
-            logger.info(f"Progress: {message}")
-
-    def _on_calibration_complete_ui(self, calibration_data: CalibrationData) -> None:
-        """Handle post-calibration UI updates.
+    def _evaluate_sensor_ready(self, calibration_data: CalibrationData) -> bool:
+        """Evaluate if sensor is ready based on transmission QC.
 
         Args:
-            calibration_data: Immutable calibration results
-        """
-        logger.info("🎯 Calibration complete - updating UI...")
+            calibration_data: Calibration data with QC results
 
-        # Update dialog
-        if self._calibration_dialog:
-            self._calibration_dialog.update_title("✅ Calibration Complete!")
-            self._calibration_dialog.update_status(
-                "Calibration successful! Review QC graphs, then click Start to begin live acquisition."
-            )
-            self._calibration_dialog.hide_progress_bar()
-
-            # Re-enable Start button for transfer to live view
-            if self._calibration_dialog.start_button:
-                self._calibration_dialog.start_button.setEnabled(True)
-                self._calibration_dialog.start_button.setText("Start")
-
-        # Show QC dialog
-        self._show_qc_dialog(calibration_data)
-
-        logger.info("=" * 80)
-        logger.info("Calibration complete - waiting for user to click Start")
-        logger.info("=" * 80)
-
-    def _show_qc_dialog(self, calibration_data: CalibrationData) -> None:
-        """Show QC dialog with calibration results.
-
-        Args:
-            calibration_data: Immutable calibration results
+        Returns:
+            True if at least one channel passed transmission QC
         """
         try:
-            from widgets.calibration_qc_dialog import CalibrationQCDialog
+            transmission_validation = calibration_data.transmission_validation
 
-            # Convert to dict for QC dialog
-            qc_data = calibration_data.to_dict()
+            if not transmission_validation:
+                logger.warning("No transmission validation data available")
+                return False
 
-            logger.info("📊 Showing QC report dialog...")
-            CalibrationQCDialog.show_qc_report(
-                parent=self.app.main_window,
-                calibration_data=qc_data
-            )
+            # Check if at least one channel passed
+            passed_channels = []
+            for ch, validation in transmission_validation.items():
+                status = validation.get('status', '')
+                if '✅ PASS' in status:
+                    passed_channels.append(ch)
 
-            logger.info("✅ QC report displayed")
+            if passed_channels:
+                logger.info(f"Sensor ready: {len(passed_channels)}/{len(transmission_validation)} channels passed QC")
+                logger.info(f"   Passed channels: {passed_channels}")
+                return True
+            else:
+                logger.warning("No channels passed transmission QC")
+                return False
 
         except Exception as e:
-            logger.error(f"❌ Failed to show QC report: {e}", exc_info=True)
+            logger.error(f"Error evaluating sensor ready status: {e}")
+            return False
 
     def get_current_calibration(self) -> Optional[CalibrationData]:
         """Get current calibration data.
@@ -335,3 +521,94 @@ class CalibrationService(QObject):
             CalibrationData if calibration completed, None otherwise
         """
         return self._current_calibration_data
+
+    def _update_ml_intelligence(self, calibration_data: CalibrationData) -> None:
+        """Update ML QC intelligence with new calibration data.
+
+        This runs all 4 ML models:
+        1. Calibration quality prediction
+        2. LED health monitoring
+        3. Sensor coating degradation
+        4. Optical alignment (baseline-based, non-interfering)
+
+        Args:
+            calibration_data: Latest calibration QC results
+        """
+        try:
+            # Initialize ML intelligence if not done yet
+            if self._ml_intelligence is None:
+                device_serial = calibration_data.detector_serial or "unknown"
+                self._ml_intelligence = MLQCIntelligence(device_serial=device_serial)
+                logger.info(f"🤖 ML QC Intelligence initialized for {device_serial}")
+
+            # Update ML models with new calibration data
+            self._ml_intelligence.update_from_calibration(calibration_data)
+
+            # Run all 4 ML models and log predictions
+            logger.info("=" * 80)
+            logger.info("🤖 ML QC INTELLIGENCE - POST-CALIBRATION ANALYSIS")
+            logger.info("=" * 80)
+
+            # Model 1: Calibration Quality Prediction
+            cal_pred = self._ml_intelligence.predict_next_calibration()
+            logger.info(f"\n📊 Model 1: Next Calibration Prediction")
+            logger.info(f"   Failure Probability: {cal_pred.failure_probability*100:.1f}%")
+            logger.info(f"   Risk Level: {cal_pred.risk_level.upper()}")
+            if cal_pred.warnings:
+                for warning in cal_pred.warnings:
+                    logger.warning(f"   ⚠️  {warning}")
+            if cal_pred.recommendations:
+                for rec in cal_pred.recommendations:
+                    logger.info(f"   💡 {rec}")
+
+            # Model 2: LED Health Monitoring
+            led_statuses = self._ml_intelligence.predict_led_health()
+            logger.info(f"\n💡 Model 2: LED Health Status")
+            for led in led_statuses:
+                status_emoji = {'excellent': '✅', 'good': '✅', 'degrading': '⚠️', 'critical': '🚨'}.get(led.status, '❓')
+                logger.info(f"   {status_emoji} Ch {led.channel.upper()}: {led.status} (intensity={led.current_intensity}, trend={led.intensity_trend:+.1f}/cal)")
+                if led.replacement_recommended:
+                    logger.warning(f"      🚨 REPLACEMENT RECOMMENDED")
+                elif led.days_until_replacement and led.days_until_replacement < 30:
+                    logger.warning(f"      ⚠️  Estimated {led.days_until_replacement} days until replacement")
+
+            # Model 3: Sensor Coating Degradation
+            coating = self._ml_intelligence.predict_sensor_coating_life()
+            logger.info(f"\n🔬 Model 3: Sensor Coating Status")
+            logger.info(f"   Quality: {coating.coating_quality.upper()}")
+            logger.info(f"   Current FWHM (avg): {coating.current_fwhm_avg:.1f} nm")
+            logger.info(f"   Trend: {coating.fwhm_trend:+.2f} nm/calibration")
+            if coating.estimated_experiments_remaining:
+                logger.info(f"   Estimated Lifespan: {coating.estimated_experiments_remaining} experiments")
+            if coating.replacement_warning:
+                logger.warning(f"   ⚠️  REPLACEMENT WARNING: Sensor chip approaching end of life")
+
+            # Model 4: Optical Alignment (Baseline-based, Non-interfering)
+            alignment = self._ml_intelligence.check_optical_alignment(calibration_data)
+            logger.info(f"\n🔧 Model 4: Optical Alignment (Calibration Baseline)")
+            logger.info(f"   P/S Ratio Baseline: {alignment.ps_ratio_baseline:.3f}")
+            logger.info(f"   Deviation: {alignment.ps_ratio_deviation:.3f}")
+            logger.info(f"   Confidence: {alignment.orientation_confidence*100:.0f}%")
+            if alignment.alignment_drift_detected:
+                logger.warning(f"   🚨 DRIFT DETECTED: {alignment.warning_message}")
+            elif alignment.maintenance_recommended:
+                logger.warning(f"   ⚠️  {alignment.warning_message}")
+            else:
+                logger.info(f"   ✅ Alignment stable")
+
+            logger.info("=" * 80)
+
+            # Generate and save comprehensive report
+            report = self._ml_intelligence.generate_intelligence_report()
+            logger.debug(f"\n{report}")
+
+        except Exception as e:
+            logger.error(f"Failed to update ML QC intelligence: {e}", exc_info=True)
+
+    def get_ml_intelligence(self) -> Optional[MLQCIntelligence]:
+        """Get ML QC intelligence instance.
+
+        Returns:
+            MLQCIntelligence instance if initialized, None otherwise
+        """
+        return self._ml_intelligence

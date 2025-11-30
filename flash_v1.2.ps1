@@ -17,21 +17,21 @@ $start = Get-Date
 
 while (((Get-Date) - $start).TotalSeconds -lt $timeout) {
     $drive = Get-Volume | Where-Object { $_.FileSystemLabel -eq "RPI-RP2" } | Select-Object -First 1
-    
+
     if ($drive) {
         $driveLetter = $drive.DriveLetter + ":"
         Write-Host "✅ Found RPI-RP2 at $driveLetter" -ForegroundColor Green
         Write-Host "`nCopying firmware V1.2..." -ForegroundColor Yellow
-        
+
         try {
             Copy-Item "firmware\pico_p4spr\affinite_p4spr_v1.2.uf2" "$driveLetter\" -Force
-            
+
             Write-Host "`n========================================" -ForegroundColor Green
             Write-Host "  🎉 Firmware V1.2 Flashed!" -ForegroundColor Green
             Write-Host "========================================" -ForegroundColor Green
             Write-Host "`nPico will reboot automatically in a few seconds..." -ForegroundColor Cyan
             Write-Host "New features: rank command for fast LED calibration`n" -ForegroundColor Cyan
-            
+
             exit 0
         }
         catch {
@@ -39,7 +39,7 @@ while (((Get-Date) - $start).TotalSeconds -lt $timeout) {
             exit 1
         }
     }
-    
+
     Start-Sleep -Milliseconds 500
 }
 

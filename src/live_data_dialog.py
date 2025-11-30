@@ -35,7 +35,10 @@ class LiveDataDialog(QDialog):
             if sys.stderr:
                 print(f"Error setting up live data dialog: {e}")
                 import traceback
-                traceback.print_exc()
+                try:
+                    print(traceback.format_exc())
+                except:
+                    pass
 
     def _setup_ui(self):
         """Setup the dialog UI with side-by-side graphs."""

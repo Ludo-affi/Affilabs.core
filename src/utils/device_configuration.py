@@ -101,6 +101,8 @@ class DeviceConfiguration:
             'dark_calibration_date': None,
             's_mode_calibration_date': None,
             'p_mode_calibration_date': None,
+            'polarizer_calibration_date': None,  # Last polarizer servo calibration date
+            'polarizer_extinction_ratio_percent': None,  # (S-P)/S in best bucket, sensor-specific reference
             'factory_calibrated': False,
             'user_calibrated': False,
             'preferred_calibration_mode': 'global',  # 'global' or 'per_channel'
@@ -119,7 +121,7 @@ class DeviceConfiguration:
         },
     }
 
-    def __init__(self, config_path: Optional[str] = None, device_serial: Optional[str] = None, controller=None):
+    def __init__(self, config_path: Optional[str] = None, device_serial: Optional[str] = None, controller=None, silent_load: bool = False):
         """
         Initialize device configuration.
 
@@ -128,20 +130,25 @@ class DeviceConfiguration:
             device_serial: Device serial number for device-specific config. If provided,
                           creates config in devices/<serial>/device_config.json
             controller: Controller instance for EEPROM fallback (optional)
+            silent_load: If True, suppress verbose logging during initialization (default: False)
         """
+        self.silent_load = silent_load  # Store for use in logging methods
+
         if config_path is None:
             if device_serial:
                 # Device-specific location: config/devices/<serial>/device_config.json
                 config_dir = Path(__file__).parent.parent / 'config' / 'devices' / device_serial
                 config_dir.mkdir(parents=True, exist_ok=True)
                 self.config_path = config_dir / 'device_config.json'
-                logger.info(f"Using device-specific configuration for S/N: {device_serial}")
+                if not silent_load:
+                    logger.info(f"Using device-specific configuration for S/N: {device_serial}")
             else:
                 # Default location: config/device_config.json (fallback for unknown devices)
                 config_dir = Path(__file__).parent.parent / 'config'
                 config_dir.mkdir(exist_ok=True)
                 self.config_path = config_dir / 'device_config.json'
-                logger.warning("No device serial provided - using default configuration")
+                if not silent_load:
+                    logger.warning("No device serial provided - using default configuration")
         else:
             self.config_path = Path(config_path)
 
@@ -154,10 +161,12 @@ class DeviceConfiguration:
         # Auto-save EEPROM config to JSON if loaded from EEPROM
         if self.loaded_from_eeprom:
             self.save()
-            logger.info(f"✓ Saved EEPROM config to JSON: {self.config_path}")
+            if not silent_load:
+                logger.info(f"✓ Saved EEPROM config to JSON: {self.config_path}")
 
-        logger.info(f"Device configuration loaded from: {self.config_path}")
-        self._log_config_summary()
+        if not silent_load:
+            logger.info(f"Device configuration loaded from: {self.config_path}")
+            self._log_config_summary()
 
     def _load_or_create_config(self) -> Dict[str, Any]:
         """
@@ -175,7 +184,8 @@ class DeviceConfiguration:
             try:
                 with open(self.config_path, 'r') as f:
                     config = json.load(f)
-                logger.info(f"✓ Loaded existing configuration from {self.config_path}")
+                if not self.silent_load:
+                    logger.info(f"✓ Loaded existing configuration from {self.config_path}")
 
                 # Validate and merge with defaults (in case new fields added)
                 config = self._merge_with_defaults(config)
@@ -183,11 +193,13 @@ class DeviceConfiguration:
                 self.created_from_scratch = False  # Loaded from file, not created
                 return config
             except Exception as e:
-                logger.error(f"Failed to load configuration: {e}")
-                logger.warning("Attempting EEPROM fallback...")
+                if not self.silent_load:
+                    logger.error(f"Failed to load configuration: {e}")
+                    logger.warning("Attempting EEPROM fallback...")
                 return self._try_load_from_eeprom_or_default()
         else:
-            logger.info("No JSON configuration found. Checking EEPROM...")
+            if not self.silent_load:
+                logger.info("No JSON configuration found. Checking EEPROM...")
             return self._try_load_from_eeprom_or_default()
 
     def _try_load_from_eeprom_or_default(self) -> Dict[str, Any]:
@@ -609,11 +621,13 @@ class DeviceConfiguration:
 
     def get_pre_led_delay_ms(self) -> float:
         """Get PRE LED delay (stabilization time before acquisition)."""
-        return self.config['timing_parameters'].get('pre_led_delay_ms', 45.0)
+        from settings import PRE_LED_DELAY_MS
+        return self.config['timing_parameters'].get('pre_led_delay_ms', PRE_LED_DELAY_MS)
 
     def get_post_led_delay_ms(self) -> float:
         """Get POST LED delay (afterglow decay time after acquisition)."""
-        return self.config['timing_parameters'].get('post_led_delay_ms', 5.0)
+        from settings import POST_LED_DELAY_MS
+        return self.config['timing_parameters'].get('post_led_delay_ms', POST_LED_DELAY_MS)
 
     def set_pre_post_led_delays(self, pre_ms: float, post_ms: float):
         """Set PRE/POST LED delays and save to config.
@@ -738,6 +752,35 @@ class DeviceConfiguration:
         hw['servo_p_position'] = p_pos
         self.config['device_info']['last_modified'] = datetime.now().isoformat()
         logger.info(f"Servo positions updated: S={s_pos}, P={p_pos}")
+
+    def set_extinction_ratio(self, extinction_ratio: float):
+        """
+        Set polarizer extinction ratio from calibration.
+
+        The extinction ratio is (S-P)/S expressed as percentage, measured in the best
+        ROI bucket during servo calibration. This is a sensor-specific reference value
+        for tracking calibration quality over time (not an absolute metric).
+
+        Args:
+            extinction_ratio: Extinction ratio as percentage (0-100)
+        """
+        if not (0.0 <= extinction_ratio <= 100.0):
+            logger.warning(f"Extinction ratio {extinction_ratio:.2f}% outside expected range (0-100%)")
+
+        cal = self.config['calibration']
+        cal['polarizer_extinction_ratio_percent'] = round(extinction_ratio, 2)
+        cal['polarizer_calibration_date'] = datetime.now().isoformat()
+        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+        logger.info(f"Polarizer extinction ratio updated: {extinction_ratio:.2f}%")
+
+    def get_extinction_ratio(self) -> Optional[float]:
+        """
+        Get polarizer extinction ratio from last calibration.
+
+        Returns:
+            Extinction ratio as percentage, or None if not calibrated
+        """
+        return self.config.get('calibration', {}).get('polarizer_extinction_ratio_percent')
 
     def swap_servo_positions(self) -> tuple[int, int, str]:
         """
@@ -976,8 +1019,6 @@ class DeviceConfiguration:
             return 'pico_p4spr'
         elif 'pico ez' in controller_str or 'picoezspr' in controller_str:
             return 'pico_ezspr'
-        elif 'qspr' in controller_str:
-            return 'qspr'
         else:
             return 'arduino'  # default fallback
 

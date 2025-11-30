@@ -3,13 +3,25 @@
 This is the ONLY way to connect to the USB4000/FLAME-T spectrometer.
 Uses pyseabreeze backend (pure Python, works on this system).
 
+INTEGRATION TIME STANDARD:
+=========================
+ALL integration times in this codebase use MILLISECONDS:
+- USB4000.set_integration(time_ms) takes milliseconds
+- DetectorParams stores min/max in milliseconds
+- LEDCalibrationResult stores integration_time in milliseconds
+- Internal conversion to microseconds happens ONLY in set_integration()
+
 Requirements:
 - pyusb Python package installed
 - seabreeze Python package installed
 """
 
 import threading
+import logging
 from utils.logger import logger
+
+# Suppress seabreeze internal USB cleanup errors (they're harmless)
+logging.getLogger('seabreeze.pyseabreeze.transport').setLevel(logging.ERROR)
 
 # Defer all seabreeze imports until open() is called to avoid blocking on import
 
@@ -33,7 +45,6 @@ class USB4000:
         self.use_seabreeze = True  # Always True - single connection method
         self._wavelengths = None
         self._integration_time = 0.1
-        self._current_integration_ms = None  # Cache for skipping redundant USB calls
 
         # Detector specifications (set during open())
         self._max_counts = 65535  # 16-bit ADC default for USB4000
@@ -61,14 +72,21 @@ class USB4000:
                 import seabreeze
                 seabreeze.use('pyseabreeze')
                 from seabreeze.spectrometers import Spectrometer, list_devices
+
+                # Suppress seabreeze debug USB errors
+                import logging
+                logging.getLogger('seabreeze.pyseabreeze.transport').setLevel(logging.ERROR)
+
                 logger.info("USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)")
             except ImportError as e:
                 logger.error(f"SeaBreeze not available: {e}")
                 logger.error("Install with: pip install seabreeze pyusb")
                 return False
 
-            # Discover devices with configurable timeout
-            from core.hardware_manager import HARDWARE_DEBUG, CONNECTION_TIMEOUT
+            # Discover devices with configurable timeout (standalone defaults)
+            HARDWARE_DEBUG = False
+            CONNECTION_TIMEOUT = 5.0  # Increased timeout for standalone usage
+
             if HARDWARE_DEBUG:
                 logger.debug(f"Scanning for Ocean Optics devices ({CONNECTION_TIMEOUT}s timeout)...")
 
@@ -195,13 +213,23 @@ class USB4000:
                         f"Detector integration time limits: "
                         f"{min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms"
                     )
+                    # Store ms limits and enforce universal minimum of 5ms
+                    self.min_integration_ms = 5.0
+                    self.max_integration_ms = float(min_max_limits[1]/1000.0)
                 elif hasattr(self._device, 'minimum_integration_time_micros'):
                     min_int_us = self._device.minimum_integration_time_micros
                     logger.info(f"Detector minimum integration time: {min_int_us/1000:.2f}ms")
+                    self.min_integration_ms = 5.0
+                    # Fallback max
+                    self.max_integration_ms = 1000.0
                 else:
                     logger.debug("Detector does not expose integration time limits via SeaBreeze")
+                    self.min_integration_ms = 5.0
+                    self.max_integration_ms = 1000.0
             except Exception as e:
                 logger.debug(f"Could not read detector capabilities: {e}")
+                self.min_integration_ms = 5.0
+                self.max_integration_ms = 1000.0
 
             logger.info(f"USB4000 connected: {self.serial_number}")
             return True
@@ -220,7 +248,14 @@ class USB4000:
                 with _usb_device_lock:
                     self._device.close()
         except Exception as e:
-            logger.warning(f"Error closing USB4000: {e}")
+            # Suppress harmless USB reset errors during cleanup
+            # These occur when device is already released by OS
+            import usb.core
+            if isinstance(e, usb.core.USBError) and e.errno == 19:
+                # errno 19 = "No such device" - device already disconnected, ignore
+                logger.debug(f"USB device cleanup (already released by OS)")
+            else:
+                logger.warning(f"Error closing USB4000: {e}")
         finally:
             self.opened = False
             self._device = None
@@ -237,18 +272,20 @@ class USB4000:
     def set_integration(self, time_ms):
         """Set integration time - THREAD-SAFE.
 
+        STANDARD: Integration time is ALWAYS in MILLISECONDS throughout the codebase.
+        This method handles the conversion to microseconds for the SeaBreeze API.
+
         Args:
-            time_ms: Integration time in milliseconds (matches settings.py)
+            time_ms: Integration time in MILLISECONDS (not seconds, not microseconds)
+                    Examples: 50 = 50ms, 95.5 = 95.5ms
+
+        Returns:
+            bool: True if successful, False otherwise
         """
         if not self._device or not self.opened:
             return False
-
-        # ✅ OPTIMIZATION: Skip redundant USB call if already set to this value
-        if self._current_integration_ms is not None and self._current_integration_ms == time_ms:
-            return True  # Already set, saves ~3ms USB overhead
-
         try:
-            # Convert milliseconds to microseconds for SeaBreeze API
+            # Convert MILLISECONDS → MICROSECONDS for SeaBreeze hardware API
             time_us = int(time_ms * 1000)
 
             # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
@@ -258,7 +295,6 @@ class USB4000:
 
             # Store in seconds for internal use
             self._integration_time = time_ms / 1000.0
-            self._current_integration_ms = time_ms  # Cache for future comparisons
             return True
         except Exception as e:
             logger.error(f"set_integration error: {e}")
@@ -283,7 +319,7 @@ class USB4000:
             logger.error(f"read_intensity error: {e}")
             # Check if device was disconnected (errno 19)
             if "[Errno 19]" in str(e) or "No such device" in str(e):
-                logger.error("🔌 Spectrometer disconnected during operation")
+                logger.error("Spectrometer disconnected during operation")
                 self.opened = False
                 self._device = None
                 raise ConnectionError("Spectrometer disconnected") from e
@@ -316,6 +352,19 @@ class USB4000:
             except Exception as e:
                 logger.debug(f"Could not read min integration time: {e}")
         return 0.001
+
+    @property
+    def integration_time(self):
+        """Get current integration time in seconds.
+
+        Returns:
+            float: Integration time in seconds
+        """
+        return self._integration_time
+
+    def get_integration_ms(self):
+        """Get current integration time in milliseconds (derived)."""
+        return float(self._integration_time * 1000.0)
 
     def read_wavelength(self):
         """Get wavelengths array."""

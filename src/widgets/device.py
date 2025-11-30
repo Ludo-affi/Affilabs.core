@@ -3,8 +3,7 @@ from PySide6.QtCore import Signal, Slot
 
 from ui.ui_EZSPR import Ui_EZSPRForm
 from ui.ui_KNX2 import Ui_KNX2
-from ui.ui_P4SPR import Ui_P4SPR_2
-from ui.ui_QSPR import Ui_QSPR
+from ui.ui_P4SPR import Ui_P4SPR
 from ui.ui_Affipump import Ui_Affipump
 from ui.ui_device import Ui_Device
 from utils.logger import logger
@@ -27,7 +26,6 @@ class Device(QWidget):
         self.ui = Ui_Device()
         self.ui.setupUi(self)
         self.p4spr = False
-        self.qspr = False
         self.knx2 = False
         self.knx = False
         self.ctrl_widget = None
@@ -75,17 +73,6 @@ class Device(QWidget):
                 self.sensor_read_sig.emit()
             self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
             self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
-        elif ctrl_type == 'QSPR':
-            self.up = False
-            self.qspr = True
-            self.ctrl_widget = QSPRWidget(self.ui.controller_frame)
-            self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
-            self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
-            self.ctrl_widget.shutdown_btn.connect(self.initiate_shutdown)
-            self.ctrl_widget.crt_command.connect(self.cartridge_motion)
-            self.sensor_read_sig.emit()
-            if not DEV:
-                self.ctrl_widget.ui.temp_display.hide()
         elif ctrl_type in ['EZSPR', 'PicoEZSPR']:
             if ctrl_type == 'PicoEZSPR':
                 self.ctrl_pico = True
@@ -230,50 +217,7 @@ class P4SPRWidget(ControlWidgetBase):
             self.ui.temp_display.hide()
 
 
-class QSPRWidget(ControlWidgetBase):
-    crt_command = Signal(str)
 
-    def __init__(self, parent):
-        super(QSPRWidget, self).__init__()
-        self.ui = Ui_QSPR()
-        self.ui.setupUi(self)
-        self.setParent(parent)
-        self.show()
-        self.ui.disconnect_btn.clicked.connect(self.disconnect_device)
-        self.ui.quick_calibrate_btn.clicked.connect(self.quick_calibration)
-        self.ui.shutdown_btn.clicked.connect(self.shutdown_device)
-        self.ui.crt_up_btn.clicked.connect(self.cartridge_up)
-        self.ui.crt_down_btn.clicked.connect(self.cartridge_down)
-        self.ui.adj_up_btn.clicked.connect(self.adjust_up)
-        self.ui.adj_down_btn.clicked.connect(self.adjust_down)
-
-    def quick_calibration(self):
-        self.calibrate_btn.emit()
-
-    def cartridge_up(self):
-        self.crt_command.emit('up')
-
-    def cartridge_down(self):
-        self.crt_command.emit('down')
-
-    def adjust_up(self):
-        self.crt_command.emit('adj_up')
-
-    def adjust_down(self):
-        self.crt_command.emit('adj_down')
-
-    def disconnect_device(self):
-        self.setEnabled(False)
-        self.disconnect_btn.emit('controller')
-
-    def shutdown_device(self):
-        self.setEnabled(False)
-        if show_message(msg_type="Warning", msg="Power off QSPR?", yes_no=True):
-            show_message(msg_type="Warning", msg="Warning: DO NOT UNPLUG\n "
-                                                 "Wait until power button light is OFF to unplug the device")
-            self.shutdown_btn.emit('controller')
-        else:
-            self.setEnabled(True)
 
     def update_temp(self, temp):
         try:

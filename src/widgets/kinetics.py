@@ -28,7 +28,6 @@ class Kinetic(QWidget):
 
         self.no_kinetic = False
         self.knx2 = False
-        self.qspr = False
         self.knx = False
 
         self.sync = False
@@ -89,8 +88,6 @@ class Kinetic(QWidget):
         if knx_type == '' and ctrl_type not in ['EZSPR', 'PicoEZSPR']:
             logger.debug("no kinetic")
             self.no_kinetic = True
-            if ctrl_type == 'QSPR':
-                pass  # add qspr connection handling later
         else:
             if knx_type == 'KNX':
                 self.knx = True

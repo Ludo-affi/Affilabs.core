@@ -128,11 +128,11 @@ WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by defa
 # LED Stabilization - time between LED turn-on and spectrum acquisition
 # LED timing defaults (seconds or milliseconds as noted)
 # Deprecated single delay (kept for backward compatibility in older paths)
-LED_DELAY = 0.050  # 50ms LED settling time (deprecated; use PRE/POST below)
+LED_DELAY = 0.010  # 10ms minimum LED settling time (fallback for legacy code)
 
-# New default LED delays (ms)
-PRE_LED_DELAY_MS: float = 45.0   # Delay after LED ON before measurement
-POST_LED_DELAY_MS: float = 5.0   # Delay after LED OFF before switching channel
+# Optimized LED delays (ms) - determined from LED characterization
+PRE_LED_DELAY_MS: float = 12.0   # Delay after LED ON before measurement (stabilization)
+POST_LED_DELAY_MS: float = 40.0  # Delay after LED OFF before switching channel (afterglow decay)
 
 # Optional: one-cycle LED verification at maximum brightness in live mode
 # When True, each channel will run the first live acquisition at LED=255 and log a clear message.

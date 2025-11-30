@@ -96,7 +96,7 @@ class ControllerHAL(Protocol):
         """Get the underlying device type string.
 
         Returns:
-            Device type: 'PicoP4SPR', 'PicoEZSPR', 'QSPR', 'Arduino', 'Kinetic'
+            Device type: 'PicoP4SPR', 'PicoEZSPR', 'Arduino', 'Kinetic'
         """
         ...
 
@@ -216,9 +216,24 @@ class PicoP4SPRAdapter:
         return self._ctrl.set_mode(mode) or False
 
     def get_polarizer_position(self) -> Dict[str, Any]:
+        """Get polarizer positions from device_config (NOT EEPROM).
+
+        ========================================================================
+        CRITICAL: POSITIONS FROM DEVICE_CONFIG ONLY
+        ========================================================================
+        This function returns positions from device_config.json.
+        Legacy servo_get() EEPROM reading has been DELETED.
+
+        Positions are loaded at startup and NEVER changed at runtime.
+        ========================================================================
+        """
         try:
-            return self._ctrl.servo_get()
-        except:
+            # Return positions from device_config (passed via constructor)
+            # For now, return empty dict - caller should use device_config directly
+            logger.warning("get_polarizer_position() called - use device_config.get_servo_positions() instead")
+            return {}
+        except Exception as e:
+            logger.error(f"get_polarizer_position error: {e}")
             return {}
 
     # Device Info & Capabilities
@@ -362,97 +377,6 @@ class PicoEZSPRAdapter:
 
     def is_connected(self) -> bool:
         return self._ctrl.valid()
-
-
-class QSPRAdapter:
-    """Adapter wrapping QSPR controller to provide ControllerHAL interface."""
-
-    def __init__(self, controller):
-        """Initialize adapter with existing QSPRController instance.
-
-        Args:
-            controller: QSPRController instance from utils.controller
-        """
-        self._ctrl = controller
-        self._device_type = "QSPR"
-
-    # LED Control
-    def turn_on_channel(self, ch: str) -> bool:
-        return self._ctrl.turn_on_channel(ch) or False
-
-    def turn_off_channels(self) -> bool:
-        return self._ctrl.turn_off_channels() or False
-
-    def set_intensity(self, ch: str, raw_val: int) -> bool:
-        return self._ctrl.set_intensity(ch, raw_val) or False
-
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
-        # QSPR doesn't have batch command - fall back to sequential
-        success = True
-        if a > 0:
-            success &= self.set_intensity('a', a)
-        if b > 0:
-            success &= self.set_intensity('b', b)
-        if c > 0:
-            success &= self.set_intensity('c', c)
-        if d > 0:
-            success &= self.set_intensity('d', d)
-        return success
-
-    # Polarizer Control
-    def set_mode(self, mode: str) -> bool:
-        return False  # QSPR does not have polarizer
-
-    def get_polarizer_position(self) -> Dict[str, Any]:
-        return {}
-
-    # Device Info & Capabilities
-    def get_device_type(self) -> str:
-        return self._device_type
-
-    def get_firmware_version(self) -> str:
-        return ''
-
-    def get_temperature(self) -> float:
-        return -1.0
-
-    # Capability queries
-    @property
-    def supports_polarizer(self) -> bool:
-        return False
-
-    @property
-    def supports_batch_leds(self) -> bool:
-        return False
-
-    @property
-    def supports_pump(self) -> bool:
-        return False
-
-    @property
-    def supports_firmware_update(self) -> bool:
-        return False
-
-    @property
-    def channel_count(self) -> int:
-        return 4
-
-    # Pump Control (not supported)
-    def get_pump_corrections(self) -> Optional[Tuple[float, float]]:
-        return None
-
-    def set_pump_corrections(self, pump_1_correction: float, pump_2_correction: float) -> bool:
-        return False
-
-    # Connection Management
-    def open(self) -> bool:
-        return self._ctrl.open()
-
-    def close(self) -> None:
-        self._ctrl.close()
-
-    def is_connected(self) -> bool:
-        return self._ctrl._ser is not None and self._ctrl._ser.is_open
 
 
 class ArduinoAdapter:
@@ -636,7 +560,7 @@ def create_controller_hal(controller) -> ControllerHAL:
     capability queries.
 
     Args:
-        controller: Controller instance (PicoP4SPR, PicoEZSPR, QSPR, Arduino, Kinetic)
+        controller: Controller instance (PicoP4SPR, PicoEZSPR, Arduino, Kinetic)
 
     Returns:
         ControllerHAL adapter wrapping the controller
@@ -671,8 +595,6 @@ def create_controller_hal(controller) -> ControllerHAL:
         'PicoP4SPR': PicoP4SPRAdapter,
         'pico_ezspr': PicoEZSPRAdapter,
         'PicoEZSPR': PicoEZSPRAdapter,
-        'qspr': QSPRAdapter,
-        'QSPRController': QSPRAdapter,
         'p4spr': ArduinoAdapter,  # Arduino uses 'p4spr' as name
         'ArduinoController': ArduinoAdapter,
         'kinetic': KineticAdapter,

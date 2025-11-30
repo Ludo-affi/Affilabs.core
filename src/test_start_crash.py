@@ -52,8 +52,9 @@ print(f"\n[OK] Hardware: ctrl={hardware_mgr.ctrl is not None}, usb={hardware_mgr
 print("\n[5/6] Injecting fake calibration data...")
 import numpy as np
 data_mgr.wave_data = np.array(range(200, 1100))  # 900 wavelengths as numpy
-data_mgr.leds_calibrated = {'a': 255, 'b': 200, 'c': 180, 'd': 255}  # DICT not list!
-data_mgr.ref_sig = {
+data_mgr.p_mode_intensity = {'a': 255, 'b': 200, 'c': 180, 'd': 255}  # DICT not list!
+data_mgr.s_mode_intensity = {'a': 255, 'b': 200, 'c': 180, 'd': 255}
+data_mgr.s_pol_ref = {
     'a': np.ones(900) * 1000,
     'b': np.ones(900) * 1000,
     'c': np.ones(900) * 1000,
@@ -63,7 +64,6 @@ data_mgr.dark_noise = np.ones(900) * 100
 data_mgr.integration_time = 40
 data_mgr.num_scans = 5
 data_mgr.calibrated = True
-data_mgr.ref_intensity = 255
 data_mgr.ch_error_list = []
 print("[OK] Fake calibration complete")
 

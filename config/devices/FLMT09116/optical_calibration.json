@@ -1,0 +1,164 @@
+{
+  "metadata": {
+    "created": "2025-11-29T05:49:04Z",
+    "device_serial": "FLMT09116",
+    "pre_on_duration_s": 0.2,
+    "acquisition_duration_ms": 250,
+    "integration_grid_ms": [
+      10.0,
+      25.0,
+      40.0,
+      55.0,
+      70.0,
+      85.0
+    ],
+    "led_intensities_s_mode": {
+      "a": 255,
+      "b": 255,
+      "c": 255,
+      "d": 255
+    },
+    "polarization_mode": "s",
+    "aging_assessment": null
+  },
+  "channel_data": {
+    "a": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 57.83878572394219,
+          "amplitude": 128.5043965320576,
+          "baseline": 25.306025468100522,
+          "r_squared": 0.9957160774268109
+        },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 56.67750402797557,
+          "amplitude": 387.3180660535306,
+          "baseline": 81.328918154045,
+          "r_squared": 0.99480911583619
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 75.95518202297416,
+          "amplitude": 415.74486295043937,
+          "baseline": 113.36858767069502,
+          "r_squared": 0.9984718836713051
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 66.33318582461271,
+          "amplitude": 712.0322026985253,
+          "baseline": 173.068036367069,
+          "r_squared": 0.9988402195072412
+        },
+        {
+          "integration_time_ms": 70.0,
+          "tau_ms": 19.79910062325665,
+          "amplitude": 22226.420813140503,
+          "baseline": 280.6185868184045,
+          "r_squared": 0.9999174416981743
+        }
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 607,
+        "peak_intensity": 17683.33709500193,
+        "integration_time_ms": 10.0,
+        "led_intensity": 255
+      }
+    },
+    "b": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 53.683896024794095,
+          "amplitude": 150.02412127966525,
+          "baseline": 27.203452128771737,
+          "r_squared": 0.9935275180054334
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 74.68674065291859,
+          "amplitude": 529.9092528796405,
+          "baseline": 114.93965246397985,
+          "r_squared": 0.9981458980096409
+        }
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 683,
+        "peak_intensity": 37030.690612657025,
+        "integration_time_ms": 10.0,
+        "led_intensity": 255
+      }
+    },
+    "c": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 49.974974846332486,
+          "amplitude": 162.1507681039451,
+          "baseline": 27.48043425264042,
+          "r_squared": 0.9904393861049048
+        },
+        {
+          "integration_time_ms": 25.0,
+          "tau_ms": 70.63715681517672,
+          "amplitude": 438.6585143641928,
+          "baseline": 68.16155891028926,
+          "r_squared": 0.9998344760352724
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 55.84270582686026,
+          "amplitude": 783.4127105131827,
+          "baseline": 134.92049246826227,
+          "r_squared": 0.9976825812574857
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 18.234229207525594,
+          "amplitude": 14412.268710353168,
+          "baseline": 231.2474785080353,
+          "r_squared": 0.9996387041780638
+        }
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 613,
+        "peak_intensity": 35502.90945267722,
+        "integration_time_ms": 10.0,
+        "led_intensity": 255
+      }
+    },
+    "d": {
+      "integration_time_data": [
+        {
+          "integration_time_ms": 10.0,
+          "tau_ms": 67.53164715385738,
+          "amplitude": 120.46538391666229,
+          "baseline": 23.56076836506774,
+          "r_squared": 0.995705370962363
+        },
+        {
+          "integration_time_ms": 40.0,
+          "tau_ms": 53.78156504039839,
+          "amplitude": 591.4002081871573,
+          "baseline": 135.46110280964047,
+          "r_squared": 0.9966647129244218
+        },
+        {
+          "integration_time_ms": 55.0,
+          "tau_ms": 67.58250689667838,
+          "amplitude": 909.5029959880387,
+          "baseline": 169.27347630605706,
+          "r_squared": 0.9986754774463225
+        }
+      ],
+      "led_spectral_info": {
+        "peak_roi_index": 22,
+        "peak_intensity": 17204.567457606983,
+        "integration_time_ms": 10.0,
+        "led_intensity": 255
+      }
+    }
+  }
+}

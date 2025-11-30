@@ -26,10 +26,10 @@ def get_version() -> str:
                 spec_file = Path(__file__).parent.parent / "main.spec"
             match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
             if match is None:
-                return "4.0"  # Default fallback version
+                return "0.2-beta"  # Fallback version for affilabs.core-beta branch
             return match[2]
         except (FileNotFoundError, AttributeError):
-            return "4.0"  # Default fallback version
+            return "0.2-beta"  # Fallback version for affilabs.core-beta branch
 
 
 DEV = False  # Set to True to enable OEM/factory features (optical calibration button, etc.)
@@ -78,7 +78,6 @@ PICO_VID = 0x2E8A
 CP210X_VID = 0x10C4
 CP210X_PID = 0xEA60
 BAUD_RATE = 115200
-QSPR_BAUD_RATE = 460800
 
 # Prevent recursion error
 GRAPH_REGION_UPDATE_GAP = 0.1  # 100 ms
@@ -94,9 +93,16 @@ CYCLE_TIME = 1.3  # cycle time for all 4 channels
 
 # LED Timing Configuration (in milliseconds)
 # PRE_LED_DELAY_MS: Settling time after LED turn-on before measurement
-# POST_LED_DELAY_MS: Dark time after LED turn-off before channel switch (for afterglow decay)
-PRE_LED_DELAY_MS = 45  # LED stabilization delay before measurement (default 45ms, configurable 0-200ms)
-POST_LED_DELAY_MS = 5  # Additional dark time after LED off (default 5ms, configurable 0-100ms)
+# POST_LED_DELAY_MS: Dark time after LED turn-off before channel switch (allows afterglow to decay)
+# Total delay budget: 40-70ms optimal for jitter reduction
+PRE_LED_DELAY_MS = 12   # LED stabilization (LED stable in 10ms, 12ms = 1.2× safety factor)
+POST_LED_DELAY_MS = 40  # Afterglow decay + jitter reduction (combined 40ms delay budget)
+
+# LED Overlap Strategy - OPTIMIZED FOR 210ms INTEGRATION TIME
+# Turn on next LED after LED_OVERLAP_MS during POST delay
+# Target: <1000ms for 4 channels with 210ms integration each
+# Timing: PRE(12) + ACQ(210) + POST(5 remaining) = 227ms first, 215ms others = 872ms total
+LED_OVERLAP_MS = 35  # Turn on next LED after 35ms of POST (5ms remaining POST after overlap)
 
 # Legacy support (kept for backward compatibility with old code)
 LED_DELAY = PRE_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
@@ -170,13 +176,65 @@ FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
 #
 # CRITICAL: Calibration determines the parameters, live view executes them.
 # This ensures perfect consistency between calibration QC and live data.
-USE_ALTERNATIVE_CALIBRATION = True  # ENFORCED: Global LED Intensity method
+
+# === CALIBRATION MODE SELECTION ===
+# MODE 1 (Standard): Global integration time, variable LED per channel
+#   - Current production mode (ENABLED)
+#   - Integration: ONE global value for all channels
+#   - LED intensity: VARIABLE per channel to reach target
+#   - Best for: Current fixed integration architecture
+#
+# MODE 2 (Adaptive Integration): Fixed LED=255, variable integration per channel
+#   - Module: calibration_adaptive_integration.py (DISABLED - ready for migration)
+#   - LED: FIXED at 255 (all channels at max brightness for optimal stability)
+#   - Integration: VARIABLE per channel (21-63ms optimized per LED brightness)
+#   - Validated: 1.51 Hz (660ms/cycle), 0.22-0.63% noise, 50k counts all channels
+#   - Enable when ready to migrate to per-channel integration architecture
+USE_ALTERNATIVE_CALIBRATION = False  # DISABLED: Using Standard mode (global integration)
 
 # === TRANSMISSION BASELINE CORRECTION ===
-# Corrects spectral tilt in transmission spectra caused by LED/detector spectral response
-# When enabled, applies polynomial baseline flattening to make transmission more uniform across wavelengths
-TRANSMISSION_BASELINE_CORRECTION = False  # Set to True to enable baseline flattening
-TRANSMISSION_BASELINE_DEGREE = 2  # Polynomial degree (2=quadratic, good for most cases)
+# Corrects spectral tilt/skew in transmission spectra
+#
+# IMPORTANT: P/S ratio already removes LED spectral profile!
+# What causes remaining tilt (left side higher than right)?
+#
+# 1. OPTICAL ARTIFACTS (should correct):
+#    - Polarizer wavelength-dependent extinction ratio
+#    - Detector quantum efficiency wavelength variation
+#    - Optical element absorption/scatter wavelength dependence
+#    → Check: Off-SPR regions (560-570nm, 750-770nm) show tilt
+#
+# 2. SPR PHYSICS (should NOT correct):
+#    - Gold optical properties wavelength dependence
+#    - SPR sensitivity wavelength variation (intrinsic)
+#    → Check: Off-SPR regions flat, only SPR region tilted
+#
+# HOW TO DIAGNOSE:
+# Use TransmissionProcessor.diagnose_spectral_tilt() to check:
+# - If off_spr_tilt > 5%/100nm → optical artifact (use 'polynomial')
+# - If off_spr_tilt < 5%/100nm but spr_tilt > 5%/100nm → SPR physics (use 'none' or 'percentile')
+#
+# BASELINE CORRECTION METHODS:
+# - 'percentile': Use Nth percentile as baseline (simple, assumes flat off-SPR)
+#   * Good for: Quick calibration, minimal optical artifacts
+#
+# - 'polynomial': Fit polynomial to remove OPTICAL wavelength tilt
+#   * Good for: Polarizer/detector has wavelength-dependent response
+#   * Flattens optical artifacts while preserving SPR physics
+#   * Use degree=1 (linear) for simple tilt, degree=2 (quadratic) for curved baseline
+#   ⚠️  WARNING: May over-flatten if SPR physics has strong wavelength dependence
+#
+# - 'off_spr': Use off-SPR region (560-570nm) mean as baseline
+#   * Good for: Most accurate, physics-based, detector covers 560-570nm
+#   * Assumes off-SPR transmission = 100% (no SPR, pure optics)
+#
+# - 'none': Skip baseline correction (raw P/S ratio with LED correction only)
+#   * Good for: Debugging, checking raw data, minimal processing
+#
+TRANSMISSION_BASELINE_METHOD = 'percentile'  # Options: 'percentile', 'polynomial', 'off_spr', 'none'
+TRANSMISSION_BASELINE_PERCENTILE = 95.0  # Percentile for 'percentile' method (80-99 typical)
+TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE = 2  # Polynomial degree for 'polynomial' method (1=linear, 2=quadratic)
+TRANSMISSION_OFF_SPR_WAVELENGTH_RANGE = (560.0, 570.0)  # Wavelength range (nm) for 'off_spr' method
 
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment

@@ -40,8 +40,165 @@ class SettingsTabBuilder:
         self._build_calibration_controls(tab_layout)
         tab_layout.addSpacing(12)
 
-        self._build_spectroscopy_plots(tab_layout)
+        self._build_spectroscopy_plots_placeholder(tab_layout)
         tab_layout.addSpacing(20)
+
+    def _build_spectroscopy_plots_placeholder(self, tab_layout: QVBoxLayout):
+        """Build lightweight placeholder for spectroscopy plots (deferred loading)."""
+        from sections import CollapsibleSection
+
+        spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
+
+        # Placeholder message
+        placeholder = QFrame()
+        placeholder.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 0, 0, 0.03);"
+            "  border-radius: 8px;"
+            "  padding: 40px;"
+            "}"
+        )
+        placeholder_layout = QVBoxLayout(placeholder)
+        placeholder_layout.setContentsMargins(40, 40, 40, 40)
+
+        loading_label = QLabel("📊 Loading spectroscopy plots...")
+        loading_label.setStyleSheet(
+            "font-size: 13px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-style: italic;"
+        )
+        from PySide6.QtCore import Qt
+        loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder_layout.addWidget(loading_label)
+
+        spectro_section.add_content_widget(placeholder)
+        tab_layout.addWidget(spectro_section)
+
+        # Store reference for later replacement
+        self.sidebar._spectroscopy_placeholder = spectro_section
+
+    def _build_spectroscopy_plots_real(self, tab_layout: QVBoxLayout, insert_index: int = -1):
+        """Build actual spectroscopy plots (called on demand when Settings tab is opened)."""
+        from plot_helpers import create_spectroscopy_plot, add_channel_curves
+        from sections import CollapsibleSection
+
+        spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
+
+        spectro_help = QLabel("Real-time transmission and raw detector spectrum display")
+        spectro_help.setStyleSheet(
+            "font-size: 11px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-style: italic;"
+            "margin: 4px 0px 8px 0px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        spectro_section.content_layout.addWidget(spectro_help)
+
+        # Card container
+        spectro_card = QFrame()
+        spectro_card.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 0, 0, 0.03);"
+            "  border-radius: 8px;"
+            "}"
+        )
+        spectro_card_layout = QVBoxLayout(spectro_card)
+        spectro_card_layout.setContentsMargins(12, 8, 12, 8)
+        spectro_card_layout.setSpacing(8)
+
+        # Transmission Plot
+        trans_label = QLabel("Transmission Spectrum (%):")
+        trans_label.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        spectro_card_layout.addWidget(trans_label)
+
+        # Create transmission plot
+        self.sidebar.transmission_plot = create_spectroscopy_plot(
+            left_label="Transmission (%)",
+            bottom_label="Wavelength (nm)"
+        )
+        self.sidebar.transmission_plot.setMinimumHeight(200)
+        self.sidebar.transmission_plot.setMaximumHeight(300)
+        spectro_card_layout.addWidget(self.sidebar.transmission_plot)
+
+        # Add channel curves to transmission plot
+        self.sidebar.transmission_curves = add_channel_curves(self.sidebar.transmission_plot)
+
+        # Add "Record Baseline Data" button
+        record_baseline_btn = QPushButton("🔴 Record 5-Min Baseline Data")
+        record_baseline_btn.setFixedHeight(36)
+        record_baseline_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E02020, stop:1 #C01818);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: #D1D1D6;"
+            "  color: #86868B;"
+            "}"
+        )
+        record_baseline_btn.setToolTip(
+            "Record 5 minutes of transmission data for baseline noise optimization analysis.\\n"
+            "Ensure stable baseline (no injections) before clicking."
+        )
+        self.sidebar.record_baseline_btn = record_baseline_btn
+        spectro_card_layout.addWidget(record_baseline_btn)
+
+        spectro_card_layout.addSpacing(12)
+
+        # Raw Data Plot
+        raw_label = QLabel("Raw Detector Signal (counts):")
+        raw_label.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        spectro_card_layout.addWidget(raw_label)
+
+        # Create raw data plot
+        self.sidebar.raw_data_plot = create_spectroscopy_plot(
+            left_label="Intensity (counts)",
+            bottom_label="Wavelength (nm)"
+        )
+        self.sidebar.raw_data_plot.setMinimumHeight(200)
+        self.sidebar.raw_data_plot.setMaximumHeight(300)
+        spectro_card_layout.addWidget(self.sidebar.raw_data_plot)
+
+        # Add channel curves to raw data plot
+        self.sidebar.raw_data_curves = add_channel_curves(self.sidebar.raw_data_plot)
+
+        spectro_section.add_content_widget(spectro_card)
+
+        # Insert at specific index if provided, otherwise append
+        if insert_index >= 0:
+            tab_layout.insertWidget(insert_index, spectro_section)
+        else:
+            tab_layout.addWidget(spectro_section)
+
+        # Log successful creation
+        from utils.logger import logger
+        logger.info(f"✅ Spectroscopy plots created: {len(self.sidebar.transmission_curves)} curves each")
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
         """Build intelligence bar section."""
@@ -164,6 +321,10 @@ class SettingsTabBuilder:
         self.sidebar.s_position_input.setToolTip("Servo position for S polarization mode (0-180 degrees)")
         self.sidebar.s_position_input.setFixedWidth(70)
         self.sidebar.s_position_input.setStyleSheet(self._lineedit_style())
+        # Connect to sync with device_config when changed
+        self.sidebar.s_position_input.textChanged.connect(
+            lambda text: self._on_s_position_changed(text)
+        )
         polarizer_row.addWidget(self.sidebar.s_position_input)
 
         polarizer_row.addSpacing(16)
@@ -178,6 +339,10 @@ class SettingsTabBuilder:
         self.sidebar.p_position_input.setToolTip("Servo position for P polarization mode (0-180 degrees)")
         self.sidebar.p_position_input.setFixedWidth(70)
         self.sidebar.p_position_input.setStyleSheet(self._lineedit_style())
+        # Connect to sync with device_config when changed
+        self.sidebar.p_position_input.textChanged.connect(
+            lambda text: self._on_p_position_changed(text)
+        )
         polarizer_row.addWidget(self.sidebar.p_position_input)
 
         # Toggle S/P Button
@@ -573,121 +738,43 @@ class SettingsTabBuilder:
         setattr(self.sidebar, button_ref, button)
         layout.addWidget(button)
 
-    def _build_spectroscopy_plots(self, tab_layout: QVBoxLayout):
-        """Build spectroscopy plots section with transmission and raw data graphs (collapsible, starts expanded)."""
-        from plot_helpers import create_spectroscopy_plot, add_channel_curves
+    # Device config sync methods
 
-        spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
+    def _on_s_position_changed(self, text: str):
+        """Sync S position changes to device_config in memory.
 
-        spectro_help = QLabel("Real-time transmission and raw detector spectrum display")
-        spectro_help.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        spectro_section.content_layout.addWidget(spectro_help)
+        Args:
+            text: New S position value from input field
+        """
+        try:
+            if text.strip() and hasattr(self.sidebar, 'device_config'):
+                s_pos = int(text)
+                if 0 <= s_pos <= 180:
+                    device_config = self.sidebar.device_config
+                    if device_config and hasattr(device_config, 'config'):
+                        if 'hardware' not in device_config.config:
+                            device_config.config['hardware'] = {}
+                        device_config.config['hardware']['servo_s_position'] = s_pos
+        except (ValueError, AttributeError):
+            pass  # Ignore invalid input or missing config
 
-        # Card container
-        spectro_card = QFrame()
-        spectro_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
-        )
-        spectro_card_layout = QVBoxLayout(spectro_card)
-        spectro_card_layout.setContentsMargins(12, 8, 12, 8)
-        spectro_card_layout.setSpacing(8)
+    def _on_p_position_changed(self, text: str):
+        """Sync P position changes to device_config in memory.
 
-        # Transmission Plot
-        trans_label = QLabel("Transmission Spectrum (%):")
-        trans_label.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        spectro_card_layout.addWidget(trans_label)
-
-        # Create transmission plot
-        self.sidebar.transmission_plot = create_spectroscopy_plot(
-            left_label="Transmission (%)",
-            bottom_label="Wavelength (nm)"
-        )
-        self.sidebar.transmission_plot.setMinimumHeight(200)
-        self.sidebar.transmission_plot.setMaximumHeight(300)
-        spectro_card_layout.addWidget(self.sidebar.transmission_plot)
-
-        # Add channel curves to transmission plot
-        self.sidebar.transmission_curves = add_channel_curves(self.sidebar.transmission_plot)
-
-        # Add "Record Baseline Data" button
-        record_baseline_btn = QPushButton("🔴 Record 5-Min Baseline Data")
-        record_baseline_btn.setFixedHeight(36)
-        record_baseline_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 8px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E02020, stop:1 #C01818);"
-            "}"
-            "QPushButton:disabled {"
-            "  background: #D1D1D6;"
-            "  color: #86868B;"
-            "}"
-        )
-        record_baseline_btn.setToolTip(
-            "Record 5 minutes of transmission data for baseline noise optimization analysis.\n"
-            "Ensure stable baseline (no injections) before clicking."
-        )
-        self.sidebar.record_baseline_btn = record_baseline_btn
-        spectro_card_layout.addWidget(record_baseline_btn)
-
-        spectro_card_layout.addSpacing(12)
-
-        # Raw Data Plot
-        raw_label = QLabel("Raw Detector Signal (counts):")
-        raw_label.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        spectro_card_layout.addWidget(raw_label)
-
-        # Create raw data plot
-        self.sidebar.raw_data_plot = create_spectroscopy_plot(
-            left_label="Intensity (counts)",
-            bottom_label="Wavelength (nm)"
-        )
-        self.sidebar.raw_data_plot.setMinimumHeight(200)
-        self.sidebar.raw_data_plot.setMaximumHeight(300)
-        spectro_card_layout.addWidget(self.sidebar.raw_data_plot)
-
-        # Add channel curves to raw data plot
-        self.sidebar.raw_data_curves = add_channel_curves(self.sidebar.raw_data_plot)
-
-        spectro_section.add_content_widget(spectro_card)
-        tab_layout.addWidget(spectro_section)
-
-        # Log successful creation
-        from utils.logger import logger
-        logger.info(f"✅ Spectroscopy plots created: {len(self.sidebar.transmission_curves)} curves each")
+        Args:
+            text: New P position value from input field
+        """
+        try:
+            if text.strip() and hasattr(self.sidebar, 'device_config'):
+                p_pos = int(text)
+                if 0 <= p_pos <= 180:
+                    device_config = self.sidebar.device_config
+                    if device_config and hasattr(device_config, 'config'):
+                        if 'hardware' not in device_config.config:
+                            device_config.config['hardware'] = {}
+                        device_config.config['hardware']['servo_p_position'] = p_pos
+        except (ValueError, AttributeError):
+            pass  # Ignore invalid input or missing config
 
     # Helper methods for consistent styling
 

@@ -6,54 +6,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QWidget, QPushButton, QLabel, QCheckBox, QGroupBox, QVBoxLayout
 
 from ui.ui_p4spr_adv_settings import Ui_P4SPR_Advanced
-from ui.ui_qspr_adv_settings import Ui_QSPR_Advanced
-
-
-class QSPRAdvMenu(QDialog):
-    """QSPR advanced settings. QSPR is obsolete, so not documenting much."""
-
-    new_parameter_sig = Signal(dict)
-    get_parameter_sig = Signal()
-
-    def __init__(self: Self, parent: QWidget | None = None) -> None:
-        """Make it."""
-        super().__init__(parent)
-
-        self.ui = Ui_QSPR_Advanced()
-        self.ui.setupUi(self)
-        self.ui.set_btn.clicked.connect(self.update_settings)
-        self.setWindowFlag(Qt.WindowType.Tool)
-
-    def refresh_values(self: Self) -> None:
-        """Refresh values."""
-        self.get_parameter_sig.emit()
-
-    def display_settings(self: Self, settings: dict[str, object]) -> None:
-        """Display settings."""
-        for setting in [
-            "s_pos",
-            "p_pos",
-            "up_time",
-            "down_time",
-            "adj_time",
-            "debounce",
-            "start_interval",
-        ]:
-            self.ui.__getattribute__(setting).setText(str(settings[setting]))
-
-    def update_settings(self: Self) -> None:
-        """Update settings."""
-        self.new_parameter_sig.emit(
-            {
-                "s_pos": self.ui.s_pos.text(),
-                "p_pos": self.ui.p_pos.text(),
-                "up_time": self.ui.up_time.text(),
-                "down_time": self.ui.down_time.text(),
-                "adj_time": self.ui.adj_time.text(),
-                "debounce": self.ui.debounce.text(),
-                "start_interval": self.ui.start_interval.text(),
-            },
-        )
 
 
 class P4SPRAdvMenu(QDialog):

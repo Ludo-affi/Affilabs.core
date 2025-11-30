@@ -60,6 +60,11 @@ class AffilabsSidebar(QWidget):
         self._ui_setup_done = False
         self.event_bus = event_bus  # EventBus for centralized signal routing
         self.cycle_table_dialog = None  # Will be created on first open
+
+        # Deferred loading flags
+        self._spectroscopy_plots_loaded = False
+        self._spectroscopy_placeholder = None
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -181,6 +186,48 @@ class AffilabsSidebar(QWidget):
         self.tabs = self.tab_widget
         main_layout.addWidget(container)
         self.setUpdatesEnabled(True)
+
+        # Connect tab change to lazy-load spectroscopy plots
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, index: int):
+        """Handle tab change - lazy load spectroscopy plots when Settings tab is opened."""
+        # Check if switched to Settings tab (index 5)
+        if index == self.tab_indices.get('Settings', -1) and not self._spectroscopy_plots_loaded:
+            self._load_spectroscopy_plots()
+
+    def _load_spectroscopy_plots(self):
+        """Lazy-load spectroscopy plots when Settings tab is first opened."""
+        if self._spectroscopy_plots_loaded:
+            return
+
+        try:
+            from utils.logger import logger
+            logger.info("📊 Loading spectroscopy plots (lazy-loaded)...")
+
+            # Find the spectroscopy placeholder and replace with real plots
+            if self._spectroscopy_placeholder is not None:
+                # Get the parent layout
+                parent_layout = self._spectroscopy_placeholder.parent().layout()
+                if parent_layout:
+                    # Get index of placeholder
+                    idx = parent_layout.indexOf(self._spectroscopy_placeholder)
+
+                    # Remove placeholder
+                    parent_layout.removeWidget(self._spectroscopy_placeholder)
+                    self._spectroscopy_placeholder.deleteLater()
+                    self._spectroscopy_placeholder = None
+
+                    # Build real spectroscopy plots
+                    from sidebar_tabs.settings_builder import SettingsTabBuilder
+                    builder = SettingsTabBuilder(self)
+                    builder._build_spectroscopy_plots_real(parent_layout, idx)
+
+                    self._spectroscopy_plots_loaded = True
+                    logger.info("✅ Spectroscopy plots loaded")
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"❌ Failed to load spectroscopy plots: {e}", exc_info=True)
 
     def set_operation_mode(self, mode: str):
         """Set the active operation mode (static or flow) and update tab states."""

@@ -101,7 +101,7 @@ Major architecture refactoring completed (commit 2510e77):
 
 **Expected Results:**
 - ✅ Graph 1 (S-pol): Shows smooth spectra for 4 channels
-- ✅ Graph 2 (P-pol): Shows smooth spectra for 4 channels  
+- ✅ Graph 2 (P-pol): Shows smooth spectra for 4 channels
 - ✅ Graph 3 (Dark): Shows low-intensity baseline
 - ✅ Graph 4 (Afterglow): Shows curves or zeros (device-dependent)
 - ✅ Graph 5 (Transmission): Shows ~100% baseline with SPR dips

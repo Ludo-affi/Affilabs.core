@@ -17,7 +17,7 @@ All operations run in background threads to avoid blocking the UI.
 
 from PySide6.QtCore import QObject, Signal, QThread
 from utils.logger import logger
-from typing import Optional
+from typing import Optional, Dict
 import threading
 import time
 
@@ -52,69 +52,54 @@ class HardwareManager(QObject):
         self.usb = None   # Spectrometer
 
         # Connection state
-        self._connecting = False
-        self._connection_thread = None
-        self._hardware_locked = False  # Main unit (controller+detector) locked after first connection
-        self._peripherals_locked = False  # Peripherals (pump/kinetic) locked after connection
+        self.connected = False
 
-        # Verification results
-        self._sensor_verified = False
-        self._optics_verified = False
+    def _connect_spectrometer(self):
+        """Attempt to connect to spectrometer (USB4000/Flame-T via SeaBreeze)."""
+        try:
+            if HARDWARE_DEBUG:
+                logger.info("="*60)
+                logger.info("SCANNING FOR SPECTROMETER...")
+                logger.info("="*60)
+            logger.info("Connecting to spectrometer...")
 
-        # Calibration results tracking
-        self._ch_error_list = []  # List of failed channels
-        self._calibration_passed = False
-        self._afterglow_calibration_done = False  # Track if afterglow calibration completed
+            try:
+                from src.utils.usb4000_wrapper import USB4000
+            except ImportError:
+                from utils.usb4000_wrapper import USB4000  # fallback if src prefix not used
 
-        # FWHM tracking for sensor verification
-        self._channel_fwhm = {'a': None, 'b': None, 'c': None, 'd': None}  # type: dict[str, Optional[float]]
-        self._fwhm_threshold = 60.0  # nm - FWHM_GOOD threshold
+            usb = USB4000()
+            if usb.open():
+                self.usb = usb
+                logger.info(f"Spectrometer connected: {self.usb.serial_number if hasattr(self.usb, 'serial_number') else 'Connected'}")
 
-        # Special case configuration
-        self._special_case = None  # Stores device-specific overrides if detector is in special cases list
+                # Warm-up dummy read at 10 ms
+                try:
+                    import time
+                    logger.info("🌡️ Performing spectrometer warm-up (10 ms dummy read)...")
+                    self.usb.set_integration(10)  # 10 ms
+                    time.sleep(0.1)
+                    dummy = self.usb.read_intensity()
+                    if dummy is not None:
+                        logger.info(f"   Warm-up read OK ({len(dummy)} pixels)")
+                    logger.info("✅ Spectrometer warm-up complete")
+                except Exception as w_e:
+                    logger.debug(f"Warm-up skipped due to: {w_e}")
+            else:
+                logger.warning("No spectrometer detected")
+                if HARDWARE_DEBUG:
+                    logger.info("   Check: USB cable, drivers, power")
+                self.usb = None
 
-        # Optics intensity monitoring for leak detection
-        self._channel_intensity_history = {'a': [], 'b': [], 'c': [], 'd': []}  # (timestamp, intensity)
-        self._channel_max_intensity = {'a': 0, 'b': 0, 'c': 0, 'd': 0}  # Peak intensity seen
-        self._optics_leak_detected = False
-        self._maintenance_required = []  # Channels requiring LED PCB replacement
+        except Exception as e:
+            logger.error(f"Spectrometer connection failed: {e}")
+            if HARDWARE_DEBUG:
+                import traceback
+                logger.debug(traceback.format_exc())
+            self.usb = None
 
-        logger.info("HardwareManager initialized")
-
-    def scan_and_connect(self):
-        """Scan for and connect to all available hardware (non-blocking).
-
-        Main unit (controller+detector) is locked after first successful connection.
-        Peripherals (pump/kinetic) can be added later via "Scan Hardware" button.
-
-        Lock Behavior:
-        - Controller + Detector: LOCKED after first connection (cannot change)
-        - Pump/Kinetic: Can be added after main unit is connected
-        - Once peripheral connected: LOCKED (cannot change type)
-        - Full reset: disconnect_all() clears everything
-
-        CRITICAL SAFEGUARDS TO PREVENT CONTROLLER HIJACKING:
-
-        1. Priority Order: PicoP4SPR → PicoEZSPR → Arduino
-           - Modern Pico controllers checked first
-           - Search stops immediately when first controller found
-
-        2. Strict VID/PID Matching:
-           - Arduino: Only connects to exact VID/PID match
-           - PicoP4SPR: VID/PID + device identity validation ("id\\n" → "P4SPR")
-
-        3. No Dangerous Fallbacks:
-           - Arduino: NO fallback COM port enumeration
-           - PicoP4SPR: Fallback excludes Arduino VID/PID ports
-
-        4. Hardware Lock After Connection:
-           - Main unit locked: prevents controller/detector changes
-           - Peripheral scan allowed: can add pump or kinetic after main unit connected
-           - Prevents any changes until explicit disconnect
-
-        5. Identity Validation:
-           - Arduino validates with "turn_off_channels" command
-           - Pico validates with "id" command returning device name
+    def scan_and_connect(self, auto_connect: bool = True) -> Dict[str, bool]:
+        """Scan for hardware devices and optionally auto-connect.
 
         See: README_HARDWARE_BEHAVIOR.md for complete documentation
         """
@@ -429,7 +414,7 @@ class HardwareManager(QObject):
     def _connect_spectrometer(self):
         """Attempt to connect to spectrometer."""
         try:
-            from utils.detector_factory import create_detector
+            from src.utils.detector_factory import create_detector
             from utils.common import get_config
             from utils.device_integration import initialize_device_on_connection
 
@@ -461,6 +446,25 @@ class HardwareManager(QObject):
                 device_dir = initialize_device_on_connection(self.usb)
                 if device_dir and HARDWARE_DEBUG:
                     logger.info(f"   Device config: {device_dir}")
+
+                # SESSION WARM-UP: perform one dummy read at 10 ms to clear USB buffers
+                try:
+                    import time
+                    logger.info("🌡️ Performing spectrometer warm-up (10 ms dummy read)...")
+                    # Set short integration for fast warm-up
+                    if hasattr(self.usb, 'set_integration'):
+                        self.usb.set_integration(10)  # 10 ms
+                        time.sleep(0.1)
+                    # Single dummy read with short timeout
+                    if hasattr(self.usb, 'read_intensity'):
+                        dummy = self.usb.read_intensity(timeout_seconds=2.0)
+                        if dummy is not None:
+                            logger.info(f"   Warm-up read OK ({len(dummy)} pixels)")
+                        else:
+                            logger.info("   Warm-up read timed out (non-fatal)")
+                    logger.info("✅ Spectrometer warm-up complete")
+                except Exception as w_e:
+                    logger.debug(f"Warm-up skipped due to: {w_e}")
             else:
                 logger.warning("No spectrometer detected")
                 if HARDWARE_DEBUG:
@@ -502,8 +506,8 @@ class HardwareManager(QObject):
 
             # Try controllers in priority order: PicoP4SPR → PicoEZSPR → Arduino
             # STOP at first controller found - ignore the other 2
-            from utils.controller import ArduinoController, PicoP4SPR, PicoEZSPR
-            from settings.settings import ARDUINO_VID, ARDUINO_PID, PICO_VID, PICO_PID
+            from src.utils.controller import ArduinoController, PicoP4SPR, PicoEZSPR
+            from src.settings.settings import ARDUINO_VID, ARDUINO_PID, PICO_VID, PICO_PID
 
             # Priority 1: Try PicoP4SPR first (most common modern controller)
             if HARDWARE_DEBUG:
@@ -513,48 +517,10 @@ class HardwareManager(QObject):
                 logger.info(f"Controller connected: {pico_p4spr.name}")
                 self.ctrl = pico_p4spr
 
-                # Check and update firmware if needed
-                try:
-                    from utils.firmware_updater import PicoFirmwareUpdater
-                    from utils.device_integration import update_firmware_version
-                    updater = PicoFirmwareUpdater(pico_p4spr._ser.port)
-
-                    # Get current version
-                    current_version = updater.get_current_version(pico_p4spr._ser)
-                    if current_version and updater.needs_update(current_version):
-                        logger.warning(f"Firmware needs update: {current_version} -> {updater.EXPECTED_VERSION}")
-
-                        # Close current connection before update
-                        pico_p4spr.close()
-
-                        # Perform automatic update
-                        logger.info("Starting automatic firmware update...")
-                        if updater.update_firmware():
-                            logger.info("✅ Firmware updated successfully - reconnecting...")
-                            # Reconnect after update
-                            pico_p4spr = PicoP4SPR()
-                            if pico_p4spr.open():
-                                self.ctrl = pico_p4spr
-                                logger.info(f"Controller reconnected with updated firmware")
-                                # Save updated firmware version to device config
-                                new_version = updater.get_current_version(pico_p4spr._ser)
-                                if new_version:
-                                    update_firmware_version(new_version)
-                            else:
-                                logger.error("Failed to reconnect after firmware update")
-                                self.ctrl = None
-                        else:
-                            logger.error("❌ Firmware update failed - continuing with old version")
-                            # Try to reconnect with old firmware
-                            pico_p4spr = PicoP4SPR()
-                            if pico_p4spr.open():
-                                self.ctrl = pico_p4spr
-                    elif current_version:
-                        logger.info(f"Firmware version OK: {current_version}")
-                        # Save current firmware version to device config
-                        update_firmware_version(current_version)
-                except Exception as e:
-                    logger.warning(f"Firmware check failed (continuing anyway): {e}")
+                # NOTE: Firmware update check disabled during scan for speed
+                # Firmware checking adds 10+ seconds to device scan due to bootloader timeout
+                # Firmware updates should be done manually via separate UI button/tool
+                # If needed, can check firmware version after connection completes
 
                 return  # Found controller - stop searching
 
@@ -591,14 +557,14 @@ class HardwareManager(QObject):
     def _connect_kinetic(self):
         """Attempt to connect to kinetic controller."""
         try:
-            from utils.controller import KineticController
+            from src.utils.controller import KineticController
             knx2 = KineticController()
             if knx2.open():
                 logger.info(f"KNX2 controller connected: {knx2.get_info()}")
                 self.knx = knx2
                 return
 
-            from utils.controller import PicoKNX2
+            from src.utils.controller import PicoKNX2
             pico_knx2 = PicoKNX2()
             if pico_knx2.open():
                 logger.info(f"Pico KNX2 controller connected: {pico_knx2.version}")
@@ -615,7 +581,7 @@ class HardwareManager(QObject):
     def _connect_pump(self):
         """Attempt to connect to pump."""
         try:
-            from pump_controller import PumpController, FTDIError
+            from src.pump_controller import PumpController, FTDIError
 
             self.pump = PumpController.from_first_available()
             if self.pump:

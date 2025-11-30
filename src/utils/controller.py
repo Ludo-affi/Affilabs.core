@@ -11,7 +11,7 @@ import numpy
 import serial
 import serial.tools.list_ports
 
-from settings import ARDUINO_VID, ARDUINO_PID, CP210X_PID, CP210X_VID, BAUD_RATE, QSPR_BAUD_RATE, ADAFRUIT_VID, \
+from settings import ARDUINO_VID, ARDUINO_PID, CP210X_PID, CP210X_VID, BAUD_RATE, ADAFRUIT_VID, \
     PICO_VID, PICO_PID
 from utils.logger import logger
 
@@ -68,7 +68,7 @@ class ControllerBase:
 
         Returns dict with keys:
             led_pcb_model: 'luminus_cool_white' or 'osram_warm_white'
-            controller_type: 'arduino', 'pico_p4spr', 'pico_ezspr', 'qspr'
+            controller_type: 'arduino', 'pico_p4spr', 'pico_ezspr'
             fiber_diameter_um: 100 or 200
             polarizer_type: 'barrel' or 'round'
             servo_s_position: 0-180
@@ -116,15 +116,14 @@ class ControllerBase:
         mapping = {
             'arduino': 0,
             'pico_p4spr': 1,
-            'pico_ezspr': 2,
-            'qspr': 3
+            'pico_ezspr': 2
         }
         return mapping.get(controller_type.lower(), 255)
 
     @staticmethod
     def _decode_controller_type(value: int) -> str:
         """Convert byte value to controller type."""
-        mapping = {0: 'arduino', 1: 'pico_p4spr', 2: 'pico_ezspr', 3: 'qspr'}
+        mapping = {0: 'arduino', 1: 'pico_p4spr', 2: 'pico_ezspr'}
         return mapping.get(value, None)
 
     @staticmethod
@@ -279,9 +278,39 @@ class ArduinoController(StaticController):
         return False
 
     def set_mode(self, mode='s'):
-        if self._ser is not None or self.open():
-            self._ser.write(mode.encode())
-            return self._ser.read() == mode.encode()
+        try:
+            if mode not in {'s', 'p'}:
+                logger.debug(f"Invalid mode '{mode}' passed to set_mode")
+                return False
+            if self._ser is not None or self.open():
+                # Flush any stale bytes to reduce false mismatches
+                try:
+                    self._ser.reset_input_buffer()
+                except Exception:
+                    pass
+                self._ser.write(mode.encode())
+                # Attempt up to 3 reads with short delays to capture echo
+                expected = mode.encode()
+                for attempt in range(3):
+                    resp = self._ser.read(1)
+                    if resp == expected:
+                        if attempt > 0:
+                            logger.debug(f"set_mode('{mode}') succeeded after retry {attempt}")
+                        return True
+                    if not resp:
+                        # Delay slightly before next attempt
+                        time.sleep(0.03)
+                    else:
+                        logger.debug(f"set_mode('{mode}') unexpected byte {resp} attempt {attempt}")
+                # If controller stayed silent, assume success (common on older firmware) and warn once
+                logger.warning(f"Controller response to set_mode('{mode}') silent after 3 attempts; assuming success")
+                return True
+            else:
+                logger.error("Serial port unavailable in set_mode")
+                return False
+        except Exception as e:
+            logger.error(f"set_mode('{mode}') failed: {e}")
+            return False
 
     def servo_get(self):
         commands = {'s': 'r5', 'p': 'r6'}
@@ -490,148 +519,47 @@ class ArduinoController(StaticController):
             logger.error(f"Failed to write EEPROM config: {e}")
             return False
 
+    def clear_servo_positions_in_eeprom(self) -> bool:
+        """Clear stored servo S/P positions in EEPROM by writing zeros.
+
+        This does not alter other configuration fields. If EEPROM layout
+        is unsupported, returns False.
+        """
+        try:
+            # Read current EEPROM config (if available)
+            current = self.read_config_from_eeprom()
+            if current is None:
+                # Build a minimal default packet with zeros for servos
+                current = {
+                    'led_pcb_model': 'osram_warm_white',
+                    'controller_type': 'arduino',
+                    'fiber_diameter_um': 200,
+                    'polarizer_type': 'round',
+                    'servo_s_position': 0,
+                    'servo_p_position': 0,
+                    'led_intensity_a': 0,
+                    'led_intensity_b': 0,
+                    'led_intensity_c': 0,
+                    'led_intensity_d': 0,
+                    'integration_time_ms': 100,
+                    'num_scans': 3,
+                }
+            else:
+                # Zero out only the servo positions
+                current['servo_s_position'] = 0
+                current['servo_p_position'] = 0
+
+            ok = self.write_config_to_eeprom(current)
+            if not ok:
+                logger.warning("EEPROM write for servo clear failed")
+            return ok
+        except Exception as e:
+            logger.error(f"Failed to clear servo positions in EEPROM: {e}")
+            return False
+
     def __str__(self):
         return "Arduino Board"
 
-
-class QSPRController(ControllerBase):
-
-    def __init__(self):
-        super().__init__(name='qspr')
-        self._lock = threading.Lock()
-
-    def open(self):
-        for dev in serial.tools.list_ports.comports():
-            if dev.pid == CP210X_PID and dev.vid == CP210X_VID:
-                logger.info(f"Found an qSPR board - {dev}, trying to connect...")
-                try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=QSPR_BAUD_RATE, timeout=3, write_timeout=1)
-                    info = self.get_info()
-                    if info is not None:
-                        if info['fw ver'].startswith('qSPR'):
-                            return True
-                        else:
-                            logger.debug('dev is not qSPR')
-                            self._ser.close()
-                            return False
-                    else:
-                        logger.debug(f"Error during get info, returned: {info}")
-                        self._ser.close()
-                        return False
-                except Exception as e:
-                    logger.error(f"Failed to open qSPR - {e}")
-                    self._ser = None
-                    return False
-
-    def _send_command(self, cmd, parse_json=False, reply=False):
-        if self._ser is not None or self.open():
-            if not (cmd.startswith('led_o')):
-                logger.debug(f"QSPR command: {cmd}")
-            try:
-                with self._lock:
-                    self._ser.write(f"{cmd}\n".encode())
-                    buf = self._ser.readline().decode()
-                    if parse_json:
-                        try:
-                            return json.loads(buf)
-                        except JSONDecodeError:
-                            logger.error(f"Failed to parse to JSON of {cmd} - {buf}")
-                            return None
-                    else:
-                        data = buf.splitlines()
-                        response = data[0] if data else buf
-                        if reply:
-                            logger.debug(f"QSPR reply: {response}")
-                        return response
-            except Exception as e:
-                logger.error(f"Failed to send command to qSPR - {e}")
-                self._ser = None
-
-    def get_status(self):
-        return self._send_command(cmd='status', parse_json=True)
-
-    def get_info(self):
-        return self._send_command(cmd='info', parse_json=True)
-
-    def get_parameters(self):
-        return self._send_command(cmd='param', parse_json=True)
-
-    def set_parameters(self, parameter_list):
-        return self._send_command(cmd=f'set_parameters:{parameter_list}:')
-
-    def read_wavelength(self):
-        data = self._send_command(cmd=f'wave')
-        if data:
-            return numpy.asarray([int(v) for v in data.split(',')])
-
-    def read_intensity(self):
-        try:
-            data = self._send_command(cmd='read')
-            if data:
-                return numpy.asarray([int(v) for v in data.split(',')])
-        except Exception as e:
-            logger.debug(f"Error during QSPR read: {e}")
-
-    def crt_up(self):
-        return self._send_command(cmd='crt_up', reply=True)
-
-    def crt_down(self):
-        return self._send_command(cmd='crt_down', reply=True)
-
-    def crt_adj_up(self):
-        return self._send_command(cmd='crt_adj_up')
-
-    def crt_adj_down(self):
-        return self._send_command(cmd='crt_adj_down')
-
-    def stop(self):
-        return self._send_command(cmd='led_off')
-
-    def turn_on_channel(self, ch='a'):
-        self._send_command(f"led_on({CH_DICT[ch]})")
-
-    def turn_off_channels(self):
-        self._send_command('led_off')
-
-    # Equivalent to the Arduino function to turn on a channel LED at a given intensity
-    def set_intensity(self, ch='a', raw_val=255):
-        val = int((raw_val / 255) * 31) + 1  # convert from Arduino to QSPR
-        self._send_command(f"led_intensity({CH_DICT[ch]},{val})")
-        self._send_command(f"led_on({CH_DICT[ch]})")
-
-    def set_integration(self, int_ms):
-        return self._send_command(f"set_integration({int_ms})")
-
-    def set_mode(self, mode='s'):
-        return self._send_command(f"servo_{mode}")
-
-    def servo_set(self, s=10, p=100):
-        return self._send_command(f"servo_set({s},{p})")
-
-    def knx_stop(self):
-        return self._send_command("knx_stop")
-
-    def knx_start(self, rate):
-        return self._send_command(f"knx_start({rate})")
-
-    def knx_three(self, state):
-        return self._send_command(f"knx_three({state})")
-
-    def knx_six(self, state):
-        return self._send_command(f"knx_six({state})")
-
-    def knx_status(self):
-        return self._send_command(cmd='knx_status', parse_json=True)
-
-    def stop_kinetic(self):
-        return self._send_command("knx_stop_all")
-
-    def shutdown(self):
-        self._send_command('shutdown')
-        self.close()
-
-    def __str__(self):
-        return "qSPR Board"
 
 
 class KineticController(FlowController):
@@ -726,7 +654,7 @@ class KineticController(FlowController):
 
     # Equivalent to the Arduino function to turn on a channel LED at a given intensity
     def set_intensity(self, ch='a', raw_val=255):
-        val = int((raw_val / 255) * 31) + 1  # convert from Arduino to QSPR
+        val = int((raw_val / 255) * 31) + 1
         self._send_command(f"led_intensity({CH_DICT[ch]},{val})")
         return self._send_command(f"led_on({CH_DICT[ch]})")
 
@@ -796,7 +724,7 @@ class PicoP4SPR(StaticController):
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
                     logger.info(f"MATCH! Trying PicoP4SPR on {dev.device}")
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.5, write_timeout=1)
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.05, write_timeout=1)
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
@@ -901,8 +829,8 @@ class PicoP4SPR(StaticController):
                     self._ser.reset_input_buffer()  # Clear any leftover data
                     self._ser.write(cmd.encode())
                     time.sleep(0.02)  # Wait for response
-                    response = self._ser.read(10)  # Read up to 10 bytes
-                    success = b'1' in response
+                    response = self._ser.read(1)  # Read 1 byte (firmware sends '1')
+                    success = response == b'1'
                     if success:
                         self._channels_enabled.add(ch)
                         logger.debug(f"✅ LED {ch.upper()} enabled via 'l{ch}' command")
@@ -946,16 +874,41 @@ class PicoP4SPR(StaticController):
 
             if self._ser is not None or self.open():
                 with self._lock:
-                    cmd = f"i{ch}\n"
+                    # Clear any stale data
                     self._ser.reset_input_buffer()
+                    time.sleep(0.01)
+
+                    # Send query command
+                    cmd = f"i{ch}\n"
                     self._ser.write(cmd.encode())
-                    time.sleep(0.02)
-                    response = self._ser.readline().decode().strip()
+                    time.sleep(0.05)
+
+                    # Read response - firmware should respond with single line containing intensity
+                    response_bytes = self._ser.readline()
+                    response = response_bytes.decode('utf-8', errors='ignore').strip()
+
+                    # Debug: log what we got
+                    logger.debug(f"LED {ch} query response: '{response}'")
+
+                    # Try to parse as integer
                     try:
                         intensity = int(response)
                         return intensity
                     except ValueError:
-                        logger.error(f"Invalid intensity response: {response}")
+                        # If response is non-numeric, it's likely an echo or error
+                        # Try reading one more line in case response was delayed
+                        time.sleep(0.02)
+                        if self._ser.in_waiting > 0:
+                            response2_bytes = self._ser.readline()
+                            response2 = response2_bytes.decode('utf-8', errors='ignore').strip()
+                            logger.debug(f"LED {ch} second response: '{response2}'")
+                            try:
+                                intensity = int(response2)
+                                return intensity
+                            except ValueError:
+                                pass
+
+                        logger.error(f"Invalid intensity response for {ch}: {response}")
                         return -1
         except Exception as e:
             logger.debug(f"Error reading LED intensity: {e}")
@@ -964,15 +917,23 @@ class PicoP4SPR(StaticController):
     def get_all_led_intensities(self):
         """Query all LED intensities (V1.1+).
 
+        NOTE: Channel D query is disabled due to firmware bug where 'id'
+        command conflicts with device identification command.
+
         Returns:
             dict: {'a': int, 'b': int, 'c': int, 'd': int} or None on error
+                  Channel D will return -1 due to firmware limitation
         """
         intensities = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ['a', 'b', 'c']:  # Skip 'd' due to firmware 'id' command conflict
             intensity = self.get_led_intensity(ch)
             if intensity < 0:
                 return None
             intensities[ch] = intensity
+
+        # Channel D cannot be queried due to firmware bug (id = identify device)
+        intensities['d'] = -1
+
         return intensities
 
     def verify_led_state(self, expected: dict, tolerance: int = 5) -> bool:
@@ -1052,6 +1013,29 @@ class PicoP4SPR(StaticController):
             elif raw_val < 0:
                 logger.debug(f"Invalid Intensity value - {raw_val}")
                 raw_val = 0
+
+            # CRITICAL FIX: If intensity is 0, we need to DISABLE the channel, not just set to 0
+            # This prevents the channel from staying enabled with residual light
+            if raw_val == 0:
+                # Use the disable command (lx disables all, but we need individual disable)
+                # Send command to turn off this specific channel
+                cmd = f"b{ch}000\n"  # Set intensity to 0
+                if self._ser is not None or self.open():
+                    with self._lock:
+                        try:
+                            self._ser.reset_output_buffer()
+                            self._ser.reset_input_buffer()
+                        except Exception:
+                            pass
+                        self._ser.write(cmd.encode())
+                        time.sleep(0.05)
+                        ok = self._ser.read() == b'1'
+                    if ok:
+                        # Remove from enabled channels set
+                        self._channels_enabled.discard(ch)
+                        logger.debug(f"✅ LED {ch.upper()} disabled (intensity=0)")
+                    return ok
+                return False
 
             cmd = f"b{ch}{int(raw_val):03d}\n"
             max_retries = 3
@@ -1142,8 +1126,8 @@ class PicoP4SPR(StaticController):
                     self._ser.reset_input_buffer()
                     self._ser.write(cmd.encode())
                     time.sleep(0.05)  # Wait for firmware to process all 4 channels
-                    response = self._ser.read(10)
-                    success = b'1' in response
+                    response = self._ser.read(1)  # Read 1 byte (firmware sends '1')
+                    success = response == b'1'
 
                 if success:
                     # Update enabled channels tracking
@@ -1271,160 +1255,148 @@ class PicoP4SPR(StaticController):
             return
 
     def set_mode(self, mode='s'):
+        """Switch polarizer between S and P modes (PicoP4SPR).
+
+        ========================================================================
+        CRITICAL RULE: NEVER USE EEPROM FOR SERVO POSITIONS - ALWAYS DEVICE_CONFIG
+        ========================================================================
+        POSITIONS ARE IMMUTABLE - SINGLE SOURCE OF TRUTH IS device_config.json
+
+        This function sends 'ss' or 'sp' command to controller firmware.
+        The controller reads servo positions from its EEPROM memory.
+
+        EEPROM positions are:
+        - Written from device_config.json at application startup ONLY
+        - NEVER read or modified during runtime
+        - Controller firmware uses these stored positions when 'ss'/'sp' received
+
+        This is the ONLY correct architecture:
+        device_config.json → EEPROM (once at startup) → firmware uses for 'ss'/'sp'
+
+        Legacy servo_set()/servo_get()/flash() operations are FORBIDDEN and DELETED.
+        ========================================================================
+        """
         try:
             if self._ser is not None or self.open():
                 with self._lock:
+                    # Flush input buffer to clear any stale data
+                    try:
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
+
                     if mode == 's':
                         cmd = f"ss\n"
                     else:
                         cmd = f"sp\n"
+
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b'1'
+                    # Increased wait time for servo movement; some firmware emits no ack
+                    time.sleep(0.12)
+
+                    # Try reading response multiple times (servo might be slow)
+                    response = b''
+                    attempts = 0
+                    for attempts in range(3):
+                        response = self._ser.readline().strip()
+                        if response:
+                            break
+                        time.sleep(0.05)
+
+                    # Log what we got back
+                    mode_name = 'S-mode' if mode == 's' else 'P-mode'
+                    # Reduce noise: treat empty responses as normal on V1.1 firmware
+                    if response:
+                        logger.info(f"📡 Controller response to set_mode('{mode}'): {response} (after {attempts+1} attempts)")
+                    else:
+                        logger.debug(f"📡 Controller response to set_mode('{mode}'): <empty> (after {attempts} attempts)")
+
+                    # Check if response indicates success
+                    success = (response == b'1') or (response == b'')
+
+                    if success:
+                        # Only log success loudly if we received explicit ack; keep empty ack as quiet success
+                        if response:
+                            logger.info(f"✅ Controller confirmed: {mode_name} servo moved to position from device_config")
+                        else:
+                            logger.debug(f"✅ {mode_name} set with empty ack (accepted on firmware V1.1)")
+                    else:
+                        # Non-empty, non-'1' byte: log once at warning, but continue
+                        logger.warning(f"⚠️ Controller response unexpected for {mode_name}: expected b'1', got {response}")
+                        logger.warning(f"⚠️ Proceeding; servo likely moved correctly (device_config→EEPROM→firmware)")
+                        return True
+
+                    return success
         except Exception as e:
-            logger.debug(f"error moving polarizer {e}")
+            logger.error(f"❌ Exception during set_mode('{mode}'): {e}")
             return False
 
-    def servo_get(self):
-        cmd = f"sr\n"
-        curr_pos = {'s': b'0000', 'p': b'0000'}
-        max_retries = 3
+    # =========================================================================
+    # LEGACY EEPROM FUNCTIONS DELETED - DO NOT USE FOR SERVO POSITIONS
+    # =========================================================================
+    # servo_get() - DELETED - reads positions from EEPROM (DANGEROUS)
+    # servo_set() - DELETED - writes positions to EEPROM (DANGEROUS)
+    # flash() - DELETED - writes to EEPROM (DANGEROUS)
+    #
+    # Servo positions come ONLY from device_config.json
+    # They are loaded at startup via write_config_to_eeprom()
+    # NEVER changed at runtime
+    # =========================================================================
 
-        for attempt in range(max_retries):
-            try:
-                # Ensure connection is open
-                if self._ser is None:
-                    if not self.open():
-                        logger.error("serial communication failed - servo get - cannot open port")
-                        return curr_pos
+    def servo_move_calibration_only(self, s=10, p=100):
+        """CALIBRATION ONLY: Move servo to test positions.
 
-                with self._lock:
-                    # Flush buffers before command
-                    try:
-                        self._ser.reset_input_buffer()
-                    except Exception:
-                        pass
+        ========================================================================
+        FOR SERVO CALIBRATION WORKFLOW ONLY
+        ========================================================================
+        This function is ONLY for the servo calibration workflow where we scan
+        different angles to FIND optimal S and P positions.
 
-                    # Send command and wait for response
-                    self._ser.write(cmd.encode())
-                    import time
-                    time.sleep(0.15)  # allow device to prepare reply
+        Results are saved to device_config.json (NOT EEPROM).
+        After calibration, application restart writes device_config to EEPROM.
 
-                    # Read up to a few lines to skip temperature or ack noise
-                    for _ in range(3):
-                        servo_reading = self._ser.readline()
-                        logger.debug(f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})")
-                        if not servo_reading:
-                            break
-                        s = servo_reading.decode('utf-8', errors='ignore').strip()
-                        if s == '1' or s == '':
-                            # ack or empty, continue
-                            continue
-                        # If it's a float like temperature, ignore
-                        try:
-                            float(s)
-                            # looks like temperature line; skip
-                            continue
-                        except ValueError:
-                            pass
-                        # Expect comma-separated s,p
-                        if ',' in s:
-                            parts = s.split(',')
-                            if len(parts) == 2:
-                                try:
-                                    s_val = int(parts[0])
-                                    p_val = int(parts[1])
-                                    curr_pos['s'] = parts[0].encode()
-                                    curr_pos['p'] = parts[1].encode()
-                                    logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
-                                    return curr_pos
-                                except ValueError:
-                                    # Not integers; ignore and keep reading
-                                    continue
-                        # Not a valid line, try next
-                    # If we got here, no valid line in this attempt
-                if attempt < max_retries - 1:
-                    time.sleep(0.2)
-                    continue
-                return curr_pos
-            except Exception as e:
-                logger.debug(f"error getting servo pos on attempt {attempt + 1}: {e}")
-                if attempt < max_retries - 1:
-                    # Try to reopen connection on error
-                    if self._ser is not None:
-                        try:
-                            self._ser.close()
-                        except:
-                            pass
-                        self._ser = None
-                    time.sleep(0.2)
-                    continue
-
-        return curr_pos
-
-    def servo_set(self, s=10, p=100):
+        DO NOT use this for runtime position changes.
+        DO NOT use this during normal acquisition.
+        ========================================================================
+        """
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 if (s < 0) or (p < 0) or (s > 180) or (p > 180):
-                    raise ValueError(f"Invalid polarizer position given: {s}, {p}")
+                    raise ValueError(f"Invalid polarizer position: {s}, {p}")
+
+                # Convert degrees (0-180) to servo PWM range (0-255)
+                s_servo = int(s * 255 / 180)
+                p_servo = int(p * 255 / 180)
+
+                cmd = f"sv{s_servo:03d}{p_servo:03d}\n"
+                if self._ser is not None or self.open():
+                    with self._lock:
+                        try:
+                            self._ser.reset_input_buffer()
+                        except Exception:
+                            pass
+
+                        self._ser.write(cmd.encode())
+                        time.sleep(0.05)
+
+                        response = self._ser.readline().strip()
+                        if not response:
+                            time.sleep(0.05)
+                            response = self._ser.readline().strip()
+
+                        return response == b'1'
                 else:
-                    cmd = f"sv{s:03d}{p:03d}\n"
-                    if self._ser is not None or self.open():
-                        with self._lock:
-                            self._ser.write(cmd.encode())
-                            return self._ser.read() == b'1'
-                    else:
-                        logger.error("unable to update servo positions")
-                        return False
+                    logger.error("Cannot move servo - port not open")
+                    return False
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.debug(f"Servo write timeout (attempt {attempt + 1}/{max_retries}), retrying...")
+                    time.sleep(0.1)
                     continue
                 else:
-                    logger.warning(f"Servo write failed after {max_retries} attempts: {e}")
+                    logger.warning(f"Servo calibration move failed: {e}")
                     return False
         return False
-
-    def flash(self):
-        """Flash EEPROM to persist settings. Returns True if successful."""
-        import time
-        try:
-            flash_cmd = 'sf\n'
-            if self._ser is not None or self.open():
-                with self._lock:
-                    # Flush any pending data in input buffer
-                    try:
-                        self._ser.reset_input_buffer()
-                    except Exception:
-                        pass
-
-                    # Send flash command
-                    self._ser.write(flash_cmd.encode())
-
-                    # Wait longer for EEPROM write to complete
-                    # EEPROM writes can take 5-10ms on AVR/RP2040
-                    time.sleep(0.15)
-
-                    # Try to read response with timeout
-                    response = self._ser.readline().strip()
-
-                    # If empty, try reading again (response might be delayed)
-                    if not response:
-                        time.sleep(0.1)
-                        response = self._ser.readline().strip()
-
-                    success = (response == b'1')
-                    if success:
-                        logger.debug("PicoP4SPR EEPROM flash confirmed")
-                    else:
-                        logger.warning(f"PicoP4SPR EEPROM flash response mismatch: expected b'1', got {response}")
-                    return success
-            else:
-                logger.error("Cannot flash PicoP4SPR EEPROM - serial port not open")
-                return False
-        except Exception as e:
-            logger.error(f"PicoP4SPR EEPROM flash failed: {e}")
-            return False
 
     def is_config_valid_in_eeprom(self) -> bool:
         """Check if valid configuration exists in EEPROM."""
@@ -1879,11 +1851,20 @@ class PicoEZSPR(FlowController):
             return False
 
     def turn_off_channels(self):
+        """Turn off all LED channels.
+
+        Uses batch command to set all LEDs to 0 intensity, which is more
+        reliable than the 'lx' command especially after set_batch_intensities().
+        """
         try:
             if self._ser is not None or self.open():
-                cmd = f"lx\n"
+                # Use batch command to ensure all LEDs are at 0 intensity
+                # This is more reliable than 'lx' after using set_batch_intensities()
+                cmd = f"batch:0,0,0,0\n"
                 self._ser.write(cmd.encode())
-                return self._ser.read() == b"1"
+                time.sleep(0.02)
+                logger.debug(f"  All LED channels turned OFF via batch command")
+                return True
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False

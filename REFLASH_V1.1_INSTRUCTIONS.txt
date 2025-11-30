@@ -1,0 +1,52 @@
+=========================================================================
+REFLASH INSTRUCTIONS - V1.1 WORKING FIRMWARE
+=========================================================================
+
+STEP 1: Enter Bootloader Mode
+------------------------------
+1. UNPLUG the USB cable from your Pico
+2. HOLD DOWN the BOOTSEL button (white button on the Pico board)
+3. While holding BOOTSEL, PLUG IN the USB cable
+4. Release BOOTSEL button
+5. The Pico should appear as a USB drive called "RPI-RP2"
+
+STEP 2: Find the Drive Letter
+------------------------------
+Run this command to find the drive:
+
+    Get-PSDrive -PSProvider FileSystem | Where-Object {$_.Description -like "*RPI*"}
+
+Or check in File Explorer for a drive named "RPI-RP2"
+
+STEP 3: Copy Firmware
+---------------------
+Replace X: with your actual RPI-RP2 drive letter:
+
+    Copy-Item "firmware\pico_p4spr\affinite_p4spr_v1.1.uf2" -Destination "X:\affinite_p4spr.uf2"
+
+The Pico will automatically reboot after copying is complete.
+
+STEP 4: Verify Installation
+----------------------------
+After the Pico reboots (drive will disconnect), run:
+
+    .venv312\Scripts\python.exe test_firmware_basic_diagnostic.py
+
+All tests should PASS with V1.1!
+
+=========================================================================
+TROUBLESHOOTING
+=========================================================================
+
+If RPI-RP2 drive doesn't appear:
+- Try a different USB cable (some are power-only)
+- Try a different USB port on your computer
+- Make sure you're holding BOOTSEL BEFORE plugging in USB
+- Some Picos need you to hold BOOTSEL for 2-3 seconds after plugging in
+
+If copy fails:
+- Make sure you're using the correct drive letter
+- Make sure you have write permissions
+- Try copying from File Explorer instead of PowerShell
+
+=========================================================================

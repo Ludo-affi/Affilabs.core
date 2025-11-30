@@ -9,7 +9,7 @@ import os
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utils.calibration_6step import run_global_led_calibration
+from utils.calibration_6step import run_full_6step_calibration
 from hardware.spectrometer_usb2000 import USB2000Plus_Detector
 from controllers.controller_hal import ControllerHAL
 
@@ -44,7 +44,7 @@ def main():
         device_serial = usb.serial_number
         device_config = DeviceConfiguration(device_serial=device_serial)
 
-        result = run_global_led_calibration(
+        result = run_full_6step_calibration(
             usb,
             ctrl,
             'cavro',
@@ -59,7 +59,8 @@ def main():
         print(f"  success: {result.success}")
         print(f"  ch_error_list: {result.ch_error_list}")
         print(f"  spr_fwhm: {result.spr_fwhm}")
-        print(f"  leds_calibrated: {result.leds_calibrated}")
+        print(f"  s_mode_intensity: {result.s_mode_intensity}")
+        print(f"  p_mode_intensity: {result.p_mode_intensity}")
         print(f"  integration_time: {result.integration_time}")
 
         if not result.success:

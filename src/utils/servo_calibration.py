@@ -1,119 +1,231 @@
 """Servo position calibration for circular polarizer using intelligent quadrant search.
 
 This module provides efficient servo calibration for SPR systems with circular
-polarizers. Uses a 3-phase quadrant search (13 measurements) with transmission
-validation before saving to EEPROM.
+polarizers. Uses a 3-phase quadrant search working in native servo units (0-255).
 
 Key features:
-- ROI-based measurement (600-750nm around SPR resonance)
-- Intelligent coarse + refinement search (~13 measurements vs 33+ for full sweep)
-- Enforces exact 90° separation for circular polarizers
-- Transmission-based validation (ensures SPR dip quality before saving)
-- Water presence check (required for SPR detection)
-- Saturation detection and handling
-- Automatic inversion correction
+- Native servo unit operation (0-255 PWM range)
+- ROI-based measurement (600-670nm SPR resonance)
+- Quadrant search: 5 coarse + refinement (~12 measurements total)
+- 90 servo unit separation for circular polarizers
+- LED verification and calibration
+- Saturation detection and dark count validation
 """
 
 import time
 import numpy as np
-from typing import Optional, Tuple
-from scipy.signal import find_peaks, peak_prominences, peak_widths
+from typing import Optional, Tuple, Dict
 from utils.logger import logger
+import time
 
-# Calibration parameters
-MIN_ANGLE = 10          # Start of servo range
-MAX_ANGLE = 170         # End of servo range
-SETTLING_TIME = 0.2     # Servo settling time (seconds)
-MODE_SWITCH_TIME = 0.1  # Time to switch between S/P modes (seconds)
+# ============================================================================
+# CONSTANTS
+# ============================================================================
 
-# ROI for SPR resonance measurement
+# Servo range (PWM units)
+MIN_SERVO = 5           # Start of servo range (0-255 PWM units)
+MAX_SERVO = 250         # End of servo range (0-255 PWM units)
+SETTLING_TIME = 0.4     # Servo settling time (seconds) - increased for HS-55MG servo
+MODE_SWITCH_TIME = 0.15 # Time to switch between S/P modes (seconds)
+MEASUREMENT_AVERAGES = 3  # Number of measurements to average per position
+
+# ROI for SPR resonance measurement (legacy single range retained for fallback)
 ROI_MIN_WL = 600        # Minimum wavelength for SPR ROI (nm)
-ROI_MAX_WL = 750        # Maximum wavelength for SPR ROI (nm)
+ROI_MAX_WL = 670        # Maximum wavelength for SPR ROI (nm)
 
-# Resonance wavelength validation
-MIN_RESONANCE_WL = 590  # Minimum valid resonance wavelength (nm)
-MAX_RESONANCE_WL = 670  # Maximum valid resonance wavelength (nm)
+# New multi-bucket ROI definition (three buckets)
+ROI_BUCKETS = [
+    (600, 620),
+    (620, 640),
+    (640, 660)
+]
 
 # Detector specifications
-MAX_DETECTOR_COUNTS = 62000        # Flame-T maximum counts (not 65535)
-SATURATION_THRESHOLD = 0.95        # Warn if above 95% of max (58,900 counts)
-
-# Servo calibration target intensity
-# Use lower target (30% of max) to prevent saturation in S-mode while still having enough signal
-SERVO_CAL_TARGET_PERCENT = 0.30   # 30% of detector max (~18,600 counts for Flame-T)
-
-# Validation thresholds
-MIN_SEPARATION = 80                # Minimum S-P separation (degrees) for circular polarizer
-MAX_SEPARATION = 100               # Maximum S-P separation (degrees) for circular polarizer
-MIN_SP_RATIO = 1.3                 # Minimum S/P intensity ratio
-IDEAL_SP_RATIO = 1.5               # Ideal S/P intensity ratio
-MIN_DIP_DEPTH_PERCENT = 10.0       # Minimum transmission dip depth (%)
-MIN_TRANSMISSION_PERCENT = 30.0    # Minimum transmission at dip (to detect water)
+MAX_DETECTOR_COUNTS = 62000        # Flame-T maximum counts
+SATURATION_THRESHOLD = 0.95        # Warn if above 95% of max
+SERVO_CAL_TARGET_PERCENT = 0.30    # 30% of detector max for LED calibration
 
 
-def get_roi_intensity(spectrum: np.ndarray, wavelengths: np.ndarray) -> float:
-    """Extract maximum intensity from ROI around SPR resonance.
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def servo_to_degrees(servo_pos: int) -> int:
+    """Convert servo position (0-255) to degrees for display purposes only."""
+    return int(servo_pos * 180 / 255)
+
+
+def degrees_to_servo(degrees: int) -> int:
+    """Convert degrees to servo position (0-255) for controller commands."""
+    return int(degrees * 255 / 180)
+
+
+def _move_servo_to_angle(ctrl, angle: int, mode: str = 's', wait_time: float = 0.5) -> bool:
+    """Move servo to specific angle for calibration scanning (CALIBRATION ONLY).
+
+    ========================================================================
+    FOR SERVO CALIBRATION WORKFLOW ONLY
+    ========================================================================
+    This function is used ONLY during servo calibration to scan different
+    angles and find optimal S and P positions.
+
+    Uses servo_move_calibration_only() which does NOT write to EEPROM.
+    Results are saved to device_config.json after calibration completes.
+    ========================================================================
 
     Args:
-        spectrum: Full spectrum intensity array
-        wavelengths: Wavelength array corresponding to spectrum
+        ctrl: Controller instance
+        angle: Target angle (0-180 degrees)
+        mode: Mode to use ('s' or 'p')
+        wait_time: Time to wait for servo movement
 
     Returns:
-        Maximum intensity in SPR ROI (600-750nm)
+        bool: True if successful
     """
-    roi_mask = (wavelengths >= ROI_MIN_WL) & (wavelengths <= ROI_MAX_WL)
-    roi_spectrum = spectrum[roi_mask]
+    try:
+        # Use calibration-only move function (does not write EEPROM)
+        if not ctrl.servo_move_calibration_only(s=angle, p=angle):
+            logger.debug(f"servo_move_calibration_only retry may be needed for angle {angle}")
 
-    if len(roi_spectrum) == 0:
-        return float(spectrum.max())
+        time.sleep(0.05)
 
-    return float(roi_spectrum.max())
+        if not ctrl.set_mode(mode):
+            logger.debug(f"set_mode('{mode}') retry may be needed for angle {angle}")
+
+        time.sleep(wait_time)
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to move servo to {angle}°: {e}")
+        return False
 
 
-def _calibrate_leds_for_servo(usb, ctrl, target_percent: float = SERVO_CAL_TARGET_PERCENT):
-    """Calibrate LEDs with lower target intensity specifically for servo calibration.
+def get_roi_bucket_intensities(spectrum: np.ndarray, wavelengths: np.ndarray) -> list:
+    """Return mean intensities for each defined ROI bucket.
 
-    This prevents saturation during servo search when in S-mode (max transmission).
-    Uses a conservative target (30% of detector max) since we only need to find
-    the SPR dip position, not achieve optimal SNR.
+    Args:
+        spectrum: Full spectrum array
+        wavelengths: Wavelength array
+
+    Returns:
+        list: Mean intensity per bucket (fallback to full spectrum mean if empty)
+    """
+    if wavelengths is None or len(wavelengths) != len(spectrum):
+        # Fallback: treat all buckets as same (full spectrum mean)
+        mean_val = float(spectrum.mean())
+        return [mean_val] * len(ROI_BUCKETS)
+    bucket_means = []
+    for (lo, hi) in ROI_BUCKETS:
+        mask = (wavelengths >= lo) & (wavelengths <= hi)
+        sub = spectrum[mask]
+        if len(sub) == 0:
+            bucket_means.append(float(spectrum.mean()))
+        else:
+            bucket_means.append(float(sub.mean()))
+    return bucket_means
+
+def get_roi_intensity(spectrum: np.ndarray, wavelengths: np.ndarray) -> float:
+    """Legacy single ROI mean (kept for backward compatibility)."""
+    bucket_means = get_roi_bucket_intensities(spectrum, wavelengths)
+    # Use average across all buckets as legacy equivalent
+    return float(np.mean(bucket_means))
+
+
+# ============================================================================
+# LED CALIBRATION
+# ============================================================================
+
+def _calibrate_leds_for_servo(usb, ctrl, target_percent: float = SERVO_CAL_TARGET_PERCENT, allow_saturation: bool = True):
+    """Calibrate LED intensities to target level for servo scanning.
+
+    Uses binary search to find optimal intensity for each LED that achieves
+    target signal level without saturation.
 
     Args:
         usb: Spectrometer wrapper
         ctrl: Controller wrapper
-        target_percent: Target as fraction of detector max (default: 0.30 = 30%)
+        target_percent: Target as fraction of detector max (default 0.30 = 30%)
 
     Returns:
-        dict: Calibrated LED intensities for each channel
+        dict: Calibrated intensities {'a': int, 'b': int, 'c': int, 'd': int}
     """
-    from utils.led_calibration import calibrate_led_channel
-
-    # Calculate target counts from detector specs
-    max_counts = getattr(usb, 'max_counts', MAX_DETECTOR_COUNTS)
-    target_counts = max_counts * target_percent
-
     logger.info("=" * 80)
     logger.info("LED CALIBRATION FOR SERVO SEARCH")
     logger.info("=" * 80)
-    logger.info(f"Target: {target_counts:.0f} counts ({target_percent*100:.0f}% of detector max)")
-    logger.info(f"Detector max: {max_counts:.0f} counts")
-    logger.info("Reason: Lower target prevents saturation in S-mode (max transmission)")
+
+    max_counts = getattr(usb, 'max_counts', MAX_DETECTOR_COUNTS)
+    target_counts = int(max_counts * target_percent)
+    saturation_limit = int(max_counts * SATURATION_THRESHOLD)
+
+    logger.info(f"Target: {target_counts} counts ({int(target_percent*100)}% of detector max)")
+    logger.info(f"Detector max: {max_counts} counts")
+    logger.info(f"Reason: Lower target prevents saturation in S-mode (max transmission)")
     logger.info("=" * 80)
 
     calibrated_intensities = {}
+    integration_time = 50  # ms - fixed integration time
 
     try:
-        # Calibrate all channels
+        usb.set_integration(integration_time)
+        time.sleep(0.1)
+
         for ch in ['a', 'b', 'c', 'd']:
             logger.info(f"Calibrating LED {ch.upper()}...")
-            intensity = calibrate_led_channel(
-                usb=usb,
-                ctrl=ctrl,
-                ch=ch,
-                target_counts=target_counts,
-                stop_flag=None
-            )
-            calibrated_intensities[ch] = intensity
-            logger.info(f"  ✓ LED {ch.upper()}: intensity = {intensity}")
+
+            ctrl.turn_on_channel(ch)
+            time.sleep(0.05)
+
+            # Binary search for optimal intensity
+            intensity_low = 10
+            intensity_high = 255
+            best_intensity = 64
+
+            for _ in range(8):  # 8 iterations for precision
+                intensity_mid = (intensity_low + intensity_high) // 2
+                ctrl.set_intensity(ch, intensity_mid)
+                time.sleep(0.1)
+
+                spectrum = usb.read_intensity()
+                if spectrum is None:
+                    continue
+
+                max_signal = float(spectrum.max())
+
+                # Check for dark counts (LED not working)
+                if max_signal < 3500:
+                    logger.error(f"LED {ch.upper()} producing no light at intensity {intensity_mid} ({max_signal:.0f} counts)")
+                    logger.error(f"Signal too close to dark counts (~3000) - LED not working!")
+                    best_intensity = intensity_mid
+                    break
+
+                # Check for saturation
+                if max_signal >= saturation_limit:
+                    logger.warning(f"LED {ch.upper()} saturating at intensity {intensity_mid} ({max_signal:.0f} counts)")
+                    if allow_saturation:
+                        # Allow saturation to proceed; keep search but prefer current mid as best
+                        best_intensity = intensity_mid
+                    else:
+                        logger.warning("Reducing intensity range to prevent saturation...")
+                        intensity_high = intensity_mid - 1
+                        if intensity_high < intensity_low:
+                            logger.error(f"LED {ch.upper()} saturates even at low intensity! Using {intensity_low}")
+                            best_intensity = intensity_low
+                            break
+                        continue
+
+                # Adjust search range based on signal
+                if max_signal < target_counts * 0.95:
+                    intensity_low = intensity_mid + 1
+                elif max_signal > target_counts * 1.05:
+                    intensity_high = intensity_mid - 1
+                else:
+                    best_intensity = intensity_mid
+                    break
+
+                best_intensity = intensity_mid
+
+            calibrated_intensities[ch] = best_intensity
+            logger.info(f"  ✓ LED {ch.upper()}: intensity = {best_intensity}")
 
         logger.info("=" * 80)
         logger.info("✅ LED CALIBRATION COMPLETE")
@@ -124,33 +236,7 @@ def _calibrate_leds_for_servo(usb, ctrl, target_percent: float = SERVO_CAL_TARGE
     except Exception as e:
         logger.error(f"LED calibration failed: {e}")
         logger.warning("Falling back to default intensity (32)")
-        # Fallback to safe default
         return {'a': 32, 'b': 32, 'c': 32, 'd': 32}
-
-
-def _set_reduced_led_intensity(ctrl, reduced_intensity: int = 32):
-    """Temporarily reduce LED intensity to prevent saturation during servo calibration.
-
-    Args:
-        ctrl: Controller wrapper
-        reduced_intensity: LED intensity to use (default: 64 = 25% of max)
-
-    Returns:
-        dict: Original LED intensities for restoration
-    """
-    original_intensities = {}
-    try:
-        logger.debug(f"Reducing LED intensity to {reduced_intensity} to prevent saturation...")
-        for ch in ['a', 'b', 'c', 'd']:
-            # Store current intensity (fallback to 128 if not available)
-            original_intensities[ch] = getattr(ctrl, f'_{ch}_intensity', 128)
-            # Set reduced intensity
-            ctrl.set_intensity(ch, reduced_intensity)
-        time.sleep(0.2)  # Allow LEDs to stabilize
-    except Exception as e:
-        logger.warning(f"Could not reduce LED intensity: {e}")
-
-    return original_intensities
 
 
 def _restore_led_intensity(ctrl, original_intensities: dict):
@@ -158,1260 +244,535 @@ def _restore_led_intensity(ctrl, original_intensities: dict):
 
     Args:
         ctrl: Controller wrapper
-        original_intensities: Dictionary of original intensities to restore
+        original_intensities: Dict of original LED intensities
     """
+    logger.debug("Restoring original LED intensities...")
     try:
-        logger.debug("Restoring original LED intensities...")
         for ch, intensity in original_intensities.items():
+            ctrl.turn_on_channel(ch)
             ctrl.set_intensity(ch, intensity)
-        time.sleep(0.2)  # Allow LEDs to stabilize
+        time.sleep(0.2)
+        logger.info("✅ LED intensities restored")
     except Exception as e:
         logger.warning(f"Could not restore LED intensities: {e}")
 
 
-def check_water_presence(usb, ctrl, s_pos: int, p_pos: int):
-    """Check if water is present on sensor by analyzing transmission spectrum.
+# ============================================================================
+# QUADRANT SEARCH
+# ============================================================================
 
-    Water presence is detected by:
-    1. Transmission dip in SPR region (600-750nm)
-    2. Transmission < 100% (P < S, no inversion)
-    3. Dip depth >= 10% of maximum transmission
+def perform_quadrant_search_prod(usb, ctrl):
+    """PRODUCTION: Perform intelligent quadrant search to find optimal S and P positions.
 
-    Uses reduced LED intensity to prevent saturation.
+    Uses native servo units (0-255) throughout:
+    1. LED verification and calibration
+    2. Coarse 5-point quadrant search in S-mode (finds maximum first)
+    3. Three-bucket ROI evaluation (600-620, 620-640, 640-660 nm)
+    4. Best bucket selection based on maximum Δ(S-P)
+    5. Three-stage refinement for S position (±28, ±7, ±3 servo units)
+    6. P position = S ± 90 servo units, measures both, picks minimum
+    7. Extinction ratio calculation: (S-P)/S in best bucket
 
-    Args:
-        usb: Spectrometer wrapper
-        ctrl: Controller wrapper
-        s_pos: Current S-mode servo position
-        p_pos: Current P-mode servo position
-
-    Returns:
-        Tuple of (has_water, transmission_min, dip_depth_percent)
-    """
-    # Use reduced LED intensity to prevent saturation
-    original_intensities = _set_reduced_led_intensity(ctrl)
-
-    try:
-        # Set positions and measure both modes
-        ctrl.servo_set(s=s_pos, p=p_pos)
-        time.sleep(SETTLING_TIME * 2)
-
-        # Measure S-pol (reference)
-        ctrl.set_mode("s")
-        time.sleep(MODE_SWITCH_TIME * 2)
-        s_spectrum = usb.read_intensity()
-
-        # Measure P-pol (SPR-active)
-        ctrl.set_mode("p")
-        time.sleep(MODE_SWITCH_TIME * 2)
-        p_spectrum = usb.read_intensity()
-
-        # Calculate transmission
-        transmission = np.divide(
-            p_spectrum,
-            s_spectrum,
-            out=np.ones_like(p_spectrum, dtype=float),
-            where=s_spectrum > 10
-        ) * 100.0
-
-        # Analyze SPR ROI
-        wavelengths = usb._wavelengths
-        if wavelengths is None:
-            logger.warning("Wavelengths not available - cannot check water presence")
-            return False, None, None
-
-        roi_mask = (wavelengths >= ROI_MIN_WL) & (wavelengths <= ROI_MAX_WL)
-        roi_transmission = transmission[roi_mask]
-
-        if len(roi_transmission) == 0:
-            return False, None, None
-
-        # Check for SPR dip characteristics
-        transmission_min = float(roi_transmission.min())
-        transmission_max = float(roi_transmission.max())
-        dip_depth_percent = transmission_max - transmission_min
-
-        # Water detected if:
-        # 1. Dip is deep enough (>10%)
-        # 2. Transmission shows proper S > P relationship
-        has_water = (
-            dip_depth_percent >= MIN_DIP_DEPTH_PERCENT and
-            transmission_min < 100.0 and
-            transmission_max < 150.0  # Sanity check
-        )
-
-        return has_water, transmission_min, dip_depth_percent
-
-    except Exception as e:
-        logger.exception(f"Error checking water presence: {e}")
-        return False, None, None
-    finally:
-        # Always restore original LED intensities
-        _restore_led_intensity(ctrl, original_intensities)
-
-
-def validate_positions_with_transmission(usb, ctrl, s_pos: int, p_pos: int):
-    """Validate S/P positions by analyzing transmission spectrum quality.
-
-    This is the CRITICAL validation step that ensures:
-    1. Water is present on sensor (SPR dip detected)
-    2. Transmission dip is deep enough (>10%)
-    3. Resonance wavelength is in valid range (590-670nm)
-    4. No inversion (transmission <100%, S > P)
-    5. S/P intensity ratio is adequate (>1.3×)
-
-    Args:
-        usb: Spectrometer wrapper
-        ctrl: Controller wrapper
-        s_pos: S-mode servo position to validate
-        p_pos: P-mode servo position to validate
-
-    Returns:
-        Tuple of (is_valid, validation_results_dict)
-    """
-    logger.info("=" * 80)
-    logger.info("TRANSMISSION-BASED VALIDATION")
-    logger.info("=" * 80)
-
-    results = {
-        "s_pos": s_pos,
-        "p_pos": p_pos,
-        "s_intensity": None,
-        "p_intensity": None,
-        "sp_ratio": None,
-        "transmission_min": None,
-        "transmission_max": None,
-        "dip_depth_percent": None,
-        "resonance_wavelength": None,
-        "validation_passed": False,
-        "validation_checks": []
-    }
-
-    try:
-        # Get wavelengths
-        wavelengths = usb._wavelengths
-        if wavelengths is None:
-            logger.error("❌ Wavelengths not available - cannot validate")
-            return False, results
-
-        # Check saturation limit
-        saturation_limit = int(MAX_DETECTOR_COUNTS * SATURATION_THRESHOLD)
-        logger.info(f"Saturation check: max allowed = {saturation_limit} counts ({SATURATION_THRESHOLD*100:.0f}%)")
-
-        # Set positions and measure
-        ctrl.servo_set(s=s_pos, p=p_pos)
-        time.sleep(SETTLING_TIME * 2)
-
-        # Measure S-pol (reference)
-        ctrl.set_mode("s")
-        time.sleep(MODE_SWITCH_TIME * 2)
-        s_spectrum = usb.read_intensity()
-        s_max = s_spectrum.max()
-        s_roi = get_roi_intensity(s_spectrum, wavelengths)
-
-        # Check S saturation
-        if s_max >= saturation_limit:
-            logger.error(f"❌ SATURATION in S-mode: {s_max:.0f} counts >= {saturation_limit}")
-            results["validation_checks"].append(("S saturation", False, f"{s_max:.0f} >= {saturation_limit}"))
-            return False, results
-
-        # Measure P-pol (SPR-active)
-        ctrl.set_mode("p")
-        time.sleep(MODE_SWITCH_TIME * 2)
-        p_spectrum = usb.read_intensity()
-        p_max = p_spectrum.max()
-        p_roi = get_roi_intensity(p_spectrum, wavelengths)
-
-        # Check P saturation
-        if p_max >= saturation_limit:
-            logger.error(f"❌ SATURATION in P-mode: {p_max:.0f} counts >= {saturation_limit}")
-            results["validation_checks"].append(("P saturation", False, f"{p_max:.0f} >= {saturation_limit}"))
-            return False, results
-
-        logger.info(f"✓ No saturation detected")
-        results["validation_checks"].append(("Saturation", True, f"S={s_max:.0f}, P={p_max:.0f} < {saturation_limit}"))
-
-        # Store intensities
-        results["s_intensity"] = float(s_roi)
-        results["p_intensity"] = float(p_roi)
-
-        # CHECK 1: S > P (no inversion at ROI level)
-        logger.info(f"1. Intensity Check:")
-        logger.info(f"   S-mode ROI: {s_roi:.0f} counts")
-        logger.info(f"   P-mode ROI: {p_roi:.0f} counts")
-
-        if s_roi <= p_roi:
-            logger.error(f"❌ FAIL: S should be higher than P (inversion detected)")
-            results["validation_checks"].append(("S > P", False, f"S={s_roi:.0f} <= P={p_roi:.0f}"))
-            return False, results
-
-        logger.info(f"   ✓ PASS: S > P (no inversion)")
-        results["validation_checks"].append(("S > P", True, f"S={s_roi:.0f} > P={p_roi:.0f}"))
-
-        # CHECK 2: S/P ratio
-        sp_ratio = s_roi / p_roi if p_roi > 0 else 0
-        results["sp_ratio"] = float(sp_ratio)
-
-        logger.info(f"2. S/P Ratio:")
-        logger.info(f"   Measured: {sp_ratio:.2f}×")
-        logger.info(f"   Minimum: {MIN_SP_RATIO:.2f}×")
-
-        if sp_ratio < MIN_SP_RATIO:
-            logger.warning(f"❌ FAIL: S/P ratio too low")
-            results["validation_checks"].append(("S/P ratio", False, f"{sp_ratio:.2f}× < {MIN_SP_RATIO:.2f}×"))
-            return False, results
-
-        logger.info(f"   ✓ PASS: S/P ratio adequate")
-        results["validation_checks"].append(("S/P ratio", True, f"{sp_ratio:.2f}× >= {MIN_SP_RATIO:.2f}×"))
-
-        # CHECK 3: Calculate transmission and analyze SPR dip
-        transmission = np.divide(
-            p_spectrum,
-            s_spectrum,
-            out=np.ones_like(p_spectrum, dtype=float),
-            where=s_spectrum > 10
-        ) * 100.0
-
-        # Analyze SPR ROI
-        roi_mask = (wavelengths >= ROI_MIN_WL) & (wavelengths <= ROI_MAX_WL)
-        roi_transmission = transmission[roi_mask]
-        roi_wavelengths = wavelengths[roi_mask]
-
-        if len(roi_transmission) == 0:
-            logger.error(f"❌ FAIL: No data in SPR ROI ({ROI_MIN_WL}-{ROI_MAX_WL}nm)")
-            return False, results
-
-        transmission_min = float(roi_transmission.min())
-        transmission_max = float(roi_transmission.max())
-        dip_depth_percent = transmission_max - transmission_min
-
-        results["transmission_min"] = transmission_min
-        results["transmission_max"] = transmission_max
-        results["dip_depth_percent"] = dip_depth_percent
-
-        logger.info(f"3. Transmission Dip Analysis:")
-        logger.info(f"   Minimum: {transmission_min:.1f}%")
-        logger.info(f"   Maximum: {transmission_max:.1f}%")
-        logger.info(f"   Dip depth: {dip_depth_percent:.1f}%")
-
-        # CHECK 4: Transmission dip depth (indicates SPR coupling quality)
-        if dip_depth_percent < MIN_DIP_DEPTH_PERCENT:
-            logger.error(f"❌ FAIL: Dip too shallow (need >{MIN_DIP_DEPTH_PERCENT}%)")
-            logger.error(f"   This indicates weak SPR coupling or no water on sensor")
-            results["validation_checks"].append(("Dip depth", False, f"{dip_depth_percent:.1f}% < {MIN_DIP_DEPTH_PERCENT}%"))
-            return False, results
-
-        logger.info(f"   ✓ PASS: Dip depth adequate")
-        results["validation_checks"].append(("Dip depth", True, f"{dip_depth_percent:.1f}% >= {MIN_DIP_DEPTH_PERCENT}%"))
-
-        # CHECK 5: No transmission inversion (should be <100%)
-        if transmission_min > 100.0:
-            logger.error(f"❌ FAIL: Transmission >100% indicates inverted polarizer positions")
-            results["validation_checks"].append(("Transmission <100%", False, f"Min={transmission_min:.1f}% > 100%"))
-            return False, results
-
-        logger.info(f"   ✓ PASS: Transmission <100% (no inversion)")
-        results["validation_checks"].append(("Transmission <100%", True, f"Min={transmission_min:.1f}%"))
-
-        # CHECK 6: Resonance wavelength validation
-        resonance_idx = np.argmin(roi_transmission)
-        resonance_wavelength = float(roi_wavelengths[resonance_idx])
-        results["resonance_wavelength"] = resonance_wavelength
-
-        logger.info(f"4. Resonance Wavelength:")
-        logger.info(f"   Measured: {resonance_wavelength:.1f}nm")
-        logger.info(f"   Valid range: {MIN_RESONANCE_WL}-{MAX_RESONANCE_WL}nm")
-
-        if resonance_wavelength < MIN_RESONANCE_WL or resonance_wavelength > MAX_RESONANCE_WL:
-            logger.warning(f"⚠️  WARNING: Resonance outside typical SPR range")
-            logger.warning(f"   This may indicate optical misalignment")
-            results["validation_checks"].append(("Resonance WL", False, f"{resonance_wavelength:.1f}nm out of range"))
-            # Don't fail - just warn
-        else:
-            logger.info(f"   ✓ PASS: Resonance in valid SPR range")
-            results["validation_checks"].append(("Resonance WL", True, f"{resonance_wavelength:.1f}nm in range"))
-
-        # All checks passed
-        logger.info("=" * 80)
-        logger.info("✅ VALIDATION PASSED - Positions are optimal")
-        logger.info("=" * 80)
-        results["validation_passed"] = True
-        return True, results
-
-    except Exception as e:
-        logger.exception(f"Error during transmission validation: {e}")
-        return False, results
-
-
-def perform_quadrant_search(usb, ctrl):
-    """Perform intelligent quadrant search to find optimal S and P positions.
-
-    Uses a 3-phase approach:
-    1. LED calibration with lower target (30% of max) to prevent saturation
-    2. Coarse 5-point search across servo range
-    3. Refinement around predicted P position (minimum)
-    4. Calculate S position exactly 90° from P
-
-    Total measurements: ~13 + LED calibration time
+    Total measurements: ~14 (vs 33+ for full sweep)
+    S/P ratio: >2.5x typical for good SPR
 
     Args:
         usb: Spectrometer wrapper
         ctrl: Controller wrapper
 
     Returns:
-        Tuple of (s_pos, p_pos) or None if search fails
+        Tuple of (s_pos_deg, p_pos_deg, extinction_ratio) or None if search fails
     """
     logger.info("=" * 80)
     logger.info("QUADRANT SEARCH FOR SERVO POSITIONS")
     logger.info("=" * 80)
 
     # Get wavelengths for ROI calculation
-    wavelengths = usb._wavelengths
-    if wavelengths is None:
-        logger.warning("Wavelengths not available, using full spectrum max")
-        use_roi = False
+    # Retrieve wavelength array robustly (attribute names vary across wrappers)
+    wavelengths = getattr(usb, 'wavelengths', None) or getattr(usb, '_wavelengths', None)
+    multi_bucket_available = wavelengths is not None
+    if not multi_bucket_available:
+        logger.warning("Wavelength array unavailable → multi-bucket ROI disabled (fallback to full spectrum)")
     else:
-        use_roi = True
-        logger.info(f"ROI: {ROI_MIN_WL}-{ROI_MAX_WL}nm (SPR resonance region)")
+        logger.info("Multi-bucket ROI enabled: " + ", ".join([f"{lo}-{hi}nm" for lo, hi in ROI_BUCKETS]))
 
-    # STEP 1: Calibrate LEDs with lower target to prevent saturation
-    # This is device-specific and adapts to each system's characteristics
+    # STEP 1a: LED Communication Test
     logger.info("")
-    logger.info("STEP 1: LED Calibration (low target for servo search)")
+    logger.info("STEP 1a: LED Communication Test")
+    logger.info("Measuring dark counts (LEDs off)...")
+
+    try:
+        ctrl.turn_off_channels()
+        time.sleep(0.2)
+        dark_spectrum = usb.read_intensity()
+        if dark_spectrum is None:
+            logger.error("❌ Failed to read dark spectrum from detector!")
+            return None
+        dark_counts = float(dark_spectrum.max())
+        logger.info(f"Dark counts: {dark_counts:.0f}")
+    except Exception as e:
+        logger.error(f"❌ Dark measurement failed: {e}")
+        return None
+
+    # Test LED commands
+    test_channel = 'b'
+    logger.info(f"Testing LED {test_channel.upper()} commands...")
+
+    try:
+        enable_ok = ctrl.turn_on_channel(test_channel)
+        logger.info(f"   Enable command response: {enable_ok}")
+        time.sleep(0.1)
+
+        intensity_ok = ctrl.set_intensity(test_channel, 50)
+        logger.info(f"   Intensity command response: {intensity_ok}")
+        time.sleep(0.2)
+
+        test_spectrum = usb.read_intensity()
+        if test_spectrum is None:
+            logger.error("❌ Failed to read spectrum from detector!")
+            return None
+
+        test_signal = float(test_spectrum.max())
+        signal_increase = test_signal - dark_counts
+        logger.info(f"Signal with LED ON: {test_signal:.0f} counts")
+        logger.info(f"Signal increase from dark: {signal_increase:.0f} counts")
+
+        if signal_increase < 500:
+            logger.error("❌ LED not producing light! Signal barely increased from dark counts")
+            logger.error(f"   Dark: {dark_counts:.0f}, LED ON: {test_signal:.0f}, Increase: {signal_increase:.0f}")
+            logger.error("   Possible causes: LED enable/intensity commands not working, hardware disconnected")
+            return None
+
+        logger.info(f"✓ LED commands working! {signal_increase:.0f} counts increase")
+    except Exception as e:
+        logger.error(f"❌ LED communication test failed: {e}")
+        return None
+
+    # STEP 1b: LED Calibration
+    logger.info("")
+    logger.info("STEP 1b: LED Calibration (low target for servo search)")
     calibrated_intensities = _calibrate_leds_for_servo(usb, ctrl)
+    if calibrated_intensities is None:
+        logger.error("❌ LED calibration returned None - cannot proceed")
+        return None
     logger.info("")
 
-    # Store original intensities for later restoration (if needed)
     original_led_intensity = calibrated_intensities.copy()
 
-    # Store all measurements
+    # Storage for all measurements
     all_positions = []
     all_intensities = []
 
-    def measure_position(angle: int) -> float:
-        """Helper to measure intensity at a servo angle."""
-        ctrl.servo_set(s=angle, p=angle)
-        time.sleep(SETTLING_TIME)
-        ctrl.set_mode("s")
-        time.sleep(MODE_SWITCH_TIME)
-        spectrum = usb.read_intensity()
-        intensity = get_roi_intensity(spectrum, wavelengths) if use_roi else spectrum.max()
-        all_positions.append(angle)
-        all_intensities.append(intensity)
-        return intensity
+    def measure_position(servo_pos: int, mode: str = 'p', buckets_for_stage: list = None) -> tuple:
+        """Measure intensity at a servo position in specified mode.
 
-    # STEP 2: Coarse search - 5 positions across range
-    logger.info("STEP 2: Coarse search (5 positions)...")
-    coarse_positions = [10, 50, 90, 130, 170]
+        Args:
+            servo_pos: Servo position in 0-255 range
+            mode: 'p' for minimum (SPR absorption) or 's' for maximum (transmission)
+
+        Takes multiple measurements and averages them for stability.
+        Waits for full servo settling before measurements.
+        """
+        angle_deg = servo_to_degrees(servo_pos)
+        # Explicitly ensure mode and servo alignment before measuring
+        s_expected = angle_deg if mode == 's' else None
+        p_expected = angle_deg if mode == 'p' else None
+        # If one of the expected is None, use current best-known for the other axis
+        if s_expected is None:
+            # Keep S at current refined best; do not change S here
+            s_expected = servo_to_degrees(s_pos_servo) if 's_pos_servo' in locals() else angle_deg
+        if p_expected is None:
+            # When measuring S, keep P at S±90 candidate if available
+            p_expected = servo_to_degrees(p_candidate_1_servo) if 'p_candidate_1_servo' in locals() else angle_deg
+        _ensure_mode_and_position(ctrl, mode, int(round(s_expected)), int(round(p_expected)), tolerance=3)
+
+        # Take multiple measurements and average
+        measurements = []
+        for i in range(MEASUREMENT_AVERAGES):
+            if i > 0:
+                time.sleep(0.05)  # Small delay between readings
+            spectrum = usb.read_intensity()
+            if spectrum is not None:
+                if multi_bucket_available:
+                    bucket_vals = get_roi_bucket_intensities(spectrum, wavelengths)
+                else:
+                    bucket_vals = [float(spectrum.mean())] * len(ROI_BUCKETS)
+                measurements.append(bucket_vals)
+
+        if len(measurements) == 0:
+            logger.error(f"Failed to measure servo position {servo_pos}")
+            # Return zero vector for buckets and aggregate 0
+            return [0.0] * len(ROI_BUCKETS), 0.0
+
+        # Use mean of measurements for stability
+        # Average bucket values across repeats
+        bucket_matrix = np.array(measurements)  # shape (repeats, buckets)
+        bucket_means = list(np.mean(bucket_matrix, axis=0))
+        # Stage bucket selection: if buckets_for_stage provided, aggregate only those indices else all
+        if buckets_for_stage is None:
+            selected_vals = bucket_means
+        else:
+            selected_vals = [bucket_means[i] for i in buckets_for_stage]
+        aggregate_intensity = float(np.mean(selected_vals))
+        std_intensity = float(np.std(selected_vals)) if len(selected_vals) > 1 else 0.0
+
+        all_positions.append(servo_pos)
+        all_intensities.append(aggregate_intensity)
+
+        if std_intensity > avg_intensity * 0.1:  # More than 10% variation
+            logger.debug(f"   High variation at servo {servo_pos}: {avg_intensity:.0f} ± {std_intensity:.0f}")
+
+        return bucket_means, aggregate_intensity
+
+    # STEP 2: Coarse quadrant search - full 0-255 servo range
+    # SEARCH FOR S (MAXIMUM) FIRST - stronger signal, easier to find!
+    logger.info("STEP 2: Coarse quadrant search for S position (maximum transmission)...")
+    logger.info("   Searching in S-mode (parallel to analyzer) - strongest signal")
+    servo_step = 55
+
+    coarse_servo_positions = list(range(5, 236, servo_step))  # [5, 60, 115, 170, 225]
     coarse_intensities = []
 
-    for pos in coarse_positions:
-        intensity = measure_position(pos)
-        coarse_intensities.append(intensity)
-        logger.debug(f"   {pos}°: {intensity:.0f} counts")
+    # Switch to S-mode for maximum search
+    _ensure_mode_and_position(ctrl, 's', int(round(servo_to_degrees(coarse_servo_positions[0]))), int(round(servo_to_degrees(coarse_servo_positions[0]))), tolerance=3)
 
-    # Find approximate min (P position - where SPR absorption is strongest)
-    coarse_min_idx = np.argmin(coarse_intensities)
-    approx_p = coarse_positions[coarse_min_idx]
+    coarse_bucket_maps = {}
+    for servo_pos in coarse_servo_positions:
+        bucket_means, agg = measure_position(servo_pos, mode='s')  # Stay in S-mode
+        coarse_intensities.append(agg)
+        coarse_bucket_maps[servo_pos] = bucket_means
+        logger.info(f"   Servo {servo_pos}: agg={agg:.0f} buckets=" + ", ".join([f"{bm:.0f}" for bm in bucket_means]))
 
-    logger.info(f"Approximate P position (minimum):")
-    logger.info(f"   P ≈ {approx_p}° ({coarse_intensities[coarse_min_idx]:.0f} counts)")
+    # Find MAXIMUM (S position) - strongest signal!
+    coarse_max_idx = np.argmax(coarse_intensities)
+    approx_s_servo = coarse_servo_positions[coarse_max_idx]
 
-    # STEP 3: Refine P position (minimum)
-    logger.info(f"STEP 3: Refining P position around {approx_p}°...")
-    p_search_positions = [
-        max(MIN_ANGLE, approx_p - 20),
-        max(MIN_ANGLE, approx_p - 10),
-        approx_p,
-        min(MAX_ANGLE, approx_p + 10),
-        min(MAX_ANGLE, approx_p + 20)
+    logger.info(f"Coarse search results:")
+    logger.info(f"   Max intensity: {coarse_intensities[coarse_max_idx]:.0f} at servo {approx_s_servo}")
+    min_idx = np.argmin(coarse_intensities)
+    logger.info(f"   Min intensity: {coarse_intensities[min_idx]:.0f} at servo {coarse_servo_positions[min_idx]}")
+    logger.info(f"   Range: {coarse_intensities[coarse_max_idx] - min(coarse_intensities):.0f} counts")
+    logger.info(f"Approximate S position (maximum):")
+    logger.info(f"   S ≈ servo {approx_s_servo} - {coarse_intensities[coarse_max_idx]:.0f} counts")
+
+    # STEP 3: Refine S position - Multi-stage refinement in servo units
+    logger.info(f"STEP 3: Refining S position around servo {approx_s_servo}...")
+    logger.info("   Staying in S-mode to find true maximum...")
+
+    # Stage 3a: Coarse refinement (±28 servo units in 14 unit steps)
+    logger.info(f"  Stage 3a: Coarse refinement (±28 servo units in 14 unit steps)...")
+    s_search_positions = [
+        max(MIN_SERVO, approx_s_servo - 28),
+        max(MIN_SERVO, approx_s_servo - 14),
+        approx_s_servo,
+        min(MAX_SERVO, approx_s_servo + 14),
+        min(MAX_SERVO, approx_s_servo + 28)
     ]
-    # Remove duplicates and already measured
-    p_search_positions = [p for p in p_search_positions if p not in all_positions]
+    s_search_positions = [p for p in s_search_positions if p not in all_positions]
 
-    p_intensities = {approx_p: coarse_intensities[coarse_min_idx]}
-    for pos in p_search_positions:
-        intensity = measure_position(pos)
-        p_intensities[pos] = intensity
-        logger.debug(f"   {pos}°: {intensity:.0f} counts")
+    s_intensities = {approx_s_servo: coarse_intensities[coarse_max_idx]}
+    # Determine optimal ROI buckets based on S-P contrast at approximate S
+    logger.info("Selecting ROI buckets based on S-P contrast (delta S-P)...")
+    # Measure P candidates at S ± 90 for bucket deltas (without committing)
+    p_candidate_positions = []
+    for delta in (-90, 90):
+        cand = approx_s_servo + delta
+        if MIN_SERVO <= cand <= MAX_SERVO:
+            p_candidate_positions.append(cand)
+    bucket_s = coarse_bucket_maps.get(approx_s_servo, [0.0]*len(ROI_BUCKETS))
+    bucket_p_min = [float('inf')] * len(ROI_BUCKETS)
+    for p_servo in p_candidate_positions:
+        p_bucket_vals, _ = measure_position(p_servo, mode='p', buckets_for_stage=None)
+        for i, val in enumerate(p_bucket_vals):
+            if val < bucket_p_min[i]:
+                bucket_p_min[i] = val
+    bucket_deltas = [bucket_s[i] - bucket_p_min[i] for i in range(len(ROI_BUCKETS))]
+    for i, (rng, delta) in enumerate(zip(ROI_BUCKETS, bucket_deltas)):
+        logger.info(f"  Bucket {rng[0]}-{rng[1]}nm: Δ(S-P)={delta:.0f} (S={bucket_s[i]:.0f} P={bucket_p_min[i]:.0f})")
+    # Rank buckets by delta descending
+    bucket_order = sorted(range(len(ROI_BUCKETS)), key=lambda i: bucket_deltas[i], reverse=True)
+    best_bucket = bucket_order[0]
+    second_bucket = bucket_order[1] if len(bucket_order) > 1 else bucket_order[0]
+    logger.info(f"Selected best bucket: {ROI_BUCKETS[best_bucket][0]}-{ROI_BUCKETS[best_bucket][1]}nm")
+    logger.info(f"Second bucket: {ROI_BUCKETS[second_bucket][0]}-{ROI_BUCKETS[second_bucket][1]}nm")
+    refinement_bucket_indices_stage_coarse = [best_bucket, second_bucket]
+    refinement_bucket_index_fine = best_bucket
+    for servo_pos in s_search_positions:
+        bucket_vals, agg = measure_position(servo_pos, mode='s', buckets_for_stage=refinement_bucket_indices_stage_coarse)
+        s_intensities[servo_pos] = agg
+        logger.debug(f"     Servo {servo_pos}: agg={agg:.0f} buckets=" + ", ".join([f"{v:.0f}" for v in bucket_vals]))
 
-    # Find refined P position (minimum intensity = strongest SPR absorption)
-    p_pos = min(p_intensities.keys(), key=lambda k: p_intensities[k])
-    p_intensity = p_intensities[p_pos]
-    logger.info(f"✓ P position refined: {p_pos}° ({p_intensity:.0f} counts)")
+    s_coarse_refined = max(s_intensities.keys(), key=lambda k: s_intensities[k])
+    logger.info(f"  Coarse refinement result: servo {s_coarse_refined} - {s_intensities[s_coarse_refined]:.0f} counts")
 
-    # STEP 4: Set S position exactly 90° from P
-    # For circular polarizer: S = P ± 90° (EXACT)
-    # Choose the option that's within servo range (10-170°)
-    s_candidate_1 = p_pos - 90
-    s_candidate_2 = p_pos + 90
+    # Stage 3b: Fine refinement (±7 servo units in 7 unit steps)
+    logger.info(f"  Stage 3b: Fine refinement (±7 servo units around {s_coarse_refined})...")
+    fine_positions = [
+        max(MIN_SERVO, s_coarse_refined - 7),
+        s_coarse_refined,
+        min(MAX_SERVO, s_coarse_refined + 7)
+    ]
+    fine_positions = [p for p in fine_positions if p not in all_positions]
 
-    if MIN_ANGLE <= s_candidate_1 <= MAX_ANGLE:
-        s_pos = s_candidate_1
-        logger.info(f"STEP 4: S position = P - 90° = {p_pos}° - 90° = {s_pos}°")
-    elif MIN_ANGLE <= s_candidate_2 <= MAX_ANGLE:
-        s_pos = s_candidate_2
-        logger.info(f"STEP 4: S position = P + 90° = {p_pos}° + 90° = {s_pos}°")
-    else:
-        # This shouldn't happen if P is 10-170, so ±90 should always be valid
-        logger.error(f"❌ ERROR: Cannot place S position 90° from P={p_pos}°")
-        logger.error(f"   P - 90 = {s_candidate_1}° (out of range {MIN_ANGLE}-{MAX_ANGLE}°)")
-        logger.error(f"   P + 90 = {s_candidate_2}° (out of range {MIN_ANGLE}-{MAX_ANGLE}°)")
+    for servo_pos in fine_positions:
+        bucket_vals, agg = measure_position(servo_pos, mode='s', buckets_for_stage=refinement_bucket_indices_stage_coarse)
+        s_intensities[servo_pos] = agg
+        logger.debug(f"     Servo {servo_pos}: agg={agg:.0f} buckets=" + ", ".join([f"{v:.0f}" for v in bucket_vals]))
+
+    s_fine_refined = max(s_intensities.keys(), key=lambda k: s_intensities[k])
+    logger.info(f"  Fine refinement result: servo {s_fine_refined} - {s_intensities[s_fine_refined]:.0f} counts")
+
+    # Stage 3c: Ultra-fine refinement (±3 servo units in 3 unit steps)
+    logger.info(f"  Stage 3c: Ultra-fine refinement (±3 servo units around {s_fine_refined})...")
+    ultrafine_positions = [
+        max(MIN_SERVO, s_fine_refined - 3),
+        s_fine_refined,
+        min(MAX_SERVO, s_fine_refined + 3)
+    ]
+    ultrafine_positions = [p for p in ultrafine_positions if p not in all_positions]
+
+    for servo_pos in ultrafine_positions:
+        bucket_vals, agg = measure_position(servo_pos, mode='s', buckets_for_stage=[refinement_bucket_index_fine])
+        s_intensities[servo_pos] = agg
+        logger.debug(f"     Servo {servo_pos}: agg={agg:.0f} bucket=" + ", ".join([f"{v:.0f}" for v in bucket_vals]))
+
+    # Final S position - TRUE MAXIMUM found!
+    s_pos_servo = max(s_intensities.keys(), key=lambda k: s_intensities[k])
+    s_intensity = s_intensities[s_pos_servo]
+    logger.info(f"✓ S position finalized: servo {s_pos_servo} - {s_intensity:.0f} counts")
+    logger.info(f"  Total S refinement measurements: {len([p for p in all_positions if p != approx_s_servo]) - len([p for p in all_positions if p in coarse_servo_positions])}")
+
+    # STEP 4: Calculate P position at S ± 90 servo units
+    logger.info(f"STEP 4: Finding P position (minimum) at S ± 90 servo units...")
+    servo_90_separation = 90  # 90 servo units for circular polarizer
+
+    # Check both candidates: S - 90 and S + 90
+    p_candidate_1_servo = s_pos_servo - servo_90_separation
+    p_candidate_2_servo = s_pos_servo + servo_90_separation
+
+    p_candidates = []
+    if MIN_SERVO <= p_candidate_1_servo <= MAX_SERVO:
+        p_candidates.append(p_candidate_1_servo)
+    if MIN_SERVO <= p_candidate_2_servo <= MAX_SERVO:
+        p_candidates.append(p_candidate_2_servo)
+
+    if len(p_candidates) == 0:
+        logger.error(f"❌ ERROR: Cannot place P position 90 units from S=servo {s_pos_servo}")
+        logger.error(f"   S - 90 = servo {p_candidate_1_servo} - out of range")
+        logger.error(f"   S + 90 = servo {p_candidate_2_servo} - out of range")
         return None
 
-    # Measure S position to verify
-    ctrl.servo_set(s=s_pos, p=s_pos)
-    time.sleep(SETTLING_TIME)
-    ctrl.set_mode("s")
-    time.sleep(MODE_SWITCH_TIME)
-    spectrum = usb.read_intensity()
-    s_intensity = get_roi_intensity(spectrum, wavelengths) if use_roi else spectrum.max()
-    all_positions.append(s_pos)
+    # Measure both P candidates in P-mode and pick the MINIMUM
+    logger.info(f"  Measuring P candidates at ±90 servo units from S...")
+    logger.info("  Switching to P-mode (perpendicular to analyzer)...")
+    p_measurements = {}
+    for candidate_servo in p_candidates:
+        bucket_vals, agg = measure_position(candidate_servo, mode='p', buckets_for_stage=[refinement_bucket_index_fine])
+        p_measurements[candidate_servo] = agg
+        logger.info(f"    Servo {candidate_servo}: agg={agg:.0f} bucket={ROI_BUCKETS[refinement_bucket_index_fine][0]}-{ROI_BUCKETS[refinement_bucket_index_fine][1]}nm vals=" + ", ".join([f"{v:.0f}" for v in bucket_vals]))
+
+    # Pick the position with MINIMUM intensity (strongest SPR absorption)
+    if len(p_measurements) == 0:
+        logger.error("❌ Failed to measure any P candidates")
+        return None
+
+    p_pos_servo = min(p_measurements.keys(), key=lambda k: p_measurements[k])
+    p_intensity = p_measurements[p_pos_servo]
+
+    all_positions.append(s_pos_servo)
     all_intensities.append(s_intensity)
 
-    logger.info(f"✓ S position set: {s_pos}° ({s_intensity:.0f} counts)")
-    logger.info(f"✓ Separation enforced: |{s_pos}° - {p_pos}°| = {abs(s_pos - p_pos)}° (exactly 90°)")
+    separation_servo = abs(s_pos_servo - p_pos_servo)
+    sp_ratio = s_intensity / p_intensity if p_intensity > 0 else 0.0
+    sp_delta = s_intensity - p_intensity
+
+    # Calculate extinction ratio: (S-P)/S as percentage
+    # This is a sensor-specific reference value for tracking calibration quality over time
+    extinction_ratio = (sp_delta / s_intensity * 100.0) if s_intensity > 0 else 0.0
+
+    logger.info(f"✓ S-P delta: {sp_delta:.0f} counts (positive confirms orientation)")
+    logger.info(f"✓ Extinction ratio: {extinction_ratio:.2f}% (sensor-specific reference for recalibration tracking)")
+
+    logger.info(f"✓ S position finalized: servo {s_pos_servo} - {s_intensity:.0f} counts")
+    logger.info(f"✓ P position: servo {p_pos_servo} - {p_intensity:.0f} counts")
+    logger.info(f"✓ Separation: {separation_servo} servo units (circular polarizer)")
+    logger.info(f"✓ S/P ratio: {sp_ratio:.2f}x (higher is better, >1.3x expected for good SPR)")
 
     logger.info(f"✅ Quadrant search complete")
     logger.info(f"Total measurements: {len(all_positions)} (vs 33+ for full sweep)")
 
-    # CRITICAL: Restore original LED intensities
+    # Restore original LED intensities
     _restore_led_intensity(ctrl, original_led_intensity)
-    logger.info("✅ LED intensities restored")
 
-    return s_pos, p_pos
+    # Convert to degrees for device_config.json compatibility
+    s_pos_deg = servo_to_degrees(s_pos_servo)
+    p_pos_deg = servo_to_degrees(p_pos_servo)
 
-
-def find_resonance_wavelength(usb, ctrl, p_position):
-    """Measure wavelength of resonance dip at P position.
-
-    Args:
-        usb: Spectrometer wrapper
-        ctrl: Controller wrapper
-        p_position: P-mode servo position
-
-    Returns:
-        float: Wavelength of minimum in nm, or None if not found
-    """
-    # Set servo to P position
-    ctrl.servo_set(s=p_position, p=p_position)
-    time.sleep(SETTLING_TIME)
-    ctrl.set_mode("s")
-    time.sleep(MODE_SWITCH_TIME)
-
-    # Read full spectrum
-    spectrum = usb.read_intensity()
-    wavelengths = usb._wavelengths
-
-    if wavelengths is None:
-        return None
-
-    # Find wavelength of minimum within valid range
-    valid_mask = (wavelengths >= MIN_RESONANCE_WL) & (wavelengths <= MAX_RESONANCE_WL)
-    valid_spectrum = spectrum[valid_mask]
-    valid_wavelengths = wavelengths[valid_mask]
-
-    if len(valid_spectrum) == 0:
-        return None
-
-    min_idx = np.argmin(valid_spectrum)
-    return float(valid_wavelengths[min_idx])
+    return s_pos_deg, p_pos_deg, extinction_ratio  # Return degrees and extinction ratio
 
 
-def analyze_peaks(positions, intensities, usb, ctrl, p_pos=None, s_pos=None):
-    """Analyze sweep data to find and validate S and P positions.
+# ============================================================================
+# SERVO VERIFICATION
+# ============================================================================
+
+def verify_servo_positions(ctrl, expected_s: int, expected_p: int, tolerance: int = 3, retry_on_mismatch: bool = True) -> tuple[bool, int, int]:
+    """Verify servo positions match expected values, with one optional retry.
 
     Args:
-        positions: Array of servo positions
-        intensities: Array of intensities at each position
-        usb: Spectrometer wrapper
-        ctrl: Controller wrapper
-        p_pos: Pre-determined P position (optional). If provided, uses this instead of searching.
-        s_pos: Pre-determined S position (optional). If provided, uses this instead of searching.
+        ctrl: Controller instance
+        expected_s: Expected S position (0-180 degrees)
+        expected_p: Expected P position (0-180 degrees)
+        tolerance: Acceptable deviation in degrees (default 3°)
 
     Returns:
-        dict: Results with s_pos, p_pos, validation status, etc.
-        None if validation fails
-    """
-    results = {
-        "s_pos": None,
-        "p_pos": None,
-        "s_intensity": None,
-        "p_intensity": None,
-        "sp_ratio": None,
-        "separation": None,
-        "resonance_wavelength": None,
-        "validation": []
-    }
-
-    logger.info("=" * 80)
-    logger.info("RESONANCE DIP ANALYSIS (SPR)")
-    logger.info("=" * 80)
-
-    # Find MINIMUM (resonance dip for P position)
-    if p_pos is not None:
-        logger.info("1. Using Pre-determined P Position:")
-        p_position = p_pos
-        # Find intensity at this position
-        p_idx = np.where(positions == p_position)[0]
-        if len(p_idx) > 0:
-            p_intensity = intensities[p_idx[0]]
-        else:
-            logger.warning(f"   ⚠️  P position {p_position}° not in measured positions")
-            p_intensity = None
-    else:
-        logger.info("1. Finding Resonance Dip (P position):")
-        min_idx = np.argmin(intensities)
-        p_position = positions[min_idx]
-        p_intensity = intensities[min_idx]
-
-    logger.info(f"   P position (MINIMUM): {p_position}°")
-    logger.info(f"   P intensity: {p_intensity:.0f} counts (LOW - resonance dip)")
-
-    results["p_pos"] = int(p_position)
-    results["p_intensity"] = float(p_intensity)
-
-    # Measure resonance wavelength
-    resonance_wavelength = find_resonance_wavelength(usb, ctrl, p_position)
-    if resonance_wavelength is not None:
-        results["resonance_wavelength"] = resonance_wavelength
-        logger.info(f"   Resonance wavelength: {resonance_wavelength:.1f}nm")
-
-        # Validate wavelength is in expected range
-        if resonance_wavelength < MIN_RESONANCE_WL or resonance_wavelength > MAX_RESONANCE_WL:
-            results["validation"].append((
-                "Resonance wavelength",
-                False,
-                f"{resonance_wavelength:.1f}nm not in [{MIN_RESONANCE_WL}, {MAX_RESONANCE_WL}]nm"
-            ))
-            logger.warning(f"   ❌ FAIL: Resonance outside valid range ({MIN_RESONANCE_WL}-{MAX_RESONANCE_WL}nm)")
-            logger.warning(f"   This suggests incorrect servo position or optical misalignment")
-            return None
-        else:
-            results["validation"].append((
-                "Resonance wavelength",
-                True,
-                f"{resonance_wavelength:.1f}nm in [{MIN_RESONANCE_WL}, {MAX_RESONANCE_WL}]nm"
-            ))
-            logger.info(f"   ✓ PASS: Resonance in valid SPR range")
-    else:
-        logger.warning(f"   ⚠️  Warning: Could not determine resonance wavelength")
-
-    # Validation: Check that minimum is significant
-    dip_depth = intensities.max() - p_intensity
-    dip_depth_percent = (dip_depth / intensities.max()) * 100 if intensities.max() > 0 else 0
-
-    logger.info(f"   Dip depth: {dip_depth:.0f} counts ({dip_depth_percent:.1f}% of maximum)")
-
-    if dip_depth_percent < MIN_DIP_DEPTH_PERCENT:
-        results["validation"].append(("Dip depth", False, f"{dip_depth_percent:.1f}% < {MIN_DIP_DEPTH_PERCENT}%"))
-        logger.warning(f"   ❌ FAIL: Resonance dip too shallow (need >{MIN_DIP_DEPTH_PERCENT}%)")
-        return None
-    else:
-        results["validation"].append(("Dip depth", True, f"{dip_depth_percent:.1f}% >= {MIN_DIP_DEPTH_PERCENT}%"))
-        logger.info(f"   ✓ PASS: Significant resonance dip detected")
-
-    # Find MAXIMUM (reference for S position)
-    if s_pos is not None:
-        logger.info("2. Using Pre-determined S Position:")
-        s_position = s_pos
-        # Find intensity at this position
-        s_idx = np.where(positions == s_position)[0]
-        if len(s_idx) > 0:
-            s_intensity = intensities[s_idx[0]]
-        else:
-            logger.warning(f"   ⚠️  S position {s_position}° not in measured positions")
-            s_intensity = None
-    else:
-        logger.info("2. Finding Reference Maximum (S position):")
-        max_idx = np.argmax(intensities)
-        s_position = positions[max_idx]
-        s_intensity = intensities[max_idx]
-
-    logger.info(f"   S position (MAXIMUM): {s_position}°")
-    logger.info(f"   S intensity: {s_intensity:.0f} counts (HIGH - reference)")
-
-    # Calculate separation
-    separation = abs(s_position - p_position)
-    results["separation"] = separation
-
-    # Validation: Check separation (skip if both positions were pre-determined with 90° constraint)
-    if p_pos is None or s_pos is None:
-        logger.info(f"3. Position Separation:")
-        logger.info(f"   Measured: {separation:.0f}°")
-        logger.info(f"   Expected: {MIN_SEPARATION}-{MAX_SEPARATION}°")
-
-        if separation < MIN_SEPARATION or separation > MAX_SEPARATION:
-            results["validation"].append(("Position separation", False, f"{separation:.0f}° not in [{MIN_SEPARATION}, {MAX_SEPARATION}]"))
-            logger.warning(f"   ❌ FAIL: Separation out of range")
-            return None
-        else:
-            results["validation"].append(("Position separation", True, f"{separation:.0f}° in [{MIN_SEPARATION}, {MAX_SEPARATION}]"))
-            logger.info(f"   ✓ PASS: Separation is valid")
-    else:
-        logger.info(f"3. Position Separation: {separation:.0f}° (enforced by quadrant search)")
-
-    # Store results
-    results["s_pos"] = int(s_position)
-    results["p_pos"] = int(p_position)
-    results["s_intensity"] = float(s_intensity)
-    results["p_intensity"] = float(p_intensity)
-
-    # Validation: Verify S > P (intensity check)
-    logger.info(f"4. Intensity Verification:")
-    logger.info(f"   S-mode intensity: {results['s_intensity']:.0f} (HIGH - reference)")
-    logger.info(f"   P-mode intensity: {results['p_intensity']:.0f} (LOW - resonance)")
-
-    if results["s_intensity"] <= results["p_intensity"]:
-        results["validation"].append(("S > P", False, f"S={results['s_intensity']:.0f} <= P={results['p_intensity']:.0f}"))
-        logger.warning(f"   ❌ FAIL: S should be higher than P")
-        return None
-    else:
-        results["validation"].append(("S > P", True, f"S={results['s_intensity']:.0f} > P={results['p_intensity']:.0f}"))
-        logger.info(f"   ✓ PASS: S is higher than P")
-
-    # Validation: Check S/P ratio
-    results["sp_ratio"] = results["s_intensity"] / results["p_intensity"]
-
-    logger.info(f"5. S/P Ratio:")
-    logger.info(f"   Measured: {results['sp_ratio']:.2f}×")
-    logger.info(f"   Minimum: {MIN_SP_RATIO:.2f}×")
-    logger.info(f"   Ideal: {IDEAL_SP_RATIO:.2f}×")
-
-    if results["sp_ratio"] < MIN_SP_RATIO:
-        results["validation"].append(("S/P ratio", False, f"{results['sp_ratio']:.2f}× < {MIN_SP_RATIO:.2f}×"))
-        logger.warning(f"   ❌ FAIL: Ratio too low")
-        return None
-    elif results["sp_ratio"] < IDEAL_SP_RATIO:
-        results["validation"].append(("S/P ratio", True, f"{results['sp_ratio']:.2f}× >= {MIN_SP_RATIO:.2f}× (acceptable)"))
-        logger.info(f"   ✓ PASS: Ratio acceptable (could be improved)")
-    else:
-        results["validation"].append(("S/P ratio", True, f"{results['sp_ratio']:.2f}× >= {IDEAL_SP_RATIO:.2f}× (ideal)"))
-        logger.info(f"   ✓ PASS: Ratio is ideal")
-
-    return results
-
-
-def verify_and_correct_positions(usb, ctrl, s_pos, p_pos):
-    """Verify positions by measuring actual intensities and correct if inverted.
-
-    Args:
-        usb: Spectrometer wrapper
-        ctrl: Controller wrapper
-        s_pos: S-mode servo position
-        p_pos: P-mode servo position
-
-    Returns:
-        tuple: (final_s_pos, final_p_pos, was_inverted)
-        None if saturation detected
-    """
-    logger.info("=" * 80)
-    logger.info("POSITION VERIFICATION AND SATURATION CHECK")
-    logger.info("=" * 80)
-
-    # Get wavelengths for ROI
-    wavelengths = usb._wavelengths
-    use_roi = wavelengths is not None
-
-    saturation_limit = int(MAX_DETECTOR_COUNTS * SATURATION_THRESHOLD)
-    logger.info(f"Saturation check: max allowed = {saturation_limit} counts ({SATURATION_THRESHOLD*100:.0f}% of {MAX_DETECTOR_COUNTS})")
-
-    # Apply calculated positions
-    ctrl.servo_set(s=s_pos, p=p_pos)
-    time.sleep(SETTLING_TIME * 2)  # Extra settling time for accurate measurement
-
-    # Measure S-mode
-    ctrl.set_mode("s")
-    time.sleep(MODE_SWITCH_TIME * 2)
-    s_spectrum = usb.read_intensity()
-    s_max = s_spectrum.max()
-    if use_roi:
-        s_measured = get_roi_intensity(s_spectrum, wavelengths)
-    else:
-        s_measured = s_max
-
-    # Check S-mode saturation
-    if s_max >= saturation_limit:
-        logger.error(f"   ❌ SATURATION DETECTED in S-mode!")
-        logger.error(f"   Peak intensity: {s_max:.0f} counts (limit: {saturation_limit})")
-        logger.error(f"   LED intensity is too high - reduce LED power before continuing")
-        return None
-
-    # Measure P-mode
-    ctrl.set_mode("p")
-    time.sleep(MODE_SWITCH_TIME * 2)
-    p_spectrum = usb.read_intensity()
-    p_max = p_spectrum.max()
-    if use_roi:
-        p_measured = get_roi_intensity(p_spectrum, wavelengths)
-    else:
-        p_measured = p_max
-
-    # Check P-mode saturation
-    if p_max >= saturation_limit:
-        logger.error(f"   ❌ SATURATION DETECTED in P-mode!")
-        logger.error(f"   Peak intensity: {p_max:.0f} counts (limit: {saturation_limit})")
-        logger.error(f"   LED intensity is too high - reduce LED power before continuing")
-        return None
-
-    logger.info(f"Initial measurement:")
-    logger.info(f"   S-mode (pos={s_pos}): ROI={s_measured:.0f}, peak={s_max:.0f} counts")
-    logger.info(f"   P-mode (pos={p_pos}): ROI={p_measured:.0f}, peak={p_max:.0f} counts")
-    logger.info(f"   ✓ No saturation detected")
-
-    # Check if inverted (P > S means transmission >100%)
-    if p_measured > s_measured:
-        logger.warning(f"   ⚠️  INVERSION DETECTED: P > S!")
-        logger.warning(f"   This would cause transmission >100%")
-        logger.info(f"   Swapping S and P positions...")
-
-        # Swap positions
-        s_pos, p_pos = p_pos, s_pos
-
-        # Verify the swap worked
-        ctrl.servo_set(s=s_pos, p=p_pos)
-        time.sleep(SETTLING_TIME * 2)
-
-        ctrl.set_mode("s")
-        time.sleep(MODE_SWITCH_TIME * 2)
-        s_verify = usb.read_intensity()
-        if use_roi:
-            s_verify_val = get_roi_intensity(s_verify, wavelengths)
-        else:
-            s_verify_val = s_verify.max()
-
-        ctrl.set_mode("p")
-        time.sleep(MODE_SWITCH_TIME * 2)
-        p_verify = usb.read_intensity()
-        if use_roi:
-            p_verify_val = get_roi_intensity(p_verify, wavelengths)
-        else:
-            p_verify_val = p_verify.max()
-
-        logger.info(f"Verification after swap:")
-        logger.info(f"   S-mode: {s_verify_val:.0f} counts")
-        logger.info(f"   P-mode: {p_verify_val:.0f} counts")
-
-        if s_verify_val > p_verify_val:
-            logger.info(f"   ✓ CORRECTED: S now > P")
-            return s_pos, p_pos, True
-        else:
-            logger.error(f"   ✗ CORRECTION FAILED: Still inverted!")
-            return s_pos, p_pos, True
-    else:
-        logger.info(f"   ✓ NO INVERSION: S > P (correct)")
-        return s_pos, p_pos, False
-
-
-def perform_barrel_window_search(usb, ctrl):
-    """Find S and P windows for barrel-style polarizer assemblies.
-
-    Barrel polarizers have ONLY 2 physical windows (not continuous rotation):
-    - Each window may span multiple servo positions (cluster of high transmission)
-    - Windows are separated by >70° (typically ~90°)
-    - One window has S-pol film strip, other has P-pol film strip
-    - Must identify which window is S vs P by analyzing SPR response
-
-    Strategy:
-    1. Full sweep to find ALL transmission peaks (windows)
-    2. Cluster peaks into 2 window groups (S and P candidates)
-    3. Find center position of each window (max transmission in cluster)
-    4. Identify which is S vs P using SPR signature:
-       - S window: High transmission, no SPR dip (reference)
-       - P window: Lower transmission, shows SPR dip when water present
-
-    Args:
-        usb: Spectrometer wrapper
-        ctrl: Controller wrapper
-
-    Returns:
-        Dict with s_pos, p_pos, separation, sp_ratio, or None if failed
+        Tuple of (success, actual_s, actual_p)
+        - success: True if positions match within tolerance
+        - actual_s: Actual S position read from controller
+        - actual_p: Actual P position read from controller
     """
     try:
-        logger.info("=" * 80)
-        logger.info("BARREL POLARIZER CALIBRATION (window-based)")
-        logger.info("=" * 80)
-        logger.info("Barrel polarizers have discrete S and P windows (not continuous)")
-        logger.info("Finding window clusters and identifying S vs P...")
+        # Read current positions from controller
+        current_positions = ctrl.servo_get()
 
-        # Get wavelength array for ROI computations
-        wavelengths = getattr(usb, "_wavelengths", None)
-        use_roi = wavelengths is not None
-        if use_roi:
-            logger.info(f"ROI: {ROI_MIN_WL}-{ROI_MAX_WL}nm (SPR resonance region)")
+        # Parse response (handle both bytes and string formats)
+        s_bytes = current_positions.get("s", b"0")
+        p_bytes = current_positions.get("p", b"0")
+
+        if isinstance(s_bytes, bytes):
+            actual_s = int(s_bytes.decode('utf-8').strip())
         else:
-            logger.warning("Wavelengths unavailable; using full-spectrum max")
+            actual_s = int(str(s_bytes).strip())
 
-        def roi_value(spectrum):
-            return get_roi_intensity(spectrum, wavelengths) if use_roi else float(spectrum.max())
-
-        # PHASE 1: Full sweep to find all windows
-        logger.info("Phase 1: Full sweep to find transmission windows...")
-        sweep_positions = list(range(MIN_ANGLE, MAX_ANGLE + 1, 5))
-        sweep_intensities = []
-
-        for angle in sweep_positions:
-            ctrl.servo_set(s=angle, p=angle)
-            time.sleep(SETTLING_TIME)
-            ctrl.set_mode("s")  # Use S-mode for initial sweep
-            time.sleep(MODE_SWITCH_TIME)
-            spectrum = usb.read_intensity()
-            intensity = roi_value(spectrum)
-            sweep_intensities.append(intensity)
-            logger.debug(f"   {angle}°: {intensity:.0f} counts")
-
-        sweep_intensities = np.array(sweep_intensities)
-
-        # PHASE 2: Find peaks (windows) using threshold
-        # Windows will show as intensity peaks above background
-        threshold = sweep_intensities.mean() + 0.5 * sweep_intensities.std()
-        logger.info(f"Phase 2: Identifying windows (threshold: {threshold:.0f} counts)...")
-
-        # Find positions above threshold (potential windows)
-        above_threshold = sweep_intensities > threshold
-        window_positions = [sweep_positions[i] for i, val in enumerate(above_threshold) if val]
-
-        if len(window_positions) < 2:
-            logger.error(f"❌ Failed to find 2 windows (found {len(window_positions)})")
-            logger.error(f"   Check barrel alignment and fiber connections")
-            return None
-
-        logger.info(f"Found {len(window_positions)} positions above threshold")
-
-        # PHASE 3: Cluster positions into 2 windows
-        # Use gap detection: windows are separated by >70°
-        logger.info("Phase 3: Clustering positions into S and P windows...")
-
-        clusters = []
-        current_cluster = [window_positions[0]]
-
-        for pos in window_positions[1:]:
-            if pos - current_cluster[-1] <= 15:  # Adjacent positions (same window)
-                current_cluster.append(pos)
-            else:  # Gap found - new window
-                clusters.append(current_cluster)
-                current_cluster = [pos]
-        clusters.append(current_cluster)  # Add last cluster
-
-        if len(clusters) < 2:
-            logger.error(f"❌ Could not separate into 2 windows (found {len(clusters)} clusters)")
-            logger.error(f"   Windows may be too close or overlap")
-            return None
-        elif len(clusters) > 2:
-            logger.warning(f"⚠️  Found {len(clusters)} clusters, using 2 largest")
-            # Keep only the 2 clusters with most positions
-            clusters.sort(key=len, reverse=True)
-            clusters = clusters[:2]
-
-        logger.info(f"✓ Found 2 window clusters:")
-        logger.info(f"   Window 1: {len(clusters[0])} positions ({min(clusters[0])}°-{max(clusters[0])}°)")
-        logger.info(f"   Window 2: {len(clusters[1])} positions ({min(clusters[1])}°-{max(clusters[1])}°)")
-
-        # PHASE 4: Find peak position within each window cluster
-        logger.info("Phase 4: Finding optimal position within each window...")
-
-        window_peaks = []
-        for i, cluster in enumerate(clusters):
-            # Find position with max intensity in this cluster
-            cluster_intensities = [sweep_intensities[sweep_positions.index(pos)] for pos in cluster]
-            max_idx = np.argmax(cluster_intensities)
-            peak_pos = cluster[max_idx]
-            peak_intensity = cluster_intensities[max_idx]
-
-            window_peaks.append({
-                'position': peak_pos,
-                'intensity': peak_intensity,
-                'cluster_size': len(cluster)
-            })
-            logger.info(f"   Window {i+1} peak: {peak_pos}° ({peak_intensity:.0f} counts)")
-
-        # PHASE 5: Identify which window is S vs P using SPR signature
-        logger.info("Phase 5: Identifying S vs P windows using SPR signature...")
-
-        # Measure both windows in both modes to detect SPR response
-        window_signatures = []
-
-        for i, window in enumerate(window_peaks):
-            pos = window['position']
-
-            # Measure in S-mode
-            ctrl.servo_set(s=pos, p=pos)
-            time.sleep(SETTLING_TIME * 2)
-            ctrl.set_mode("s")
-            time.sleep(MODE_SWITCH_TIME * 2)
-            s_spectrum = usb.read_intensity()
-            s_intensity = roi_value(s_spectrum)
-
-            # Measure in P-mode
-            ctrl.set_mode("p")
-            time.sleep(MODE_SWITCH_TIME * 2)
-            p_spectrum = usb.read_intensity()
-            p_intensity = roi_value(p_spectrum)
-
-            # Calculate transmission to detect SPR dip
-            transmission = np.divide(
-                p_spectrum,
-                s_spectrum,
-                out=np.ones_like(p_spectrum, dtype=float),
-                where=s_spectrum > 10
-            ) * 100.0
-
-            # Analyze transmission in SPR ROI
-            if wavelengths is not None:
-                roi_mask = (wavelengths >= ROI_MIN_WL) & (wavelengths <= ROI_MAX_WL)
-                roi_transmission = transmission[roi_mask]
-                trans_min = float(roi_transmission.min()) if len(roi_transmission) > 0 else 100.0
-                trans_max = float(roi_transmission.max()) if len(roi_transmission) > 0 else 100.0
-                dip_depth = trans_max - trans_min
-            else:
-                trans_min = 100.0
-                dip_depth = 0.0
-
-            window_signatures.append({
-                'window_id': i + 1,
-                'position': pos,
-                's_intensity': s_intensity,
-                'p_intensity': p_intensity,
-                'trans_min': trans_min,
-                'dip_depth': dip_depth
-            })
-
-            logger.info(f"   Window {i+1} @ {pos}°:")
-            logger.info(f"      S-mode: {s_intensity:.0f} counts")
-            logger.info(f"      P-mode: {p_intensity:.0f} counts")
-            logger.info(f"      Transmission min: {trans_min:.1f}%")
-            logger.info(f"      Dip depth: {dip_depth:.1f}%")
-
-        # Decision logic: S window shows minimal SPR effect, P window shows SPR dip
-        # S-pol: Reference beam, high transmission, minimal difference S vs P modes
-        # P-pol: SPR-active beam, shows transmission dip when water present
-
-        if window_signatures[0]['dip_depth'] > window_signatures[1]['dip_depth']:
-            # Window 1 has stronger dip → it's P-pol
-            p_window = window_signatures[0]
-            s_window = window_signatures[1]
-            logger.info("Decision: Window 1 is P-pol (stronger SPR dip)")
+        if isinstance(p_bytes, bytes):
+            actual_p = int(p_bytes.decode('utf-8').strip())
         else:
-            # Window 2 has stronger dip → it's P-pol
-            p_window = window_signatures[1]
-            s_window = window_signatures[0]
-            logger.info("Decision: Window 2 is P-pol (stronger SPR dip)")
+            actual_p = int(str(p_bytes).strip())
 
-        s_pos = s_window['position']
-        p_pos = p_window['position']
-        separation = abs(s_pos - p_pos)
+        # Check if within tolerance
+        s_diff = abs(actual_s - expected_s)
+        p_diff = abs(actual_p - expected_p)
 
-        # Calculate S/P ratio (S should be higher than P)
-        sp_ratio = s_window['s_intensity'] / p_window['p_intensity'] if p_window['p_intensity'] > 0 else 0.0
+        success = (s_diff <= tolerance) and (p_diff <= tolerance)
 
-        logger.info("=" * 80)
-        logger.info("✅ BARREL WINDOW IDENTIFICATION COMPLETE")
-        logger.info(f"   S window: {s_pos}° ({s_window['s_intensity']:.0f} counts)")
-        logger.info(f"   P window: {p_pos}° ({p_window['p_intensity']:.0f} counts)")
-        logger.info(f"   Separation: {separation}°")
-        logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
-        logger.info(f"   P-window dip: {p_window['dip_depth']:.1f}%")
-        logger.info("=" * 80)
+        if success:
+            logger.info(f"✅ Servo verification passed: S={actual_s}° (expected {expected_s}°), P={actual_p}° (expected {expected_p}°)")
+        else:
+            logger.warning(f"⚠️ Servo verification failed:")
+            logger.warning(f"   S: actual={actual_s}° expected={expected_s}° diff={s_diff}° (tolerance={tolerance}°)")
+            logger.warning(f"   P: actual={actual_p}° expected={expected_p}° diff={p_diff}° (tolerance={tolerance}°)")
+            # Perform one retry: command move then re-read
+            if retry_on_mismatch:
+                try:
+                    ctrl.servo_set(expected_s, expected_p)
+                    time.sleep(0.3)
+                    current_positions = ctrl.servo_get()
+                    s_bytes = current_positions.get("s", b"0")
+                    p_bytes = current_positions.get("p", b"0")
+                    if isinstance(s_bytes, bytes):
+                        actual_s = int(s_bytes.decode('utf-8').strip())
+                    else:
+                        actual_s = int(str(s_bytes).strip())
+                    if isinstance(p_bytes, bytes):
+                        actual_p = int(p_bytes.decode('utf-8').strip())
+                    else:
+                        actual_p = int(str(p_bytes).strip())
+                    s_diff = abs(actual_s - expected_s)
+                    p_diff = abs(actual_p - expected_p)
+                    success = (s_diff <= tolerance) and (p_diff <= tolerance)
+                    if success:
+                        logger.info(f"✅ Servo verification passed after retry: S={actual_s}°, P={actual_p}°")
+                    else:
+                        logger.warning(f"❌ Servo mismatch persists after retry: S diff={s_diff}°, P diff={p_diff}°")
+                except Exception as re:
+                    logger.error(f"Retry to set/verify servo failed: {re}")
 
-        return {
-            "s_pos": int(s_pos),
-            "p_pos": int(p_pos),
-            "separation": float(separation),
-            "sp_ratio": float(sp_ratio),
-            "s_intensity": float(s_window['s_intensity']),
-            "p_intensity": float(p_window['p_intensity']),
-            "p_dip_depth": float(p_window['dip_depth'])
-        }
+        return success, actual_s, actual_p
 
     except Exception as e:
-        logger.exception(f"Barrel window search failed: {e}")
-        return None
-        logger.info(f"Estimated S/P (ROI) at windows: {sp_ratio:.2f}× (S={s_meas:.0f}, P={p_meas:.0f})")
-
-        return {
-            "s_pos": int(s_pos),
-            "p_pos": int(p_pos),
-            "separation": float(separation),
-            "sp_ratio": float(sp_ratio),
-        }
-
-    except Exception as e:
-        logger.exception(f"Barrel window search failed: {e}")
-        return None
+        logger.error(f"❌ Servo verification error: {e}")
+        return False, 0, 0
 
 
-def perform_full_sweep_fallback(usb, ctrl):
-    """Exhaustive full-sweep method to determine S/P positions.
+def _ensure_mode_and_position(ctrl, mode: str, s_expected: int, p_expected: int, tolerance: int = 3) -> bool:
+    """Set controller mode and ensure servos match expected positions.
 
-    Mirrors the legacy logic formerly embedded in main.py. Validates peaks,
-    separation, saturation, and S/P ratio. Returns a result dict or None.
-
-    Returns dict keys: s_pos, p_pos, sp_ratio, separation, s_intensity, p_intensity
+    Returns True when in the requested `mode` and S/P are within tolerance
+    of expected, performing one retry if needed.
     """
     try:
-        logger.info("\ud83d\udd04 Starting FULL SWEEP (exhaustive method - fallback)")
-
-        min_angle = MIN_ANGLE
-        max_angle = MAX_ANGLE
-        half_range = (max_angle - min_angle) // 2
-        angle_step = 5
-        steps = half_range // angle_step
-        max_intensities = np.zeros(2 * steps + 1)
-
-        # Perform sweep
-        logger.debug("Starting servo position sweep...")
-        ctrl.servo_set(half_range + min_angle, max_angle)
-        ctrl.set_mode("p")
-        ctrl.set_mode("s")
-        time.sleep(0.5)
-        max_intensities[steps] = usb.read_intensity().max()
-
-        for i in range(steps):
-            x = min_angle + angle_step * i
-            ctrl.servo_set(s=x, p=x + half_range + angle_step)
-            time.sleep(0.2)
-            ctrl.set_mode("s")
-            time.sleep(0.1)
-            max_intensities[i] = usb.read_intensity().max()
-            ctrl.set_mode("p")
-            time.sleep(0.1)
-            max_intensities[i + steps + 1] = usb.read_intensity().max()
-
-        # Validation 1: peaks
-        peaks = find_peaks(max_intensities)[0]
-        if len(peaks) < 2:
-            logger.warning(f"Validation failed: only {len(peaks)} peaks found (need 2)")
-            logger.warning(
-                f"Intensity range: {max_intensities.min():.0f}-{max_intensities.max():.0f} counts"
-            )
-            return None
-
-        prominences = peak_prominences(max_intensities, peaks)
-        if len(prominences[0]) < 2:
-            logger.warning("Validation failed: less than 2 prominent peaks detected")
-            return None
-
-        # Select two most prominent peaks
-        peak_indices = prominences[0].argsort()[-2:]
-
-        # Edge positions for width at 5% height to estimate centers
-        edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
-        edges = np.array(edges)[:, peak_indices]
-        pos1, pos2 = (min_angle + angle_step * edges.mean(0)).astype(int)
-
-        separation = abs(int(pos2) - int(pos1))
-        expected_separation = half_range
-        tolerance = 15
-        if abs(separation - expected_separation) > tolerance:
-            logger.warning("Validation failed: peak separation incorrect")
-            logger.warning(f"Found: {separation}\u00b0 apart; expected: {expected_separation}\u00b0 ")
-            return None
-
-        logger.debug(
-            f"Peak separation valid: {separation}\u00b0 (expected ~{expected_separation}\u00b0)"
-        )
-        logger.debug(f"Candidate positions: pos1={int(pos1)}, pos2={int(pos2)}")
-
-        # Determine S vs P based on intensity at the two positions
-        ctrl.servo_set(s=int(pos1), p=int(pos2))
-        time.sleep(0.8)
-
-        ctrl.set_mode("s"); time.sleep(0.5)
-        spectrum_pos1 = usb.read_intensity(); intensity_pos1 = spectrum_pos1.max()
-
-        ctrl.set_mode("p"); time.sleep(0.5)
-        spectrum_pos2 = usb.read_intensity(); intensity_pos2 = spectrum_pos2.max()
-
-        saturation_limit = int(MAX_DETECTOR_COUNTS * SATURATION_THRESHOLD)
-        if intensity_pos1 >= saturation_limit:
-            logger.error(f"Saturation at position {int(pos1)}; peak {intensity_pos1:.0f} >= {saturation_limit}")
-            return None
-        if intensity_pos2 >= saturation_limit:
-            logger.error(f"Saturation at position {int(pos2)}; peak {intensity_pos2:.0f} >= {saturation_limit}")
-            return None
-
-        if intensity_pos1 > intensity_pos2:
-            s_pos = int(pos1); p_pos = int(pos2)
-            s_intensity = float(intensity_pos1); p_intensity = float(intensity_pos2)
+        # Set mode first for consistent firmware behavior
+        if not ctrl.set_mode(mode):
+            logger.warning(f"Failed to set controller mode '{mode}'")
+        # Command expected positions
+        ctrl.servo_set(s_expected, p_expected)
+        time.sleep(0.3)
+        ok, actual_s, actual_p = verify_servo_positions(ctrl, s_expected, p_expected, tolerance=tolerance, retry_on_mismatch=True)
+        if not ok:
+            logger.warning(f"Servo not aligned after retry for mode '{mode}': expected S={s_expected},P={p_expected} got S={actual_s},P={actual_p}")
         else:
-            s_pos = int(pos2); p_pos = int(pos1)
-            s_intensity = float(intensity_pos2); p_intensity = float(intensity_pos1)
-
-        if p_intensity == 0:
-            logger.warning("Validation failed: P-mode intensity is zero")
-            return None
-
-        sp_ratio = s_intensity / p_intensity
-        if sp_ratio < MIN_SP_RATIO:
-            logger.warning(
-                f"Validation failed: S/P ratio {sp_ratio:.2f}x < minimum {MIN_SP_RATIO:.2f}x"
-            )
-            return None
-
-        logger.info("\u2705 FULL SWEEP successful")
-        logger.info(f"S position: {s_pos}\u00b0 ({s_intensity:.0f} counts)")
-        logger.info(f"P position: {p_pos}\u00b0 ({p_intensity:.0f} counts)")
-        logger.info(
-            f"S/P ratio: {sp_ratio:.2f}x {'\u2705' if sp_ratio >= IDEAL_SP_RATIO else 'acceptable'}"
-        )
-        logger.info(f"Peak separation: {separation}\u00b0")
-
-        return {
-            "s_pos": s_pos,
-            "p_pos": p_pos,
-            "sp_ratio": float(sp_ratio),
-            "separation": int(separation),
-            "s_intensity": s_intensity,
-            "p_intensity": p_intensity,
-        }
-
+            logger.info(f"Mode '{mode}' with servos aligned: S={actual_s}, P={actual_p}")
+        return ok
     except Exception as e:
-        logger.exception(f"Full sweep fallback error: {e}")
-        return None
+        logger.error(f"_ensure_mode_and_position error: {e}")
+        return False
 
+
+# ============================================================================
+# BACKWARD COMPATIBILITY WRAPPER
+# ============================================================================
+
+def perform_quadrant_search(usb, ctrl):
+    """Backward compatibility wrapper - calls production version.
+
+    Args:
+        usb: Spectrometer wrapper
+        ctrl: Controller wrapper
+
+    Returns:
+        Tuple of (s_pos, p_pos, extinction_ratio) or None if search fails
+    """
+    return perform_quadrant_search_prod(usb, ctrl)
+
+
+# ============================================================================
+# MAIN CALIBRATION FUNCTION
+# ============================================================================
 
 def auto_calibrate_polarizer(usb, ctrl, require_water: bool = True, polarizer_type: str = "circular"):
-    """Automatic polarizer calibration with transmission validation.
+    """Automatically calibrate polarizer servo positions using quadrant search.
 
-    This is the main entry point for servo calibration. It:
-    1. Checks for water presence (if required)
-    2. Uses appropriate method based on polarizer type:
-       - Circular: Quadrant search with 90° enforcement
-       - Barrel: Window detection with SPR signature identification
-    3. Validates positions using transmission spectrum quality
-    4. Returns validation results for user confirmation
-
-    NOTE: This function does NOT automatically save to EEPROM or device_config.
-    The caller should:
-    1. Show user the results for confirmation
-    2. Save to device_config if user approves
-    3. Apply positions to hardware: ctrl.servo_set(s_pos, p_pos)
-    4. EEPROM save happens later via "Push to EEPROM" in device config UI
+    This is the main entry point called by the application.
 
     Args:
         usb: Spectrometer wrapper
         ctrl: Controller wrapper
-        require_water: If True, check for water before starting calibration
-        polarizer_type: Type of polarizer ("circular" or "barrel")
+        require_water: Not used (legacy parameter for compatibility)
+        polarizer_type: Type of polarizer (only "circular" supported)
 
     Returns:
-        Dict with validation results if successful, None if failed:
-        {
-            'success': True,
-            'polarizer_type': str,
-            's_pos': int,
-            'p_pos': int,
-            'sp_ratio': float,
-            'dip_depth_percent': float,
-            'resonance_wavelength': float (circular only),
-            'transmission_min': float,
-            'validation_checks': list (circular only)
-        }
+        Tuple of (s_pos, p_pos, extinction_ratio) or None if calibration fails
     """
-    logger.info("=" * 80)
-    logger.info(f"AUTOMATIC POLARIZER CALIBRATION ({polarizer_type.upper()})")
-    logger.info("=" * 80)
+    if polarizer_type != "circular":
+        logger.warning(f"Polarizer type '{polarizer_type}' not supported, using 'circular'")
 
-    try:
-        # Pre-check: Water presence (if required for circular polarizers)
-        if require_water and polarizer_type == "circular":
-            logger.info("Checking for water presence on sensor...")
-            # Use current positions for water check
-            current_s = getattr(ctrl, 's_position', 90)
-            current_p = getattr(ctrl, 'p_position', 0)
+    logger.info("Starting automatic polarizer calibration...")
+    logger.info(f"Using PRODUCTION quadrant search with native servo units (0-255)")
 
-            has_water, trans_min, dip_depth = check_water_presence(usb, ctrl, current_s, current_p)
+    result = perform_quadrant_search_prod(usb, ctrl)
 
-            if not has_water:
-                logger.error("❌ WATER NOT DETECTED")
-                logger.error("   Please ensure:")
-                logger.error("   1. Prism has water droplet on sensor surface")
-                logger.error("   2. Prism is properly seated")
-                logger.error("   3. SPR coupling is established")
-                if trans_min is not None:
-                    logger.error(f"   Transmission min: {trans_min:.1f}%")
-                if dip_depth is not None:
-                    logger.error(f"   Dip depth: {dip_depth:.1f}% (need >{MIN_DIP_DEPTH_PERCENT}%)")
-                return None
+    if result:
+        s_pos, p_pos, extinction_ratio = result
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("CALIBRATION COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"S Position: {s_pos}°")
+        logger.info(f"P Position: {p_pos}°")
+        logger.info(f"Separation: {abs(s_pos - p_pos)}°")
+        logger.info(f"Extinction Ratio: {extinction_ratio:.2f}% (reference baseline)")
+        logger.info("=" * 80)
+    else:
+        logger.error("Calibration failed!")
 
-            logger.info(f"✓ Water detected (dip depth: {dip_depth:.1f}%)")
-
-        # Choose calibration method based on polarizer type
-        if polarizer_type == "barrel":
-            logger.info("Using BARREL window detection method...")
-            logger.info("(Discrete S/P windows, identified by SPR signature)")
-
-            result = perform_barrel_window_search(usb, ctrl)
-            if result is None:
-                logger.error("❌ Barrel window search failed")
-                return None
-
-            # Format barrel results to match expected output
-            return {
-                'success': True,
-                'polarizer_type': 'barrel',
-                's_pos': result['s_pos'],
-                'p_pos': result['p_pos'],
-                'sp_ratio': result['sp_ratio'],
-                'dip_depth_percent': result.get('p_dip_depth', 0.0),
-                'transmission_min': None,
-                'resonance_wavelength': None,
-                'separation': result['separation'],
-                'validation_checks': [
-                    ('Window separation', True, f"{result['separation']:.0f}° (>70° required)"),
-                    ('S/P ratio', result['sp_ratio'] >= MIN_SP_RATIO, f"{result['sp_ratio']:.2f}×")
-                ]
-            }
-
-        else:  # circular polarizer (default)
-            logger.info("Using CIRCULAR polarizer quadrant search...")
-            logger.info("(90° phase relationship with transmission validation)")
-
-            # Phase 1: Find S and P positions using quadrant search
-            result = perform_quadrant_search(usb, ctrl)
-            if result is None:
-                logger.error("❌ Quadrant search failed")
-                return None
-
-            s_pos, p_pos = result
-
-            # Phase 2: Validate positions with transmission analysis
-            is_valid, validation_results = validate_positions_with_transmission(usb, ctrl, s_pos, p_pos)
-
-            if not is_valid:
-                logger.error("❌ VALIDATION FAILED")
-                logger.error("   Positions found but transmission quality insufficient")
-                logger.error("   Please check:")
-                logger.error("   1. Water presence on sensor")
-                logger.error("   2. SPR coupling quality")
-                logger.error("   3. LED intensity (not saturating)")
-                return None
-
-            # Success - return validated results for user confirmation
-            logger.info("=" * 80)
-            logger.info("✅ CALIBRATION SUCCESSFUL")
-            logger.info(f"   S position: {s_pos}°")
-            logger.info(f"   P position: {p_pos}°")
-            logger.info(f"   S/P ratio: {validation_results['sp_ratio']:.2f}×")
-            logger.info(f"   Dip depth: {validation_results['dip_depth_percent']:.1f}%")
-            logger.info(f"   Resonance: {validation_results['resonance_wavelength']:.1f}nm")
-            logger.info("=" * 80)
-            logger.info("⚠️  Positions NOT automatically saved")
-            logger.info("   User confirmation required before saving to device config")
-
-            return {
-                'success': True,
-                'polarizer_type': 'circular',
-                's_pos': s_pos,
-                'p_pos': p_pos,
-                'sp_ratio': validation_results['sp_ratio'],
-                'dip_depth_percent': validation_results['dip_depth_percent'],
-                'resonance_wavelength': validation_results['resonance_wavelength'],
-                'transmission_min': validation_results['transmission_min'],
-                'validation_checks': validation_results['validation_checks']
-            }
-
-    except Exception as e:
-        logger.exception(f"Polarizer calibration error: {e}")
-        return None
+    return result
 

@@ -256,15 +256,15 @@ def test_full_calibration(ctrl, usb):
             print(f"\n   Integration time: {cal_result.integration_time}ms")
             print(f"   Number of scans: {cal_result.num_scans}")
             print(f"\n   S-mode LED intensities:")
-            for ch, intensity in cal_result.ref_intensity.items():
+            for ch, intensity in cal_result.s_mode_intensity.items():
                 print(f"      Channel {ch.upper()}: {intensity}/255")
 
             print(f"\n   P-mode LED intensities:")
-            for ch, intensity in cal_result.leds_calibrated.items():
+            for ch, intensity in cal_result.p_mode_intensity.items():
                 print(f"      Channel {ch.upper()}: {intensity}/255")
 
             print(f"\n   Reference signals acquired:")
-            for ch, ref_sig in cal_result.ref_sig.items():
+            for ch, ref_sig in cal_result.s_pol_ref.items():
                 max_signal = float(np.max(ref_sig)) if ref_sig is not None else 0
                 print(f"      Channel {ch.upper()}: max={max_signal:.0f} counts")
 

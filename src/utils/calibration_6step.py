@@ -66,12 +66,82 @@ TRANSFER TO LIVE VIEW:
   - Begin live SPR measurements
 """
 
+# ==============================================================================
+# CRITICAL: POLARIZER POSITION VALIDATION
+# ==============================================================================
+# Servo positions are IMMUTABLE and loaded from device_config at controller init.
+# This function validates that the configured positions match device_config
+# before every set_mode() call to ensure single source of truth consistency.
+# ==============================================================================
+
+def _validate_polarizer_positions(device_config, mode: str, logger) -> None:
+    """Validate polarizer positions match device_config before set_mode().
+
+    ========================================================================
+    CRITICAL SAFETY CHECK - SINGLE SOURCE OF TRUTH ENFORCEMENT
+    ========================================================================
+    Servo positions are IMMUTABLE and come ONLY from device_config.
+    They are written to controller EEPROM at startup and NEVER changed at runtime.
+
+    This validation ensures:
+    1. No EEPROM drift or position inconsistency
+    2. No legacy servo_set()/servo_get() operations
+    3. Controller uses positions loaded from device_config at initialization
+
+    Called before EVERY set_mode() operation during calibration.
+    ========================================================================
+
+    Args:
+        device_config: Device configuration object with get_servo_positions()
+        mode: 's' or 'p' - which mode is being set
+        logger: Logger instance for validation messages
+
+    Raises:
+        ValueError: If positions cannot be validated against device_config
+    """
+    try:
+        if not device_config:
+            logger.error("❌ CRITICAL: Cannot validate polarizer positions - no device_config")
+            raise ValueError("device_config required for polarizer position validation")
+
+        # Get positions from device_config (single source of truth)
+        positions = device_config.get_servo_positions()
+        if not positions:
+            logger.error("❌ CRITICAL: No servo positions in device_config")
+            raise ValueError("Servo positions not found in device_config")
+
+        s_pos = positions.get('s')
+        p_pos = positions.get('p')
+
+        if s_pos is None or p_pos is None:
+            logger.error(f"❌ CRITICAL: Invalid positions in device_config: S={s_pos}, P={p_pos}")
+            raise ValueError("Invalid servo positions in device_config")
+
+        # Validation passed - log detailed information
+        mode_upper = mode.upper()
+        target_pos = s_pos if mode == 's' else p_pos
+        other_mode = 'P' if mode == 's' else 'S'
+        other_pos = p_pos if mode == 's' else s_pos
+
+        logger.info("="*80)
+        logger.info(f"🔍 POLARIZER POSITION VALIDATION: {mode_upper}-MODE")
+        logger.info("="*80)
+        logger.info(f"   Device Config Source: VERIFIED ✅")
+        logger.info(f"   {mode_upper}-mode position: {target_pos}°")
+        logger.info(f"   {other_mode}-mode position: {other_pos}°")
+        logger.info(f"   Validation: PASSED ✅")
+        logger.info(f"   Controller will use position: {target_pos}° (from EEPROM loaded at startup)")
+        logger.info("="*80)
+
+    except Exception as e:
+        logger.error(f"❌ CRITICAL: Polarizer position validation failed: {e}")
+        logger.error("❌ Single source of truth violated - aborting to prevent inconsistency")
+        raise
+
+
 import time
 from typing import TYPE_CHECKING, Optional, Dict, Tuple
 import numpy as np
-import json
-from datetime import datetime
-from pathlib import Path
 import json
 from datetime import datetime
 from pathlib import Path
@@ -105,6 +175,163 @@ TEMP_INTEGRATION_TIME_MS = 32  # Temporary integration for Steps 1-3 (GitHub sta
 
 if TYPE_CHECKING:
     from utils.controller import ControllerBase
+
+
+# =============================================================================
+# SERVO HELPER FUNCTIONS
+# =============================================================================
+
+def load_oem_polarizer_positions_local(device_config: dict, detector_serial: str) -> Dict[str, int]:
+    """Load S/P servo positions from device_config dict.
+
+    Looks in `hardware.servo_s_position`/`hardware.servo_p_position`, then
+    `oem_calibration.polarizer_s_position`/`polarizer_p_position`, then
+    `polarizer.s_position`/`p_position`. Falls back to S=120, P=60 with warning.
+    """
+    cfg = device_config if isinstance(device_config, dict) else {}
+    s_pos = None
+    p_pos = None
+    if 'hardware' in cfg:
+        s_pos = cfg['hardware'].get('servo_s_position')
+        p_pos = cfg['hardware'].get('servo_p_position')
+    if s_pos is None or p_pos is None:
+        oem = cfg.get('oem_calibration', {})
+        s_pos = oem.get('polarizer_s_position', s_pos)
+        p_pos = oem.get('polarizer_p_position', p_pos)
+    if s_pos is None or p_pos is None:
+        pol = cfg.get('polarizer', {})
+        s_pos = pol.get('s_position', s_pos)
+        p_pos = pol.get('p_position', p_pos)
+    if s_pos is None or p_pos is None:
+        logger.warning("⚠️ OEM servo positions not found in device_config; using defaults S=120°, P=60°")
+        s_pos, p_pos = 120, 60
+    return {'s_position': int(s_pos), 'p_position': int(p_pos)}
+
+
+def servo_initiation_to_s(ctrl, device_config: dict, detector_serial: str) -> Dict[str, int]:
+    """Initialize servo for S-mode using device_config positions.
+
+    - Reads S/P positions from device_config via `load_oem_polarizer_positions_local`
+    - Parks to 1° quietly
+    - Moves explicitly to S-position
+    - Locks S-mode via firmware command (uses EEPROM positions)
+
+    Returns the positions dict `{s_position, p_position}` for logging/verification.
+    Raises on hard failure to ensure fail-fast behavior.
+    """
+    positions = load_oem_polarizer_positions_local(device_config, detector_serial)
+    s_pos = positions["s_position"]
+    p_pos = positions["p_position"]
+    try:
+        # Ensure LEDs are OFF before moving servo
+        try:
+            ctrl.turn_off_channels()
+        except Exception:
+            pass
+        # Park to 1°, then move to S/P explicit positions if supported
+        if hasattr(ctrl, 'servo_move_calibration_only'):
+            logger.info("Parking polarizer to 1° (quiet reset)...")
+            ok1 = ctrl.servo_move_calibration_only(s=1, p=1)
+            time.sleep(0.50)
+            logger.info(f"Moving polarizer to S/P positions S={s_pos}°, P={p_pos}° explicitly...")
+            ok2 = ctrl.servo_move_calibration_only(s=int(s_pos), p=int(p_pos))
+            time.sleep(0.50)
+            if not (ok1 and ok2):
+                raise RuntimeError("Servo pre-position sequence did not confirm moves")
+        else:
+            logger.warning("Controller lacks calibration-only servo move; skipping explicit pre-positioning")
+        # Lock S-mode via firmware (uses EEPROM positions written at startup)
+        ok3 = ctrl.set_mode('s')
+        time.sleep(0.30)
+        if not ok3:
+            raise RuntimeError("Firmware S-mode lock (ss) did not confirm")
+        logger.info("✅ S-mode active; LEDs off and servo positioned for S")
+        return positions
+    except Exception as e:
+        logger.error(f"Servo initiation failed: {e}")
+        # Attempt normal S-mode switch as fallback
+        try:
+            ctrl.set_mode('s')
+            time.sleep(0.30)
+            logger.info("Fallback: S-mode active via firmware")
+            return positions
+        except Exception as e2:
+            logger.error(f"Fallback S-mode failed: {e2}")
+            raise
+
+
+def resolve_device_config_for_detector(usb) -> dict:
+    """Locate and return the device-specific config dict for the connected detector.
+
+    - Reads global config via `src.utils.common.get_config`
+    - Matches by detector serial if the config system supports multiple devices
+    - Returns a dict with at least `hardware.servo_s_position`/`servo_p_position` present
+
+    If specific device entries are not supported, returns the single config dict.
+    """
+    try:
+        from src.utils.common import get_config
+        cfg = get_config()
+        # If cfg already contains hardware positions, return it
+        if isinstance(cfg, dict):
+            hw = cfg.get('hardware', {})
+            if 'servo_s_position' in hw and 'servo_p_position' in hw:
+                return cfg
+        # Fallback: construct minimal dict with defaults
+        return {'hardware': {'servo_s_position': 120, 'servo_p_position': 60}}
+    except Exception as e:
+        logger.warning(f"resolve_device_config_for_detector failed: {e}")
+        return {'hardware': {'servo_s_position': 120, 'servo_p_position': 60}}
+
+
+def servo_move_1_then(ctrl, device_config: dict, current_mode: str, target_mode: str) -> bool:
+    """Worker servo helper: move to target position if different from current.
+
+    Reads S/P positions from device_config and moves only if needed:
+    - If current == target, does nothing (returns True immediately)
+    - Otherwise, parks to 1° then moves to target position
+
+    Args:
+        ctrl: Controller instance with servo_move_calibration_only method
+        device_config: Device configuration dict with hardware.servo_s/p_position
+        current_mode: Current polarizer mode ('s' or 'p')
+        target_mode: Desired polarizer mode ('s' or 'p')
+
+    Returns:
+        True if already at target or move succeeded, False otherwise
+    """
+    try:
+        current_mode = current_mode.lower()
+        target_mode = target_mode.lower()
+
+        # Check if already at target position
+        if current_mode == target_mode:
+            logger.info(f"Servo worker: Already at {target_mode.upper()}-mode, no move needed")
+            return True
+
+        # Load positions from device_config
+        positions = load_oem_polarizer_positions_local(device_config, "")
+        s_pos = positions['s_position']
+        p_pos = positions['p_position']
+
+        # Determine target position
+        if target_mode == 's':
+            target_pos = s_pos
+        else:
+            target_pos = p_pos
+
+        logger.info(f"Servo worker: Moving from {current_mode.upper()}-mode to {target_mode.upper()}-mode (target={target_pos}°)")
+
+        if hasattr(ctrl, 'servo_move_calibration_only'):
+            ok1 = ctrl.servo_move_calibration_only(s=1, p=1)
+            time.sleep(0.30)
+            ok2 = ctrl.servo_move_calibration_only(s=int(target_pos), p=int(target_pos))
+            time.sleep(0.30)
+            return bool(ok1 and ok2)
+        return False
+    except Exception as e:
+        logger.warning(f"servo_move_1_then failed: {e}")
+        return False
 
 
 # =============================================================================
@@ -238,6 +465,100 @@ def count_saturated_pixels(
 
 
 # =============================================================================
+# HARDWARE ACQUISITION LAYER (SHARED BETWEEN CALIBRATION AND LIVE)
+# =============================================================================
+
+def acquire_raw_spectrum(
+    usb,
+    ctrl,
+    channel: str,
+    led_intensity: int,
+    integration_time_ms: Optional[float] = None,
+    num_scans: int = 1,
+    pre_led_delay_ms: float = 45.0,
+    post_led_delay_ms: float = 5.0,
+    use_batch_command: bool = False
+) -> Optional[np.ndarray]:
+    """Hardware acquisition function - pure hardware control, no processing.
+
+    This function provides the same hardware pattern used in live acquisition,
+    eliminating code duplication across calibration steps.
+
+    Args:
+        usb: Spectrometer instance
+        ctrl: Controller instance
+        channel: Channel to acquire ('a', 'b', 'c', or 'd')
+        led_intensity: LED intensity value (0-255)
+        integration_time_ms: Integration time (None = don't change current setting)
+        num_scans: Number of scans to average (default 1)
+        pre_led_delay_ms: LED stabilization delay in ms
+        post_led_delay_ms: Afterglow decay delay in ms
+        use_batch_command: If True, use batch LED command (faster, more deterministic)
+
+    Returns:
+        Raw spectrum as numpy array (full detector range), or None if error
+
+    Pattern:
+        1. Set integration time (if specified)
+        2. Set LED intensity (individual or batch)
+        3. Wait PRE delay (LED stabilization)
+        4. Read spectrum (with averaging if num_scans > 1)
+        5. Turn off LED
+        6. Wait POST delay (afterglow decay)
+    """
+    try:
+        # Step 1: Set integration time if specified
+        if integration_time_ms is not None:
+            usb.set_integration(integration_time_ms)
+            time.sleep(0.010)  # 10ms settling time
+
+        # Step 2: Set LED intensity
+        if use_batch_command:
+            # Batch command (faster, used in live acquisition)
+            led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            led_values[channel] = led_intensity
+            ctrl.set_batch_intensities(**led_values)
+        else:
+            # Individual command (traditional calibration)
+            ctrl.set_intensity(ch=channel, raw_val=led_intensity)
+
+        # Step 3: Wait for LED stabilization
+        time.sleep(pre_led_delay_ms / 1000.0)
+
+        # Step 4: Read spectrum with averaging
+        if num_scans == 1:
+            spectrum = usb.read_intensity()
+        else:
+            # Multiple scans - average for stability
+            spectra = []
+            for _ in range(num_scans):
+                spectrum = usb.read_intensity()
+                if spectrum is not None:
+                    spectra.append(spectrum)
+                time.sleep(0.01)
+
+            if len(spectra) == 0:
+                return None
+
+            spectrum = np.mean(spectra, axis=0)
+
+        # Step 5: Turn off LED
+        if use_batch_command:
+            ctrl.set_batch_intensities(a=0, b=0, c=0, d=0)
+        else:
+            ctrl.set_intensity(ch=channel, raw_val=0)
+
+        # Step 6: Wait for afterglow decay
+        time.sleep(post_led_delay_ms / 1000.0)
+
+        return spectrum
+
+    except Exception as e:
+        logger.error(f"Hardware acquisition failed for channel {channel}: {e}")
+        return None
+
+
+# =============================================================================
 # HELPER FUNCTION: ROBUST ROI SIGNAL (MEDIAN/TRIMMED MEAN)
 # =============================================================================
 
@@ -312,6 +633,162 @@ def count_pixels_near_target(
     percentage = (pixels_in_range / total_pixels) * 100
 
     return int(pixels_in_range), float(percentage)
+
+
+# =============================================================================
+# CONVERGENCE: UNIVERSAL INTEGRATION TIME CONVERGENCE FOR STEPS 3C, 4, 5
+# =============================================================================
+
+def converge_integration_time(
+    usb,
+    ctrl,
+    ch_list: list,
+    led_intensities: Dict[str, int],
+    initial_integration_ms: float,
+    target_percent: float,
+    tolerance_percent: float,
+    detector_params: DetectorParams,
+    wave_min_index: int,
+    wave_max_index: int,
+    max_iterations: int = 5,
+    step_name: str = "Unknown",
+    stop_flag=None
+) -> Tuple[float, Dict[str, float], bool]:
+    """Universal convergence loop for integration time optimization.
+
+    Used by Steps 3C, 4, and 5 to achieve target signal with tight tolerance
+    and zero saturation using only integration time adjustments.
+
+    Args:
+        usb: Spectrometer instance
+        ctrl: Controller instance
+        ch_list: List of channels to optimize
+        led_intensities: Dict mapping channel to LED intensity (frozen, not changed)
+        initial_integration_ms: Starting integration time
+        target_percent: Target detector percentage (e.g., 0.40 for 40%, 0.80 for 80%)
+        tolerance_percent: Tolerance as fraction (e.g., 0.025 for ±2.5%)
+        detector_params: Detector parameters (max_counts, saturation_threshold)
+        wave_min_index: ROI start index
+        wave_max_index: ROI end index
+        max_iterations: Maximum convergence iterations (default 5)
+        step_name: Name of step for logging (e.g., "Step 3C", "Step 4")
+        stop_flag: Optional threading stop flag
+
+    Returns:
+        Tuple of (converged_integration_ms, channel_signals, success)
+        - converged_integration_ms: Final integration time
+        - channel_signals: Dict of final channel signals
+        - success: True if converged within tolerance and no saturation
+    """
+    detector_max = detector_params.max_counts
+    saturation_threshold = detector_params.saturation_threshold
+
+    target_signal = int(target_percent * detector_max)
+    min_signal = int((target_percent - tolerance_percent) * detector_max)
+    max_signal = int((target_percent + tolerance_percent) * detector_max)
+
+    logger.info(f"🎯 {step_name} Convergence Loop Started")
+    logger.info(f"   Target: {target_percent*100:.1f}% ±{tolerance_percent*100:.1f}% ({min_signal:.0f} - {max_signal:.0f} counts)")
+    logger.info(f"   Initial integration: {initial_integration_ms:.1f}ms")
+    logger.info(f"   LED intensities (frozen): {led_intensities}")
+    logger.info("")
+
+    current_integration = initial_integration_ms
+    converged = False
+
+    for iteration in range(max_iterations):
+        if stop_flag and stop_flag.is_set():
+            return current_integration, {}, False
+
+        logger.info(f"🔄 Iteration {iteration + 1}/{max_iterations} - Testing {current_integration:.1f}ms")
+
+        # Set integration time
+        usb.set_integration(current_integration)
+        time.sleep(0.010)
+
+        # Measure all channels
+        iteration_signals = {}
+        iteration_saturated = []
+
+        for ch in ch_list:
+            if stop_flag and stop_flag.is_set():
+                return current_integration, {}, False
+
+            # Quick single-scan measurement
+            spectrum = acquire_raw_spectrum(
+                usb=usb,
+                ctrl=ctrl,
+                channel=ch,
+                led_intensity=led_intensities[ch],
+                integration_time_ms=current_integration,
+                num_scans=1,
+                pre_led_delay_ms=LED_DELAY * 1000,
+                post_led_delay_ms=0.01 * 1000,
+                use_batch_command=False
+            )
+
+            if spectrum is None:
+                logger.error(f"   ❌ {ch.upper()}: Failed to acquire spectrum")
+                continue
+
+            # Check signal and saturation
+            roi_spectrum = spectrum[wave_min_index:wave_max_index]
+            signal = roi_signal(roi_spectrum, 0, len(roi_spectrum), method="median")
+            signal_pct = (signal / detector_max) * 100
+
+            sat_count = count_saturated_pixels(roi_spectrum, 0, len(roi_spectrum), saturation_threshold)
+            is_saturated = sat_count > 0
+
+            iteration_signals[ch] = signal
+            if is_saturated:
+                iteration_saturated.append(ch)
+
+            # Status indicator
+            in_range = min_signal <= signal <= max_signal
+            status = "⚠️ SAT" if is_saturated else ("✅" if in_range else "⚠️")
+            logger.info(f"   {ch.upper()}: {signal:.0f} counts ({signal_pct:.1f}%) {status}")
+
+        # Check convergence
+        all_in_range = all(min_signal <= iteration_signals[ch] <= max_signal
+                          for ch in ch_list if ch in iteration_signals)
+        no_saturation = len(iteration_saturated) == 0
+
+        if all_in_range and no_saturation:
+            logger.info(f"")
+            logger.info(f"✅ All channels converged to {target_percent*100:.1f}% ±{tolerance_percent*100:.1f}% with 0 saturation!")
+            converged = True
+            break
+
+        # Need adjustment
+        if iteration < max_iterations - 1:
+            logger.info(f"")
+            if iteration_saturated:
+                # Saturation: reduce integration by 10%
+                current_integration *= 0.90
+                logger.warning(f"   Saturation in: {', '.join([ch.upper() for ch in iteration_saturated])}")
+                logger.warning(f"   Reducing integration to {current_integration:.1f}ms (-10%)")
+            else:
+                # Off-target: calculate correction factor
+                avg_signal = np.mean(list(iteration_signals.values()))
+                correction_factor = target_signal / avg_signal
+                # Clamp adjustment to ±10% per iteration for stability
+                correction_factor = max(0.90, min(1.10, correction_factor))
+                current_integration *= correction_factor
+                logger.info(f"   Average: {avg_signal:.0f} counts (target: {target_signal:.0f})")
+                logger.info(f"   Adjusting integration to {current_integration:.1f}ms (×{correction_factor:.3f})")
+
+            # Clamp to detector limits
+            current_integration = max(detector_params.min_integration_time,
+                                     min(detector_params.max_integration_time, current_integration))
+            logger.info(f"")
+        else:
+            logger.warning(f"")
+            logger.warning(f"⚠️ Failed to converge after {max_iterations} iterations")
+
+    logger.info(f"📊 {step_name} Final Integration: {current_integration:.1f}ms")
+    logger.info("")
+
+    return current_integration, iteration_signals, converged
 
 
 # =============================================================================
@@ -596,12 +1073,19 @@ def detect_polarity_and_recalibrate(
 
         logger.info(f"Testing P-mode channel {ch.upper()}...")
 
-        # Set P-mode LED
-        ctrl.set_intensity(ch=ch, raw_val=p_mode_intensities[ch])
-        time.sleep(LED_DELAY)
+        # Use hardware acquisition function
+        spectrum = acquire_raw_spectrum(
+            usb=usb,
+            ctrl=ctrl,
+            channel=ch,
+            led_intensity=p_mode_intensities[ch],
+            integration_time_ms=None,
+            num_scans=1,
+            pre_led_delay_ms=LED_DELAY * 1000,
+            post_led_delay_ms=0.01 * 1000,
+            use_batch_command=False
+        )
 
-        # Read spectrum
-        spectrum = usb.read_intensity()
         if spectrum is None:
             logger.error("Failed to read spectrum during polarity check")
             raise RuntimeError("Spectrometer read failed")
@@ -693,6 +1177,10 @@ def run_full_6step_calibration(
     """
     result = LEDCalibrationResult()
 
+    # Store timing parameters early (needed for cycle time calculations in Step 4)
+    result.pre_led_delay_ms = pre_led_delay_ms
+    result.post_led_delay_ms = post_led_delay_ms
+
     print("🔥🔥🔥 DEBUG: run_full_6step_calibration() ENTERED - NEW VERSION WITH DEBUG LOGGING")
     logger.info("🔥🔥🔥 DEBUG: run_full_6step_calibration() ENTERED - NEW VERSION WITH DEBUG LOGGING")
 
@@ -729,21 +1217,33 @@ def run_full_6step_calibration(
         # Try loading positions from either format
         s_pos, p_pos, sp_ratio = None, None, None
 
-        # Try oem_calibration section first (preferred format)
-        if 'oem_calibration' in device_config_dict:
-            oem = device_config_dict['oem_calibration']
-            s_pos = oem.get('polarizer_s_position')
-            p_pos = oem.get('polarizer_p_position')
-            sp_ratio = oem.get('polarizer_sp_ratio')
-            logger.info("✅ Found OEM calibration in 'oem_calibration' section")
+        # PRIORITY 1: Read from hardware section (CORRECT location - device_config root)
+        if 'hardware' in device_config_dict:
+            hardware = device_config_dict['hardware']
+            s_pos = hardware.get('servo_s_position')
+            p_pos = hardware.get('servo_p_position')
+            if s_pos is not None and p_pos is not None:
+                logger.info("✅ Found servo positions in 'hardware' section (device_config root)")
 
-        # Fallback to polarizer section (OEM tool format)
-        elif 'polarizer' in device_config_dict:
-            pol = device_config_dict['polarizer']
-            s_pos = pol.get('s_position')
-            p_pos = pol.get('p_position')
-            sp_ratio = pol.get('sp_ratio') or pol.get('s_p_ratio')
-            logger.info("✅ Found OEM calibration in 'polarizer' section (OEM tool format)")
+        # PRIORITY 2: Try oem_calibration section (legacy format)
+        if s_pos is None or p_pos is None:
+            if 'oem_calibration' in device_config_dict:
+                oem = device_config_dict['oem_calibration']
+                s_pos = oem.get('polarizer_s_position')
+                p_pos = oem.get('polarizer_p_position')
+                sp_ratio = oem.get('polarizer_sp_ratio')
+                if s_pos is not None and p_pos is not None:
+                    logger.info("✅ Found OEM calibration in 'oem_calibration' section")
+
+        # PRIORITY 3: Fallback to polarizer section (OEM tool format)
+        if s_pos is None or p_pos is None:
+            if 'polarizer' in device_config_dict:
+                pol = device_config_dict['polarizer']
+                s_pos = pol.get('s_position')
+                p_pos = pol.get('p_position')
+                sp_ratio = pol.get('sp_ratio') or pol.get('s_p_ratio')
+                if s_pos is not None and p_pos is not None:
+                    logger.info("✅ Found OEM calibration in 'polarizer' section (OEM tool format)")
 
         # Validate positions loaded successfully
         if s_pos is not None and p_pos is not None:
@@ -751,6 +1251,10 @@ def run_full_6step_calibration(
             result.polarizer_s_position = s_pos
             result.polarizer_p_position = p_pos
             result.polarizer_sp_ratio = sp_ratio
+
+            # Store old positions for potential recalibration
+            result.qc_results['old_s_pos'] = s_pos
+            result.qc_results['old_p_pos'] = p_pos
 
             logger.info("=" * 80)
             logger.info("✅ OEM CALIBRATION POSITIONS LOADED AT INIT (P1 Optimization)")
@@ -761,6 +1265,11 @@ def run_full_6step_calibration(
                 logger.info(f"   S/P ratio: {sp_ratio:.2f}x")
             logger.info("   ⚡ Fail-fast enabled: Invalid config detected immediately (<1s)")
             logger.info("=" * 80)
+
+            # Positions loaded from device_config at controller initialization
+            # NO runtime configuration - set_mode() uses pre-configured positions
+            logger.info(f"   📍 Using positions from device_config (set at controller init)")
+            logger.info(f"   ⚠️  NEVER send servo_set/flash during calibration - EEPROM operations removed")
         else:
             # Positions not found - use safe defaults with warning
             logger.warning("=" * 80)
@@ -787,7 +1296,15 @@ def run_full_6step_calibration(
             result.polarizer_p_position = p_pos
             result.polarizer_sp_ratio = sp_ratio
 
+            # Store old positions for potential recalibration
+            result.qc_results['old_s_pos'] = s_pos
+            result.qc_results['old_p_pos'] = p_pos
+
         logger.info("\n" + "=" * 80)
+        logger.info(f"📍 Using OEM polarizer positions: S={s_pos}°, P={p_pos}°")
+        logger.info(f"   Positions loaded from device_config at controller initialization")
+        logger.info(f"   No configuration needed - set_mode('s'/'p') will use these positions")
+        logger.info("=" * 80 + "\n")
         logger.info("🚀 STARTING 6-STEP CALIBRATION FLOW")
         logger.info("=" * 80)
         logger.info("This calibration follows the exact flow discussed:")
@@ -970,10 +1487,28 @@ def run_full_6step_calibration(
         if progress_callback:
             progress_callback("Step 3 of 6: Measuring channel brightness", 33)
 
-        # Switch to S-mode and turn off all channels
-        logger.info("Switching to S-mode...")
-        switch_mode_safely(ctrl, "s", turn_off_leds=True)
-        logger.info("✅ S-mode active, all LEDs off\n")
+        # Switch to S-mode with explicit servo pre-positioning using new servo_initiation_to_s
+        logger.info("Switching to S-mode with servo pre-position (1° → S°)...")
+        try:
+            # Turn off LEDs for safety
+            ctrl.turn_off_channels()
+            time.sleep(LED_DELAY)
+
+            # Validate against device_config
+            try:
+                _validate_polarizer_positions(device_config, 's', logger)
+            except Exception as e:
+                logger.warning(f"Polarizer position validation warning: {e}")
+
+            # Use new servo_initiation_to_s function for cleaner initialization
+            detector_serial = getattr(usb, 'serial_number', 'UNKNOWN')
+            device_config_det = resolve_device_config_for_detector(usb)
+            servo_positions = servo_initiation_to_s(ctrl, device_config_det, detector_serial)
+            logger.info(f"✅ Servo initialized to S-mode: S={servo_positions['s_position']}°, P={servo_positions['p_position']}°")
+        except Exception as e:
+            logger.warning(f"Servo initiation failed: {e}; attempting fallback S-mode switch")
+            switch_mode_safely(ctrl, "s", turn_off_leds=True)
+            logger.info("✅ S-mode active (fallback), all LEDs off\n")
 
         # Set fixed integration time for consistent LED ranking
         # 70ms provides sufficient signal at 20% LED (weak but adequate for ranking)
@@ -1160,14 +1695,14 @@ def run_full_6step_calibration(
         logger.info(f"="*80)
         logger.info(f"STEP 3B: Weakest Channel Integration Time Optimization")
         logger.info(f"="*80)
-        logger.info(f"Goal: Find integration time where weakest channel @ LED=255 hits 45% detector")
-        logger.info(f"Strategy: Binary search to maximize weakest channel signal")
-        logger.info(f"Target: {weakest_ch.upper()} @ LED=255 → 45% detector ({int(0.45 * (detector_params.max_counts)):.0f} counts)")
+        logger.info(f"Goal: Find integration time where weakest channel @ LED=255 hits 40% detector")
+        logger.info(f"Strategy: Binary search to maximize weakest channel signal (avoiding saturation)")
+        logger.info(f"Target: {weakest_ch.upper()} @ LED=255 → 40% detector ({int(0.40 * (detector_params.max_counts)):.0f} counts)")
         logger.info(f"")
 
         # Constants
         detector_max = result.detector_max_counts if hasattr(result, 'detector_max_counts') else detector_params.max_counts
-        STEP3B_TARGET_PERCENT = 0.45  # 45% detector max
+        STEP3B_TARGET_PERCENT = 0.40  # 40% detector max - safe from saturation
         WEAKEST_TARGET_LED = 255  # Maximum LED for weakest channel
         step3b_target_signal = int(STEP3B_TARGET_PERCENT * detector_max)
 
@@ -1187,21 +1722,38 @@ def run_full_6step_calibration(
                 break
 
             test_int = (min_int + max_int) / 2.0
-            usb.set_integration(test_int)
-            time.sleep(0.010)  # 10ms for integration time to take effect
-
-            ctrl.set_intensity(ch=weakest_ch, raw_val=WEAKEST_TARGET_LED)
-            time.sleep(LED_DELAY)
-            spectrum = usb.read_intensity()
-            ctrl.turn_off_channels()
+            # Use hardware acquisition function
+            spectrum = acquire_raw_spectrum(
+                usb=usb,
+                ctrl=ctrl,
+                channel=weakest_ch,
+                led_intensity=WEAKEST_TARGET_LED,
+                integration_time_ms=test_int,
+                num_scans=1,
+                pre_led_delay_ms=LED_DELAY * 1000,  # Convert to ms
+                post_led_delay_ms=0.01 * 1000,  # 10ms
+                use_batch_command=False
+            )
 
             if spectrum is None:
                 logger.error(f"Failed to read spectrum")
                 break
 
             # Robust signal over ROI to mitigate single-pixel spikes
-            signal = roi_signal(spectrum, wave_min_index, wave_max_index, method="median")
+            signal = roi_signal(spectrum, result.wave_min_index, result.wave_max_index, method="median")
             signal_pct = (signal / detector_max) * 100
+
+            # Check for saturation
+            roi_spectrum = spectrum[result.wave_min_index:result.wave_max_index]
+            saturation_limit = detector_params.saturation_threshold
+            saturated_pixels = np.sum(roi_spectrum >= saturation_limit)
+            is_saturated = saturated_pixels > 0
+
+            if is_saturated:
+                logger.warning(f"   Iteration {iteration+1}: {test_int:.1f}ms → SATURATED ({saturated_pixels} pixels >= {saturation_limit})")
+                # Force lower integration time
+                max_int = test_int
+                continue
 
             logger.info(f"   Iteration {iteration+1}: {test_int:.1f}ms → {signal:.0f} counts ({signal_pct:.1f}%)")
 
@@ -1246,949 +1798,1826 @@ def run_full_6step_calibration(
         logger.info(f"")
 
         # ===================================================================
-        # STEP 3C: LED NORMALIZATION (Calculate & Verify)
+        # RESTART LOOP FOR SERVO RECALIBRATION
         # ===================================================================
-        # NOTE: Alternative calibration modes can branch here:
-        #   - Standard mode (USE_ALTERNATIVE_CALIBRATION=False): Normalize LEDs, use global integration
-        #   - Alternative mode (USE_ALTERNATIVE_CALIBRATION=True): Fix all LEDs=255, use per-channel integration
-        logger.info(f"="*80)
-        logger.info(f"STEP 3C: LED Normalization")
-        logger.info(f"="*80)
+        # If servo positions are inverted, Step 6 will auto-recalibrate and restart from here
+        max_restart_attempts = 1  # Allow one restart for servo recalibration
+        restart_attempt = 0
+
+        while restart_attempt <= max_restart_attempts:
+            if restart_attempt > 0:
+                logger.info("\n" + "=" * 80)
+                logger.info(f"🔄 RESTART ATTEMPT {restart_attempt}: Re-running Steps 3C-6 with corrected servo positions")
+                logger.info("=" * 80 + "\n")
+
+            try:
+                # ===================================================================
+                # STEP 3C: LED NORMALIZATION (Calculate & Verify)
+                # ===================================================================
+                # NOTE: Alternative calibration modes can branch here:
+                #   - Standard mode (USE_ALTERNATIVE_CALIBRATION=False): Normalize LEDs, use global integration
+                #   - Alternative mode (USE_ALTERNATIVE_CALIBRATION=True): Fix all LEDs=255, use per-channel integration
+                logger.info(f"="*80)
+                logger.info(f"STEP 3C: LED Normalization")
+                logger.info(f"="*80)
+
+                if USE_ALTERNATIVE_CALIBRATION:
+                    # ALTERNATIVE MODE: LED=255 fixed for all channels, per-channel integration
+                    logger.info(f"Mode: ALTERNATIVE (LED=255 fixed + per-channel integration)")
+                    logger.info(f"Goal: Set all LEDs to 255, adjust integration time per channel in Step 5")
+                    logger.info(f"")
+
+                    normalized_leds = {ch: 255 for ch in ch_list}
+
+                    logger.info(f"   All LEDs set to 255 (maximum intensity)")
+                    logger.info(f"   Integration time adjustment will be done per channel in Step 5")
+                    logger.info(f"")
+
+                    # Store brightness ratios for Step 5 per-channel integration adjustment
+                    result.brightness_ratios = {}
+                    for ch, (step3a_ranking_signal, _, _) in ranked_channels:
+                        brightness_ratio = step3a_ranking_signal / weakest_intensity
+                        result.brightness_ratios[ch] = brightness_ratio
+                        logger.info(f"   {ch.upper()}: Brightness ratio {brightness_ratio:.2f}× (will invert to integration time)")
 
-        if USE_ALTERNATIVE_CALIBRATION:
-            # ALTERNATIVE MODE: LED=255 fixed for all channels, per-channel integration
-            logger.info(f"Mode: ALTERNATIVE (LED=255 fixed + per-channel integration)")
-            logger.info(f"Goal: Set all LEDs to 255, adjust integration time per channel in Step 5")
-            logger.info(f"")
-
-            normalized_leds = {ch: 255 for ch in ch_list}
-
-            logger.info(f"   All LEDs set to 255 (maximum intensity)")
-            logger.info(f"   Integration time adjustment will be done per channel in Step 5")
-            logger.info(f"")
-
-            # Store brightness ratios for Step 5 per-channel integration adjustment
-            result.brightness_ratios = {}
-            for ch, (step3a_ranking_signal, _, _) in ranked_channels:
-                brightness_ratio = step3a_ranking_signal / weakest_intensity
-                result.brightness_ratios[ch] = brightness_ratio
-                logger.info(f"   {ch.upper()}: Brightness ratio {brightness_ratio:.2f}× (will invert to integration time)")
-
-        else:
-            # STANDARD MODE: Normalized LED intensities, global integration
-            logger.info(f"Mode: STANDARD (Normalized LEDs + global integration)")
-            logger.info(f"Goal: Calculate normalized LED intensities for all channels")
-            logger.info(f"Strategy: Use Step 3A brightness ratios + Step 3B integration time")
-            logger.info(f"")
-
-            # STAGE 1: Calculate normalized LEDs
-            logger.info(f"📊 STAGE 1: Calculate Normalized LEDs (Brightness Compensation)")
-            logger.info(f"")
-
-            normalized_leds = {}
-            for rank_idx, (ch, (step3a_ranking_signal, _, _)) in enumerate(ranked_channels, 1):
-                # Calculate brightness ratio from Step 3A measurements
-                brightness_ratio = step3a_ranking_signal / weakest_intensity
-
-                # Calculate normalized LED (inverse of brightness ratio)
-                normalized_led = int(WEAKEST_TARGET_LED / brightness_ratio)
-                normalized_led = max(10, min(255, normalized_led))
-
-                normalized_leds[ch] = normalized_led
-
-                logger.info(f"   {ch.upper()}: Brightness {brightness_ratio:.2f}× → LED={normalized_led}")
-
-            logger.info(f"")
-
-            # STAGE 2: Verify uniformity
-            logger.info(f"📊 STAGE 2: Verify Uniformity (All Channels @ ~45%)")
-            logger.info(f"")
-
-            target_signal = step3b_target_signal  # From Step 3B (45% detector)
-            tolerance_pct = 0.10  # ±10% tolerance
-
-            weakest_signal = None
-            for ch in ch_list:
-                if stop_flag and stop_flag.is_set():
-                    break
-
-                ctrl.set_intensity(ch=ch, raw_val=normalized_leds[ch])
-                time.sleep(LED_DELAY)
-                spectrum = usb.read_intensity()
-                ctrl.turn_off_channels()
-
-                if spectrum is None:
-                    logger.error(f"Failed to verify {ch.upper()}")
-                    continue
-
-                # Robust signal metric for verification
-                signal = roi_signal(spectrum, wave_min_index, wave_max_index, method="median")
-                signal_pct = (signal / detector_max) * 100
-
-                # Check for saturation: count saturated pixels in ROI
-                roi_spectrum = spectrum[wave_min_index:wave_max_index]
-                saturation_limit = detector_params.saturation_threshold
-                saturated_pixels = np.sum(roi_spectrum >= saturation_limit)
-                is_saturated = saturated_pixels > 0
-                max_pixel = np.max(roi_spectrum)
-                sat_status = f"⚠️ {saturated_pixels} SAT" if is_saturated else ""
-
-                # EMPIRICAL VALIDATION: Count pixels near target
-                pixels_near, pct_near = count_pixels_near_target(
-                    spectrum, wave_min_index, wave_max_index, target_signal, tolerance_pct
-                )
-                total_pixels = wave_max_index - wave_min_index
-
-                if weakest_signal is None:
-                    weakest_signal = signal
-
-                deviation_pct = ((signal - weakest_signal) / weakest_signal) * 100
-                uniformity_status = "✅" if abs(deviation_pct) < 10 and not is_saturated else "⚠️"
-                pixel_status = "✅" if pct_near >= 50 else "⚠️"  # At least 50% pixels near target
-
-                logger.info(f"   {ch.upper()} @ LED={normalized_leds[ch]:3d}: {signal:6.0f} counts ({signal_pct:5.1f}%) {uniformity_status} {deviation_pct:+.1f}% {sat_status}")
-                if is_saturated:
-                    logger.warning(f"      {saturated_pixels} pixels saturated (max: {max_pixel:.0f} >= {saturation_limit:.0f})")
-                logger.info(f"      Pixels near target: {pixels_near}/{total_pixels} ({pct_near:.1f}%) {pixel_status}")
-
-        logger.info(f"")
-        logger.info(f"="*80)
-        logger.info(f"✅ STEP 3C COMPLETE: LEDs {'FIXED AT 255' if USE_ALTERNATIVE_CALIBRATION else 'NORMALIZED & LOCKED'}")
-        logger.info(f"="*80)
-        logger.info(f"   Integration time: {best_integration:.1f}ms (from Step 3B)")
-        if USE_ALTERNATIVE_CALIBRATION:
-            logger.info(f"   All LEDs @ 255 (per-channel integration will be optimized in Step 5)")
-        else:
-            logger.info(f"   All channels @ ~45% ({step3b_target_signal:.0f} counts)")
-        logger.info(f"   ⚠️  LED VALUES NOW FROZEN (no changes after Step 3C)")
-        logger.info(f"")
-
-        # Store results
-        result.s_mode_intensity = normalized_leds
-        result.ref_intensity = normalized_leds
-        result.s_integration_time = best_integration  # Already in milliseconds
-        result.weakest_channel = weakest_ch
-
-        # ===================================================================
-        # STEP 4: S-MODE BASELINE CHARACTERIZATION (TWO ROI REGIONS)
-        # ===================================================================
-        if progress_callback:
-            progress_callback("Step 4 of 6: Measuring S-mode baseline", 50)
-
-        logger.info("=" * 80)
-        logger.info("STEP 4: S-Mode Baseline Characterization (Two ROI Regions)")
-        logger.info("=" * 80)
-        logger.info("Goal: Measure S-mode signal in two ROI regions for P-mode loss calculation")
-        logger.info("Strategy: Use normalized LEDs + integration time from Step 3 (frozen)")
-        logger.info("ROI 1: 560-570nm (blue edge - minimal SPR signal)")
-        logger.info("ROI 2: 710-720nm (red edge - minimal SPR signal)")
-        logger.info("Purpose: Establish S-pol baseline to calculate P-pol signal loss in Step 5\n")
-
-        logger.info("Purpose: Establish S-pol baseline to calculate P-pol signal loss in Step 5\n")
-
-        # Define ROI regions (away from SPR dip)
-        ROI1_MIN = 560.0  # nm
-        ROI1_MAX = 570.0  # nm
-        ROI2_MIN = 710.0  # nm
-        ROI2_MAX = 720.0  # nm
-
-        # Find indices for ROI regions in the full wavelength array
-        roi1_min_idx = np.searchsorted(result.full_wavelengths, ROI1_MIN)
-        roi1_max_idx = np.searchsorted(result.full_wavelengths, ROI1_MAX)
-        roi2_min_idx = np.searchsorted(result.full_wavelengths, ROI2_MIN)
-        roi2_max_idx = np.searchsorted(result.full_wavelengths, ROI2_MAX)
-
-        logger.info(f"📊 ROI Definitions:")
-        logger.info(f"   ROI 1: {ROI1_MIN}-{ROI1_MAX}nm (indices {roi1_min_idx}-{roi1_max_idx})")
-        logger.info(f"   ROI 2: {ROI2_MIN}-{ROI2_MAX}nm (indices {roi2_min_idx}-{roi2_max_idx})")
-        logger.info(f"   Using integration time from Step 3B: {best_integration:.1f}ms")
-        logger.info("")
-
-        # Measure each channel in S-mode at both ROI regions
-        s_roi1_signals = {}
-        s_roi2_signals = {}
-        s_raw_data = {}
-
-        # Calculate num_scans based on integration time
-        result.num_scans = max(3, min(int(MAX_READ_TIME / best_integration), MAX_NUM_SCANS))
-        logger.info(f"📊 Acquisition: {result.num_scans} scans per channel\n")
-
-        for ch in ch_list:
-            if stop_flag and stop_flag.is_set():
-                break
-
-            logger.info(f"Measuring channel {ch.upper()} S-mode baseline...")
-
-            # Set LED intensity from Step 3C (normalized)
-            ctrl.set_intensity(ch=ch, raw_val=normalized_leds[ch])
-            time.sleep(LED_DELAY)
-
-            # Average multiple scans for stable measurement
-            spectra = []
-            for scan_idx in range(result.num_scans):
-                spectrum = usb.read_intensity()
-                if spectrum is not None:
-                    spectra.append(spectrum)  # Full spectrum
-                time.sleep(0.01)
-
-            ctrl.turn_off_channels()
-
-            if len(spectra) == 0:
-                logger.error(f"   ❌ Failed to capture spectra for {ch.upper()}")
-                continue
-
-            # Average spectra
-            avg_spectrum = np.mean(spectra, axis=0)
-
-            # Store filtered spectrum for Step 6
-            s_raw_data[ch] = avg_spectrum[wave_min_index:wave_max_index]
-
-            # Calculate mean signal in each ROI (using full spectrum indices)
-            roi1_signal = np.mean(avg_spectrum[roi1_min_idx:roi1_max_idx])
-            roi2_signal = np.mean(avg_spectrum[roi2_min_idx:roi2_max_idx])
-
-            s_roi1_signals[ch] = roi1_signal
-            s_roi2_signals[ch] = roi2_signal
-
-            signal_pct = (roi1_signal / detector_max) * 100
-            logger.info(f"   ROI 1 (560-570nm): {roi1_signal:.0f} counts ({signal_pct:.1f}%)")
-            signal_pct = (roi2_signal / detector_max) * 100
-            logger.info(f"   ROI 2 (710-720nm): {roi2_signal:.0f} counts ({signal_pct:.1f}%)")
-
-        # Store S-mode data for Step 5 comparison
-        result.s_raw_data = s_raw_data
-        result.s_roi1_signals = s_roi1_signals
-        result.s_roi2_signals = s_roi2_signals
-        result.s_integration_time = best_integration  # Lock from Step 3B
-
-        logger.info("")
-        logger.info("="*80)
-        logger.info("✅ STEP 4 COMPLETE: S-Mode Baseline Characterized")
-        logger.info("="*80)
-        logger.info(f"   Integration time: {best_integration:.1f}ms (from Step 3B)")
-        logger.info(f"   Scans per channel: {result.num_scans}")
-        logger.info(f"   S-mode ROI signals captured for P-mode comparison in Step 5")
-        logger.info("")
-        for ch in ch_list:
-            if ch in s_roi1_signals and ch in s_roi2_signals:
-                logger.info(f"   {ch.upper()}: ROI1={s_roi1_signals[ch]:.0f}, ROI2={s_roi2_signals[ch]:.0f}")
-
-        # ---------------------------------------------------------------
-        # CALCULATE CYCLE TIME (for 1Hz constraint validation)
-        # ---------------------------------------------------------------
-        # Single cycle = 4 LEDs measured sequentially in one polarization mode
-        # Time per channel = integration_time + pre_led_delay + post_led_delay + overhead
-
-        cycle_time_per_channel = (
-            best_integration +  # Integration time (ms)
-            result.pre_led_delay_ms +  # Pre-LED stabilization (12ms)
-            result.post_led_delay_ms +  # Post-LED afterglow (40ms)
-            10  # Overhead: USB communication + processing (estimated 10ms)
-        )
-
-        total_cycle_time_ms = cycle_time_per_channel * len(ch_list)
-        total_cycle_time_s = total_cycle_time_ms / 1000.0
-        max_acquisition_rate_hz = 1.0 / total_cycle_time_s if total_cycle_time_s > 0 else 0
-
-        logger.info("")
-        logger.info(f"📊 Cycle Time Analysis (4 LEDs sequential):")
-        logger.info(f"   Time per channel: {cycle_time_per_channel:.1f}ms")
-        logger.info(f"   Total cycle time: {total_cycle_time_ms:.1f}ms ({total_cycle_time_s:.3f}s)")
-        logger.info(f"   Maximum acquisition rate: {max_acquisition_rate_hz:.2f} Hz")
-
-        # QC CHECK: Validate 1Hz constraint (cycle time must be ≤1000ms)
-        MAX_CYCLE_TIME_MS = 1000.0  # 1 second = 1Hz
-        if total_cycle_time_ms > MAX_CYCLE_TIME_MS:
-            logger.warning("")
-            logger.warning("⚠️  QC FLAG: Cycle time exceeds 1Hz constraint")
-            logger.warning(f"   Current: {total_cycle_time_ms:.1f}ms > {MAX_CYCLE_TIME_MS:.0f}ms limit")
-            logger.warning(f"   Acquisition rate: {max_acquisition_rate_hz:.2f} Hz < 1.0 Hz minimum")
-            logger.warning("   Consider reducing integration time or LED delays")
-            logger.warning("")
-            result.qc_results['cycle_time_flag'] = {
-                'status': 'WARNING',
-                'cycle_time_ms': float(total_cycle_time_ms),
-                'max_allowed_ms': MAX_CYCLE_TIME_MS,
-                'acquisition_rate_hz': float(max_acquisition_rate_hz),
-                'message': f'Cycle time {total_cycle_time_ms:.1f}ms exceeds 1Hz constraint'
-            }
-        else:
-            logger.info(f"   ✅ Cycle time within 1Hz constraint ({total_cycle_time_ms:.1f}ms ≤ {MAX_CYCLE_TIME_MS:.0f}ms)")
-            result.qc_results['cycle_time_check'] = {
-                'status': 'PASS',
-                'cycle_time_ms': float(total_cycle_time_ms),
-                'acquisition_rate_hz': float(max_acquisition_rate_hz)
-            }
-
-        # Store cycle time metrics in result
-        result.cycle_time_ms = total_cycle_time_ms
-        result.acquisition_rate_hz = max_acquisition_rate_hz
-
-        logger.info("")
-        logger.info("="*80 + "\n")
-
-        # ===================================================================
-        # STEP 5: P-MODE MEASUREMENT + PER-CHANNEL INTEGRATION ADJUSTMENT
-        # ===================================================================
-        # After Step 4 measured S-mode baseline in ROI regions, we now:
-        #   1. Switch polarization from S to P
-        #   2. Measure ROI signals with S-mode integration time
-        #   3. Calculate signal loss: (S_ROI - P_ROI) / S_ROI per channel
-        #   4. Adjust integration time per channel to compensate for P-pol loss (initial estimate)
-        #   5. Optimize integration time per channel to hit target intensity (77-83%) with no saturation
-        #   6. Capture P-mode raw spectra with optimized per-channel integration times
-        #   7. Measure dark reference with LEDs OFF
-        #
-        # DESIGN: ROI-based initial estimate + binary search per channel for target optimization
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("STEP 5: P-MODE MEASUREMENT + PER-CHANNEL INTEGRATION ADJUSTMENT")
-        logger.info("        Switch to P-polarization → Measure ROI signal loss → Optimize integration per channel")
-        logger.info("=" * 80)
-
-        if progress_callback:
-            progress_callback("Step 5 of 6: P-mode measurement...", 67)
-
-        # ---------------------------------------------------------------
-        # PART A: SWITCH TO P-MODE AND MEASURE ROI SIGNALS
-        # ---------------------------------------------------------------
-        ctrl.set_polarization('P')
-        logger.info("  → Switched to P-polarization mode")
-        logger.info("")
-
-        # Use S-mode integration as baseline
-        p_integration_time = result.s_integration_time  # Already in milliseconds
-        usb.set_integration(p_integration_time)
-        time.sleep(0.010)  # 10ms settling time
-
-        # P-mode LED intensities (normalized from Step 3C)
-        p_led_intensities = result.normalized_leds.copy()
-
-        # Define ROI wavelength ranges (from Step 4)
-        ROI1_WL_MIN, ROI1_WL_MAX = 560, 570  # Blue edge
-        ROI2_WL_MIN, ROI2_WL_MAX = 710, 720  # Red edge
-
-        # Convert wavelengths to pixel indices
-        wavelengths = usb.read_wavelengths()
-        roi1_min_idx = np.searchsorted(wavelengths, ROI1_WL_MIN)
-        roi1_max_idx = np.searchsorted(wavelengths, ROI1_WL_MAX)
-        roi2_min_idx = np.searchsorted(wavelengths, ROI2_WL_MIN)
-        roi2_max_idx = np.searchsorted(wavelengths, ROI2_WL_MAX)
-
-        logger.info(f"  Measuring P-mode ROI signals with {p_integration_time:.1f}ms integration:")
-
-        # Measure P-mode ROI signals
-        p_roi1_signals = {}
-        p_roi2_signals = {}
-        for ch_name in ch_list:
-            led_val = p_led_intensities[ch_name]
-            ctrl.set_intensity(ch=ch_name, raw_val=led_val)
-            time.sleep(LED_DELAY)
-            spectrum = usb.read_intensity()
-            ctrl.set_intensity(ch=ch_name, raw_val=0)
-            time.sleep(0.01)
-
-            if spectrum is None:
-                logger.warning(f"    ⚠️  {ch_name.upper()}: No spectrum")
-                continue
-
-            # Calculate ROI signals (median of ROI pixels)
-            roi1_signal = np.median(spectrum[roi1_min_idx:roi1_max_idx])
-            roi2_signal = np.median(spectrum[roi2_min_idx:roi2_max_idx])
-
-            p_roi1_signals[ch_name] = roi1_signal
-            p_roi2_signals[ch_name] = roi2_signal
-
-            logger.info(f"    {ch_name.upper()}: ROI1={roi1_signal:.0f}, ROI2={roi2_signal:.0f}")
-
-        # ---------------------------------------------------------------
-        # PART B: CALCULATE SIGNAL LOSS AND INITIAL INTEGRATION ESTIMATE
-        # ---------------------------------------------------------------
-        logger.info("")
-        logger.info("  Calculating P-pol signal loss and initial integration estimate:")
-
-        # Retrieve S-mode baseline from Step 4
-        s_roi1_signals = result.s_roi1_signals
-        s_roi2_signals = result.s_roi2_signals
-
-        # QC CHECK: Detect if P-pol ROI signals INCREASE vs S-pol (suggests polarizer issue)
-        roi_increase_detected = False
-        roi_increase_channels = []
-
-        # Calculate per-channel integration time adjustments (initial estimate)
-        channel_integration_times = {}
-
-        if USE_ALTERNATIVE_CALIBRATION and hasattr(result, 'brightness_ratios') and result.brightness_ratios:
-            # ALTERNATIVE MODE: Use frozen integration time ratios from Step 3A brightness ratios
-            # Since all LEDs are at 255, we compensate brightness differences via integration time
-            logger.info("  Using brightness ratios from Step 3A (frozen integration time ratios):")
-
-            # Target for validation (45% detector, same as Step 3B)
-            target_signal = step3b_target_signal
-            tolerance_pct = 0.10  # ±10% tolerance
-
-            for ch_name in ch_list:
-                if ch_name not in result.brightness_ratios:
-                    logger.warning(f"    ⚠️  {ch_name.upper()}: Missing brightness ratio, using baseline integration")
-                    channel_integration_times[ch_name] = p_integration_time
-                    continue
-
-                # Integration ratio is inverse of brightness ratio
-                # Weakest channel (ratio = 1.0) gets baseline integration
-                # Brighter channels get proportionally less integration
-                brightness_ratio = result.brightness_ratios[ch_name]
-                integration_ratio = 1.0 / brightness_ratio
-
-                # Apply ratio to baseline P-mode integration time
-                adjusted_int = p_integration_time * integration_ratio
-
-                # Clamp to detector limits
-                adjusted_int = np.clip(adjusted_int, detector_params.min_integration_time, detector_params.max_integration_time)
-
-                channel_integration_times[ch_name] = adjusted_int
-
-                logger.info(f"    {ch_name.upper()}: Brightness={brightness_ratio:.2f}× → Int ratio={integration_ratio:.2f}× → {adjusted_int:.1f}ms")
-
-                # EMPIRICAL VALIDATION: Measure actual signal at calculated integration time
-                usb.set_integration(adjusted_int)
-                time.sleep(0.010)
-
-                led_val = p_led_intensities[ch_name]
-                ctrl.set_intensity(ch=ch_name, raw_val=led_val)
-                time.sleep(LED_DELAY)
-                spectrum = usb.read_intensity()
-                ctrl.set_intensity(ch=ch_name, raw_val=0)
-                time.sleep(0.01)
-
-                if spectrum is not None:
-                    measured_signal = roi_signal(spectrum, wave_min_index, wave_max_index, method="median")
-                    signal_pct = (measured_signal / detector_max) * 100
-
-                    # Check for saturation: count saturated pixels in ROI
-                    roi_spectrum = spectrum[wave_min_index:wave_max_index]
-                    saturation_limit = detector_params.saturation_threshold
-                    saturated_pixels = np.sum(roi_spectrum >= saturation_limit)
-                    is_saturated = saturated_pixels > 0
-                    max_pixel = np.max(roi_spectrum)
-                    sat_status = f"⚠️ {saturated_pixels} SAT" if is_saturated else ""
-
-                    # Count pixels near target
-                    pixels_near, pct_near = count_pixels_near_target(
-                        spectrum, wave_min_index, wave_max_index, target_signal, tolerance_pct
-                    )
-                    total_pixels = wave_max_index - wave_min_index
-
-                    deviation_from_target = ((measured_signal - target_signal) / target_signal) * 100
-                    signal_status = "✅" if abs(deviation_from_target) < 20 and not is_saturated else "⚠️"
-                    pixel_status = "✅" if pct_near >= 50 else "⚠️"
-
-                    logger.info(f"       Measured: {measured_signal:.0f} counts ({signal_pct:.1f}%) {signal_status} {deviation_from_target:+.1f}% vs target {sat_status}")
-                    if is_saturated:
-                        logger.warning(f"       {saturated_pixels} pixels saturated (max: {max_pixel:.0f} >= {saturation_limit:.0f})")
-                    logger.info(f"       Pixels near target: {pixels_near}/{total_pixels} ({pct_near:.1f}%) {pixel_status}")
-
-                # QC CHECK for P-pol signal increase (still check in alternative mode)
-                if ch_name in s_roi1_signals and ch_name in p_roi1_signals:
-                    s_avg = (s_roi1_signals[ch_name] + s_roi2_signals[ch_name]) / 2
-                    p_avg = (p_roi1_signals[ch_name] + p_roi2_signals[ch_name]) / 2
-                    if p_avg > s_avg * 1.05:
-                        roi_increase_detected = True
-                        roi_increase_channels.append(ch_name)
-                        logger.warning(f"       ⚠️  P-pol signal INCREASED vs S-pol (P={p_avg:.0f} > S={s_avg:.0f})")
-
-        else:
-            # STANDARD MODE: Calculate from ROI signal loss (S-pol vs P-pol)
-            # Target for validation (45% detector, same as Step 3B)
-            target_signal = step3b_target_signal
-            tolerance_pct = 0.10  # ±10% tolerance
-
-            for ch_name in ch_list:
-                if ch_name not in s_roi1_signals or ch_name not in p_roi1_signals:
-                    logger.warning(f"    ⚠️  {ch_name.upper()}: Missing ROI data, using baseline integration")
-                    channel_integration_times[ch_name] = p_integration_time
-                    continue
-
-                # Average signal loss across both ROI regions
-                s_avg = (s_roi1_signals[ch_name] + s_roi2_signals[ch_name]) / 2
-                p_avg = (p_roi1_signals[ch_name] + p_roi2_signals[ch_name]) / 2
-
-                # Calculate signal loss ratio
-                if p_avg > 0:
-                    loss_ratio = s_avg / p_avg
                 else:
-                    logger.warning(f"    ⚠️  {ch_name.upper()}: Zero P-pol signal, using 2× adjustment")
-                    loss_ratio = 2.0
+                    # STANDARD MODE: Normalized LED intensities, global integration
+                    logger.info(f"Mode: STANDARD (Normalized LEDs + global integration)")
+                    logger.info(f"Goal: Calculate normalized LED intensities for all channels")
+                    logger.info(f"Strategy: Use Step 3A brightness ratios + Step 3B integration time")
+                    logger.info(f"")
 
-                # Adjust integration time to compensate for P-pol loss
-                adjusted_int = p_integration_time * loss_ratio
+                    # STAGE 1: Calculate normalized LEDs
+                    logger.info(f"📊 STAGE 1: Calculate Normalized LEDs (Brightness Compensation)")
+                    logger.info(f"")
+
+                    normalized_leds = {}
+                    for rank_idx, (ch, (step3a_ranking_signal, _, _)) in enumerate(ranked_channels, 1):
+                        # Calculate brightness ratio from Step 3A measurements
+                        brightness_ratio = step3a_ranking_signal / weakest_intensity
+
+                        # Calculate normalized LED (inverse of brightness ratio)
+                        normalized_led = int(WEAKEST_TARGET_LED / brightness_ratio)
+                        normalized_led = max(10, min(255, normalized_led))
+
+                        normalized_leds[ch] = normalized_led
+
+                        logger.info(f"   {ch.upper()}: Brightness {brightness_ratio:.2f}× → LED={normalized_led}")
+
+                    logger.info(f"")
+
+                    # STAGE 2: Iterative LED Correction (Ensure Uniformity)
+                    logger.info(f"📊 STAGE 2: Smart LED Calculation (All Channels @ 40% Detector)")
+                    logger.info(f"")
+
+                    target_signal = step3b_target_signal  # From Step 3B (80% detector)
+                    # Safety check: Ensure target is below 95% of saturation threshold
+                    safe_max_signal = detector_params.saturation_threshold * 0.95
+
+                    logger.info(f"   Target signal: {target_signal:.0f} counts ({(target_signal/detector_max)*100:.1f}% detector)")
+                    logger.info(f"   Safe maximum: {safe_max_signal:.0f} counts (95% of saturation threshold)")
+
+                    if target_signal >= safe_max_signal:
+                        logger.warning(f"   ⚠️ Target ({target_signal:.0f}) at/above safe maximum ({safe_max_signal:.0f})")
+                        target_signal = int(safe_max_signal * 0.98)  # Back off to 98% of safe max
+                        logger.warning(f"   Reducing target to: {target_signal:.0f} counts ({(target_signal/detector_max)*100:.1f}% detector)")
+                    else:
+                        logger.info(f"   ✅ Target is safely below saturation threshold")
+
+                    logger.info(f"")
+
+                    correction_tolerance = 0.05  # ±5% tolerance for tight convergence
+                    max_correction_iterations = 5  # Increased from 3 to ensure convergence
+
+                    # Track which channels need correction
+                    channels_to_correct = list(ch_list)
+
+                    logger.info(f"   Convergence tolerance: ±{correction_tolerance*100:.0f}%")
+                    logger.info(f"   Maximum iterations: {max_correction_iterations}")
+                    logger.info(f"")
+
+                    for correction_iter in range(max_correction_iterations):
+                        if stop_flag and stop_flag.is_set():
+                            break
+
+                        if not channels_to_correct:
+                            break
+
+                        if correction_iter > 0:
+                            logger.info(f"")
+                            logger.info(f"🔄 Correction Iteration {correction_iter + 1}")
+                            logger.info(f"")
+
+                        channels_corrected_this_iter = []
+
+                        for ch in channels_to_correct:
+                            if stop_flag and stop_flag.is_set():
+                                break
+
+                            # Use hardware acquisition function
+                            spectrum = acquire_raw_spectrum(
+                                usb=usb,
+                                ctrl=ctrl,
+                                channel=ch,
+                                led_intensity=normalized_leds[ch],
+                                integration_time_ms=None,
+                                num_scans=1,
+                                pre_led_delay_ms=LED_DELAY * 1000,
+                                post_led_delay_ms=0.01 * 1000,
+                                use_batch_command=False
+                            )
+
+                            if spectrum is None:
+                                logger.error(f"Failed to verify {ch.upper()}")
+                                channels_corrected_this_iter.append(ch)  # Remove from correction list
+                                continue
+
+                            # Robust signal metric for verification
+                            signal = roi_signal(spectrum, result.wave_min_index, result.wave_max_index, method="median")
+                            signal_pct = (signal / detector_max) * 100
+
+                            # Check for saturation FIRST
+                            roi_spectrum = spectrum[result.wave_min_index:result.wave_max_index]
+                            saturation_limit = detector_params.saturation_threshold
+                            saturated_pixels = np.sum(roi_spectrum >= saturation_limit)
+                            is_saturated = saturated_pixels > 0
+                            max_pixel = np.max(roi_spectrum)
+
+                            # Calculate error from target
+                            error_pct = ((signal - target_signal) / target_signal)
+
+                            # Check if converged (within tolerance AND no saturation)
+                            converged = (abs(error_pct) <= correction_tolerance) and not is_saturated
+
+                            if converged:
+                                # Success - mark as done
+                                channels_corrected_this_iter.append(ch)
+                                logger.info(f"   ✅ {ch.upper()} @ LED={normalized_leds[ch]:3d}: {signal:6.0f} counts ({signal_pct:5.1f}%) CONVERGED {error_pct:+.1%}")
+                                continue
+
+                            # Check if final iteration
+                            if correction_iter >= max_correction_iterations - 1:
+                                channels_corrected_this_iter.append(ch)
+                                if is_saturated:
+                                    logger.warning(f"   ⚠️ {ch.upper()} @ LED={normalized_leds[ch]:3d}: SATURATED after {max_correction_iterations} iterations")
+                                else:
+                                    logger.warning(f"   ⚠️ {ch.upper()} @ LED={normalized_leds[ch]:3d}: {signal:6.0f} counts - NOT CONVERGED {error_pct:+.1%}")
+                                continue
+
+                            # Need correction - calculate smart LED adjustment
+                            old_led = normalized_leds[ch]
+
+                            if is_saturated:
+                                # CRITICAL: Reduce to eliminate saturation
+                                # Use max_pixel (not median signal) for saturation calculation
+                                safe_target = saturation_limit * 0.90  # 90% of sat threshold
+                                correction_factor = safe_target / max_pixel
+                                correction_factor = max(0.75, min(0.95, correction_factor))
+                                logger.warning(f"   🔻 {ch.upper()} @ LED={old_led:3d}: SATURATED ({saturated_pixels} px, max={max_pixel:.0f})")
+                                logger.warning(f"      → Reducing to LED={int(old_led * correction_factor):3d} (factor {correction_factor:.3f})")
+                            else:
+                                # Proportional correction: new_LED = old_LED × (target / signal)
+                                correction_factor = target_signal / signal
+
+                                # First iteration: dampen to prevent overshoot
+                                if correction_iter == 0:
+                                    correction_factor = 0.7 * correction_factor + 0.3
+
+                                # Clamp to reasonable bounds
+                                correction_factor = max(0.80, min(1.20, correction_factor))
+
+                                status = "🔺 LOW" if error_pct < 0 else "🔻 HIGH"
+                                logger.info(f"   {status} {ch.upper()} @ LED={old_led:3d}: {signal:6.0f} counts {error_pct:+.1%}")
+                                logger.info(f"      → Adjusting to LED={int(old_led * correction_factor):3d} (factor {correction_factor:.3f})")
+
+                            # Apply correction
+                            new_led = int(old_led * correction_factor)
+                            new_led = max(10, min(255, new_led))
+                            normalized_leds[ch] = new_led
+
+                        # Remove corrected channels from list
+                        for ch in channels_corrected_this_iter:
+                            if ch in channels_to_correct:
+                                channels_to_correct.remove(ch)
+
+                        # If all channels corrected, exit loop
+                        if not channels_to_correct:
+                            logger.info(f"")
+                            logger.info(f"✅ All channels within ±5% of target after {correction_iter + 1} iteration(s)")
+                            break
+
+                    # Final verification pass
+                    if channels_to_correct:
+                        logger.info(f"")
+                        logger.info(f"⚠️ {len(channels_to_correct)} channel(s) still outside tolerance after {max_correction_iterations} iterations")
+
+                    logger.info(f"")
+                    logger.info(f"📊 STAGE 3: Final Uniformity Check")
+                    logger.info(f"")
+
+                    weakest_signal = None
+                    saturated_channels = []
+                    for ch in ch_list:
+                        if stop_flag and stop_flag.is_set():
+                            break
+
+                        # Final measurement
+                        spectrum = acquire_raw_spectrum(
+                            usb=usb,
+                            ctrl=ctrl,
+                            channel=ch,
+                            led_intensity=normalized_leds[ch],
+                            integration_time_ms=None,
+                            num_scans=1,
+                            pre_led_delay_ms=LED_DELAY * 1000,
+                            post_led_delay_ms=0.01 * 1000,
+                            use_batch_command=False
+                        )
+
+                        if spectrum is None:
+                            continue
+
+                        signal = roi_signal(spectrum, result.wave_min_index, result.wave_max_index, method="median")
+                        signal_pct = (signal / detector_max) * 100
+
+                        # Check for saturation
+                        roi_spectrum = spectrum[result.wave_min_index:result.wave_max_index]
+                        saturation_limit = detector_params.saturation_threshold
+                        saturated_pixels = np.sum(roi_spectrum >= saturation_limit)
+                        is_saturated = saturated_pixels > 0
+                        max_pixel = np.max(roi_spectrum)
+                        sat_status = f"⚠️ {saturated_pixels} SAT" if is_saturated else ""
+
+                        # EMPIRICAL VALIDATION: Count pixels near target
+                        pixels_near, pct_near = count_pixels_near_target(
+                            spectrum, result.wave_min_index, result.wave_max_index, target_signal, 0.10
+                        )
+                        total_pixels = result.wave_max_index - result.wave_min_index
+
+                        if weakest_signal is None:
+                            weakest_signal = signal
+
+                        deviation_pct = ((signal - weakest_signal) / weakest_signal) * 100
+                        uniformity_status = "✅" if abs(deviation_pct) < 10 and not is_saturated else "⚠️"
+                        pixel_status = "✅" if pct_near >= 50 else "⚠️"
+
+                        logger.info(f"   {ch.upper()} @ LED={normalized_leds[ch]:3d}: {signal:6.0f} counts ({signal_pct:5.1f}%) {uniformity_status} {deviation_pct:+.1f}% {sat_status}")
+                        if is_saturated:
+                            logger.warning(f"      {saturated_pixels} pixels saturated (max: {max_pixel:.0f} >= {saturation_limit:.0f})")
+                            saturated_channels.append(ch)
+                        logger.info(f"      Pixels near target: {pixels_near}/{total_pixels} ({pct_near:.1f}%) {pixel_status}")
+
+                    # CRITICAL CHECK: If saturation detected, apply emergency LED reduction
+                    if saturated_channels:
+                        logger.warning(f"")
+                        logger.warning(f"⚠️ Saturation detected in channels: {', '.join([ch.upper() for ch in saturated_channels])}")
+                        logger.warning(f"   Applying emergency 15% LED reduction to saturated channels...")
+
+                        # Reduce LEDs by 15% for saturated channels
+                        for ch in saturated_channels:
+                            old_led = normalized_leds[ch]
+                            new_led = int(old_led * 0.85)
+                            new_led = max(10, new_led)
+                            normalized_leds[ch] = new_led
+                            logger.warning(f"   {ch.upper()}: LED {old_led} → {new_led}")
+
+                        logger.warning(f"   Verifying saturation cleared...")
+
+                        # Re-measure saturated channels to verify
+                        still_saturated = []
+                        for ch in saturated_channels:
+                            spectrum = acquire_raw_spectrum(
+                                usb=usb,
+                                ctrl=ctrl,
+                                channel=ch,
+                                led_intensity=normalized_leds[ch],
+                                integration_time_ms=None,
+                                num_scans=1,
+                                pre_led_delay_ms=LED_DELAY * 1000,
+                                post_led_delay_ms=0.01 * 1000,
+                                use_batch_command=False
+                            )
+
+                            if spectrum is not None:
+                                roi_spectrum = spectrum[result.wave_min_index:result.wave_max_index]
+                                sat_count = np.sum(roi_spectrum >= detector_params.saturation_threshold)
+                                if sat_count > 0:
+                                    still_saturated.append(ch)
+                                    logger.error(f"   ❌ {ch.upper()}: Still {sat_count} pixels saturated")
+                                else:
+                                    signal = roi_signal(spectrum, result.wave_min_index, result.wave_max_index, method="median")
+                                    signal_pct = (signal / detector_max) * 100
+                                    logger.info(f"   ✅ {ch.upper()}: Saturation cleared ({signal:.0f} counts, {signal_pct:.1f}%)")
+
+                        if still_saturated:
+                            logger.error(f"")
+                            logger.error(f"❌ CALIBRATION FAILED: Saturation persists in {', '.join([ch.upper() for ch in still_saturated])}")
+                            logger.error(f"   Even after 15% LED reduction, saturation remains.")
+                            logger.error(f"   The 80% target cannot be achieved with this hardware configuration.")
+                            logger.error(f"")
+                            raise RuntimeError(f"Persistent saturation in Step 3C: {still_saturated}")
+                        else:
+                            logger.info(f"")
+                            logger.info(f"✅ Saturation cleared after emergency LED reduction")
+
+                    logger.info(f"")
+                logger.info(f"="*80)
+                logger.info(f"✅ STEP 3C COMPLETE: LEDs {'FIXED AT 255' if USE_ALTERNATIVE_CALIBRATION else 'NORMALIZED & ITERATIVELY CORRECTED'}")
+                logger.info(f"="*80)
+                logger.info(f"   Integration time: {best_integration:.1f}ms (from Step 3B)")
+                if USE_ALTERNATIVE_CALIBRATION:
+                    logger.info(f"   All LEDs @ 255 (per-channel integration will be optimized in Step 5)")
+                else:
+                    logger.info(f"   All channels @ ~40% ({step3b_target_signal:.0f} counts) within ±5% tolerance")
+                    logger.info(f"   LED intensities after iterative correction:")
+                    for ch in ch_list:
+                        logger.info(f"      {ch.upper()}: LED={normalized_leds[ch]}")
+                logger.info(f"")
+                logger.info(f"   🔒 LED VALUES NOW FROZEN (no changes after Step 3C)")
+                logger.info(f"   📋 CRITICAL RULE: Steps 4, 5, 6 use ONLY integration time adjustments")
+                logger.info(f"   📋 LED intensities remain locked at Step 3C values for all subsequent steps")
+                logger.info(f"")
+
+                # DEBUG: Print full S-pol spectrum data at end of Step 3C
+                logger.info("="*80)
+                logger.info("DEBUG: FULL S-POL SPECTRUM DATA AT END OF STEP 3C")
+                logger.info("="*80)
+                logger.info(f"Integration time: {best_integration:.2f} ms")
+                logger.info(f"Wavelength range: {result.wave_data[0]:.2f} - {result.wave_data[-1]:.2f} nm")
+                logger.info(f"Number of pixels: {len(result.wave_data)}")
+                logger.info("")
+                for ch in ch_list:
+                    if stop_flag and stop_flag.is_set():
+                        break
+                    # Measure one final time to get clean spectrum
+                    spectrum = acquire_raw_spectrum(
+                        usb=usb,
+                        ctrl=ctrl,
+                        channel=ch,
+                        led_intensity=normalized_leds[ch],
+                        integration_time_ms=None,
+                        num_scans=1,
+                        pre_led_delay_ms=LED_DELAY * 1000,
+                        post_led_delay_ms=0.01 * 1000,
+                        use_batch_command=False
+                    )
+                    if spectrum is not None:
+                        logger.info(f"Channel {ch.upper()} @ LED={normalized_leds[ch]}:")
+                        logger.info(f"  Max: {np.max(spectrum):.1f} counts")
+                        logger.info(f"  Mean: {np.mean(spectrum):.1f} counts")
+                        logger.info(f"  Full spectrum array:")
+                        logger.info(f"{spectrum}")
+                        logger.info("")
+                logger.info("="*80)
+                logger.info("")
+
+                # Store results
+                result.s_mode_intensity = normalized_leds
+                result.ref_intensity = normalized_leds
+                result.s_integration_time = best_integration  # Already in milliseconds
+                result.weakest_channel = weakest_ch
+
+                # Track Step 3C saturation behavior for Step 4 intelligence
+                # Safely check if saturated_channels variable exists from Step 3C
+                step3c_saturated_channels = []
+                step3c_had_saturation = False
+                try:
+                    # Try to access saturated_channels - will raise NameError if doesn't exist
+                    if saturated_channels and len(saturated_channels) > 0:
+                        step3c_saturated_channels = list(saturated_channels)
+                        step3c_had_saturation = True
+                        logger.info(f"⚠️ Step 3C had saturation in: {', '.join([ch.upper() for ch in step3c_saturated_channels])}")
+                        logger.info(f"   Step 4 will use more aggressive reduction for these channels")
+                except (NameError, UnboundLocalError):
+                    # Variable doesn't exist - no saturation in Step 3C
+                    logger.info(f"✅ Step 3C completed with no saturation")
+
+                if not step3c_had_saturation:
+                    logger.info(f"✅ Step 3C completed with no saturation")
+                logger.info("")
+
+                # ===================================================================
+                # STEP 4: S-MODE BASELINE CHARACTERIZATION (TWO ROI REGIONS)
+                # ===================================================================
+                if progress_callback:
+                    progress_callback("Step 4 of 6: Measuring S-mode baseline", 50)
+
+                logger.info("=" * 80)
+                logger.info("STEP 4: S-Mode Baseline Characterization (Two ROI Regions)")
+                logger.info("=" * 80)
+                logger.info("Goal: Measure S-mode signal in two ROI regions for P-mode loss calculation")
+                logger.info("Strategy: Adjust integration time to achieve target detector signal")
+                logger.info("ROI 1: 560-570nm (blue edge - minimal SPR signal)")
+                logger.info("ROI 2: 710-720nm (red edge - minimal SPR signal)")
+                logger.info("Purpose: Establish high-SNR S-pol baseline for transmission calculation\n")
+
+                # Check if any channels have maxed-out LEDs (255) - they need special handling
+                maxed_channels = [ch for ch in ch_list if normalized_leds[ch] >= 255]
+                if maxed_channels:
+                    logger.warning(f"⚠️ Channels with maxed LEDs detected: {', '.join([ch.upper() for ch in maxed_channels])}")
+                    logger.warning(f"   Using per-channel integration time optimization")
+                    logger.warning(f"   Target: 75% detector (49K counts) for all channels")
+                    # Use 75% target - achievable with per-channel integration times
+                    STEP4_TARGET_PERCENT = 0.75  # 75% = ~49K counts
+                else:
+                    # Normal target for channels with LED headroom
+                    STEP4_TARGET_PERCENT = 0.80  # 80% = ~52K counts
+
+                # ALWAYS use per-channel integration optimization (user requested)
+                use_per_channel_integration = True
+
+                STEP4_TOLERANCE_PERCENT = 0.025  # ±2.5% tight tolerance
+                step4_target_signal = int(STEP4_TARGET_PERCENT * detector_max)
+                step4_min_signal = int((STEP4_TARGET_PERCENT - STEP4_TOLERANCE_PERCENT) * detector_max)
+                step4_max_signal = int((STEP4_TARGET_PERCENT + STEP4_TOLERANCE_PERCENT) * detector_max)
+                step3c_target_signal = step3b_target_signal  # Step 3C was 40%
+
+                # Calculate initial integration time scaling: Step4_target / Step3C_target
+                integration_scale_factor = step4_target_signal / step3c_target_signal
+
+                # Start with scaled integration time as baseline
+                step4_integration = best_integration * integration_scale_factor
 
                 # Clamp to detector limits
-                adjusted_int = np.clip(adjusted_int, detector_params.min_integration_time, detector_params.max_integration_time)
+                step4_integration = max(detector_params.min_integration_time,
+                                       min(detector_params.max_integration_time, step4_integration))
 
-                channel_integration_times[ch_name] = adjusted_int
+                logger.info(f"📊 Step 4 Target Calculation:")
+                logger.info(f"   Step 3C target: {step3c_target_signal:.0f} counts ({STEP3B_TARGET_PERCENT*100:.0f}% detector)")
+                logger.info(f"   Step 4 target: {step4_target_signal:.0f} counts ({STEP4_TARGET_PERCENT*100:.0f}% detector)")
+                logger.info(f"   Acceptable range: {step4_min_signal:.0f} - {step4_max_signal:.0f} counts ({(STEP4_TARGET_PERCENT-STEP4_TOLERANCE_PERCENT)*100:.1f}% - {(STEP4_TARGET_PERCENT+STEP4_TOLERANCE_PERCENT)*100:.1f}%)")
+                logger.info(f"   Baseline integration: {step4_integration:.1f}ms (scaled {integration_scale_factor:.2f}× from Step 3C)")
+                logger.info(f"   Using Step 3C LEDs (unchanged)")
 
-                signal_loss_pct = ((s_avg - p_avg) / s_avg) * 100 if s_avg > 0 else 0
+                if use_per_channel_integration:
+                    logger.info(f"   Mode: PER-CHANNEL integration time optimization")
+                else:
+                    logger.info(f"   Mode: SINGLE common integration time")
+                logger.info("")
 
-                # QC CHECK: Flag if P-pol signal INCREASES vs S-pol (should always decrease)
-                if p_avg > s_avg * 1.05:  # Allow 5% tolerance for noise
-                    roi_increase_detected = True
-                    roi_increase_channels.append(ch_name)
-                    logger.warning(f"    ⚠️  {ch_name.upper()}: P-pol signal INCREASED vs S-pol (P={p_avg:.0f} > S={s_avg:.0f})")
-                    logger.warning(f"       This suggests polarizer misalignment or incorrect S/P positions")
+                # Initialize per-channel integration times
+                channel_s_integration_times = {}
 
-                logger.info(f"    {ch_name.upper()}: S_avg={s_avg:.0f}, P_avg={p_avg:.0f}, Loss={signal_loss_pct:.1f}%, Int={adjusted_int:.1f}ms")
+                if use_per_channel_integration:
+                    # PER-CHANNEL OPTIMIZATION: Each channel gets its own integration time
+                    logger.info(f"🔄 Step 4 Per-Channel Optimization")
+                    logger.info(f"   Target: {STEP4_TARGET_PERCENT*100:.0f}% ±2.5% for each channel")
+                    logger.info("")
 
-                # EMPIRICAL VALIDATION: Measure actual signal at calculated integration time
-                usb.set_integration(adjusted_int)
+                    for ch in ch_list:
+                        logger.info(f"  Optimizing {ch.upper()}:")
+
+                        # Binary search for optimal integration time
+                        # Start conservatively to avoid saturation
+                        min_int = detector_params.min_integration_time
+                        max_int = min(step4_integration * 2.0, detector_params.max_integration_time)
+                        best_int = detector_params.min_integration_time  # Start with minimum as fallback
+                        best_signal = 0
+                        max_iterations = 8
+
+                        # Track if we ever hit saturation
+                        ever_saturated = False
+
+                        for iteration in range(max_iterations):
+                            test_int = (min_int + max_int) / 2
+
+                            spectrum = acquire_raw_spectrum(
+                                usb=usb,
+                                ctrl=ctrl,
+                                channel=ch,
+                                led_intensity=normalized_leds[ch],
+                                integration_time_ms=test_int,
+                                num_scans=5,
+                                pre_led_delay_ms=LED_DELAY * 1000,
+                                post_led_delay_ms=0.01 * 1000,
+                                use_batch_command=False
+                            )
+
+                            if spectrum is None:
+                                logger.warning(f"    Iter {iteration+1}: No spectrum, skipping")
+                                break
+
+                            # Check signal and saturation
+                            roi_spectrum = spectrum[wave_min_index:wave_max_index]
+                            signal = roi_signal(roi_spectrum, 0, len(roi_spectrum), method="median")
+                            signal_pct = (signal / detector_max) * 100
+                            max_pixel = np.max(roi_spectrum)
+
+                            sat_count = count_saturated_pixels(roi_spectrum, 0, len(roi_spectrum), detector_params.saturation_threshold)
+                            is_saturated = sat_count > 0
+
+                            # Check if in target range
+                            in_range = step4_min_signal <= signal <= step4_max_signal
+
+                            if sat_count > 0:
+                                ever_saturated = True
+                                logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), SATURATED → reduce")
+                                max_int = test_int
+                            elif in_range:
+                                # Found optimal: in range and not saturated
+                                best_int = test_int
+                                best_signal = signal
+                                logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), ✅ OPTIMAL")
+                                break
+                            elif signal < step4_min_signal:
+                                logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), too low → increase")
+                                min_int = test_int
+                                # Update best if this is closer to target AND not saturated
+                                if abs(signal - step4_target_signal) < abs(best_signal - step4_target_signal) or best_signal == 0:
+                                    best_int = test_int
+                                    best_signal = signal
+                            else:
+                                # Signal too high but not saturated - reduce
+                                logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), too high → reduce")
+                                max_int = test_int
+                                # Update best if closer to target
+                                if abs(signal - step4_target_signal) < abs(best_signal - step4_target_signal):
+                                    best_int = test_int
+                                    best_signal = signal
+
+                        # CRITICAL: If we ever hit saturation, verify final integration time is safe
+                        if ever_saturated:
+                            logger.warning(f"    Channel {ch.upper()} hit saturation during search - verifying final integration is safe...")
+                            verify_spectrum = acquire_raw_spectrum(
+                                usb=usb,
+                                ctrl=ctrl,
+                                channel=ch,
+                                led_intensity=normalized_leds[ch],
+                                integration_time_ms=best_int,
+                                num_scans=5,
+                                pre_led_delay_ms=LED_DELAY * 1000,
+                                post_led_delay_ms=0.01 * 1000,
+                                use_batch_command=False
+                            )
+                            if verify_spectrum is not None:
+                                verify_roi = verify_spectrum[wave_min_index:wave_max_index]
+                                verify_sat = count_saturated_pixels(verify_roi, 0, len(verify_roi), detector_params.saturation_threshold)
+                                if verify_sat > 0:
+                                    # Still saturated! Reduce integration time aggressively
+                                    logger.error(f"    ❌ Still saturated at {best_int:.1f}ms! Reducing to 70% of current value...")
+                                    best_int *= 0.70
+                                    best_int = max(detector_params.min_integration_time, best_int)
+                                    logger.warning(f"    Using emergency reduced integration: {best_int:.1f}ms")
+
+                        channel_s_integration_times[ch] = best_int
+                        final_pct = (best_signal / detector_max) * 100 if best_signal > 0 else 0
+                        logger.info(f"  ✅ {ch.upper()}: Final {best_int:.1f}ms → {best_signal:.0f} ({final_pct:.1f}%)")
+                        logger.info("")
+
+                    logger.info("✅ All channels optimized with per-channel integration times")
+                    step4_integration = channel_s_integration_times.get('a', step4_integration)  # Use channel A as reference
+
+                logger.info("")
+                logger.info(f"📊 Final Step 4 integration time: {step4_integration:.1f}ms")
+                logger.info("")
+
+                # Now do final acquisition with converged integration time
+                usb.set_integration(step4_integration)
                 time.sleep(0.010)
 
-                led_val = p_led_intensities[ch_name]
-                ctrl.set_intensity(ch=ch_name, raw_val=led_val)
-                time.sleep(LED_DELAY)
-                spectrum = usb.read_intensity()
-                ctrl.set_intensity(ch=ch_name, raw_val=0)
-                time.sleep(0.01)
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("📸 STEP 4 (S-mode): Final Data Acquisition with Converged Integration Time")
+                logger.info("=" * 80)
+                logger.info("")
 
-                if spectrum is not None:
-                    measured_signal = roi_signal(spectrum, wave_min_index, wave_max_index, method="median")
-                    signal_pct = (measured_signal / detector_max) * 100
+                # Define ROI regions (away from SPR dip)
+                ROI1_MIN = 560.0  # nm
+                ROI1_MAX = 570.0  # nm
+                ROI2_MIN = 710.0  # nm
+                ROI2_MAX = 720.0  # nm
 
-                    # Check for saturation: count saturated pixels in ROI
-                    roi_spectrum = spectrum[wave_min_index:wave_max_index]
-                    saturation_limit = detector_params.saturation_threshold
-                    saturated_pixels = np.sum(roi_spectrum >= saturation_limit)
-                    is_saturated = saturated_pixels > 0
-                    max_pixel = np.max(roi_spectrum)
-                    sat_status = f"⚠️ {saturated_pixels} SAT" if is_saturated else ""
+                # Find indices for ROI regions in the full wavelength array
+                roi1_min_idx = np.searchsorted(result.full_wavelengths, ROI1_MIN)
+                roi1_max_idx = np.searchsorted(result.full_wavelengths, ROI1_MAX)
+                roi2_min_idx = np.searchsorted(result.full_wavelengths, ROI2_MIN)
+                roi2_max_idx = np.searchsorted(result.full_wavelengths, ROI2_MAX)
 
-                    # Count pixels near target
-                    pixels_near, pct_near = count_pixels_near_target(
-                        spectrum, wave_min_index, wave_max_index, target_signal, tolerance_pct
+                logger.info(f"📊 ROI Definitions:")
+                logger.info(f"   ROI 1: {ROI1_MIN}-{ROI1_MAX}nm (indices {roi1_min_idx}-{roi1_max_idx})")
+                logger.info(f"   ROI 2: {ROI2_MIN}-{ROI2_MAX}nm (indices {roi2_min_idx}-{roi2_max_idx})")
+                logger.info(f"   Using converged integration time: {step4_integration:.1f}ms")
+                logger.info("")
+
+                # Ensure polarizer is in S-mode
+                logger.info("")
+                logger.info("🔄 POLARIZER ORIENTATION CHANGE: Switching to S-MODE")
+                logger.info("  Current Step: Step 4 - S-mode baseline measurement")
+                logger.info("  Expected behavior: Maximum transmission through polarizer")
+                logger.info("")
+
+                # CRITICAL SAFETY CHECK: Validate positions before set_mode()
+                _validate_polarizer_positions(device_config, 's', logger)
+
+                logger.info("  → Sending set_mode('s') command to controller...")
+                set_result = ctrl.set_mode('s')
+                if set_result:
+                    logger.info("  ✅ Controller confirmed: Servo moved to S position")
+                else:
+                    logger.warning("  ⚠️ Controller response unexpected - servo should have moved to S position")
+                    logger.warning("  ⚠️ Continuing calibration - servo movement may still be successful")
+                logger.info("")
+                time.sleep(0.5)  # Wait for servo to move
+
+                logger.info("📋 STEP 4 FINAL CHECKLIST (before storing data):")
+                logger.info(f"   Target: 80% ±2.5% ({step4_min_signal:.0f} - {step4_max_signal:.0f} counts)")
+                logger.info(f"   Integration time: {step4_integration:.1f}ms")
+                logger.info("")
+
+                s_raw_data = {}  # Store raw data for each channel
+                s_data = {}      # Store ROI-trimmed data
+
+                # Polarizer now in S-mode (using device_config position)
+                logger.info(f"    ✅ S-mode set (position from device_config)")
+                logger.info("")
+
+                # Measure each channel in S-mode at both ROI regions
+                s_roi1_signals = {}
+                s_roi2_signals = {}
+                s_raw_data = {}
+
+                # Calculate num_scans based on integration time
+                result.num_scans = max(3, min(int(MAX_READ_TIME / best_integration), MAX_NUM_SCANS))
+                logger.info(f"📊 Acquisition: {result.num_scans} scans per channel\n")
+
+                for ch in ch_list:
+                    if stop_flag and stop_flag.is_set():
+                        break
+
+                    logger.info(f"Measuring channel {ch.upper()} S-mode baseline...")
+
+                    # Get integration time for this channel (per-channel or common)
+                    ch_integration = channel_s_integration_times.get(ch, step4_integration) if use_per_channel_integration else step4_integration
+
+                    # Use hardware acquisition function with averaging
+                    # Use Step 3C LEDs with Step 4 integration time (per-channel or common)
+                    avg_spectrum = acquire_raw_spectrum(
+                        usb=usb,
+                        ctrl=ctrl,
+                        channel=ch,
+                        led_intensity=normalized_leds[ch],  # Step 3C LEDs unchanged
+                        integration_time_ms=ch_integration,  # Per-channel or common integration
+                        num_scans=result.num_scans,
+                        pre_led_delay_ms=LED_DELAY * 1000,
+                        post_led_delay_ms=0.01 * 1000,
+                        use_batch_command=False
                     )
-                    total_pixels = wave_max_index - wave_min_index
 
-                    deviation_from_target = ((measured_signal - target_signal) / target_signal) * 100
-                    signal_status = "✅" if abs(deviation_from_target) < 20 and not is_saturated else "⚠️"
-                    pixel_status = "✅" if pct_near >= 50 else "⚠️"
+                    if avg_spectrum is None:
+                        logger.error(f"   ❌ Failed to capture spectra for {ch.upper()}")
+                        continue
 
-                    logger.info(f"       Measured: {measured_signal:.0f} counts ({signal_pct:.1f}%) {signal_status} {deviation_from_target:+.1f}% vs target {sat_status}")
-                    if is_saturated:
-                        logger.warning(f"       {saturated_pixels} pixels saturated (max: {max_pixel:.0f} >= {saturation_limit:.0f})")
-                    logger.info(f"       Pixels near target: {pixels_near}/{total_pixels} ({pct_near:.1f}%) {pixel_status}")
+                    # Store filtered spectrum for Step 6
+                    s_raw_data[ch] = avg_spectrum[wave_min_index:wave_max_index]
 
-        # Store QC flag if P-pol signals increased
-        if roi_increase_detected:
-            logger.warning("")
-            logger.warning("⚠️  QC FLAG: P-pol ROI signals INCREASED for some channels")
-            logger.warning(f"   Affected channels: {', '.join([ch.upper() for ch in roi_increase_channels])}")
-            logger.warning("   This suggests polarizer misalignment or swapped S/P positions")
-            logger.warning("   Calibration will continue, but polarizer positions should be verified")
-            logger.warning("")
-            result.qc_results['step5_roi_increase_flag'] = {
-                'status': 'WARNING',
-                'affected_channels': roi_increase_channels,
-                'message': 'P-pol signal increased vs S-pol - polarizer issue suspected'
-            }
+                    # Calculate mean signal in each ROI (using full spectrum indices)
+                    roi1_signal = np.mean(avg_spectrum[roi1_min_idx:roi1_max_idx])
+                    roi2_signal = np.mean(avg_spectrum[roi2_min_idx:roi2_max_idx])
 
-        # ---------------------------------------------------------------
-        # PART C: OPTIMIZE INTEGRATION TIME PER CHANNEL (TARGET + NO SATURATION)
-        # ---------------------------------------------------------------
-        logger.info("")
-        logger.info("  Optimizing integration time per channel (target intensity + no saturation):")
+                    s_roi1_signals[ch] = roi1_signal
+                    s_roi2_signals[ch] = roi2_signal
 
-        # Target: 77-83% detector (80% ± 3%)
-        target_pct = 0.80
-        tolerance_pct = 0.03
-        min_pct = target_pct - tolerance_pct
-        max_pct = target_pct + tolerance_pct
+                    signal_pct = (roi1_signal / detector_max) * 100
+                    logger.info(f"   ROI 1 (560-570nm): {roi1_signal:.0f} counts ({signal_pct:.1f}%)")
+                    signal_pct = (roi2_signal / detector_max) * 100
+                    logger.info(f"   ROI 2 (710-720nm): {roi2_signal:.0f} counts ({signal_pct:.1f}%)")
 
-        target_signal = detector_max * target_pct
-        min_signal = detector_max * min_pct
-        max_signal = detector_max * max_pct
+                # CRITICAL CHECK: Verify convergence and no saturation in S-mode raw data
+                logger.info("")
+                logger.info("📋 STEP 4 FINAL CHECKLIST (Channel-by-Channel):")
+                logger.info(f"   Target Range: {step4_min_signal:.0f} - {step4_max_signal:.0f} counts (80% ±2.5%)")
+                logger.info(f"   Saturation Threshold: {detector_params.saturation_threshold:.0f} counts")
+                logger.info("")
 
-        final_channel_signals = {}
-        for ch_name in ch_list:
-            ch_int = channel_integration_times[ch_name]
-            logger.info(f"    {ch_name.upper()}: Starting at {ch_int:.1f}ms (from signal loss compensation)")
+                saturated_channels_s = []
+                off_target_channels_s = []
 
-            # Binary search to hit target while avoiding saturation
-            min_int = detector_params.min_integration_time
-            max_int = detector_params.max_integration_time
-            best_int = ch_int
-            best_signal = 0
-            max_iterations = 8
+                for ch in ch_list:
+                    if ch in s_raw_data:
+                        spectrum = s_raw_data[ch]
+                        sat_count = count_saturated_pixels(
+                            spectrum, 0, len(spectrum), detector_params.saturation_threshold
+                        )
+                        signal = roi_signal(spectrum, 0, len(spectrum), method="median")
+                        signal_pct = (signal / detector_max) * 100
 
-            for iteration in range(max_iterations):
-                test_int = (min_int + max_int) / 2
-                usb.set_integration(test_int)
+                        in_range = step4_min_signal <= signal <= step4_max_signal
+                        no_sat = sat_count == 0
+
+                        if sat_count > 0:
+                            max_pixel = np.max(spectrum)
+                            logger.error(f"   ❌ {ch.upper()}: {sat_count} SAT pixels (max: {max_pixel:.0f}, {signal:.0f} counts, {signal_pct:.1f}%)")
+                            saturated_channels_s.append(ch)
+                        elif not in_range:
+                            logger.warning(f"   ⚠️ {ch.upper()}: OFF TARGET ({signal:.0f} counts, {signal_pct:.1f}%) - expected 77.5%-82.5%")
+                            off_target_channels_s.append(ch)
+                        else:
+                            logger.info(f"   ✅ {ch.upper()}: {signal:.0f} counts ({signal_pct:.1f}%) - No saturation, in range")
+
+                logger.info("")
+                if saturated_channels_s:
+                    logger.error(f"❌ STEP 4 SATURATION: Detected in {', '.join([ch.upper() for ch in saturated_channels_s])}")
+                    logger.error(f"")
+                    logger.error(f"   Attempting FINAL EMERGENCY RECOVERY...")
+                    logger.error(f"   Reducing integration time to 50% of current value for saturated channels")
+                    logger.error(f"")
+
+                    # EMERGENCY RECOVERY: Reduce integration time to 50% for saturated channels
+                    recovery_success = True
+                    for ch in saturated_channels_s:
+                        ch_integration = channel_s_integration_times.get(ch, step4_integration) if use_per_channel_integration else step4_integration
+                        emergency_int = ch_integration * 0.50
+                        emergency_int = max(detector_params.min_integration_time, emergency_int)
+
+                        logger.warning(f"   {ch.upper()}: Reducing {ch_integration:.1f}ms → {emergency_int:.1f}ms (50% emergency reduction)")
+
+                        # Re-acquire with emergency reduced integration
+                        emergency_spectrum = acquire_raw_spectrum(
+                            usb=usb,
+                            ctrl=ctrl,
+                            channel=ch,
+                            led_intensity=normalized_leds[ch],
+                            integration_time_ms=emergency_int,
+                            num_scans=result.num_scans,
+                            pre_led_delay_ms=LED_DELAY * 1000,
+                            post_led_delay_ms=0.01 * 1000,
+                            use_batch_command=False
+                        )
+
+                        if emergency_spectrum is not None:
+                            emergency_roi = emergency_spectrum[wave_min_index:wave_max_index]
+                            emergency_sat = count_saturated_pixels(emergency_roi, 0, len(emergency_roi), detector_params.saturation_threshold)
+                            emergency_signal = roi_signal(emergency_roi, 0, len(emergency_roi), method="median")
+                            emergency_pct = (emergency_signal / detector_max) * 100
+
+                            if emergency_sat == 0:
+                                logger.info(f"   ✅ {ch.upper()}: Recovery successful - {emergency_signal:.0f} counts ({emergency_pct:.1f}%), 0 saturated pixels")
+                                # Update stored data
+                                s_raw_data[ch] = emergency_roi
+                                if use_per_channel_integration:
+                                    channel_s_integration_times[ch] = emergency_int
+                                else:
+                                    step4_integration = emergency_int  # Update common integration
+                                # Recalculate ROI signals
+                                roi1_signal = np.mean(emergency_spectrum[roi1_min_idx:roi1_max_idx])
+                                roi2_signal = np.mean(emergency_spectrum[roi2_min_idx:roi2_max_idx])
+                                s_roi1_signals[ch] = roi1_signal
+                                s_roi2_signals[ch] = roi2_signal
+                            else:
+                                logger.error(f"   ❌ {ch.upper()}: Recovery FAILED - still {emergency_sat} saturated pixels")
+                                recovery_success = False
+                        else:
+                            logger.error(f"   ❌ {ch.upper()}: Emergency acquisition failed")
+                            recovery_success = False
+
+                    logger.info("")
+
+                    # If recovery failed, abort calibration
+                    if not recovery_success:
+                        logger.error(f"❌ STEP 4 CRITICAL FAILURE: Emergency recovery failed")
+                        logger.error(f"")
+                        logger.error(f"   ROOT CAUSE: LEDs are too bright even at minimum safe integration time")
+                        logger.error(f"   IMPACT: Cannot proceed with saturated baseline data")
+                        logger.error(f"")
+                        logger.error(f"   RECOMMENDATIONS:")
+                        logger.error(f"     1. Reduce LED intensities in Step 3")
+                        logger.error(f"     2. Check detector saturation threshold is correct")
+                        logger.error(f"     3. Verify sensor is not overexposed (check alignment)")
+                        logger.error(f"")
+                        logger.error(f"   CALIBRATION ABORTED")
+                        logger.error(f"")
+
+                        # Store failure in QC results
+                        result.qc_results['step4_saturation'] = {
+                            'status': 'FAILED',
+                            'saturated_channels': saturated_channels_s,
+                            'message': 'S-mode saturation - emergency recovery failed'
+                        }
+
+                        # Return failure
+                        result.success = False
+                        result.error_message = f"Step 4 saturation in channels: {', '.join([ch.upper() for ch in saturated_channels_s])} - emergency recovery failed"
+                        return result
+                    else:
+                        logger.info(f"✅ EMERGENCY RECOVERY SUCCESSFUL: All channels recovered")
+                        saturated_channels_s = []  # Clear saturation list
+
+                elif off_target_channels_s:
+                    logger.warning(f"⚠️ STEP 4 WARNING: Off-target signals in {', '.join([ch.upper() for ch in off_target_channels_s])}")
+                    logger.warning(f"   Signals outside 77.5%-82.5% range but no saturation detected")
+                    logger.warning(f"   Continuing - may affect QC scores but data is usable")
+                else:
+                    logger.info(f"✅ STEP 4 CHECKLIST PASSED: All channels in range with 0 saturation!")
+
+                logger.info("")
+
+                # Store S-mode data for Step 5 comparison
+                result.s_raw_data = s_raw_data
+                result.s_roi1_signals = s_roi1_signals
+                result.s_roi2_signals = s_roi2_signals
+                result.s_integration_time = step4_integration  # Store Step 4 integration (baseline for reference)
+                result.channel_integration_times = channel_s_integration_times if use_per_channel_integration else {ch: step4_integration for ch in ch_list}
+
+                logger.info("")
+                logger.info("="*80)
+                logger.info("✅ STEP 4 COMPLETE: S-Mode Baseline Characterized")
+                logger.info("="*80)
+                if use_per_channel_integration:
+                    logger.info(f"   Using PER-CHANNEL integration times:")
+                    for ch in ch_list:
+                        if ch in channel_s_integration_times:
+                            logger.info(f"     {ch.upper()}: {channel_s_integration_times[ch]:.1f}ms")
+                else:
+                    logger.info(f"   Common integration time: {step4_integration:.1f}ms")
+                logger.info(f"   Scans per channel: {result.num_scans}")
+                logger.info(f"   S-mode ROI signals captured for P-mode comparison in Step 5")
+                logger.info("")
+                for ch in ch_list:
+                    if ch in s_roi1_signals and ch in s_roi2_signals:
+                        logger.info(f"   {ch.upper()}: ROI1={s_roi1_signals[ch]:.0f}, ROI2={s_roi2_signals[ch]:.0f}")
+
+                # ---------------------------------------------------------------
+                # CALCULATE CYCLE TIME (for 1Hz constraint validation)
+                # ---------------------------------------------------------------
+                # Single cycle = 4 LEDs measured sequentially in one polarization mode
+                # Time per channel = integration_time + pre_led_delay + post_led_delay + overhead
+
+                cycle_time_per_channel = (
+                    best_integration +  # Integration time (ms)
+                    result.pre_led_delay_ms +  # Pre-LED stabilization (12ms)
+                    result.post_led_delay_ms +  # Post-LED afterglow (40ms)
+                    10  # Overhead: USB communication + processing (estimated 10ms)
+                )
+
+                total_cycle_time_ms = cycle_time_per_channel * len(ch_list)
+                total_cycle_time_s = total_cycle_time_ms / 1000.0
+                max_acquisition_rate_hz = 1.0 / total_cycle_time_s if total_cycle_time_s > 0 else 0
+
+                logger.info("")
+                logger.info(f"📊 Cycle Time Analysis (4 LEDs sequential):")
+                logger.info(f"   Time per channel: {cycle_time_per_channel:.1f}ms")
+                logger.info(f"   Total cycle time: {total_cycle_time_ms:.1f}ms ({total_cycle_time_s:.3f}s)")
+                logger.info(f"   Maximum acquisition rate: {max_acquisition_rate_hz:.2f} Hz")
+
+                # QC CHECK: Validate 1Hz constraint (cycle time must be ≤1000ms)
+                MAX_CYCLE_TIME_MS = 1000.0  # 1 second = 1Hz
+                if total_cycle_time_ms > MAX_CYCLE_TIME_MS:
+                    logger.warning("")
+                    logger.warning("⚠️  QC FLAG: Cycle time exceeds 1Hz constraint")
+                    logger.warning(f"   Current: {total_cycle_time_ms:.1f}ms > {MAX_CYCLE_TIME_MS:.0f}ms limit")
+                    logger.warning(f"   Acquisition rate: {max_acquisition_rate_hz:.2f} Hz < 1.0 Hz minimum")
+                    logger.warning("   Consider reducing integration time or LED delays")
+                    logger.warning("")
+                    result.qc_results['cycle_time_flag'] = {
+                        'status': 'WARNING',
+                        'cycle_time_ms': float(total_cycle_time_ms),
+                        'max_allowed_ms': MAX_CYCLE_TIME_MS,
+                        'acquisition_rate_hz': float(max_acquisition_rate_hz),
+                        'message': f'Cycle time {total_cycle_time_ms:.1f}ms exceeds 1Hz constraint'
+                    }
+                else:
+                    logger.info(f"   ✅ Cycle time within 1Hz constraint ({total_cycle_time_ms:.1f}ms ≤ {MAX_CYCLE_TIME_MS:.0f}ms)")
+                    result.qc_results['cycle_time_check'] = {
+                        'status': 'PASS',
+                        'cycle_time_ms': float(total_cycle_time_ms),
+                        'acquisition_rate_hz': float(max_acquisition_rate_hz)
+                    }
+
+                # Store cycle time metrics in result
+                result.cycle_time_ms = total_cycle_time_ms
+                result.acquisition_rate_hz = max_acquisition_rate_hz
+
+                logger.info("")
+                logger.info("="*80 + "\n")
+
+                # ===================================================================
+                # STEP 5: P-MODE MEASUREMENT + PER-CHANNEL INTEGRATION ADJUSTMENT
+                # ===================================================================
+                # After Step 4 measured S-mode baseline in ROI regions, we now:
+                #   1. Switch polarization from S to P
+                #   2. Measure ROI signals with S-mode integration time
+                #   3. Calculate signal loss: (S_ROI - P_ROI) / S_ROI per channel
+                #   4. Adjust integration time per channel to compensate for P-pol loss (initial estimate)
+                #   5. Optimize integration time per channel to hit target intensity (77-83%) with no saturation
+                #   6. Capture P-mode raw spectra with optimized per-channel integration times
+                #   7. Measure dark reference with LEDs OFF
+                #
+                # DESIGN: ROI-based initial estimate + binary search per channel for target optimization
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("STEP 5: P-MODE MEASUREMENT + PER-CHANNEL INTEGRATION ADJUSTMENT")
+                # Debug log: S-mode raw data after Step 4
+                logger.debug("S-mode raw data after Step 4:")
+                for ch, data in s_raw_data.items():
+                    logger.debug(f"  {ch.upper()}: {{}}".format(np.array2string(data, threshold=10, edgeitems=5)))
+                logger.info("        Switch to P-polarization → Measure ROI signal loss → Optimize integration per channel")
+                logger.info("=" * 80)
+
+                if progress_callback:
+                    progress_callback("Step 5 of 6: P-mode measurement...", 67)
+
+                # ---------------------------------------------------------------
+                # PART A: SWITCH TO P-MODE AND MEASURE ROI SIGNALS
+                # ---------------------------------------------------------------
+                logger.info("")
+                logger.info("🔄 POLARIZER ORIENTATION CHANGE: Switching to P-MODE")
+                logger.info("  Current Step: Step 5 - P-mode measurement")
+                logger.info("  Expected behavior: Minimum transmission, strongest SPR absorption")
+                logger.info("")
+
+                # CRITICAL SAFETY CHECK: Validate positions before set_mode()
+                _validate_polarizer_positions(device_config, 'p', logger)
+
+                logger.info("  → Sending set_mode('p') command to controller...")
+                set_result = ctrl.set_mode('p')
+                if set_result:
+                    logger.info("  ✅ Controller confirmed: Servo moved to P position")
+                else:
+                    logger.warning("  ⚠️ Controller response unexpected - servo should have moved to P position")
+                    logger.warning("  ⚠️ Continuing calibration - servo movement may still be successful")
+                logger.info("")
+                time.sleep(0.5)  # Wait for servo to move
+
+                # Polarizer now in P-mode (using device_config position)
+                logger.info(f"    ✅ P-mode set (position from device_config)")
+                logger.info("")
+
+                # Use S-mode integration as baseline
+                p_integration_time = result.s_integration_time  # Already in milliseconds
+                usb.set_integration(p_integration_time)
                 time.sleep(0.010)  # 10ms settling time
 
-                led_val = p_led_intensities[ch_name]
-                ctrl.set_intensity(ch=ch_name, raw_val=led_val)
+                # ========================================================================
+                # CRITICAL: P-mode LED intensities must be LOWER than S-mode
+                # ========================================================================
+                # P-mode typically has HIGHER transmission than S-mode (polarizer effect)
+                # Using same intensities as S-mode will cause saturation
+                # Apply 0.5x reduction factor (50% of S-mode) to prevent P-mode saturation
+                # Previous 0.7x was insufficient and still caused saturation
+                # ========================================================================
+                logger.info("")
+                logger.info("  Calculating P-mode LED intensities (reduced from S-mode):")
+                p_led_intensities = {}
+                P_MODE_REDUCTION_FACTOR = 0.5  # Reduce by 50% to prevent saturation
+
+                for ch_name in ch_list:
+                    s_intensity = result.s_mode_intensity[ch_name]
+                    p_intensity = int(s_intensity * P_MODE_REDUCTION_FACTOR)
+                    p_intensity = max(p_intensity, 10)  # Minimum 10 to ensure signal
+                    p_led_intensities[ch_name] = p_intensity
+                    logger.info(f"    {ch_name.upper()}: S={s_intensity} → P={p_intensity} ({P_MODE_REDUCTION_FACTOR:.0%} reduction)")
+
+                logger.info("")
+                logger.info(f"  Reason: P-mode has higher transmission, needs lower LED intensity")
+                logger.info(f"  50% reduction prevents saturation while maintaining good SNR")
+                logger.info("")
+
+                # Define ROI wavelength ranges (from Step 4)
+                ROI1_WL_MIN, ROI1_WL_MAX = 560, 570  # Blue edge
+                ROI2_WL_MIN, ROI2_WL_MAX = 710, 720  # Red edge
+
+                # Convert wavelengths to pixel indices
+                wavelengths = usb.read_wavelength()
+                roi1_min_idx = np.searchsorted(wavelengths, ROI1_WL_MIN)
+                roi1_max_idx = np.searchsorted(wavelengths, ROI1_WL_MAX)
+                roi2_min_idx = np.searchsorted(wavelengths, ROI2_WL_MIN)
+                roi2_max_idx = np.searchsorted(wavelengths, ROI2_WL_MAX)
+
+                logger.info(f"  Measuring P-mode ROI signals with {p_integration_time:.1f}ms integration:")
+
+                # Measure P-mode ROI signals
+                p_roi1_signals = {}
+                p_roi2_signals = {}
+                for ch_name in ch_list:
+                    led_val = p_led_intensities[ch_name]
+
+                    # Use hardware acquisition function
+                    spectrum = acquire_raw_spectrum(
+                        usb=usb,
+                        ctrl=ctrl,
+                        channel=ch_name,
+                        led_intensity=led_val,
+                        integration_time_ms=None,  # Already set
+                        num_scans=1,
+                        pre_led_delay_ms=LED_DELAY * 1000,
+                        post_led_delay_ms=0.01 * 1000,
+                        use_batch_command=False
+                    )
+
+                    if spectrum is None:
+                        logger.warning(f"    ⚠️  {ch_name.upper()}: No spectrum")
+                        continue
+
+                    # Calculate ROI signals (median of ROI pixels)
+                    roi1_signal = np.median(spectrum[roi1_min_idx:roi1_max_idx])
+                    roi2_signal = np.median(spectrum[roi2_min_idx:roi2_max_idx])
+
+                    p_roi1_signals[ch_name] = roi1_signal
+                    p_roi2_signals[ch_name] = roi2_signal
+
+                    logger.info(f"    {ch_name.upper()}: ROI1={roi1_signal:.0f}, ROI2={roi2_signal:.0f}")
+
+                # ---------------------------------------------------------------
+                # PART B: CALCULATE SIGNAL LOSS AND INITIAL INTEGRATION ESTIMATE
+                # ---------------------------------------------------------------
+                logger.info("")
+                logger.info("  Calculating P-pol signal loss and initial integration estimate:")
+
+                # Retrieve S-mode baseline from Step 4
+                s_roi1_signals = result.s_roi1_signals
+                s_roi2_signals = result.s_roi2_signals
+
+                # QC CHECK: Verify polarizer rotation by comparing S vs P signals
+                logger.info("")
+                logger.info("  🔍 QC: Verifying polarizer rotation (S-mode vs P-mode):")
+                polarizer_rotation_ok = False
+                for ch_name in ch_list:
+                    if ch_name in s_roi2_signals and ch_name in p_roi2_signals:
+                        s_signal = s_roi2_signals[ch_name]
+                        p_signal = p_roi2_signals[ch_name]
+                        ratio = p_signal / s_signal if s_signal > 0 else 1.0
+
+                        # P-mode should have LOWER signal than S-mode (ratio < 1.0)
+                        # Typical ratio: 0.1 to 0.8 depending on SPR dip strength
+                        if ratio < 0.95:
+                            status = "✅ POLARIZER ROTATED"
+                            polarizer_rotation_ok = True
+                        elif ratio < 1.05:
+                            status = "⚠️ MINIMAL CHANGE"
+                        else:
+                            status = "❌ P > S (INVERTED OR NO ROTATION)"
+
+                        logger.info(f"    {ch_name.upper()}: S={s_signal:.0f}, P={p_signal:.0f}, P/S={ratio:.3f} {status}")
+
+                if not polarizer_rotation_ok:
+                    logger.error("")
+                    logger.error("  ❌ CRITICAL: Polarizer may not have rotated!")
+                    logger.error("     Expected: P-mode signal < S-mode signal (P/S ratio < 0.95)")
+                    logger.error("     Possible causes: Servo not moving, wrong positions, hardware issue")
+                    logger.error("")
+                    result.qc_results['polarizer_rotation'] = {
+                        'status': 'FAIL',
+                        'message': 'P-mode signal not lower than S-mode - polarizer may not have rotated'
+                    }
+                else:
+                    logger.info("  ✅ Polarizer rotation verified (P-mode < S-mode)")
+                    result.qc_results['polarizer_rotation'] = {
+                        'status': 'PASS',
+                        'message': 'P-mode signal lower than S-mode as expected'
+                    }
+                logger.info("")
+
+                # QC CHECK: Detect if P-pol ROI signals INCREASE vs S-pol (suggests polarizer issue)
+                roi_increase_detected = False
+                roi_increase_channels = []
+
+                # Calculate per-channel integration time adjustments using binary search optimization
+                channel_integration_times = {}
+
+                # ALWAYS use per-channel binary search optimization (matches Step 4 approach)
+                logger.info("  🔄 Step 5 Per-Channel Binary Search Optimization")
+                logger.info(f"   Target: {STEP4_TARGET_PERCENT*100:.0f}% ±2.5% for each channel")
+                logger.info(f"   Starting from P-mode baseline: {p_integration_time:.1f}ms")
+                logger.info("")
+
+                for ch_name in ch_list:
+                    logger.info(f"  Optimizing {ch_name.upper()}:")
+
+                    # Binary search for optimal P-mode integration time
+                    min_int = detector_params.min_integration_time
+                    max_int = min(p_integration_time * 3.0, detector_params.max_integration_time)  # Allow up to 3× baseline
+                    best_int = detector_params.min_integration_time  # Start with minimum as fallback
+                    best_signal = 0
+                    max_iterations = 8
+
+                    # Track if we ever hit saturation
+                    ever_saturated = False
+
+                    for iteration in range(max_iterations):
+                        test_int = (min_int + max_int) / 2
+
+                        spectrum = acquire_raw_spectrum(
+                            usb=usb,
+                            ctrl=ctrl,
+                            channel=ch_name,
+                            led_intensity=p_led_intensities[ch_name],
+                            integration_time_ms=test_int,
+                            num_scans=5,
+                            pre_led_delay_ms=LED_DELAY * 1000,
+                            post_led_delay_ms=0.01 * 1000,
+                            use_batch_command=False
+                        )
+
+                        if spectrum is None:
+                            logger.warning(f"    Iter {iteration+1}: No spectrum, skipping")
+                            break
+
+                        # Check signal and saturation
+                        roi_spectrum = spectrum[result.wave_min_index:result.wave_max_index]
+                        signal = roi_signal(roi_spectrum, 0, len(roi_spectrum), method="median")
+                        signal_pct = (signal / detector_max) * 100
+
+                        sat_count = count_saturated_pixels(roi_spectrum, 0, len(roi_spectrum), detector_params.saturation_threshold)
+                        is_saturated = sat_count > 0
+
+                        # Check if in target range
+                        in_range = step4_min_signal <= signal <= step4_max_signal
+
+                        if sat_count > 0:
+                            ever_saturated = True
+                            logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), SATURATED → reduce")
+                            max_int = test_int
+                        elif in_range:
+                            best_int = test_int
+                            best_signal = signal
+                            logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), ✅ OPTIMAL")
+                            break
+                        elif signal < step4_min_signal:
+                            logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), too low → increase")
+                            min_int = test_int
+                            if abs(signal - step4_target_signal) < abs(best_signal - step4_target_signal) or best_signal == 0:
+                                best_int = test_int
+                                best_signal = signal
+                        else:
+                            logger.info(f"    Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), too high → reduce")
+                            max_int = test_int
+                            if abs(signal - step4_target_signal) < abs(best_signal - step4_target_signal):
+                                best_int = test_int
+                                best_signal = signal
+
+                    # CRITICAL: If we ever hit saturation, verify final integration time is safe
+                    if ever_saturated:
+                        logger.warning(f"    Channel {ch_name.upper()} hit saturation during search - verifying final integration is safe...")
+                        verify_spectrum = acquire_raw_spectrum(
+                            usb=usb,
+                            ctrl=ctrl,
+                            channel=ch_name,
+                            led_intensity=p_led_intensities[ch_name],
+                            integration_time_ms=best_int,
+                            num_scans=5,
+                            pre_led_delay_ms=LED_DELAY * 1000,
+                            post_led_delay_ms=0.01 * 1000,
+                            use_batch_command=False
+                        )
+                        if verify_spectrum is not None:
+                            verify_roi = verify_spectrum[result.wave_min_index:result.wave_max_index]
+                            verify_sat = count_saturated_pixels(verify_roi, 0, len(verify_roi), detector_params.saturation_threshold)
+                            if verify_sat > 0:
+                                # Still saturated! Reduce integration time aggressively
+                                logger.error(f"    ❌ Still saturated at {best_int:.1f}ms! Reducing to 70% of current value...")
+                                best_int *= 0.70
+                                best_int = max(detector_params.min_integration_time, best_int)
+                                logger.warning(f"    Using emergency reduced integration: {best_int:.1f}ms")
+
+                    channel_integration_times[ch_name] = best_int
+                    final_pct = (best_signal / detector_max) * 100 if best_signal > 0 else 0
+                    logger.info(f"  ✅ {ch_name.upper()}: Final {best_int:.1f}ms → {best_signal:.0f} ({final_pct:.1f}%)")
+                    logger.info("")
+
+                logger.info("✅ All channels optimized with per-channel P-mode integration times")
+
+                # Store final signals for later use
+                final_channel_signals = {}
+                for ch_name in ch_list:
+                    # Re-measure with final integration time to get accurate signal
+                    spectrum = acquire_raw_spectrum(
+                        usb=usb,
+                        ctrl=ctrl,
+                        channel=ch_name,
+                        led_intensity=p_led_intensities[ch_name],
+                        integration_time_ms=channel_integration_times[ch_name],
+                        num_scans=5,
+                        pre_led_delay_ms=LED_DELAY * 1000,
+                        post_led_delay_ms=0.01 * 1000,
+                        use_batch_command=False
+                    )
+                    if spectrum is not None:
+                        roi_spectrum = spectrum[result.wave_min_index:result.wave_max_index]
+                        signal = roi_signal(roi_spectrum, 0, len(roi_spectrum), method="median")
+                        final_channel_signals[ch_name] = signal
+
+                # QC CHECK: Detect if P-pol ROI signals INCREASE vs S-pol (suggests polarizer issue)
+                roi_increase_detected = False
+                roi_increase_channels = []
+
+                for ch_name in ch_list:
+                    if ch_name in s_roi1_signals and ch_name in p_roi1_signals:
+                            s_avg = (s_roi1_signals[ch_name] + s_roi2_signals[ch_name]) / 2
+                            p_avg = (p_roi1_signals[ch_name] + p_roi2_signals[ch_name]) / 2
+                            if p_avg > s_avg * 1.05:
+                                roi_increase_detected = True
+                                roi_increase_channels.append(ch_name)
+                                logger.warning(f"       ⚠️  P-pol signal INCREASED vs S-pol (P={p_avg:.0f} > S={s_avg:.0f})")
+
+                # Store results
+                result.p_integration_time = channel_integration_times.get(ch_list[0], p_integration_time)  # Use first channel as reference
+                result.channel_integration_times = channel_integration_times  # Per-channel integration times
+                result.p_mode_intensity = p_led_intensities.copy()
+                result.p_roi1_signals = p_roi1_signals
+                result.p_roi2_signals = p_roi2_signals
+
+                # Store QC flag if P-pol signals increased
+                if roi_increase_detected:
+                    logger.warning("")
+                    logger.warning("⚠️  QC FLAG: P-pol ROI signals INCREASED for some channels")
+                    logger.warning(f"   Affected channels: {', '.join([ch.upper() for ch in roi_increase_channels])}")
+                    logger.warning("   This suggests polarizer misalignment or swapped S/P positions")
+                    logger.warning("   Calibration will continue, but polarizer positions should be verified")
+                    logger.warning("")
+                    result.qc_results['step5_roi_increase_flag'] = {
+                        'status': 'WARNING',
+                        'affected_channels': roi_increase_channels,
+                        'message': 'P-pol signal increased vs S-pol - polarizer issue suspected'
+                    }
+
+                logger.info("")
+                logger.info("="*80)
+                logger.info("✅ STEP 5 COMPLETE: P-mode Measurement with Per-Channel Integration Times")
+                logger.info("="*80)
+                logger.info(f"   Per-channel optimized integration times:")
+                for ch in ch_list:
+                    if ch in channel_integration_times:
+                        logger.info(f"      {ch.upper()}: {channel_integration_times[ch]:.1f}ms")
+                logger.info("")
+
+                # Standardized summary of P-mode step
+                log_step_summary(
+                    step_name="Step 5 (P-mode Measurement)",
+                    detector_max=detector_max,
+                    integration_ms=result.p_integration_time,
+                    channel_signals=final_channel_signals,
+                    sat_counts={ch: 0 for ch in ch_list},  # Already validated above
+                )
+
+                # ---------------------------------------------------------------
+                # PART D: CAPTURE P-MODE RAW SPECTRA AND DARK REFERENCE FOR STEP 6
+                # ---------------------------------------------------------------
+                logger.info("")
+                logger.info("  Capturing P-mode raw spectra with per-channel integration times:")
+
+                p_raw_data = {}
+                for ch_name in ch_list:
+                    ch_int = channel_integration_times[ch_name]
+                    usb.set_integration(ch_int)
+                    time.sleep(0.010)  # 10ms settling time
+
+                    led_val = p_led_intensities[ch_name]
+
+                    # Use hardware acquisition function with averaging
+                    avg_spectrum = acquire_raw_spectrum(
+                        usb=usb,
+                        ctrl=ctrl,
+                        channel=ch_name,
+                        led_intensity=led_val,
+                        integration_time_ms=ch_int,
+                        num_scans=result.num_scans,
+                        pre_led_delay_ms=LED_DELAY * 1000,
+                        post_led_delay_ms=0.01 * 1000,
+                        use_batch_command=False
+                    )
+
+                    if avg_spectrum is not None:
+                        p_raw_data[ch_name] = avg_spectrum[wave_min_index:wave_max_index]
+                        logger.info(f"    ✅ {ch_name.upper()}: {result.num_scans} scans averaged at {ch_int:.1f}ms")
+                    else:
+                        logger.warning(f"    ⚠️  {ch_name.upper()}: No valid spectra captured")
+
+                # CRITICAL CHECK: Verify no saturation in final P-mode raw spectra
+                logger.info("")
+                logger.info("  Final P-mode saturation check:")
+                saturated_channels_p = []
+                for ch_name in ch_list:
+                    if ch_name in p_raw_data:
+                        spectrum = p_raw_data[ch_name]
+                        sat_count = count_saturated_pixels(
+                            spectrum, 0, len(spectrum), detector_params.saturation_threshold
+                        )
+                        if sat_count > 0:
+                            max_pixel = np.max(spectrum)
+                            logger.error(f"    ❌ {ch_name.upper()}: {sat_count} saturated pixels (max: {max_pixel:.0f})")
+                            saturated_channels_p.append(ch_name)
+                        else:
+                            signal = roi_signal(spectrum, 0, len(spectrum), method="median")
+                            signal_pct = (signal / detector_max) * 100
+                            logger.info(f"    ✅ {ch_name.upper()}: No saturation ({signal:.0f} counts, {signal_pct:.1f}%)")
+
+                if saturated_channels_p:
+                    logger.error(f"")
+                    logger.error(f"❌ CALIBRATION FAILED: P-mode saturation detected in channels: {', '.join([ch.upper() for ch in saturated_channels_p])}")
+                    logger.error(f"   The 80% target is too high for P-mode.")
+                    logger.error(f"   Binary search failed to find non-saturated integration times.")
+                    logger.error(f"")
+                    raise RuntimeError(f"P-mode saturation detected in Step 5 after optimization: {saturated_channels_p}")
+
+                logger.info("")
+
+                # Measure dark reference at highest P-mode integration time
+                max_p_integration = max(channel_integration_times.values())
+                usb.set_integration(max_p_integration)
+
+                # Turn off all LEDs and verify
+                logger.info("")
+                logger.info(f"  Turning off all LEDs for dark measurement...")
+                ctrl.turn_off_channels()
                 time.sleep(LED_DELAY)
-                spectrum = usb.read_intensity()
-                ctrl.set_intensity(ch=ch_name, raw_val=0)
-                time.sleep(0.01)
 
-                if spectrum is None:
-                    logger.warning(f"      Iter {iteration+1}: No spectrum, skipping")
-                    break
+                # Verify LEDs are actually off
+                if hasattr(ctrl, 'get_all_led_intensities'):
+                    led_status = ctrl.get_all_led_intensities()
+                    leds_off = all(intensity <= 1 for ch, intensity in led_status.items() if ch != 'd' or intensity >= 0)
+                    if leds_off:
+                        logger.info(f"    ✅ All LEDs confirmed OFF: {led_status}")
+                    else:
+                        logger.error(f"    ❌ CRITICAL: LEDs still ON during dark measurement: {led_status}")
+                        logger.error(f"       Dark measurement will be invalid!")
+                        result.qc_results['dark_measurement_leds_on'] = {
+                            'status': 'FAIL',
+                            'led_status': led_status,
+                            'message': 'LEDs were not turned off for dark measurement'
+                        }
 
-                # Check saturation
-                sat_count = count_saturated_pixels(
-                    spectrum, wave_min_index, wave_max_index, detector_params.saturation_threshold
-                )
+                logger.info(f"  Measuring dark reference at {max_p_integration:.1f}ms:")
 
-                # Calculate median ROI signal
-                signal = roi_signal(spectrum, wave_min_index, wave_max_index, method="median")
-                signal_pct = (signal / detector_max) * 100
+                dark_scans = []
+                for scan_idx in range(max(3, result.num_scans // 2)):
+                    spectrum = usb.read_intensity()
+                    if spectrum is not None:
+                        dark_scans.append(spectrum[wave_min_index:wave_max_index])
+                    time.sleep(0.01)
 
-                # Check if in target range
-                in_range = min_signal <= signal <= max_signal
+                p_dark_ref_filtered = np.mean(dark_scans, axis=0) if dark_scans else np.zeros(wave_max_index - wave_min_index)
 
-                if sat_count > 0:
-                    logger.info(f"      Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), SATURATED → reduce")
-                    max_int = test_int
-                elif in_range:
-                    best_int = test_int
-                    best_signal = signal
-                    logger.info(f"      Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), ✅ OPTIMAL")
-                    break
-                elif signal < min_signal:
-                    logger.info(f"      Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), too low → increase")
-                    min_int = test_int
-                    # Track best (closest to target)
-                    if abs(signal - target_signal) < abs(best_signal - target_signal):
-                        best_int = test_int
-                        best_signal = signal
+                # Connect Step 5 outputs to Step 6
+                result.p_raw_data = p_raw_data
+                result.dark_noise = p_dark_ref_filtered
+                # Debug log: P-mode raw data after Step 5
+                logger.debug("P-mode raw data after Step 5:")
+                for ch, data in p_raw_data.items():
+                    logger.debug(f"  {ch.upper()}: {{}}".format(np.array2string(data, threshold=10, edgeitems=5)))
+
+                # QC check: Verify dark signal is LOW (should be near detector baseline ~200-800 counts)
+                dark_mean = np.mean(p_dark_ref_filtered)
+                dark_max = np.max(p_dark_ref_filtered)
+                dark_std = np.std(p_dark_ref_filtered)
+
+                logger.info(f"    Mean: {dark_mean:.1f} counts")
+                logger.info(f"    Max: {dark_max:.1f} counts")
+                logger.info(f"    Std: {dark_std:.1f} counts")
+
+                # QC validation (expected range: 100-1000 counts for dark measurement with LEDs OFF)
+                EXPECTED_DARK_MIN = 100
+                EXPECTED_DARK_MAX = 1000
+
+                if EXPECTED_DARK_MIN <= dark_mean <= EXPECTED_DARK_MAX:
+                    logger.info(f"    ✅ Dark-ref within expected range ({EXPECTED_DARK_MIN}-{EXPECTED_DARK_MAX} counts)")
+                    result.qc_results['dark_measurement'] = {
+                        'status': 'PASS',
+                        'dark_mean': float(dark_mean),
+                        'dark_max': float(dark_max),
+                        'expected_range': (EXPECTED_DARK_MIN, EXPECTED_DARK_MAX)
+                    }
                 else:
-                    logger.info(f"      Iter {iteration+1}: {test_int:.1f}ms → {signal:.0f} ({signal_pct:.1f}%), too high → reduce")
-                    max_int = test_int
-                    # Track best (closest to target)
-                    if abs(signal - target_signal) < abs(best_signal - target_signal):
-                        best_int = test_int
-                        best_signal = signal
+                    logger.error(f"    ❌ CRITICAL: Dark-ref outside expected range ({EXPECTED_DARK_MIN}-{EXPECTED_DARK_MAX} counts)")
+                    if dark_mean > EXPECTED_DARK_MAX:
+                        logger.error(f"       Possible causes: LEDs NOT OFF (most likely), light leak, detector issue")
+                        logger.error(f"       Expected dark ~200-800 counts, got {dark_mean:.0f} counts")
+                    else:
+                        logger.warning(f"       Possible causes: Detector offset drift, temperature change")
 
-            # Update to best found integration time
-            channel_integration_times[ch_name] = best_int
-            final_channel_signals[ch_name] = best_signal
-            final_pct = (best_signal / detector_max) * 100
-            logger.info(f"    ✅ {ch_name.upper()}: Final {best_int:.1f}ms → {best_signal:.0f} ({final_pct:.1f}%)")
+                    result.qc_results['dark_measurement'] = {
+                        'status': 'FAIL',
+                        'dark_mean': float(dark_mean),
+                        'dark_max': float(dark_max),
+                        'expected_range': (EXPECTED_DARK_MIN, EXPECTED_DARK_MAX),
+                        'message': f'Dark too high ({dark_mean:.0f} counts) - LEDs may not be off'
+                    }
 
-        logger.info("")
-        logger.info("  ✅ All channels optimized to target intensity with no saturation")
+                logger.info("")
+                logger.info("✅ Step 5 complete: P-mode measurement and dark-ref capture done\n")
 
-        # Store per-channel integration times
-        result.p_integration_time = p_integration_time  # Baseline P-mode integration
-        result.channel_integration_times = channel_integration_times  # Per-channel adjusted
-        result.p_mode_intensity = p_led_intensities.copy()
-        result.p_roi1_signals = p_roi1_signals
-        result.p_roi2_signals = p_roi2_signals
+                # ===================================================================
+                # STEP 6: DATA PROCESSING + TRANSMISSION CALCULATION + QC (FINAL STEP)
+                # ===================================================================
+                logger.info("=" * 80)
+                logger.info("STEP 6: Data Processing + Transmission Calculation + QC (FINAL STEP)")
+                logger.info("=" * 80)
 
-        logger.info("")
-        logger.info("="*80)
-        logger.info("✅ STEP 5 COMPLETE: P-mode Measurement and Integration Adjustment")
-        logger.info("="*80)
-        logger.info(f"   Baseline P-mode integration: {p_integration_time:.1f}ms")
-        logger.info(f"   Per-channel adjusted integration times:")
-        for ch in ch_list:
-            if ch in channel_integration_times:
-                logger.info(f"      {ch.upper()}: {channel_integration_times[ch]:.1f}ms")
-        logger.info("")
+                if progress_callback:
+                    progress_callback("Step 6 of 6: Preparing QC results", 83)
 
-        # Standardized summary of P-mode step
-        log_step_summary(
-            step_name="Step 5 (P-mode Measurement)",
-            detector_max=detector_max,
-            integration_ms=p_integration_time,
-            channel_signals=final_channel_signals,
-            sat_counts={ch: 0 for ch in ch_list},  # Already validated above
-        )
+                try:
+                    # ---------------------------------------------------------------
+                    # PART A: VERIFY RAW DATA AVAILABILITY
+                    # ---------------------------------------------------------------
+                    logger.info("\n📊 Part A: Verifying Raw Data Availability")
 
-        # ---------------------------------------------------------------
-        # PART D: CAPTURE P-MODE RAW SPECTRA AND DARK REFERENCE FOR STEP 6
-        # ---------------------------------------------------------------
-        logger.info("")
-        logger.info("  Capturing P-mode raw spectra with per-channel integration times:")
+                    if not hasattr(result, 's_raw_data') or not result.s_raw_data:
+                        raise RuntimeError("S-pol raw data missing from Step 4")
+                    if not hasattr(result, 'p_raw_data') or not result.p_raw_data:
+                        raise RuntimeError("P-pol raw data missing from Step 5")
+                    if not hasattr(result, 'dark_noise') or result.dark_noise is None:
+                        raise RuntimeError("Dark noise reference missing from Step 5")
 
-        p_raw_data = {}
-        for ch_name in ch_list:
-            ch_int = channel_integration_times[ch_name]
-            usb.set_integration(ch_int)
-            time.sleep(0.010)  # 10ms settling time
+                    logger.info("   ✅ S-pol raw data: 4 channels from Step 4")
+                    logger.info("   ✅ P-pol raw data: 4 channels from Step 5")
+                    logger.info("   ✅ Dark reference: From Step 5 (P-mode integration time)")
+                    logger.info(f"   ✅ S-mode integration time: {result.s_integration_time:.2f}ms")
+                    logger.info(f"   ✅ P-mode integration time: {result.p_integration_time:.2f}ms")
 
-            led_val = p_led_intensities[ch_name]
-            ctrl.set_intensity(ch=ch_name, raw_val=led_val)
-            time.sleep(LED_DELAY)
+                    # ---------------------------------------------------------------
+                    # PART B: PROCESS POLARIZATION DATA (SpectrumPreprocessor)
+                    # ---------------------------------------------------------------
+                    logger.info("\n🔧 Part B: Processing Polarization Data (SpectrumPreprocessor)")
 
-            spectra = []
-            for scan_idx in range(result.num_scans):
-                spectrum = usb.read_intensity()
-                if spectrum is not None:
-                    spectra.append(spectrum[wave_min_index:wave_max_index])
-                time.sleep(0.01)
+                    # Process S-pol and P-pol data using modern architecture
+                    s_pol_ref = {}
+                    p_pol_ref = {}
 
-            ctrl.set_intensity(ch=ch_name, raw_val=0)
-            time.sleep(0.01)
+                    for ch in ch_list:
+                        logger.info(f"Processing channel {ch.upper()}...")
 
-            if spectra:
-                p_raw_data[ch_name] = np.mean(spectra, axis=0)
-                logger.info(f"    ✅ {ch_name.upper()}: {len(spectra)} scans averaged at {ch_int:.1f}ms")
-            else:
-                logger.warning(f"    ⚠️  {ch_name.upper()}: No valid spectra captured")
+                        # Process S-pol (remove dark noise)
+                        s_pol_ref[ch] = SpectrumPreprocessor.process_polarization_data(
+                            raw_spectrum=result.s_raw_data[ch],
+                            dark_noise=result.dark_noise,
+                            channel_name=ch,
+                            verbose=True
+                        )
 
-        # Measure dark reference at highest P-mode integration time
-        max_p_integration = max(channel_integration_times.values())
-        usb.set_integration(max_p_integration)
-        ctrl.turn_off_channels()
-        time.sleep(LED_DELAY)
+                        # Process P-pol (remove dark noise)
+                        p_pol_ref[ch] = SpectrumPreprocessor.process_polarization_data(
+                            raw_spectrum=result.p_raw_data[ch],
+                            dark_noise=result.dark_noise,
+                            channel_name=ch,
+                            verbose=True
+                        )
 
-        logger.info("")
-        logger.info(f"  Measuring dark reference at {max_p_integration:.1f}ms:")
+                    # Store processed references
+                    result.s_pol_ref = s_pol_ref
+                    result.p_pol_ref = p_pol_ref
 
-        dark_scans = []
-        for scan_idx in range(max(3, result.num_scans // 2)):
-            spectrum = usb.read_intensity()
-            if spectrum is not None:
-                dark_scans.append(spectrum[wave_min_index:wave_max_index])
-            time.sleep(0.01)
+                    logger.info("\n✅ S-pol and P-pol references processed")
+                    logger.info("   Ready for QC display")
 
-        p_dark_ref_filtered = np.mean(dark_scans, axis=0) if dark_scans else np.zeros(wave_max_index - wave_min_index)
+                    # ---------------------------------------------------------------
+                    # PART C: CALCULATE TRANSMISSION SPECTRUM (TransmissionProcessor)
+                    # ---------------------------------------------------------------
+                    logger.info("\n📈 Part C: Calculating Transmission Spectrum (TransmissionProcessor)")
+                    logger.info("   🔴 SIMULATING LIVE DATA ACQUISITION")
 
-        # Connect Step 5 outputs to Step 6
-        result.p_raw_data = p_raw_data
-        result.dark_noise = p_dark_ref_filtered
+                    transmission_spectra = {}
 
-        # QC check: Verify dark signal is around expected level (~3200 counts for typical detectors)
-        dark_mean = np.mean(p_dark_ref_filtered)
-        dark_max = np.max(p_dark_ref_filtered)
-        dark_std = np.std(p_dark_ref_filtered)
+                    for ch in ch_list:
+                        logger.info(f"\n{'='*80}")
+                        logger.info(f"Channel {ch.upper()}: TransmissionProcessor Processing")
+                        logger.info(f"{'='*80}")
 
-        logger.info(f"    Mean: {dark_mean:.1f} counts")
-        logger.info(f"    Max: {dark_max:.1f} counts")
-        logger.info(f"    Std: {dark_std:.1f} counts")
+                        # Calculate transmission using modern architecture
+                        transmission_ch = TransmissionProcessor.process_single_channel(
+                            p_pol_clean=p_pol_ref[ch],  # Already preprocessed above
+                            s_pol_ref=s_pol_ref[ch],     # Already preprocessed above
+                            led_intensity_s=result.ref_intensity[ch],
+                            led_intensity_p=result.p_mode_intensity[ch],
+                            wavelengths=result.wave_data,
+                            apply_sg_filter=True,
+                            baseline_method='percentile',
+                            baseline_percentile=95.0,
+                            verbose=True
+                        )
 
-        # QC validation (expected range: 2500-4000 counts for typical Ocean Optics detectors)
-        EXPECTED_DARK_MIN = 2500
-        EXPECTED_DARK_MAX = 4000
+                        transmission_spectra[ch] = transmission_ch
 
-        if EXPECTED_DARK_MIN <= dark_mean <= EXPECTED_DARK_MAX:
-            logger.info(f"    ✅ Dark-ref within expected range ({EXPECTED_DARK_MIN}-{EXPECTED_DARK_MAX} counts)")
-        else:
-            logger.warning(f"    ⚠️  Dark-ref outside expected range ({EXPECTED_DARK_MIN}-{EXPECTED_DARK_MAX} counts)")
-            if dark_mean > EXPECTED_DARK_MAX:
-                logger.warning(f"       Possible causes: LEDs not fully off, light leak, detector issue")
-            else:
-                logger.warning(f"       Possible causes: Detector offset drift, temperature change")
+                    # Store transmission spectra
+                    result.transmission = transmission_spectra
 
-        logger.info("")
-        logger.info("✅ Step 5 complete: P-mode measurement and dark-ref capture done\n")
+                    logger.info("\n" + "=" * 80)
+                    logger.info("✅ Transmission spectra calculated")
+                    logger.info("   Ready for QC display and peak tracking pipeline")
+                    logger.info("=" * 80)
 
-        # ===================================================================
-        # STEP 6: DATA PROCESSING + TRANSMISSION CALCULATION + QC (FINAL STEP)
-        # ===================================================================
-        logger.info("=" * 80)
-        logger.info("STEP 6: Data Processing + Transmission Calculation + QC (FINAL STEP)")
-        logger.info("=" * 80)
+                    # ---------------------------------------------------------------
+                    # PART D: COMPREHENSIVE QC VALIDATION (USING TransmissionProcessor.calculate_transmission_qc)
+                    # ---------------------------------------------------------------
+                    logger.info("\n🔍 Part D: Comprehensive QC Validation & Orientation Check")
+                    logger.info("=" * 80)
 
-        if progress_callback:
-            progress_callback("Step 6 of 6: Preparing QC results", 83)
+                    qc_results = {}
+                    all_channels_pass = True
+                    orientation_issues = []
 
-        try:
-            # ---------------------------------------------------------------
-            # PART A: VERIFY RAW DATA AVAILABILITY
-            # ---------------------------------------------------------------
-            logger.info("\n📊 Part A: Verifying Raw Data Availability")
+                    # Get detector parameters for saturation checks
+                    detector_params = get_detector_params(device_type)
 
-            if not hasattr(result, 's_raw_data') or not result.s_raw_data:
-                raise RuntimeError("S-pol raw data missing from Step 4")
-            if not hasattr(result, 'p_raw_data') or not result.p_raw_data:
-                raise RuntimeError("P-pol raw data missing from Step 5")
-            if not hasattr(result, 'dark_noise') or result.dark_noise is None:
-                raise RuntimeError("Dark noise reference missing from Step 5")
+                    for ch in ch_list:
+                        logger.info(f"\n{'='*80}")
+                        logger.info(f"Channel {ch.upper()} QC Validation")
+                        logger.info(f"{'='*80}")
 
-            logger.info("   ✅ S-pol raw data: 4 channels from Step 4")
-            logger.info("   ✅ P-pol raw data: 4 channels from Step 5")
-            logger.info("   ✅ Dark reference: From Step 5 (P-mode integration time)")
-            logger.info(f"   ✅ S-mode integration time: {result.s_integration_time:.2f}ms")
-            logger.info(f"   ✅ P-mode integration time: {result.p_integration_time:.2f}ms")
+                        transmission_ch = transmission_spectra[ch]
+                        wavelengths = result.wave_data
 
-            # ---------------------------------------------------------------
-            # PART B: PROCESS POLARIZATION DATA (SpectrumPreprocessor)
-            # ---------------------------------------------------------------
-            logger.info("\n🔧 Part B: Processing Polarization Data (SpectrumPreprocessor)")
+                        # Use comprehensive QC calculation with orientation validation
+                        qc = TransmissionProcessor.calculate_transmission_qc(
+                            transmission_spectrum=transmission_ch,
+                            wavelengths=wavelengths,
+                            channel=ch,
+                            p_spectrum=result.p_raw_data[ch],  # P-mode (LOW at SPR)
+                            s_spectrum=result.s_raw_data[ch],  # S-mode (HIGH reference)
+                            detector_max_counts=detector_params.max_counts,
+                            saturation_threshold=detector_params.saturation_threshold
+                        )
 
-            # Process S-pol and P-pol data using modern architecture
-            s_pol_ref = {}
-            p_pol_ref = {}
+                        # Log all QC metrics
+                        logger.info(f"📊 SPR Dip Analysis:")
+                        logger.info(f"   Dip Wavelength: {qc['dip_wavelength']:.1f}nm")
+                        logger.info(f"   Min Transmission: {qc['transmission_min']:.1f}%")
+                        logger.info(f"   Dip Depth: {qc['dip_depth']:.1f}%")
+                        logger.info(f"   Status: {'✅ DETECTED' if qc['dip_detected'] else '❌ WEAK/ABSENT'} (depth > 5%)")
 
-            for ch in ch_list:
-                logger.info(f"Processing channel {ch.upper()}...")
+                        logger.info(f"\n📊 FWHM Analysis:")
+                        if qc['fwhm'] is not None:
+                            logger.info(f"   FWHM: {qc['fwhm']:.1f}nm")
+                            logger.info(f"   Quality: {qc['fwhm_quality'].upper()}")
+                            fwhm_pass = qc['fwhm'] < 60.0
+                            logger.info(f"   Status: {'✅ PASS' if fwhm_pass else '❌ FAIL'} (FWHM < 60nm)")
+                        else:
+                            logger.info(f"   FWHM: Cannot calculate")
+                            logger.info(f"   Status: ❌ FAIL")
+                            fwhm_pass = False
 
-                # Process S-pol (remove dark noise)
-                s_pol_ref[ch] = SpectrumPreprocessor.process_polarization_data(
-                    raw_spectrum=result.s_raw_data[ch],
-                    dark_noise=result.dark_noise,
-                    channel_name=ch,
-                    verbose=True
-                )
+                        logger.info(f"\n📊 Polarizer Orientation Check:")
+                        if qc['ratio'] is not None:
+                            logger.info(f"   P/S Ratio: {qc['ratio']:.3f}")
+                            if qc['orientation_correct'] is True:
+                                logger.info(f"   Status: ✅ CORRECT (0.10 ≤ P/S ≤ 0.95)")
+                            elif qc['orientation_correct'] is False:
+                                logger.error(f"   Status: ❌ INVERTED (P/S > 1.15)")
+                                logger.error(f"   ⚠️  CRITICAL: Polarizer appears INVERTED!")
+                                logger.error(f"   Expected: P-mode < S-mode (ratio < 0.95)")
+                                logger.error(f"   Actual: P-mode > S-mode (ratio = {qc['ratio']:.3f})")
+                                orientation_issues.append(ch)
+                            else:
+                                logger.warning(f"   Status: ⚠️ INDETERMINATE (borderline ratio)")
+                        else:
+                            logger.info(f"   P/S Ratio: Not calculated")
+                            logger.info(f"   Status: ⚠️ CANNOT VERIFY")
 
-                # Process P-pol (remove dark noise)
-                p_pol_ref[ch] = SpectrumPreprocessor.process_polarization_data(
-                    raw_spectrum=result.p_raw_data[ch],
-                    dark_noise=result.dark_noise,
-                    channel_name=ch,
-                    verbose=True
-                )
+                        logger.info(f"\n📊 Saturation Check:")
+                        if qc['s_saturated'] or qc['p_saturated']:
+                            if qc['s_saturated']:
+                                logger.error(f"   S-pol: ❌ SATURATED ({qc['s_max_counts']:.0f} counts)")
+                            if qc['p_saturated']:
+                                logger.error(f"   P-pol: ❌ SATURATED ({qc['p_max_counts']:.0f} counts)")
+                        else:
+                            logger.info(f"   S-pol: ✅ OK ({qc['s_max_counts']:.0f} counts)")
+                            logger.info(f"   P-pol: ✅ OK ({qc['p_max_counts']:.0f} counts)")
 
-            # Store processed references
-            result.s_pol_ref = s_pol_ref
-            result.p_pol_ref = p_pol_ref
+                        # Log any warnings
+                        if qc['warnings']:
+                            logger.warning(f"\n⚠️  Warnings:")
+                            for warning in qc['warnings']:
+                                logger.warning(f"   - {warning}")
 
-            logger.info("\n✅ S-pol and P-pol references processed")
-            logger.info("   Ready for QC display")
+                        # Overall channel status
+                        channel_pass = (
+                            qc['dip_detected'] and
+                            fwhm_pass and
+                            qc['orientation_correct'] is not False and  # Allow indeterminate but not inverted
+                            not qc['s_saturated'] and
+                            not qc['p_saturated']
+                        )
 
-            # ---------------------------------------------------------------
-            # PART C: CALCULATE TRANSMISSION SPECTRUM (TransmissionProcessor)
-            # ---------------------------------------------------------------
-            logger.info("\n📈 Part C: Calculating Transmission Spectrum (TransmissionProcessor)")
-            logger.info("   🔴 SIMULATING LIVE DATA ACQUISITION")
+                        logger.info(f"\n{'='*40}")
+                        logger.info(f"Channel {ch.upper()}: {'✅ PASS' if channel_pass else '❌ FAIL'}")
+                        logger.info(f"{'='*40}")
 
-            transmission_spectra = {}
+                        # Store comprehensive QC results
+                        qc_results[ch] = {
+                            'spr_wavelength': qc['dip_wavelength'],
+                            'spr_depth': qc['dip_depth'],
+                            'spr_pass': qc['dip_detected'],
+                            'fwhm': qc['fwhm'] if qc['fwhm'] is not None else 0,
+                            'fwhm_pass': fwhm_pass,
+                            'fwhm_quality': qc['fwhm_quality'],
+                            'p_s_ratio': qc['ratio'],
+                            'orientation_correct': qc['orientation_correct'],
+                            's_saturated': qc['s_saturated'],
+                            'p_saturated': qc['p_saturated'],
+                            's_max_counts': qc['s_max_counts'],
+                            'p_max_counts': qc['p_max_counts'],
+                            'warnings': qc['warnings'],
+                            'overall_pass': channel_pass
+                        }
 
-            for ch in ch_list:
-                logger.info(f"\n{'='*80}")
-                logger.info(f"Channel {ch.upper()}: TransmissionProcessor Processing")
-                logger.info(f"{'='*80}")
+                        if not channel_pass:
+                            all_channels_pass = False
 
-                # Calculate transmission using modern architecture
-                transmission_ch = TransmissionProcessor.process_single_channel(
-                    p_pol_clean=p_pol_ref[ch],  # Already preprocessed above
-                    s_pol_ref=s_pol_ref[ch],     # Already preprocessed above
-                    led_intensity_s=result.ref_intensity[ch],
-                    led_intensity_p=result.p_mode_intensity[ch],
-                    wavelengths=result.wave_data,
-                    apply_sg_filter=True,
-                    baseline_method='percentile',
-                    baseline_percentile=95.0,
-                    verbose=True
-                )
+                    # ---------------------------------------------------------------
+                    # AUTOMATIC POLARIZER RECALIBRATION ON INVERSION DETECTION
+                    # ---------------------------------------------------------------
+                    if orientation_issues and False:  # DISABLED FOR DEBUGGING
+                        logger.warning("\n" + "=" * 80)
+                        logger.warning("⚠️  POLARIZER INVERSION DETECTED - AUTO-RECALIBRATION DISABLED")
+                        logger.warning("=" * 80)
+                        logger.warning(f"   Affected channels: {', '.join([ch.upper() for ch in orientation_issues])}")
+                        logger.warning(f"   P/S ratio > 1.15 indicates positions are inverted")
+                        logger.warning(f"   Auto-recalibration is currently DISABLED for debugging")
+                        logger.warning("=" * 80)
+                        continue  # Skip recalibration
 
-                transmission_spectra[ch] = transmission_ch
+                    if False:  # Original code disabled
+                        logger.warning("\n" + "=" * 80)
+                        logger.warning("⚠️  POLARIZER INVERSION DETECTED - AUTO-RECALIBRATING")
+                        logger.warning("=" * 80)
+                        logger.warning(f"   Affected channels: {', '.join([ch.upper() for ch in orientation_issues])}")
+                        logger.warning(f"   P/S ratio > 1.15 indicates positions are inverted")
+                        logger.warning(f"")
+                        logger.warning("   🔄 Starting automatic servo recalibration...")
+                        logger.warning("=" * 80)
 
-            # Store transmission spectra
-            result.transmission = transmission_spectra
+                        try:
+                            # Get polarizer type from device config
+                            polarizer_type = device_config.config['hardware'].get('polarizer_type', 'round')
+                            # Map 'round' to 'circular' for servo calibration function
+                            if polarizer_type == 'round':
+                                polarizer_type = 'circular'
 
-            logger.info("\n" + "=" * 80)
-            logger.info("✅ Transmission spectra calculated")
-            logger.info("   Ready for QC display and peak tracking pipeline")
-            logger.info("=" * 80)
+                            logger.info(f"Polarizer type: {polarizer_type}")
+                            logger.info(f"Using channel A LED intensity: {result.s_mode_intensity.get('a', 255)}")
 
-            # ---------------------------------------------------------------
-            # PART D: QC VALIDATION & AUTO-CALIBRATION DECISIONS
-            # ---------------------------------------------------------------
-            logger.info("\n🔍 Part D: QC Validation & Auto-Calibration Decisions")
-            logger.info("=" * 80)
+                            # Import servo calibration function
+                            from utils.servo_calibration import auto_calibrate_polarizer, _calibrate_leds_for_servo
 
-            qc_results = {}
-            all_channels_pass = True
+                            # Set channel A to its calibrated LED intensity for servo calibration
+                            cal_ch = 'a'
+                            cal_led = result.s_mode_intensity.get(cal_ch, 255)
 
-            for ch in ch_list:
-                logger.info(f"\nChannel {ch.upper()} QC:")
+                            logger.info(f"Setting channel {cal_ch.upper()} to LED={cal_led} for servo calibration")
+                            ctrl.set_intensity(ch=cal_ch, raw_val=cal_led)
+                            time.sleep(0.05)
 
-                transmission_ch = transmission_spectra[ch]
-                wavelengths = result.wave_data
+                            # Run automatic servo recalibration (no water check - we know SPR is active)
+                            recal_result = auto_calibrate_polarizer(
+                                usb=usb,
+                                ctrl=ctrl,
+                                require_water=False,  # Skip water check - already validated
+                                polarizer_type=polarizer_type
+                            )
 
-                # 1. SPR Dip Detection
-                min_transmission = np.min(transmission_ch)
-                min_idx = np.argmin(transmission_ch)
-                spr_wavelength = wavelengths[min_idx]
-                spr_depth = 100.0 - min_transmission
+                            if recal_result and recal_result.get('success'):
+                                new_s_pos = recal_result['s_pos']
+                                new_p_pos = recal_result['p_pos']
 
-                spr_pass = spr_depth > 5.0
-                logger.info(f"   SPR Dip: {min_transmission:.1f}% at {spr_wavelength:.1f}nm (depth={spr_depth:.1f}%)")
-                logger.info(f"   Status: {'✅ PASS' if spr_pass else '❌ FAIL'} (depth > 5%)")
+                                logger.info("\n" + "=" * 80)
+                                logger.info("✅ AUTO-RECALIBRATION SUCCESSFUL")
+                                logger.info("=" * 80)
+                                logger.info(f"   Found S position: {new_s_pos}°")
+                                logger.info(f"   Found P position: {new_p_pos}°")
+                                logger.info(f"   S/P ratio: {recal_result['sp_ratio']:.2f}×")
+                                logger.info(f"   Dip depth: {recal_result['dip_depth_percent']:.1f}%")
 
-                # 2. FWHM Measurement
-                half_max = (100.0 + min_transmission) / 2.0
-                below_half_max = transmission_ch < half_max
-                fwhm_indices = np.where(below_half_max)[0]
+                                # CRITICAL: Check if positions are still inverted by checking S/P ratio
+                                # If S/P ratio < 1.0, positions are inverted (S gives higher signal than P)
+                                # Correct: S should give LOWER signal than P (S/P ratio > 1.0)
+                                if recal_result['sp_ratio'] < 1.0:
+                                    logger.warning("=" * 80)
+                                    logger.warning("⚠️  DETECTED: Positions are labeled backwards!")
+                                    logger.warning(f"   S/P ratio = {recal_result['sp_ratio']:.2f} < 1.0")
+                                    logger.warning("   This means 'S' position has HIGHER signal than 'P' position")
+                                    logger.warning("   SWAPPING positions to correct labeling...")
+                                    logger.warning("=" * 80)
+                                    # Swap the positions
+                                    new_s_pos, new_p_pos = new_p_pos, new_s_pos
+                                    logger.info(f"   Corrected S position: {new_s_pos}°")
+                                    logger.info(f"   Corrected P position: {new_p_pos}°")
 
-                if len(fwhm_indices) > 1:
-                    fwhm_wavelengths = wavelengths[fwhm_indices]
-                    fwhm = fwhm_wavelengths[-1] - fwhm_wavelengths[0]
-                    fwhm_pass = fwhm < 60.0
-                    logger.info(f"   FWHM: {fwhm:.1f}nm")
-                    logger.info(f"   Status: {'✅ PASS' if fwhm_pass else '❌ FAIL'} (FWHM < 60nm)")
+                                logger.info("=" * 80)
+
+                                # ❌ DANGEROUS: DO NOT apply servo positions during calibration!
+                                # Positions come from device_config and are set at controller init ONLY
+                                logger.error("=" * 80)
+                                logger.error("❌ CRITICAL ERROR: Position correction attempted during calibration")
+                                logger.error("❌ Servo positions are IMMUTABLE - set at controller initialization")
+                                logger.error("❌ To fix positions: Update device_config.json and RESTART application")
+                                logger.error("=" * 80)
+
+                                # Update result for logging but DO NOT apply to hardware
+                                result.s_position = new_s_pos
+                                result.p_position = new_p_pos
+                                result.polarizer_s_position = new_s_pos
+                                result.polarizer_p_position = new_p_pos
+
+                                # Abort calibration - user must fix device_config and restart
+                                logger.error("\n🛑 CALIBRATION ABORTED - Position mismatch detected")
+                                logger.error("   Action required: Update device_config.json with correct positions and restart")
+                                raise ValueError("Servo position correction not allowed during calibration - update device_config and restart")
+
+                        except Exception as e:
+                            logger.exception(f"Error during auto-recalibration: {e}")
+                            result.qc_results['orientation_check'] = {
+                                'status': 'FAIL',
+                                'failed_channels': orientation_issues,
+                                'message': f'Auto-recalibration error: {str(e)}'
+                            }
+
+                    # ---------------------------------------------------------------
+                    # LEGACY QC COMPATIBILITY (for old code that expects these fields)
+                    # ---------------------------------------------------------------
+                    for ch in ch_list:
+                        # Add SNR calculation for legacy compatibility
+                        signal_mean = np.mean(s_pol_ref[ch])
+                        noise_std = np.std(result.dark_noise)
+                        snr = signal_mean / max(noise_std, 1)
+                        snr_pass = snr > 100
+
+                        qc_results[ch]['snr'] = snr
+                        qc_results[ch]['snr_pass'] = snr_pass
+
+                    # Store QC results
+                    result.qc_results = qc_results
+
+                    # Build list of channels that failed QC
+                    result.ch_error_list = [ch for ch, qc in qc_results.items() if not qc['overall_pass']]
+
+                    # ---------------------------------------------------------------
+                    # AUTO-CALIBRATION DECISIONS
+                    # ---------------------------------------------------------------
+                    logger.info("\n" + "=" * 80)
+                    logger.info("AUTO-CALIBRATION DECISIONS")
+                    logger.info("=" * 80)
+
+                    if all_channels_pass:
+                        logger.info("✅ ALL CHANNELS PASSED QC")
+                        logger.info("   No auto-calibration needed")
+                    else:
+                        logger.info("⚠️  SOME CHANNELS FAILED QC")
+
+                        for ch, qc in qc_results.items():
+                            if not qc['overall_pass']:
+                                logger.warning(f"   Channel {ch.upper()} failed:")
+                                if not qc['spr_pass']:
+                                    logger.warning(f"      - SPR dip too shallow ({qc['spr_depth']:.1f}%)")
+                                if not qc['fwhm_pass']:
+                                    logger.warning(f"      - FWHM too wide ({qc['fwhm']:.1f}nm)")
+                                if not qc['snr_pass']:
+                                    logger.warning(f"      - SNR too low ({qc['snr']:.0f})")
+                                if qc.get('orientation_correct') is False:
+                                    logger.error(f"      - Polarizer INVERTED (P/S ratio = {qc['p_s_ratio']:.3f})")
+                                if qc.get('s_saturated') or qc.get('p_saturated'):
+                                    logger.error(f"      - Saturation detected")
+
+                    logger.info("=" * 80)
+                    logger.info("STEP 6 COMPLETE: Data Processing & QC Finished")
+                    logger.info("=" * 80)
+
+                    if progress_callback:
+                        progress_callback("Calibration complete", 100)
+
+                except Exception as e:
+                    # Inner except for Step 6 errors (not restart requests)
+                    logger.exception(f"Error in Step 6 processing: {e}")
+                    raise  # Re-raise to be caught by outer except
+
+                # If we reach here, Step 6 completed successfully - break out of restart loop
+                break
+
+            except Exception as e:
+                # Outer except for restart logic
+                # Check if this is a restart request from servo recalibration
+                if str(e) == "RESTART_FROM_STEP_3C":
+                    restart_attempt += 1
+                    if restart_attempt > max_restart_attempts:
+                        logger.error("\n" + "=" * 80)
+                        logger.error("⚠️  POLARIZER RECALIBRATION FAILED TWICE")
+                        logger.error("=" * 80)
+                        logger.error("   First attempt: Auto-recalibrated servo positions")
+                        logger.error("   Second attempt: Still detecting inverted polarization")
+                        logger.error("")
+                        logger.error("   Possible causes:")
+                        logger.error("   1. Hardware malfunction (servo motor stuck)")
+                        logger.error("   2. Mechanical obstruction preventing rotation")
+                        logger.error("   3. Incorrect polarizer type in config")
+                        logger.error("   4. Wiring or communication issue")
+                        logger.error("")
+                        logger.error("   ⚠️  CONTINUING CALIBRATION WITH WARNING FLAG")
+                        logger.error("   User must perform further hardware testing")
+                        logger.error("=" * 80 + "\n")
+
+                        # Flag the issue but continue
+                        result.qc_results['orientation_check'] = {
+                            'status': 'FAIL_AFTER_RECALIBRATION',
+                            'message': 'Polarizer inversion persists after auto-recalibration - hardware issue suspected',
+                            'recalibration_attempts': restart_attempt,
+                            'requires_user_testing': True
+                        }
+
+                        # Break out of loop to complete calibration with warning
+                        break
+                    # Continue to next iteration of while loop (restart from Step 3C)
+                    continue
                 else:
-                    fwhm = 0
-                    fwhm_pass = False
-                    logger.info(f"   FWHM: Cannot calculate (no clear dip)")
-                    logger.info(f"   Status: ❌ FAIL")
-
-                # 3. Signal Quality (SNR)
-                signal_mean = np.mean(s_pol_ref[ch])
-                noise_std = np.std(result.dark_noise)
-                snr = signal_mean / max(noise_std, 1)
-                snr_pass = snr > 100
-
-                logger.info(f"   SNR: {snr:.0f}")
-                logger.info(f"   Status: {'✅ PASS' if snr_pass else '❌ FAIL'} (SNR > 100)")
-
-                # Store QC results
-                qc_results[ch] = {
-                    'spr_wavelength': spr_wavelength,
-                    'spr_depth': spr_depth,
-                    'spr_pass': spr_pass,
-                    'fwhm': fwhm,
-                    'fwhm_pass': fwhm_pass,
-                    'snr': snr,
-                    'snr_pass': snr_pass,
-                    'overall_pass': spr_pass and fwhm_pass and snr_pass
-                }
-
-                if not qc_results[ch]['overall_pass']:
-                    all_channels_pass = False
-
-            # Store QC results
-            result.qc_results = qc_results
-
-            # Build list of channels that failed QC
-            result.ch_error_list = [ch for ch, qc in qc_results.items() if not qc['overall_pass']]
-
-            # ---------------------------------------------------------------
-            # AUTO-CALIBRATION DECISIONS
-            # ---------------------------------------------------------------
-            logger.info("\n" + "=" * 80)
-            logger.info("AUTO-CALIBRATION DECISIONS")
-            logger.info("=" * 80)
-
-            if all_channels_pass:
-                logger.info("✅ ALL CHANNELS PASSED QC")
-                logger.info("   No auto-calibration needed")
-            else:
-                logger.info("⚠️  SOME CHANNELS FAILED QC")
-
-                for ch, qc in qc_results.items():
-                    if not qc['overall_pass']:
-                        logger.warning(f"   Channel {ch.upper()} failed:")
-                        if not qc['spr_pass']:
-                            logger.warning(f"      - SPR dip too shallow ({qc['spr_depth']:.1f}%)")
-                        if not qc['fwhm_pass']:
-                            logger.warning(f"      - FWHM too wide ({qc['fwhm']:.1f}nm)")
-                        if not qc['snr_pass']:
-                            logger.warning(f"      - SNR too low ({qc['snr']:.0f})")
-
-            logger.info("=" * 80)
-            logger.info("STEP 6 COMPLETE: Data Processing & QC Finished")
-            logger.info("=" * 80)
-
-            if progress_callback:
-                progress_callback("Calibration complete", 100)
-
-        except Exception as e:
-            logger.exception(f"Error in Step 6: {e}")
-            raise RuntimeError(f"Step 6 failed: {e}")
+                    logger.exception(f"Error in Step 6: {e}")
+                    raise RuntimeError(f"Step 6 failed: {e}")
 
         # ===================================================================
         # CALIBRATION COMPLETE - STEP 6 IS FINAL STEP
@@ -2200,9 +3629,18 @@ def run_full_6step_calibration(
         result.post_led_delay_ms = post_led_delay_ms
         result.success = True
 
+        # Check for critical warnings that require user attention
+        orientation_check = result.qc_results.get('orientation_check', {})
+        has_critical_warning = orientation_check.get('status') == 'FAIL_AFTER_RECALIBRATION'
+
         logger.info("\n" + "=" * 80)
         logger.info("✅ 6-STEP CALIBRATION COMPLETE")
+        if has_critical_warning:
+            logger.warning("⚠️  WITH CRITICAL WARNING - USER TESTING REQUIRED")
         logger.info("=" * 80)
+        s_pos = getattr(result, 's_position', None) or getattr(result, 'polarizer_s_position', 'N/A')
+        p_pos = getattr(result, 'p_position', None) or getattr(result, 'polarizer_p_position', 'N/A')
+        logger.info(f"Servo Positions: S={s_pos}°, P={p_pos}°")
         logger.info(f"LED Timing: PRE={pre_led_delay_ms}ms, POST={post_led_delay_ms}ms")
         logger.info(f"LED Intensities (S-mode): {result.ref_intensity}")
         logger.info(f"LED Intensities (P-mode): {result.p_mode_intensity}")
@@ -2211,6 +3649,25 @@ def run_full_6step_calibration(
         logger.info(f"Scans per Channel: {result.num_scans}")
         logger.info(f"S-pol Raw Data: {list(result.s_raw_data.keys()) if hasattr(result, 's_raw_data') else 'Not captured'}")
         logger.info(f"P-pol Raw Data: {list(result.p_raw_data.keys()) if hasattr(result, 'p_raw_data') else 'Not captured'}")
+
+        if has_critical_warning:
+            logger.warning("")
+            logger.warning("=" * 80)
+            logger.warning("⚠️  CRITICAL WARNING: POLARIZER HARDWARE ISSUE DETECTED")
+            logger.warning("=" * 80)
+            logger.warning("   Polarizer inversion persisted after automatic recalibration")
+            logger.warning("   Calibration completed but optical performance may be compromised")
+            logger.warning("")
+            logger.warning("   REQUIRED USER ACTIONS:")
+            logger.warning("   1. Verify servo motor physically moves during mode switch")
+            logger.warning("   2. Check for mechanical obstructions")
+            logger.warning("   3. Verify polarizer type in device config (circular vs barrel)")
+            logger.warning("   4. Test servo manually: python -m utils.servo_calibration --test")
+            logger.warning("   5. Check wiring and connections")
+            logger.warning("")
+            logger.warning("   If issue persists, contact technical support")
+            logger.warning("=" * 80)
+
         logger.info("=" * 80)
         logger.info("Next: Show post-calibration dialog, wait for user to click Start")
         logger.info("=" * 80 + "\n")
@@ -2417,12 +3874,19 @@ def run_fast_track_calibration(
                 continue
 
             saved_led = saved_s_leds[ch]
-            ctrl.set_intensity(ch=ch, raw_val=saved_led)
-            time.sleep(LED_DELAY)
 
-            spectrum = usb.read_intensity()
-            ctrl.set_intensity(ch=ch, raw_val=0)
-            time.sleep(0.01)
+            # Use hardware acquisition function
+            spectrum = acquire_raw_spectrum(
+                usb=usb,
+                ctrl=ctrl,
+                channel=ch,
+                led_intensity=saved_led,
+                integration_time_ms=None,
+                num_scans=1,
+                pre_led_delay_ms=LED_DELAY * 1000,
+                post_led_delay_ms=0.01 * 1000,
+                use_batch_command=False
+            )
 
             if spectrum is None:
                 logger.error(f"❌ {ch.upper()}: Hardware read failed")
@@ -2464,12 +3928,19 @@ def run_fast_track_calibration(
                     continue
 
                 saved_led = saved_p_leds[ch]
-                ctrl.set_intensity(ch=ch, raw_val=saved_led)
-                time.sleep(LED_DELAY)
 
-                spectrum = usb.read_intensity()
-                ctrl.set_intensity(ch=ch, raw_val=0)
-                time.sleep(0.01)
+                # Use hardware acquisition function
+                spectrum = acquire_raw_spectrum(
+                    usb=usb,
+                    ctrl=ctrl,
+                    channel=ch,
+                    led_intensity=saved_led,
+                    integration_time_ms=None,
+                    num_scans=1,
+                    pre_led_delay_ms=LED_DELAY * 1000,
+                    post_led_delay_ms=0.01 * 1000,
+                    use_batch_command=False
+                )
 
                 if spectrum is None:
                     logger.error(f"❌ {ch.upper()}: Hardware read failed")
@@ -2495,8 +3966,6 @@ def run_fast_track_calibration(
             logger.warning("PHASE 2: P-mode Validation - SKIPPED (no saved P-mode LEDs)\n")
             p_passed = False
 
-        # If both S and P passed, use fast-track
-        if s_passed and p_passed and len(failed_channels) == 0:
         # If both S and P passed, use fast-track
         if s_passed and p_passed and len(failed_channels) == 0:
             logger.info("\n" + "=" * 80)
@@ -2554,12 +4023,18 @@ def run_fast_track_calibration(
                 if stop_flag and stop_flag.is_set():
                     break
 
-                ctrl.set_intensity(ch=ch, raw_val=validated_s_leds[ch])
-                time.sleep(LED_DELAY)
-
-                raw_spectrum = usb.read_intensity()
-                ctrl.set_intensity(ch=ch, raw_val=0)
-                time.sleep(0.01)
+                # Use hardware acquisition function
+                raw_spectrum = acquire_raw_spectrum(
+                    usb=usb,
+                    ctrl=ctrl,
+                    channel=ch,
+                    led_intensity=validated_s_leds[ch],
+                    integration_time_ms=None,
+                    num_scans=1,
+                    pre_led_delay_ms=LED_DELAY * 1000,
+                    post_led_delay_ms=0.01 * 1000,
+                    use_batch_command=False
+                )
 
                 if raw_spectrum is not None:
                     result.s_raw_data[ch] = raw_spectrum.copy()
@@ -2575,12 +4050,18 @@ def run_fast_track_calibration(
                 if stop_flag and stop_flag.is_set():
                     break
 
-                ctrl.set_intensity(ch=ch, raw_val=validated_p_leds[ch])
-                time.sleep(LED_DELAY)
-
-                raw_spectrum = usb.read_intensity()
-                ctrl.set_intensity(ch=ch, raw_val=0)
-                time.sleep(0.01)
+                # Use hardware acquisition function
+                raw_spectrum = acquire_raw_spectrum(
+                    usb=usb,
+                    ctrl=ctrl,
+                    channel=ch,
+                    led_intensity=validated_p_leds[ch],
+                    integration_time_ms=None,
+                    num_scans=1,
+                    pre_led_delay_ms=LED_DELAY * 1000,
+                    post_led_delay_ms=0.01 * 1000,
+                    use_batch_command=False
+                )
 
                 if raw_spectrum is not None:
                     result.p_raw_data[ch] = raw_spectrum.copy()

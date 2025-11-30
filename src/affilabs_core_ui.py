@@ -144,6 +144,7 @@ from plot_helpers import create_time_plot, add_channel_curves, create_spectrosco
 from diagnostics_dialog import DiagnosticsDialog
 from inspector import ElementInspector
 from utils.baseline_data_recorder import BaselineDataRecorder
+from PySide6.QtCore import QMetaObject, Q_ARG
 
 
 
@@ -153,6 +154,12 @@ class StartupCalibProgressDialog(QDialog):
     start_clicked = Signal()  # Signal emitted when Start button is clicked
     retry_clicked = Signal()  # Signal emitted when Retry button is clicked
     continue_anyway_clicked = Signal()  # Signal emitted when Continue Anyway is clicked
+
+    # Internal signals for thread-safe UI updates
+    _update_title_signal = Signal(str)
+    _update_status_signal = Signal(str)
+    _hide_progress_signal = Signal()
+    _enable_start_signal = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None, title: str = "Processing",
                  message: str = "Please wait...", show_start_button: bool = False) -> None:
@@ -290,6 +297,12 @@ class StartupCalibProgressDialog(QDialog):
         self.button_layout.addStretch()
         main_layout.addWidget(self.button_container)
 
+        # Connect internal signals for thread-safe UI updates
+        self._update_title_signal.connect(self._do_update_title)
+        self._update_status_signal.connect(self._do_update_status)
+        self._hide_progress_signal.connect(self._do_hide_progress)
+        self._enable_start_signal.connect(self._do_enable_start)
+
         # Add shadow effect
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(30)
@@ -324,7 +337,10 @@ class StartupCalibProgressDialog(QDialog):
             from utils.logger import logger
             logger.error(f"❌ Error in _on_start_clicked: {e}", exc_info=True)
             import traceback
-            traceback.print_exc()
+            try:
+                print(traceback.format_exc())
+            except:
+                pass
 
     def closeEvent(self, event: Any) -> None:
         """Clean up overlay when dialog closes."""
@@ -373,21 +389,54 @@ class StartupCalibProgressDialog(QDialog):
             self.move(x, y)
 
     def update_status(self, message: str) -> None:
-        """Update the status message (thread-safe)."""
+        """Update the status message (thread-safe via signal)."""
+        print(f"🔵 DEBUG: update_status() called with: {message}")
+        self._update_status_signal.emit(message)
+        print("🟢 DEBUG: update_status signal emitted")
+
+    def _do_update_status(self, message: str) -> None:
+        """Actually update status label (runs in main thread)."""
+        print(f"🔵 DEBUG: _do_update_status() executing in main thread")
         if not self._is_closing and self.isVisible():
             try:
+                print("🔵 DEBUG: Setting status_label text...")
                 self.status_label.setText(message)
-            except RuntimeError:
-                pass  # Widget deleted
+                print("🟢 DEBUG: Status updated successfully")
+            except RuntimeError as e:
+                print(f"🔴 ERROR: RuntimeError in _do_update_status: {e}")
+            except Exception as e:
+                print(f"🔴 ERROR: Exception in _do_update_status: {e}")
+                import traceback
+                try:
+                    print(traceback.format_exc())
+                except:
+                    pass
 
     def update_title(self, title: str):
-        """Update the title (thread-safe)."""
+        """Update the title (thread-safe via signal)."""
+        print(f"🔵 DEBUG: update_title() called with: {title}")
+        self._update_title_signal.emit(title)
+        print("🟢 DEBUG: update_title signal emitted")
+
+    def _do_update_title(self, title: str) -> None:
+        """Actually update title (runs in main thread)."""
+        print(f"🔵 DEBUG: _do_update_title() executing in main thread")
         if not self._is_closing and self.isVisible():
             try:
+                print("🔵 DEBUG: Setting title_label text...")
                 self.title_label.setText(title)
+                print("🔵 DEBUG: Setting window title...")
                 self.setWindowTitle(title)
-            except RuntimeError:
-                pass  # Widget deleted
+                print("🟢 DEBUG: Title updated successfully")
+            except RuntimeError as e:
+                print(f"🔴 ERROR: RuntimeError in _do_update_title: {e}")
+            except Exception as e:
+                print(f"🔴 ERROR: Exception in _do_update_title: {e}")
+                import traceback
+                try:
+                    print(traceback.format_exc())
+                except:
+                    pass
 
     def set_progress(self, value: int, maximum: int = 100):
         """Set progress bar to show actual progress (thread-safe).
@@ -410,12 +459,28 @@ class StartupCalibProgressDialog(QDialog):
                 pass  # Widget deleted
 
     def hide_progress_bar(self) -> None:
-        """Hide progress bar (for checklist/pre-calibration state)."""
+        """Hide progress bar (thread-safe via signal)."""
+        print("🔵 DEBUG: hide_progress_bar() called")
+        self._hide_progress_signal.emit()
+        print("🟢 DEBUG: hide_progress_bar signal emitted")
+
+    def _do_hide_progress(self) -> None:
+        """Actually hide progress bar (runs in main thread)."""
+        print("🔵 DEBUG: _do_hide_progress() executing in main thread")
         if not self._is_closing and self.isVisible():
             try:
+                print("🔵 DEBUG: Hiding progress_bar...")
                 self.progress_bar.hide()
-            except RuntimeError:
-                pass  # Widget deleted
+                print("🟢 DEBUG: Progress bar hidden")
+            except RuntimeError as e:
+                print(f"🔴 ERROR: RuntimeError in _do_hide_progress: {e}")
+            except Exception as e:
+                print(f"🔴 ERROR: Exception in _do_hide_progress: {e}")
+                import traceback
+                try:
+                    print(traceback.format_exc())
+                except:
+                    pass
 
     def show_progress_bar(self) -> None:
         """Show progress bar (when calibration starts)."""
@@ -443,14 +508,31 @@ class StartupCalibProgressDialog(QDialog):
                 pass  # Widget deleted
 
     def enable_start_button(self) -> None:
-        """Enable the Start button when calibration is complete (thread-safe)."""
+        """Enable the Start button when calibration is complete (thread-safe via signal)."""
+        print("🔵 DEBUG: enable_start_button() called")
+        self._enable_start_signal.emit()
+        print("🟢 DEBUG: enable_start_button signal emitted")
+
+    def _do_enable_start(self) -> None:
+        """Actually enable start button (runs in main thread)."""
+        print("🔵 DEBUG: _do_enable_start() executing in main thread")
         if not self._is_closing and self.isVisible() and self.start_button:
             try:
+                print("🔵 DEBUG: Setting _is_complete = True...")
                 self._is_complete = True
                 self._is_error_state = False
+                print("🔵 DEBUG: Enabling start button...")
                 self.start_button.setEnabled(True)
-            except RuntimeError:
-                pass  # Widget deleted
+                print("🟢 DEBUG: Start button enabled")
+            except RuntimeError as e:
+                print(f"🔴 ERROR: RuntimeError in _do_enable_start: {e}")
+            except Exception as e:
+                print(f"🔴 ERROR: Exception in _do_enable_start: {e}")
+                import traceback
+                try:
+                    print(traceback.format_exc())
+                except:
+                    pass
 
     def show_error_state(self, error_message: str, retry_count: int, max_retries: int) -> None:
         """Switch dialog to error state with Retry/Continue buttons.
@@ -1626,6 +1708,10 @@ class AffilabsMainWindow(QMainWindow):
         self.intelligence_refresh_timer.timeout.connect(self._refresh_intelligence_bar)
         self.intelligence_refresh_timer.start(5000)  # 5 seconds
 
+        # Track deferred UI loading state
+        self._deferred_ui_loaded = False
+        self._graph_placeholders_created = False
+
         self._setup_ui()
         self._connect_signals()
 
@@ -1662,6 +1748,8 @@ class AffilabsMainWindow(QMainWindow):
         self.sidebar = AffilabsSidebar(event_bus=self.event_bus)
         self.sidebar.setMinimumWidth(55)  # Allow window to resize very small
         self.sidebar.setMaximumWidth(900)  # Maximum width for sidebar
+        # Give sidebar reference to device_config for S/P position syncing
+        self.sidebar.device_config = self.device_config
         self.splitter.addWidget(self.sidebar)
         self.splitter.setCollapsible(0, False)  # Prevent sidebar from collapsing
 
@@ -1742,8 +1830,9 @@ class AffilabsMainWindow(QMainWindow):
         from PySide6.QtWidgets import QStackedWidget
         self.content_stack = QStackedWidget()
 
-        # Create content for each tab
-        self.content_stack.addWidget(self._create_sensorgram_content())  # Index 0
+        # Create placeholder for sensorgram (will be replaced with real graphs after window shows)
+        self._sensorgram_placeholder = self._create_sensorgram_placeholder()
+        self.content_stack.addWidget(self._sensorgram_placeholder)  # Index 0
         self.content_stack.addWidget(self._create_blank_content("Edits"))  # Index 1
         self.content_stack.addWidget(self._create_blank_content("Analyze"))  # Index 2
         self.content_stack.addWidget(self._create_blank_content("Report"))  # Index 3
@@ -1755,6 +1844,9 @@ class AffilabsMainWindow(QMainWindow):
         self.splitter.setSizes([520, 880])
 
         main_layout.addWidget(self.splitter)
+
+        # Ensure Sensorgram page (index 0) is shown by default
+        self.content_stack.setCurrentIndex(0)
 
     def _create_navigation_bar(self):
         """Create the pill-shaped navigation bar."""
@@ -2077,6 +2169,145 @@ class AffilabsMainWindow(QMainWindow):
 
         content_layout.addWidget(splitter, 1)
         return content_widget
+
+    def _create_sensorgram_placeholder(self):
+        """Create lightweight placeholder for sensorgram page during initial load.
+
+        This placeholder mimics the actual UI layout with skeleton states
+        so the transition is seamless when real graphs load.
+        """
+        placeholder = QFrame()
+        placeholder.setStyleSheet("QFrame { background: #FFFFFF; border: none; }")
+
+        layout = QVBoxLayout(placeholder)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+
+        # Timeline section skeleton
+        timeline_card = QFrame()
+        timeline_card.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BACKGROUND_WHITE};
+                border: 1px solid {Colors.OVERLAY_LIGHT_10};
+                border-radius: 12px;
+            }}
+        """)
+        timeline_layout = QVBoxLayout(timeline_card)
+        timeline_layout.setContentsMargins(16, 12, 16, 16)
+        timeline_layout.setSpacing(8)
+
+        timeline_title = QLabel("Full Timeline")
+        timeline_title.setStyleSheet(f"""
+            QLabel {{
+                font-size: 14px;
+                font-weight: 600;
+                color: {Colors.PRIMARY_TEXT};
+                background: transparent;
+            }}
+        """)
+        timeline_layout.addWidget(timeline_title)
+
+        # Graph skeleton (light gray box)
+        timeline_skeleton = QFrame()
+        timeline_skeleton.setFixedHeight(200)
+        timeline_skeleton.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BACKGROUND_LIGHT};
+                border: 1px dashed {Colors.OVERLAY_LIGHT_20};
+                border-radius: 8px;
+            }}
+        """)
+        skeleton_layout = QVBoxLayout(timeline_skeleton)
+        skeleton_label = QLabel("Loading graph...")
+        skeleton_label.setStyleSheet(f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;")
+        skeleton_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        skeleton_layout.addWidget(skeleton_label)
+        timeline_layout.addWidget(timeline_skeleton)
+
+        layout.addWidget(timeline_card)
+
+        # Cycle section skeleton
+        cycle_card = QFrame()
+        cycle_card.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BACKGROUND_WHITE};
+                border: 1px solid {Colors.OVERLAY_LIGHT_10};
+                border-radius: 12px;
+            }}
+        """)
+        cycle_layout = QVBoxLayout(cycle_card)
+        cycle_layout.setContentsMargins(16, 12, 16, 16)
+        cycle_layout.setSpacing(8)
+
+        cycle_title = QLabel("Cycle of Interest")
+        cycle_title.setStyleSheet(f"""
+            QLabel {{
+                font-size: 14px;
+                font-weight: 600;
+                color: {Colors.PRIMARY_TEXT};
+                background: transparent;
+            }}
+        """)
+        cycle_layout.addWidget(cycle_title)
+
+        cycle_skeleton = QFrame()
+        cycle_skeleton.setFixedHeight(250)
+        cycle_skeleton.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BACKGROUND_LIGHT};
+                border: 1px dashed {Colors.OVERLAY_LIGHT_20};
+                border-radius: 8px;
+            }}
+        """)
+        cycle_skeleton_layout = QVBoxLayout(cycle_skeleton)
+        cycle_skeleton_label = QLabel("Loading graph...")
+        cycle_skeleton_label.setStyleSheet(f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;")
+        cycle_skeleton_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cycle_skeleton_layout.addWidget(cycle_skeleton_label)
+        cycle_layout.addWidget(cycle_skeleton)
+
+        layout.addWidget(cycle_card)
+
+        return placeholder
+
+    def load_deferred_graphs(self):
+        """Load heavy graph widgets after window is visible.
+
+        Called by main_simplified.py after window.show() to improve startup time.
+        Replaces placeholder with real sensorgram graphs.
+        """
+        if self._deferred_ui_loaded:
+            return  # Already loaded
+
+        try:
+            logger.info("📊 Loading sensorgram graphs...")
+
+            # Create real sensorgram content
+            sensorgram_widget = self._create_sensorgram_content()
+
+            # Replace placeholder with real content
+            self.content_stack.removeWidget(self._sensorgram_placeholder)
+            self._sensorgram_placeholder.deleteLater()
+            self.content_stack.insertWidget(0, sensorgram_widget)
+
+            # Force display of Sensorgram page (index 0)
+            self.content_stack.setCurrentIndex(0)
+
+            # Update navigation button states to match
+            for i, btn in enumerate(self.nav_buttons):
+                btn.setChecked(i == 0)
+
+            self._deferred_ui_loaded = True
+            logger.info("✅ Sensorgram graphs loaded")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load deferred graphs: {e}", exc_info=True)
+            # Update placeholder with error message
+            if hasattr(self, '_loading_label'):
+                self._loading_label.setText(f"Error loading graphs: {e}")
+                self._loading_label.setStyleSheet(
+                    "QLabel { color: #FF3B30; font-size: 14px; }"
+                )
 
     def _create_graph_header(self):
         """Create header with channel toggle controls and live data checkbox."""
@@ -6178,23 +6409,25 @@ End of Debug Log
 
             ctrl = self.app.hardware_mgr.ctrl
 
-            # Apply polarizer positions
+            # ❌ DANGEROUS: DO NOT apply servo positions at runtime!
+            # Servo positions are IMMUTABLE - set at controller initialization only
             if s_pos is not None or p_pos is not None:
-                # Get current positions if only one is being changed
-                current = ctrl.servo_get()
-                if s_pos is None:
-                    s_pos = int(current['s'][:3])  # First 3 digits
-                if p_pos is None:
-                    p_pos = int(current['p'][:3])  # First 3 digits
+                logger.error("=" * 80)
+                logger.error("❌ CRITICAL ERROR: Attempt to change servo positions at runtime")
+                logger.error("❌ Servo positions are LOCKED after controller initialization")
+                logger.error("❌ To change positions: Update device_config.json and RESTART application")
+                logger.error("=" * 80)
 
-                logger.info(f"Setting servo positions: S={s_pos}, P={p_pos}")
-                ctrl.servo_set(s=s_pos, p=p_pos)
-
-                # Update device config
+                # DO NOT call servo_get() or servo_set() - these are legacy EEPROM operations
+                # Save to device_config for NEXT session only
                 if self.app.main_window.device_config:
-                    self.app.main_window.device_config.data['hardware']['servo_s_position'] = s_pos
-                    self.app.main_window.device_config.data['hardware']['servo_p_position'] = p_pos
+                    if s_pos is not None:
+                        self.app.main_window.device_config.data['hardware']['servo_s_position'] = s_pos
+                    if p_pos is not None:
+                        self.app.main_window.device_config.data['hardware']['servo_p_position'] = p_pos
                     self.app.main_window.device_config.save()
+                    logger.warning(f"⚠️ Positions saved to device_config: S={s_pos}, P={p_pos}")
+                    logger.warning("⚠️ RESTART REQUIRED - Positions will be loaded on next controller init")
 
             # Apply LED intensities
             led_updates = []
@@ -6562,7 +6795,10 @@ End of Debug Log
         except Exception as e:
             print(f"❌ Error loading demo data: {e}")
             import traceback
-            traceback.print_exc()
+            try:
+                print(traceback.format_exc())
+            except:
+                pass
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 self,

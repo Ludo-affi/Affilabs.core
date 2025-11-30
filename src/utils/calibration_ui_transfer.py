@@ -138,9 +138,9 @@ class PostCalibrationDialog(QDialog):
         if self.calibration_result.dark_noise is not None:
             log_lines.append(f"Dark Noise Max: {max(self.calibration_result.dark_noise):.1f} counts\n")
 
-        if self.calibration_result.s_ref_sig:
+        if self.calibration_result.s_pol_ref:
             log_lines.append("\nS-Mode Reference Signals:\n")
-            for ch, sig in self.calibration_result.s_ref_sig.items():
+            for ch, sig in self.calibration_result.s_pol_ref.items():
                 log_lines.append(f"  Ch {ch.upper()}: max={max(sig):.0f} counts\n")
 
         if self.calibration_result.verification:
@@ -253,7 +253,7 @@ def transfer_calibration_to_live_view(
 
         # Set reference signals and dark noise
         data_acquisition_manager.set_reference_signals(
-            calibration_result.s_ref_sig
+            calibration_result.s_pol_ref
         )
         data_acquisition_manager.set_dark_noise(
             calibration_result.dark_noise
@@ -341,11 +341,11 @@ def save_calibration_to_device_config(
 
         # Full arrays (not just metrics)
         's_ref_signals': {
-            ch: sig.tolist() for ch, sig in calibration_result.s_ref_sig.items()
-        } if calibration_result.s_ref_sig else {},
+            ch: sig.tolist() for ch, sig in calibration_result.s_pol_ref.items()
+        } if calibration_result.s_pol_ref else {},
         'p_ref_signals': {
-            ch: sig.tolist() for ch, sig in calibration_result.p_ref_sig.items()
-        } if hasattr(calibration_result, 'p_ref_sig') and calibration_result.p_ref_sig else {},
+            ch: sig.tolist() for ch, sig in calibration_result.p_pol_ref.items()
+        } if hasattr(calibration_result, 'p_pol_ref') and calibration_result.p_pol_ref else {},
         'dark_noise': calibration_result.dark_noise.tolist() if calibration_result.dark_noise is not None else [],
         'wavelengths': calibration_result.wave_data.tolist() if calibration_result.wave_data is not None else [],
 
@@ -380,9 +380,9 @@ def save_calibration_to_device_config(
 
     # Log summary
     logger.info("✅ Calibration saved with FULL arrays:")
-    logger.info(f"   S-ref signals: {len(calibration_result.s_ref_sig)} channels × {len(calibration_result.wave_data)} pixels")
-    if hasattr(calibration_result, 'p_ref_sig') and calibration_result.p_ref_sig:
-        logger.info(f"   P-ref signals: {len(calibration_result.p_ref_sig)} channels × {len(calibration_result.wave_data)} pixels")
+    logger.info(f"   S-ref signals: {len(calibration_result.s_pol_ref)} channels × {len(calibration_result.wave_data)} pixels")
+    if hasattr(calibration_result, 'p_pol_ref') and calibration_result.p_pol_ref:
+        logger.info(f"   P-ref signals: {len(calibration_result.p_pol_ref)} channels × {len(calibration_result.wave_data)} pixels")
     logger.info(f"   Dark noise: {len(calibration_result.dark_noise)} pixels")
     logger.info(f"   Wavelengths: {len(calibration_result.wave_data)} pixels")
     logger.info(f"   LED intensities: S-mode and P-mode")
@@ -440,7 +440,7 @@ def check_and_run_afterglow_calibration(
         afterglow_result = run_afterglow_calibration(
             usb,
             ctrl,
-            led_intensities=calibration_result.ref_intensity,
+            led_intensities=calibration_result.s_mode_intensity,
             device_config=device_config,
             stop_flag=None,
             progress_callback=None

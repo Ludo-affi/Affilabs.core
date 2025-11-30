@@ -896,7 +896,7 @@ class MainWindow(QMainWindow):
             # No status bar in new design - remove status updates
             self.sensorgram.reference_channel_dlg.close()
             self.data_processing.reference_channel_dlg.close()
-            if self.advanced_menu and (self.device_config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR']):  # QSPR removed
+            if self.advanced_menu and (self.device_config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR']):
                 self.advanced_menu.close()
             self.app.close()
             super().closeEvent(event)

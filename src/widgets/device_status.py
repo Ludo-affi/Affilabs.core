@@ -17,7 +17,6 @@ class DeviceStatusWidget(QWidget):
     # Controller type constants
     STATIC_CONTROLLERS = ['P4SPR', 'PicoP4SPR']
     FLOW_CONTROLLERS = ['PicoKNX2', 'PicoEZSPR', 'EZSPR']
-    QSPR_CONTROLLERS = ['QSPR']
 
     def __init__(self, parent=None):
         super(DeviceStatusWidget, self).__init__(parent)
@@ -423,7 +422,7 @@ class DeviceStatusWidget(QWidget):
         Update the device status display.
 
         Args:
-            ctrl_type: Controller type string ('P4SPR', 'PicoP4SPR', 'QSPR', 'EZSPR', 'PicoEZSPR', etc.)
+            ctrl_type: Controller type string ('P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR', etc.)
             knx_type: Kinetic controller type string ('KNX', 'KNX2', 'PicoKNX2', etc.)
             pump_connected: Whether a pump is connected (True/False/None)
         """
@@ -510,7 +509,6 @@ class DeviceStatusWidget(QWidget):
         Logic:
         - Arduino or PicoP4SPR → Static only
         - PicoKNX or PicoEZSPR (with kinetics) → Flow
-        - QSPR → Not Supported
         - No controller → Unknown
 
         Args:
@@ -518,14 +516,10 @@ class DeviceStatusWidget(QWidget):
             knx_type: Kinetic controller type string
 
         Returns:
-            Capacity string: "Static", "Flow", "Not Supported", or "Unknown"
+            Capacity string: "Static", "Flow", or "Unknown"
         """
         if not ctrl_type:
             return "Unknown"
-
-        # Check if QSPR (not supported)
-        if ctrl_type in self.QSPR_CONTROLLERS:
-            return "Not Supported"
 
         # Check if Flow-capable (PicoKNX2, PicoEZSPR, EZSPR)
         if ctrl_type in self.FLOW_CONTROLLERS:

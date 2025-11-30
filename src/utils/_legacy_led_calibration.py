@@ -611,10 +611,9 @@ class LEDCalibrationResult:
         self.success = False
         self.s_integration_time = MIN_INTEGRATION  # S-mode integration time (Step 4)
         self.num_scans = 1
-        self.ref_intensity = {}  # S-mode LED intensities
-        self.leds_calibrated = {}  # P-mode LED intensities
+        self.s_mode_intensity = {}  # S-mode LED intensities
         self.dark_noise = None
-        self.ref_sig = {}
+        self.s_pol_ref = {}  # S-mode reference spectra
         self.wave_data = None
         self.wavelengths = None  # Alias for wave_data (GitHub compatibility)
         self.full_wavelengths = None  # Full detector wavelength array (before SPR filtering)
@@ -631,7 +630,7 @@ class LEDCalibrationResult:
         # P-mode verification results (populated by verify_calibration)
         self.orientation_validation = {}  # {ch: {'p_s_ratio': float, 'expected_range': tuple, 'status': str}}
         self.transmission_validation = {}  # {ch: {'fwhm': float, 'dip_depth': float, 'status': str}}
-        self.p_ref_sig = {}  # P-mode reference spectra (measured during verification)
+        self.p_pol_ref = {}  # P-mode reference spectra (measured during verification)
         self.p_mode_intensity = {}  # P-mode LED intensities (optimized in Step 5)
         self.p_integration_time = MIN_INTEGRATION  # P-mode integration time (Step 5, may be up to +10% of S-mode)
 
@@ -655,6 +654,15 @@ class LEDCalibrationResult:
         self.per_channel_integration = {}  # {ch: integration_time_ms} - for variable integration per channel
         self.per_channel_dark_noise = {}   # {ch: dark_noise_array} - dark noise at each channel's integration time
         self.calibration_method = "standard"  # "standard" or "alternative"
+
+        # Additional attributes used by calibration_6step.py
+        self.ref_intensity = {}  # Alias for s_mode_intensity (LED intensities)
+        self.s_raw_data = {}  # Raw S-mode spectra per channel
+        self.p_raw_data = {}  # Raw P-mode spectra per channel
+        self.s_pol_ref = {}  # S-mode reference spectra (processed)
+        self.p_pol_ref = {}  # P-mode reference spectra (processed)
+        self.leds_calibrated = {}  # Final calibrated LED intensities (P-mode)
+        self.ref_sig = {}  # Generic reference signal alias
 
 
 # =============================================================================
@@ -2559,7 +2567,7 @@ def perform_full_led_calibration(
                     max_acceptable = 0.8 * detector_max
 
                     if min_acceptable <= max_val <= max_acceptable:
-                        result.ref_intensity[ch] = led_val
+                        result.s_mode_intensity[ch] = led_val
                         validation_passed.append(ch)
                         logger.info(f"   ✅ Ch {ch.upper()}: LED {led_val} validated (signal: {max_val:.0f} counts, range: {min_acceptable:.0f}-{max_acceptable:.0f})")
                     else:
@@ -2572,7 +2580,7 @@ def perform_full_led_calibration(
                         logger.warning(f"   ⚠️ Ch {ch.upper()}: Signal {reason}, recalibrating...")
                         if progress_callback:
                             progress_callback(f"Recalibrating LED {ch.upper()}...")
-                        result.ref_intensity[ch] = calibrate_led_channel(
+                        result.s_mode_intensity[ch] = calibrate_led_channel(
                             usb, ctrl, ch, None, stop_flag,
                             detector_params=detector_params
                         )
@@ -2582,7 +2590,7 @@ def perform_full_led_calibration(
                     logger.warning(f"   ⚠️ Ch {ch.upper()}: No saved LED value in device config")
                     if progress_callback:
                         progress_callback(f"Calibrating LED {ch.upper()}...")
-                    result.ref_intensity[ch] = calibrate_led_channel(
+                    result.s_mode_intensity[ch] = calibrate_led_channel(
                         usb, ctrl, ch, None, stop_flag,
                         detector_params=detector_params
                     )
@@ -2608,18 +2616,18 @@ def perform_full_led_calibration(
                 if progress_callback:
                     progress_callback(f"Calibrating LED {ch.upper()}...")
                 logger.info(f"   Calibrating Ch {ch.upper()} (using real hardware measurements)...")
-                result.ref_intensity[ch] = calibrate_led_channel(
+                result.s_mode_intensity[ch] = calibrate_led_channel(
                     usb, ctrl, ch, None, stop_flag,
                     detector_params=detector_params  # Pass pre-read detector params
                 )
 
-        logger.info(f"✅ S-mode calibration complete: {result.ref_intensity}")
+        logger.info(f"✅ S-mode calibration complete: {result.s_mode_intensity}")
 
         # ========================================================================
         # POST-CALIBRATION VALIDATION: Verify all channels have valid LED values
         # ========================================================================
         invalid_led_values = []
-        for ch, led_val in result.ref_intensity.items():
+        for ch, led_val in result.s_mode_intensity.items():
             if led_val is None or led_val < 1 or led_val > 255:
                 invalid_led_values.append(f"{ch.upper()}={led_val}")
 
@@ -2633,7 +2641,7 @@ def perform_full_led_calibration(
         logger.info("🔍 Post-calibration verification: Testing all channels produce expected signal...")
         all_channels_verified = True
 
-        for ch, led_val in result.ref_intensity.items():
+        for ch, led_val in result.s_mode_intensity.items():
             ctrl.set_intensity(ch=ch, raw_val=led_val)
             time.sleep(0.1)
 
@@ -2663,12 +2671,12 @@ def perform_full_led_calibration(
         # The measure_reference_signals() function will set them to the correct intensities
 
         # Log each channel's calibrated intensity for debugging
-        for ch, intensity in result.ref_intensity.items():
+        for ch, intensity in result.s_mode_intensity.items():
             logger.info(f"   Ch {ch.upper()}: LED intensity = {intensity}/255")
 
         # === SECOND PASS OPTIMIZATION: Improve headroom if possible ===
         # Check if we can improve headroom by increasing integration time
-        weak_channels = [ch for ch, intensity in result.ref_intensity.items() if intensity > 200]
+        weak_channels = [ch for ch, intensity in result.s_mode_intensity.items() if intensity > 200]
         if weak_channels and result.integration_time < MAX_INTEGRATION_BUDGET_MS:
             # Calculate how much we could improve by using more integration time
             integration_headroom = MAX_INTEGRATION_BUDGET_MS - result.integration_time
@@ -2698,20 +2706,20 @@ def perform_full_led_calibration(
                     new_intensity = calibrate_led_channel(
                         usb, ctrl, ch, None, stop_flag
                     )
-                    improvement = result.ref_intensity[ch] - new_intensity
-                    logger.info(f"   Ch {ch.upper()}: {result.ref_intensity[ch]} → {new_intensity} (improved by {improvement})")
-                    result.ref_intensity[ch] = new_intensity
+                    improvement = result.s_mode_intensity[ch] - new_intensity
+                    logger.info(f"   Ch {ch.upper()}: {result.s_mode_intensity[ch]} → {new_intensity} (improved by {improvement})")
+                    result.s_mode_intensity[ch] = new_intensity
 
                 # Update result with new integration time
                 result.integration_time = new_integration
                 result.num_scans = min(int(MAX_READ_TIME / new_integration), MAX_NUM_SCANS)
 
                 logger.info(f"✅ Second pass complete - integration: {new_integration}ms, LEDs improved")
-                logger.info(f"   Recalibrated channels: {result.ref_intensity}\n")
+                logger.info(f"   Recalibrated channels: {result.s_mode_intensity}\n")
 
         # Analyze S-mode LED intensities and provide integration time guidance
         # High LED values indicate weak signal that limits P-mode optimization headroom
-        weak_channels = [ch for ch, intensity in result.ref_intensity.items() if intensity > 200]
+        weak_channels = [ch for ch, intensity in result.s_mode_intensity.items() if intensity > 200]
         if weak_channels:
             logger.warning(f"\n⚠️ LED INTENSITY vs TIMING BUDGET ANALYSIS:")
             logger.warning(f"   Channels {', '.join([c.upper() for c in weak_channels])} have high S-mode LED values (>200/255)")
@@ -2744,7 +2752,7 @@ def perform_full_led_calibration(
 
         # === LED HEADROOM ANALYSIS (done once, reused in P-mode) ===
         # Analyze S-mode LED intensities to predict P-mode boost potential
-        result.headroom_analysis = analyze_channel_headroom(result.ref_intensity)
+        result.headroom_analysis = analyze_channel_headroom(result.s_mode_intensity)
 
         if stop_flag and stop_flag.is_set():
             return result
@@ -2801,11 +2809,11 @@ def perform_full_led_calibration(
             progress_callback("Measuring reference signals...")
         logger.debug("Measuring reference signals...")
         try:
-            result.ref_sig = measure_reference_signals(
+            result.s_pol_ref = measure_reference_signals(
                 usb,
                 ctrl,
                 ch_list,
-                result.ref_intensity,
+                result.s_mode_intensity,
                 result.dark_noise,
                 result.integration_time,
                 result.wave_min_index,
@@ -2879,8 +2887,8 @@ def perform_full_led_calibration(
         if progress_callback:
             progress_callback("Calibrating P-mode LEDs...")
         logger.debug("Calibrating P-mode LEDs...")
-        result.leds_calibrated, result.channel_performance = calibrate_p_mode_leds(
-            usb, ctrl, ch_list, result.ref_intensity, stop_flag,
+        result.p_mode_intensity, result.channel_performance = calibrate_p_mode_leds(
+            usb, ctrl, ch_list, result.s_mode_intensity, stop_flag,
             detector_params=detector_params,  # Pass pre-read detector params
             headroom_analysis=result.headroom_analysis  # Pass pre-computed headroom analysis
         )
@@ -2890,9 +2898,9 @@ def perform_full_led_calibration(
 
         # Step 7: Verify P-mode calibration (check saturation, S vs P comparison, and FWHM)
         # Use trimmed wave_data (already trimmed to MIN_WAVELENGTH:MAX_WAVELENGTH)
-        # to match the trimmed ref_sig from measure_reference_signals
+        # to match the trimmed s_pol_ref from measure_reference_signals
         result.ch_error_list, result.spr_fwhm, polarizer_swap_detected = verify_calibration(
-            usb, ctrl, result.leds_calibrated, result.wave_data, result.ref_sig
+            usb, ctrl, result.p_mode_intensity, result.wave_data, result.s_pol_ref
         )
 
         # Auto-correct polarizer swap if detected (3+ channels with inverted orientation)
@@ -3039,6 +3047,27 @@ def perform_full_led_calibration(
 # =============================================================================
 # ALTERNATIVE CALIBRATION PATH - FIXED LED (PER-CHANNEL INTEGRATION) METHOD
 # =============================================================================
+# STATUS: READY FOR DEPLOYMENT (Currently DISABLED via USE_ALTERNATIVE_CALIBRATION=False)
+#
+# This calibration mode uses the proven algorithm from test_max_speed_50k_counts.py
+# which validated the variable integration + fixed LED=255 approach.
+#
+# VALIDATED PERFORMANCE (from test_max_speed_50k_counts.py):
+# - Throughput: 1.51 Hz (660ms/cycle for 4 channels)
+# - Noise: 0.22-0.63% across all channels (excellent precision)
+# - Target: 50,000 counts achieved on ALL channels
+# - Integration times: Ch A=63ms, B=23ms, C=21ms, D=54ms
+# - LED: All channels at 255 (max brightness for stability)
+#
+# ADVANTAGES OVER STANDARD MODE:
+# - 51% faster than current 1Hz target (1.51 Hz vs 1.0 Hz)
+# - Better LED stability (all at optimal 255 intensity)
+# - Lower noise (0.22-0.63% vs typical 0.5-1.0%)
+# - Higher signal (50k vs typical 30-40k counts)
+#
+# TO ENABLE: Set USE_ALTERNATIVE_CALIBRATION = True in settings.py
+# MIGRATION: Requires updating live acquisition to use per-channel integration times
+# =============================================================================
 
 def calibrate_integration_per_channel(
     usb,
@@ -3047,76 +3076,109 @@ def calibrate_integration_per_channel(
     led_intensity: int = 255,
     target_counts: float = None,
     stop_flag=None,
+    max_integration: float = 300.0,  # Allow longer integration for 50k counts target
 ) -> tuple[int, int]:
     """Calibrate integration time for a single channel at fixed LED intensity.
 
     Used in Fixed LED (Per-Channel Integration) method where all LEDs are at max (255).
-    Integration time calibrated per channel, then MAX used as global integration time.
+    Uses iterative optimization algorithm proven in test_max_speed_50k_counts.py:
+    - Adaptive integration time increase based on signal ratio
+    - Target: 50,000 counts per channel (optimal SNR)
+    - Max integration: 300ms (configurable, validates variable integration approach)
+
+    This algorithm was validated to achieve:
+    - 1.51 Hz throughput (660ms/cycle for 4 channels)
+    - 0.22-0.63% noise across all channels
+    - All channels hitting 50k counts target
+    - Integration times: 21-63ms depending on LED brightness
 
     Args:
         usb: Spectrometer instance
         ctrl: Controller instance
         ch: Channel to calibrate ('a', 'b', 'c', or 'd')
         led_intensity: Fixed LED intensity (typically 255 for max)
-        target_counts: Target detector count level (if None, uses detector's target_counts)
+        target_counts: Target detector count level (default 50000 for optimal SNR)
         stop_flag: Optional threading event to check for cancellation
+        max_integration: Maximum integration time to try (ms, default 300ms)
 
     Returns:
         Tuple of (integration_time, num_scans) for this channel
     """
+    # Use 50k counts target for optimal SNR (proven in test_max_speed_50k_counts.py)
     if target_counts is None:
-        target_counts = usb.target_counts
+        target_counts = 50000  # Optimal SNR target from test validation
+        logger.debug(f"Using optimal SNR target: {target_counts} counts")
 
     logger.debug(f"Calibrating integration time for ch {ch.upper()} at LED={led_intensity}")
+    logger.debug(f"Target: {target_counts} counts, Max integration: {max_integration}ms")
 
     # Set fixed LED intensity
     ctrl.set_intensity(ch=ch, raw_val=led_intensity)
-    time.sleep(pre_led_delay_ms / 1000.0)
+    time.sleep(0.020)  # 20ms LED settling (from test validation)
 
     # Start with minimum integration time
-    integration = MIN_INTEGRATION
-    max_integration_allowed = min(MAX_INTEGRATION, MAX_INTEGRATION_BUDGET_MS)
-    usb.set_integration(integration)
-    time.sleep(0.1)
+    integration = 10.0  # Start at 10ms (hardware minimum from test)
 
-    # Read initial signal
-    int_array = usb.read_intensity()
-    if int_array is None:
-        logger.error(f"Failed to read intensity for channel {ch.upper()}")
-        raise RuntimeError(f"Spectrometer read failed for channel {ch.upper()}")
+    # Iterative optimization algorithm (from test_max_speed_50k_counts.py)
+    # Try to reach target with adaptive integration time increases
+    max_attempts = 5
 
-    current_count = int_array.max()
-    logger.debug(f"Ch {ch.upper()} initial: {integration}ms = {current_count:.0f} counts (target: {target_counts})")
-
-    # Increase integration time until we hit target (with budget constraint)
-    step_size = 2  # ms increments
-    while current_count < target_counts and integration < max_integration_allowed:
+    for attempt in range(max_attempts):
         if stop_flag and stop_flag.is_set():
             break
 
-        integration += step_size
         usb.set_integration(integration)
-        time.sleep(0.02)
+        time.sleep(0.01)
 
+        # Read signal
         int_array = usb.read_intensity()
         if int_array is None:
-            raise RuntimeError(f"Spectrometer read failed during integration calibration")
+            logger.error(f"Failed to read intensity for channel {ch.upper()}")
+            raise RuntimeError(f"Spectrometer read failed for channel {ch.upper()}")
 
-        new_count = int_array.max()
-        logger.debug(f"Ch {ch.upper()}: {integration}ms = {new_count:.0f} counts (change: {new_count - current_count:+.0f})")
-        current_count = new_count
+        peak_counts = int_array.max()
+        logger.debug(f"  Attempt {attempt+1}: Integration={integration:.1f}ms, LED={led_intensity} → {peak_counts:.0f} counts")
 
-    # Check if we hit the budget limit
-    if integration >= max_integration_allowed and current_count < target_counts:
-        logger.warning(
-            f"Ch {ch.upper()}: Hit integration budget limit ({max_integration_allowed}ms) "
-            f"at {current_count:.0f} counts (target: {target_counts})"
-        )
+        # Check if we reached target
+        if peak_counts >= target_counts * 0.9:
+            logger.debug(f"  → Close to target at {integration:.1f}ms, proceeding to optimization")
+            break
+
+        # Check if saturated
+        if peak_counts >= 65535:
+            logger.warning(f"  → Saturated at {integration:.1f}ms, need shorter integration or lower LED")
+            # Back off integration
+            integration = integration * 0.8
+            continue
+
+        # Need more signal - calculate needed integration time
+        if integration >= max_integration:
+            logger.warning(f"  → Max integration reached ({max_integration}ms)")
+            break
+
+        # Calculate needed ratio and increase integration
+        needed_ratio = target_counts / peak_counts
+        integration = min(integration * needed_ratio * 1.1, max_integration)  # 10% margin
+        logger.debug(f"  → Need {needed_ratio:.2f}x more signal, increasing to {integration:.1f}ms")
+
+    # Now we have a rough integration time - no need for fine adjustment since
+    # we're targeting a signal range, not an exact value
+    # The iterative increase already brought us close to target
+
+    # Final verification read
+    usb.set_integration(integration)
+    time.sleep(0.01)
+    int_array = usb.read_intensity()
+    if int_array is not None:
+        final_counts = int_array.max()
+        error_pct = ((final_counts - target_counts) / target_counts) * 100
+        logger.info(f"✓ Ch {ch.upper()}: Integration={integration:.1f}ms → {final_counts:.0f} counts ({error_pct:+.1f}% from target)")
+    else:
+        logger.warning(f"✓ Ch {ch.upper()}: Integration={integration:.1f}ms (verification read failed)")
 
     # Calculate optimal scan count for this integration time
-    num_scans = min(int(MAX_READ_TIME / integration), MAX_NUM_SCANS)
-
-    logger.info(f"✓ Ch {ch.upper()}: Integration={integration}ms, Signal={current_count:.0f} counts, Scans={num_scans}")
+    # In Alternative mode, we use 1 scan for speed (validated in test)
+    num_scans = 1  # Fast acquisition mode (validated at 1.51 Hz)
 
     return integration, num_scans
 
@@ -3394,7 +3456,7 @@ def perform_alternative_calibration(
         print("\n🔍 DEBUG: About to measure S-mode reference signals...")
         # Step 4: Measure reference signals
         logger.debug("Measuring reference signals...")
-        result.ref_sig = measure_reference_signals(
+        result.s_pol_ref = measure_reference_signals(
             usb,
             ctrl,
             ch_list,

@@ -1,0 +1,14 @@
+{
+  "calibration_metadata": {
+    "timestamp": "2025-11-29T20:24:43.259461",
+    "success": true,
+    "calibration_method": "standard",
+    "detector_serial": 65535
+  },
+  "detector_parameters": {
+    "max_counts": 65535,
+    "saturation_threshold": 62258,
+    "wavelength_range": {
+      "min": 560.044201243574,
+      "max": 719.9313788403352,
+      "min_index": 

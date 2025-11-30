@@ -5,21 +5,32 @@ This is a clean rewrite that:
 2. Initializes hardware in background threads
 3. Uses standard app.exec() instead of asyncio complexity
 
-ARCHITECTURE:
-=============
-- UI Layer: affilabs_core_ui.py (MainWindowPrototype) - Modular, PySide6-based interface
-- Application Layer: This file (Application class) - Coordinates UI and hardware managers
-- Core Managers: hardware_manager, data_acquisition_manager, recording_manager, kinetic_manager
-- UI Components: sidebar.py, sections.py, plot_helpers.py, diagnostics_dialog.py, inspector.py
+ARCHITECTURE (4-Layer Clean Separation):
+=========================================
+Layer 4: UI/Widgets (affilabs_core_ui.py, widgets/) - Display only, no business logic
+Layer 3: Coordinators (calibration_service, graph_coordinator, cycle_coordinator) - Orchestration
+Layer 2: Core Business Logic (data_acquisition_manager, recording_manager, kinetic_manager) - Processing
+Layer 1: Hardware (hardware_manager) - Hardware Abstraction Layer (HAL)
+
+→ Application class (this file) connects layers via signal/slot pattern
+
+6-STEP CALIBRATION FLOW:
+========================
+1. Hardware Validation & LED Verification - Ensure LEDs off, verify firmware
+2. Wavelength Calibration - Read EEPROM, determine ROI (560-720nm)
+3. LED Brightness Ranking - Measure at 255, rank weak→strong channels
+4. S-Mode Integration Time Optimization - Maximize weakest LED, constrain strongest
+5. P-Mode Optimization (Transfer + Boost) - Transfer S-mode + iterative boost
+6. S-Mode Reference Signals + QC - Final validation, quality checks
 
 INTEGRATION STATUS: ✅ READY
 ============================
-The UI is fully integrated and scalable:
-- Clean separation between UI (affilabs_core_ui.py) and business logic (main_simplified.py)
-- All UI components are modular and can be updated independently
-- Signal/slot connections allow UI updates without tight coupling
-- New UI features can be added to affilabs_core_ui.py without touching core logic
-- The Application class handles all manager coordination and data flow
+4-layer architecture enforced:
+- Layer 4 (UI): Display only, zero business logic
+- Layer 3 (Coordinators): Orchestration via calibration_service, graph_coordinator, cycle_coordinator
+- Layer 2 (Core): Business logic in data_acquisition_manager, recording_manager
+- Layer 1 (Hardware): HAL abstraction in hardware_manager
+All communication via Qt signals/slots (no direct cross-layer calls)
 
 Last Updated: November 22, 2025
 """
@@ -72,6 +83,12 @@ class QtWarningFilter:
         if self._closed or not self.original:
             return
         try:
+            # Handle both str and bytes (traceback module can write bytes)
+            if isinstance(text, bytes):
+                text = text.decode('utf-8', errors='replace')
+            elif not isinstance(text, str):
+                text = str(text)
+
             # Suppress known false-positive Qt threading warnings
             if any(s in text for s in self.SUPPRESSED):
                 return  # Silently drop
@@ -196,23 +213,23 @@ class Application(QApplication):
         self._apply_theme()
 
         # Create hardware manager (does NOT connect yet)
-        logger.info("Creating hardware manager...")
+        logger.debug("Creating hardware manager...")
         self.hardware_mgr = HardwareManager()
 
         # Create data acquisition manager
-        logger.info("Creating data acquisition manager...")
+        logger.debug("Creating data acquisition manager...")
         self.data_mgr = DataAcquisitionManager(self.hardware_mgr)
 
         # Create recording manager
-        logger.info("Creating recording manager...")
+        logger.debug("Creating recording manager...")
         self.recording_mgr = RecordingManager(self.data_mgr)
 
         # Create kinetic operations manager
-        logger.info("Creating kinetic operations manager...")
+        logger.debug("Creating kinetic operations manager...")
         self.kinetic_mgr = KineticManager(self.hardware_mgr)
 
         # Create session quality monitor for FWHM tracking
-        logger.info("Creating session quality monitor...")
+        logger.debug("Creating session quality monitor...")
         self.quality_monitor = SessionQualityMonitor(
             device_serial="unknown",  # Will be updated when hardware connects
             session_id=None  # Auto-generated
@@ -246,27 +263,26 @@ class Application(QApplication):
         self._filter_method = 'median'  # Default: 'median' or 'kalman'
         self._kalman_filters = {}  # Store Kalman filter instances per channel
 
-        # Three-zone filtering cache (historical, cycle, live)
-        self._cached_zone1_filtered = {}  # Cached historical filtering per channel
-        self._cached_zone1_bounds = {}  # Track cursor position for cache invalidation
-
         # Track selected channel for flagging (None, 0-3 for A-D)
+
+        # QC dialog reference (Layer 1 responsibility)
+        self._qc_dialog = None
         self._selected_channel = None
         self._flag_data = []  # List of {channel, time, annotation} dicts
 
         # LED status monitoring timer (V1.1+ firmware)
         self._led_status_timer = None
 
-        # Calibration progress dialog
-        self._calibration_dialog = None
+        # Calibration state tracking
         self._calibration_retry_count = 0
         self._max_calibration_retries = 3
         self._calibration_completed = False  # Track if calibration has completed to prevent re-triggering
         self._initial_connection_done = False  # Track if initial hardware connection completed
 
-        # Transmission spectrum dialog
+        # Dialogs - lazy-loaded via properties (not created until first use)
         self._transmission_dialog = None
         self._live_data_dialog = None  # Live Data Dialog for real-time spectra
+        self._diagnostics_dialog = None  # Diagnostics dialog
 
         # Initialize data buffer manager
         self.buffer_mgr = DataBufferManager()
@@ -310,8 +326,8 @@ class Application(QApplication):
         self._sensorgram_update_counter = 0
 
         # Pre-cache attribute checks for performance (called frequently)
-        self._has_stop_cursor = (hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
-                                self.main_window.full_timeline_graph.stop_cursor is not None)
+        # NOTE: Deferred until graphs are loaded (done in _load_deferred_widgets)
+        self._has_stop_cursor = False
 
         # Start processing thread
         self._start_processing_thread()
@@ -348,41 +364,95 @@ class Application(QApplication):
         if hasattr(self.main_window, 'content_stack'):
             self.main_window.content_stack.currentChanged.connect(self._on_page_changed)
 
-        # Show window FIRST
+        # Mark which UI components need deferred loading
+        self._deferred_connections_pending = True
+
+        # Show window FIRST (with minimal essential UI)
         logger.info("🪟 Showing main window...")
+
+        # Update splash screen message if available
+        if hasattr(self, 'update_splash_message'):
+            self.update_splash_message("Building interface...")
+
         self.main_window.show()
         self.main_window.raise_()
         self.main_window.activateWindow()
-        logger.info(f"✅ Window visible: {self.main_window.isVisible()}")
+
+        # Force immediate UI update - paint window before loading heavy widgets
+        QApplication.processEvents()
+        logger.info(f"✅ Window visible (minimal UI rendered): {self.main_window.isVisible()}")
+
+        # Load deferred widgets in background (after window is visible)
+        QTimer.singleShot(50, self._load_deferred_widgets)
 
         # DO NOT auto-connect hardware - user must press Power button
         # This allows user to start in offline mode for post-processing
         logger.info("💡 Ready - waiting for user to press Power button to connect hardware...")
 
-        # Connect cursor movements to update cycle graph
-        self.main_window.full_timeline_graph.start_cursor.sigPositionChanged.connect(
-            self._update_cycle_of_interest_graph
-        )
-        self.main_window.full_timeline_graph.stop_cursor.sigPositionChanged.connect(
-            self._update_cycle_of_interest_graph
-        )
+    def _load_deferred_widgets(self):
+        """Load heavy UI components after window is visible.
 
-        # Connect cursor auto-follow signal (thread-safe)
-        self.cursor_update_signal.connect(self._update_stop_cursor_position)
+        This improves perceived startup time by showing the window immediately,
+        then loading expensive components in the background.
+        """
+        try:
+            logger.info("🔄 Loading deferred UI components...")
 
-        # Connect polarizer toggle button to servo control
-        self.main_window.polarizer_toggle_btn.clicked.connect(self._on_polarizer_toggle_clicked)
+            # Update splash message
+            if hasattr(self, 'update_splash_message'):
+                self.update_splash_message("Loading graphs...")
 
-        # Connect mouse events for channel selection and flagging
-        self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
-            self._on_graph_clicked
-        )
+            # Load heavy graph widgets (PyQtGraph plots)
+            if hasattr(self.main_window, 'load_deferred_graphs'):
+                self.main_window.load_deferred_graphs()
+                logger.info("  ✅ Graph widgets loaded")
 
-        # Optional debug: simulate calibration success automatically
-        if os.environ.get('AFFILABS_SIMULATE_CAL_SUCCESS', '0') not in ('0','false','False'):
-            from PySide6.QtCore import QTimer
-            logger.info('🧪 Debug simulation: scheduling fake calibration success in 2s')
-            QTimer.singleShot(2000, self._debug_simulate_calibration_success)
+            # Process events to ensure graphs are rendered before connecting signals
+            QApplication.processEvents()
+
+            # Ensure graphs are fully initialized before connecting signals
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                # Connect cursor movements to update cycle graph
+                if hasattr(self.main_window.full_timeline_graph, 'start_cursor'):
+                    self.main_window.full_timeline_graph.start_cursor.sigPositionChanged.connect(
+                        self._update_cycle_of_interest_graph
+                    )
+                if hasattr(self.main_window.full_timeline_graph, 'stop_cursor'):
+                    self.main_window.full_timeline_graph.stop_cursor.sigPositionChanged.connect(
+                        self._update_cycle_of_interest_graph
+                    )
+                logger.info("  ✅ Timeline graph cursors connected")
+
+            # Connect cursor auto-follow signal (thread-safe)
+            self.cursor_update_signal.connect(self._update_stop_cursor_position)
+            logger.info("  ✅ Cursor auto-follow connected")
+
+            # Update cached attribute checks now that graphs are loaded
+            self._has_stop_cursor = (hasattr(self.main_window, 'full_timeline_graph') and
+                                    hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
+                                    self.main_window.full_timeline_graph.stop_cursor is not None)
+            logger.info(f"  ℹ️  Stop cursor available: {self._has_stop_cursor}")
+
+            # Connect polarizer toggle button to servo control
+            if hasattr(self.main_window, 'polarizer_toggle_btn'):
+                self.main_window.polarizer_toggle_btn.clicked.connect(self._on_polarizer_toggle_clicked)
+                logger.info("  ✅ Polarizer toggle connected")
+
+            # Connect mouse events for channel selection and flagging
+            if hasattr(self.main_window, 'cycle_of_interest_graph'):
+                self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
+                    self._on_graph_clicked
+                )
+                logger.info("  ✅ Graph click events connected")
+
+            # Mark deferred loading as complete
+            self._deferred_connections_pending = False
+
+            logger.info("✅ Deferred UI components loaded successfully")
+
+        except Exception as e:
+            logger.error(f"❌ Error loading deferred widgets: {e}", exc_info=True)
+            # Non-fatal - app can continue with reduced functionality
 
     def _apply_theme(self):
         """Apply modern UI theme."""
@@ -413,8 +483,8 @@ class Application(QApplication):
 
         # === CALIBRATION MANAGER SIGNALS ===
         # Connect to calibration_complete to update optics_ready status
-        self.calibration.manager.calibration_complete.connect(self._on_calibration_complete_status_update, Qt.QueuedConnection)
-        logger.info("Connected: calibration.manager.calibration_complete -> _on_calibration_complete_status_update")
+        self.calibration.calibration_complete.connect(self._on_calibration_complete_status_update, Qt.QueuedConnection)
+        logger.info("Connected: calibration.calibration_complete -> _on_calibration_complete_status_update")
 
         # === RECORDING MANAGER SIGNALS ===
         self.recording_mgr.recording_started.connect(self._on_recording_started)
@@ -428,14 +498,15 @@ class Application(QApplication):
         self.kinetic_mgr.pump_state_changed.connect(self._on_pump_state_changed)
         self.kinetic_mgr.valve_switched.connect(self._on_valve_switched)
 
-    def _on_calibration_complete_status_update(self, calibration_data: dict):
+    def _on_calibration_complete_status_update(self, calibration_data):
         """Handler for calibration completion - updates optics_ready status.
 
         Args:
-            calibration_data: Dict with calibration result including 'optics_ready' flag
+            calibration_data: CalibrationData object (immutable dataclass)
         """
         try:
-            optics_ready = calibration_data.get('optics_ready', False)
+            # CalibrationData is a dataclass, not a dict - check if channels were calibrated
+            optics_ready = len(calibration_data.get_channels()) > 0 if calibration_data else False
             logger.info(f"📡 Calibration complete signal received - optics_ready={optics_ready}")
 
             if optics_ready:
@@ -456,11 +527,11 @@ class Application(QApplication):
 
     def _on_calibration_complete(self, calibration_data):
         """Handler for calibration_complete signal from CalibrationService.
-        
+
         This is called when CalibrationService completes calibration and provides
         the immutable CalibrationData model. We apply it to the acquisition manager
-        to enable live measurements.
-        
+        and show the QC dialog (Layer 1 responsibility).
+
         Args:
             calibration_data: CalibrationData instance with all calibration parameters
         """
@@ -468,15 +539,20 @@ class Application(QApplication):
             logger.info("=" * 80)
             logger.info("📊 CALIBRATION COMPLETE - APPLYING TO ACQUISITION MANAGER")
             logger.info("=" * 80)
-            
+
             # Apply calibration data to acquisition manager (single entry point)
             self.data_mgr.apply_calibration(calibration_data)
-            
+
             logger.info("✅ Calibration data applied successfully")
             logger.info("✅ System ready for live acquisition")
             logger.info("=" * 80)
             logger.info("")
-            
+
+            # Show QC dialog (Layer 1 responsibility - UI operations)
+            print("🔵 DEBUG: Layer 1 showing QC dialog...")
+            self._show_qc_dialog(calibration_data)
+            print("🟢 DEBUG: Layer 1 QC dialog shown")
+
         except Exception as e:
             logger.error(f"❌ Failed to apply calibration data: {e}", exc_info=True)
             # Show error dialog to user
@@ -486,6 +562,37 @@ class Application(QApplication):
                 "Calibration Error",
                 f"Failed to apply calibration data:\n{e}\n\nPlease try calibration again."
             )
+
+    def _show_qc_dialog(self, calibration_data):
+        """Show QC dialog with calibration results (Layer 1 - UI responsibility).
+
+        Args:
+            calibration_data: CalibrationData instance
+        """
+        try:
+            print("🔵 DEBUG: _show_qc_dialog() started in Layer 1")
+            from widgets.calibration_qc_dialog import CalibrationQCDialog
+
+            # Convert to dict for QC dialog
+            print("🔵 DEBUG: Converting calibration_data to dict...")
+            qc_data = calibration_data.to_dict()
+            print(f"🟢 DEBUG: qc_data created with {len(qc_data)} keys")
+
+            logger.info("📊 Showing QC report dialog...")
+
+            # Create and show dialog (non-blocking)
+            print("🔵 DEBUG: Calling CalibrationQCDialog.show_qc_report()...")
+            self._qc_dialog = CalibrationQCDialog.show_qc_report(
+                parent=self.main_window,
+                calibration_data=qc_data
+            )
+            print("🟢 DEBUG: CalibrationQCDialog.show_qc_report() returned")
+
+            logger.info("✅ QC report displayed (non-blocking)")
+
+        except Exception as e:
+            print(f"🔴 ERROR in _show_qc_dialog: {e}")
+            logger.error(f"❌ Failed to show QC report: {e}", exc_info=True)
 
     def _connect_ui_signals(self):
         """Connect UI signals after handler method is defined."""
@@ -535,11 +642,6 @@ class Application(QApplication):
         logger.info("=" * 80)
         logger.info("🔧 DEBUG: Ctrl+Shift+S to start spectrum simulation")
 
-        # Ctrl+Shift+T: Test acquisition worker threading (skip calibration) - DISABLED
-        # debug_thread_shortcut = QShortcut(QKeySequence("Ctrl+Shift+T"), self.main_window)
-        # debug_thread_shortcut.activated.connect(self._debug_test_acquisition_thread)
-        # logger.info("Debug: Ctrl+Shift+T to test acquisition thread (skip cal)")
-
         self.main_window.acquisition_pause_requested.connect(self._on_acquisition_pause_requested)
         self.main_window.export_requested.connect(self._on_export_requested)
 
@@ -548,30 +650,24 @@ class Application(QApplication):
 
         logger.info("✅ All signal connections registered")
 
-    def _connect_hardware_signals(self):
-        """DEPRECATED: Now handled by event bus.
-        Kept for reference during transition."""
-        pass
+    def _check_hardware_ready(self, operation_name: str = "operation") -> bool:
+        """Check if hardware is ready for calibration operations.
 
-    def _connect_data_acquisition_signals(self):
-        """DEPRECATED: Now handled by event bus.
-        Kept for reference during transition."""
-        pass
+        Args:
+            operation_name: Name of operation for error message
 
-    def _connect_recording_signals(self):
-        """DEPRECATED: Now handled by event bus.
-        Kept for reference during transition."""
-        pass
-
-    def _connect_kinetic_signals(self):
-        """DEPRECATED: Now handled by event bus.
-        Kept for reference during transition."""
-        pass
-
-    def _connect_ui_request_signals(self):
-        """DEPRECATED: Now handled by event bus.
-        Kept for reference during transition."""
-        pass
+        Returns:
+            True if hardware ready, False otherwise (with user message shown)
+        """
+        if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
+            logger.error(f"❌ Hardware not ready for {operation_name}: Controller or spectrometer not connected")
+            from widgets.message import show_message
+            show_message(
+                "Please connect the controller and spectrometer first.",
+                "Hardware Not Ready"
+            )
+            return False
+        return True
 
     def _connect_ui_control_signals(self):
         """Register UI control element signal connections.
@@ -607,8 +703,11 @@ class Application(QApplication):
             self._on_graph_clicked
         )
 
-        # Polarizer Calibration button
-        ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
+        # NOTE: Polarizer Calibration button is connected in affilabs_core_ui.py
+        # If available, connect here to ensure functionality
+        if hasattr(ui, 'polarizer_calibration_btn'):
+            ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
+            logger.info("✅ Connected Polarizer Calibration button to handler")
 
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
@@ -622,6 +721,45 @@ class Application(QApplication):
         # Start button (direct connection)
         ui.sidebar.start_cycle_btn.clicked.connect(self._on_start_button_clicked)
 
+    def _on_polarizer_calibration(self):
+        """Run 3-bucket servo calibration from Settings → Calibrate Polarizer."""
+        try:
+            if not self._check_hardware_ready("polarizer calibration"):
+                return
+            # Pause acquisition if running
+            try:
+                self.data_mgr.stop_acquisition()
+            except Exception:
+                pass
+            logger.info("🔧 Running Polarizer Calibration (3-bucket ROI)...")
+            from utils.servo_calibration import auto_calibrate_polarizer, verify_servo_positions
+            usb = self.hardware_mgr.usb
+            ctrl = self.hardware_mgr.ctrl
+            result = auto_calibrate_polarizer(usb, ctrl)
+            if not result:
+                from widgets.message import show_message
+                show_message("Polarizer calibration failed. Please check hardware.", msg_type="Error", title="Calibration Failed")
+                return
+            s_pos, p_pos, extinction_ratio = result
+            ctrl.servo_set(int(s_pos), int(p_pos))
+            import time as _t
+            _t.sleep(0.3)
+            ok, actual_s, actual_p = verify_servo_positions(ctrl, int(s_pos), int(p_pos), tolerance=3, retry_on_mismatch=True)
+            if not ok:
+                logger.warning(f"⚠️ Servo mismatch after calibration: expected S={s_pos},P={p_pos} got S={actual_s},P={actual_p}")
+                from widgets.message import show_message
+                show_message(f"Servo mismatch after calibration (S={actual_s}, P={actual_p}).", msg_type="Warning", title="Servo Verification")
+            else:
+                logger.info(f"✅ Polarizer calibrated and verified: S={actual_s}, P={actual_p}, Extinction={extinction_ratio:.2f}%")
+            # TODO: Persist S/P and extinction ratio to device_config.json if available on main_window
+        except Exception as e:
+            logger.error(f"❌ Polarizer calibration handler failed: {e}", exc_info=True)
+            try:
+                from widgets.message import show_message
+                show_message(f"Polarizer calibration error: {e}", msg_type="Error", title="Calibration Error")
+            except Exception:
+                pass
+
     # === DEBUG / TEST HELPERS ===
     def _debug_simulate_calibration_success(self):
         """Force a simulated successful calibration (debug/testing only).
@@ -630,31 +768,21 @@ class Application(QApplication):
         Auto-start logic (if enabled) should then begin acquisition attempt.
         """
         try:
+            from utils.debug_helpers import inject_fake_calibration
+
             if getattr(self.data_mgr, 'calibrated', False):
                 logger.info('🧪 Debug: system already calibrated; skipping simulation')
                 return
 
             logger.info('🧪 Debug: simulating calibration success (no hardware checks)')
-            # Minimal fake data
-            self.data_mgr.calibrated = True
+            inject_fake_calibration(self.data_mgr)
+
+            # Override with lighter settings for simulation
             self.data_mgr.integration_time = 36
             self.data_mgr.num_scans = 1
-            self.data_mgr.leds_calibrated = {'a':180,'b':180,'c':180,'d':180}
-            self.data_mgr.ref_intensity = 25000
-            # Emit calibration_complete via event bus
-            calibration_data = {
-                'integration_time': self.data_mgr.integration_time,
-                'num_scans': self.data_mgr.num_scans,
-                'ref_intensity': self.data_mgr.ref_intensity,
-                'leds_calibrated': self.data_mgr.leds_calibrated.copy(),
-                'ch_error_list': [],
-                's_ref_qc_results': {},
-                'channel_performance': {},
-                'calibration_type': 'debug',
-                'afterglow_available': False,
-                'sp_validation_results': {}
-            }
-            # Debug bypass complete - calibration manager not used
+            self.data_mgr.p_mode_intensity = {'a':180,'b':180,'c':180,'d':180}
+            self.data_mgr.s_mode_intensity = {'a':180,'b':180,'c':180,'d':180}
+
             logger.info('🧪 Debug: calibration bypassed (no signal emitted)')
         except Exception as e:
             logger.error(f'🧪 Debug: calibration simulation failed: {e}')
@@ -670,42 +798,17 @@ class Application(QApplication):
         NO hardware interaction - pure UI state change for debugging.
         """
         try:
+            from utils.debug_helpers import inject_fake_calibration, save_fake_calibration_to_config
+
             logger.info("=" * 80)
             logger.info("🔧 DEBUG BYPASS: Marking system as calibrated (NO HARDWARE)")
             logger.info("=" * 80)
 
             # Inject minimal fake calibration data into data manager
-            import numpy as np
-            self.data_mgr.calibrated = True
-            self.data_mgr.integration_time = 40
-            self.data_mgr.num_scans = 5
-            self.data_mgr.leds_calibrated = {'a': 255, 'b': 150, 'c': 150, 'd': 255}
-            self.data_mgr.wave_data = np.linspace(400, 900, 2048)
-            self.data_mgr.ref_sig = {
-                'a': np.ones(2048) * 40000,
-                'b': np.ones(2048) * 40000,
-                'c': np.ones(2048) * 40000,
-                'd': np.ones(2048) * 40000
-            }
-            self.data_mgr.dark_noise = np.zeros(2048)
-            self.data_mgr.fourier_weights = {
-                'a': np.ones(2048 - 1),  # Derivative has n-1 points
-                'b': np.ones(2048 - 1),
-                'c': np.ones(2048 - 1),
-                'd': np.ones(2048 - 1)
-            }
-
-            logger.info("✅ Fake calibration data injected")
+            inject_fake_calibration(self.data_mgr)
 
             # Save LED intensities to device config so Settings dialog shows correct values
-            if self.main_window.device_config:
-                try:
-                    self.main_window.device_config.set_led_intensities(255, 150, 150, 255)
-                    self.main_window.device_config.set_calibration_settings(40, 5)
-                    self.main_window.device_config.save()
-                    logger.info("💾 Fake calibration saved to device config")
-                except Exception as e:
-                    logger.warning(f"Failed to save fake calibration to device config: {e}")
+            save_fake_calibration_to_config(self.main_window.device_config)
 
             # Enable Start button in UI
             if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'start_cycle_btn'):
@@ -851,22 +954,17 @@ class Application(QApplication):
 
             def send_one():
                 try:
-                    logger.info(f"[SIM-TRACK-1] send_one() ENTRY - cycle {spectrum_count[0]}")
-
                     # Generate fake SPR wavelength data for each channel
                     channels = ['a', 'b', 'c', 'd']
                     peak_positions = {'a': 650, 'b': 660, 'c': 655, 'd': 670}
                     intensities = {'a': 15000, 'b': 12000, 'c': 10000, 'd': 14000}
 
                     elapsed = time.time() - start_time[0]
-                    logger.info(f"[SIM-TRACK-2] Elapsed time: {elapsed:.3f}s")
 
                     # Generate wavelength array (match real detector: ~640-690nm range for SPR)
                     wavelengths = np.linspace(640, 690, 512)  # 512 points for smooth spectrum
 
                     for ch in channels:
-                        logger.info(f"[SIM-TRACK-3] Generating data for channel {ch}")
-
                         # Generate realistic SPR peak wavelength with drift
                         base_wavelength = peak_positions[ch]
                         drift = 0.5 * np.sin(elapsed / 10)  # Slow oscillation
@@ -900,21 +998,18 @@ class Application(QApplication):
                             'simulated': True
                         }
 
-                        logger.info(f"[SIM-TRACK-4] Emitting data for channel {ch}")
                         # Emit to spectrum_acquired signal
                         if self.data_mgr and hasattr(self.data_mgr, 'spectrum_acquired'):
                             self.data_mgr.spectrum_acquired.emit(data)
-                        logger.info(f"[SIM-TRACK-5] Channel {ch} emitted successfully")
 
                     spectrum_count[0] += 1
-                    logger.info(f"[SIM-TRACK-6] Cycle {spectrum_count[0]} COMPLETE")
 
                     # Log every 50 cycles (5 seconds)
                     if spectrum_count[0] % 50 == 0:
                         logger.info(f"📊 Injected {spectrum_count[0]} simulated data cycles ({spectrum_count[0] * 4} points)")
 
                 except Exception as e:
-                    logger.exception(f"[SIM-TRACK-FATAL] Simulation crashed: {e}")
+                    logger.exception(f"❌ Simulation error: {e}")
                     timer.stop()
 
             timer.timeout.connect(send_one)
@@ -953,50 +1048,15 @@ class Application(QApplication):
         Works WITHOUT hardware connected - creates mock hardware objects.
         """
         try:
+            from utils.debug_helpers import create_mock_hardware, inject_fake_calibration
+
             logger.info('🧪 DEBUG: Testing acquisition thread (no hardware needed)')
 
             # Create mock hardware if not connected
-            if not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
-                logger.info('🧪 DEBUG: Creating mock hardware objects')
-
-                class MockController:
-                    def set_intensity(self, ch, raw_val):
-                        pass
-                    def set_mode(self, mode):
-                        pass
-
-                class MockSpectrometer:
-                    def set_integration(self, time_ms):
-                        pass
-                    def read_intensity(self):
-                        import numpy as np
-                        return np.random.randint(20000, 50000, 2048)
-
-                self.hardware_mgr.ctrl = MockController()
-                self.hardware_mgr.usb = MockSpectrometer()
-                logger.info('🧪 DEBUG: Mock hardware created')
+            create_mock_hardware(self.hardware_mgr)
 
             # Inject minimal fake calibration data into data manager
-            import numpy as np
-            self.data_mgr.calibrated = True
-            self.data_mgr.integration_time = 40
-            self.data_mgr.num_scans = 5
-            self.data_mgr.leds_calibrated = {'a': 255, 'b': 150, 'c': 150, 'd': 255}
-            self.data_mgr.wave_data = np.linspace(400, 900, 2048)
-            self.data_mgr.ref_sig = {
-                'a': np.ones(2048) * 40000,
-                'b': np.ones(2048) * 40000,
-                'c': np.ones(2048) * 40000,
-                'd': np.ones(2048) * 40000
-            }
-            self.data_mgr.dark_noise = np.zeros(2048)
-            self.data_mgr.fourier_weights = {
-                'a': np.ones(2048 - 1),  # Derivative has n-1 points
-                'b': np.ones(2048 - 1),
-                'c': np.ones(2048 - 1),
-                'd': np.ones(2048 - 1)
-            }
-
+            inject_fake_calibration(self.data_mgr)
             logger.info('🧪 DEBUG: Fake calibration data injected')
 
             # Now start acquisition - this should trigger the Qt threading error if it exists
@@ -1011,13 +1071,7 @@ class Application(QApplication):
 
     def _on_start_button_clicked(self):
         """User clicked Start button - begin live data acquisition."""
-        logger.info("🚀 User requested start - PHASE 4: Full acquisition + recording")
-
-        # ========================================================
-        # PHASE 4: FULL DATA ACQUISITION + RECORDING
-        # ========================================================
-        # Start acquisition thread AND recording to test complete pipeline
-        # ========================================================
+        logger.info("🚀 User requested start - beginning acquisition")
 
         # Check if already acquiring
         if self.data_mgr and self.data_mgr._acquiring:
@@ -1353,11 +1407,12 @@ class Application(QApplication):
                 logger.error("_start_oem_calibration_workflow method not found in main_window")
 
         # Update calibration dialog if it exists and is waiting for hardware
-        if self._calibration_dialog and not self._calibration_dialog._is_closing:
+        calibration_dialog = self.calibration.dialog if self.calibration else None
+        if calibration_dialog and not calibration_dialog._is_closing:
             if status.get('ctrl_type') and status.get('spectrometer'):
                 # Both hardware components detected
                 logger.info("✅ Calibration dialog updated: Hardware detected")
-                self._calibration_dialog.update_status(
+                calibration_dialog.update_status(
                     f"Hardware detected:\n"
                     f"• Controller: {status.get('ctrl_type')}\n"
                     f"• Spectrometer: Connected\n\n"
@@ -1365,14 +1420,14 @@ class Application(QApplication):
                 )
             elif status.get('spectrometer') and not status.get('ctrl_type'):
                 logger.warning("⚠️ Spectrometer found but controller missing")
-                self._calibration_dialog.update_status(
+                calibration_dialog.update_status(
                     "⚠️ Controller not detected\n\n"
                     "Please connect the SPR controller\n"
                     "to continue calibration."
                 )
             elif status.get('ctrl_type') and not status.get('spectrometer'):
                 logger.warning("⚠️ Controller found but spectrometer missing")
-                self._calibration_dialog.update_status(
+                calibration_dialog.update_status(
                     "⚠️ Spectrometer not detected\n\n"
                     "Please connect the spectrometer\n"
                     "to continue calibration."
@@ -1391,9 +1446,21 @@ class Application(QApplication):
             # Start calibration ONLY if BOTH controller and spectrometer are connected
             # Calibration requires both hardware components
             if status.get('ctrl_type') and status.get('spectrometer') and not self._calibration_completed:
-                logger.info("🎯 Starting automatic calibration...")
-                logger.info(f"   Controller: {status.get('ctrl_type')}")
-                logger.info(f"   Spectrometer: Connected")
+                logger.info("="*80)
+                logger.info("🎯 STARTING 6-STEP CALIBRATION FLOW")
+                logger.info("="*80)
+                logger.info(f"   Hardware Detected:")
+                logger.info(f"   • Controller: {status.get('ctrl_type')}")
+                logger.info(f"   • Spectrometer: Connected")
+                logger.info("")
+                logger.info("   Calibration Steps:")
+                logger.info("   1. Hardware Validation & LED Verification")
+                logger.info("   2. Wavelength Calibration")
+                logger.info("   3. LED Brightness Ranking")
+                logger.info("   4. S-Mode Integration Time Optimization")
+                logger.info("   5. P-Mode Optimization (Transfer + Boost)")
+                logger.info("   6. S-Mode Reference Signals + QC")
+                logger.info("="*80)
 
                 # OPTIMIZATION: Check for optical calibration file first
                 # If missing, offer to run it BEFORE LED calibration (faster workflow)
@@ -1552,14 +1619,29 @@ class Application(QApplication):
             self.main_window._set_power_button_state("disconnected")
             self.main_window._update_power_button_style()
 
+    @property
+    def transmission_dialog(self):
+        """Lazy-load transmission dialog on first access."""
+        if self._transmission_dialog is None:
+            from transmission_spectrum_dialog import TransmissionSpectrumDialog
+            self._transmission_dialog = TransmissionSpectrumDialog(self.main_window)
+            logger.info("✅ Transmission dialog created (lazy-loaded)")
+        return self._transmission_dialog
+
+    @property
+    def live_data_dialog(self):
+        """Lazy-load live data dialog on first access."""
+        if self._live_data_dialog is None:
+            from live_data_dialog import LiveDataDialog
+            self._live_data_dialog = LiveDataDialog(parent=self.main_window)
+            logger.info("✅ Live data dialog created (lazy-loaded)")
+        return self._live_data_dialog
+
     def show_transmission_dialog(self):
         """Show the transmission spectrum dialog."""
-        if self._transmission_dialog is None:
-            self._transmission_dialog = TransmissionSpectrumDialog(self.main_window)
-
-        self._transmission_dialog.show()
-        self._transmission_dialog.raise_()
-        self._transmission_dialog.activateWindow()
+        self.transmission_dialog.show()
+        self.transmission_dialog.raise_()
+        self.transmission_dialog.activateWindow()
 
     # === Data Acquisition Callbacks ===
 
@@ -1682,8 +1764,6 @@ class Application(QApplication):
             # Throttled logging (only log every Nth acquisition)
             should_log = (self._acquisition_counter % DEBUG_LOG_THROTTLE_FACTOR == 0)
 
-            if should_log:
-                logger.info(f"[CRASH-TRACK-2] _process_spectrum_data ENTRY")
             import numpy as np
 
             channel = data['channel']  # 'a', 'b', 'c', 'd'
@@ -1693,34 +1773,11 @@ class Application(QApplication):
             elapsed_time = data['elapsed_time']
             is_preview = data.get('is_preview', False)  # Interpolated preview vs real data
 
-            if should_log:
-                logger.info(f"[CRASH-TRACK-2A] Data parsed - ch={channel}, wave={wavelength:.1f}, int={intensity:.0f}")
-                print(f"[PROCESS] Channel {channel}: wave={wavelength:.1f}nm, int={intensity:.0f}, time={elapsed_time:.2f}s")
-
-            # SIMPLIFIED: Just append to buffers and queue graph update
-            # Skip intensity monitoring, transmission queueing, etc. for now
-
             # Append to timeline data buffers (RAW data - unfiltered)
             try:
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-2B] Calling buffer_mgr.append_timeline_point")
                 self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength, timestamp)
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-2C] Buffer append SUCCESS")
-                    print(f"[PROCESS] Channel {channel}: Buffer updated OK")
-
-                # CRASH DEBUG: Check thread context (throttled)
-                if should_log:
-                    import threading
-                    logger.info(f"[CRASH-DEBUG] Current thread: {threading.current_thread().name}")
-                    logger.info(f"[CRASH-DEBUG] Is main thread: {threading.current_thread() is threading.main_thread()}")
-                    print(f"[CRASH-DEBUG] Thread: {threading.current_thread().name}")
-
             except Exception as e:
-                logger.exception(f"[CRASH-TRACK-2C-ERROR] Buffer append FAILED: {e}")
-                print(f"[PROCESS ERROR] Channel {channel}: Buffer append failed: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.exception(f"❌ Buffer append failed for channel {channel}: {e}")
 
             # Queue transmission spectrum update (for dialog display) ONLY if we have full spectrum
             # THROTTLED: Only update every N seconds per channel
@@ -1729,19 +1786,8 @@ class Application(QApplication):
             time_since_last_update = timestamp - self._last_transmission_update.get(channel, 0)
             should_update_transmission = (time_since_last_update >= TRANSMISSION_UPDATE_INTERVAL)
 
-            # Debug log (only once per session) - ALWAYS PRINT
-            if not hasattr(self, '_trans_check_logged'):
-                msg = f"[TRANS-UPDATE] Condition check: has_raw={has_raw_data}, has_trans={has_transmission}, should_update={should_update_transmission}, keys={list(data.keys())}"
-                logger.info(msg)
-                print(msg)  # FORCE PRINT
-                self._trans_check_logged = True
-
             if has_raw_data and has_transmission and should_update_transmission:
                 try:
-                    if should_log:
-                        logger.info(f"[CRASH-TRACK-2D] Calling _queue_transmission_update")
-                        print(f"[DEBUG] About to call _queue_transmission_update(channel={channel})")
-                        print(f"[DEBUG] self={type(self).__name__}, has_method={hasattr(self, '_queue_transmission_update')}")
                     self._queue_transmission_update(channel, data)
                     self._last_transmission_update[channel] = timestamp
 
@@ -1749,14 +1795,8 @@ class Application(QApplication):
                     if 'sensor_iq' in data:
                         self._update_sensor_iq_display(channel, data['sensor_iq'])
 
-                    if should_log:
-                        logger.info(f"[CRASH-TRACK-2E] Transmission queue SUCCESS")
-                        print(f"[PROCESS] Channel {channel}: Transmission queued")
                 except Exception as e:
-                    logger.exception(f"[CRASH-TRACK-2E-ERROR] Transmission queue FAILED: {e}")
-                    print(f"[PROCESS ERROR] Channel {channel}: Transmission queue failed: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.exception(f"❌ Transmission queue error for channel {channel}: {e}")
 
             # Cursor auto-follow (thread-safe via signal)
             # Emit signal to update cursor on main thread
@@ -1767,10 +1807,7 @@ class Application(QApplication):
 
         except Exception as e:
             # TOP-LEVEL CATCH: Prevent any exception from killing the processing thread
-            logger.exception(f"[CRASH-TRACK-2-FATAL] _process_spectrum_data CRASHED: {e}")
-            print(f"[PROCESS FATAL] Channel {data.get('channel', '?')}: Unhandled exception: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"❌ Spectrum processing error: {e}")
 
         # Queue graph update instead of immediate update (throttled by timer)
         # DOWNSAMPLED: Only queue every Nth update
@@ -1779,42 +1816,26 @@ class Application(QApplication):
 
         if should_update_graph:
             try:
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-3] Queueing graph update")
-
                 # Queue the update (main thread will check if live data is enabled)
                 self._pending_graph_updates[channel] = {
                     'elapsed_time': elapsed_time,
                     'channel': channel
                 }
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-3A] Graph update queued")
             except Exception as e:
-                logger.exception(f"[CRASH-TRACK-3-ERROR] Graph queue FAILED: {e}")
+                logger.exception(f"❌ Graph update error for channel {channel}: {e}")
 
         # Record data point if recording is active
         try:
-            if should_log:
-                logger.info(f"[CRASH-TRACK-4] Checking recording - is_recording={self.recording_mgr.is_recording}")
             if self.recording_mgr.is_recording:
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-4A] Building data point")
                 # Build data point with all channels (use latest value for each)
                 data_point = {}
                 for ch in self._idx_to_channel:
                     latest_value = self.buffer_mgr.get_latest_value(ch)
                     data_point[f'channel_{ch}'] = latest_value if latest_value is not None else ''
 
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-4B] Recording data point")
                 self.recording_mgr.record_data_point(data_point)
-                if should_log:
-                    logger.info(f"[CRASH-TRACK-4C] Recording SUCCESS")
         except Exception as e:
-            logger.exception(f"[CRASH-TRACK-4-ERROR] Recording FAILED: {e}")
-
-        if should_log:
-            logger.info(f"[CRASH-TRACK-5] _process_spectrum_data EXIT - COMPLETE")
+            logger.exception(f"❌ Recording error for channel {channel}: {e}")
 
         # Update cycle of interest graph (bottom graph) - REMOVED
         # This was causing crashes by running heavy processing 40+ times per second
@@ -1887,17 +1908,18 @@ class Application(QApplication):
 
         # Fallback: calculate transmission if not provided
         if transmission is None and raw_spectrum is not None and len(raw_spectrum) > 0:
-            ref_spectrum = self.data_mgr.ref_sig[channel]
+            if self.data_mgr.calibration_data and self.data_mgr.calibration_data.s_pol_ref:
+                ref_spectrum = self.data_mgr.calibration_data.s_pol_ref[channel]
 
-            # Get LED intensities for this channel (same as QC calculation)
-            p_led = self.data_mgr.leds_calibrated.get(channel) if hasattr(self.data_mgr, 'leds_calibrated') and isinstance(self.data_mgr.leds_calibrated, dict) else None
-            s_led = self.data_mgr.ref_intensity.get(channel) if hasattr(self.data_mgr, 'ref_intensity') and isinstance(self.data_mgr.ref_intensity, dict) else None
+                # Get LED intensities for this channel (same as QC calculation)
+                p_led = self.data_mgr.calibration_data.p_mode_intensities.get(channel)
+                s_led = self.data_mgr.calibration_data.s_mode_intensities.get(channel)
 
-            # Calculate transmission with LED correction (matches QC calculation exactly)
-            transmission = calculate_transmission(
-                raw_spectrum, ref_spectrum,
-                p_led_intensity=p_led, s_led_intensity=s_led
-            )
+                # Calculate transmission with LED correction (matches QC calculation exactly)
+                transmission = calculate_transmission(
+                    raw_spectrum, ref_spectrum,
+                    p_led_intensity=p_led, s_led_intensity=s_led
+                )
 
             # Apply baseline correction (matches QC report visualization exactly)
             if hasattr(self.data_mgr, '_apply_baseline_correction'):
@@ -1919,29 +1941,13 @@ class Application(QApplication):
                            f"Calibration may have failed. Skipping spectrum update.")
                 return  # Don't update dialogs without wavelength data
 
+            # Queue for batch processing (all UI updates happen via timer, not immediately)
             self._pending_transmission_updates[channel] = {
                 'transmission': transmission,
                 'raw_spectrum': raw_spectrum,
                 'wavelengths': wavelengths
             }
             logger.debug(f"[TRANS-UPDATE] Queued ch {channel}: {len(transmission)} points, λ={wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm")
-
-            if wavelengths is not None:
-                # Update transmission dialog if open (only if enabled)
-                if self._transmission_updates_enabled and self._transmission_dialog is not None and self._transmission_dialog.isVisible():
-                    self._transmission_dialog.update_spectrum(channel, wavelengths, transmission, raw_spectrum)
-
-                # Update live data dialog if open (THREAD SAFE - called from processing thread)
-                if self._live_data_dialog is not None:
-                    try:
-                        # Update both transmission and raw data plots (respect enable flags)
-                        if self._transmission_updates_enabled:
-                            self._live_data_dialog.update_transmission_plot(channel, wavelengths, transmission)
-                        if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
-                            self._live_data_dialog.update_raw_data_plot(channel, wavelengths, raw_spectrum)
-                    except Exception as e:
-                        # Silently ignore dialog update errors (dialog may be closing)
-                        pass
 
     def _update_sensor_iq_display(self, channel: str, sensor_iq):
         """Update Sensor IQ display in diagnostics panel.
@@ -2010,7 +2016,7 @@ class Application(QApplication):
         # Page 0 is Live Data (sensorgram)
         if page_index == 0:
             # Show live data dialog if acquisition is running
-            if self.data_mgr and hasattr(self.data_mgr, 'is_acquiring') and self.data_mgr.is_acquiring and self._live_data_dialog is not None:
+            if self.data_mgr and self.data_mgr._acquiring and self._live_data_dialog is not None:
                 self._live_data_dialog.show()
                 self._live_data_dialog.raise_()
         else:
@@ -2143,7 +2149,7 @@ class Application(QApplication):
                 if wavelengths is None or len(wavelengths) != len(transmission):
                     continue
 
-                # Update transmission curve
+                # Update Settings tab transmission curve
                 self.main_window.transmission_curves[channel_idx].setData(
                     wavelengths,
                     transmission
@@ -2158,7 +2164,7 @@ class Application(QApplication):
                     # Force autoscale on first update
                     self.main_window.transmission_plot.enableAutoRange()
 
-                # Update raw data plot
+                # Update Settings tab raw data plot
                 if hasattr(self.main_window, 'raw_data_curves') and raw_spectrum is not None:
                     self.main_window.raw_data_curves[channel_idx].setData(
                         wavelengths,
@@ -2172,6 +2178,23 @@ class Application(QApplication):
                         logger.info(f"✅ Ch {channel.upper()}: Raw data plot updated")
                         self._raw_update_logged.add(channel)
                         self.main_window.raw_data_plot.enableAutoRange()
+
+                # Update Transmission Dialog if open and enabled
+                if self._transmission_updates_enabled and self._transmission_dialog is not None and self._transmission_dialog.isVisible():
+                    try:
+                        self._transmission_dialog.update_spectrum(channel, wavelengths, transmission, raw_spectrum)
+                    except Exception:
+                        pass  # Dialog may be closing
+
+                # Update Live Data Dialog if open and enabled
+                if self._live_data_dialog is not None and self._live_data_dialog.isVisible():
+                    try:
+                        if self._transmission_updates_enabled:
+                            self._live_data_dialog.update_transmission_plot(channel, wavelengths, transmission)
+                        if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
+                            self._live_data_dialog.update_raw_data_plot(channel, wavelengths, raw_spectrum)
+                    except Exception:
+                        pass  # Dialog may be closing
 
             except Exception:
                 # Silent fail - non-critical display error
@@ -2414,23 +2437,67 @@ class Application(QApplication):
             # Toggle to opposite position
             new_position = 'P' if current_position == 'S' else 'S'
 
-            # Send command to hardware (FIX: ctrl not controller)
+            # Send command to hardware using servo_move_1_then worker function
             if self.hardware_mgr.ctrl is not None:
                 logger.info(f"🔄 Toggling polarizer: {current_position} → {new_position}")
-                success = self.hardware_mgr.ctrl.set_mode(new_position.lower())
 
-                if success:
-                    # Update UI to reflect new position
-                    self.main_window.sidebar.set_polarizer_position(new_position)
-                    logger.info(f"✅ Polarizer moved to position {new_position}")
+                # Import servo worker function
+                from utils.calibration_6step import servo_move_1_then, resolve_device_config_for_detector
+
+                # Get device config (reads updated UI positions)
+                device_config_det = None
+                if hasattr(self.main_window, 'device_config') and self.main_window.device_config:
+                    device_config_det = self.main_window.device_config.config
                 else:
-                    logger.error(f"❌ Failed to move polarizer to position {new_position}")
+                    # Fallback: try to resolve from USB
+                    try:
+                        if hasattr(self.hardware_mgr, 'usb') and self.hardware_mgr.usb:
+                            device_config_det = resolve_device_config_for_detector(self.hardware_mgr.usb)
+                    except Exception:
+                        pass
+
+                if device_config_det:
+                    # Use servo worker function - it reads positions from device_config
+                    # and moves only if current != target
+                    success = servo_move_1_then(
+                        self.hardware_mgr.ctrl,
+                        device_config_det,
+                        current_mode=current_position.lower(),
+                        target_mode=new_position.lower()
+                    )
+
+                    if success:
+                        # Lock the new mode via firmware command
+                        mode_success = self.hardware_mgr.ctrl.set_mode(new_position.lower())
+
+                        if mode_success:
+                            # Update UI to reflect new position
+                            self.main_window.sidebar.set_polarizer_position(new_position)
+                            logger.info(f"✅ Polarizer moved to position {new_position}")
+                        else:
+                            logger.warning(f"⚠️ Servo moved but mode lock failed for {new_position}")
+                            # Still update UI since servo physically moved
+                            self.main_window.sidebar.set_polarizer_position(new_position)
+                    else:
+                        logger.error(f"❌ Failed to move polarizer to position {new_position}")
+                        from widgets.message import show_message
+                        show_message(f"Failed to move polarizer to position {new_position}\n\nCheck hardware connection.")
+                else:
+                    logger.error("❌ No device_config available for servo positions")
                     from widgets.message import show_message
-                    show_message(f"Failed to move polarizer to position {new_position}\\n\\nCheck hardware connection.")
+                    show_message("Cannot move polarizer - device configuration not loaded.")
+
             else:
                 logger.warning("⚠️ Controller not connected - cannot move polarizer")
                 from widgets.message import show_message
-                show_message("Controller not connected.\\n\\nPlease connect hardware first.")
+                show_message("Controller not connected.\n\nPlease connect hardware first.")
+
+        except Exception as e:
+            logger.error(f"❌ Error toggling polarizer: {e}")
+            import traceback
+            traceback.print_exc()
+            from widgets.message import show_message
+            show_message(f"Error toggling polarizer: {str(e)}")
 
         except Exception as e:
             logger.error(f"❌ Error toggling polarizer: {e}")
@@ -2474,7 +2541,7 @@ class Application(QApplication):
         if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'subunit_status') and 'Spectroscopy' in self.main_window.sidebar.subunit_status:
             status_label = self.main_window.sidebar.subunit_status['Spectroscopy']['status_label']
             # Only update if acquisition is still running
-            if self.data_mgr.is_acquiring:
+            if self.data_mgr._acquiring:
                 status_label.setText("Running")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
@@ -2614,6 +2681,94 @@ class Application(QApplication):
         logger.info(f"Valve {channel} switched to {position}")
         # TODO: Update UI valve status
 
+    def _cleanup_resources(self, emergency: bool = False):
+        """Consolidated cleanup logic for all shutdown paths.
+
+        Args:
+            emergency: If True, skip graceful shutdown steps and force-close hardware
+        """
+        try:
+            if not emergency:
+                # Print final profiling stats if enabled (graceful shutdown only)
+                if PROFILING_ENABLED:
+                    logger.info("\n📊 FINAL PROFILING STATISTICS:")
+                    self.profiler.print_stats(sort_by='total', min_calls=1)
+                    self.profiler.print_hotspots(top_n=10)
+
+                # Stop processing thread first (Phase 3)
+                logger.info("Stopping processing thread...")
+                self._stop_processing_thread()
+
+                # Stop data acquisition
+                if self.data_mgr:
+                    logger.info("Stopping data acquisition...")
+                    try:
+                        self.data_mgr.stop_acquisition()
+                    except Exception as e:
+                        logger.error(f"Error stopping data acquisition: {e}")
+
+                # Stop recording
+                if self.recording_mgr and self.recording_mgr.is_recording:
+                    logger.info("Stopping recording...")
+                    try:
+                        self.recording_mgr.stop_recording()
+                    except Exception as e:
+                        logger.error(f"Error stopping recording: {e}")
+
+                # Stop all pumps
+                if self.kinetic_mgr:
+                    logger.info("Stopping pumps...")
+                    try:
+                        self.kinetic_mgr.stop_all_pumps()
+                    except Exception as e:
+                        logger.error(f"Error stopping pumps: {e}")
+
+            # Disconnect hardware (force close in emergency mode)
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                if not emergency:
+                    logger.info("Disconnecting hardware...")
+                try:
+                    # Close controller
+                    if hasattr(self.hardware_mgr, 'controller') and self.hardware_mgr.controller:
+                        try:
+                            if not emergency:
+                                self.hardware_mgr.controller.stop()
+                            self.hardware_mgr.controller.close()
+                        except Exception as e:
+                            if not emergency:
+                                logger.error(f"Error closing controller: {e}")
+
+                    # Close spectrometer
+                    if hasattr(self.hardware_mgr, 'spectrometer') and self.hardware_mgr.spectrometer:
+                        try:
+                            self.hardware_mgr.spectrometer.close()
+                        except Exception as e:
+                            if not emergency:
+                                logger.error(f"Error closing spectrometer: {e}")
+                except Exception as e:
+                    if not emergency:
+                        logger.error(f"Error during hardware disconnect: {e}")
+
+            # Close kinetics controller
+            if hasattr(self, 'kinetic_mgr') and self.kinetic_mgr:
+                if hasattr(self.kinetic_mgr, 'kinetics_controller') and self.kinetic_mgr.kinetics_controller:
+                    try:
+                        self.kinetic_mgr.kinetics_controller.close()
+                    except Exception as e:
+                        if not emergency:
+                            logger.error(f"Error closing kinetics: {e}")
+
+            if not emergency:
+                # Wait for threads to finish (with timeout)
+                time.sleep(0.5)
+                logger.info("✅ Application closed successfully")
+            else:
+                logger.info("✅ Emergency cleanup completed")
+
+        except Exception as e:
+            if not emergency:
+                logger.error(f"Error during cleanup: {e}")
+
     def close(self):
         """Clean up resources on application close."""
         if self.closing:
@@ -2622,76 +2777,8 @@ class Application(QApplication):
         self.closing = True
         logger.info("🔄 Closing application...")
 
-        try:
-            # Print final profiling stats if enabled
-            if PROFILING_ENABLED:
-                logger.info("\n📊 FINAL PROFILING STATISTICS:")
-                self.profiler.print_stats(sort_by='total', min_calls=1)
-                self.profiler.print_hotspots(top_n=10)
-
-            # Stop processing thread first (Phase 3)
-            logger.info("Stopping processing thread...")
-            self._stop_processing_thread()
-
-            # Stop data acquisition
-            if self.data_mgr:
-                logger.info("Stopping data acquisition...")
-                try:
-                    self.data_mgr.stop_acquisition()
-                except Exception as e:
-                    logger.error(f"Error stopping data acquisition: {e}")
-
-            # Stop recording
-            if self.recording_mgr and self.recording_mgr.is_recording:
-                logger.info("Stopping recording...")
-                try:
-                    self.recording_mgr.stop_recording()
-                except Exception as e:
-                    logger.error(f"Error stopping recording: {e}")
-
-            # Stop all pumps
-            if self.kinetic_mgr:
-                logger.info("Stopping pumps...")
-                try:
-                    self.kinetic_mgr.stop_all_pumps()
-                except Exception as e:
-                    logger.error(f"Error stopping pumps: {e}")
-
-            # Disconnect hardware gracefully
-            if self.hardware_mgr:
-                logger.info("Disconnecting hardware...")
-                try:
-                    # Close controller
-                    if hasattr(self.hardware_mgr, 'controller') and self.hardware_mgr.controller:
-                        try:
-                            self.hardware_mgr.controller.stop()
-                            self.hardware_mgr.controller.close()
-                        except Exception as e:
-                            logger.error(f"Error closing controller: {e}")
-
-                    # Close spectrometer
-                    if hasattr(self.hardware_mgr, 'spectrometer') and self.hardware_mgr.spectrometer:
-                        try:
-                            self.hardware_mgr.spectrometer.close()
-                        except Exception as e:
-                            logger.error(f"Error closing spectrometer: {e}")
-
-                    # Close kinetics controller
-                    if hasattr(self.kinetic_mgr, 'kinetics_controller') and self.kinetic_mgr.kinetics_controller:
-                        try:
-                            self.kinetic_mgr.kinetics_controller.close()
-                        except Exception as e:
-                            logger.error(f"Error closing kinetics: {e}")
-                except Exception as e:
-                    logger.error(f"Error during hardware disconnect: {e}")
-
-            # Wait for threads to finish (with timeout)
-            time.sleep(0.5)
-
-            logger.info("✅ Application closed successfully")
-
-        except Exception as e:
-            logger.error(f"Error during application close: {e}")
+        # Perform graceful cleanup
+        self._cleanup_resources(emergency=False)
 
         return super().close()
 
@@ -2703,40 +2790,14 @@ class Application(QApplication):
         logger.warning("⚠️ Emergency cleanup triggered - forcing resource release")
 
         # Force close all hardware connections without waiting
-        try:
-            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
-                # Close controller
-                try:
-                    if hasattr(self.hardware_mgr, 'controller') and self.hardware_mgr.controller:
-                        self.hardware_mgr.controller.close()
-                except Exception as e:
-                    logger.error(f"Emergency cleanup - controller close failed: {e}")
-
-                # Close spectrometer
-                try:
-                    if hasattr(self.hardware_mgr, 'spectrometer') and self.hardware_mgr.spectrometer:
-                        self.hardware_mgr.spectrometer.close()
-                except Exception as e:
-                    logger.error(f"Emergency cleanup - spectrometer close failed: {e}")
-        except Exception as e:
-            logger.error(f"Emergency cleanup - hardware_mgr access failed: {e}")
-
-        # Close kinetics
-        try:
-            if hasattr(self, 'kinetic_mgr') and self.kinetic_mgr:
-                if hasattr(self.kinetic_mgr, 'kinetics_controller') and self.kinetic_mgr.kinetics_controller:
-                    self.kinetic_mgr.kinetics_controller.close()
-        except Exception as e:
-            logger.error(f"Emergency cleanup - kinetics close failed: {e}")
-
-        logger.info("✅ Emergency cleanup completed")
+        self._cleanup_resources(emergency=True)
 
     def __del__(self):
         """Destructor to ensure resources are cleaned up."""
         try:
             if not hasattr(self, 'closing') or not self.closing:
                 logger.warning("⚠️ __del__ called without proper close - forcing cleanup")
-                self._emergency_cleanup()
+                self._cleanup_resources(emergency=True)
         except Exception:
             pass  # Destructor should never raise
 
@@ -2882,127 +2943,6 @@ class Application(QApplication):
 
         logger.info(f"Kalman filters initialized (R={measurement_noise:.4f}, Q={process_noise:.4f})")
 
-    def _filter_zone1_historical(self, data, strength: int):
-        """Light filtering for historical data (Zone 1).
-
-        For large datasets, downsample first to maintain responsiveness.
-        Uses median filter for speed.
-        """
-        import numpy as np
-        from scipy.ndimage import median_filter
-
-        n = len(data)
-        if n == 0:
-            return data
-        elif n < 1000:
-            # Small history: filter normally
-            window_size = 2 * strength + 1
-            return median_filter(data, size=window_size, mode='nearest')
-        else:
-            # Large history: downsample first (keep ~1000 points)
-            downsample_factor = max(1, n // 1000)
-            downsampled = data[::downsample_factor]
-            window_size = 2 * strength + 1
-            filtered = median_filter(downsampled, size=window_size, mode='nearest')
-            return filtered
-
-    def _filter_zone2_cycle(self, data, strength: int, channel: str):
-        """High-quality filtering for cycle of interest (Zone 2).
-
-        Uses Kalman for small cycles (<500 pts) for smoothest trajectories.
-        Uses median for large cycles (>500 pts) for speed.
-        """
-        import numpy as np
-        from scipy.ndimage import median_filter
-
-        n = len(data)
-        if n < 3:
-            return data  # Too small to filter
-        elif n < 500:
-            # Small cycle: use Kalman for best quality
-            if channel not in self._kalman_filters:
-                self._init_kalman_filters()
-            self._kalman_filters[channel].reset()
-            return self._kalman_filters[channel].filter_array(data)
-        else:
-            # Large cycle: use median for speed
-            window_size = 2 * strength + 1
-            return median_filter(data, size=window_size, mode='nearest')
-
-    def _filter_zone3_live(self, data, strength: int):
-        """Light filtering for live data (Zone 3).
-
-        Uses median filter on recent window only.
-        """
-        import numpy as np
-        from scipy.ndimage import median_filter
-
-        n = len(data)
-        if n < 3:
-            return data
-
-        # Filter only recent window (last 100 points or all if less)
-        window_size = 2 * strength + 1
-        return median_filter(data, size=window_size, mode='nearest')
-
-    def _apply_three_zone_filtering(self, data, time, strength: int, channel: str):
-        """Apply zone-specific filtering based on cursor positions.
-
-        Zone 1 (Historical): Before cycle start - downsampled + light filtering
-        Zone 2 (Cycle): Between cursors - high-quality filtering (frozen)
-        Zone 3 (Live): After cycle end - light filtering for recent data
-        """
-        import numpy as np
-
-        # Get cursor positions
-        try:
-            start_time = self.main_window.full_timeline_graph.start_cursor.value()
-            stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
-        except (AttributeError, RuntimeError):
-            # Cursors not ready - fallback to normal filtering
-            return self._apply_smoothing(data, strength, channel)
-
-        # Create zone masks
-        zone1_mask = time < start_time  # Historical
-        zone2_mask = (time >= start_time) & (time <= stop_time)  # Cycle
-        zone3_mask = time > stop_time  # Live
-
-        # Copy input data
-        result = np.copy(data)
-
-        # Zone 1: Historical (cached for performance)
-        if np.any(zone1_mask):
-            # Check if cache is valid
-            cache_key = f"{channel}_{start_time}"
-            if cache_key in self._cached_zone1_filtered:
-                # Use cached result (fast path)
-                cached_filtered = self._cached_zone1_filtered[cache_key]
-                # Ensure cache matches current data size
-                if len(cached_filtered) == np.sum(zone1_mask):
-                    result[zone1_mask] = cached_filtered
-                else:
-                    # Cache size mismatch - recompute
-                    zone1_filtered = self._filter_zone1_historical(data[zone1_mask], strength)
-                    result[zone1_mask] = zone1_filtered
-                    self._cached_zone1_filtered[cache_key] = zone1_filtered
-            else:
-                # Compute and cache
-                zone1_filtered = self._filter_zone1_historical(data[zone1_mask], strength)
-                result[zone1_mask] = zone1_filtered
-                self._cached_zone1_filtered[cache_key] = zone1_filtered
-
-        # Zone 2: Cycle of Interest (high-quality)
-        if np.any(zone2_mask):
-            zone2_filtered = self._filter_zone2_cycle(data[zone2_mask], strength, channel)
-            result[zone2_mask] = zone2_filtered
-
-        # Zone 3: Live (light filtering)
-        if np.any(zone3_mask):
-            zone3_filtered = self._filter_zone3_live(data[zone3_mask], strength)
-            result[zone3_mask] = zone3_filtered
-
-        return result
-
     def _apply_smoothing(self, data, strength: int, channel: str = None, method: str = None):
         """Apply smoothing filter to data (median or Kalman).
 
@@ -3144,10 +3084,9 @@ class Application(QApplication):
             # Apply smoothing if enabled
             display_data = wavelength_data
             if self._filter_enabled:
-                # Use three-zone filtering for timeline
-                display_data = self._apply_three_zone_filtering(
+                # Apply smoothing to timeline data
+                display_data = self._apply_smoothing(
                     wavelength_data,
-                    time_data,
                     self._filter_strength,
                     ch_letter
                 )
@@ -3449,6 +3388,22 @@ class Application(QApplication):
 
             logger.info(f"Toggling polarizer from {current_pos.upper()} to {new_pos.upper()}")
 
+            # 🔒 CRITICAL VALIDATION: Check positions match device_config
+            try:
+                if hasattr(self.main_window, 'device_config') and self.main_window.device_config:
+                    positions = self.main_window.device_config.get_servo_positions()
+                    if positions:
+                        s_pos = positions.get('s')
+                        p_pos = positions.get('p')
+                        target_pos = s_pos if new_pos == 's' else p_pos
+                        logger.info(f"✅ Position validation: {new_pos.upper()}-mode target={target_pos}° (from device_config)")
+                    else:
+                        logger.warning("⚠️  Cannot validate positions - not found in device_config")
+                else:
+                    logger.warning("⚠️  Cannot validate positions - device_config not available")
+            except Exception as e:
+                logger.error(f"❌ Position validation failed: {e}")
+
             # Set polarizer position
             self.hardware_mgr.ctrl.set_mode(mode=new_pos)
             self.hardware_mgr._current_polarizer = new_pos
@@ -3474,8 +3429,8 @@ class Application(QApplication):
             led_d = int(self.main_window.channel_d_input.text() or "0")
 
             # Get LED delay values from Advanced Settings if available
-            pre_led_delay = 45  # Default
-            post_led_delay = 5  # Default
+            pre_led_delay = 12  # Default (optimized for <1Hz acquisition)
+            post_led_delay = 40  # Default (optimized for <1Hz acquisition)
             if hasattr(self.main_window, 'advanced_menu') and self.main_window.advanced_menu:
                 if hasattr(self.main_window.advanced_menu, 'led_delay_input'):
                     pre_led_delay = self.main_window.advanced_menu.led_delay_input.value()
@@ -3494,8 +3449,9 @@ class Application(QApplication):
             if self.hardware_mgr and self.hardware_mgr.ctrl:
                 logger.info(f"Applying settings: S={s_pos}, P={p_pos}, LEDs=[{led_a},{led_b},{led_c},{led_d}]")
 
-                # Set polarizer positions (applies immediately to hardware)
-                self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
+                # ⚠️  Polarizer positions are IMMUTABLE - set at controller initialization
+                # DO NOT apply servo_set() - positions come from device_config at startup
+                logger.info(f"   🔒 Polarizer positions locked (from device_config at init): S={s_pos}°, P={p_pos}°")
 
                 # Set LED intensities (applies immediately to hardware)
                 self.hardware_mgr.ctrl.set_intensity('a', led_a)
@@ -3622,63 +3578,59 @@ class Application(QApplication):
 
         logger.info("✅ Graph colors updated successfully")
 
-    def _on_simple_led_calibration(self):
-        """Start simple LED intensity calibration.
+    def _start_led_calibration(self, calibration_type: str = "LED"):
+        """Unified LED intensity calibration method.
 
-        Identical to OEM calibration - measures both S-pol and P-pol reference spectra.
-        The term 'simple' is historical; functionality is the same as full calibration.
+        This method handles all types of LED calibration:
+        - Simple LED calibration (historical name)
+        - Full calibration (measures S-pol and P-pol reference spectra)
+        - OEM calibration (with optional afterglow measurement)
+
+        Args:
+            calibration_type: Type of calibration for logging ("LED", "Full", "OEM")
         """
-        logger.info("🔧 Starting Simple LED Calibration...")
+        logger.info(f"🔧 Starting {calibration_type} Calibration...")
 
         # Check if hardware is ready
-        if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
-            logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            from widgets.message import show_message
-            show_message(
-                "Please connect the controller and spectrometer first.",
-                "Hardware Not Ready"
-            )
+        if not self._check_hardware_ready(f"{calibration_type} calibration"):
             return
 
         # Start LED calibration using the unified calibration coordinator
         # This measures both S-pol reference AND P-pol reference automatically
         self.calibration.start_calibration()
+
+    # Backward compatibility aliases
+    def _on_simple_led_calibration(self):
+        """Backward compatibility wrapper for simple LED calibration."""
+        self._start_led_calibration("Simple LED")
 
     def _on_full_calibration(self):
-        """Start full calibration.
-
-        Identical to simple/OEM calibration - measures both S-pol and P-pol reference spectra.
-        All calibration types now use the same unified workflow.
-        """
-        logger.info("🔧 Starting Full Calibration...")
-
-        # Check if hardware is ready
-        if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
-            logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            from widgets.message import show_message
-            show_message(
-                "Please connect the controller and spectrometer first.",
-                "Hardware Not Ready"
-            )
-            return
-
-        # Start LED calibration using the unified calibration coordinator
-        # This measures both S-pol reference AND P-pol reference automatically
-        self.calibration.start_calibration()
+        """Backward compatibility wrapper for full calibration."""
+        self._start_led_calibration("Full")
 
     def _on_polarizer_calibration(self):
         """Run polarizer servo calibration to find optimal S and P positions."""
         logger.info("🔧 Starting Polarizer Calibration...")
 
         # Check if hardware is ready
-        if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
-            logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            from widgets.message import show_message
-            show_message(
-                "Please connect the controller and spectrometer first.",
-                "Hardware Not Ready"
-            )
+        if not self._check_hardware_ready("polarizer calibration"):
             return
+
+        # CRITICAL: Stop live acquisition before servo calibration (not just pause)
+        # Servo calibration needs full USB access without interference
+        was_acquiring = False
+        if hasattr(self, 'data_mgr') and self.data_mgr:
+            try:
+                if self.data_mgr._acquiring:
+                    logger.info("⏹ Stopping live acquisition for servo calibration...")
+                    self.data_mgr.stop_acquisition()
+                    was_acquiring = True
+                    # Give worker thread time to fully stop
+                    import time
+                    time.sleep(0.5)
+                    logger.info("   Acquisition stopped")
+            except Exception as e:
+                logger.debug(f"Could not stop acquisition (may not be running): {e}")
 
         # Get polarizer type from device config
         polarizer_type = "circular"  # Default
@@ -3688,10 +3640,21 @@ class Application(QApplication):
         logger.info(f"📋 Polarizer type: {polarizer_type}")
 
         # Import polarizer calibration function
-        from utils.servo_calibration import auto_calibrate_polarizer
+        logger.info("🔍 Importing servo_calibration module...")
+        try:
+            from utils.servo_calibration import auto_calibrate_polarizer
+            logger.info("✅ servo_calibration imported successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to import servo_calibration: {e}")
+            from widgets.message import show_message
+            show_message(f"Cannot import servo calibration module:\n{e}", "Error")
+            return
+
         import threading
         from PySide6.QtWidgets import QProgressDialog
         from PySide6.QtCore import Qt, QTimer, Signal, QObject
+
+        logger.info("✅ All imports completed")
 
         # Create signal emitter for thread-safe UI updates
         class CalibrationSignals(QObject):
@@ -3699,22 +3662,31 @@ class Application(QApplication):
             error = Signal(str)  # Emits error message
 
         signals = CalibrationSignals()
+        logger.info("✅ Signal emitter created")
 
-        # Create progress dialog
+        # Create progress dialog (NO cancel button - operation cannot be safely interrupted)
         progress = QProgressDialog(
             f"Running {polarizer_type} polarizer calibration...\n\n"
             f"{'This will take ~1-2 minutes.' if polarizer_type == 'circular' else 'This will take ~30-60 seconds.'}\n\n"
             f"Please ensure water/buffer is on the sensor.",
-            "Cancel", 0, 100, self.main_window
+            None,  # No cancel button - calibration cannot be safely interrupted
+            0, 100, self.main_window
         )
         progress.setWindowTitle("Polarizer Calibration")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
+        progress.setCancelButton(None)  # Explicitly disable cancel button
+        progress.setAutoClose(False)  # Don't auto-close when reaching 100%
+        progress.setAutoReset(False)  # Don't auto-reset
+        logger.info("✅ Progress dialog created")
 
         def run_calibration():
             """Background thread function - NO direct UI access allowed."""
+            logger.info("🚀 [THREAD] Calibration thread started!")
             try:
+                logger.info("🔧 Running servo calibration in background thread...")
+
                 # Run calibration with water requirement
                 result = auto_calibrate_polarizer(
                     self.hardware_mgr.usb,
@@ -3723,46 +3695,69 @@ class Application(QApplication):
                     polarizer_type=polarizer_type
                 )
 
-                if result and result.get('success'):
-                    s_pos = result['s_pos']
-                    p_pos = result['p_pos']
-                    sp_ratio = result.get('sp_ratio', 0)
+                logger.info(f"🔍 Calibration returned: {result}")
 
+                if result:
+                    s_pos, p_pos, extinction_ratio = result
                     logger.info(f"✅ Polarizer calibration complete!")
                     logger.info(f"   S position: {s_pos}°")
                     logger.info(f"   P position: {p_pos}°")
-                    logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
+                    logger.info(f"   Extinction ratio: {extinction_ratio:.2f}%")
 
-                    # Update device config (thread-safe - file I/O only)
-                    if self.main_window.device_config:
-                        self.main_window.device_config.data['hardware']['servo_s_position'] = s_pos
-                        self.main_window.device_config.data['hardware']['servo_p_position'] = p_pos
-                        self.main_window.device_config.save()
-                        logger.info("✅ Positions saved to device_config.json")
+                    # Apply positions and verify
+                    self.hardware_mgr.ctrl.servo_set(s_pos, p_pos)
+                    import time
+                    time.sleep(0.3)  # Allow servos to settle
 
-                    # Apply to hardware (thread-safe - USB I/O only)
-                    self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
-                    logger.info("✅ Positions applied to hardware")
+                    # Verify servo positions
+                    from utils.servo_calibration import verify_servo_positions
+                    verified, actual_s, actual_p = verify_servo_positions(
+                        self.hardware_mgr.ctrl, s_pos, p_pos, tolerance=3
+                    )
 
-                    # Signal success to main thread
-                    signals.finished.emit(result)
-                else:
-                    logger.error("❌ Polarizer calibration failed")
-                    error_msg = "Polarizer calibration failed.\n\n"
-                    if result:
-                        error_msg += f"Reason: {result.get('error', 'Unknown error')}"
+                    if verified:
+                        # Update device config (thread-safe - file I/O only)
+                        if self.main_window.device_config:
+                            self.main_window.device_config.set_servo_positions(s_pos, p_pos)
+                            self.main_window.device_config.set_extinction_ratio(extinction_ratio)
+                            self.main_window.device_config.save(auto_sync_eeprom=False)
+                            logger.info("✅ Positions and extinction ratio saved to device_config.json")
+                            logger.info("⚠️  RESTART REQUIRED - Servo positions will be loaded on next controller init")
+
+                        # Signal success to main thread
+                        signals.finished.emit({'success': True, 's_pos': s_pos, 'p_pos': p_pos, 'extinction_ratio': extinction_ratio})
                     else:
-                        error_msg += "Check logs for details."
+                        logger.error(f"❌ Servo verification failed - positions NOT saved")
+                        logger.error(f"   Expected: S={s_pos}° P={p_pos}°")
+                        logger.error(f"   Actual: S={actual_s}° P={actual_p}°")
+                        signals.error.emit(f"Servo verification failed!\nExpected S={s_pos}° P={p_pos}°\nActual S={actual_s}° P={actual_p}°")
+                else:
+                    logger.error("❌ Polarizer calibration failed - result is None")
+                    logger.error("   Result is None - function returned without data")
+                    error_msg = "Polarizer calibration failed.\n\nNo result returned - check logs for details."
                     signals.error.emit(error_msg)
 
             except Exception as e:
-                logger.exception(f"❌ Polarizer calibration error: {e}")
-                signals.error.emit(f"Calibration error: {e}")
+                logger.exception(f"❌ [THREAD] Polarizer calibration exception: {e}")
+                import traceback
+                logger.error(f"[THREAD] Traceback:\n{traceback.format_exc()}")
+                signals.error.emit(f"Calibration error: {str(e)}\n\nCheck logs for full details.")
+            finally:
+                # CRITICAL: Always ensure progress dialog closes
+                logger.info("[THREAD] Calibration thread finishing, ensuring cleanup...")
 
         def on_calibration_finished(result):
             """Main thread handler for successful calibration."""
             timer.stop()
             progress.close()
+
+            # Restart acquisition if it was running
+            if was_acquiring and hasattr(self, 'data_mgr') and self.data_mgr:
+                try:
+                    logger.info("▶️ Restarting live acquisition after servo calibration...")
+                    self.data_mgr.start_acquisition()
+                except Exception as e:
+                    logger.warning(f"Could not restart acquisition: {e}")
 
             from widgets.message import show_message
 
@@ -3790,6 +3785,14 @@ class Application(QApplication):
             timer.stop()
             progress.close()
 
+            # Restart acquisition if it was running
+            if was_acquiring and hasattr(self, 'data_mgr') and self.data_mgr:
+                try:
+                    logger.info("▶️ Restarting live acquisition after servo calibration error...")
+                    self.data_mgr.start_acquisition()
+                except Exception as e:
+                    logger.warning(f"Could not restart acquisition: {e}")
+
             from widgets.message import show_message
             show_message(error_msg, "Error")
 
@@ -3799,7 +3802,9 @@ class Application(QApplication):
 
         # Run in background thread
         thread = threading.Thread(target=run_calibration, daemon=True)
+        logger.info("🚀 Starting calibration thread...")
         thread.start()
+        logger.info(f"✅ Thread started, is_alive={thread.is_alive()}")
 
         # Update progress periodically
         timer = QTimer()
@@ -3818,17 +3823,16 @@ class Application(QApplication):
         timer.start(100)  # Update every 100ms
 
     def _on_oem_led_calibration(self):
-        """Start OEM LED calibration with full afterglow measurement."""
-        logger.info("🔧 Starting OEM LED Calibration (with afterglow)...")
+        """Start OEM LED calibration with optional full afterglow measurement.
+
+        This method checks if optical calibration exists:
+        - If missing: Runs full workflow (LED → afterglow)
+        - If present: Runs LED calibration only
+        """
+        logger.info("🔧 Starting OEM LED Calibration...")
 
         # Check if hardware is ready
-        if not self.hardware_mgr.usb or not self.hardware_mgr.ctrl:
-            logger.error("❌ Hardware not ready: Controller or spectrometer not connected")
-            from widgets.message import show_message
-            show_message(
-                "Please connect the controller and spectrometer first.",
-                "Hardware Not Ready"
-            )
+        if not self._check_hardware_ready("OEM calibration"):
             return
 
         # OPTIMIZATION: Check for optical calibration file first
@@ -3844,12 +3848,9 @@ class Application(QApplication):
             self._run_led_then_afterglow_calibration()
             return
 
-        # Start LED calibration
-        logger.info("   Step 1/2: Starting LED calibration...")
-        self.data_mgr.start_calibration()
-
-        # TODO: After calibration completes, trigger afterglow measurement
-        # For now, this will be a manual step after LED calibration completes
+        # Optical calibration exists - run LED calibration only
+        logger.info("📋 Optical calibration exists - running LED calibration only")
+        self._start_led_calibration("OEM LED")
 
     def _run_led_then_afterglow_calibration(self):
         """Run LED calibration first, then automatically trigger afterglow measurement.
@@ -3872,13 +3873,13 @@ class Application(QApplication):
             """Triggered when LED calibration completes successfully."""
             # Disconnect this one-shot handler
             try:
-                self.calibration.manager.calibration_complete.disconnect(on_led_calibration_complete)
+                self.calibration.calibration_complete.disconnect(on_led_calibration_complete)
             except:
                 pass
 
             # Check if calibration was successful
-            if calibration_data.get('ch_error_list'):
-                logger.warning(f"⚠️ LED calibration had errors on channels: {calibration_data['ch_error_list']}")
+            if calibration_data.ch_error_list:
+                logger.warning(f"⚠️ LED calibration had errors on channels: {calibration_data.ch_error_list}")
                 logger.warning("   Afterglow calibration may be less accurate for failed channels")
                 # Don't proceed to afterglow if LED calibration failed
                 return
@@ -3887,16 +3888,17 @@ class Application(QApplication):
             logger.info("   Step 2/2: Starting optical afterglow calibration...")
 
             # Update dialog to show we're moving to afterglow step
-            if hasattr(self.calibration, '_calibration_dialog') and self.calibration._calibration_dialog:
-                self.calibration._calibration_dialog.update_title("Calibration: Step 2/2")
-                self.calibration._calibration_dialog.update_status("Running optical afterglow calibration...\n\nThis will take 5-10 minutes.")
-                self.calibration._calibration_dialog.set_progress(50, 100)
+            calibration_dialog = self.calibration.dialog if self.calibration else None
+            if calibration_dialog:
+                calibration_dialog.update_title("Calibration: Step 2/2")
+                calibration_dialog.update_status("Running optical afterglow calibration...\n\nThis will take 5-10 minutes.")
+                calibration_dialog.set_progress(50, 100)
 
             # Now run afterglow measurement with calibrated LED intensities
-            self._run_afterglow_calibration(calibration_data.get('leds_calibrated'))
+            self._run_afterglow_calibration(calibration_data.s_mode_intensities)
 
         # Connect one-shot handler
-        self.calibration.manager.calibration_complete.connect(
+        self.calibration.calibration_complete.connect(
             on_led_calibration_complete,
             Qt.ConnectionType.QueuedConnection
         )
@@ -3928,9 +3930,8 @@ class Application(QApplication):
             return
 
         # Reuse the existing calibration dialog (don't create a new one)
-        dialog = None
-        if hasattr(self.calibration, '_calibration_dialog') and self.calibration._calibration_dialog:
-            dialog = self.calibration._calibration_dialog
+        dialog = self.calibration.dialog if self.calibration else None
+        if dialog:
             logger.info("📊 Using existing calibration dialog for afterglow progress")
         else:
             logger.warning("⚠️ No calibration dialog found - afterglow will run without progress display")
@@ -4222,10 +4223,74 @@ class Application(QApplication):
                 self.main_window.s_position_input.setText(str(s_pos))
                 self.main_window.p_position_input.setText(str(p_pos))
 
-                # Apply servo positions to hardware
-                self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
+                # ========================================================================
+                # CRITICAL: WRITE DEVICE CONFIG POSITIONS TO CONTROLLER EEPROM
+                # ========================================================================
+                # Servo positions are IMMUTABLE and come from device_config ONLY
+                # We write them to controller EEPROM at startup to ensure single source of truth
+                # Controller firmware loads positions from EEPROM at boot
+                # ========================================================================
+                logger.info("=" * 80)
+                logger.info("🔒 CRITICAL: Syncing servo positions to controller EEPROM")
+                logger.info("=" * 80)
+                logger.info(f"   Device Config: S={s_pos}°, P={p_pos}°")
+                logger.info(f"   Action: Writing to controller EEPROM...")
 
-                logger.info(f"  ✅ Servo positions loaded from device config: S={s_pos}, P={p_pos}")
+                try:
+                    # Read current EEPROM config
+                    eeprom_config = self.hardware_mgr.ctrl.read_config_from_eeprom()
+
+                    if eeprom_config:
+                        # Check if EEPROM positions match device_config
+                        eeprom_s = eeprom_config.get('servo_s_position')
+                        eeprom_p = eeprom_config.get('servo_p_position')
+
+                        logger.info(f"   Current EEPROM: S={eeprom_s}°, P={eeprom_p}°")
+
+                        if eeprom_s != s_pos or eeprom_p != p_pos:
+                            logger.warning("⚠️  EEPROM MISMATCH DETECTED!")
+                            logger.warning(f"   Device Config: S={s_pos}°, P={p_pos}°")
+                            logger.warning(f"   EEPROM:        S={eeprom_s}°, P={eeprom_p}°")
+                            logger.warning("   Updating EEPROM to match device_config...")
+
+                            # Update EEPROM with device_config positions
+                            eeprom_config['servo_s_position'] = s_pos
+                            eeprom_config['servo_p_position'] = p_pos
+
+                            if self.hardware_mgr.ctrl.write_config_to_eeprom(eeprom_config):
+                                logger.info("✅ EEPROM updated successfully")
+                                logger.info("🔄 Power cycle controller to apply new positions")
+                                logger.warning("")
+                                logger.warning("=" * 80)
+                                logger.warning("⚠️  CRITICAL: CONTROLLER NEEDS POWER CYCLE")
+                                logger.warning("=" * 80)
+                                logger.warning("The controller firmware caches EEPROM positions at boot.")
+                                logger.warning("New positions have been written but firmware is still using old values.")
+                                logger.warning("")
+                                logger.warning("TO FIX:")
+                                logger.warning("1. Close this application")
+                                logger.warning("2. Unplug the controller USB cable")
+                                logger.warning("3. Wait 5 seconds")
+                                logger.warning("4. Plug the USB cable back in")
+                                logger.warning("5. Restart this application")
+                                logger.warning("=" * 80)
+                                logger.warning("")
+                            else:
+                                logger.error("❌ EEPROM write failed!")
+                                logger.error("   DANGER: Controller may use wrong positions!")
+                        else:
+                            logger.info("✅ EEPROM matches device_config - no update needed")
+                    else:
+                        logger.warning("⚠️  Could not read EEPROM config")
+                        logger.warning("   Cannot verify position sync")
+
+                except Exception as e:
+                    logger.error(f"❌ EEPROM sync failed: {e}")
+                    logger.error("   DANGER: Controller positions may not match device_config!")
+
+                logger.info("=" * 80)
+                logger.info(f"  Servo positions: S={s_pos}°, P={p_pos}° (🔒 IMMUTABLE - loaded at init)")
+                logger.info("=" * 80)
             else:
                 logger.warning("  ⚠️ Device config not available - cannot load servo positions")
 
@@ -4252,6 +4317,12 @@ class Application(QApplication):
                     logger.info(f"  ✅ LED intensities loaded from device config: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
                 else:
                     logger.info("  ℹ️  No calibrated LED intensities in device config - will calibrate on startup")
+
+            # Initialize polarizer position to S-mode (default after startup)
+            # This keeps UI in sync with hardware state
+            if hasattr(self.main_window, 'sidebar'):
+                self.main_window.sidebar.set_polarizer_position('S')
+                logger.info("  ✅ Polarizer position initialized to S-mode (default)")
 
         except Exception as e:
             logger.error(f"Failed to load device settings: {e}")
@@ -4299,7 +4370,7 @@ class Application(QApplication):
                 polarizer_type=polarizer_type
             )
 
-            if result is None or not result.get('success'):
+            if result is None:
                 logger.error("=" * 80)
                 logger.error("❌ SERVO CALIBRATION FAILED")
                 logger.error("=" * 80)
@@ -4316,69 +4387,90 @@ class Application(QApplication):
                 logger.error("=" * 80)
                 return
 
-            # Calibration succeeded - show results and ask for user confirmation
+            # Calibration succeeded - unpack results
+            s_pos, p_pos, extinction_ratio = result
+
             logger.info("=" * 80)
             logger.info("✅ SERVO CALIBRATION SUCCESSFUL")
             logger.info("=" * 80)
             logger.info(f"   Found positions:")
-            logger.info(f"   • S position: {result['s_pos']}°")
-            logger.info(f"   • P position: {result['p_pos']}°")
-            logger.info(f"   • S/P ratio: {result['sp_ratio']:.2f}×")
-            logger.info(f"   • Dip depth: {result['dip_depth_percent']:.1f}%")
-            if result.get('resonance_wavelength'):
-                logger.info(f"   • Resonance: {result['resonance_wavelength']:.1f}nm")
+            logger.info(f"   • S position: {s_pos}°")
+            logger.info(f"   • P position: {p_pos}°")
+            logger.info(f"   • Extinction ratio: {extinction_ratio:.2f}%")
             logger.info("=" * 80)
 
-            # Show confirmation dialog to user
-            from PySide6.QtWidgets import QMessageBox
-            msg = QMessageBox(self.main_window)
-            msg.setIcon(QMessageBox.Question)
-            msg.setWindowTitle("Servo Calibration Complete")
-            msg.setText(
-                f"<b>Servo calibration successful!</b><br><br>"
-                f"Found optimal positions:<br>"
-                f"<table style='margin-top:10px;'>"
-                f"<tr><td style='padding-right:20px;'><b>S position:</b></td><td>{result['s_pos']}°</td></tr>"
-                f"<tr><td><b>P position:</b></td><td>{result['p_pos']}°</td></tr>"
-                f"<tr><td><b>S/P ratio:</b></td><td>{result['sp_ratio']:.2f}×</td></tr>"
-                f"<tr><td><b>Dip depth:</b></td><td>{result['dip_depth_percent']:.1f}%</td></tr>"
-                f"</table><br>"
-                f"<i>Do you want to save these positions to device config?</i>"
+            # Apply positions and verify before saving
+            self.hardware_mgr.ctrl.servo_set(s_pos, p_pos)
+            import time
+            time.sleep(0.3)  # Allow servos to settle
+
+            from utils.servo_calibration import verify_servo_positions
+            verified, actual_s, actual_p = verify_servo_positions(
+                self.hardware_mgr.ctrl, s_pos, p_pos, tolerance=3
             )
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg.setDefaultButton(QMessageBox.Yes)
 
-            reply = msg.exec()
+            if not verified:
+                logger.error("=" * 80)
+                logger.error("❌ SERVO VERIFICATION FAILED")
+                logger.error("=" * 80)
+                logger.error(f"   Expected: S={s_pos}° P={p_pos}°")
+                logger.error(f"   Actual: S={actual_s}° P={actual_p}°")
+                logger.error("   Positions NOT saved - calibration aborted")
+                logger.error("=" * 80)
+                return
 
-            if reply == QMessageBox.Yes:
-                # Save positions to device config
-                s_pos = result['s_pos']
-                p_pos = result['p_pos']
+            # Auto-save positions (OEM workflow - no user prompt)
+            logger.info("=" * 80)
+            logger.info("💾 AUTO-SAVING POSITIONS (OEM MODE)")
+            logger.info("=" * 80)
 
-                self.main_window.device_config.set_servo_positions(s_pos, p_pos)
-                self.main_window.device_config.save()
+            # Save to device config
+            self.main_window.device_config.set_servo_positions(s_pos, p_pos)
+            self.main_window.device_config.set_extinction_ratio(extinction_ratio)
+            self.main_window.device_config.save(auto_sync_eeprom=False)
 
-                # Update UI
+            # Update UI
+            if hasattr(self.main_window, 's_position_input'):
                 self.main_window.s_position_input.setText(str(s_pos))
+            if hasattr(self.main_window, 'p_position_input'):
                 self.main_window.p_position_input.setText(str(p_pos))
 
-                # Apply to hardware
-                self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
+            logger.info(f"   ✅ S={s_pos}°, P={p_pos}°, extinction={extinction_ratio:.2f}% saved to device_config.json")
+            logger.info("=" * 80)
+            logger.info("🔄 RELOADING CALIBRATION DATA AND RESTARTING FROM STEP 3C")
+            logger.info("=" * 80)
+            logger.info("   Servo positions updated - reloading calibration data with correct polarization")
+            logger.info("   This ensures LED intensities match the new polarizer positions")
+            logger.info("=" * 80)
 
-                logger.info("=" * 80)
-                logger.info("✅ POSITIONS SAVED TO DEVICE CONFIG")
-                logger.info("=" * 80)
-                logger.info(f"   S={s_pos}, P={p_pos} saved to device_config.json")
-                logger.info("   Positions applied to hardware")
-                logger.info("=" * 80)
-                logger.info("💡 TIP: Click 'Push to EEPROM' to backup these positions")
-                logger.info("=" * 80)
+            # Reload calibration data from device config into calibration manager
+            if hasattr(self, 'calibration') and self.calibration:
+                try:
+                    # Reload dark spectrum
+                    dark_data = self.main_window.device_config.get_dark_calibration()
+                    if dark_data and 'spectrum' in dark_data:
+                        self.calibration.dark_spectrum = dark_data['spectrum']
+                        logger.info("✅ Dark spectrum reloaded from device config")
+
+                    # Reload S-ref spectrum
+                    s_ref_data = self.main_window.device_config.get_reference_spectrum('s')
+                    if s_ref_data and 'spectrum' in s_ref_data:
+                        self.calibration.s_ref_spectrum = s_ref_data['spectrum']
+                        logger.info("✅ S-ref spectrum reloaded from device config")
+
+                    # Reload P-ref spectrum
+                    p_ref_data = self.main_window.device_config.get_reference_spectrum('p')
+                    if p_ref_data and 'spectrum' in p_ref_data:
+                        self.calibration.p_ref_spectrum = p_ref_data['spectrum']
+                        logger.info("✅ P-ref spectrum reloaded from device config")
+
+                    logger.info("▶️ Restarting LED calibration from Step 3C with new servo positions...")
+                    self.calibration.start_calibration()
+                except Exception as reload_err:
+                    logger.error(f"❌ Failed to reload calibration data: {reload_err}")
+                    logger.warning("⚠️ Manual calibration restart required")
             else:
-                logger.info("=" * 80)
-                logger.info("⚠️  USER DECLINED - POSITIONS NOT SAVED")
-                logger.info("=" * 80)
-                logger.info("   Calibration results discarded")
-                logger.info("   You can run calibration again from Settings menu")
+                logger.warning("⚠️ Calibration manager not available - manual restart required")
                 logger.info("=" * 80)
 
         except ImportError as e:
@@ -4703,15 +4795,9 @@ class Application(QApplication):
 
                 export_data[ch] = ch_data
 
-            # Export based on format
-            if format_type == 'excel':
-                self._export_to_excel(file_path, export_data, config)
-            elif format_type == 'csv':
-                self._export_to_csv(file_path, export_data, config)
-            elif format_type == 'json':
-                self._export_to_json(file_path, export_data, config)
-            elif format_type == 'hdf5':
-                self._export_to_hdf5(file_path, export_data, config)
+            # Export using strategy pattern
+            exporter = self._get_export_strategy(format_type)
+            exporter.export(file_path, export_data, config)
 
             logger.info(f"✅ Data exported successfully to: {file_path}")
             QMessageBox.information(
@@ -4728,10 +4814,66 @@ class Application(QApplication):
                 f"Failed to export data:\\n{str(e)}"
             )
 
-    def _export_to_excel(self, file_path: str, export_data: dict, config: dict):
+    def _get_export_strategy(self, format_type: str):
+        """Factory method to get appropriate export strategy.
+
+        Args:
+            format_type: Export format ('excel', 'csv', 'json', 'hdf5')
+
+        Returns:
+            ExportStrategy instance for the specified format
+        """
+        strategies = {
+            'excel': ExcelExportStrategy(),
+            'csv': CSVExportStrategy(),
+            'json': JSONExportStrategy(),
+            'hdf5': HDF5ExportStrategy()
+        }
+        return strategies.get(format_type, ExcelExportStrategy())
+
+
+# ============================================================================
+# Export Strategy Pattern Implementation
+# ============================================================================
+
+class ExportStrategy:
+    """Base class for export strategies."""
+
+    def export(self, file_path: str, export_data: dict, config: dict):
+        """Export data to file.
+
+        Args:
+            file_path: Destination file path
+            export_data: Dict of channel data with 'raw' and 'processed' DataFrames
+            config: Export configuration dict
+        """
+        raise NotImplementedError("Subclasses must implement export()")
+
+    def _build_metadata(self, config: dict) -> dict:
+        """Build common metadata dict.
+
+        Args:
+            config: Export configuration
+
+        Returns:
+            Metadata dictionary
+        """
+        import datetime as dt
+        return {
+            'export_date': dt.datetime.now().strftime('%Y-%m-%d'),
+            'export_time': dt.datetime.now().strftime('%H:%M:%S'),
+            'format': config.get('format', 'unknown'),
+            'precision': config.get('precision', 4),
+            'channels': ', '.join([c.upper() for c in config.get('channels', [])])
+        }
+
+
+class ExcelExportStrategy(ExportStrategy):
+    """Export strategy for Excel files."""
+
+    def export(self, file_path: str, export_data: dict, config: dict):
         """Export data to Excel workbook with multiple sheets."""
         import pandas as pd
-        import datetime as dt
 
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
             # Export each channel's data
@@ -4746,22 +4888,21 @@ class Application(QApplication):
 
             # Add metadata sheet if requested
             if config.get('include_metadata', False):
+                metadata = self._build_metadata(config)
                 metadata_df = pd.DataFrame({
-                    'Parameter': ['Export Date', 'Export Time', 'Format', 'Precision', 'Channels'],
-                    'Value': [
-                        dt.datetime.now().strftime('%Y-%m-%d'),
-                        dt.datetime.now().strftime('%H:%M:%S'),
-                        config.get('format', 'excel'),
-                        config.get('precision', 4),
-                        ', '.join([c.upper() for c in config.get('channels', [])])
-                    ]
+                    'Parameter': list(metadata.keys()),
+                    'Value': list(metadata.values())
                 })
                 metadata_df.to_excel(writer, sheet_name='Metadata', index=False)
 
         logger.info(f"Excel export complete: {file_path}")
 
-    def _export_to_csv(self, file_path: str, export_data: dict, config: dict):
-        """Export data to CSV file(s)."""
+
+class CSVExportStrategy(ExportStrategy):
+    """Export strategy for CSV files."""
+
+    def export(self, file_path: str, export_data: dict, config: dict):
+        """Export data to CSV file (combines all channels)."""
         import pandas as pd
 
         # Combine all channels into one CSV
@@ -4783,7 +4924,11 @@ class Application(QApplication):
             combined_df.to_csv(file_path, index=False)
             logger.info(f"CSV export complete: {file_path}")
 
-    def _export_to_json(self, file_path: str, export_data: dict, config: dict):
+
+class JSONExportStrategy(ExportStrategy):
+    """Export strategy for JSON files."""
+
+    def export(self, file_path: str, export_data: dict, config: dict):
         """Export data to JSON file."""
         import json
         import datetime as dt
@@ -4799,10 +4944,11 @@ class Application(QApplication):
 
         # Add metadata
         if config.get('include_metadata', False):
+            metadata = self._build_metadata(config)
             json_data['metadata'] = {
                 'export_date': dt.datetime.now().isoformat(),
-                'format': config.get('format', 'json'),
-                'precision': config.get('precision', 4),
+                'format': metadata['format'],
+                'precision': metadata['precision'],
                 'channels': config.get('channels', [])
             }
 
@@ -4811,7 +4957,11 @@ class Application(QApplication):
 
         logger.info(f"JSON export complete: {file_path}")
 
-    def _export_to_hdf5(self, file_path: str, export_data: dict, config: dict):
+
+class HDF5ExportStrategy(ExportStrategy):
+    """Export strategy for HDF5 files."""
+
+    def export(self, file_path: str, export_data: dict, config: dict):
         """Export data to HDF5 file."""
         import pandas as pd
 
@@ -4962,6 +5112,12 @@ def main():
             self.buffer = ""
 
         def write(self, text):
+            # Handle both str and bytes (traceback module can write bytes)
+            if isinstance(text, bytes):
+                text = text.decode('utf-8', errors='replace')
+            elif not isinstance(text, str):
+                text = str(text)
+
             # Suppress known harmless Qt threading warnings
             if "QObject: Cannot create children" in text or \
                "parent's thread is" in text or \
@@ -5002,8 +5158,95 @@ def main():
 
     atexit.register(emergency_silence)
 
-    # Create and run application
+    # Create application instance
     app = Application(sys.argv)
+
+    # Show splash screen for better user experience during startup
+    from PySide6.QtWidgets import QSplashScreen
+    from PySide6.QtGui import QPixmap, QPainter, QLinearGradient, QBrush, QColor
+    from PySide6.QtCore import Qt, QRect
+
+    splash = QSplashScreen()
+    splash.setFixedSize(400, 250)
+
+    # Create custom splash with gradient background
+    splash_pixmap = QPixmap(400, 250)
+    splash_pixmap.fill(Qt.transparent)
+
+    painter = QPainter(splash_pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Draw rounded rectangle with gradient
+    from PySide6.QtGui import QPainterPath
+    gradient = QLinearGradient(0, 0, 0, 250)
+    gradient.setColorAt(0, QColor(46, 48, 227))  # Primary blue
+    gradient.setColorAt(1, QColor(36, 38, 180))  # Darker blue
+
+    path = QPainterPath()
+    path.addRoundedRect(QRect(0, 0, 400, 250), 12, 12)
+    painter.fillPath(path, QBrush(gradient))
+
+    # Draw app name
+    painter.setPen(QColor(255, 255, 255))
+    from PySide6.QtGui import QFont
+    font = painter.font()
+    font.setPointSize(24)
+    font.setWeight(QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.drawText(QRect(0, 80, 400, 40), Qt.AlignCenter, "AffiLabs.core")
+
+    # Draw version/status
+    font.setPointSize(12)
+    font.setWeight(QFont.Weight.Normal)
+    painter.setFont(font)
+    painter.setPen(QColor(255, 255, 255, 180))
+    painter.drawText(QRect(0, 130, 400, 30), Qt.AlignCenter, "Loading components...")
+
+    painter.end()
+
+    splash.setPixmap(splash_pixmap)
+    splash.show()
+    app.processEvents()
+
+    # Update splash message when main window is ready
+    def update_splash_message(message: str):
+        """Update splash screen message."""
+        if splash.isVisible():
+            painter = QPainter(splash_pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            # Clear message area
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            gradient = QLinearGradient(0, 120, 0, 170)
+            gradient.setColorAt(0, QColor(46, 48, 227))
+            gradient.setColorAt(1, QColor(36, 38, 180))
+            painter.fillRect(QRect(0, 120, 400, 50), QBrush(gradient))
+
+            # Draw new message
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.setPen(QColor(255, 255, 255, 180))
+            font = painter.font()
+            font.setPointSize(12)
+            painter.setFont(font)
+            painter.drawText(QRect(0, 130, 400, 30), Qt.AlignCenter, message)
+            painter.end()
+
+            splash.setPixmap(splash_pixmap)
+            app.processEvents()
+
+    # Store splash reference in app for updates
+    app.splash_screen = splash
+    app.update_splash_message = update_splash_message
+
+    # Schedule splash close after window is fully loaded
+    def close_splash():
+        """Close splash screen after deferred loading completes."""
+        if hasattr(app, 'splash_screen') and app.splash_screen.isVisible():
+            app.update_splash_message("Ready!")
+            QTimer.singleShot(300, lambda: app.splash_screen.finish(app.main_window))
+
+    # Close splash after deferred widgets load (total ~350ms)
+    QTimer.singleShot(350, close_splash)
 
     logger.info("🚀 Starting event loop...")
     exit_code = app.exec()

@@ -816,5 +816,8 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
         import traceback
-        traceback.print_exc()
+        try:
+            print(traceback.format_exc())
+        except:
+            pass
         sys.exit(1)

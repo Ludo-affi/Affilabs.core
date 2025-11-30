@@ -167,7 +167,10 @@ class SimpleAcquisitionManager(QObject):
         except Exception as e:
             print(f"[SimpleAcq] WORKER CRASHED: {e}")
             import traceback
-            traceback.print_exc()
+            try:
+                print(traceback.format_exc())
+            except:
+                pass
 
         print("[SimpleAcq] WORKER STOPPED")
 

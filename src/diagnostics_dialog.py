@@ -158,11 +158,11 @@ class DiagnosticsDialog(QDialog):
                 self.led_b_diag.setText(f"{leds.get('b', 'N/A')}/255")
                 self.led_c_diag.setText(f"{leds.get('c', 'N/A')}/255")
                 self.led_d_diag.setText(f"{leds.get('d', 'N/A')}/255")
-            if hasattr(app.data_mgr, 'ref_sig') and app.data_mgr.ref_sig:
+            if hasattr(app.data_mgr, 'calibration_data') and app.data_mgr.calibration_data and app.data_mgr.calibration_data.s_pol_ref:
                 import numpy as np
                 for ch in ['a', 'b', 'c', 'd']:
-                    if ch in app.data_mgr.ref_sig:
-                        sig = app.data_mgr.ref_sig[ch]
+                    if ch in app.data_mgr.calibration_data.s_pol_ref:
+                        sig = app.data_mgr.calibration_data.s_pol_ref[ch]
                         max_val = np.max(sig) if len(sig) > 0 else 0
                         getattr(self, f"sref_{ch}_diag").setText(f"{max_val:.0f} counts")
         if hasattr(app, 'hardware_mgr') and app.hardware_mgr:
