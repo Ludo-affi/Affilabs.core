@@ -86,17 +86,34 @@ class CalibrationService(QObject):
             return True
 
         logger.info("=" * 80)
-        logger.info("🎬 CALIBRATION SERVICE: Showing calibration dialog...")
+        logger.info("🎬 CALIBRATION SERVICE: Showing calibration dialog (auto-start)...")
         logger.info("=" * 80)
 
         # Reset state
         self._calibration_completed = False
         self._current_calibration_data = None
 
-        # Show progress dialog (user must click Start to begin)
+        # Show progress dialog (no Start button; auto-start calibration)
         self._show_progress_dialog()
 
-        logger.info("✅ Waiting for user to click Start button...")
+        # Launch calibration immediately
+        if self._calibration_dialog:
+            try:
+                # Ensure progress is visible and user sees status
+                self._calibration_dialog.show_progress_bar()
+                self._calibration_dialog.update_status("Running LED intensity calibration...")
+            except Exception:
+                pass
+
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._run_calibration,
+            daemon=True,
+            name="CalibrationService"
+        )
+        self._thread.start()
+        self.calibration_started.emit()
+        logger.info("✅ Calibration thread started (auto)")
         return True
 
     @property
@@ -128,11 +145,14 @@ class CalibrationService(QObject):
             parent=self.app.main_window,
             title="Calibrating SPR System",
             message=message,
-            show_start_button=True
+            show_start_button=False
         )
 
-        # Connect dialog signals
-        self._calibration_dialog.start_clicked.connect(self._on_start_button_clicked)
+        # Connect dialog signals (post-calibration continue handled if button exists)
+        try:
+            self._calibration_dialog.start_clicked.connect(self._on_start_button_clicked)
+        except Exception:
+            pass
 
         # Connect calibration service signals to update dialog
         self.calibration_progress.connect(self._update_dialog_progress)
@@ -140,8 +160,7 @@ class CalibrationService(QObject):
 
         self._calibration_dialog.hide_progress_bar()
         self._calibration_dialog.show()
-        self._calibration_dialog.enable_start_button_pre_calib()
-
+        # Do not enable Start pre-calibration in customer-facing flow
         logger.info("✅ Calibration dialog displayed")
 
     def _progress_callback(self, message: str, progress: int = 0) -> None:
