@@ -1413,11 +1413,14 @@ class HardwareManager(QObject):
 
         return health
 
-    def auto_recover_connection(self) -> bool:
+    def auto_recover_connection(self, validate: bool = True) -> bool:
         """Attempt to recover lost connections using cached info.
 
+        Args:
+            validate: If True, validate connection after recovery with test command
+
         Returns:
-            True if any connections were recovered, False otherwise
+            True if any connections were recovered and validated, False otherwise
         """
         recovered = False
 
@@ -1428,8 +1431,17 @@ class HardwareManager(QObject):
             if self.ctrl is None and self._ctrl_port:
                 logger.info(f"Attempting controller recovery on {self._ctrl_port}...")
                 if self._try_reconnect_controller():
-                    recovered = True
-                    logger.info("✅ Controller recovered")
+                    # Validate connection if requested
+                    if validate:
+                        if self.is_controller_responsive():
+                            recovered = True
+                            logger.info("✅ Controller recovered and validated")
+                        else:
+                            logger.warning("⚠️ Controller reconnected but not responsive")
+                            self.ctrl = None  # Clear failed connection
+                    else:
+                        recovered = True
+                        logger.info("✅ Controller recovered (validation skipped)")
                 else:
                     logger.warning("❌ Controller recovery failed")
 
@@ -1437,8 +1449,17 @@ class HardwareManager(QObject):
             if self.usb is None and self._spec_serial:
                 logger.info(f"Attempting spectrometer recovery: {self._spec_serial}...")
                 if self._try_reconnect_spectrometer():
-                    recovered = True
-                    logger.info("✅ Spectrometer recovered")
+                    # Validate connection if requested
+                    if validate:
+                        if self.is_spectrometer_responsive():
+                            recovered = True
+                            logger.info("✅ Spectrometer recovered and validated")
+                        else:
+                            logger.warning("⚠️ Spectrometer reconnected but not responsive")
+                            self.usb = None  # Clear failed connection
+                    else:
+                        recovered = True
+                        logger.info("✅ Spectrometer recovered (validation skipped)")
                 else:
                     logger.warning("❌ Spectrometer recovery failed")
 

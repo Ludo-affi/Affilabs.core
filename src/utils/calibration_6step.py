@@ -180,6 +180,33 @@ from utils.calibration_helpers import (
 from core.spectrum_preprocessor import SpectrumPreprocessor
 from core.transmission_processor import TransmissionProcessor
 
+# ============================================================================
+# SHARED PROCESSING ALIASES (Same processors used in calibration & live)
+# ============================================================================
+# These processors are used identically in both calibration_6step.py and
+# data_acquisition_manager.py to ensure consistent results:
+#
+# DarkSubtractor = SpectrumPreprocessor
+#   - Removes dark noise from raw spectra
+#   - Called: process_polarization_data(raw_spectrum, dark_noise, ...)
+#
+# TransmissionCalculator = TransmissionProcessor
+#   - Calculates P/S transmission ratio with LED correction
+#   - Called: process_single_channel(p_pol_clean, s_pol_ref, led_s, led_p, ...)
+#
+# Both use IDENTICAL parameters:
+#   - baseline_method='percentile', baseline_percentile=95.0
+#   - apply_sg_filter=True
+#
+# SHARED HARDWARE FUNCTION:
+#   acquire_raw_spectrum() - matches _acquire_raw_spectrum() in live acquisition
+#     - Same LED timing pattern (PRE/POST delays)
+#     - Same batch command support
+#     - Same averaging strategy (num_scans)
+# ============================================================================
+DarkSubtractor = SpectrumPreprocessor
+TransmissionCalculator = TransmissionProcessor
+
 # Local constants for Steps 1-3 (GitHub alignment)
 TEMP_INTEGRATION_TIME_MS = 32  # Temporary integration for Steps 1-3 (GitHub standard)
 

@@ -76,8 +76,8 @@ class DirectArgminPipeline(ProcessingPipeline):
         ref_safe = np.where(reference > 0, reference, 1)
         transmission = (intensity / ref_safe) * 100.0
 
-        # Clip to valid range
-        transmission = np.clip(transmission, 0, 100)
+        # No clipping - allow full dynamic range
+        # Transmission can exceed 100% or go below 0%
 
         return transmission
 

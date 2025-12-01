@@ -870,6 +870,8 @@ class CalibrationQCDialog(QDialog):
 
         if data_type == 'transmission':
             plot_widget.setLabel('left', 'Transmission', units='%')
+            # Enable auto-range for transmission - don't constrain the Y-axis
+            plot_widget.enableAutoRange(axis='y')
         else:
             plot_widget.setLabel('left', 'Intensity', units='counts')
 

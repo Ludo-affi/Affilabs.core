@@ -1,0 +1,218 @@
+"""Domain Model Adapters
+
+Converts between legacy data structures and new domain models.
+These adapters allow gradual migration to the new architecture.
+"""
+
+import numpy as np
+from typing import Optional
+from datetime import datetime
+
+from .calibration_data import CalibrationData, CalibrationMetrics
+from .spectrum_data import SpectrumData, RawSpectrumData, ProcessedSpectrumData
+from .acquisition_config import AcquisitionConfig, LEDConfig, TimingConfig, AcquisitionMode, PolarizerMode
+
+
+def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
+    """Convert LEDCalibrationResult to domain CalibrationData.
+
+    Args:
+        legacy_result: LEDCalibrationResult from calibration_6step
+
+    Returns:
+        CalibrationData domain model
+
+    Raises:
+        ValueError: If legacy_result is missing required data
+    """
+    if not legacy_result.success:
+        raise ValueError("Cannot convert failed calibration result")
+
+    # Extract wavelengths (handle both naming conventions)
+    wavelengths = legacy_result.wavelengths if legacy_result.wavelengths is not None else legacy_result.wave_data
+    if wavelengths is None or len(wavelengths) == 0:
+        raise ValueError("Calibration result missing wavelength data")
+
+    # Validate reference spectra exist
+    if not legacy_result.s_pol_ref:
+        raise ValueError("Calibration result missing S-pol reference spectra")
+
+    # Build quality metrics per channel (if QC results available)
+    metrics = {}
+    if hasattr(legacy_result, 'qc_results') and legacy_result.qc_results:
+        for channel, qc_data in legacy_result.qc_results.items():
+            if isinstance(qc_data, dict) and channel in legacy_result.s_pol_ref:
+                spectrum = legacy_result.s_pol_ref[channel]
+                max_counts = legacy_result.detector_max_counts or 65535
+
+                metrics[channel] = CalibrationMetrics(
+                    snr=qc_data.get('snr', 0.0),
+                    peak_intensity=float(np.max(spectrum)),
+                    mean_intensity=float(np.mean(spectrum)),
+                    std_dev=float(np.std(spectrum)),
+                    dynamic_range=float(np.max(spectrum) / np.min(spectrum)) if np.min(spectrum) > 0 else 0.0,
+                    saturation_percent=float(np.sum(spectrum >= max_counts * 0.95) / len(spectrum) * 100)
+                )
+
+    # Create domain model
+    return CalibrationData(
+        # Core calibration data
+        s_pol_ref={k: v.copy() for k, v in legacy_result.s_pol_ref.items()},
+        wavelengths=wavelengths.copy(),
+
+        # LED intensities (handle different naming conventions)
+        p_mode_intensities=dict(legacy_result.p_mode_intensity) if legacy_result.p_mode_intensity else {},
+        s_mode_intensities=dict(legacy_result.s_mode_intensity) if legacy_result.s_mode_intensity else dict(legacy_result.ref_intensity) if legacy_result.ref_intensity else {},
+
+        # Acquisition parameters
+        integration_time_s=float(legacy_result.s_integration_time) if legacy_result.s_integration_time else 0.0,
+        integration_time_p=float(legacy_result.p_integration_time) if legacy_result.p_integration_time else float(legacy_result.s_integration_time) if legacy_result.s_integration_time else 0.0,
+        num_scans=int(legacy_result.num_scans) if hasattr(legacy_result, 'num_scans') else 5,
+
+        # Timing parameters
+        pre_led_delay=float(legacy_result.pre_led_delay_ms) if legacy_result.pre_led_delay_ms else 12.0,
+        post_led_delay=float(legacy_result.post_led_delay_ms) if legacy_result.post_led_delay_ms else 40.0,
+
+        # Quality metrics
+        metrics=metrics,
+
+        # Metadata
+        timestamp=datetime.now().timestamp(),
+        roi_start=float(wavelengths[0]),
+        roi_end=float(wavelengths[-1])
+    )
+
+
+def domain_to_acquisition_config(calibration: CalibrationData, mode: AcquisitionMode = AcquisitionMode.LIVE) -> AcquisitionConfig:
+    """Convert CalibrationData to AcquisitionConfig.
+
+    Creates acquisition configuration based on calibration results.
+
+    Args:
+        calibration: CalibrationData domain model
+        mode: Acquisition mode (LIVE, CALIBRATION, SINGLE)
+
+    Returns:
+        AcquisitionConfig with parameters from calibration
+    """
+    return AcquisitionConfig(
+        mode=mode,
+        integration_time_s=calibration.integration_time_s,
+        integration_time_p=calibration.integration_time_p,
+        per_channel_integration=False,
+        num_scans=calibration.num_scans,
+        s_mode_leds=LEDConfig.from_dict(calibration.s_mode_intensities),
+        p_mode_leds=LEDConfig.from_dict(calibration.p_mode_intensities),
+        timing=TimingConfig(
+            pre_led_delay=calibration.pre_led_delay,
+            post_led_delay=calibration.post_led_delay,
+            servo_movement_delay=150.0,  # Standard value
+            integration_time=calibration.integration_time_p
+        ),
+        roi_start=calibration.roi_start,
+        roi_end=calibration.roi_end,
+        polarizer_mode=PolarizerMode.P_MODE if mode == AcquisitionMode.LIVE else PolarizerMode.S_MODE,
+        apply_baseline_correction=True,
+        apply_smoothing=False,
+        smoothing_window=11
+    )
+
+
+def numpy_spectrum_to_domain(
+    wavelengths: np.ndarray,
+    intensities: np.ndarray,
+    channel: str,
+    timestamp: Optional[float] = None,
+    **kwargs
+) -> SpectrumData:
+    """Convert numpy arrays to SpectrumData domain model.
+
+    Args:
+        wavelengths: Wavelength array (nm)
+        intensities: Intensity array (counts or %)
+        channel: Channel identifier ('a', 'b', 'c', 'd')
+        timestamp: Unix timestamp (defaults to now)
+        **kwargs: Additional metadata
+
+    Returns:
+        SpectrumData domain model
+    """
+    return SpectrumData(
+        wavelengths=wavelengths.copy() if isinstance(wavelengths, np.ndarray) else np.array(wavelengths),
+        intensities=intensities.copy() if isinstance(intensities, np.ndarray) else np.array(intensities),
+        channel=channel.lower(),
+        timestamp=timestamp if timestamp is not None else datetime.now().timestamp(),
+        metadata=dict(kwargs)
+    )
+
+
+def create_raw_spectrum(
+    wavelengths: np.ndarray,
+    intensities: np.ndarray,
+    channel: str,
+    integration_time: float,
+    num_scans: int,
+    led_intensity: int,
+    timestamp: Optional[float] = None,
+    **kwargs
+) -> RawSpectrumData:
+    """Create RawSpectrumData from acquisition parameters.
+
+    Args:
+        wavelengths: Wavelength array (nm)
+        intensities: Raw intensity array (counts)
+        channel: Channel identifier
+        integration_time: Integration time (ms)
+        num_scans: Number of averaged scans
+        led_intensity: LED brightness (0-255)
+        timestamp: Unix timestamp (defaults to now)
+        **kwargs: Additional metadata
+
+    Returns:
+        RawSpectrumData domain model
+    """
+    return RawSpectrumData(
+        wavelengths=wavelengths.copy() if isinstance(wavelengths, np.ndarray) else np.array(wavelengths),
+        intensities=intensities.copy() if isinstance(intensities, np.ndarray) else np.array(intensities),
+        channel=channel.lower(),
+        timestamp=timestamp if timestamp is not None else datetime.now().timestamp(),
+        metadata=dict(kwargs),
+        integration_time=float(integration_time),
+        num_scans=int(num_scans),
+        led_intensity=int(led_intensity)
+    )
+
+
+def create_processed_spectrum(
+    wavelengths: np.ndarray,
+    transmission_percent: np.ndarray,
+    channel: str,
+    reference_spectrum: Optional[np.ndarray] = None,
+    baseline_corrected: bool = False,
+    timestamp: Optional[float] = None,
+    **kwargs
+) -> ProcessedSpectrumData:
+    """Create ProcessedSpectrumData from transmission calculation.
+
+    Args:
+        wavelengths: Wavelength array (nm)
+        transmission_percent: Transmission spectrum (%)
+        channel: Channel identifier
+        reference_spectrum: S-pol reference spectrum (optional)
+        baseline_corrected: Whether baseline correction was applied
+        timestamp: Unix timestamp (defaults to now)
+        **kwargs: Additional metadata
+
+    Returns:
+        ProcessedSpectrumData domain model
+    """
+    return ProcessedSpectrumData(
+        wavelengths=wavelengths.copy() if isinstance(wavelengths, np.ndarray) else np.array(wavelengths),
+        intensities=transmission_percent.copy() if isinstance(transmission_percent, np.ndarray) else np.array(transmission_percent),
+        channel=channel.lower(),
+        timestamp=timestamp if timestamp is not None else datetime.now().timestamp(),
+        metadata=dict(kwargs),
+        transmission_percent=transmission_percent.copy() if isinstance(transmission_percent, np.ndarray) else np.array(transmission_percent),
+        reference_spectrum=reference_spectrum.copy() if reference_spectrum is not None and isinstance(reference_spectrum, np.ndarray) else reference_spectrum,
+        baseline_corrected=baseline_corrected
+    )

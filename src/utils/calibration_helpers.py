@@ -13,6 +13,7 @@ class DetectorParams:
     min_integration_time: int  # MILLISECONDS (not seconds, not microseconds)
     max_integration_time: int  # MILLISECONDS (not seconds, not microseconds)
     saturation_level: int
+    target_counts: int  # Target signal level for calibration (typically 90% of max)
 
 
 def get_detector_params(usb) -> DetectorParams:
@@ -20,6 +21,7 @@ def get_detector_params(usb) -> DetectorParams:
     # Fallback values typical for Ocean Optics-style detectors
     max_counts = getattr(usb, "max_counts", 65535)
     saturation_threshold = int(0.95 * max_counts)
+    target_counts = int(0.90 * max_counts)  # Target 90% of max for optimal SNR
     # If usb exposes min/max integration in seconds, convert to ms
     min_int_ms = int(getattr(usb, "min_integration_ms", 5))
     max_int_ms = int(getattr(usb, "max_integration_ms", 1000))
@@ -29,6 +31,7 @@ def get_detector_params(usb) -> DetectorParams:
         min_integration_time=min_int_ms,
         max_integration_time=max_int_ms,
         saturation_level=saturation_threshold,
+        target_counts=target_counts,
     )
 
 

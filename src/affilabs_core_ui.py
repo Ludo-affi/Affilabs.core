@@ -2393,6 +2393,43 @@ class AffilabsMainWindow(QMainWindow):
         self.live_data_checkbox.toggled.connect(self._toggle_live_data)
         header_layout.addWidget(self.live_data_checkbox)
 
+        # Add spacing
+        header_layout.addSpacing(16)
+
+        # Clear Graph button
+        self.clear_graph_btn = QPushButton("Clear Graph")
+        self.clear_graph_btn.setFixedHeight(32)
+        self.clear_graph_btn.setToolTip(
+            "Clear all timeline data and reset graphs\n"
+            "• Clears all channel data (A, B, C, D)\n"
+            "• Resets baseline wavelengths\n"
+            "• Does not stop acquisition"
+        )
+        self.clear_graph_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  color: #1D1D1F;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  padding: 0 16px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(0, 0, 0, 0.15);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: rgba(0, 0, 0, 0.03);"
+            "  color: #86868B;"
+            "}"
+        )
+        self.clear_graph_btn.clicked.connect(self._clear_graph_data)
+        header_layout.addWidget(self.clear_graph_btn)
+
         return header
 
     def _show_transmission_spectrum(self):
@@ -2499,6 +2536,33 @@ class AffilabsMainWindow(QMainWindow):
                 curve.show()
             else:
                 curve.hide()
+
+    def _clear_graph_data(self):
+        """Clear all timeline data and reset graphs."""
+        if hasattr(self, 'app') and self.app:
+            try:
+                # Clear all buffers
+                self.app.buffer_mgr.clear_all()
+
+                # Clear plot curves in full timeline graph
+                if hasattr(self, 'full_timeline_graph'):
+                    for curve in self.full_timeline_graph.curves:
+                        curve.setData([], [])
+
+                # Clear plot curves in cycle of interest graph
+                if hasattr(self, 'cycle_of_interest_graph'):
+                    for curve in self.cycle_of_interest_graph.curves:
+                        curve.setData([], [])
+
+                # Reset cursors to initial position
+                if hasattr(self, 'start_cursor'):
+                    self.start_cursor.setValue(0)
+                if hasattr(self, 'stop_cursor'):
+                    self.stop_cursor.setValue(0)
+
+                print("✅ Graph data cleared")
+            except Exception as e:
+                print(f"❌ Error clearing graph data: {e}")
 
     def _create_graph_container(self, title: str, height: int, show_delta_spr: bool = False) -> QFrame:
         """Create a graph container with title and controls."""
@@ -5060,15 +5124,23 @@ End of Debug Log
 
     def _toggle_recording(self):
         """Toggle recording state - emit signal for Application to handle."""
+        logger.info(f"[RECORD-BTN] _toggle_recording called, is_recording={self.is_recording}")
+
         # Emit signal based on current recording state
         if not self.is_recording:
             # Request to start recording - emit signal
             if hasattr(self, 'recording_start_requested'):
+                logger.info("[RECORD-BTN] Emitting recording_start_requested signal")
                 self.recording_start_requested.emit()
+            else:
+                logger.error("[RECORD-BTN] ERROR: recording_start_requested signal not found!")
         else:
             # Request to stop recording - emit signal
             if hasattr(self, 'recording_stop_requested'):
+                logger.info("[RECORD-BTN] Emitting recording_stop_requested signal")
                 self.recording_stop_requested.emit()
+            else:
+                logger.error("[RECORD-BTN] ERROR: recording_stop_requested signal not found!")
 
     def _toggle_pause(self):
         """Toggle pause state for live acquisition."""
@@ -5082,26 +5154,28 @@ End of Debug Log
             if hasattr(self, 'acquisition_pause_requested'):
                 self.acquisition_pause_requested.emit(True)
 
-            # Add pause marker to live sensorgram (system-level flag, not channel-specific)
-            if hasattr(self, 'full_timeline_graph'):
+            # Add pause marker to live sensorgram using ELAPSED TIME (not wall clock)
+            if hasattr(self, 'full_timeline_graph') and hasattr(self, '_get_elapsed_time'):
                 import pyqtgraph as pg
-                from PySide6.QtCore import QTime
-                pause_time = QTime.currentTime().msecsSinceStartOfDay() / 1000.0
+                # Get elapsed time from experiment (matches X-axis of sensorgram)
+                pause_time = self._get_elapsed_time()
 
-                pause_line = pg.InfiniteLine(
-                    pos=pause_time,
-                    angle=90,
-                    pen=pg.mkPen(color='#FF9500', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
-                    movable=False,
-                    label='⏸ Paused',
-                    labelOpts={'position': 0.95, 'color': '#FF9500'}
-                )
-                self.full_timeline_graph.addItem(pause_line)
+                if pause_time is not None:
+                    pause_line = pg.InfiniteLine(
+                        pos=pause_time,
+                        angle=90,
+                        pen=pg.mkPen(color='#FF9500', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                        movable=False,
+                        label='⏸ Paused',
+                        labelOpts={'position': 0.95, 'color': '#FF9500'}
+                    )
+                    self.full_timeline_graph.addItem(pause_line)
 
-                # Store reference to pause marker
-                if not hasattr(self, 'pause_markers'):
-                    self.pause_markers = []
-                self.pause_markers.append({'time': pause_time, 'line': pause_line, 'type': 'pause'})
+                    # Store reference to pause marker
+                    if not hasattr(self, 'pause_markers'):
+                        self.pause_markers = []
+                    self.pause_markers.append({'time': pause_time, 'line': pause_line, 'type': 'pause'})
+                    logger.debug(f"[PAUSE] Marker added at elapsed time: {pause_time:.1f}s")
         else:
             # Resume acquisition
             self.pause_btn.setToolTip("Pause Live Acquisition")
@@ -5110,26 +5184,28 @@ End of Debug Log
             if hasattr(self, 'acquisition_pause_requested'):
                 self.acquisition_pause_requested.emit(False)
 
-            # Add resume marker to live sensorgram
-            if hasattr(self, 'full_timeline_graph'):
+            # Add resume marker to live sensorgram using ELAPSED TIME
+            if hasattr(self, 'full_timeline_graph') and hasattr(self, '_get_elapsed_time'):
                 import pyqtgraph as pg
-                from PySide6.QtCore import QTime
-                resume_time = QTime.currentTime().msecsSinceStartOfDay() / 1000.0
+                # Get elapsed time from experiment (matches X-axis of sensorgram)
+                resume_time = self._get_elapsed_time()
 
-                resume_line = pg.InfiniteLine(
-                    pos=resume_time,
-                    angle=90,
-                    pen=pg.mkPen(color='#34C759', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
-                    movable=False,
-                    label='▶️ Resumed',
-                    labelOpts={'position': 0.95, 'color': '#34C759'}
-                )
-                self.full_timeline_graph.addItem(resume_line)
+                if resume_time is not None:
+                    resume_line = pg.InfiniteLine(
+                        pos=resume_time,
+                        angle=90,
+                        pen=pg.mkPen(color='#34C759', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                        movable=False,
+                        label='▶️ Resumed',
+                        labelOpts={'position': 0.95, 'color': '#34C759'}
+                    )
+                    self.full_timeline_graph.addItem(resume_line)
 
-                # Store reference to resume marker
-                if not hasattr(self, 'pause_markers'):
-                    self.pause_markers = []
-                self.pause_markers.append({'time': resume_time, 'line': resume_line, 'type': 'resume'})
+                    # Store reference to resume marker
+                    if not hasattr(self, 'pause_markers'):
+                        self.pause_markers = []
+                    self.pause_markers.append({'time': resume_time, 'line': resume_line, 'type': 'resume'})
+                    logger.debug(f"[RESUME] Marker added at elapsed time: {resume_time:.1f}s")
 
     def set_recording_state(self, is_recording: bool, filename: str = ""):
         """Update recording UI state from external controller.
@@ -5908,50 +5984,6 @@ End of Debug Log
         if remaining <= 0:
             self.cycle_countdown_timer.stop()
             self.cycle_start_time = None
-
-    def start_cycle_countdown(self, duration_minutes: int):
-        """Start countdown timer for cycle duration.
-
-        Args:
-            duration_minutes: Cycle duration in minutes
-        """
-        import time
-        self.cycle_duration_seconds = duration_minutes * 60
-        self.cycle_start_time = time.time()
-        self.cycle_countdown_timer.start(1000)  # Update every second
-        logger.info(f"⏱️ Started countdown timer for {duration_minutes} min cycle")
-
-    def _update_countdown(self):
-        """Update countdown timer display based on cycle progress."""
-        if self.cycle_start_time is None:
-            return
-
-        import time
-        elapsed = time.time() - self.cycle_start_time
-        remaining = max(0, self.cycle_duration_seconds - elapsed)
-
-        minutes = int(remaining // 60)
-        seconds = int(remaining % 60)
-
-        if hasattr(self.sidebar, 'countdown_label'):
-            self.sidebar.countdown_label.setText(f"{minutes:02d}:{seconds:02d}")
-
-        # Stop timer when countdown reaches zero
-        if remaining <= 0:
-            self.cycle_countdown_timer.stop()
-            self.cycle_start_time = None
-
-    def start_cycle_countdown(self, duration_minutes: int):
-        """Start countdown timer for cycle duration.
-
-        Args:
-            duration_minutes: Cycle duration in minutes
-        """
-        import time
-        self.cycle_duration_seconds = duration_minutes * 60
-        self.cycle_start_time = time.time()
-        self.cycle_countdown_timer.start(1000)  # Update every second
-        logger.info(f"⏱️ Started countdown timer for {duration_minutes} min cycle")
 
     def _on_export_data(self):
         """Handle export data button click - emit signal with export configuration."""

@@ -175,8 +175,9 @@ class TransmissionProcessor:
         else:
             logger.warning(f"Unknown baseline method '{baseline_method}', skipping correction")
 
-        # Step 4: Clip to valid range
-        transmission = np.clip(transmission, 0, 100)
+        # Step 4: No clipping - allow full dynamic range of transmission data
+        # Transmission can exceed 100% (S/P formula produces values >100%)
+        # and can go below 0% due to noise or baseline corrections
 
         # Step 5: Savitzky-Golay filter (optional)
         if apply_sg_filter and len(transmission) >= 11:

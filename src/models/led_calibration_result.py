@@ -8,11 +8,15 @@ class LEDCalibrationResult:
     error: Optional[str] = None
 
     # Wavelength data
-    full_wavelengths: Optional[np.ndarray] = None
-    wave_data: Optional[np.ndarray] = None
-    wavelengths: Optional[np.ndarray] = None
-    wave_min_index: Optional[int] = None
-    wave_max_index: Optional[int] = None
+    # NOTE: wave_data and wavelengths are ALIASES (same array, different names for backward compatibility)
+    # - wave_data: Legacy name from original calibration code
+    # - wavelengths: Modern name used in live acquisition
+    # Both point to the SPR-filtered wavelength range (e.g., 560-750nm)
+    full_wavelengths: Optional[np.ndarray] = None  # Full detector range (e.g., 337-1020nm)
+    wave_data: Optional[np.ndarray] = None  # SPR-filtered range (legacy name)
+    wavelengths: Optional[np.ndarray] = None  # SPR-filtered range (modern name, same as wave_data)
+    wave_min_index: Optional[int] = None  # Start index of SPR range in full spectrum
+    wave_max_index: Optional[int] = None  # End index of SPR range in full spectrum
 
     # Detector
     detector_max_counts: Optional[int] = None
@@ -26,14 +30,24 @@ class LEDCalibrationResult:
     # Ranking & normalization
     led_ranking: Optional[list] = None
     weakest_channel: Optional[str] = None
-    s_mode_intensity: Dict[str, int] = field(default_factory=dict)
-    ref_intensity: Dict[str, int] = field(default_factory=dict)
+    # LED intensities
+    # NOTE: Multiple naming conventions for historical reasons:
+    # - s_mode_intensity: S-mode LED intensities (legacy)
+    # - ref_intensity: Same as s_mode_intensity (alias)
+    # - p_mode_intensity: P-mode LED intensities (final calibrated values)
+    # - normalized_leds: Intermediate normalized values (Step 3C)
+    s_mode_intensity: Dict[str, int] = field(default_factory=dict)  # S-mode LED intensities
+    ref_intensity: Dict[str, int] = field(default_factory=dict)  # Alias for s_mode_intensity
     normalized_leds: Dict[str, int] = field(default_factory=dict)  # Step 3C output
     brightness_ratios: Dict[str, float] = field(default_factory=dict)  # For alternative mode (LED=255 fixed)
 
     # Integration times (ms)
-    s_integration_time: Optional[float] = None
-    p_integration_time: Optional[float] = None
+    # NOTE: Different naming for S vs P mode:
+    # - s_integration_time / s_mode_integration_time: Both refer to S-mode integration time
+    # - p_integration_time / p_mode_integration_time: Both refer to P-mode integration time
+    # - channel_integration_times: Per-channel P-mode times (alternative calibration mode)
+    s_integration_time: Optional[float] = None  # S-mode integration time (ms)
+    p_integration_time: Optional[float] = None  # P-mode integration time (ms)
     channel_integration_times: Dict[str, float] = field(default_factory=dict)  # Per-channel P-mode integration times
 
     # ROI signal measurements (Step 4 and Step 5)
@@ -43,8 +57,12 @@ class LEDCalibrationResult:
     p_roi2_signals: Dict[str, float] = field(default_factory=dict)  # P-mode ROI2 (710-720nm)
 
     # LED timing delays (ms)
-    pre_led_delay_ms: Optional[float] = None
-    post_led_delay_ms: Optional[float] = None
+    # SHARED WITH LIVE ACQUISITION: These exact timing values are reused in data_acquisition_manager
+    # - pre_led_delay_ms: LED stabilization time before spectrum acquisition (typically 12ms)
+    # - post_led_delay_ms: Afterglow decay time after LED off (typically 40ms)
+    # Same timing ensures calibration and live data match
+    pre_led_delay_ms: Optional[float] = None  # LED stabilization delay (used in acquire_raw_spectrum)
+    post_led_delay_ms: Optional[float] = None  # Afterglow decay delay (used in acquire_raw_spectrum)
 
     # Cycle time metrics (for 1Hz constraint validation)
     cycle_time_ms: Optional[float] = None
@@ -52,13 +70,17 @@ class LEDCalibrationResult:
 
     # Raw and processed data
     num_scans: int = 5
-    s_raw_data: Dict[str, np.ndarray] = field(default_factory=dict)
-    p_raw_data: Dict[str, np.ndarray] = field(default_factory=dict)
-    dark_noise: Optional[np.ndarray] = None
 
-    # Modern architecture: s_pol_ref and p_pol_ref (clean spectra from SpectrumPreprocessor)
-    s_pol_ref: Dict[str, np.ndarray] = field(default_factory=dict)
-    p_pol_ref: Dict[str, np.ndarray] = field(default_factory=dict)
+    # Dark noise reference
+    dark_noise: Optional[np.ndarray] = None  # Dark spectrum for QC reconstruction
+
+    # Reference spectra (clean, preprocessed by SpectrumPreprocessor)
+    # SHARED WITH LIVE ACQUISITION: These are used in TransmissionProcessor.process_single_channel()
+    # - s_pol_ref: S-polarization reference spectra (dark-subtracted, used as denominator in P/S ratio)
+    # - p_pol_ref: P-polarization reference spectra (dark-subtracted, used for QC validation)
+    # Both calibration and live acquisition use s_pol_ref for transmission calculation
+    s_pol_ref: Dict[str, np.ndarray] = field(default_factory=dict)  # S-mode references (for P/S transmission)
+    p_pol_ref: Dict[str, np.ndarray] = field(default_factory=dict)  # P-mode references (for QC)
 
     transmission: Dict[str, np.ndarray] = field(default_factory=dict)
     afterglow_curves: Dict[str, np.ndarray] = field(default_factory=dict)

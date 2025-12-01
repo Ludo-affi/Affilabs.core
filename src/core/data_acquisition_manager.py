@@ -124,10 +124,31 @@ from typing import Optional, Dict
 import threading
 import gc
 
-# Calibration data model
-from core.calibration_data import CalibrationData
+# Phase 1.1 Domain Model (replacing legacy CalibrationData type alias)
+from domain import CalibrationData
 from core.spectrum_preprocessor import SpectrumPreprocessor
 from core.transmission_processor import TransmissionProcessor
+
+# ============================================================================
+# SHARED PROCESSING ALIASES (Same processors used in calibration & live)
+# ============================================================================
+# These processors are used identically in both calibration_6step.py and
+# data_acquisition_manager.py to ensure consistent results:
+#
+# DarkSubtractor = SpectrumPreprocessor
+#   - Removes dark noise from raw spectra
+#   - Called: process_polarization_data(raw_spectrum, dark_noise, ...)
+#
+# TransmissionCalculator = TransmissionProcessor
+#   - Calculates P/S transmission ratio with LED correction
+#   - Called: process_single_channel(p_pol_clean, s_pol_ref, led_s, led_p, ...)
+#
+# Both use IDENTICAL parameters:
+#   - baseline_method='percentile', baseline_percentile=95.0
+#   - apply_sg_filter=True
+# ============================================================================
+DarkSubtractor = SpectrumPreprocessor
+TransmissionCalculator = TransmissionProcessor
 
 # ✅ OPTIMIZATION: Disable automatic GC to eliminate random 10-50ms pauses
 # Manual GC will be called periodically during safe times
@@ -250,6 +271,9 @@ class DataAcquisitionManager(QObject):
         self.spectrum_processor = None
 
         pass  # Initialized silently
+
+        # One-time run parameter summary flag (reset on each start)
+        self._run_params_logged = False
 
     def _load_led_delays_from_config(self):
         """Load PRE/POST LED delays from device configuration.
@@ -464,7 +488,22 @@ class DataAcquisitionManager(QObject):
             logger.info("🚀 STARTING LIVE ACQUISITION")
             logger.info("=" * 80)
             logger.info("Using calibration parameters (method-agnostic):")
-            logger.info(f"  Integration Time: {self.calibration_data.integration_time}ms")
+            try:
+                p_it = getattr(self.calibration_data, 'p_integration_time', None)
+                s_it = getattr(self.calibration_data, 's_integration_time', None)
+                per_ch_times = getattr(self.calibration_data, 'channel_integration_times', {}) or {}
+                if per_ch_times:
+                    logger.info(f"  Integration Time: per-channel ({len(per_ch_times)} channels), P-mode default {p_it}ms")
+                else:
+                    logger.info(f"  Integration Time: P-mode {p_it}ms (S-mode {s_it}ms)")
+            except Exception:
+                logger.info(f"  Integration Time: {self.calibration_data.integration_time}ms")
+
+            # LED timing delays actually used during calibration (fallback to device defaults)
+            pre_led_delay = self.calibration_data.pre_led_delay_ms if getattr(self.calibration_data, 'pre_led_delay_ms', None) else self._pre_led_delay_ms
+            post_led_delay = self.calibration_data.post_led_delay_ms if getattr(self.calibration_data, 'post_led_delay_ms', None) else self._post_led_delay_ms
+            logger.info(f"  LED Delays: PRE={pre_led_delay}ms, POST={post_led_delay}ms")
+
             logger.info(f"  Scans per Spectrum: {self.calibration_data.num_scans}")
             logger.info(f"  P-mode LED Intensities: {self.calibration_data.p_mode_intensities}")
             logger.info(f"  S-mode LED Intensities: {self.calibration_data.s_mode_intensities}")
@@ -536,6 +575,8 @@ class DataAcquisitionManager(QObject):
             logger.info("Scheduling worker launch in 50ms...")
             QTimer.singleShot(50, _launch_worker)  # Small delay for UI thread to finish calibration updates
             logger.info("✅ start_acquisition completed successfully")
+            # Reset one-time applied-parameters summary flag for this run
+            self._run_params_logged = False
         except Exception as e:
             logger.error(f"❌ CRASH in start_acquisition: {e}", exc_info=True)
             import traceback
@@ -694,6 +735,12 @@ class DataAcquisitionManager(QObject):
             cycle_count = 0
             BATCH_SIZE = 12  # 3 complete 4-channel cycles
 
+            # Connection resilience tracking
+            connection_recovery_attempts = 0
+            max_recovery_attempts = 3
+            channel_error_counts = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            channel_disabled = {'a': False, 'b': False, 'c': False, 'd': False}
+
             # Pre-flight check
             print(f"[Worker] Hardware check: ctrl={self.hardware_mgr.ctrl is not None}, usb={self.hardware_mgr.usb is not None}")
             print(f"[Worker] Calibration check: calibration_data={'present' if self.calibration_data else 'MISSING'}, channels={len(self.calibration_data.p_mode_intensities) if self.calibration_data else 0}")
@@ -710,39 +757,59 @@ class DataAcquisitionManager(QObject):
             # ===================================================================
             # SMART PARAMETER ANALYSIS: Detect what's common across channels
             # ===================================================================
-            # Integration time analysis
-            integration_time = self.calibration_data.p_integration_time
-            if not integration_time or integration_time <= 0:
-                print(f"[Worker] Warning: P-mode integration time invalid ({integration_time}ms), falling back to S-mode")
-                integration_time = self.calibration_data.s_mode_integration_time
+            # Integration time analysis (consistent naming with calibration)
+            p_integration_time_effective = self.calibration_data.p_integration_time
+            if not p_integration_time_effective or p_integration_time_effective <= 0:
+                print(f"[Worker] Warning: P-mode integration time invalid ({p_integration_time_effective}ms), falling back to S-mode")
+                p_integration_time_effective = self.calibration_data.s_mode_integration_time
 
             # Check if we have per-channel integration times (alternative mode)
-            per_channel_integration = bool(self.calibration_data.channel_integration_times)
-            if per_channel_integration:
+            has_per_channel_integration_times = bool(self.calibration_data.channel_integration_times)
+            if has_per_channel_integration_times:
                 print(f"[Worker] ⚡ SMART MODE: Per-channel integration times detected")
                 print(f"  Channel times: {self.calibration_data.channel_integration_times}")
             else:
                 # Standard mode: Pre-arm integration time ONCE (optimization)
-                print(f"[Worker] ⚡ SMART MODE: Common integration time detected ({integration_time}ms)")
+                print(f"[Worker] ⚡ SMART MODE: Common integration time detected ({p_integration_time_effective}ms)")
                 print(f"  Optimization: Pre-arming detector for all channels")
                 try:
                     usb = self.hardware_mgr.usb
                     if usb:
-                        usb.set_integration(integration_time)
+                        usb.set_integration(p_integration_time_effective)
                         print(f"  ✅ Pre-armed: Saves ~7ms per channel (21ms per cycle)")
                 except Exception as e:
                     print(f"  ⚠️ Could not pre-arm: {e}")
 
             # Common parameters (same for all channels)
             num_scans = self.calibration_data.num_scans if self.calibration_data.num_scans and self.calibration_data.num_scans > 0 else 1
-            pre_led_delay = self.calibration_data.pre_led_delay_ms if self.calibration_data.pre_led_delay_ms else self._pre_led_delay_ms
-            post_led_delay = self.calibration_data.post_led_delay_ms if self.calibration_data.post_led_delay_ms else self._post_led_delay_ms
+            pre_led_delay = self.calibration_data.pre_led_delay_ms if self.calibration_data.pre_led_delay_ms is not None else self._pre_led_delay_ms
+            post_led_delay = self.calibration_data.post_led_delay_ms if self.calibration_data.post_led_delay_ms is not None else self._post_led_delay_ms
 
             print(f"[Worker] Common parameters:")
             print(f"  Number of scans: {num_scans}")
             print(f"  PRE LED delay: {pre_led_delay}ms")
             print(f"  POST LED delay: {post_led_delay}ms")
             print(f"[Worker] ⚡ Smart acquisition ready - mode-agnostic with auto-optimization")
+
+            # One-time applied parameter summary (concise)
+            if not self._run_params_logged:
+                try:
+                    print("\n===== APPLIED PARAMETERS SUMMARY (ONE-TIME) =====")
+                    print(f"Mode: P-only live (S-ref reused)")
+                    print(f"Integration Times: S={self.calibration_data.s_mode_integration_time}ms, P={self.calibration_data.p_integration_time}ms, Per-channel={has_per_channel_integration_times}")
+                    print(f"Averaging: num_scans={num_scans}")
+                    print(f"LED Delays (ms): PRE={pre_led_delay}, POST={post_led_delay}")
+                    print(f"P-mode LED Intensities: {self.calibration_data.p_mode_intensities}")
+                    try:
+                        wl = self.calibration_data.wavelengths
+                        if wl is not None and len(wl) > 0:
+                            print(f"ROI Wavelengths: {float(wl[0]):.1f}-{float(wl[-1]):.1f}nm ({len(wl)} px)")
+                    except Exception:
+                        pass
+                    print("Polarizer: P-mode enforced before acquisition")
+                    print("===== END APPLIED PARAMETERS SUMMARY =====\n")
+                finally:
+                    self._run_params_logged = True
 
             while not self._stop_acquisition.is_set():
                 cycle_count += 1
@@ -784,6 +851,12 @@ class DataAcquisitionManager(QObject):
                                 if self._stop_acquisition.is_set():
                                     break
 
+                                # Skip channel if disabled due to persistent errors
+                                if channel_disabled[ch]:
+                                    if cycle_count % 50 == 1:
+                                        print(f"   [CH-{ch.upper()}] Disabled due to persistent errors")
+                                    continue
+
                                 # Determine next channel for LED overlap optimization
                                 next_ch = channels[idx + 1] if idx + 1 < len(channels) else None
 
@@ -798,9 +871,9 @@ class DataAcquisitionManager(QObject):
                                     next_led_int = self.calibration_data.p_mode_intensities.get(next_ch)
 
                                 # SMART: Get integration time (per-channel if available, else common)
-                                ch_integration_time = integration_time
-                                if per_channel_integration:
-                                    ch_integration_time = self.calibration_data.channel_integration_times.get(ch, integration_time)
+                                ch_integration_time = p_integration_time_effective
+                                if has_per_channel_integration_times:
+                                    ch_integration_time = self.calibration_data.channel_integration_times.get(ch, p_integration_time_effective)
 
                                 # LAYER 3: Smart acquire - auto-detects if pre-arm optimization is possible
                                 raw_spectrum = self._acquire_raw_spectrum(
@@ -812,10 +885,19 @@ class DataAcquisitionManager(QObject):
                                     post_led_delay_ms=post_led_delay,
                                     next_channel=next_ch,
                                     next_led_intensity=next_led_int,
-                                    pre_armed=not per_channel_integration  # Optimization flag
+                                    pre_armed=not has_per_channel_integration_times  # Optimization flag
                                 )
 
                                 if raw_spectrum is not None:
+                                    # DEBUG: Log first raw spectrum
+                                    if not hasattr(self, '_first_raw_logged'):
+                                        print(f"\n[RAW-SPECTRUM-DEBUG] First raw spectrum acquired:")
+                                        print(f"  Channel: {ch}")
+                                        print(f"  Shape: {raw_spectrum.shape}")
+                                        print(f"  Min: {np.min(raw_spectrum):.1f}, Max: {np.max(raw_spectrum):.1f}, Mean: {np.mean(raw_spectrum):.1f}")
+                                        print(f"  Non-zero: {np.count_nonzero(raw_spectrum)}/{len(raw_spectrum)}")
+                                        self._first_raw_logged = True
+
                                     # Package data for processing
                                     spectrum_data = {
                                         'raw_spectrum': raw_spectrum,
@@ -831,21 +913,61 @@ class DataAcquisitionManager(QObject):
                                     self._spectrum_batch[ch].append(spectrum_data)
                                     self._batch_timestamps[ch].append(timestamp)
 
+                                    # DEBUG: Log buffer growth
+                                    if cycle_count <= 3:
+                                        print(f"   [BUFFER-ADD] Ch {ch}: Added spectrum (buffer now has {len(self._spectrum_batch[ch])} spectra)")
+
+                                    # Clear channel error count on success
+                                    channel_error_counts[ch] = 0
+                                else:
+                                    # Acquisition failed for this channel
+                                    channel_error_counts[ch] += 1
+
+                                    if cycle_count % 10 == 1:
+                                        print(f"   [ERROR] Ch {ch} batch {batch_idx}: raw_spectrum is None! (errors: {channel_error_counts[ch]})")
+
+                                    # Disable channel if too many consecutive errors
+                                    if channel_error_counts[ch] >= 20:
+                                        channel_disabled[ch] = True
+                                        print(f"   [CH-{ch.upper()}] ⚠️ DISABLED after {channel_error_counts[ch]} consecutive errors")
+
                             except Exception as e:
-                                print(f"   [ERROR] Ch {ch} batch {batch_idx}: {e}")
+                                channel_error_counts[ch] += 1
+                                print(f"   [ERROR] Ch {ch} batch {batch_idx}: {e} (errors: {channel_error_counts[ch]})")
+
+                                # Check for connection errors
+                                import serial
+                                if isinstance(e, (serial.SerialException, ConnectionError, OSError)):
+                                    print(f"   [CONNECTION] Hardware connection error detected: {type(e).__name__}")
+                                    # Trigger connection recovery after this cycle
+                                    consecutive_errors = max_consecutive_errors - 1  # Will trigger recovery
 
                     # Process all accumulated spectra for each channel
                     if spectra_acquired >= 8:  # At least 2 cycles successful
+                        if cycle_count % 10 == 1:
+                            print(f"   [BATCH-PROCESS] Checking buffers: A={len(self._spectrum_batch['a'])}, B={len(self._spectrum_batch['b'])}, C={len(self._spectrum_batch['c'])}, D={len(self._spectrum_batch['d'])}")
+
                         for ch in channels:
-                            if len(self._spectrum_batch[ch]) >= 3:  # Process if we have at least 3 spectra
+                            buffer_size = len(self._spectrum_batch[ch])
+                            if buffer_size >= 2:  # Process if we have at least 2 spectra (LOWERED from 3)
                                 try:
+                                    if cycle_count % 10 == 1:
+                                        print(f"   [BATCH] Ch {ch}: Processing {buffer_size} spectra...")
                                     self._process_and_emit_batch(ch)
                                     if cycle_count % 10 == 1:
-                                        print(f"   [BATCH] Ch {ch}: Processed {len(self._spectrum_batch[ch])} spectra")
+                                        print(f"   [BATCH] Ch {ch}: ✓ Processed successfully")
                                 except Exception as e:
-                                    print(f"   [ERROR] Ch {ch} batch processing: {e}")
+                                    print(f"   [ERROR] Ch {ch} batch processing failed: {e}")
+                                    import traceback
+                                    traceback.print_exc()
                                     self._spectrum_batch[ch].clear()
                                     self._batch_timestamps[ch].clear()
+                            else:
+                                if cycle_count % 10 == 1:
+                                    print(f"   [BATCH] Ch {ch}: Skipped (only {buffer_size} spectra, need 2)")
+                    else:
+                        if cycle_count % 10 == 1:
+                            print(f"   [BATCH-PROCESS] Skipped - only {spectra_acquired} spectra acquired (need 8)")
 
                     if cycle_count % 10 == 1:
                         print(f"   [CYCLE] Acquired {spectra_acquired}/{BATCH_SIZE} spectra")
@@ -857,8 +979,43 @@ class DataAcquisitionManager(QObject):
                         consecutive_errors += 1
                         print(f"[Worker] Batch {cycle_count}: FAILED - consecutive_errors={consecutive_errors}/{max_consecutive_errors}")
 
+                        # Attempt connection recovery before giving up
+                        if consecutive_errors >= max_consecutive_errors and connection_recovery_attempts < max_recovery_attempts:
+                            print(f"[Worker] 🔄 Attempting connection recovery (attempt {connection_recovery_attempts + 1}/{max_recovery_attempts})...")
+
+                            # Check connection health
+                            health = self.hardware_mgr.check_connection_health()
+                            print(f"[Worker] Connection health: {health}")
+
+                            # Attempt recovery
+                            if not health['controller'] or not health['spectrometer']:
+                                if self.hardware_mgr.auto_recover_connection(validate=True):
+                                    print("[Worker] ✅ Connection recovered - resuming acquisition")
+                                    consecutive_errors = 0  # Reset error counter
+                                    connection_recovery_attempts += 1
+
+                                    # Re-enable all channels
+                                    for ch in channels:
+                                        channel_disabled[ch] = False
+                                        channel_error_counts[ch] = 0
+
+                                    # Re-arm integration time if needed
+                                    if not has_per_channel_integration_times:
+                                        try:
+                                            usb = self.hardware_mgr.usb
+                                            if usb:
+                                                usb.set_integration(p_integration_time_effective)
+                                                print(f"[Worker] ✅ Re-armed integration time: {p_integration_time_effective}ms")
+                                        except Exception as e:
+                                            print(f"[Worker] ⚠️ Could not re-arm integration: {e}")
+
+                                    continue  # Resume acquisition
+                                else:
+                                    print("[Worker] ❌ Connection recovery failed")
+                                    connection_recovery_attempts += 1
+
                         if consecutive_errors >= max_consecutive_errors:
-                            print(f"[Worker] ❌ STOPPING: {max_consecutive_errors} consecutive failed batches")
+                            print(f"[Worker] ❌ STOPPING: {max_consecutive_errors} consecutive failed batches (recovery attempts: {connection_recovery_attempts})")
                             try:
                                 self._spectrum_queue.put_nowait({'_error': "Hardware communication lost - stopping acquisition"})
                             except queue.Full:
@@ -898,53 +1055,6 @@ class DataAcquisitionManager(QObject):
             self.hardware_mgr.ctrl is not None and
             self.hardware_mgr.usb is not None
         )
-
-    def _process_and_emit_batch(self, channel: str) -> None:
-        """Process and emit a batch of spectra for a channel.
-
-        Processes all buffered raw spectra and emits them individually to maintain
-        compatibility with existing UI code while reducing acquisition overhead.
-        """
-        batch = self._spectrum_batch[channel]
-        timestamps = self._batch_timestamps[channel]
-
-        if not batch:
-            return
-
-        # Process each spectrum in the batch
-        for spectrum_data, timestamp in zip(batch, timestamps):
-            try:
-                # Process spectrum (filtering, peak finding)
-                processed = self._process_spectrum(channel, spectrum_data)
-
-                # Buffer the data
-                self.channel_buffers[channel].append(processed['wavelength'])
-                self.time_buffers[channel].append(timestamp)
-
-                # Put processed data in queue instead of emitting directly
-                data = {
-                    'channel': channel,
-                    'wavelength': processed['wavelength'],
-                    'intensity': processed['intensity'],
-                    'full_spectrum': processed.get('full_spectrum'),
-                    'raw_spectrum': processed.get('raw_spectrum'),  # P-mode spectrum for transmission calc
-                    'transmission_spectrum': processed.get('transmission_spectrum'),  # P/S ratio
-                    'timestamp': timestamp,
-                    'is_preview': False  # Real processed data
-                }
-
-                try:
-                    self._spectrum_queue.put_nowait(data)
-                except queue.Full:
-                    pass  # Queue full, drop this data point
-
-            except Exception as e:
-                # Removed logger.error to prevent Qt threading issues
-                pass  # Silent failure to avoid Qt threading crashes
-
-        # Clear the batch buffers
-        self._spectrum_batch[channel].clear()
-        self._batch_timestamps[channel].clear()
 
     # ========================================================================
     # LAYER 3: HARDWARE ACQUISITION (Pure Hardware Control)
@@ -1014,6 +1124,7 @@ class DataAcquisitionManager(QObject):
             usb = self.hardware_mgr.usb
 
             if not ctrl or not usb:
+                logger.warning(f"Hardware not available: ctrl={ctrl is not None}, usb={usb is not None}")
                 return None
 
             # ===================================================================
@@ -1028,7 +1139,11 @@ class DataAcquisitionManager(QObject):
                 # Per-channel mode: Set integration time each time
                 try:
                     usb.set_integration(integration_time_ms)
+                except (ConnectionError, OSError) as conn_e:
+                    logger.error(f"Connection lost while setting integration time: {conn_e}")
+                    return None
                 except Exception as e:
+                    logger.error(f"Failed to set integration time: {e}")
                     return None
             # else: Integration time already pre-armed (optimization - saves ~7ms)
 
@@ -1065,9 +1180,14 @@ class DataAcquisitionManager(QObject):
                     led_on_time = time.perf_counter()
 
                     if not success:
+                        logger.warning(f"Failed to set LED intensities for channel {channel}")
                         return None
 
+                except (ConnectionError, OSError) as conn_e:
+                    logger.error(f"Connection lost while setting LED: {conn_e}")
+                    return None
                 except Exception as e:
+                    logger.error(f"Failed to set LED intensities: {e}")
                     return None
 
             # ===================================================================
@@ -1098,16 +1218,18 @@ class DataAcquisitionManager(QObject):
                         if spectrum is not None:
                             spectra.append(spectrum)
                     if len(spectra) == 0:
+                        logger.warning(f"No valid spectra acquired for channel {channel}")
                         return None
                     raw_spectrum = np.mean(spectra, axis=0)
                 else:
                     raw_spectrum = usb.read_intensity()
 
-            except ConnectionError:
-                self.acquisition_error.emit("Spectrometer disconnected. Please reconnect and restart.")
-                self.stop_acquisition()
+            except (ConnectionError, OSError) as conn_e:
+                logger.error(f"Connection lost while reading spectrum: {conn_e}")
+                # Don't emit error here - let acquisition worker handle recovery
                 return None
             except Exception as e:
+                logger.error(f"Failed to read spectrum: {e}")
                 return None
 
             if raw_spectrum is None:
@@ -1141,7 +1263,11 @@ class DataAcquisitionManager(QObject):
             # Turn off LED first
             try:
                 ctrl.set_batch_intensities(a=0, b=0, c=0, d=0)
-            except Exception:
+            except (ConnectionError, OSError) as conn_e:
+                logger.warning(f"Connection lost while turning off LED: {conn_e}")
+                # Don't fail acquisition - spectrum was already captured
+            except Exception as e:
+                logger.debug(f"Failed to turn off LED (non-critical): {e}")
                 pass
 
             # LED Overlap Strategy: Turn on next LED during POST delay
@@ -1358,6 +1484,32 @@ class DataAcquisitionManager(QObject):
                 'batch_filtered': True  # Mark as batch-filtered
             }
 
+            # DEBUG: Log EVERY data point for first 5 emissions to trace data flow
+            if not hasattr(self, '_data_trace_count'):
+                self._data_trace_count = 0
+
+            if self._data_trace_count < 5:
+                print(f"\n" + "="*80)
+                print(f"[DATA-TRACE #{self._data_trace_count+1}] Channel {channel.upper()} - EMITTING TO QUEUE:")
+                print(f"="*80)
+                print(f"  wavelength: {wl:.2f}nm")
+                print(f"  intensity: {intensities[i]:.1f}")
+                if raw_spectrum is not None:
+                    is_empty = np.count_nonzero(raw_spectrum) == 0
+                    print(f"  ✓ raw_spectrum EXISTS: len={len(raw_spectrum)}, min={np.min(raw_spectrum):.1f}, max={np.max(raw_spectrum):.1f}, mean={np.mean(raw_spectrum):.1f}")
+                    print(f"    non-zero: {np.count_nonzero(raw_spectrum)}/{len(raw_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}")
+                else:
+                    print(f"  ❌ raw_spectrum: NONE!")
+                if transmission_spectrum is not None:
+                    is_empty = np.count_nonzero(transmission_spectrum) == 0
+                    print(f"  ✓ transmission EXISTS: len={len(transmission_spectrum)}, min={np.min(transmission_spectrum):.1f}%, max={np.max(transmission_spectrum):.1f}%, mean={np.mean(transmission_spectrum):.1f}%")
+                    print(f"    non-zero: {np.count_nonzero(transmission_spectrum)}/{len(transmission_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}")
+                else:
+                    print(f"  ❌ transmission: NONE!")
+                print(f"  Queue size BEFORE emit: {self._spectrum_queue.qsize()}")
+                print(f"="*80)
+                self._data_trace_count += 1
+
             try:
                 self._spectrum_queue.put_nowait(data)
             except queue.Full:
@@ -1424,6 +1576,16 @@ class DataAcquisitionManager(QObject):
 
                     # Calculate transmission using unified processor (same as calibration Part C)
                     # clean_spectrum is now dark-corrected (processed by SpectrumPreprocessor above)
+
+                    # DEBUG: Log first transmission calculation inputs
+                    if not hasattr(self, '_first_trans_calc'):
+                        print(f"\n[TRANSMISSION-CALC-DEBUG] First transmission calculation for channel {channel}:")
+                        print(f"  p_pol_clean: len={len(clean_spectrum)}, min={np.min(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}, mean={np.mean(clean_spectrum):.1f}")
+                        print(f"  s_pol_ref: len={len(ref_spectrum)}, min={np.min(ref_spectrum):.1f}, max={np.max(ref_spectrum):.1f}, mean={np.mean(ref_spectrum):.1f}")
+                        print(f"  LED intensities: S={s_led}, P={p_led}")
+                        print(f"  wavelengths: len={len(self.calibration_data.wavelengths)}, range={self.calibration_data.wavelengths[0]:.1f}-{self.calibration_data.wavelengths[-1]:.1f}nm")
+                        self._first_trans_calc = True
+
                     transmission_spectrum = TransmissionProcessor.process_single_channel(
                         p_pol_clean=clean_spectrum,  # Clean spectrum from SpectrumPreprocessor
                         s_pol_ref=ref_spectrum,      # Clean S-pol reference from calibration
@@ -1435,6 +1597,23 @@ class DataAcquisitionManager(QObject):
                         baseline_percentile=95.0,      # Same as calibration
                         verbose=False  # No logging for live acquisition (performance)
                     )
+
+                    # DEBUG: Log first 3 transmission results with full detail
+                    if not hasattr(self, '_trans_result_count'):
+                        self._trans_result_count = 0
+
+                    if self._trans_result_count < 3:
+                        print(f"\n{'='*80}")
+                        print(f"[TRANSMISSION-CALC #{self._trans_result_count+1}] Channel {channel.upper()}:")
+                        print(f"{'='*80}")
+                        if transmission_spectrum is not None:
+                            is_empty = np.count_nonzero(transmission_spectrum) == 0
+                            print(f"  ✓ RESULT: len={len(transmission_spectrum)}, min={np.min(transmission_spectrum):.1f}%, max={np.max(transmission_spectrum):.1f}%, mean={np.mean(transmission_spectrum):.1f}%")
+                            print(f"    non-zero: {np.count_nonzero(transmission_spectrum)}/{len(transmission_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}")
+                        else:
+                            print(f"  ❌ RESULT: NONE!")
+                        print(f"{'='*80}")
+                        self._trans_result_count += 1
 
                     # Debug log LED correction (throttled)
                     if hasattr(self, '_transmission_debug_counter'):

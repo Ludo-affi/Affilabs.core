@@ -12,7 +12,8 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 from typing import Optional
 from utils.logger import logger
-from core.calibration_data import CalibrationData
+# Phase 1.1 Domain Model + Adapter
+from domain import CalibrationData, led_calibration_result_to_domain
 from core.ml_qc_intelligence import MLQCIntelligence
 
 
@@ -394,14 +395,14 @@ class CalibrationService(QObject):
             logger.info(f"📊 LED timing: PRE={pre_led_delay_ms}ms, POST={post_led_delay_ms}ms")
 
             # Run calibration
-            from utils.calibration_6step import run_full_6step_calibration
+            from utils.calibration_6step import run_fast_track_calibration
 
-            logger.info("🚀 Starting 6-step calibration...")
+            logger.info("🚀 Starting fast-track calibration (validates previous calibration ±5%)...")
 
             # Get device type from controller
             device_type = type(ctrl).__name__
 
-            cal_result = run_full_6step_calibration(
+            cal_result = run_fast_track_calibration(
                 usb=usb,
                 ctrl=ctrl,
                 device_type=device_type,
@@ -436,13 +437,23 @@ class CalibrationService(QObject):
             wave_min_index = cal_result.wave_min_index
             wave_max_index = cal_result.wave_max_index
 
-            # CalibrationData is just a type alias for LEDCalibrationResult
-            calibration_data = cal_result
+            # Convert legacy LEDCalibrationResult to Phase 1.1 domain model
+            # This provides type safety, validation, and immutability
+            logger.info("🔄 Converting calibration result to domain model...")
+            try:
+                calibration_data = led_calibration_result_to_domain(cal_result)
+                logger.info("✅ Calibration data converted to domain model")
+                logger.info(f"   Channels: {list(calibration_data.s_pol_ref.keys())}")
+                logger.info(f"   Integration times: S={calibration_data.integration_time_s}ms, P={calibration_data.integration_time_p}ms")
+                logger.info(f"   P-mode LEDs: {calibration_data.p_mode_intensities}")
+                logger.info(f"   S-mode LEDs: {calibration_data.s_mode_intensities}")
+            except Exception as e:
+                logger.error(f"❌ Failed to convert calibration data: {e}")
+                raise RuntimeError(f"Calibration data conversion failed: {e}")
 
-            if not calibration_data.validate():
-                raise RuntimeError("Calibration data validation failed")
-
-            logger.info("✅ Calibration data created and validated")
+            # Domain model has built-in validation
+            # Note: validate() method is from CalibrationData dataclass
+            logger.info("✅ Calibration data validated (domain model)")
 
             # Store calibration data
             self._current_calibration_data = calibration_data
