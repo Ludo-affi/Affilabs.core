@@ -233,6 +233,13 @@ class Application(QApplication):
         # Create main window (production AffiLabs.core UI)
         self.main_window = AffilabsMainWindow(event_bus=None)
 
+        # Ensure calibration runs with visible dialogs in UI launcher
+        # Force-disable headless calibration unless explicitly enabled in-app
+        try:
+            os.environ['CALIBRATION_HEADLESS'] = '0'
+        except Exception:
+            pass
+
         # Store reference to app in window for easy access to managers
         self.main_window.app = self
 
@@ -372,6 +379,14 @@ class Application(QApplication):
         # Force immediate UI update - paint window before loading heavy widgets
         QApplication.processEvents()
         logger.info(f"✅ Window visible (minimal UI rendered): {self.main_window.isVisible()}")
+
+        # Connect UI signals (power button, recording controls, etc.)
+        # This enables the Power ON flow which leads to the startup calibration dialog.
+        try:
+            self._connect_ui_signals()
+            logger.info("🔗 UI signals connected (power/start/recording)")
+        except Exception as e:
+            logger.error(f"❌ Failed to connect UI signals: {e}")
 
         # Load deferred widgets in background (after window is visible)
         QTimer.singleShot(50, self._load_deferred_widgets)
