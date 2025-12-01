@@ -54,4 +54,10 @@ def create_spectroscopy_plot(left_label: str, bottom_label: str, size: str = '10
     plot.getPlotItem().getAxis('bottom').setPen(color=AXIS_PEN_COLOR, width=1)
     plot.getPlotItem().getAxis('left').setTextPen(AXIS_COLOR)
     plot.getPlotItem().getAxis('bottom').setTextPen(AXIS_COLOR)
+    # Prefer autorange by default (no hard axes to avoid clipping)
+    try:
+        plot.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+    except Exception:
+        plot.enableAutoRange('x', True)
+        plot.enableAutoRange('y', True)
     return plot

@@ -147,11 +147,19 @@ class LiveDataDialog(QDialog):
         plot_widget.setLabel('bottom', 'Wavelength', units='nm')
         if plot_type == 'transmission':
             plot_widget.setLabel('left', 'Transmission', units='%')
-            # Start with a generous default; will autoscale on updates
-            plot_widget.setYRange(0, 120)
+            # No hard axis: enable full autorange
+            try:
+                plot_widget.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+            except Exception:
+                plot_widget.enableAutoRange('x', True)
+                plot_widget.enableAutoRange('y', True)
         else:
             plot_widget.setLabel('left', 'Intensity', units='counts')
-            plot_widget.setYRange(0, 65535)
+            try:
+                plot_widget.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+            except Exception:
+                plot_widget.enableAutoRange('x', True)
+                plot_widget.enableAutoRange('y', True)
 
         plot_widget.setXRange(400, 1000)
 
@@ -189,24 +197,10 @@ class LiveDataDialog(QDialog):
         if channel in self.transmission_curves:
             try:
                 self.transmission_curves[channel].setData(wavelength, transmission_spectrum)
-
-                # Dynamic autoscale to keep spectrum within view (floor at 0%)
+                # Keep autorange fully enabled; no manual setRange
                 try:
-                    if wavelength is not None and len(wavelength) > 1:
-                        x_min = float(wavelength[0])
-                        x_max = float(wavelength[-1])
-                        if x_max > x_min:
-                            pad = 0.02 * (x_max - x_min)
-                            self.transmission_plot.setXRange(x_min - pad, x_max + pad, padding=0)
-
-                    if transmission_spectrum is not None and len(transmission_spectrum) > 0:
-                        import numpy as _np
-                        y_max = float(_np.nanmax(transmission_spectrum))
-                        if not _np.isfinite(y_max):
-                            y_max = 100.0
-                        y_max = max(100.0, y_max * 1.10)
-                        y_max = min(y_max, 200.0)
-                        self.transmission_plot.setYRange(0.0, y_max, padding=0.02)
+                    self.transmission_plot.enableAutoRange('x', True)
+                    self.transmission_plot.enableAutoRange('y', True)
                 except Exception:
                     pass
             except Exception:

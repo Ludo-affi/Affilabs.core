@@ -380,13 +380,8 @@ class Application(QApplication):
         QApplication.processEvents()
         logger.info(f"✅ Window visible (minimal UI rendered): {self.main_window.isVisible()}")
 
-        # Connect UI signals (power button, recording controls, etc.)
-        # This enables the Power ON flow which leads to the startup calibration dialog.
-        try:
-            self._connect_ui_signals()
-            logger.info("🔗 UI signals connected (power/start/recording)")
-        except Exception as e:
-            logger.error(f"❌ Failed to connect UI signals: {e}")
+        # UI signals are connected by the main UI or after deferred widgets load.
+        # Avoid early connections that reference not-yet-built widgets.
 
         # Load deferred widgets in background (after window is visible)
         QTimer.singleShot(50, self._load_deferred_widgets)
