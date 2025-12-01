@@ -40,8 +40,8 @@ class SpectrumPreprocessor:
         (transmission calculation, display, peak finding, etc.).
 
         Args:
-            raw_spectrum: Raw spectrum counts from spectrometer
-            dark_noise: Dark reference spectrum (same length as raw_spectrum)
+            raw_spectrum: Raw spectrum counts from spectrometer (ROI-only: wavelength-adapted range)
+            dark_noise: Dark reference spectrum (must match raw_spectrum length; use ROI-sliced dark)
             channel_name: Channel identifier for logging (e.g., "a", "b", "c", "d")
             verbose: Enable detailed logging
 
@@ -72,8 +72,9 @@ class SpectrumPreprocessor:
         if dark_noise is not None:
             if len(dark_noise) != len(clean_spectrum):
                 raise ValueError(
-                    f"Dark noise length ({len(dark_noise)}) must match "
-                    f"spectrum length ({len(clean_spectrum)})"
+                    "Dark noise length mismatch. Downstream expects ROI-sliced dark "
+                    f"(got {len(dark_noise)} vs spectrum {len(clean_spectrum)}). "
+                    "Ensure dark uses the wavelength-adapted spectral range (same ROI)."
                 )
 
             dark_mean = np.mean(dark_noise)

@@ -160,6 +160,16 @@ from settings import (
     USE_ALTERNATIVE_CALIBRATION,
 )
 from utils.logger import logger
+
+# =============================================================================
+# CALIBRATION METHOD SELECTION
+# =============================================================================
+# Set to True to use LED convergence workflow (Steps 3-5 replacement)
+# Set to False to use legacy Step 3-5 calibration
+USE_LED_CONVERGENCE = True  # DEFAULT: Use optimized LED convergence workflow
+# Use batch LED command in convergence & preflight for identical behavior
+CONVERGENCE_USE_BATCH_COMMAND = False  # set True to match live acquisition timing
+
 from models.led_calibration_result import LEDCalibrationResult
 from utils.calibration_helpers import (
     DetectorParams,
@@ -567,7 +577,8 @@ def roi_signal(
     wave_min_index: int,
     wave_max_index: int,
     method: str = "median",
-    trim_fraction: float = 0.1
+    trim_fraction: float = 0.1,
+    top_n: int = None
 ) -> float:
     """Compute a robust signal metric over the SPR ROI.
 
@@ -578,16 +589,28 @@ def roi_signal(
         spectrum: Full spectrum data from detector
         wave_min_index: Start index of ROI
         wave_max_index: End index of ROI
-        method: 'median' or 'trimmed_mean'
+        method: 'median', 'trimmed_mean', 'mean', or 'max'
         trim_fraction: Fraction to trim from each tail for trimmed mean
+        top_n: If provided, average the top N pixels (for convergence methods)
 
     Returns:
         Robust signal value over ROI
     """
     roi = spectrum[wave_min_index:wave_max_index]
+
+    # Handle top_n averaging (used by LED convergence)
+    if top_n is not None and top_n > 0:
+        sorted_roi = np.sort(roi)[::-1]  # Sort descending
+        return float(np.mean(sorted_roi[:top_n]))
+
     if roi.size == 0:
         return 0.0
-    if method == "trimmed_mean":
+
+    if method == "mean":
+        return float(np.mean(roi))
+    elif method == "max":
+        return float(np.max(roi))
+    elif method == "trimmed_mean":
         # Clamp trim to valid range
         t = max(0.0, min(0.49, float(trim_fraction)))
         sorted_roi = np.sort(roi)
@@ -597,8 +620,9 @@ def roi_signal(
         if start >= end:
             return float(np.mean(sorted_roi))
         return float(np.mean(sorted_roi[start:end]))
-    # Default: median
-    return float(np.median(roi))
+    else:
+        # Default: median
+        return float(np.median(roi))
 
 
 def count_pixels_near_target(
@@ -633,6 +657,120 @@ def count_pixels_near_target(
     percentage = (pixels_in_range / total_pixels) * 100
 
     return int(pixels_in_range), float(percentage)
+
+
+# =============================================================================
+# PREFLIGHT: LIGHT PATH AND POLARIZER CHECK (FAIL-FAST AFTER STEP 2)
+# =============================================================================
+
+def preflight_light_and_polarizer(
+    usb,
+    ctrl,
+    ch_list: list,
+    wave_min_index: int,
+    wave_max_index: int,
+    device_config_det: dict,
+    detector_params: DetectorParams,
+    min_counts_threshold: float = 4000.0,
+    integration_time_ms: float = 70.0,
+    use_batch_command: bool = False,
+    fast: bool = True,
+) -> tuple[bool, str]:
+    """Quickly verify that LEDs produce light and polarizer can engage S-mode.
+
+    - Forces S-mode, measures 1-2 channels at LED=255
+    - If all tested channels are below threshold, returns (False, reason)
+    - Logs basic servo diagnostics and attempts a P-mode switch for confirmation
+
+    Returns:
+        (ok, message): ok=True if light detected; message for logs otherwise
+    """
+    try:
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🔎 PREFLIGHT: Light Path & Polarizer Check")
+        logger.info("=" * 80)
+
+        # Safety: turn off LEDs quickly
+        try:
+            ctrl.turn_off_channels()
+        except Exception:
+            pass
+
+        # Fast path: only attempt a quick S-mode lock (no pre-positioning)
+        s_locked = False
+        try:
+            if hasattr(ctrl, 'set_mode'):
+                s_locked = bool(ctrl.set_mode('s'))
+        except Exception:
+            s_locked = False
+        logger.info(f"Polarizer S-mode lock: {'OK' if s_locked else 'UNKNOWN'}")
+
+        # Pick channels: fast → first only; else test first two
+        test_channels = [ch_list[0]] if (fast and len(ch_list) > 0) else (ch_list[:2] if len(ch_list) >= 2 else ch_list)
+        detected = {}
+        for ch in test_channels:
+            # Use the exact same acquisition function/pattern as convergence
+            spec = acquire_raw_spectrum(
+                usb=usb,
+                ctrl=ctrl,
+                channel=ch,
+                led_intensity=255,
+                integration_time_ms=integration_time_ms,
+                num_scans=1,
+                pre_led_delay_ms=45.0,
+                post_led_delay_ms=5.0,
+                use_batch_command=use_batch_command,
+            )
+
+            if spec is None:
+                logger.error(f"❌ {ch.upper()}: No spectrum read")
+                detected[ch] = 0.0
+                continue
+
+            roi = spec[wave_min_index:wave_max_index]
+            mean_val = float(np.mean(roi)) if roi is not None and len(roi) > 0 else 0.0
+            max_val = float(np.max(roi)) if roi is not None and len(roi) > 0 else 0.0
+            sat_px = count_saturated_pixels(
+                spectrum=spec,
+                wave_min_index=wave_min_index,
+                wave_max_index=wave_max_index,
+                saturation_threshold=detector_params.saturation_threshold,
+            )
+            detected[ch] = mean_val
+            pct = (mean_val / detector_params.max_counts * 100.0) if detector_params.max_counts else 0.0
+            logger.info(
+                f"   {ch.upper()} @ LED=255, T={integration_time_ms:.1f}ms → mean={mean_val:.0f} ({pct:.1f}%), max={max_val:.0f}, sat_px={sat_px}"
+            )
+
+        any_light = any(v >= min_counts_threshold for v in detected.values())
+        if not any_light:
+            msg = ("LED VERIFICATION FAILED: All tested channels < "
+                   f"{min_counts_threshold:.0f} counts at LED=255 (S-mode).")
+            logger.error("\n" + "=" * 80)
+            logger.error(f"❌ {msg}")
+            for ch, val in detected.items():
+                logger.error(f"   {ch.upper()}: {val:.0f} counts")
+            logger.error("=" * 80 + "\n")
+            return False, msg
+
+        # Skip P-toggle in fast path to minimize delay
+        if not fast:
+            try:
+                if hasattr(ctrl, 'set_mode'):
+                    pm_ok = bool(ctrl.set_mode('p'))
+                    logger.info(f"Polarizer P-mode lock: {'OK' if pm_ok else 'UNKNOWN'}")
+                    sm_ok = bool(ctrl.set_mode('s'))
+                    logger.info(f"Polarizer S-mode re-lock: {'OK' if sm_ok else 'UNKNOWN'}")
+            except Exception as e:
+                logger.warning(f"⚠️  Polarizer quick toggle check failed: {e}")
+
+        logger.info("✅ PREFLIGHT PASSED: Light detected and polarizer usable")
+        return True, "OK"
+
+    except Exception as e:
+        logger.exception(f"Preflight check error: {e}")
+        return False, str(e)
 
 
 # =============================================================================
@@ -1181,9 +1319,6 @@ def run_full_6step_calibration(
     result.pre_led_delay_ms = pre_led_delay_ms
     result.post_led_delay_ms = post_led_delay_ms
 
-    print("🔥🔥🔥 DEBUG: run_full_6step_calibration() ENTERED - NEW VERSION WITH DEBUG LOGGING")
-    logger.info("🔥🔥🔥 DEBUG: run_full_6step_calibration() ENTERED - NEW VERSION WITH DEBUG LOGGING")
-
     try:
         # ===================================================================
         # ✨ P1 OPTIMIZATION: Early OEM Position Loading (Fail-Fast)
@@ -1339,79 +1474,47 @@ def run_full_6step_calibration(
             progress_callback("Step 1 of 6: Checking connections", 0)
 
         # CRITICAL: Force all LEDs OFF and VERIFY
-        print("🔦 DEBUG: Forcing ALL LEDs OFF...")
-        print(f"   DEBUG: ctrl object type: {type(ctrl)}")
-        print(f"   DEBUG: ctrl has get_all_led_intensities: {hasattr(ctrl, 'get_all_led_intensities')}")
-        logger.info("🔦 Forcing ALL LEDs OFF...")
-        logger.info(f"   DEBUG: ctrl object type: {type(ctrl)}")
-        logger.info(f"   DEBUG: ctrl has get_all_led_intensities: {hasattr(ctrl, 'get_all_led_intensities')}")
-
+        logger.info("Forcing all LEDs OFF...")
         ctrl.turn_off_channels()
         time.sleep(0.2)
 
         # VERIFY LEDs are off using V1.1 firmware query (CRITICAL!)
-        print("✅ DEBUG: Verifying LEDs are off...")
-        logger.info("✅ Verifying LEDs are off...")
-        max_retries = 3  # Optimized: 3 attempts sufficient, saves ~40ms
+        max_retries = 3
         led_verified = False
         has_led_query = hasattr(ctrl, 'get_all_led_intensities')
 
         if has_led_query:
-            print("DEBUG: Controller supports LED state query (V1.1+ firmware)")
-            logger.info("Controller supports LED state query (V1.1+ firmware)")
             for attempt in range(max_retries):
                 time.sleep(0.005)  # Optimized: 5ms adequate for command processing
 
                 # Query LED state (V1.1 firmware feature)
                 try:
                     led_state = ctrl.get_all_led_intensities()
-                    print(f"   DEBUG: LED query returned: {led_state} (type: {type(led_state)})")
-                    logger.info(f"   DEBUG: LED query returned: {led_state} (type: {type(led_state)})")
                 except Exception as query_error:
-                    print(f"   DEBUG: LED query raised exception: {query_error}")
-                    logger.error(f"   DEBUG: LED query raised exception: {query_error}")
+                    logger.error(f"LED query failed: {query_error}")
                     led_state = None
 
                 if led_state is None:
-                    print(f"WARNING: LED query returned None (attempt {attempt+1}/{max_retries})")
-                    logger.warning(f"LED query returned None (attempt {attempt+1}/{max_retries})")
                     if attempt == max_retries - 1:
-                        # All queries failed - fall back to timing-based approach
-                        print("INFO: All LED queries failed - falling back to timing-based verification")
-                        logger.info("All LED queries failed - falling back to timing-based verification")
                         has_led_query = False
                         break
                     continue
 
-                # Check if all LEDs are off (0 intensity)
-                # Note: Channel D returns -1 due to firmware limitation, so exclude it
-                # Note: Treat intensity <= 1 as "off" to account for firmware/hardware limitations
+                # Check if all LEDs are off (intensity <= 1)
                 channels_to_check = {ch: val for ch, val in led_state.items() if ch != 'd'}
-                print(f"   DEBUG: Channels to check: {channels_to_check}")
-                logger.info(f"   DEBUG: Channels to check: {channels_to_check}")
                 all_off = all(intensity <= 1 for intensity in channels_to_check.values())
-                print(f"   DEBUG: All off (intensity <= 1)? {all_off}")
-                logger.info(f"   DEBUG: All off (intensity <= 1)? {all_off}")
 
                 if all_off:
-                    print(f"✅ DEBUG: All LEDs confirmed OFF: {led_state}")
-                    logger.info(f"✅ All LEDs confirmed OFF: {led_state}")
+                    logger.info("✅ All LEDs confirmed OFF")
                     led_verified = True
                     break
                 else:
-                    print(f"⚠️ DEBUG: LEDs still on (attempt {attempt+1}/{max_retries}): {led_state}")
-                    logger.warning(f"⚠️ LEDs still on (attempt {attempt+1}/{max_retries}): {led_state}")
-                    # Retry turn-off command
-                    print(f"   DEBUG: Retrying turn_off_channels()...")
-                    logger.info(f"   DEBUG: Retrying turn_off_channels()...")
+                    logger.warning(f"LEDs still on (attempt {attempt+1}/{max_retries})")
                     ctrl.turn_off_channels()
-                    time.sleep(0.05)  # Extra delay
+                    time.sleep(0.05)
 
             if not led_verified and has_led_query:
-                print(f"❌ DEBUG: Failed to turn off LEDs after {max_retries} attempts")
-                print(f"   DEBUG: Last LED state: {led_state if 'led_state' in locals() else 'N/A'}")
-                logger.error(f"❌ Failed to turn off LEDs after {max_retries} attempts")
-                logger.error(f"   Last LED state: {led_state if 'led_state' in locals() else 'N/A'}")
+                logger.error("❌ Failed to turn off LEDs after retries")
                 logger.error("This may indicate a hardware or firmware communication issue")
                 raise RuntimeError("Cannot proceed - LEDs failed to turn off")
 
@@ -1478,14 +1581,142 @@ def run_full_6step_calibration(
         logger.info(f"✅ Step 2 complete\n")
 
         # ===================================================================
-        # STEP 3: LED BRIGHTNESS RANKING (WITH FIRMWARE RANK OPTIMIZATION)
+        # PREFLIGHT: LIGHT & POLARIZER (fail-fast)
         # ===================================================================
-        logger.info("=" * 80)
-        logger.info("STEP 3: LED Brightness Ranking")
-        logger.info("=" * 80)
+        device_config_det = resolve_device_config_for_detector(usb)
+        ok_pre, msg_pre = preflight_light_and_polarizer(
+            usb=usb,
+            ctrl=ctrl,
+            ch_list=ch_list,
+            wave_min_index=result.wave_min_index,
+            wave_max_index=result.wave_max_index,
+            device_config_det=device_config_det,
+            detector_params=detector_params,
+            min_counts_threshold=4000.0,
+            integration_time_ms=70.0,
+            use_batch_command=CONVERGENCE_USE_BATCH_COMMAND,
+            fast=True,
+        )
+        if not ok_pre:
+            result.success = False
+            result.error_message = msg_pre
+            result.error = msg_pre
+            return result
 
-        if progress_callback:
-            progress_callback("Step 3 of 6: Measuring channel brightness", 33)
+        # ===================================================================
+        # STEPS 3-5: LED CONVERGENCE (DEFAULT) OR LEGACY CALIBRATION
+        # ===================================================================
+
+        logger.info("🔍 CRITICAL CHECKPOINT: Reached Steps 3-5 branching logic")
+        logger.info(f"   USE_LED_CONVERGENCE = {USE_LED_CONVERGENCE}")
+
+        if USE_LED_CONVERGENCE:
+            # === NEW PATH: LED CONVERGENCE WORKFLOW ===
+            logger.info("=" * 80)
+            logger.info("🚀 USING LED CONVERGENCE WORKFLOW (Steps 3-5)")
+            logger.info("=" * 80)
+            logger.info("")
+
+            # Get device config for servo positions
+            logger.info("📁 Getting device config for servo positions...")
+            device_config_det = resolve_device_config_for_detector(usb)
+            logger.info(f"   ✅ Device config loaded")
+
+            # Run LED convergence calibration (Steps 3-5 replacement)
+            logger.info("🚨 ABOUT TO CALL run_convergence_calibration_steps_3_to_5()")
+            convergence_result = run_convergence_calibration_steps_3_to_5(
+                usb=usb,
+                ctrl=ctrl,
+                detector_params=detector_params,
+                ch_list=ch_list,
+                wave_min_index=result.wave_min_index,
+                wave_max_index=result.wave_max_index,
+                device_config_det=device_config_det,
+                target_percent=0.40,  # 40% detector target
+                tolerance_percent=0.02,  # ±2% tolerance
+                strategy="intensity"  # Use LED normalization strategy
+            )
+
+            if not convergence_result['success']:
+                logger.error(f"❌ LED convergence failed: {convergence_result['error']}")
+                result.success = False
+                result.error_message = f"LED convergence calibration failed: {convergence_result['error']}"
+                return result
+
+            # Transfer convergence results to calibration result
+            result.weakest_channel = convergence_result['weakest_channel']
+            result.s_mode_intensity = convergence_result['s_mode_intensities']
+            result.p_mode_intensity = convergence_result['p_mode_intensities']
+            result.s_integration_time = convergence_result['s_integration_time']
+            result.p_integration_time = convergence_result['p_integration_time']
+
+            # Store raw spectra for Step 6 processing (match legacy format)
+            # Assign raw ROI spectra (retain legacy fields)
+            result.s_raw_data = convergence_result['s_pol_ref']  # Dict {ch: ndarray}
+            result.p_raw_data = convergence_result['p_pol_ref']  # Dict {ch: ndarray}
+            # Provide modern references (same ROI arrays)
+            result.s_pol_ref = convergence_result['s_pol_ref']
+            result.p_pol_ref = convergence_result['p_pol_ref']
+            # Dark spectrum: store ROI slice for additive reconstruction; keep max for QC
+            if convergence_result['dark_spectrum'] is not None:
+                full_dark = convergence_result['dark_spectrum']
+                result.dark_noise = full_dark[result.wave_min_index:result.wave_max_index]
+                try:
+                    result.qc_results['dark_max_counts'] = float(np.max(full_dark))
+                except Exception:
+                    pass
+            # Normalized LED metadata (alias to s_mode_intensity)
+            result.normalized_leds = dict(result.s_mode_intensity)
+            # Brightness ratios derived from mean ROI signals of S references
+            try:
+                s_means = {ch: float(np.mean(result.s_pol_ref[ch])) for ch in result.s_pol_ref}
+                weakest_mean = s_means.get(result.weakest_channel)
+                if weakest_mean and weakest_mean > 0:
+                    result.brightness_ratios = {ch: s_means[ch] / weakest_mean for ch in s_means}
+            except Exception:
+                pass
+            # LEDs calibrated compatibility field
+            result.leds_calibrated = dict(result.p_mode_intensity)
+            # Basic QC placeholders for Step 6 consumption
+            try:
+                for ch in result.s_pol_ref:
+                    sig_top50 = float(np.mean(np.sort(result.s_pol_ref[ch])[-50:])) if len(result.s_pol_ref[ch]) >= 50 else float(np.max(result.s_pol_ref[ch]))
+                    pct = sig_top50 / result.detector_max_counts * 100.0 if result.detector_max_counts else 0.0
+                    result.qc_results.setdefault('s_mode_top50', {})[ch] = sig_top50
+                    result.qc_results.setdefault('s_mode_top50_pct', {})[ch] = pct
+                for ch in result.p_pol_ref:
+                    sig_top50 = float(np.mean(np.sort(result.p_pol_ref[ch])[-50:])) if len(result.p_pol_ref[ch]) >= 50 else float(np.max(result.p_pol_ref[ch]))
+                    pct = sig_top50 / result.detector_max_counts * 100.0 if result.detector_max_counts else 0.0
+                    result.qc_results.setdefault('p_mode_top50', {})[ch] = sig_top50
+                    result.qc_results.setdefault('p_mode_top50_pct', {})[ch] = pct
+            except Exception:
+                pass
+
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("✅ LED CONVERGENCE COMPLETE - Proceeding to Step 6")
+            logger.info("=" * 80)
+            logger.info("")
+
+            # Skip old Steps 3-5 and jump directly to Step 6
+            # (Step 6 processes the raw spectra and performs QC)
+
+        else:
+            # === LEGACY PATH: Original Steps 3-5 ===
+            logger.info("=" * 80)
+            logger.info("⚠️  USING LEGACY CALIBRATION (Steps 3-5)")
+            logger.info("=" * 80)
+            logger.info("")
+
+            # ===================================================================
+            # STEP 3: LED BRIGHTNESS RANKING (WITH FIRMWARE RANK OPTIMIZATION)
+            # ===================================================================
+            logger.info("=" * 80)
+            logger.info("STEP 3: LED Brightness Ranking")
+            logger.info("=" * 80)
+
+            if progress_callback:
+                progress_callback("Step 3 of 6: Measuring channel brightness", 33)
 
         # Switch to S-mode with explicit servo pre-positioning using new servo_initiation_to_s
         logger.info("Switching to S-mode with servo pre-position (1° → S°)...")
@@ -1575,7 +1806,8 @@ def run_full_6step_calibration(
             logger.info(f"   Test region: Full SPR spectrum ({result.wave_data[0]:.1f}-{result.wave_data[-1]:.1f}nm)\n")
 
             channel_data = {}
-            SATURATION_THRESHOLD = int(0.95 * detector_params.saturation_level)
+            # Use detector saturation threshold from DetectorParams
+            SATURATION_THRESHOLD = int(0.95 * detector_params.saturation_threshold)
 
             # Measure each channel
             for ch in ch_list:
@@ -4190,3 +4422,441 @@ def run_fast_track_calibration(
 # Alternative calibration modes (e.g., LED=255 fixed + variable integration per channel)
 # branch at Step 3C but share identical Steps 4-6 logic with run_full_6step_calibration().
 # See Step 3C comment for branching anchor point.
+
+
+# =============================================================================
+# LED CONVERGENCE CALIBRATION (Steps 3-5 Replacement)
+# =============================================================================
+
+def run_convergence_calibration_steps_3_to_5(
+    usb,
+    ctrl,
+    detector_params,
+    ch_list,
+    wave_min_index,
+    wave_max_index,
+    device_config_det,
+    target_percent=0.40,
+    tolerance_percent=0.02,
+    strategy="intensity"
+):
+    """
+    Replace Steps 3-5 using LED convergence workflow.
+
+    Returns raw spectra (S-pol, P-pol, dark) for Step 6 processing.
+
+    Workflow:
+    1. Measure channel brightness @ LED=255 (Step 3A replacement)
+    2. S-mode: LEDconverge → capture S-pol reference
+    3. Servo to P-mode
+    4. P-mode: LEDconverge → capture P-pol reference
+    5. LEDs off → capture dark spectrum
+
+    Args:
+        usb: Spectrometer object
+        ctrl: Controller object
+        detector_params: Detector specifications (DetectorParams)
+        ch_list: List of channels to calibrate (e.g., ['a', 'b', 'c', 'd'])
+        wave_min_index: Start index of ROI
+        wave_max_index: End index of ROI
+        device_config_det: Device configuration dict with servo positions
+        target_percent: Target signal as % of detector max (default 40%)
+        tolerance_percent: Acceptable deviation (default ±2%)
+        strategy: "intensity" or "time" normalization strategy
+
+    Returns:
+        dict with:
+        - success: bool
+        - s_mode_intensities: dict {ch: int}
+        - p_mode_intensities: dict {ch: int}
+        - s_integration_time: float (ms)
+        - p_integration_time: float (ms)
+        - s_pol_ref: dict {ch: ndarray} - S-mode RAW spectra (ROI only)
+        - p_pol_ref: dict {ch: ndarray} - P-mode RAW spectra (ROI only)
+                - dark_spectrum: ndarray - Dark scan (full detector). Downstream uses ROI slice
+                    aligned to [wave_min_index:wave_max_index] for dark subtraction.
+        - weakest_channel: str - Weakest channel ID
+        - error: str (if failed)
+    """
+    # CRITICAL: Log IMMEDIATELY to confirm function is called
+    logger.info("="*80)
+    logger.info("🚨 CONVERGENCE FUNCTION CALLED - STARTING LED CONVERGENCE")
+    logger.info("="*80)
+
+    try:
+        from utils.LEDCONVERGENCE import run_convergence
+        logger.info("✅ LEDCONVERGENCE import successful")
+    except Exception as e:
+        logger.error(f"❌ LEDCONVERGENCE import FAILED: {e}")
+        return {
+            'success': False,
+            'error': f'Import failed: {e}',
+            's_mode_intensities': {},
+            'p_mode_intensities': {},
+            's_integration_time': None,
+            'p_integration_time': None,
+            's_pol_ref': {},
+            'p_pol_ref': {},
+            'dark_spectrum': None,
+            'weakest_channel': None
+        }
+
+    import time
+    import numpy as np
+
+    logger.info("="*80)
+    logger.info("🔄 LED CONVERGENCE CALIBRATION (Steps 3-5 Replacement)")
+    logger.info("="*80)
+
+    result = {
+        'success': False,
+        's_mode_intensities': {},
+        'p_mode_intensities': {},
+        's_integration_time': None,
+        'p_integration_time': None,
+        's_pol_ref': {},
+        'p_pol_ref': {},
+        'dark_spectrum': None,
+        'weakest_channel': None,
+        'error': None
+    }
+
+    try:
+        # === STEP 3A: Measure channel brightness @ LED=255 ===
+        logger.info("📊 Step 3A: Measuring channel brightness @ LED=255...")
+        logger.info("   🔍 LED VERIFICATION: Checking that LEDs are working...")
+        channel_measurements = {}
+
+        for ch in ch_list:
+            ctrl.set_intensity(ch, 255)
+            time.sleep(0.1)
+
+            spectrum = usb.read_intensity()
+            roi = spectrum[wave_min_index:wave_max_index]
+            mean_val = np.mean(roi)
+            max_val = np.max(roi)
+
+            channel_measurements[ch] = (mean_val, max_val)
+            ctrl.set_intensity(ch, 0)
+
+            logger.info(f"   {ch.upper()}: {mean_val:.0f} counts (max={max_val:.0f})")
+
+        # === LED VERIFICATION: Check that LEDs actually produced light ===
+        MIN_LED_COUNTS = 4000  # Minimum expected counts at LED=255
+
+        all_channels_dark = all(channel_measurements[ch][0] < MIN_LED_COUNTS for ch in ch_list)
+        if all_channels_dark:
+            result['error'] = f"❌ LED VERIFICATION FAILED: All channels produced <{MIN_LED_COUNTS} counts at LED=255. Check LED hardware/connections!"
+            logger.error("")
+            logger.error("="*80)
+            logger.error(result['error'])
+            for ch in ch_list:
+                logger.error(f"   {ch.upper()}: {channel_measurements[ch][0]:.0f} counts (expected >{MIN_LED_COUNTS})")
+            logger.error("="*80)
+            logger.error("")
+            return result
+
+        # Check for individual weak/dead LEDs
+        weak_leds = [ch for ch in ch_list if channel_measurements[ch][0] < MIN_LED_COUNTS]
+        if weak_leds:
+            result['error'] = f"❌ LED VERIFICATION FAILED: Weak/dead LEDs detected"
+            logger.error("")
+            logger.error("="*80)
+            logger.error(result['error'])
+            for ch in weak_leds:
+                logger.error(f"   {ch.upper()}: {channel_measurements[ch][0]:.0f} counts (expected >{MIN_LED_COUNTS})")
+            logger.error("="*80)
+            logger.error("")
+            return result
+
+        weakest_ch = min(channel_measurements.keys(),
+                         key=lambda c: channel_measurements[c][0])
+        result['weakest_channel'] = weakest_ch
+
+        logger.info("")
+        logger.info("   ✅ LED VERIFICATION PASSED - All channels producing >{} counts".format(MIN_LED_COUNTS))
+        logger.info(f"   Weakest: {weakest_ch.upper()} (mean={channel_measurements[weakest_ch][0]:.0f})")
+        logger.info("")
+
+        # === SERVO INITIALIZATION: Move to S-mode with explicit pre-positioning ===
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🔧 SERVO INITIALIZATION & DIAGNOSTICS")
+        logger.info("=" * 80)
+
+        # === COMPREHENSIVE SERVO DIAGNOSTICS ===
+        logger.info("")
+        logger.info("📋 CONTROLLER STATUS:")
+        logger.info(f"   Type: {type(ctrl).__name__}")
+        logger.info(f"   Has servo_move_calibration_only(): {hasattr(ctrl, 'servo_move_calibration_only')}")
+        logger.info(f"   Has set_mode(): {hasattr(ctrl, 'set_mode')}")
+
+        # Check serial connection
+        serial_ok = False
+        port_name = "Unknown"
+        if hasattr(ctrl, '_ser') and ctrl._ser is not None:
+            try:
+                serial_ok = ctrl._ser.is_open if hasattr(ctrl._ser, 'is_open') else False
+                port_name = ctrl._ser.port if hasattr(ctrl._ser, 'port') else "Unknown"
+                logger.info(f"   Serial port: {port_name}")
+                logger.info(f"   Serial port open: {serial_ok}")
+            except Exception as e:
+                logger.error(f"   ❌ Serial port check failed: {e}")
+                serial_ok = False
+        else:
+            logger.error("   ❌ No serial port object (_ser is None or missing)")
+
+        # Check controller connection
+        connected = False
+        if hasattr(ctrl, 'is_connected'):
+            try:
+                connected = ctrl.is_connected()
+                logger.info(f"   Controller connected: {connected}")
+            except Exception as e:
+                logger.error(f"   ❌ Connection check failed: {e}")
+        else:
+            logger.warning("   ⚠️  No is_connected() method")
+
+        # CRITICAL CHECK
+        logger.info("")
+        if not serial_ok:
+            logger.error("🚨 CRITICAL: Serial port NOT open - servo commands will FAIL!")
+        if not connected:
+            logger.error("🚨 CRITICAL: Controller NOT connected - servo commands will FAIL!")
+        if not hasattr(ctrl, 'servo_move_calibration_only'):
+            logger.error("🚨 CRITICAL: servo_move_calibration_only() method MISSING!")
+
+        if serial_ok and connected:
+            logger.info("✅ All servo prerequisites OK - ready to move servo")
+        logger.info("")
+
+        # Turn off LEDs for safety
+        logger.info("🔒 Safety: Turning off all LEDs before servo movement...")
+        ctrl.turn_off_channels()
+        time.sleep(0.1)
+        logger.info("   ✅ All LEDs OFF")
+
+        # Get servo positions from device config
+        servo_positions = load_oem_polarizer_positions_local(device_config_det, usb.serial_number if hasattr(usb, 'serial_number') else 'UNKNOWN')
+        s_pos = servo_positions['s_position']
+        p_pos = servo_positions['p_position']
+
+        logger.info(f"📍 Servo positions from device_config:")
+        logger.info(f"   S-position: {s_pos}°")
+        logger.info(f"   P-position: {p_pos}°")
+
+        # Park to 1° (backlash removal)
+        if hasattr(ctrl, 'servo_move_calibration_only'):
+            logger.info("")
+            logger.info("🔄 Step 1: Parking polarizer to 1° (backlash removal)...")
+            logger.info("   👂 LISTEN: You should HEAR the servo motor move now...")
+            park_ok = ctrl.servo_move_calibration_only(s=1, p=1)
+            time.sleep(1.0)  # Increased wait time for audible confirmation
+            if park_ok:
+                logger.info("   ✅ Parked to 1° - Did you HEAR it move?")
+            else:
+                logger.warning("   ⚠️  Park command did not confirm (continuing anyway)")
+
+            # Move explicitly to S/P positions
+            logger.info("")
+            logger.info(f"🔄 Step 2: Moving to S={s_pos}°, P={p_pos}°...")
+            logger.info("   👂 LISTEN: You should HEAR the servo move again...")
+            move_ok = ctrl.servo_move_calibration_only(s=int(s_pos), p=int(p_pos))
+            time.sleep(1.0)  # Increased wait time for audible confirmation
+            if move_ok:
+                logger.info(f"   ✅ Moved to S={s_pos}°, P={p_pos}° - Did you HEAR it move?")
+            else:
+                logger.warning(f"   ⚠️  Move command did not confirm (continuing anyway)")
+        else:
+            logger.warning("   ⚠️  Controller lacks servo_move_calibration_only - skipping explicit pre-positioning")
+            logger.error("   🚨 SERVO CANNOT MOVE - This is a critical problem!")
+
+        # Lock S-mode via firmware
+        logger.info("")
+        logger.info("🔒 Step 3: Locking S-mode via firmware (ss command)...")
+        logger.info("   👂 LISTEN: You might HEAR a small servo adjustment...")
+        mode_ok = ctrl.set_mode('s')
+        time.sleep(0.5)
+        if mode_ok:
+            logger.info("   ✅ S-mode locked via firmware")
+        else:
+            logger.warning("   ⚠️  set_mode('s') did not confirm (continuing anyway)")
+
+        logger.info("=" * 80)
+        logger.info("✅ SERVO INITIALIZATION COMPLETE - S-mode active")
+        logger.info("=" * 80)
+        logger.info("")
+
+        # === STEP 3B-3C: S-mode LED convergence ===
+        logger.info(f"   Target: {target_percent*100:.0f}% detector, tolerance: ±{tolerance_percent*100:.0f}%")
+        logger.info(f"   Strategy: {strategy}")
+        logger.info("")
+
+        s_shared_int, s_per_ch_results, s_ok = run_convergence(
+            usb=usb,
+            ctrl=ctrl,
+            ch_list=ch_list,
+            acquire_raw_spectrum_fn=acquire_raw_spectrum,
+            roi_signal_fn=roi_signal,
+            detector_params=detector_params,
+            wave_min_index=wave_min_index,
+            wave_max_index=wave_max_index,
+            strategy=strategy,
+            initial_integration_ms=70.0,
+            target_percent=target_percent,
+            tolerance_percent=tolerance_percent,
+            tighten_final=False,
+            use_batch_command=CONVERGENCE_USE_BATCH_COMMAND,
+            logger=logger
+        )
+
+        if not s_ok:
+            result['error'] = f"S-mode convergence failed: Did not converge to target"
+            logger.error(f"❌ {result['error']}")
+            return result
+
+        # Extract LED intensities and integration time from results
+        result['s_mode_intensities'] = {ch: int(s_per_ch_results[ch]['final_led']) for ch in ch_list}
+        result['s_integration_time'] = s_shared_int if s_shared_int is not None else s_per_ch_results[ch_list[0]]['final_integration_ms']
+
+        logger.info("")
+        logger.info(f"   ✅ S-mode convergence complete:")
+        logger.info(f"      Integration time: {result['s_integration_time']:.1f}ms")
+        for ch in ch_list:
+            logger.info(f"      {ch.upper()}: LED={result['s_mode_intensities'][ch]}")
+
+        # === STEP 4: Capture S-pol reference (RAW) ===
+        logger.info("")
+        logger.info("📸 Step 4: Capturing S-pol reference spectra...")
+        usb.set_integration(result['s_integration_time'])
+        time.sleep(0.1)
+
+        for ch in ch_list:
+            ctrl.set_intensity(ch, result['s_mode_intensities'][ch])
+            time.sleep(0.05)
+            full = usb.read_intensity()
+            result['s_pol_ref'][ch] = full[wave_min_index:wave_max_index]
+            ctrl.set_intensity(ch, 0)
+
+        logger.info(f"   ✅ S-pol ref captured: {len(result['s_pol_ref'])} channels")
+
+        # === STEP 5A: P-mode servo movement ===
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🔧 SERVO MOVEMENT: Switching from S-mode to P-mode")
+        logger.info("=" * 80)
+
+        # Turn off LEDs for safety
+        logger.info("🔒 Safety: Turning off all LEDs before servo movement...")
+        ctrl.turn_off_channels()
+        time.sleep(0.1)
+        logger.info("   ✅ All LEDs OFF")
+
+        # Park to 1° (backlash removal)
+        if hasattr(ctrl, 'servo_move_calibration_only'):
+            logger.info("🔄 Step 1: Parking polarizer to 1° (backlash removal)...")
+            park_ok = ctrl.servo_move_calibration_only(s=1, p=1)
+            time.sleep(0.5)
+            if park_ok:
+                logger.info("   ✅ Parked to 1°")
+            else:
+                logger.warning("   ⚠️  Park command did not confirm (continuing anyway)")
+
+            # Move explicitly to P position (from current S position)
+            logger.info(f"🔄 Step 2: Moving from S={s_pos}° to P={p_pos}°...")
+            move_ok = ctrl.servo_move_calibration_only(s=int(s_pos), p=int(p_pos))
+            time.sleep(0.5)
+            if move_ok:
+                logger.info(f"   ✅ Moved to P={p_pos}°")
+            else:
+                logger.warning(f"   ⚠️  Move command did not confirm (continuing anyway)")
+        else:
+            logger.warning("   ⚠️  Controller lacks servo_move_calibration_only - using simple mode switch")
+
+        # Lock P-mode via firmware
+        logger.info("🔒 Step 3: Locking P-mode via firmware (pp command)...")
+        mode_ok = ctrl.set_mode('p')
+        time.sleep(0.3)
+        if mode_ok:
+            logger.info("   ✅ P-mode locked via firmware")
+        else:
+            logger.warning("   ⚠️  set_mode('p') did not confirm (continuing anyway)")
+
+        logger.info("=" * 80)
+        logger.info("✅ SERVO MOVEMENT COMPLETE - P-mode active")
+        logger.info("=" * 80)
+        logger.info("")
+
+        # === STEP 5B: P-mode LED convergence ===
+        logger.info("🎯 Step 5: Running LED convergence in P-mode...")
+        logger.info(f"   Starting from S-mode LED values")
+        logger.info("")
+
+        p_shared_int, p_per_ch_results, p_ok = run_convergence(
+            usb=usb,
+            ctrl=ctrl,
+            ch_list=ch_list,
+            acquire_raw_spectrum_fn=acquire_raw_spectrum,
+            roi_signal_fn=roi_signal,
+            detector_params=detector_params,
+            wave_min_index=wave_min_index,
+            wave_max_index=wave_max_index,
+            strategy=strategy,
+            initial_integration_ms=result['s_integration_time'],  # Start from S-mode integration time
+            target_percent=target_percent,
+            tolerance_percent=tolerance_percent,
+            tighten_final=False,
+            use_batch_command=CONVERGENCE_USE_BATCH_COMMAND,
+            logger=logger
+        )
+
+        if not p_ok:
+            result['error'] = f"P-mode convergence failed: Did not converge to target"
+            logger.error(f"❌ {result['error']}")
+            return result
+
+        # Extract LED intensities and integration time from results
+        result['p_mode_intensities'] = {ch: int(p_per_ch_results[ch]['final_led']) for ch in ch_list}
+        result['p_integration_time'] = p_shared_int if p_shared_int is not None else p_per_ch_results[ch_list[0]]['final_integration_ms']
+
+        logger.info("")
+        logger.info(f"   ✅ P-mode convergence complete:")
+        logger.info(f"      Integration time: {result['p_integration_time']:.1f}ms")
+        for ch in ch_list:
+            logger.info(f"      {ch.upper()}: LED={result['p_mode_intensities'][ch]}")
+
+        # === STEP 5B: Capture P-pol reference (RAW) ===
+        logger.info("")
+        logger.info("📸 Step 5B: Capturing P-pol reference spectra...")
+        usb.set_integration(result['p_integration_time'])
+        time.sleep(0.1)
+
+        for ch in ch_list:
+            ctrl.set_intensity(ch, result['p_mode_intensities'][ch])
+            time.sleep(0.05)
+            full = usb.read_intensity()
+            result['p_pol_ref'][ch] = full[wave_min_index:wave_max_index]
+            ctrl.set_intensity(ch, 0)
+
+        logger.info(f"   ✅ P-pol ref captured: {len(result['p_pol_ref'])} channels")
+
+        # === DARK SPECTRUM (capture now, used in Step 6) ===
+        logger.info("")
+        logger.info("📸 Capturing dark spectrum (LEDs OFF)...")
+        time.sleep(0.2)
+        result['dark_spectrum'] = usb.read_intensity()
+
+        # === SUCCESS ===
+        result['success'] = True
+        logger.info("")
+        logger.info("="*80)
+        logger.info("✅ LED CONVERGENCE CALIBRATION COMPLETE (Steps 3-5)")
+        logger.info("="*80)
+        logger.info("")
+
+        return result
+
+    except Exception as e:
+        logger.exception(f"❌ Convergence calibration error: {e}")
+        result['error'] = str(e)
+        return result
