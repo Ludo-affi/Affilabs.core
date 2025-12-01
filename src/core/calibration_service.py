@@ -308,6 +308,25 @@ class CalibrationService(QObject):
         """Main calibration routine (runs in background thread)."""
         import sys
         import io
+        import logging
+        from datetime import datetime
+        # File logger to capture full calibration thread output (headless-safe)
+        log_handler = None
+        try:
+            os.makedirs("logs", exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            logfile = os.path.join("logs", f"calibration_{timestamp}.log")
+            log_handler = logging.FileHandler(logfile, encoding="utf-8")
+            log_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s')
+            log_handler.setFormatter(formatter)
+            logger.addHandler(log_handler)
+            logger.info(f"[CAL] File logging enabled → {logfile}")
+        except Exception as e:
+            try:
+                logger.warning(f"[CAL] Could not initialize file logger: {e}")
+            except Exception:
+                pass
 
         # Do NOT redirect stdout/stderr to logger to avoid recursion deadlocks.
         # Keep original streams so print() from dependencies remains visible.
@@ -456,6 +475,14 @@ class CalibrationService(QObject):
             self._running = False
             logger.info("Calibration service reset - UI should be re-enabled")
             # No stream redirection performed; nothing to restore.
+            # Detach file handler cleanly so subsequent runs create fresh logs
+            try:
+                if log_handler is not None:
+                    logger.info("[CAL] Closing file logger")
+                    logger.removeHandler(log_handler)
+                    log_handler.close()
+            except Exception:
+                pass
 
     def _evaluate_sensor_ready(self, calibration_data: CalibrationData) -> bool:
         """Evaluate if sensor is ready based on transmission QC.

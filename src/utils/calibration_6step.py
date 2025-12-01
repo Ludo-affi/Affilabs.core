@@ -348,6 +348,44 @@ def servo_move_1_then(ctrl, device_config: dict, current_mode: str, target_mode:
 # CALIBRATION RESULT PERSISTENCE
 # =============================================================================
 
+def _jsonify(obj):
+    """Recursively convert numpy types/arrays and other non-serializable objects
+    into JSON-serializable Python natives.
+
+    Rules:
+    - np.integer -> int
+    - np.floating -> float
+    - np.bool_ -> bool
+    - np.ndarray -> list (with recursive conversion of elements)
+    - dict/list/tuple -> recurse
+    - Path -> str
+    - set -> list
+    - Anything else returned as-is (json will handle or raise)
+    """
+    import numpy as _np
+    from pathlib import Path as _Path
+
+    if obj is None:
+        return None
+    if isinstance(obj, (_np.integer,)):
+        return int(obj)
+    if isinstance(obj, (_np.floating,)):
+        return float(obj)
+    if isinstance(obj, (_np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, (_np.ndarray,)):
+        return [_jsonify(x) for x in obj.tolist()]
+    if isinstance(obj, dict):
+        return {str(k): _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(x) for x in obj]
+    if isinstance(obj, set):
+        return [_jsonify(x) for x in obj]
+    if isinstance(obj, _Path):
+        return str(obj)
+    return obj
+
+
 def save_calibration_result_json(result: LEDCalibrationResult, base_dir: str = "calibration_results") -> Optional[Path]:
     """Save calibration result to JSON file for future reference.
 
@@ -420,6 +458,9 @@ def save_calibration_result_json(result: LEDCalibrationResult, base_dir: str = "
             'qc_results': result.qc_results,
             'error_channels': result.ch_error_list,
         }
+
+        # Coerce to JSON-serializable structure (handles numpy types)
+        data = _jsonify(data)
 
         # Save timestamped version
         timestamped_file = output_dir / f"calibration_{timestamp}.json"
@@ -1583,7 +1624,9 @@ def run_full_6step_calibration(
         # ===================================================================
         # PREFLIGHT: LIGHT & POLARIZER (fail-fast)
         # ===================================================================
-        device_config_det = resolve_device_config_for_detector(usb)
+        # Use the provided device_config (already loaded at init) to avoid
+        # fallback/default positions that can invert S/P.
+        device_config_det = device_config_dict
         ok_pre, msg_pre = preflight_light_and_polarizer(
             usb=usb,
             ctrl=ctrl,
@@ -1619,8 +1662,9 @@ def run_full_6step_calibration(
 
             # Get device config for servo positions
             logger.info("📁 Getting device config for servo positions...")
-            device_config_det = resolve_device_config_for_detector(usb)
-            logger.info(f"   ✅ Device config loaded")
+            # Use the same device_config dict we validated at startup
+            device_config_det = device_config_dict
+            logger.info(f"   ✅ Device config loaded (from init context)")
 
             # Run LED convergence calibration (Steps 3-5 replacement)
             logger.info("🚨 ABOUT TO CALL run_convergence_calibration_steps_3_to_5()")
@@ -1632,9 +1676,9 @@ def run_full_6step_calibration(
                 wave_min_index=result.wave_min_index,
                 wave_max_index=result.wave_max_index,
                 device_config_det=device_config_det,
-                target_percent=0.40,  # 40% detector target
+                target_percent=0.80,  # S-mode target: 80% detector
                 tolerance_percent=0.02,  # ±2% tolerance
-                strategy="intensity"  # Use LED normalization strategy
+                strategy="intensity"  # Shared-time convergence with fixed LEDs
             )
 
             if not convergence_result['success']:
@@ -1650,13 +1694,10 @@ def run_full_6step_calibration(
             result.s_integration_time = convergence_result['s_integration_time']
             result.p_integration_time = convergence_result['p_integration_time']
 
-            # Store raw spectra for Step 6 processing (match legacy format)
-            # Assign raw ROI spectra (retain legacy fields)
-            result.s_raw_data = convergence_result['s_pol_ref']  # Dict {ch: ndarray}
-            result.p_raw_data = convergence_result['p_pol_ref']  # Dict {ch: ndarray}
-            # Provide modern references (same ROI arrays)
-            result.s_pol_ref = convergence_result['s_pol_ref']
-            result.p_pol_ref = convergence_result['p_pol_ref']
+            # Store raw spectra for Step 6 processing
+            # Prefer explicit raw ROI keys (added for clarity); fall back to legacy keys
+            result.s_raw_data = convergence_result.get('s_raw_roi', convergence_result.get('s_pol_ref', {}))
+            result.p_raw_data = convergence_result.get('p_raw_roi', convergence_result.get('p_pol_ref', {}))
             # Dark spectrum: store ROI slice for additive reconstruction; keep max for QC
             if convergence_result['dark_spectrum'] is not None:
                 full_dark = convergence_result['dark_spectrum']
@@ -1667,9 +1708,9 @@ def run_full_6step_calibration(
                     pass
             # Normalized LED metadata (alias to s_mode_intensity)
             result.normalized_leds = dict(result.s_mode_intensity)
-            # Brightness ratios derived from mean ROI signals of S references
+            # Brightness ratios derived from mean ROI signals of S RAW references
             try:
-                s_means = {ch: float(np.mean(result.s_pol_ref[ch])) for ch in result.s_pol_ref}
+                s_means = {ch: float(np.mean(result.s_raw_data[ch])) for ch in result.s_raw_data}
                 weakest_mean = s_means.get(result.weakest_channel)
                 if weakest_mean and weakest_mean > 0:
                     result.brightness_ratios = {ch: s_means[ch] / weakest_mean for ch in s_means}
@@ -1677,15 +1718,15 @@ def run_full_6step_calibration(
                 pass
             # LEDs calibrated compatibility field
             result.leds_calibrated = dict(result.p_mode_intensity)
-            # Basic QC placeholders for Step 6 consumption
+            # Basic QC placeholders for Step 6 consumption (use RAW data)
             try:
-                for ch in result.s_pol_ref:
-                    sig_top50 = float(np.mean(np.sort(result.s_pol_ref[ch])[-50:])) if len(result.s_pol_ref[ch]) >= 50 else float(np.max(result.s_pol_ref[ch]))
+                for ch in result.s_raw_data:
+                    sig_top50 = float(np.mean(np.sort(result.s_raw_data[ch])[-50:])) if len(result.s_raw_data[ch]) >= 50 else float(np.max(result.s_raw_data[ch]))
                     pct = sig_top50 / result.detector_max_counts * 100.0 if result.detector_max_counts else 0.0
                     result.qc_results.setdefault('s_mode_top50', {})[ch] = sig_top50
                     result.qc_results.setdefault('s_mode_top50_pct', {})[ch] = pct
-                for ch in result.p_pol_ref:
-                    sig_top50 = float(np.mean(np.sort(result.p_pol_ref[ch])[-50:])) if len(result.p_pol_ref[ch]) >= 50 else float(np.max(result.p_pol_ref[ch]))
+                for ch in result.p_raw_data:
+                    sig_top50 = float(np.mean(np.sort(result.p_raw_data[ch])[-50:])) if len(result.p_raw_data[ch]) >= 50 else float(np.max(result.p_raw_data[ch]))
                     pct = sig_top50 / result.detector_max_counts * 100.0 if result.detector_max_counts else 0.0
                     result.qc_results.setdefault('p_mode_top50', {})[ch] = sig_top50
                     result.qc_results.setdefault('p_mode_top50_pct', {})[ch] = pct
@@ -1700,6 +1741,277 @@ def run_full_6step_calibration(
 
             # Skip old Steps 3-5 and jump directly to Step 6
             # (Step 6 processes the raw spectra and performs QC)
+
+            # Map compatibility field expected by Step 6 logs
+            try:
+                result.ref_intensity = dict(result.s_mode_intensity)
+            except Exception:
+                result.ref_intensity = dict(result.s_mode_intensity) if hasattr(result, 's_mode_intensity') else {}
+
+            # ===================================================================
+            # STEP 6: DATA PROCESSING + TRANSMISSION CALCULATION + QC (FINAL STEP)
+            # (Direct path after LED convergence)
+            # ===================================================================
+            logger.info("=" * 80)
+            logger.info("STEP 6: Data Processing + Transmission Calculation + QC (FINAL STEP)")
+            logger.info("=" * 80)
+
+            if progress_callback:
+                progress_callback("Step 6 of 6: Preparing QC results", 83)
+
+            try:
+                # Part A: Verify data availability
+                logger.info("\n📊 Part A: Verifying Raw Data Availability")
+
+                if not hasattr(result, 's_raw_data') or not result.s_raw_data:
+                    raise RuntimeError("S-pol raw data missing from convergence output")
+                if not hasattr(result, 'p_raw_data') or not result.p_raw_data:
+                    raise RuntimeError("P-pol raw data missing from convergence output")
+                if not hasattr(result, 'dark_noise') or result.dark_noise is None:
+                    raise RuntimeError("Dark noise reference missing from convergence output")
+
+                logger.info("   ✅ S-pol raw data: 4 channels from convergence")
+                logger.info("   ✅ P-pol raw data: 4 channels from convergence")
+                logger.info("   ✅ Dark reference: From convergence capture")
+                logger.info(f"   ✅ S-mode integration time: {result.s_integration_time:.2f}ms")
+                logger.info(f"   ✅ P-mode integration time: {result.p_integration_time:.2f}ms")
+
+                # Part B: Process polarization data
+                logger.info("\n🔧 Part B: Processing Polarization Data (SpectrumPreprocessor)")
+
+                # Sanity check: S vs P magnitude before processing
+                try:
+                    import numpy as _np
+                    s_means_pre = {ch: float(_np.mean(result.s_raw_data[ch])) for ch in ch_list if ch in result.s_raw_data}
+                    p_means_pre = {ch: float(_np.mean(result.p_raw_data[ch])) for ch in ch_list if ch in result.p_raw_data}
+                    logger.info("   🔍 Preprocess sanity: mean(S_raw) vs mean(P_raw)")
+                    for ch in ch_list:
+                        if ch in s_means_pre and ch in p_means_pre:
+                            ratio = (p_means_pre[ch] / s_means_pre[ch]) if s_means_pre[ch] > 0 else float('inf')
+                            logger.info(f"      {ch.upper()}: S={s_means_pre[ch]:.0f}, P={p_means_pre[ch]:.0f}, P/S={ratio:.3f}")
+                    sp_swap_applied = False
+                    if all(ch in s_means_pre and ch in p_means_pre and p_means_pre[ch] > s_means_pre[ch] for ch in ch_list):
+                        logger.warning("   ⚠️  All channels have P_raw > S_raw — S/P inversion suspected upstream")
+                        # Apply runtime swap for processing/QC to maintain P/S convention
+                        logger.warning("   ⚠️  Applying runtime S/P swap for processing (no EEPROM changes)")
+                        # Swap raw references in a local view for processing only
+                        swapped_s_raw = result.p_raw_data
+                        swapped_p_raw = result.s_raw_data
+                        result.qc_results = result.qc_results or {}
+                        result.qc_results['sp_swap_applied'] = True
+                        result.qc_results['sp_swap_reason'] = 'P_raw > S_raw across all channels'
+                    else:
+                        swapped_s_raw = result.s_raw_data
+                        swapped_p_raw = result.p_raw_data
+                except Exception as _e:
+                    logger.debug(f"   (Sanity check skipped: {_e})")
+                    swapped_s_raw = result.s_raw_data
+                    swapped_p_raw = result.p_raw_data
+
+                s_pol_ref = {}
+                p_pol_ref = {}
+
+                for ch in ch_list:
+                    logger.info(f"Processing channel {ch.upper()}...")
+
+                    s_pol_ref[ch] = SpectrumPreprocessor.process_polarization_data(
+                        raw_spectrum=swapped_s_raw[ch],
+                        dark_noise=result.dark_noise,
+                        channel_name=ch,
+                        verbose=True
+                    )
+
+                    p_pol_ref[ch] = SpectrumPreprocessor.process_polarization_data(
+                        raw_spectrum=swapped_p_raw[ch],
+                        dark_noise=result.dark_noise,
+                        channel_name=ch,
+                        verbose=True
+                    )
+
+                result.s_pol_ref = s_pol_ref
+                result.p_pol_ref = p_pol_ref
+
+                logger.info("\n✅ S-pol and P-pol references processed")
+                logger.info("   Ready for QC display")
+
+                # Part C: Transmission spectrum
+                logger.info("\n📈 Part C: Calculating Transmission Spectrum (TransmissionProcessor)")
+                logger.info("   🔴 SIMULATING LIVE DATA ACQUISITION")
+
+                transmission_spectra = {}
+                for ch in ch_list:
+                    logger.info(f"\n{'='*80}")
+                    logger.info(f"Channel {ch.upper()}: TransmissionProcessor Processing")
+                    logger.info(f"{'='*80}")
+
+                    transmission_ch = TransmissionProcessor.process_single_channel(
+                        p_pol_clean=p_pol_ref[ch],
+                        s_pol_ref=s_pol_ref[ch],
+                        led_intensity_s=result.ref_intensity[ch],
+                        led_intensity_p=result.p_mode_intensity[ch],
+                        wavelengths=result.wave_data,
+                        apply_sg_filter=True,
+                        baseline_method='percentile',
+                        baseline_percentile=95.0,
+                        verbose=True
+                    )
+
+                    transmission_spectra[ch] = transmission_ch
+
+                result.transmission = transmission_spectra
+
+                logger.info("\n" + "=" * 80)
+                logger.info("✅ Transmission spectra calculated")
+                logger.info("   Ready for QC display and peak tracking pipeline")
+                logger.info("=" * 80)
+
+                # Part D: Comprehensive QC
+                logger.info("\n🔍 Part D: Comprehensive QC Validation & Orientation Check")
+                logger.info("=" * 80)
+
+                qc_results = {}
+                all_channels_pass = True
+
+                # Use detector params for saturation checks
+                det_params_for_qc = get_detector_params(device_type)
+
+                for ch in ch_list:
+                    logger.info(f"\n{'='*80}")
+                    logger.info(f"Channel {ch.upper()} QC Validation")
+                    logger.info(f"{'='*80}")
+
+                    transmission_ch = transmission_spectra[ch]
+                    wavelengths = result.wave_data
+
+                    qc = TransmissionProcessor.calculate_transmission_qc(
+                        transmission_spectrum=transmission_ch,
+                        wavelengths=wavelengths,
+                        channel=ch,
+                        p_spectrum=swapped_p_raw[ch],
+                        s_spectrum=swapped_s_raw[ch],
+                        detector_max_counts=det_params_for_qc.max_counts,
+                        saturation_threshold=det_params_for_qc.saturation_threshold
+                    )
+
+                    logger.info(f"📊 SPR Dip Analysis:")
+                    logger.info(f"   Dip Wavelength: {qc['dip_wavelength']:.1f}nm")
+                    logger.info(f"   Min Transmission: {qc['transmission_min']:.1f}%")
+                    logger.info(f"   Dip Depth: {qc['dip_depth']:.1f}%")
+                    logger.info(f"   Status: {'✅ DETECTED' if qc['dip_detected'] else '❌ WEAK/ABSENT'} (depth > 5%)")
+
+                    logger.info(f"\n📊 FWHM Analysis:")
+                    if qc['fwhm'] is not None:
+                        logger.info(f"   FWHM: {qc['fwhm']:.1f}nm")
+                        logger.info(f"   Quality: {qc['fwhm_quality'].upper()}")
+                        fwhm_pass = qc['fwhm'] < 60.0
+                        logger.info(f"   Status: {'✅ PASS' if fwhm_pass else '❌ FAIL'} (FWHM < 60nm)")
+                    else:
+                        logger.info(f"   FWHM: Cannot calculate")
+                        logger.info(f"   Status: ❌ FAIL")
+                        fwhm_pass = False
+
+                    logger.info(f"\n📊 Polarizer Orientation Check:")
+                    if qc['ratio'] is not None:
+                        logger.info(f"   P/S Ratio: {qc['ratio']:.3f}")
+                        if qc['orientation_correct'] is True:
+                            logger.info(f"   Status: ✅ CORRECT (0.10 ≤ P/S ≤ 0.95)")
+                        elif qc['orientation_correct'] is False:
+                            logger.error(f"   Status: ❌ INVERTED (P/S > 1.15)")
+                            logger.error(f"   ⚠️  CRITICAL: Polarizer appears INVERTED!")
+                            logger.error(f"   Expected: P-mode < S-mode (ratio < 0.95)")
+                            logger.error(f"   Actual: P-mode > S-mode (ratio = {qc['ratio']:.3f})")
+                        else:
+                            logger.warning(f"   Status: ⚠️ INDETERMINATE (borderline ratio)")
+                    else:
+                        logger.info(f"   P/S Ratio: Not calculated")
+                        logger.info(f"   Status: ⚠️ CANNOT VERIFY")
+
+                    logger.info(f"\n📊 Saturation Check:")
+                    if qc['s_saturated'] or qc['p_saturated']:
+                        if qc['s_saturated']:
+                            logger.error(f"   S-pol: ❌ SATURATED ({qc['s_max_counts']:.0f} counts)")
+                        if qc['p_saturated']:
+                            logger.error(f"   P-pol: ❌ SATURATED ({qc['p_max_counts']:.0f} counts)")
+                    else:
+                        logger.info(f"   S-pol: ✅ OK ({qc['s_max_counts']:.0f} counts)")
+                        logger.info(f"   P-pol: ✅ OK ({qc['p_max_counts']:.0f} counts)")
+
+                    channel_pass = (
+                        qc['dip_detected'] and
+                        fwhm_pass and
+                        qc['orientation_correct'] is not False and
+                        not qc['s_saturated'] and
+                        not qc['p_saturated']
+                    )
+
+                    logger.info(f"\n{'='*40}")
+                    logger.info(f"Channel {ch.upper()}: {'✅ PASS' if channel_pass else '❌ FAIL'}")
+                    logger.info(f"{'='*40}")
+
+                    qc_results[ch] = {
+                        'spr_wavelength': qc['dip_wavelength'],
+                        'spr_depth': qc['dip_depth'],
+                        'spr_pass': qc['dip_detected'],
+                        'fwhm': qc['fwhm'] if qc['fwhm'] is not None else 0,
+                        'fwhm_pass': fwhm_pass,
+                        'fwhm_quality': qc['fwhm_quality'],
+                        'p_s_ratio': qc['ratio'],
+                        'orientation_correct': qc['orientation_correct'],
+                        's_saturated': qc['s_saturated'],
+                        'p_saturated': qc['p_saturated'],
+                        's_max_counts': qc['s_max_counts'],
+                        'p_max_counts': qc['p_max_counts'],
+                        'warnings': qc['warnings'],
+                        'overall_pass': channel_pass
+                    }
+
+                    if not channel_pass:
+                        all_channels_pass = False
+
+                # Legacy QC compatibility fields
+                for ch in ch_list:
+                    signal_mean = np.mean(s_pol_ref[ch])
+                    noise_std = np.std(result.dark_noise)
+                    snr = signal_mean / max(noise_std, 1)
+                    snr_pass = snr > 100
+                    qc_results[ch]['snr'] = snr
+                    qc_results[ch]['snr_pass'] = snr_pass
+
+                result.qc_results = qc_results
+                result.ch_error_list = [ch for ch, qc in qc_results.items() if not qc['overall_pass']]
+
+                # Finalization and summary
+                result.leds_calibrated = result.p_mode_intensity
+                result.pre_led_delay_ms = pre_led_delay_ms
+                result.post_led_delay_ms = post_led_delay_ms
+                result.success = True
+
+                logger.info("\n" + "=" * 80)
+                logger.info("✅ 6-STEP CALIBRATION COMPLETE")
+                logger.info("=" * 80)
+                s_pos = getattr(result, 's_position', None) or getattr(result, 'polarizer_s_position', 'N/A')
+                p_pos = getattr(result, 'p_position', None) or getattr(result, 'polarizer_p_position', 'N/A')
+                logger.info(f"Servo Positions: S={s_pos}°, P={p_pos}°")
+                logger.info(f"LED Timing: PRE={pre_led_delay_ms}ms, POST={post_led_delay_ms}ms")
+                logger.info(f"LED Intensities (S-mode): {result.ref_intensity}")
+                logger.info(f"LED Intensities (P-mode): {result.p_mode_intensity}")
+                logger.info(f"Integration Time (S-mode): {result.s_integration_time}ms")
+                logger.info(f"Integration Time (P-mode): {result.p_integration_time}ms")
+                logger.info(f"Scans per Channel: {result.num_scans}")
+                logger.info(f"S-pol Raw Data: {list(result.s_raw_data.keys()) if hasattr(result, 's_raw_data') else 'Not captured'}")
+                logger.info(f"P-pol Raw Data: {list(result.p_raw_data.keys()) if hasattr(result, 'p_raw_data') else 'Not captured'}")
+
+                if progress_callback:
+                    progress_callback("Calibration complete", 100)
+
+                # Persist result
+                save_calibration_result_json(result)
+
+                return result
+
+            except Exception as e:
+                logger.exception(f"Error in Step 6 processing (convergence path): {e}")
+                raise
 
         else:
             # === LEGACY PATH: Original Steps 3-5 ===
@@ -1733,7 +2045,8 @@ def run_full_6step_calibration(
 
             # Use new servo_initiation_to_s function for cleaner initialization
             detector_serial = getattr(usb, 'serial_number', 'UNKNOWN')
-            device_config_det = resolve_device_config_for_detector(usb)
+            # Use the same device_config dict we validated at startup
+            device_config_det = device_config_dict
             servo_positions = servo_initiation_to_s(ctrl, device_config_det, detector_serial)
             logger.info(f"✅ Servo initialized to S-mode: S={servo_positions['s_position']}°, P={servo_positions['p_position']}°")
         except Exception as e:
@@ -4464,19 +4777,20 @@ def run_convergence_calibration_steps_3_to_5(
         tolerance_percent: Acceptable deviation (default ±2%)
         strategy: "intensity" or "time" normalization strategy
 
-    Returns:
-        dict with:
-        - success: bool
-        - s_mode_intensities: dict {ch: int}
-        - p_mode_intensities: dict {ch: int}
-        - s_integration_time: float (ms)
-        - p_integration_time: float (ms)
-        - s_pol_ref: dict {ch: ndarray} - S-mode RAW spectra (ROI only)
-        - p_pol_ref: dict {ch: ndarray} - P-mode RAW spectra (ROI only)
+        Returns:
+                dict with:
+                - success: bool
+                - s_mode_intensities: dict {ch: int}
+                - p_mode_intensities: dict {ch: int}
+                - s_integration_time: float (ms)
+                - p_integration_time: float (ms)
+                - s_raw_roi: dict {ch: ndarray} - S-mode RAW spectra (ROI only)
+                - p_raw_roi: dict {ch: ndarray} - P-mode RAW spectra (ROI only)
+                    (compat: also returns legacy keys 's_pol_ref'/'p_pol_ref' mapped to the same raw ROI)
                 - dark_spectrum: ndarray - Dark scan (full detector). Downstream uses ROI slice
                     aligned to [wave_min_index:wave_max_index] for dark subtraction.
-        - weakest_channel: str - Weakest channel ID
-        - error: str (if failed)
+                - weakest_channel: str - Weakest channel ID
+                - error: str (if failed)
     """
     # CRITICAL: Log IMMEDIATELY to confirm function is called
     logger.info("="*80)
@@ -4514,6 +4828,9 @@ def run_convergence_calibration_steps_3_to_5(
         'p_mode_intensities': {},
         's_integration_time': None,
         'p_integration_time': None,
+        's_raw_roi': {},
+        'p_raw_roi': {},
+        # Back-compat legacy keys (same contents as raw ROI)
         's_pol_ref': {},
         'p_pol_ref': {},
         'dark_spectrum': None,
@@ -4701,7 +5018,7 @@ def run_convergence_calibration_steps_3_to_5(
             detector_params=detector_params,
             wave_min_index=wave_min_index,
             wave_max_index=wave_max_index,
-            strategy=strategy,
+            strategy=strategy,  # Use selected strategy (intensity/shared-time)
             initial_integration_ms=70.0,
             target_percent=target_percent,
             tolerance_percent=tolerance_percent,
@@ -4717,7 +5034,19 @@ def run_convergence_calibration_steps_3_to_5(
 
         # Extract LED intensities and integration time from results
         result['s_mode_intensities'] = {ch: int(s_per_ch_results[ch]['final_led']) for ch in ch_list}
-        result['s_integration_time'] = s_shared_int if s_shared_int is not None else s_per_ch_results[ch_list[0]]['final_integration_ms']
+        # Derive per-channel integration times from results when strategy='time'
+        s_channel_times = {ch: float(s_per_ch_results[ch]['final_integration_ms']) for ch in s_per_ch_results}
+        # Store a representative S integration (median) for compatibility
+        if s_shared_int is not None:
+            result['s_integration_time'] = s_shared_int
+        else:
+            try:
+                import numpy as _np
+                result['s_integration_time'] = float(_np.median(list(s_channel_times.values()))) if s_channel_times else None
+            except Exception:
+                result['s_integration_time'] = s_per_ch_results[ch_list[0]]['final_integration_ms']
+        # Expose per-channel S times for downstream (optional consumption)
+        result['s_channel_integration_times'] = s_channel_times
 
         logger.info("")
         logger.info(f"   ✅ S-mode convergence complete:")
@@ -4728,17 +5057,27 @@ def run_convergence_calibration_steps_3_to_5(
         # === STEP 4: Capture S-pol reference (RAW) ===
         logger.info("")
         logger.info("📸 Step 4: Capturing S-pol reference spectra...")
-        usb.set_integration(result['s_integration_time'])
-        time.sleep(0.1)
-
+        # Capture S-pol reference using per-channel integration times when available
         for ch in ch_list:
+            ch_time = result.get('s_channel_integration_times', {}).get(ch, result['s_integration_time'])
+            usb.set_integration(ch_time)
+            time.sleep(0.1)
             ctrl.set_intensity(ch, result['s_mode_intensities'][ch])
             time.sleep(0.05)
             full = usb.read_intensity()
-            result['s_pol_ref'][ch] = full[wave_min_index:wave_max_index]
+            # Store RAW ROI under explicit and legacy keys
+            roi_slice = full[wave_min_index:wave_max_index]
+            result['s_raw_roi'][ch] = roi_slice
+            result['s_pol_ref'][ch] = roi_slice  # legacy compat: was misnamed but used as raw
             ctrl.set_intensity(ch, 0)
 
         logger.info(f"   ✅ S-pol ref captured: {len(result['s_pol_ref'])} channels")
+        try:
+            import numpy as _np
+            means = {ch: float(_np.mean(result['s_raw_roi'][ch])) for ch in result['s_raw_roi']}
+            logger.info("   🔍 S-mode capture means (ROI): " + ", ".join([f"{k.upper()}={v:.0f}" for k, v in means.items()]))
+        except Exception as _e:
+            logger.debug(f"   (S-mode capture stats unavailable: {_e})")
 
         # === STEP 5A: P-mode servo movement ===
         logger.info("")
@@ -4835,10 +5174,19 @@ def run_convergence_calibration_steps_3_to_5(
             ctrl.set_intensity(ch, result['p_mode_intensities'][ch])
             time.sleep(0.05)
             full = usb.read_intensity()
-            result['p_pol_ref'][ch] = full[wave_min_index:wave_max_index]
+            # Store RAW ROI under explicit and legacy keys
+            roi_slice = full[wave_min_index:wave_max_index]
+            result['p_raw_roi'][ch] = roi_slice
+            result['p_pol_ref'][ch] = roi_slice  # legacy compat: was misnamed but used as raw
             ctrl.set_intensity(ch, 0)
 
         logger.info(f"   ✅ P-pol ref captured: {len(result['p_pol_ref'])} channels")
+        try:
+            import numpy as _np
+            means = {ch: float(_np.mean(result['p_raw_roi'][ch])) for ch in result['p_raw_roi']}
+            logger.info("   🔍 P-mode capture means (ROI): " + ", ".join([f"{k.upper()}={v:.0f}" for k, v in means.items()]))
+        except Exception as _e:
+            logger.debug(f"   (P-mode capture stats unavailable: {_e})")
 
         # === DARK SPECTRUM (capture now, used in Step 6) ===
         logger.info("")

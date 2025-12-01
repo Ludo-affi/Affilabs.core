@@ -49,7 +49,7 @@ class RecordingManager(QObject):
         self.auto_save_interval = 60  # seconds
         self.last_save_time = 0
 
-        logger.info("RecordingManager initialized")
+        pass  # Initialized silently
 
     def start_recording(self, filename: Optional[str] = None):
         """Start recording data to file."""

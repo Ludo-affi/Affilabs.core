@@ -213,40 +213,31 @@ class Application(QApplication):
         self._apply_theme()
 
         # Create hardware manager (does NOT connect yet)
-        logger.debug("Creating hardware manager...")
         self.hardware_mgr = HardwareManager()
 
         # Create data acquisition manager
-        logger.debug("Creating data acquisition manager...")
         self.data_mgr = DataAcquisitionManager(self.hardware_mgr)
 
         # Create recording manager
-        logger.debug("Creating recording manager...")
         self.recording_mgr = RecordingManager(self.data_mgr)
 
         # Create kinetic operations manager
-        logger.debug("Creating kinetic operations manager...")
         self.kinetic_mgr = KineticManager(self.hardware_mgr)
 
         # Create session quality monitor for FWHM tracking
-        logger.debug("Creating session quality monitor...")
         self.quality_monitor = SessionQualityMonitor(
             device_serial="unknown",  # Will be updated when hardware connects
             session_id=None  # Auto-generated
         )
 
         # Create main window (production AffiLabs.core UI)
-        logger.info("Creating main window...")
         self.main_window = AffilabsMainWindow(event_bus=None)
 
         # Store reference to app in window for easy access to managers
         self.main_window.app = self
-        logger.info("✅ Main window initialized")
 
-        # Verify spectroscopy plots are available
-        if hasattr(self.main_window, 'transmission_curves'):
-            logger.info(f"✅ Spectroscopy plots initialized: {len(self.main_window.transmission_curves)} transmission curves")
-        else:
+        # Verify spectroscopy plots are available (silent check)
+        if not hasattr(self.main_window, 'transmission_curves'):
             logger.warning("⚠️ Spectroscopy plots NOT found in main window - graphs will not display")
 
         # Track selected axis for manual/auto scaling (default X)
@@ -288,7 +279,7 @@ class Application(QApplication):
         self.buffer_mgr = DataBufferManager()
 
         # Initialize coordinators for better separation of concerns
-        logger.info("Creating coordinators...")
+        # Create coordinators
         self.calibration = CalibrationService(self)
         self.calibration.calibration_complete.connect(self._on_calibration_complete)
         self.graphs = GraphCoordinator(self)
@@ -368,7 +359,7 @@ class Application(QApplication):
         self._deferred_connections_pending = True
 
         # Show window FIRST (with minimal essential UI)
-        logger.info("🪟 Showing main window...")
+        pass  # Show window silently
 
         # Update splash screen message if available
         if hasattr(self, 'update_splash_message'):
@@ -380,7 +371,6 @@ class Application(QApplication):
 
         # Force immediate UI update - paint window before loading heavy widgets
         QApplication.processEvents()
-        logger.info(f"✅ Window visible (minimal UI rendered): {self.main_window.isVisible()}")
 
         # Load deferred widgets in background (after window is visible)
         QTimer.singleShot(50, self._load_deferred_widgets)
@@ -396,8 +386,6 @@ class Application(QApplication):
         then loading expensive components in the background.
         """
         try:
-            logger.info("🔄 Loading deferred UI components...")
-
             # Update splash message
             if hasattr(self, 'update_splash_message'):
                 self.update_splash_message("Loading graphs...")
@@ -405,7 +393,6 @@ class Application(QApplication):
             # Load heavy graph widgets (PyQtGraph plots)
             if hasattr(self.main_window, 'load_deferred_graphs'):
                 self.main_window.load_deferred_graphs()
-                logger.info("  ✅ Graph widgets loaded")
 
             # Process events to ensure graphs are rendered before connecting signals
             QApplication.processEvents()
@@ -421,34 +408,27 @@ class Application(QApplication):
                     self.main_window.full_timeline_graph.stop_cursor.sigPositionChanged.connect(
                         self._update_cycle_of_interest_graph
                     )
-                logger.info("  ✅ Timeline graph cursors connected")
 
             # Connect cursor auto-follow signal (thread-safe)
             self.cursor_update_signal.connect(self._update_stop_cursor_position)
-            logger.info("  ✅ Cursor auto-follow connected")
 
             # Update cached attribute checks now that graphs are loaded
             self._has_stop_cursor = (hasattr(self.main_window, 'full_timeline_graph') and
                                     hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
                                     self.main_window.full_timeline_graph.stop_cursor is not None)
-            logger.info(f"  ℹ️  Stop cursor available: {self._has_stop_cursor}")
 
             # Connect polarizer toggle button to servo control
             if hasattr(self.main_window, 'polarizer_toggle_btn'):
                 self.main_window.polarizer_toggle_btn.clicked.connect(self._on_polarizer_toggle_clicked)
-                logger.info("  ✅ Polarizer toggle connected")
 
             # Connect mouse events for channel selection and flagging
             if hasattr(self.main_window, 'cycle_of_interest_graph'):
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked
                 )
-                logger.info("  ✅ Graph click events connected")
 
             # Mark deferred loading as complete
             self._deferred_connections_pending = False
-
-            logger.info("✅ Deferred UI components loaded successfully")
 
         except Exception as e:
             logger.error(f"❌ Error loading deferred widgets: {e}", exc_info=True)
@@ -1416,7 +1396,7 @@ class Application(QApplication):
                     f"Hardware detected:\n"
                     f"• Controller: {status.get('ctrl_type')}\n"
                     f"• Spectrometer: Connected\n\n"
-                    f"Calibration will start automatically..."
+                    f"Click Start to begin calibration."
                 )
             elif status.get('spectrometer') and not status.get('ctrl_type'):
                 logger.warning("⚠️ Spectrometer found but controller missing")
@@ -1447,7 +1427,7 @@ class Application(QApplication):
             # Calibration requires both hardware components
             if status.get('ctrl_type') and status.get('spectrometer') and not self._calibration_completed:
                 logger.info("="*80)
-                logger.info("🎯 STARTING 6-STEP CALIBRATION FLOW")
+                logger.info("🎯 6-STEP CALIBRATION AVAILABLE")
                 logger.info("="*80)
                 logger.info(f"   Hardware Detected:")
                 logger.info(f"   • Controller: {status.get('ctrl_type')}")
@@ -1462,26 +1442,64 @@ class Application(QApplication):
                 logger.info("   6. S-Mode Reference Signals + QC")
                 logger.info("="*80)
 
-                # OPTIMIZATION: Check for optical calibration file first
-                # If missing, offer to run it BEFORE LED calibration (faster workflow)
-                from utils.device_integration import get_device_optical_calibration_path
-                optical_cal_path = get_device_optical_calibration_path()
+                # Ask the user before starting calibration (do not auto-start)
+                try:
+                    from widgets.message import show_message
+                    from utils.device_integration import get_device_optical_calibration_path
+                    optical_cal_path = get_device_optical_calibration_path()
 
-                if not optical_cal_path or not optical_cal_path.exists():
-                    logger.info("📋 Optical calibration file not found - starting full calibration workflow")
-                    logger.info("   Step 1/2: LED intensity calibration")
-                    logger.info("   Step 2/2: Optical afterglow calibration (after LED completes)")
-                    # Run full calibration workflow automatically (LED → afterglow)
-                    self._run_led_then_afterglow_calibration()
-                    return
-
-                # Trigger calibration with dialog (LED only, optical cal already exists)
-                logger.info("📋 Optical calibration exists - running LED calibration only")
-                logger.info("="*80)
-                logger.info(f"🔍 TYPE CHECK: self.calibration = {type(self.calibration)}")
-                logger.info(f"🔍 OBJECT: {self.calibration}")
-                logger.info("="*80)
-                self.calibration.start_calibration()
+                    if not optical_cal_path or not optical_cal_path.exists():
+                        prompt = (
+                            "Hardware connected.\n\n"
+                            "No optical calibration found for this device.\n\n"
+                            "Run full calibration now?\n\n"
+                            "This includes:\n"
+                            "• LED intensity calibration\n"
+                            "• Optical afterglow calibration"
+                        )
+                        start_now = show_message(
+                            prompt,
+                            msg_type="Question",
+                            q=(True, "Run Now", "Later"),
+                            title="Calibration Available"
+                        )
+                        if start_now:
+                            logger.info("User confirmed: starting full calibration (LED → afterglow)")
+                            self._run_led_then_afterglow_calibration()
+                            return
+                        else:
+                            logger.info("User deferred calibration start")
+                    else:
+                        prompt = (
+                            "Hardware connected.\n\n"
+                            "Optical calibration exists.\n\n"
+                            "Run LED calibration now?"
+                        )
+                        start_now = show_message(
+                            prompt,
+                            msg_type="Question",
+                            q=(True, "Start Now", "Later"),
+                            title="Calibration Available"
+                        )
+                        if start_now:
+                            logger.info("User confirmed: starting LED calibration")
+                            logger.info("="*80)
+                            logger.info(f"🔍 TYPE CHECK: self.calibration = {type(self.calibration)}")
+                            logger.info(f"🔍 OBJECT: {self.calibration}")
+                            logger.info("="*80)
+                            self.calibration.start_calibration()
+                        else:
+                            logger.info("User deferred calibration start")
+                except Exception as e:
+                    # Fail-safe: if prompt fails for any reason, do NOT auto-start
+                    logger.error(f"Calibration start prompt failed: {e}")
+                    from widgets.message import show_message
+                    show_message(
+                        "Calibration is available but did not auto-start.\n\n"
+                        "You can launch it later from the Calibration menu.",
+                        msg_type="Information",
+                        title="Calibration Available"
+                    )
             elif status.get('ctrl_type') and status.get('spectrometer') and self._calibration_completed:
                 logger.info("✅ Calibration already completed - waiting for user to press Start button")
             elif status.get('spectrometer') and not status.get('ctrl_type'):
@@ -1660,7 +1678,7 @@ class Application(QApplication):
             daemon=True
         )
         self._processing_thread.start()
-        logger.info("✅ Processing thread started (acquisition/processing separated)")
+        pass  # Processing thread started
 
     def _stop_processing_thread(self):
         """Stop processing thread gracefully."""
@@ -5248,7 +5266,7 @@ def main():
     # Close splash after deferred widgets load (total ~350ms)
     QTimer.singleShot(350, close_splash)
 
-    logger.info("🚀 Starting event loop...")
+    pass  # Event loop starting
     exit_code = app.exec()
 
     # Restore original stderr

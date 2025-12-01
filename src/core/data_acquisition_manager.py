@@ -249,7 +249,7 @@ class DataAcquisitionManager(QObject):
         # Spectrum processor (will be imported when needed)
         self.spectrum_processor = None
 
-        logger.debug("DataAcquisitionManager initialized")
+        pass  # Initialized silently
 
     def _load_led_delays_from_config(self):
         """Load PRE/POST LED delays from device configuration.

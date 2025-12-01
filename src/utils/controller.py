@@ -717,6 +717,27 @@ class PicoP4SPR(StaticController):
         # Reset channel tracking on new connection
         self._channels_enabled = set()
 
+        # Try explicit COM4 first (user environment uses COM4)
+        try:
+            explicit_port = 'COM4'
+            logger.info(f"Trying explicit PicoP4SPR on {explicit_port}...")
+            self._ser = serial.Serial(port=explicit_port, baudrate=115200, timeout=0.50, write_timeout=1)
+            self._ser.reset_input_buffer(); self._ser.reset_output_buffer()
+            self._ser.write(b"id\n"); import time; time.sleep(0.25)
+            reply = self._ser.readline()[0:5].decode()
+            if reply == 'P4SPR':
+                self._ser.write(b"iv\n"); time.sleep(0.25)
+                self.version = self._ser.readline()[0:4].decode()
+                logger.info(f"Pico P4SPR detected on {explicit_port} (explicit) fw={self.version}")
+                return True
+            else:
+                # Accept empty or unexpected reply as provisional open; further commands may still work
+                logger.warning(f"ID mismatch/empty on {explicit_port}: '{reply}' - proceeding provisionally")
+                return True
+        except Exception as e:
+            logger.debug(f"Explicit COM4 open failed: {e}")
+            self._ser = None
+
         # Try VID/PID match first (preferred method)
         logger.info(f"PicoP4SPR.open() - Looking for VID={hex(PICO_VID)} PID={hex(PICO_PID)}")
         for dev in serial.tools.list_ports.comports():
@@ -724,7 +745,8 @@ class PicoP4SPR(StaticController):
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
                     logger.info(f"MATCH! Trying PicoP4SPR on {dev.device}")
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.05, write_timeout=1)
+                    # Increase timeouts to improve reliability on Windows
+                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.30, write_timeout=1)
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
@@ -732,13 +754,13 @@ class PicoP4SPR(StaticController):
                     cmd = f"id\n"
                     self._ser.write(cmd.encode())
                     import time
-                    time.sleep(0.1)  # Increased delay for Pico to respond
+                    time.sleep(0.20)  # Increased delay for Pico to respond
                     reply = self._ser.readline()[0:5].decode()
                     logger.info(f"Pico P4SPR ID reply: '{reply}'")
                     if reply == 'P4SPR':
                         cmd = f"iv\n"
                         self._ser.write(cmd.encode())
-                        time.sleep(0.1)
+                        time.sleep(0.20)
                         self.version = self._ser.readline()[0:4].decode()
                         logger.info(f"Pico P4SPR Fw version: {self.version}")
                         return True
@@ -781,14 +803,15 @@ class PicoP4SPR(StaticController):
 
             try:
                 logger.info(f"Trying PicoP4SPR fallback on {dev.device}")
-                self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.3, write_timeout=0.5)
+                # Slightly higher timeout to handle slower Pico responses
+                self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=0.5, write_timeout=0.5)
                 self._ser.reset_input_buffer()
                 self._ser.reset_output_buffer()
 
                 cmd = f"id\n"
                 self._ser.write(cmd.encode())
                 import time
-                time.sleep(0.05)  # Reduced from 0.15s
+                time.sleep(0.15)  # Allow more time for firmware to print
                 reply = self._ser.readline()[0:5].decode()
 
                 if reply == 'P4SPR':

@@ -44,25 +44,13 @@ class CalibrationQCDialog(QDialog):
                 - firmware_version: str (controller firmware)
                 - timestamp: str (calibration timestamp)
         """
-        print("🔵 DEBUG: CalibrationQCDialog.__init__() started")
         super().__init__(parent)
-        print("🔵 DEBUG: QDialog super().__init__() completed")
         self.calibration_data = calibration_data or {}
 
-        # DEBUG: Log what data is received
-        logger.info("🔍 QC Dialog Received Data:")
-        logger.info(f"   orientation_validation: {list(self.calibration_data.get('orientation_validation', {}).keys())}")
-        logger.info(f"   spr_fwhm: {self.calibration_data.get('spr_fwhm', {})}")
-        logger.info(f"   transmission_validation: {list(self.calibration_data.get('transmission_validation', {}).keys())}")
-
-        print("🔵 DEBUG: Setting window title and size...")
         self.setWindowTitle("Calibration QC Report")
         self.setMinimumSize(1600, 1000)
         self.setModal(True)
-        print("🔵 DEBUG: Window properties set")
-
         # Apply modern styling
-        print("🔵 DEBUG: Applying stylesheet...")
         self.setStyleSheet("""
             QDialog {
                 background: #FFFFFF;
@@ -89,13 +77,10 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        print("🔵 DEBUG: Calling _setup_ui()...")
         self._setup_ui()
-        print("🟢 DEBUG: CalibrationQCDialog.__init__() completed")
 
     def _setup_ui(self):
         """Setup the UI layout with tabs for graphs and QC parameters."""
-        print("🔵 DEBUG: _setup_ui() started")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(8)
@@ -797,6 +782,7 @@ class CalibrationQCDialog(QDialog):
 
         integration_time = data.get('integration_time', 0)
         led_intensities = data.get('led_intensities', {})
+        sp_swap_applied = data.get('sp_swap_applied', False)
 
         led_str = ", ".join([f"{ch.upper()}:{led_intensities.get(ch, 0)}" for ch in ['a', 'b', 'c', 'd']])
 
@@ -819,11 +805,13 @@ class CalibrationQCDialog(QDialog):
         s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
         p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
 
+        swap_badge = "  |  <span style='color:#FF9500'><b>QC Display:</b> S/P swapped</span>" if sp_swap_applied else ""
+
         summary_text = (
             f"<b>Integration:</b> {integration_time:.2f}ms  |  "
             f"<b>LEDs:</b> {led_str}  |  "
             f"<b>S-pol Max:</b> {s_max_str}  |  "
-            f"<b>P-pol Max:</b> {p_max_str}"
+            f"<b>P-pol Max:</b> {p_max_str}" + swap_badge
         )
 
         summary_label = QLabel(summary_text)
@@ -1248,16 +1236,11 @@ FAILURE DIAGNOSIS:
         print("🟢 DEBUG: CalibrationQCDialog instance created")
 
         # Make dialog non-modal and non-blocking
-        print("🔵 DEBUG: Setting dialog to non-modal...")
         dialog.setModal(False)
 
         # Ensure dialog is visible and comes to front
-        print("🔵 DEBUG: Showing dialog...")
         dialog.show()
-        print("🔵 DEBUG: Raising dialog to front...")
         dialog.raise_()
-        print("🔵 DEBUG: Activating window...")
         dialog.activateWindow()
-        print("🟢 DEBUG: Dialog displayed successfully")
 
         return dialog

@@ -71,8 +71,10 @@ def LEDconverge(
     detector_params: DetectorParams,
     wave_min_index: int,
     wave_max_index: int,
-    max_iterations: int = 5,
+    max_iterations: int = 10,
     step_name: str = 'Step 4',
+    use_batch_command: bool = False,
+    adjust_leds: bool = True,
     logger=None,
 ) -> Tuple[float, Dict[str, float], bool]:
     """Gold-standard convergence method to reach target counts with shared integration time.
@@ -115,7 +117,7 @@ def LEDconverge(
             t_target = seed_time * (target / sig_seed)
             t_target = max(detector_params.min_integration_time, min(detector_params.max_integration_time, t_target))
             # Verify and adjust within tolerance
-            spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_target, 1, 45.0, 5.0, False)
+            spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_target, 1, 45.0, 5.0, use_batch_command)
             if spec2 is not None:
                 sig2 = roi_signal_fn(spec2, wave_min_index, wave_max_index, method='median', top_n=50)
                 sat2 = count_saturated_pixels(spec2, wave_min_index, wave_max_index, detector_params.saturation_threshold)
@@ -129,13 +131,13 @@ def LEDconverge(
                         if logger:
                             logger.info(f"{step_name} per-channel: {ch.upper()} saturated at min time {t_target:.1f}ms — reducing LED 255→{new_led}")
                         # Re-measure with reduced LED at same time
-                        spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, new_led, t_target, 1, 45.0, 5.0, False)
+                        spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, new_led, t_target, 1, 45.0, 5.0, use_batch_command)
                         sig2 = roi_signal_fn(spec2, wave_min_index, wave_max_index, method='median', top_n=50) if spec2 is not None else sig2
                         # Update intensities for reporting path (although caller passed 255s)
                     else:
                         t_target *= 0.90
                         t_target = max(detector_params.min_integration_time, t_target)
-                        spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_target, 1, 45.0, 5.0, False)
+                        spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_target, 1, 45.0, 5.0, use_batch_command)
                         sig2 = roi_signal_fn(spec2, wave_min_index, wave_max_index, method='median', top_n=50) if spec2 is not None else sig2
                 elif not (min_sig <= sig2 <= max_sig):
                     adj = max(0.90, min(1.10, (target / sig2) if sig2 > 0 else 1.0))
@@ -143,7 +145,7 @@ def LEDconverge(
                     t_target = max(detector_params.min_integration_time, min(detector_params.max_integration_time, t_target))
             per_channel_times[ch] = float(t_target)
             # Final measurement at t_target
-            spec_final = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, per_channel_times[ch], 1, 45.0, 5.0, False)
+            spec_final = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, per_channel_times[ch], 1, 45.0, 5.0, use_batch_command)
             if spec_final is not None:
                 sig_final = roi_signal_fn(spec_final, wave_min_index, wave_max_index, method='median', top_n=50)
                 sat_final = count_saturated_pixels(spec_final, wave_min_index, wave_max_index, detector_params.saturation_threshold)
@@ -153,7 +155,7 @@ def LEDconverge(
                     near_min = abs(per_channel_times[ch] - detector_params.min_integration_time) <= 0.5
                     if not near_min:
                         per_channel_times[ch] = max(detector_params.min_integration_time, per_channel_times[ch] * 0.75)
-                        spec_final = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, per_channel_times[ch], 1, 45.0, 5.0, False)
+                        spec_final = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, per_channel_times[ch], 1, 45.0, 5.0, use_batch_command)
                         if spec_final is not None:
                             sig_final = roi_signal_fn(spec_final, wave_min_index, wave_max_index, method='median', top_n=50)
                             sat_final = count_saturated_pixels(spec_final, wave_min_index, wave_max_index, detector_params.saturation_threshold)
@@ -166,7 +168,7 @@ def LEDconverge(
                         new_led = int(max(10, min(255, round(255 * scale))))
                         if logger:
                             logger.info(f"{step_name} per-channel: {ch.upper()} emergency saturation clear — LED 255→{new_led} at T={per_channel_times[ch]:.1f}ms")
-                        spec_final = acquire_raw_spectrum_fn(usb, ctrl, ch, new_led, per_channel_times[ch], 1, 45.0, 5.0, False)
+                        spec_final = acquire_raw_spectrum_fn(usb, ctrl, ch, new_led, per_channel_times[ch], 1, 45.0, 5.0, use_batch_command)
                         if spec_final is not None:
                             sig_final = roi_signal_fn(spec_final, wave_min_index, wave_max_index, method='median', top_n=50)
                 signals[ch] = sig_final
@@ -185,8 +187,10 @@ def LEDconverge(
         sat_per_ch: Dict[str, int] = {}
 
         for ch in ch_list:
-            spec = acquire_raw_spectrum_fn(usb, ctrl, ch, led_intensities[ch], current, 1, 45.0, 5.0, False)
+            spec = acquire_raw_spectrum_fn(usb, ctrl, ch, led_intensities[ch], current, 1, 45.0, 5.0, use_batch_command)
             if spec is None:
+                if logger:
+                    logger.error(f"{step_name} iter {i+1}: {ch.upper()} read returned None @LED={led_intensities[ch]}, T={current:.1f}ms (batch={use_batch_command})")
                 continue
             sig = roi_signal_fn(spec, wave_min_index, wave_max_index, method='median', top_n=50)
             signals[ch] = sig
@@ -200,10 +204,12 @@ def LEDconverge(
             total_sat = sum(sat_per_ch.values())
             logger.info(f"{step_name} iter {i+1}: total_saturated_pixels={total_sat} per_channel={sat_per_ch}")
 
-        if signals and all(min_sig <= signals[ch] <= max_sig for ch in signals) and not saturated_any:
+        # Success condition: signals within tolerance band.
+        # Saturation is guidance during iteration, not a stop criteria.
+        if signals and all(min_sig <= signals[ch] <= max_sig for ch in signals):
             return current, signals, True
 
-        if signals:
+        if signals and adjust_leds:
             errors = {ch: abs(signals[ch] - target) for ch in ch_list if ch in signals}
             ranked = sorted(errors.items(), key=lambda kv: kv[1], reverse=True)
             furthest = {ch for ch, _ in ranked[:2]}
@@ -223,6 +229,7 @@ def LEDconverge(
 
         avg = np.median(list(signals.values())) if signals else target
         if saturated_any:
+            # Back off integration modestly to clear saturation, but keep iterating
             current *= 0.95
         else:
             factor = target / avg if avg > 0 else 1.0
@@ -246,6 +253,7 @@ def LEDnormalizationtime(
     wave_max_index: int,
     logger=None,
     tighten_final: bool = False,
+    use_batch_command: bool = False,
 ) -> Dict[str, float]:
     """Compute per-channel integration times at LED=255 to hit target.
 
@@ -271,7 +279,7 @@ def LEDnormalizationtime(
 
     for ch in ch_list:
         # Measure at seed
-        spec = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, seed_time, 1, 45.0, 5.0, False)
+        spec = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, seed_time, 1, 45.0, 5.0, use_batch_command)
         if spec is None:
             continue
         sig = roi_signal_fn(spec, wave_min_index, wave_max_index, method='median', top_n=50)
@@ -288,7 +296,7 @@ def LEDnormalizationtime(
         t_target = max(detector_params.min_integration_time, min(detector_params.max_integration_time, t_target))
 
         # Verify and micro-adjust if outside tolerance or saturated
-        spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_target, 1, 45.0, 5.0, False)
+        spec2 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_target, 1, 45.0, 5.0, use_batch_command)
         if spec2 is not None:
             sig2 = roi_signal_fn(spec2, wave_min_index, wave_max_index, method='median', top_n=50)
             sat2 = count_saturated_pixels(spec2, wave_min_index, wave_max_index, detector_params.saturation_threshold)
@@ -308,7 +316,7 @@ def LEDnormalizationtime(
     if tighten_final:
         for ch in ch_list:
             t_cur = per_channel_times.get(ch, seed_time)
-            spec3 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_cur, 1, 45.0, 5.0, False)
+            spec3 = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t_cur, 1, 45.0, 5.0, use_batch_command)
             if spec3 is None:
                 continue
             sig3 = roi_signal_fn(spec3, wave_min_index, wave_max_index, method='median', top_n=50)
@@ -324,7 +332,7 @@ def LEDnormalizationtime(
                 best_sig = sig3
                 best_t = t_cur
                 for t in candidates:
-                    specd = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t, 1, 45.0, 5.0, False)
+                    specd = acquire_raw_spectrum_fn(usb, ctrl, ch, 255, t, 1, 45.0, 5.0, use_batch_command)
                     if specd is None:
                         continue
                     sd = roi_signal_fn(specd, wave_min_index, wave_max_index, method='median', top_n=50)

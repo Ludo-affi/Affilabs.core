@@ -390,18 +390,13 @@ class StartupCalibProgressDialog(QDialog):
 
     def update_status(self, message: str) -> None:
         """Update the status message (thread-safe via signal)."""
-        print(f"🔵 DEBUG: update_status() called with: {message}")
         self._update_status_signal.emit(message)
-        print("🟢 DEBUG: update_status signal emitted")
 
     def _do_update_status(self, message: str) -> None:
         """Actually update status label (runs in main thread)."""
-        print(f"🔵 DEBUG: _do_update_status() executing in main thread")
         if not self._is_closing and self.isVisible():
             try:
-                print("🔵 DEBUG: Setting status_label text...")
                 self.status_label.setText(message)
-                print("🟢 DEBUG: Status updated successfully")
             except RuntimeError as e:
                 print(f"🔴 ERROR: RuntimeError in _do_update_status: {e}")
             except Exception as e:
@@ -414,20 +409,14 @@ class StartupCalibProgressDialog(QDialog):
 
     def update_title(self, title: str):
         """Update the title (thread-safe via signal)."""
-        print(f"🔵 DEBUG: update_title() called with: {title}")
         self._update_title_signal.emit(title)
-        print("🟢 DEBUG: update_title signal emitted")
 
     def _do_update_title(self, title: str) -> None:
         """Actually update title (runs in main thread)."""
-        print(f"🔵 DEBUG: _do_update_title() executing in main thread")
         if not self._is_closing and self.isVisible():
             try:
-                print("🔵 DEBUG: Setting title_label text...")
                 self.title_label.setText(title)
-                print("🔵 DEBUG: Setting window title...")
                 self.setWindowTitle(title)
-                print("🟢 DEBUG: Title updated successfully")
             except RuntimeError as e:
                 print(f"🔴 ERROR: RuntimeError in _do_update_title: {e}")
             except Exception as e:
@@ -460,18 +449,13 @@ class StartupCalibProgressDialog(QDialog):
 
     def hide_progress_bar(self) -> None:
         """Hide progress bar (thread-safe via signal)."""
-        print("🔵 DEBUG: hide_progress_bar() called")
         self._hide_progress_signal.emit()
-        print("🟢 DEBUG: hide_progress_bar signal emitted")
 
     def _do_hide_progress(self) -> None:
         """Actually hide progress bar (runs in main thread)."""
-        print("🔵 DEBUG: _do_hide_progress() executing in main thread")
         if not self._is_closing and self.isVisible():
             try:
-                print("🔵 DEBUG: Hiding progress_bar...")
                 self.progress_bar.hide()
-                print("🟢 DEBUG: Progress bar hidden")
             except RuntimeError as e:
                 print(f"🔴 ERROR: RuntimeError in _do_hide_progress: {e}")
             except Exception as e:

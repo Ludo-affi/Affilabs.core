@@ -40,7 +40,7 @@ class KineticManager(QObject):
         self.default_flow_rate = 100  # μL/min
         self.flush_rate = 500  # μL/min
 
-        logger.info("KineticManager initialized")
+        pass  # Initialized silently
 
     def initialize_pump(self):
         """Initialize the pump system."""

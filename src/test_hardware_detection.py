@@ -23,26 +23,38 @@ try:
 except Exception as e:
     print(f"   ERROR: {e}")
 
-# Test 2: Check for Ocean Optics devices
+# Test 2: Check for Ocean Optics devices (USB4000 via SeaBreeze)
 print("\n2. OCEAN OPTICS SPECTROMETERS:")
 try:
     from utils.usb4000_wrapper import USB4000
     usb = USB4000()
-    count = usb.get_device_count()
-    print(f"   Found {count} device(s)")
-    if count > 0:
-        print(f"   Serial: {usb.serial_number if hasattr(usb, 'serial_number') else 'Unknown'}")
+    ok = usb.open()
+    if ok:
+        print("   Connected: YES")
+        print(f"   Serial: {getattr(usb, 'serial_number', 'Unknown')}")
+    else:
+        print("   Connected: NO")
 except Exception as e:
     print(f"   ERROR: {e}")
 
-# Test 3: Try connecting to controller
+# Test 3: Try connecting to controller (PicoP4SPR → PicoEZSPR → Arduino)
 print("\n3. SPR CONTROLLERS:")
 try:
-    from utils.controller import detect_and_connect_controller
-    ctrl = detect_and_connect_controller()
+    from utils.controller import PicoP4SPR, PicoEZSPR, ArduinoController
+    ctrl = None
+    for cls in (PicoP4SPR, PicoEZSPR, ArduinoController):
+        try:
+            c = cls()
+            if c.open():
+                ctrl = c
+                break
+        except Exception:
+            pass
     if ctrl:
-        print(f"   Found: {ctrl.__class__.__name__}")
-        print(f"   Port: {ctrl._port if hasattr(ctrl, '_port') else 'Unknown'}")
+        name = getattr(ctrl, 'name', ctrl.__class__.__name__)
+        port = getattr(getattr(ctrl, '_ser', None), 'port', 'Unknown')
+        print(f"   Found: {name}")
+        print(f"   Port: {port}")
     else:
         print("   NO controller found")
 except Exception as e:

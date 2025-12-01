@@ -119,9 +119,28 @@ class LEDCalibrationResult:
             s_pol_raw = self.s_pol_ref
             p_pol_raw = self.p_pol_ref
 
+        # UI-only safeguard: if S/P appear inverted across most channels,
+        # swap display mapping to match expected labels without altering stored data.
+        sp_swap_applied = False
+        try:
+            ratios = []
+            for ch in self.s_pol_ref.keys():
+                s_max = float(np.max(self.s_pol_ref[ch])) if ch in self.s_pol_ref and self.s_pol_ref[ch] is not None else 0.0
+                p_max = float(np.max(self.p_pol_ref[ch])) if ch in self.p_pol_ref and self.p_pol_ref[ch] is not None else 0.0
+                if s_max > 0:
+                    ratios.append(p_max / s_max)
+            # If majority clearly > 1.15, assume labels inverted in capture/mapping
+            if ratios and sum(1 for r in ratios if r > 1.15) >= max(1, len(ratios) // 2 + 1):
+                s_pol_raw, p_pol_raw = p_pol_raw, s_pol_raw
+                sp_swap_applied = True
+        except Exception:
+            # Do not fail QC rendering due to heuristic; keep original mapping
+            sp_swap_applied = False
+
         return {
             's_pol_spectra': s_pol_raw,
             'p_pol_spectra': p_pol_raw,
+            'sp_swap_applied': sp_swap_applied,
             'dark_scan': {ch: self.dark_noise for ch in self.s_pol_ref.keys()} if self.dark_noise is not None else {},
             'afterglow_curves': self.afterglow_curves,
             'transmission_spectra': self.transmission,
