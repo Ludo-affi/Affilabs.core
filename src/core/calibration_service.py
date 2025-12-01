@@ -63,8 +63,11 @@ class CalibrationService(QObject):
             logger.warning("Calibration already in progress")
             return False
 
-        # Headless mode: environment variable CALIBRATION_HEADLESS=1 skips dialog entirely
-        headless = os.getenv("CALIBRATION_HEADLESS", "0") == "1"
+        # Headless mode: allowed only when NOT running inside the UI
+        # In UI context, we always show the dialog regardless of env var
+        in_ui_context = hasattr(self.app, 'main_window') and self.app.main_window is not None
+        headless_env = os.getenv("CALIBRATION_HEADLESS", "0") == "1"
+        headless = (not in_ui_context) and headless_env
 
         if headless:
             logger.info("=" * 80)

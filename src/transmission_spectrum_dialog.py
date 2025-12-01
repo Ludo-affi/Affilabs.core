@@ -72,9 +72,13 @@ class TransmissionSpectrumDialog(QDialog):
         self.transmission_plot.setLabel('bottom', 'Wavelength', units='nm')
         self.transmission_plot.setTitle("Transmission Spectra (4 Channels)")
 
-        # Set axis ranges (detector wavelength range: 560-720 nm)
-        self.transmission_plot.setXRange(560, 720, padding=0.02)
-        self.transmission_plot.setYRange(0, 100, padding=0.05)
+        # Prefer full auto-range; no hard axes (prevents clipping)
+        try:
+            self.transmission_plot.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+        except Exception:
+            # Fallback if combined flag unsupported
+            self.transmission_plot.enableAutoRange('x', True)
+            self.transmission_plot.enableAutoRange('y', True)
 
         # Create curves for each channel
         self.transmission_curves = {}
