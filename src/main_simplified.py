@@ -568,17 +568,17 @@ class Application(QApplication):
             qc_data = calibration_data.to_dict()
             print(f"🟢 DEBUG: qc_data created with {len(qc_data)} keys")
 
-            logger.info("📊 Showing QC report dialog...")
+            logger.info("📊 Showing QC report dialog (modal)...")
 
-            # Create and show dialog (non-blocking)
-            print("🔵 DEBUG: Calling CalibrationQCDialog.show_qc_report()...")
+            # Create and show dialog (modal, blocks until closed)
+            print("🔵 DEBUG: Calling CalibrationQCDialog.show_qc_report() (modal)...")
             self._qc_dialog = CalibrationQCDialog.show_qc_report(
                 parent=self.main_window,
                 calibration_data=qc_data
             )
             print("🟢 DEBUG: CalibrationQCDialog.show_qc_report() returned")
 
-            logger.info("✅ QC report displayed (non-blocking)")
+            logger.info("✅ QC report displayed and closed (modal)")
 
         except Exception as e:
             print(f"🔴 ERROR in _show_qc_dialog: {e}")

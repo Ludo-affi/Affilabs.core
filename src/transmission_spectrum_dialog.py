@@ -158,6 +158,27 @@ class TransmissionSpectrumDialog(QDialog):
             if len(wavelengths) == len(transmission):
                 self.transmission_curves[channel].setData(wavelengths, transmission)
 
+                # Dynamic autoscale to avoid clipping (keep floor at 0%)
+                try:
+                    # X-range from provided wavelengths with small padding
+                    x_min = float(wavelengths[0])
+                    x_max = float(wavelengths[-1])
+                    if x_max > x_min:
+                        pad = 0.02 * (x_max - x_min)
+                        self.transmission_plot.setXRange(x_min - pad, x_max + pad, padding=0)
+
+                    # Y-range from current channel values; allow headroom to 10% over max
+                    y_min = 0.0
+                    y_max = float(np.nanmax(transmission)) if len(transmission) else 100.0
+                    if not np.isfinite(y_max):
+                        y_max = 100.0
+                    y_max = max(100.0, y_max * 1.10)
+                    # Clamp to a reasonable top to avoid runaway scale
+                    y_max = min(y_max, 200.0)
+                    self.transmission_plot.setYRange(y_min, y_max, padding=0.02)
+                except Exception:
+                    pass
+
         # Update the raw data curve
         if raw_data is not None and wavelengths is not None:
             if len(wavelengths) == len(raw_data):

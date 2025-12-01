@@ -1218,14 +1218,14 @@ FAILURE DIAGNOSIS:
 
     @staticmethod
     def show_qc_report(parent=None, calibration_data: dict = None):
-        """Static method to show QC report dialog (non-blocking).
+        """Static method to show QC report dialog (modal, blocking).
 
         Args:
             parent: Parent widget
             calibration_data: Calibration data dictionary
 
         Returns:
-            The dialog instance (non-blocking - doesn't wait for user to close it)
+            The dialog instance (returns after the dialog is closed)
         """
         print("🔵 DEBUG: CalibrationQCDialog.show_qc_report() started")
         print(f"🔵 DEBUG: parent = {parent}")
@@ -1235,12 +1235,11 @@ FAILURE DIAGNOSIS:
         dialog = CalibrationQCDialog(parent=parent, calibration_data=calibration_data)
         print("🟢 DEBUG: CalibrationQCDialog instance created")
 
-        # Make dialog non-modal and non-blocking
-        dialog.setModal(False)
+        # Ensure modal behavior (blocks until user closes)
+        dialog.setModal(True)
+        dialog.setWindowModality(Qt.ApplicationModal)
 
-        # Ensure dialog is visible and comes to front
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
+        # Execute dialog modally
+        dialog.exec()
 
         return dialog

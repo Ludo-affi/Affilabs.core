@@ -147,7 +147,8 @@ class LiveDataDialog(QDialog):
         plot_widget.setLabel('bottom', 'Wavelength', units='nm')
         if plot_type == 'transmission':
             plot_widget.setLabel('left', 'Transmission', units='%')
-            plot_widget.setYRange(0, 100)
+            # Start with a generous default; will autoscale on updates
+            plot_widget.setYRange(0, 120)
         else:
             plot_widget.setLabel('left', 'Intensity', units='counts')
             plot_widget.setYRange(0, 65535)
@@ -188,6 +189,26 @@ class LiveDataDialog(QDialog):
         if channel in self.transmission_curves:
             try:
                 self.transmission_curves[channel].setData(wavelength, transmission_spectrum)
+
+                # Dynamic autoscale to keep spectrum within view (floor at 0%)
+                try:
+                    if wavelength is not None and len(wavelength) > 1:
+                        x_min = float(wavelength[0])
+                        x_max = float(wavelength[-1])
+                        if x_max > x_min:
+                            pad = 0.02 * (x_max - x_min)
+                            self.transmission_plot.setXRange(x_min - pad, x_max + pad, padding=0)
+
+                    if transmission_spectrum is not None and len(transmission_spectrum) > 0:
+                        import numpy as _np
+                        y_max = float(_np.nanmax(transmission_spectrum))
+                        if not _np.isfinite(y_max):
+                            y_max = 100.0
+                        y_max = max(100.0, y_max * 1.10)
+                        y_max = min(y_max, 200.0)
+                        self.transmission_plot.setYRange(0.0, y_max, padding=0.02)
+                except Exception:
+                    pass
             except Exception:
                 pass  # Silently ignore plotting errors
 

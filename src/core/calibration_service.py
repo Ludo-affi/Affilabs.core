@@ -86,34 +86,24 @@ class CalibrationService(QObject):
             return True
 
         logger.info("=" * 80)
-        logger.info("🎬 CALIBRATION SERVICE: Showing calibration dialog (auto-start)...")
+        logger.info("🎬 CALIBRATION SERVICE: Showing calibration dialog (awaiting Start)...")
         logger.info("=" * 80)
 
         # Reset state
         self._calibration_completed = False
         self._current_calibration_data = None
 
-        # Show progress dialog (no Start button; auto-start calibration)
+        # Show progress dialog with Start button; do NOT auto-start
         self._show_progress_dialog()
 
-        # Launch calibration immediately
+        # Enable Start button for pre-calibration checklist (original feel)
         if self._calibration_dialog:
             try:
-                # Ensure progress is visible and user sees status
-                self._calibration_dialog.show_progress_bar()
-                self._calibration_dialog.update_status("Running LED intensity calibration...")
+                self._calibration_dialog.enable_start_button_pre_calib()
             except Exception:
                 pass
 
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._run_calibration,
-            daemon=True,
-            name="CalibrationService"
-        )
-        self._thread.start()
-        self.calibration_started.emit()
-        logger.info("✅ Calibration thread started (auto)")
+        # Wait for user to click Start in the dialog
         return True
 
     @property
@@ -145,7 +135,7 @@ class CalibrationService(QObject):
             parent=self.app.main_window,
             title="Calibrating SPR System",
             message=message,
-            show_start_button=False
+            show_start_button=True
         )
 
         # Connect dialog signals (post-calibration continue handled if button exists)
@@ -160,8 +150,7 @@ class CalibrationService(QObject):
 
         self._calibration_dialog.hide_progress_bar()
         self._calibration_dialog.show()
-        # Do not enable Start pre-calibration in customer-facing flow
-        logger.info("✅ Calibration dialog displayed")
+        logger.info("✅ Calibration dialog displayed (Start button visible)")
 
     def _progress_callback(self, message: str, progress: int = 0) -> None:
         """Progress callback for calibration routines.
