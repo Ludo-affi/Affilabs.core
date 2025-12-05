@@ -25,6 +25,9 @@ from src.utils.led_normalization import (
 from src.utils.controller import PicoP4SPR
 from src.utils.usb4000_wrapper import USB4000
 
+# Import convergence test
+from test_led_convergence import test_led_convergence_optimized, plot_optimized_convergence
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -167,6 +170,39 @@ def test_led_normalization_with_hal():
         logger.info("  ✓ LED a configured with normalized parameters from time mode")
         logger.info("  (LED is now on with normalized settings)")
         
+        # Turn off before convergence test
+        controller.turn_off_channels()
+        
+        # ====================================================================
+        # STEP 9: LED Convergence Test with 80% Saturation Boost
+        # ====================================================================
+        logger.info("\n[9] Testing LED convergence with optimized parameters...")
+        logger.info("    (Auto-boost to 80% saturation for optimal SNR)")
+        
+        # Test convergence for LED 'a' with intensity mode results
+        convergence_metrics = test_led_convergence_optimized(
+            normalizer,
+            results_intensity,
+            led='a',
+            mode='intensity',
+            target_saturation=0.8,  # 80% of max detector count
+            num_samples=30,
+            rapid_samples=10
+        )
+        
+        # Generate convergence plot
+        plot_optimized_convergence(
+            convergence_metrics,
+            save_path='led_a_convergence_intensity.png',
+            show_plot=False  # Don't block test execution
+        )
+        
+        logger.info("  ✓ Convergence test complete")
+        logger.info(f"    - Convergence time: {convergence_metrics.get('convergence_time_ms', 'N/A')} ms")
+        logger.info(f"    - Final saturation: {convergence_metrics.get('saturation_achieved_percent', 'N/A'):.1f}%")
+        logger.info(f"    - Stability (CV): {convergence_metrics.get('steady_state_cv_percent', 'N/A'):.3f}%")
+        logger.info(f"    - Plot saved: led_a_convergence_intensity.png")
+        
     finally:
         # ====================================================================
         # CLEANUP
@@ -265,6 +301,21 @@ def test_with_mock_devices():
         for led, result in results.items():
             logger.info(f"  LED {led}: intensity={result['value']}, "
                        f"achieved={result['achieved_count']:.0f}")
+        
+        # Test convergence with mock devices
+        logger.info("\nTesting convergence with mock LED 'a'...")
+        convergence_metrics = test_led_convergence_optimized(
+            normalizer,
+            results,
+            led='a',
+            mode='intensity',
+            target_saturation=0.8,
+            num_samples=30,
+            rapid_samples=10
+        )
+        
+        logger.info(f"  ✓ Mock convergence test complete")
+        logger.info(f"    - Final saturation: {convergence_metrics.get('saturation_achieved_percent', 'N/A'):.1f}%")
         
         logger.info("\n✓ Mock test successful (no hardware needed)")
         
