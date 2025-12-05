@@ -178,12 +178,22 @@ def test_led_normalization_with_hal():
         # ====================================================================
         logger.info("\n[9] Testing LED convergence with optimized parameters...")
         logger.info("    (Auto-boost to 80% saturation for optimal SNR)")
+        logger.info("    (Testing WEAKEST LED first - matches main calibration priority)")
         
-        # Test convergence for LED 'a' with intensity mode results
+        # Get ranking from step 5 to find weakest LED (dimmest = highest priority)
+        # Ranking is stored as brightest→dimmest, so weakest is LAST
+        ranked_leds = list(ranked.keys())  # Already sorted brightest→dimmest
+        weakest_led = ranked_leds[-1]  # Last one is dimmest/weakest
+        
+        logger.info(f"    Ranked LEDs (brightest→dimmest): {ranked_leds}")
+        logger.info(f"    Testing weakest LED: {weakest_led.upper()} (highest optimization priority)")
+        
+        # Test convergence for WEAKEST LED with intensity mode results
+        # This matches main calibration: weakest LED is always optimized first
         convergence_metrics = test_led_convergence_optimized(
             normalizer,
             results_intensity,
-            led='a',
+            led=weakest_led,
             mode='intensity',
             target_saturation=0.8,  # 80% of max detector count
             num_samples=30,
@@ -191,17 +201,35 @@ def test_led_normalization_with_hal():
         )
         
         # Generate convergence plot
+        plot_filename = f'led_{weakest_led}_convergence_intensity.png'
         plot_optimized_convergence(
             convergence_metrics,
-            save_path='led_a_convergence_intensity.png',
+            save_path=plot_filename,
             show_plot=False  # Don't block test execution
         )
         
         logger.info("  ✓ Convergence test complete")
+        logger.info(f"    - LED tested: {weakest_led.upper()} (weakest)")
         logger.info(f"    - Convergence time: {convergence_metrics.get('convergence_time_ms', 'N/A')} ms")
         logger.info(f"    - Final saturation: {convergence_metrics.get('saturation_achieved_percent', 'N/A'):.1f}%")
         logger.info(f"    - Stability (CV): {convergence_metrics.get('steady_state_cv_percent', 'N/A'):.3f}%")
-        logger.info(f"    - Plot saved: led_a_convergence_intensity.png")
+        logger.info(f"    - Plot saved: {plot_filename}")
+        
+        # Optional: Test all 4 LEDs for comprehensive analysis
+        # Uncomment to enable full 4-LED convergence test
+        # logger.info("\n    Testing all 4 LEDs for comprehensive analysis...")
+        # for test_led in ranked_leds:
+        #     logger.info(f"\n    → Testing LED {test_led.upper()}")
+        #     metrics = test_led_convergence_optimized(
+        #         normalizer, results_intensity, led=test_led, mode='intensity',
+        #         target_saturation=0.8, num_samples=30, rapid_samples=10
+        #     )
+        #     plot_optimized_convergence(
+        #         metrics, save_path=f'led_{test_led}_convergence_intensity.png', show_plot=False
+        #     )
+        #     logger.info(f"      Conv: {metrics.get('convergence_time_ms', 'N/A'):.1f}ms, "
+        #                f"Sat: {metrics.get('saturation_achieved_percent', 'N/A'):.1f}%, "
+        #                f"CV: {metrics.get('steady_state_cv_percent', 'N/A'):.3f}%")
         
     finally:
         # ====================================================================

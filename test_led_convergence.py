@@ -110,19 +110,47 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     logger.info(f"Boost factor needed: {boost_factor:.2f}x")
     
     # Step 4: Apply boost using SAME LOGIC as main calibration code
+    # KEY LOGIC: If LED would exceed 255 in intensity mode, switch to time mode
+    # This matches the production calibration behavior in LEDconverge()
+    
     if mode == 'intensity':
         # INTENSITY MODE: Boost LED intensity, keep integration time fixed
         # This matches LEDnormalizationintensity + LEDconverge with adjust_leds=True
         
         current_integration_time = normalizer.spectrometer.get_integration_time()
-        new_intensity = min(int(base_params['value'] * boost_factor), 255)
+        new_intensity = int(base_params['value'] * boost_factor)
         
-        logger.info(f"Intensity mode: Boosting LED {base_params['value']} → {new_intensity}")
-        logger.info(f"  (keeping integration time fixed at {current_integration_time}ms)")
-        
-        normalizer.controller.set_intensity(led.lower(), new_intensity)
-        boosted_param = new_intensity
-        boosted_param_name = 'LED intensity'
+        # CRITICAL: Check if LED would exceed 255 (hardware limit)
+        if new_intensity > 255:
+            logger.warning(f"Intensity mode: LED {base_params['value']} × {boost_factor:.2f} = {new_intensity} exceeds 255")
+            logger.warning(f"  → SWITCHING TO TIME MODE (LED already at max)")
+            
+            # Switch to time mode: keep LED at 255, boost integration time instead
+            mode = 'time'
+            new_intensity = 255
+            normalizer.controller.set_intensity(led.lower(), new_intensity)
+            
+            # Calculate time boost needed FROM CURRENT INTEGRATION TIME
+            # Use at least 1ms as minimum safe starting point
+            safe_current_time = max(current_integration_time, 1.0)
+            new_time = min(int(safe_current_time * boost_factor), 200)
+            new_time = max(1, new_time)  # Ensure at least 1ms
+            
+            logger.info(f"Time mode: Boosting integration time {safe_current_time}ms → {new_time}ms")
+            logger.info(f"  (keeping LED intensity fixed at {new_intensity})")
+            
+            normalizer.spectrometer.set_integration_time(new_time)
+            boosted_param = new_time
+            boosted_param_name = 'integration time (ms)'
+        else:
+            # Normal intensity boost within limits
+            new_intensity = min(new_intensity, 255)
+            logger.info(f"Intensity mode: Boosting LED {base_params['value']} → {new_intensity}")
+            logger.info(f"  (keeping integration time fixed at {current_integration_time}ms)")
+            
+            normalizer.controller.set_intensity(led.lower(), new_intensity)
+            boosted_param = new_intensity
+            boosted_param_name = 'LED intensity'
         
     else:  # mode == 'time'
         # TIME MODE: Boost integration time, keep LED at 255
