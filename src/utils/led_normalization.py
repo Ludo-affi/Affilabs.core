@@ -215,8 +215,10 @@ class LEDNormalizer:
             logger.warning(f"Target {target_count:.0f} exceeds recommended "
                           f"{recommended_target:.0f}. May cause saturation!")
         
-        # Fix integration time
-        fixed_integration_time = self.spectrometer.get_integration_time()
+        # Fix integration time (use 10ms default for intensity normalization)
+        current_integration_time = self.spectrometer.get_integration_time()
+        fixed_integration_time = max(current_integration_time, 10.0) if current_integration_time > 1.0 else 10.0
+        self.spectrometer.set_integration_time(fixed_integration_time)
         logger.info(f"Normalizing by intensity (fixed time: {fixed_integration_time}ms)...")
         
         results = {}
@@ -383,7 +385,9 @@ class LEDNormalizer:
         mode = params['mode']
         
         if mode == 'intensity':
-            self.spectrometer.set_integration_time(params['integration_time'])
+            # Ensure integration time is at least 1ms for hardware compatibility
+            integration_time = max(params['integration_time'], 1.0)
+            self.spectrometer.set_integration_time(integration_time)
             self.controller.set_intensity(led, params['value'])
         elif mode == 'time':
             self.controller.set_intensity(led, params['intensity'])

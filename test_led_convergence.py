@@ -107,7 +107,7 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     if mode == 'intensity':
         # Boost intensity
         new_intensity = min(int(base_params['value'] * boost_factor), 255)
-        normalizer.controller.set_channel_intensity(led.lower(), new_intensity)
+        normalizer.controller.set_intensity(led.lower(), new_intensity)
         logger.info(f"Boosted intensity: {base_params['value']} → {new_intensity}")
         boosted_param = new_intensity
     else:  # mode == 'time'
