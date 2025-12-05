@@ -1,16 +1,23 @@
 """LED Convergence Test - Aligned with Main Calibration Logic
 
-Tests LED convergence with auto-boost to 80% saturation for optimal SNR.
-Uses SAME convergence strategy as main calibration code (LEDCONVERGENCE.py):
-- Intensity mode: Boost LED intensity, keep integration time fixed
-- Time mode: Boost integration time, keep LED at 255
+Tests LED convergence with iterative adjustments to hit target intensity.
+Uses GOLD-STANDARD convergence logic from led_methods.py LEDconverge():
+- Iterative LED intensity adjustments with furthest-first prioritization
+- Median-driven integration time adjustments
+- Automatic mode switching when LED hits 255 limit
+- Saturation detection and proportional backoff
+
+Production Calibration Parameters (from calibration_6step.py):
+- Target: 80% detector max (52,428 counts for 16-bit)
+- Tolerance: ±2.5% (tight)
+- Max iterations: 10
 
 Features:
-- Auto-boost to 80% of max detector count for optimal SNR
+- Weakest LED tested first (matches main calibration priority)
 - Adaptive sampling: 10 rapid samples (no delay) + 20 steady-state samples
 - Enhanced metrics: rise time, overshoot, convergence time, stability CV
 - 3-panel diagnostic plots (intensity, normalized response, stability)
-- Follows same parameter adjustment logic as LEDconverge/LEDnormalizationtime
+- V1.9 firmware optimized (multi-LED command for fast switching)
 
 Usage:
     python test_led_convergence.py [mode] [led]
@@ -23,9 +30,14 @@ import numpy as np
 import time
 import logging
 import json
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 import sys
 import os
+
+# Production calibration thresholds from main code (calibration_6step.py)
+CONVERGENCE_TARGET_PERCENT = 0.80  # 80% of detector max
+CONVERGENCE_TOLERANCE_PERCENT = 0.025  # ±2.5% tight tolerance  
+MAX_CONVERGENCE_ITERATIONS = 10  # Maximum iterations to reach target
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -46,6 +58,131 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def iterative_led_convergence(
+    normalizer: LEDNormalizer,
+    led: str,
+    target_count: float,
+    tolerance_percent: float,
+    max_iterations: int,
+    mode: str,
+    initial_led_intensity: int,
+    initial_integration_time: float,
+    max_detector_count: int = 65535
+) -> Tuple[int, float, List[float], bool]:
+    """
+    Iterative convergence using gold-standard logic from led_methods.py LEDconverge().
+    
+    Strategy:
+    - Start with initial parameters
+    - Measure intensity, compare to target ± tolerance
+    - Adjust LED intensity or integration time based on error
+    - Prioritize furthest-from-target channels (in multi-LED case, here just one)
+    - Use median-driven adjustments for robustness
+    - Apply proportional scaling with bounds (0.80-1.20 for furthest, 0.92-1.08 for normal)
+    
+    Args:
+        normalizer: LEDNormalizer instance
+        led: LED channel ('a', 'b', 'c', 'd')
+        target_count: Target intensity in counts
+        tolerance_percent: Tolerance as fraction of max (e.g., 0.025 = ±2.5%)
+        max_iterations: Maximum iteration count
+        mode: 'intensity' or 'time'
+        initial_led_intensity: Starting LED intensity
+        initial_integration_time: Starting integration time (ms)
+        max_detector_count: Max detector counts (default 65535 for 16-bit)
+    
+    Returns:
+        (final_led_intensity, final_integration_time, signal_history, converged)
+    """
+    min_sig = target_count - (tolerance_percent * max_detector_count)
+    max_sig = target_count + (tolerance_percent * max_detector_count)
+    
+    current_led = initial_led_intensity
+    current_time = initial_integration_time
+    signal_history = []
+    
+    logger.info(f"\\n🎯 ITERATIVE CONVERGENCE STARTED")
+    logger.info(f"   Target: {target_count:.0f} counts ± {tolerance_percent*100:.1f}%")
+    logger.info(f"   Range: {min_sig:.0f} - {max_sig:.0f} counts")
+    logger.info(f"   Starting: LED={current_led}, Time={current_time:.1f}ms")
+    logger.info(f"   Mode: {'INTENSITY (adjust LED)' if mode == 'intensity' else 'TIME (adjust integration)'}")
+    
+    for iteration in range(max_iterations):
+        # Apply current settings
+        if mode == 'intensity':
+            normalizer.controller.set_intensity(led.lower(), current_led)
+            normalizer.spectrometer.set_integration_time(current_time)
+        else:  # time mode
+            normalizer.controller.set_intensity(led.lower(), 255)  # Always 255 in time mode
+            normalizer.spectrometer.set_integration_time(current_time)
+        
+        # Measure
+        normalizer.controller.turn_on_channel(led.lower())
+        time.sleep(0.02)  # Brief settling
+        
+        spectrum = normalizer.spectrometer.read_spectrum()
+        if spectrum is None:
+            logger.error(f"   Iter {iteration+1}: Failed to read spectrum")
+            continue
+        
+        wavelengths = normalizer.spectrometer.get_wavelengths()
+        signal = normalizer.intensity_calculator.calculate(spectrum, wavelengths)
+        signal_history.append(signal)
+        
+        normalizer.controller.turn_off_channels()
+        time.sleep(0.01)
+        
+        # Check convergence
+        converged = min_sig <= signal <= max_sig
+        pct_of_max = (signal / max_detector_count) * 100
+        status = "✓ CONVERGED" if converged else "→ adjusting"
+        
+        logger.info(f"   Iter {iteration+1}: {signal:.0f} counts ({pct_of_max:.1f}%) {status}")
+        
+        if converged:
+            logger.info(f"   🎉 Target reached in {iteration+1} iterations!")
+            return current_led, current_time, signal_history, True
+        
+        # Calculate adjustment (matches LEDconverge logic)
+        error = abs(signal - target_count)
+        desired_ratio = target_count / signal if signal > 0 else 1.0
+        
+        # Apply bounds: aggressive for large errors, conservative for small
+        # Matches furthest-first logic: 0.80-1.20 for large errors, 0.92-1.08 for small
+        if error > 0.10 * target_count:  # >10% error = aggressive
+            lower, upper = 0.80, 1.20
+        else:
+            lower, upper = 0.92, 1.08
+        
+        desired_ratio = max(lower, min(upper, desired_ratio))
+        
+        if mode == 'intensity':
+            # Adjust LED intensity
+            new_led = int(max(10, min(255, current_led * desired_ratio)))
+            
+            if new_led >= 255 and current_led >= 255:
+                # LED maxed out - switch to time mode
+                logger.warning(f"   ⚠️ LED maxed at 255, switching to TIME mode")
+                mode = 'time'
+                current_led = 255
+                # Adjust time instead
+                new_time = max(1.0, min(200.0, current_time * desired_ratio))
+                logger.info(f"   → Time {current_time:.1f}ms → {new_time:.1f}ms")
+                current_time = new_time
+            else:
+                logger.info(f"   → LED {current_led} → {new_led} (ratio {desired_ratio:.2f})")
+                current_led = new_led
+        else:
+            # Time mode: adjust integration time
+            new_time = max(1.0, min(200.0, current_time * desired_ratio))
+            logger.info(f"   → Time {current_time:.1f}ms → {new_time:.1f}ms (ratio {desired_ratio:.2f})")
+            current_time = new_time
+    
+    logger.warning(f"   ⚠️ Did not converge after {max_iterations} iterations")
+    logger.warning(f"   Final: {signal_history[-1] if signal_history else 0:.0f} counts (target {target_count:.0f})")
+    return current_led, current_time, signal_history, False
 
 
 def test_led_convergence_optimized(normalizer: LEDNormalizer, 
@@ -102,76 +239,67 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     
     logger.info(f"Current intensity at normalized settings: {current_intensity:.1f} counts")
     
-    # Step 3: Calculate boost factor to reach target saturation
-    target_count = max_detector_count * target_saturation
-    boost_factor = target_count / current_intensity if current_intensity > 0 else 1.0
+    # Step 3: Use production calibration thresholds
+    target_count = max_detector_count * CONVERGENCE_TARGET_PERCENT
+    tolerance_count = CONVERGENCE_TOLERANCE_PERCENT * max_detector_count
     
-    logger.info(f"Target count ({target_saturation*100:.0f}% saturation): {target_count:.0f}")
-    logger.info(f"Boost factor needed: {boost_factor:.2f}x")
+    logger.info(f"Target count ({CONVERGENCE_TARGET_PERCENT*100:.0f}% saturation): {target_count:.0f}")
+    logger.info(f"Tolerance: ±{CONVERGENCE_TOLERANCE_PERCENT*100:.1f}% = ±{tolerance_count:.0f} counts")
+    logger.info(f"Range: {target_count - tolerance_count:.0f} - {target_count + tolerance_count:.0f} counts")
     
-    # Step 4: Apply boost using SAME LOGIC as main calibration code
-    # KEY LOGIC: If LED would exceed 255 in intensity mode, switch to time mode
-    # This matches the production calibration behavior in LEDconverge()
+    # Step 4: Run iterative convergence (matches LEDconverge from led_methods.py)
+    initial_led = base_params['value'] if mode == 'intensity' else 255
+    initial_time = normalizer.spectrometer.get_integration_time()
     
+    # Safety check: ensure initial time is at least 1ms
+    if initial_time < 1.0:
+        initial_time = 10.0  # Default safe starting point
+        normalizer.spectrometer.set_integration_time(initial_time)
+        logger.warning(f"   ⚠️ Initial integration time too low, setting to {initial_time}ms")
+    
+    logger.info(f"\n🔄 Starting iterative convergence...")
+    logger.info(f"   Initial: LED={initial_led}, Time={initial_time:.1f}ms")
+    
+    final_led, final_time, convergence_signals, converged = iterative_led_convergence(
+        normalizer=normalizer,
+        led=led,
+        target_count=target_count,
+        tolerance_percent=CONVERGENCE_TOLERANCE_PERCENT,
+        max_iterations=MAX_CONVERGENCE_ITERATIONS,
+        mode=mode,
+        initial_led_intensity=initial_led,
+        initial_integration_time=initial_time,
+        max_detector_count=max_detector_count
+    )
+    
+    if converged:
+        logger.info(f"\\n✅ CONVERGENCE SUCCESSFUL")
+        logger.info(f"   Final: LED={final_led}, Time={final_time:.1f}ms")
+        logger.info(f"   Final signal: {convergence_signals[-1]:.0f} counts")
+        boosted_param_name = 'LED intensity' if mode == 'intensity' else 'integration time (ms)'
+        boosted_param = final_led if mode == 'intensity' else final_time
+    else:
+        logger.warning(f"\\n⚠️ CONVERGENCE INCOMPLETE")
+        logger.warning(f"   Final: LED={final_led}, Time={final_time:.1f}ms")
+        logger.warning(f"   Final signal: {convergence_signals[-1] if convergence_signals else 0:.0f} counts")
+        logger.warning(f"   Target was: {target_count:.0f} counts")
+        boosted_param_name = 'LED intensity' if mode == 'intensity' else 'integration time (ms)'
+        boosted_param = final_led if mode == 'intensity' else final_time
+    
+    # Step 5: Apply final converged settings for measurement phase
     if mode == 'intensity':
-        # INTENSITY MODE: Boost LED intensity, keep integration time fixed
-        # This matches LEDnormalizationintensity + LEDconverge with adjust_leds=True
-        
-        current_integration_time = normalizer.spectrometer.get_integration_time()
-        new_intensity = int(base_params['value'] * boost_factor)
-        
-        # CRITICAL: Check if LED would exceed 255 (hardware limit)
-        if new_intensity > 255:
-            logger.warning(f"Intensity mode: LED {base_params['value']} × {boost_factor:.2f} = {new_intensity} exceeds 255")
-            logger.warning(f"  → SWITCHING TO TIME MODE (LED already at max)")
-            
-            # Switch to time mode: keep LED at 255, boost integration time instead
-            mode = 'time'
-            new_intensity = 255
-            normalizer.controller.set_intensity(led.lower(), new_intensity)
-            
-            # Calculate time boost needed FROM CURRENT INTEGRATION TIME
-            # Use at least 1ms as minimum safe starting point
-            safe_current_time = max(current_integration_time, 1.0)
-            new_time = min(int(safe_current_time * boost_factor), 200)
-            new_time = max(1, new_time)  # Ensure at least 1ms
-            
-            logger.info(f"Time mode: Boosting integration time {safe_current_time}ms → {new_time}ms")
-            logger.info(f"  (keeping LED intensity fixed at {new_intensity})")
-            
-            normalizer.spectrometer.set_integration_time(new_time)
-            boosted_param = new_time
-            boosted_param_name = 'integration time (ms)'
-        else:
-            # Normal intensity boost within limits
-            new_intensity = min(new_intensity, 255)
-            logger.info(f"Intensity mode: Boosting LED {base_params['value']} → {new_intensity}")
-            logger.info(f"  (keeping integration time fixed at {current_integration_time}ms)")
-            
-            normalizer.controller.set_intensity(led.lower(), new_intensity)
-            boosted_param = new_intensity
-            boosted_param_name = 'LED intensity'
-        
-    else:  # mode == 'time'
-        # TIME MODE: Boost integration time, keep LED at 255
-        # This matches LEDnormalizationtime logic
-        
-        current_led = normalizer.controller.get_led_intensities().get(led.lower(), 255)
-        new_time = min(int(base_params['value'] * boost_factor), 200)
-        
-        logger.info(f"Time mode: Boosting integration time {base_params['value']}ms → {new_time}ms")
-        logger.info(f"  (keeping LED intensity fixed at {current_led})")
-        
-        normalizer.spectrometer.set_integration_time(new_time)
-        boosted_param = new_time
-        boosted_param_name = 'integration time (ms)'
+        normalizer.controller.set_intensity(led.lower(), final_led)
+        normalizer.spectrometer.set_integration_time(final_time)
+    else:
+        normalizer.controller.set_intensity(led.lower(), 255)
+        normalizer.spectrometer.set_integration_time(final_time)
     
-    # Turn off and prepare for convergence test
+    # Turn off and prepare for convergence dynamics test
     normalizer.controller.turn_off_channels()
     time.sleep(0.5)  # Ensure complete off state
     
-    # Step 5: Rapid convergence test - ADAPTIVE SAMPLING
-    logger.info(f"\nStarting adaptive convergence test...")
+    # Step 6: Rapid convergence test - ADAPTIVE SAMPLING
+    logger.info(f"\n📊 Starting convergence dynamics measurement...")
     logger.info(f"Phase 1: {rapid_samples} rapid samples (no delay)")
     logger.info(f"Phase 2: {num_samples - rapid_samples} steady-state samples (100ms delay)")
     
@@ -254,13 +382,21 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     # Saturation achievement
     saturation_achieved = (final_value / max_detector_count) * 100
     
+    # Convergence success info
+    final_led_value = final_led if mode == 'intensity' else 255
+    final_time_value = final_time
+    
     metrics = {
         'led': led,
         'mode': mode,
         'boosted_parameter': boosted_param_name,
         'target_count': target_count,
-        'target_saturation_percent': target_saturation * 100,
-        'boost_factor': boost_factor,
+        'target_saturation_percent': CONVERGENCE_TARGET_PERCENT * 100,
+        'tolerance_percent': CONVERGENCE_TOLERANCE_PERCENT * 100,
+        'converged': converged,
+        'final_led_intensity': final_led_value,
+        'final_integration_time': final_time_value,
+        'convergence_iterations': len(convergence_signals),
         'boosted_parameter': boosted_param,
         'samples': samples,
         'timestamps': timestamps,
@@ -278,9 +414,10 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     
     # Print enhanced summary
     logger.info(f"\n--- LED {led.upper()} OPTIMIZED Convergence Summary ---")
-    logger.info(f"Mode: {mode.upper()} (boosted {boosted_param_name})")
-    logger.info(f"Target: {target_count:.0f} counts ({target_saturation*100:.0f}% saturation)")
-    logger.info(f"Boost factor: {boost_factor:.2f}x → {boosted_param_name} = {boosted_param}")
+    logger.info(f"Mode: {mode.upper()} (adjusted {boosted_param_name})")
+    logger.info(f"Target: {target_count:.0f} counts ({CONVERGENCE_TARGET_PERCENT*100:.0f}% saturation)")
+    logger.info(f"Converged: {'✓ YES' if converged else '✗ NO'} after {len(convergence_signals)} iterations")
+    logger.info(f"Final settings: LED={final_led_value}, Time={final_time_value:.1f}ms")
     if convergence_time:
         logger.info(f"Convergence time (to 95%): {metrics['convergence_time_ms']:.1f}ms")
     if rise_time:
