@@ -23,7 +23,7 @@ from src.utils.led_normalization import (
 
 # Import legacy hardware (for wrapping)
 from src.utils.controller import PicoP4SPR
-from src.utils.usb4000_wrapper import USB4000Wrapper
+from src.utils.usb4000_wrapper import USB4000
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def test_led_normalization_with_hal():
     
     # Your existing hardware initialization
     picop4spr = PicoP4SPR(port='COM5')
-    usb4000 = USB4000Wrapper()
+    usb4000 = USB4000()
     
     # ========================================================================
     # STEP 2: Wrap with HAL adapters (existing functions!)
@@ -242,8 +242,8 @@ def test_with_mock_devices():
     logger.info("="*60)
     
     # Create mock devices (existing HAL mocks)
-    controller = MockController(device_id='mock_controller')
-    spectrometer = MockSpectrometer(device_id='mock_spectrometer')
+    controller = MockController(model='MockPicoP4SPR')
+    spectrometer = MockSpectrometer(model='MockUSB4000')
     
     # Connect
     controller.connect()
@@ -284,7 +284,11 @@ if __name__ == '__main__':
     print("  3. Mock devices (no hardware required)")
     print("="*60)
     
-    choice = input("\nEnter choice (1-3): ").strip()
+    # Accept command line argument or prompt
+    if len(sys.argv) > 1:
+        choice = sys.argv[1]
+    else:
+        choice = input("\nEnter choice (1-3): ").strip()
     
     if choice == '1':
         test_led_normalization_with_hal()

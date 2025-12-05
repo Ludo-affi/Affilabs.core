@@ -108,12 +108,12 @@ class LEDNormalizer:
             caps = self.controller.get_capabilities()
             max_channels = caps.max_channels
             
-            # Assume channels are A, B, C, D up to max_channels
-            channel_names = ['A', 'B', 'C', 'D']
+            # Assume channels are a, b, c, d up to max_channels (lowercase for HAL)
+            channel_names = ['a', 'b', 'c', 'd']
             return channel_names[:max_channels]
         except:
             # Fallback: assume 4 channels
-            return ['A', 'B', 'C', 'D']
+            return ['a', 'b', 'c', 'd']
     
     def rank_leds(self, 
                   test_intensity: int = 255,
@@ -153,7 +153,7 @@ class LEDNormalizer:
             logger.info(f"  LED {led}: {intensity:.1f} counts")
             
             # Turn off
-            self.controller.turn_off_all_channels()
+            self.controller.turn_off_channels()
             time.sleep(0.1)
         
         # Sort brightest to dimmest
@@ -329,7 +329,7 @@ class LEDNormalizer:
             wavelengths = self.spectrometer.get_wavelengths() if hasattr(self.spectrometer, 'get_wavelengths') else None
             count = self.intensity_calculator.calculate(spectrum, wavelengths)
             
-            self.controller.turn_off_all_channels()
+            self.controller.turn_off_channels()
             
             error = abs(count - target_count)
             
