@@ -122,7 +122,8 @@ class USB4000Adapter(ISpectrometer):
     def get_wavelengths(self) -> np.ndarray:
         """Get wavelength calibration array."""
         try:
-            wl = self._spectrometer.wavelengths()
+            # wavelengths is a property, not a method
+            wl = self._spectrometer.wavelengths
             if wl is None:
                 raise CommandError("Wavelength calibration not available")
             return np.array(wl)
@@ -163,8 +164,9 @@ class USB4000Adapter(ISpectrometer):
             raise ValueError(f"num_scans must be >= 1, got {num_scans}")
 
         try:
-            if hasattr(self._spectrometer, 'intensities'):
-                intensities = self._spectrometer.intensities(num_scans)
+            # USB4000 uses read_intensity() method
+            if hasattr(self._spectrometer, 'read_intensity'):
+                intensities = self._spectrometer.read_intensity()
                 if intensities is None:
                     return None
                 return np.array(intensities)
@@ -260,7 +262,8 @@ class PhasePhotonicsAdapter(ISpectrometer):
     def get_wavelengths(self) -> np.ndarray:
         """Get wavelength calibration array."""
         try:
-            wl = self._spectrometer.wavelengths()
+            # wavelengths is a property, not a method
+            wl = self._spectrometer.wavelengths
             if wl is None:
                 raise CommandError("Wavelength calibration not available")
             return np.array(wl)

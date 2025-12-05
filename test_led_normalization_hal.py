@@ -41,8 +41,8 @@ def test_led_normalization_with_hal():
     # ========================================================================
     logger.info("\n[1] Creating legacy hardware instances...")
     
-    # Your existing hardware initialization
-    picop4spr = PicoP4SPR(port='COM5')
+    # Your existing hardware initialization (auto-detects ports)
+    picop4spr = PicoP4SPR()
     usb4000 = USB4000()
     
     # ========================================================================
@@ -159,12 +159,12 @@ def test_led_normalization_with_hal():
         # ====================================================================
         # STEP 8: Apply saved normalization
         # ====================================================================
-        logger.info("\n[8] Applying saved normalization for LED A...")
+        logger.info("\n[8] Applying saved normalization for LED a (time mode)...")
         
-        normalizer.apply_normalization(results_intensity, 'A')
-        controller.turn_on_channel('A')
+        normalizer.apply_normalization(results_time, 'a')
+        controller.turn_on_channel('a')
         
-        logger.info("  ✓ LED A configured with normalized parameters")
+        logger.info("  ✓ LED a configured with normalized parameters from time mode")
         logger.info("  (LED is now on with normalized settings)")
         
     finally:
@@ -194,8 +194,8 @@ def test_with_device_manager():
     manager = DeviceManager()
     
     # Create and register devices
-    picop4spr = PicoP4SPR(port='COM5')
-    usb4000 = USB4000Wrapper()
+    picop4spr = PicoP4SPR()
+    usb4000 = USB4000()
     
     controller = wrap_existing_controller(picop4spr)
     spectrometer = wrap_existing_spectrometer(usb4000)

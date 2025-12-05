@@ -146,6 +146,10 @@ class LEDNormalizer:
             
             # Measure
             spectrum = self.spectrometer.read_spectrum()
+            if spectrum is None:
+                logger.error(f"  LED {led}: Failed to read spectrum (returned None)")
+                continue
+                
             wavelengths = self.spectrometer.get_wavelengths() if hasattr(self.spectrometer, 'get_wavelengths') else None
             intensity = self.intensity_calculator.calculate(spectrum, wavelengths)
             
