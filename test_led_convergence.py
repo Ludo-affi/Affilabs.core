@@ -1,20 +1,22 @@
-"""LED Convergence Test - Smart Python with V1.9 Firmware Features
+"""LED Convergence Test - Aligned with Main Calibration Logic
 
 Tests LED convergence with auto-boost to 80% saturation for optimal SNR.
-Uses adaptive sampling: rapid initial samples to catch turn-on transient,
-then steady-state samples for stability measurement.
+Uses SAME convergence strategy as main calibration code (LEDCONVERGENCE.py):
+- Intensity mode: Boost LED intensity, keep integration time fixed
+- Time mode: Boost integration time, keep LED at 255
 
 Features:
-- Auto-boost to 80% of max detector count
-- Adaptive sampling (fast then slow)
-- Enhanced metrics: rise time, overshoot, stability
-- 3-panel diagnostic plots
+- Auto-boost to 80% of max detector count for optimal SNR
+- Adaptive sampling: 10 rapid samples (no delay) + 20 steady-state samples
+- Enhanced metrics: rise time, overshoot, convergence time, stability CV
+- 3-panel diagnostic plots (intensity, normalized response, stability)
+- Follows same parameter adjustment logic as LEDconverge/LEDnormalizationtime
 
 Usage:
     python test_led_convergence.py [mode] [led]
     
     mode: 1=Real hardware, 2=Mock devices (default: 2)
-    led: A, B, C, or D (default: A)
+    led: a, b, c, or d (default: a)
 """
 
 import numpy as np
@@ -57,6 +59,10 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     """
     Optimized LED convergence test with V1.9 firmware.
     
+    Uses same convergence logic as main calibration code:
+    - Intensity mode: Boost LED intensity, keep integration time fixed
+    - Time mode: Boost integration time, keep LED at 255
+    
     Features:
     1. Auto-boost to 80% of max detector count for optimal SNR
     2. Rapid initial sampling (no delays) to catch turn-on transient
@@ -64,9 +70,9 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     
     Args:
         normalizer: LEDNormalizer instance
-        results: Normalization results
+        results: Normalization results from normalize()
         led: LED to test (lowercase: 'a', 'b', 'c', 'd')
-        mode: 'intensity' or 'time'
+        mode: 'intensity' or 'time' (must match normalization mode)
         target_saturation: Target percentage of max detector count (0.8 = 80%)
         max_detector_count: Maximum detector counts (65535 for 16-bit)
         num_samples: Total samples to collect
@@ -84,7 +90,7 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     normalizer.apply_normalization(results, led.lower())
     base_params = results[led.lower()]
     
-    # Step 2: Measure current intensity
+    # Step 2: Measure current intensity at normalized settings
     normalizer.controller.turn_on_channel(led.lower())
     time.sleep(0.2)  # Initial settling
     
@@ -94,7 +100,7 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     wavelengths = normalizer.spectrometer.get_wavelengths()
     current_intensity = normalizer.intensity_calculator.calculate(spectrum, wavelengths)
     
-    logger.info(f"Current intensity: {current_intensity:.1f} counts")
+    logger.info(f"Current intensity at normalized settings: {current_intensity:.1f} counts")
     
     # Step 3: Calculate boost factor to reach target saturation
     target_count = max_detector_count * target_saturation
@@ -103,19 +109,34 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     logger.info(f"Target count ({target_saturation*100:.0f}% saturation): {target_count:.0f}")
     logger.info(f"Boost factor needed: {boost_factor:.2f}x")
     
-    # Step 4: Apply boost (adjust intensity or time based on mode)
+    # Step 4: Apply boost using SAME LOGIC as main calibration code
     if mode == 'intensity':
-        # Boost intensity
+        # INTENSITY MODE: Boost LED intensity, keep integration time fixed
+        # This matches LEDnormalizationintensity + LEDconverge with adjust_leds=True
+        
+        current_integration_time = normalizer.spectrometer.get_integration_time()
         new_intensity = min(int(base_params['value'] * boost_factor), 255)
+        
+        logger.info(f"Intensity mode: Boosting LED {base_params['value']} → {new_intensity}")
+        logger.info(f"  (keeping integration time fixed at {current_integration_time}ms)")
+        
         normalizer.controller.set_intensity(led.lower(), new_intensity)
-        logger.info(f"Boosted intensity: {base_params['value']} → {new_intensity}")
         boosted_param = new_intensity
+        boosted_param_name = 'LED intensity'
+        
     else:  # mode == 'time'
-        # Boost integration time
+        # TIME MODE: Boost integration time, keep LED at 255
+        # This matches LEDnormalizationtime logic
+        
+        current_led = normalizer.controller.get_led_intensities().get(led.lower(), 255)
         new_time = min(int(base_params['value'] * boost_factor), 200)
+        
+        logger.info(f"Time mode: Boosting integration time {base_params['value']}ms → {new_time}ms")
+        logger.info(f"  (keeping LED intensity fixed at {current_led})")
+        
         normalizer.spectrometer.set_integration_time(new_time)
-        logger.info(f"Boosted integration time: {base_params['value']}ms → {new_time}ms")
         boosted_param = new_time
+        boosted_param_name = 'integration time (ms)'
     
     # Turn off and prepare for convergence test
     normalizer.controller.turn_off_channels()
@@ -208,6 +229,7 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     metrics = {
         'led': led,
         'mode': mode,
+        'boosted_parameter': boosted_param_name,
         'target_count': target_count,
         'target_saturation_percent': target_saturation * 100,
         'boost_factor': boost_factor,
@@ -228,8 +250,9 @@ def test_led_convergence_optimized(normalizer: LEDNormalizer,
     
     # Print enhanced summary
     logger.info(f"\n--- LED {led.upper()} OPTIMIZED Convergence Summary ---")
+    logger.info(f"Mode: {mode.upper()} (boosted {boosted_param_name})")
     logger.info(f"Target: {target_count:.0f} counts ({target_saturation*100:.0f}% saturation)")
-    logger.info(f"Boost factor: {boost_factor:.2f}x")
+    logger.info(f"Boost factor: {boost_factor:.2f}x → {boosted_param_name} = {boosted_param}")
     if convergence_time:
         logger.info(f"Convergence time (to 95%): {metrics['convergence_time_ms']:.1f}ms")
     if rise_time:
