@@ -6,11 +6,12 @@ Processes S-pol, P-pol, and dark measurements to create normalized calibration m
 
 Steps:
 1. Load S, P, and dark measurements
-2. Apply dark correction to all measurements
-3. Build 2D RBF models for S and P separately
-4. Validate models in SPR region (10k-20k counts)
-5. Calculate polarization-dependent correction factors
-6. Create unified calibration matrix
+2. Validate intensity/time matching between S and P
+3. Apply dark correction to all measurements
+4. Build 2D RBF models for S and P separately
+5. Validate models in SPR region (10k-20k counts)
+6. Calculate polarization-dependent correction factors
+7. Create unified calibration matrix
 """
 
 import json
@@ -18,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import RBFInterpolator
 from pathlib import Path
+from datetime import datetime
 
 def get_detector_serial():
     """Get detector serial from device config"""
@@ -79,6 +81,162 @@ def load_calibration_data(detector_serial=None):
         dark_offset = 0.0
 
     return data_S, data_P, (dark_rate, dark_offset), detector_serial
+
+
+def validate_intensity_time_matching(data_S, data_P):
+    """
+    Validate that S and P measurements have matching (intensity, time) pairs
+
+    This is critical for building proper 2D RBF models where both S and P
+    need to sample the same (intensity, time) space.
+
+    Returns: (is_valid, report_dict)
+    """
+    print("\n" + "="*80)
+    print("VALIDATING S/P INTENSITY/TIME MATCHING")
+    print("="*80)
+
+    report = {
+        'overall_valid': True,
+        'timestamp': datetime.now().isoformat(),
+        'leds': {}
+    }
+
+    for led_name in ['A', 'B', 'C', 'D']:
+        measurements_S = data_S[led_name]['measurements']
+        measurements_P = data_P[led_name]['measurements']
+
+        # Extract (intensity, time) pairs, excluding failed measurements
+        pairs_S = [(m['intensity'], m['time']) for m in measurements_S
+                   if m.get('counts') is not None]
+        pairs_P = [(m['intensity'], m['time']) for m in measurements_P
+                   if m.get('counts') is not None]
+
+        # Convert to sets for comparison
+        set_S = set(pairs_S)
+        set_P = set(pairs_P)
+
+        # Find differences
+        missing_in_P = set_S - set_P
+        missing_in_S = set_P - set_S
+        common = set_S & set_P
+
+        # Check for duplicates
+        duplicates_S = [p for p in pairs_S if pairs_S.count(p) > 1]
+        duplicates_P = [p for p in pairs_P if pairs_P.count(p) > 1]
+
+        led_valid = (len(missing_in_P) == 0 and len(missing_in_S) == 0 and
+                    len(duplicates_S) == 0 and len(duplicates_P) == 0)
+
+        report['leds'][led_name] = {
+            'valid': led_valid,
+            'num_S': len(pairs_S),
+            'num_P': len(pairs_P),
+            'num_common': len(common),
+            'missing_in_P': sorted(list(missing_in_P)),
+            'missing_in_S': sorted(list(missing_in_S)),
+            'duplicates_S': sorted(list(set(duplicates_S))),
+            'duplicates_P': sorted(list(set(duplicates_P)))
+        }
+
+        print(f"\nLED {led_name}:")
+        print(f"  S measurements: {len(pairs_S)}")
+        print(f"  P measurements: {len(pairs_P)}")
+        print(f"  Common (I, T) pairs: {len(common)}")
+
+        if duplicates_S:
+            print(f"  ⚠️  Duplicates in S: {len(set(duplicates_S))} unique pairs")
+            report['overall_valid'] = False
+
+        if duplicates_P:
+            print(f"  ⚠️  Duplicates in P: {len(set(duplicates_P))} unique pairs")
+            report['overall_valid'] = False
+
+        if missing_in_P:
+            print(f"  ⚠️  Missing in P: {len(missing_in_P)} pairs")
+            if len(missing_in_P) <= 5:
+                for pair in sorted(missing_in_P):
+                    print(f"      - I={pair[0]}, T={pair[1]} ms")
+            report['overall_valid'] = False
+
+        if missing_in_S:
+            print(f"  ⚠️  Missing in S: {len(missing_in_S)} pairs")
+            if len(missing_in_S) <= 5:
+                for pair in sorted(missing_in_S):
+                    print(f"      - I={pair[0]}, T={pair[1]} ms")
+            report['overall_valid'] = False
+
+        if led_valid:
+            print(f"  ✓ Perfect S/P matching")
+
+    print("\n" + "-"*80)
+    if report['overall_valid']:
+        print("✓ ALL LEDS: Perfect S/P matching - ready for 2D RBF model construction")
+    else:
+        print("⚠️  WARNING: S/P measurements not perfectly matched")
+        print("   This may cause issues in 2D RBF model construction")
+        print("   Consider filtering to common pairs only")
+
+    return report['overall_valid'], report
+
+
+def filter_to_common_pairs(data_S, data_P):
+    """
+    Filter S and P measurements to only include common (intensity, time) pairs
+
+    This ensures both datasets have identical sampling points for 2D RBF model.
+
+    Returns: (filtered_data_S, filtered_data_P)
+    """
+    print("\n" + "="*80)
+    print("FILTERING TO COMMON (INTENSITY, TIME) PAIRS")
+    print("="*80)
+
+    filtered_S = {}
+    filtered_P = {}
+
+    for led_name in ['A', 'B', 'C', 'D']:
+        measurements_S = data_S[led_name]['measurements']
+        measurements_P = data_P[led_name]['measurements']
+
+        # Build dict of (intensity, time) -> measurement for quick lookup
+        s_dict = {(m['intensity'], m['time']): m for m in measurements_S
+                  if m.get('counts') is not None}
+        p_dict = {(m['intensity'], m['time']): m for m in measurements_P
+                  if m.get('counts') is not None}
+
+        # Find common pairs
+        common_pairs = set(s_dict.keys()) & set(p_dict.keys())
+
+        # Extract measurements for common pairs only
+        common_S = [s_dict[pair] for pair in sorted(common_pairs)]
+        common_P = [p_dict[pair] for pair in sorted(common_pairs)]
+
+        filtered_S[led_name] = {
+            'measurements': common_S,
+            'polarization': 'S',
+            'original_count': len(measurements_S),
+            'filtered_count': len(common_S)
+        }
+
+        filtered_P[led_name] = {
+            'measurements': common_P,
+            'polarization': 'P',
+            'original_count': len(measurements_P),
+            'filtered_count': len(common_P)
+        }
+
+        print(f"LED {led_name}:")
+        print(f"  Original S: {len(measurements_S)} → Filtered: {len(common_S)}")
+        print(f"  Original P: {len(measurements_P)} → Filtered: {len(common_P)}")
+
+        if len(common_S) < len(measurements_S) or len(common_P) < len(measurements_P):
+            removed_S = len(measurements_S) - len(common_S)
+            removed_P = len(measurements_P) - len(common_P)
+            print(f"  ⚠️  Removed {removed_S} S and {removed_P} P measurements")
+
+    return filtered_S, filtered_P
+
 
 def apply_dark_correction(measurements, dark_rate, dark_offset):
     """Apply dark correction to measurements"""
@@ -145,10 +303,35 @@ def process_calibration():
 
     if data_S is None or data_P is None:
         print("\nERROR: Required calibration data not found!")
-        print("Run: python measure_spr_calibration_with_polarization.py")
+        print("Run: python measure_spr_calibration_matched.py")
         return
 
     dark_rate, dark_offset = dark_params
+
+    # Validate S/P matching
+    is_matched, validation_report = validate_intensity_time_matching(data_S, data_P)
+
+    # Save validation report
+    validation_file = f'LED-Counts relationship/spr_processing_validation_{detector_serial}.json'
+    with open(validation_file, 'w') as f:
+        json.dump(validation_report, f, indent=2)
+    print(f"\n✓ Validation report saved to: {validation_file}")
+
+    # Filter to common pairs if not perfectly matched
+    if not is_matched:
+        print("\n⚠️  Filtering to common (intensity, time) pairs only...")
+        data_S_filtered, data_P_filtered = filter_to_common_pairs(data_S, data_P)
+
+        # Ask user to confirm
+        response = input("\nProceed with filtered data? (yes/no): ").strip().lower()
+        if response not in ['yes', 'y']:
+            print("Processing aborted. Re-run calibration measurement for better data.")
+            return
+
+        data_S = data_S_filtered
+        data_P = data_P_filtered
+    else:
+        print("\n✓ Data validation passed - proceeding with processing")
 
     print("\n" + "="*80)
     print("APPLYING DARK CORRECTION")
