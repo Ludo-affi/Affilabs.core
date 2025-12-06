@@ -1,0 +1,745 @@
+{
+  "A": {
+    "channel": "a",
+    "measurements": [
+      {
+        "intensity": 40,
+        "time": 10.0,
+        "counts": 5416.324800285095
+      },
+      {
+        "intensity": 90,
+        "time": 10.0,
+        "counts": 8178.00819647789
+      },
+      {
+        "intensity": 140,
+        "time": 10.0,
+        "counts": 10947.476464823449
+      },
+      {
+        "intensity": 200,
+        "time": 10.0,
+        "counts": 14293.025272473495
+      },
+      {
+        "intensity": 255,
+        "time": 10.0,
+        "counts": 17270.738870905472
+      },
+      {
+        "intensity": 255,
+        "time": 7.5,
+        "counts": 13703.321206901672
+      },
+      {
+        "intensity": 255,
+        "time": 13.2,
+        "counts": 21817.104208119265
+      },
+      {
+        "intensity": 255,
+        "time": 18.9,
+        "counts": 29930.88720933686
+      },
+      {
+        "intensity": 255,
+        "time": 24.5,
+        "counts": 37838.37109850622
+      },
+      {
+        "intensity": 255,
+        "time": 30.2,
+        "counts": 45755.58607786654
+      },
+      {
+        "intensity": 153,
+        "time": 25.0,
+        "counts": 24690.111276096573
+      },
+      {
+        "intensity": 204,
+        "time": 25.0,
+        "counts": 31677.423276809313
+      },
+      {
+        "intensity": 255,
+        "time": 25.0,
+        "counts": 38575.59849137291
+      },
+      {
+        "intensity": 153,
+        "time": 30.0,
+        "counts": 28863.970480800643
+      },
+      {
+        "intensity": 204,
+        "time": 30.0,
+        "counts": 37218.306031538625
+      },
+      {
+        "intensity": 255,
+        "time": 30.0,
+        "counts": 45444.58043536364
+      },
+      {
+        "intensity": 127,
+        "time": 35.0,
+        "counts": 28013.86244171888
+      },
+      {
+        "intensity": 170,
+        "time": 35.0,
+        "counts": 36310.58993852642
+      },
+      {
+        "intensity": 213,
+        "time": 35.0,
+        "counts": 44467.57898019184
+      },
+      {
+        "intensity": 255,
+        "time": 35.0,
+        "counts": 52138.01351230956
+      },
+      {
+        "intensity": 107,
+        "time": 40.0,
+        "counts": 27121.716093012208
+      },
+      {
+        "intensity": 143,
+        "time": 40.0,
+        "counts": 35124.56466605292
+      },
+      {
+        "intensity": 179,
+        "time": 40.0,
+        "counts": 42957.70302616339
+      },
+      {
+        "intensity": 214,
+        "time": 40.0,
+        "counts": 50306.23309476436
+      },
+      {
+        "intensity": 250,
+        "time": 40.0,
+        "counts": 57499.454963917684
+      },
+      {
+        "intensity": 91,
+        "time": 45.0,
+        "counts": 26129.92338075015
+      },
+      {
+        "intensity": 122,
+        "time": 45.0,
+        "counts": 33852.51655629139
+      },
+      {
+        "intensity": 152,
+        "time": 45.0,
+        "counts": 41268.77501262139
+      },
+      {
+        "intensity": 183,
+        "time": 45.0,
+        "counts": 48738.35984319782
+      },
+      {
+        "intensity": 213,
+        "time": 45.0,
+        "counts": 55791.84325720904
+      }
+    ],
+    "optimal_settings": {
+      "fixed_time_35ms": {
+        "intensity": 255,
+        "time": 35.0,
+        "predicted_counts": 52137.802699731605
+      },
+      "fixed_intensity_255": {
+        "intensity": 255,
+        "time": 255.0,
+        "predicted_counts": 257483.076680229
+      },
+      "minimum_time": {
+        "intensity": 255,
+        "time": 35.0,
+        "predicted_counts": 52137.802699731605
+      }
+    }
+  },
+  "B": {
+    "channel": "b",
+    "measurements": [
+      {
+        "intensity": 40,
+        "time": 10.0,
+        "counts": 8415.446797137172
+      },
+      {
+        "intensity": 90,
+        "time": 10.0,
+        "counts": 14795.14952632673
+      },
+      {
+        "intensity": 140,
+        "time": 10.0,
+        "counts": 21316.92617230422
+      },
+      {
+        "intensity": 200,
+        "time": 10.0,
+        "counts": 29125.152941525852
+      },
+      {
+        "intensity": 255,
+        "time": 10.0,
+        "counts": 36359.245389481184
+      },
+      {
+        "intensity": 255,
+        "time": 3.6,
+        "counts": 11214.108336055593
+      },
+      {
+        "intensity": 255,
+        "time": 6.4,
+        "counts": 24000.76084696938
+      },
+      {
+        "intensity": 255,
+        "time": 9.1,
+        "counts": 32850.21426662311
+      },
+      {
+        "intensity": 255,
+        "time": 11.8,
+        "counts": 41516.7231906869
+      },
+      {
+        "intensity": 255,
+        "time": 14.5,
+        "counts": 50140.41531791049
+      },
+      {
+        "intensity": 82,
+        "time": 25.0,
+        "counts": 30360.22290856176
+      },
+      {
+        "intensity": 109,
+        "time": 25.0,
+        "counts": 39148.954325423925
+      },
+      {
+        "intensity": 137,
+        "time": 25.0,
+        "counts": 48029.157990081076
+      },
+      {
+        "intensity": 164,
+        "time": 25.0,
+        "counts": 56158.51073560419
+      },
+      {
+        "intensity": 191,
+        "time": 25.0,
+        "counts": 63872.15130816975
+      },
+      {
+        "intensity": 66,
+        "time": 30.0,
+        "counts": 29199.49847058474
+      },
+      {
+        "intensity": 88,
+        "time": 30.0,
+        "counts": 37959.81510408933
+      },
+      {
+        "intensity": 110,
+        "time": 30.0,
+        "counts": 46348.40409229947
+      },
+      {
+        "intensity": 132,
+        "time": 30.0,
+        "counts": 54567.28286757937
+      },
+      {
+        "intensity": 154,
+        "time": 30.0,
+        "counts": 62456.47230718974
+      },
+      {
+        "intensity": 54,
+        "time": 35.0,
+        "counts": 28147.762242746412
+      },
+      {
+        "intensity": 72,
+        "time": 35.0,
+        "counts": 36397.002019422085
+      },
+      {
+        "intensity": 90,
+        "time": 35.0,
+        "counts": 44614.323820271435
+      },
+      {
+        "intensity": 109,
+        "time": 35.0,
+        "counts": 52932.07047189142
+      },
+      {
+        "intensity": 127,
+        "time": 35.0,
+        "counts": 60512.97897425238
+      },
+      {
+        "intensity": 45,
+        "time": 40.0,
+        "counts": 26921.644878686184
+      },
+      {
+        "intensity": 61,
+        "time": 40.0,
+        "counts": 35443.35518070858
+      },
+      {
+        "intensity": 76,
+        "time": 40.0,
+        "counts": 43296.73420841624
+      },
+      {
+        "intensity": 91,
+        "time": 40.0,
+        "counts": 50904.50051970421
+      },
+      {
+        "intensity": 107,
+        "time": 40.0,
+        "counts": 58557.41908947822
+      },
+      {
+        "intensity": 40,
+        "time": 45.0,
+        "counts": 26996.768894960354
+      },
+      {
+        "intensity": 52,
+        "time": 45.0,
+        "counts": 34132.382710183236
+      },
+      {
+        "intensity": 65,
+        "time": 45.0,
+        "counts": 41828.11807679744
+      },
+      {
+        "intensity": 78,
+        "time": 45.0,
+        "counts": 49276.6837525614
+      },
+      {
+        "intensity": 91,
+        "time": 45.0,
+        "counts": 56518.5610726695
+      }
+    ],
+    "optimal_settings": {
+      "fixed_time_35ms": {
+        "intensity": 108,
+        "time": 35.0,
+        "predicted_counts": 52493.53892727729
+      },
+      "fixed_intensity_255": {
+        "intensity": 255,
+        "time": 255.0,
+        "predicted_counts": 496773.4352811069
+      },
+      "minimum_time": {
+        "intensity": 255,
+        "time": 15.0,
+        "predicted_counts": 51690.648408780704
+      }
+    }
+  },
+  "C": {
+    "channel": "c",
+    "measurements": [
+      {
+        "intensity": 40,
+        "time": 10.0,
+        "counts": 9746.659935259704
+      },
+      {
+        "intensity": 90,
+        "time": 10.0,
+        "counts": 18008.3555073798
+      },
+      {
+        "intensity": 140,
+        "time": 10.0,
+        "counts": 26225.288064621505
+      },
+      {
+        "intensity": 200,
+        "time": 10.0,
+        "counts": 35882.42197012443
+      },
+      {
+        "intensity": 255,
+        "time": 10.0,
+        "counts": 44910.92744929172
+      },
+      {
+        "intensity": 255,
+        "time": 2.9,
+        "counts": 11552.750274700798
+      },
+      {
+        "intensity": 255,
+        "time": 5.1,
+        "counts": 24039.6852077332
+      },
+      {
+        "intensity": 255,
+        "time": 7.2,
+        "counts": 32813.236123897485
+      },
+      {
+        "intensity": 255,
+        "time": 9.4,
+        "counts": 41547.862679297956
+      },
+      {
+        "intensity": 255,
+        "time": 11.6,
+        "counts": 50226.048911590886
+      },
+      {
+        "intensity": 65,
+        "time": 25.0,
+        "counts": 29602.36560449024
+      },
+      {
+        "intensity": 86,
+        "time": 25.0,
+        "counts": 38080.86986606479
+      },
+      {
+        "intensity": 108,
+        "time": 25.0,
+        "counts": 46707.67594214949
+      },
+      {
+        "intensity": 130,
+        "time": 25.0,
+        "counts": 54953.023282748785
+      },
+      {
+        "intensity": 151,
+        "time": 25.0,
+        "counts": 62418.71567724884
+      },
+      {
+        "intensity": 52,
+        "time": 30.0,
+        "counts": 28437.35948682921
+      },
+      {
+        "intensity": 69,
+        "time": 30.0,
+        "counts": 36678.81439135212
+      },
+      {
+        "intensity": 86,
+        "time": 30.0,
+        "counts": 44788.31571288569
+      },
+      {
+        "intensity": 104,
+        "time": 30.0,
+        "counts": 53070.641196210614
+      },
+      {
+        "intensity": 121,
+        "time": 30.0,
+        "counts": 60479.114780387856
+      },
+      {
+        "intensity": 43,
+        "time": 35.0,
+        "counts": 27596.204050723132
+      },
+      {
+        "intensity": 57,
+        "time": 35.0,
+        "counts": 35576.86573812847
+      },
+      {
+        "intensity": 71,
+        "time": 35.0,
+        "counts": 43545.85011730467
+      },
+      {
+        "intensity": 86,
+        "time": 35.0,
+        "counts": 51515.2237400885
+      },
+      {
+        "intensity": 100,
+        "time": 35.0,
+        "counts": 58776.17399697086
+      },
+      {
+        "intensity": 40,
+        "time": 40.0,
+        "counts": 29155.12469931399
+      },
+      {
+        "intensity": 48,
+        "time": 40.0,
+        "counts": 34374.49223413417
+      },
+      {
+        "intensity": 60,
+        "time": 40.0,
+        "counts": 42056.99331808868
+      },
+      {
+        "intensity": 72,
+        "time": 40.0,
+        "counts": 49605.20535740801
+      },
+      {
+        "intensity": 84,
+        "time": 40.0,
+        "counts": 56813.21848365158
+      },
+      {
+        "intensity": 40,
+        "time": 45.0,
+        "counts": 32420.48932379057
+      },
+      {
+        "intensity": 41,
+        "time": 45.0,
+        "counts": 33179.90360229264
+      },
+      {
+        "intensity": 51,
+        "time": 45.0,
+        "counts": 40380.52109999109
+      },
+      {
+        "intensity": 61,
+        "time": 45.0,
+        "counts": 47600.60077807145
+      },
+      {
+        "intensity": 71,
+        "time": 45.0,
+        "counts": 54385.89534641998
+      }
+    ],
+    "optimal_settings": {
+      "fixed_time_35ms": {
+        "intensity": 88,
+        "time": 35.0,
+        "predicted_counts": 52559.8162597296
+      },
+      "fixed_intensity_255": {
+        "intensity": 255,
+        "time": 255.0,
+        "predicted_counts": 578187.2261536964
+      },
+      "minimum_time": {
+        "intensity": 254,
+        "time": 12.0,
+        "predicted_counts": 51542.63216460615
+      }
+    }
+  },
+  "D": {
+    "channel": "d",
+    "measurements": [
+      {
+        "intensity": 40,
+        "time": 10.0,
+        "counts": 5371.561785406706
+      },
+      {
+        "intensity": 90,
+        "time": 10.0,
+        "counts": 8193.577940783416
+      },
+      {
+        "intensity": 140,
+        "time": 10.0,
+        "counts": 10996.13191577822
+      },
+      {
+        "intensity": 200,
+        "time": 10.0,
+        "counts": 14380.605084192082
+      },
+      {
+        "intensity": 255,
+        "time": 10.0,
+        "counts": 17410.866569655213
+      },
+      {
+        "intensity": 255,
+        "time": 8.3,
+        "counts": 14913.868826656371
+      },
+      {
+        "intensity": 255,
+        "time": 14.6,
+        "counts": 23800.300389035725
+      },
+      {
+        "intensity": 255,
+        "time": 20.8,
+        "counts": 33009.80414575476
+      },
+      {
+        "intensity": 255,
+        "time": 27.1,
+        "counts": 41796.97858818638
+      },
+      {
+        "intensity": 255,
+        "time": 33.3,
+        "counts": 50266.919490392895
+      },
+      {
+        "intensity": 153,
+        "time": 25.0,
+        "counts": 24768.73848483949
+      },
+      {
+        "intensity": 204,
+        "time": 25.0,
+        "counts": 31944.833635256735
+      },
+      {
+        "intensity": 255,
+        "time": 25.0,
+        "counts": 38825.49288747661
+      },
+      {
+        "intensity": 153,
+        "time": 30.0,
+        "counts": 28933.25584296023
+      },
+      {
+        "intensity": 204,
+        "time": 30.0,
+        "counts": 37457.30160662846
+      },
+      {
+        "intensity": 255,
+        "time": 30.0,
+        "counts": 45651.268791019516
+      },
+      {
+        "intensity": 126,
+        "time": 35.0,
+        "counts": 27974.54883734743
+      },
+      {
+        "intensity": 168,
+        "time": 35.0,
+        "counts": 36154.50325186351
+      },
+      {
+        "intensity": 211,
+        "time": 35.0,
+        "counts": 44375.71748878924
+      },
+      {
+        "intensity": 253,
+        "time": 35.0,
+        "counts": 52121.27603718113
+      },
+      {
+        "intensity": 255,
+        "time": 35.0,
+        "counts": 52402.30992189588
+      },
+      {
+        "intensity": 106,
+        "time": 40.0,
+        "counts": 27081.234757817838
+      },
+      {
+        "intensity": 142,
+        "time": 40.0,
+        "counts": 35209.80901612568
+      },
+      {
+        "intensity": 177,
+        "time": 40.0,
+        "counts": 42867.787752798984
+      },
+      {
+        "intensity": 213,
+        "time": 40.0,
+        "counts": 50559.24143972916
+      },
+      {
+        "intensity": 248,
+        "time": 40.0,
+        "counts": 57530.98369613637
+      },
+      {
+        "intensity": 91,
+        "time": 45.0,
+        "counts": 26219.44941050694
+      },
+      {
+        "intensity": 121,
+        "time": 45.0,
+        "counts": 33850.5703382532
+      },
+      {
+        "intensity": 151,
+        "time": 45.0,
+        "counts": 41311.98105306922
+      },
+      {
+        "intensity": 182,
+        "time": 45.0,
+        "counts": 48852.4082202358
+      },
+      {
+        "intensity": 212,
+        "time": 45.0,
+        "counts": 55838.16324651799
+      }
+    ],
+    "optimal_settings": {
+      "fixed_time_35ms": {
+        "intensity": 255,
+        "time": 35.0,
+        "predicted_counts": 52402.921036301406
+      },
+      "fixed_intensity_255": {
+        "intensity": 255,
+        "time": 255.0,
+        "predicted_counts": 258046.64067101222
+      },
+      "minimum_time": {
+        "intensity": 255,
+        "time": 35.0,
+        "predicted_counts": 52402.921036301406
+      }
+    }
+  }
+}

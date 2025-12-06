@@ -1,0 +1,562 @@
+{
+  "A": [
+    {
+      "time": 5.0,
+      "intensity": 161,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 5.0,
+      "intensity": 255,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 5.0,
+      "intensity": 255,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 7.5,
+      "intensity": 107,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 7.5,
+      "intensity": 161,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 214,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 255,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 10.0,
+      "intensity": 78,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 10.0,
+      "intensity": 137,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 10.0,
+      "intensity": 197,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 12.5,
+      "intensity": 65,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 12.5,
+      "intensity": 115,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 12.5,
+      "intensity": 164,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 15.0,
+      "intensity": 60,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 15.0,
+      "intensity": 91,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 121,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 152,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 20.0,
+      "intensity": 64,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 20.0,
+      "intensity": 112,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 20.0,
+      "intensity": 160,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 25.0,
+      "intensity": 51,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 25.0,
+      "intensity": 89,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 25.0,
+      "intensity": 128,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    }
+  ],
+  "B": [
+    {
+      "time": 5.0,
+      "intensity": 116,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 5.0,
+      "intensity": 204,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 5.0,
+      "intensity": 255,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 7.5,
+      "intensity": 64,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 7.5,
+      "intensity": 96,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 128,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 160,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 10.0,
+      "intensity": 45,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 10.0,
+      "intensity": 79,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 10.0,
+      "intensity": 113,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 12.5,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 12.5,
+      "intensity": 69,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 12.5,
+      "intensity": 99,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 15.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 15.0,
+      "intensity": 49,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 66,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 82,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 20.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 20.0,
+      "intensity": 48,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 20.0,
+      "intensity": 69,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 25.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 25.0,
+      "intensity": 40,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 25.0,
+      "intensity": 55,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    }
+  ],
+  "C": [
+    {
+      "time": 5.0,
+      "intensity": 92,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 5.0,
+      "intensity": 161,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 5.0,
+      "intensity": 230,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 7.5,
+      "intensity": 59,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 7.5,
+      "intensity": 89,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 119,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 149,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 10.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 10.0,
+      "intensity": 66,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 10.0,
+      "intensity": 95,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 12.5,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 12.5,
+      "intensity": 54,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 12.5,
+      "intensity": 78,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 15.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 15.0,
+      "intensity": 40,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 52,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 65,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 20.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 20.0,
+      "intensity": 40,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 20.0,
+      "intensity": 56,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 25.0,
+      "intensity": 40,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 25.0,
+      "intensity": 40,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 25.0,
+      "intensity": 45,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    }
+  ],
+  "D": [
+    {
+      "time": 5.0,
+      "intensity": 162,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 5.0,
+      "intensity": 255,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 5.0,
+      "intensity": 255,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 7.5,
+      "intensity": 108,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 7.5,
+      "intensity": 162,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 216,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 7.5,
+      "intensity": 255,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 10.0,
+      "intensity": 78,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 10.0,
+      "intensity": 138,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 10.0,
+      "intensity": 197,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 12.5,
+      "intensity": 66,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 12.5,
+      "intensity": 116,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 12.5,
+      "intensity": 165,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 15.0,
+      "intensity": 55,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 15.0,
+      "intensity": 82,
+      "target_counts": 12000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 110,
+      "target_counts": 16000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 15.0,
+      "intensity": 138,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 20.0,
+      "intensity": 63,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 20.0,
+      "intensity": 110,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 20.0,
+      "intensity": 158,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    },
+    {
+      "time": 25.0,
+      "intensity": 50,
+      "target_counts": 8000,
+      "purpose": "SPR Low"
+    },
+    {
+      "time": 25.0,
+      "intensity": 89,
+      "target_counts": 14000,
+      "purpose": "SPR Mid"
+    },
+    {
+      "time": 25.0,
+      "intensity": 127,
+      "target_counts": 20000,
+      "purpose": "SPR High"
+    }
+  ]
+}

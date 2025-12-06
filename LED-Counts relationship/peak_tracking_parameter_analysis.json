@@ -1,0 +1,1862 @@
+{
+  "S": {
+    "A": [
+      {
+        "intensity": 161,
+        "time": 5.0,
+        "counts_raw": 4589.18213405399,
+        "dark_counts": 3102.7779223548873,
+        "counts": 1486.4042116991027,
+        "snr": 38.553913053010625,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 7936.677159742227,
+        "dark_counts": 3102.7779223548873,
+        "counts": 4833.899237387339,
+        "snr": 69.52624854964735,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 7919.161197398509,
+        "dark_counts": 3102.7779223548873,
+        "counts": 4816.383275043621,
+        "snr": 69.40016768743156,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 107,
+        "time": 7.5,
+        "counts_raw": 4476.301487838921,
+        "dark_counts": 3107.933812606636,
+        "counts": 1368.3676752322854,
+        "snr": 36.9914540837784,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 161,
+        "time": 7.5,
+        "counts_raw": 5324.852552490125,
+        "dark_counts": 3107.933812606636,
+        "counts": 2216.9187398834893,
+        "snr": 47.08416655186209,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 214,
+        "time": 7.5,
+        "counts_raw": 5869.79360318356,
+        "dark_counts": 3107.933812606636,
+        "counts": 2761.859790576924,
+        "snr": 52.55339941979894,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 7.5,
+        "counts_raw": 10301.332076144092,
+        "dark_counts": 3107.933812606636,
+        "counts": 7193.398263537456,
+        "snr": 84.8139037159442,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 78,
+        "time": 10.0,
+        "counts_raw": 3590.772280462091,
+        "dark_counts": 3113.089702858385,
+        "counts": 477.68257760370625,
+        "snr": 21.85595062228377,
+        "quality": "Poor",
+        "trackable": false
+      },
+      {
+        "intensity": 137,
+        "time": 10.0,
+        "counts_raw": 6644.388382383512,
+        "dark_counts": 3113.089702858385,
+        "counts": 3531.298679525127,
+        "snr": 59.42473121121481,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 197,
+        "time": 10.0,
+        "counts_raw": 10060.001039408427,
+        "dark_counts": 3113.089702858385,
+        "counts": 6946.9113365500425,
+        "snr": 83.3481333717201,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 65,
+        "time": 12.5,
+        "counts_raw": 9900.411160276779,
+        "dark_counts": 3118.2455931101335,
+        "counts": 6782.165567166645,
+        "snr": 82.35390438325706,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 115,
+        "time": 12.5,
+        "counts_raw": 9336.007929201438,
+        "dark_counts": 3118.2455931101335,
+        "counts": 6217.762336091304,
+        "snr": 78.85278901910384,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 164,
+        "time": 12.5,
+        "counts_raw": 8209.147685088943,
+        "dark_counts": 3118.2455931101335,
+        "counts": 5090.902091978809,
+        "snr": 71.35055775520476,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 60,
+        "time": 15.0,
+        "counts_raw": 8362.89891010602,
+        "dark_counts": 3123.401483361882,
+        "counts": 5239.497426744138,
+        "snr": 72.38437280756212,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 91,
+        "time": 15.0,
+        "counts_raw": 11529.395658242509,
+        "dark_counts": 3123.401483361882,
+        "counts": 8405.994174880627,
+        "snr": 91.68420897232319,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 121,
+        "time": 15.0,
+        "counts_raw": 14026.39340124135,
+        "dark_counts": 3123.401483361882,
+        "counts": 10902.991917879468,
+        "snr": 104.41739279391852,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 152,
+        "time": 15.0,
+        "counts_raw": 17085.848157277345,
+        "dark_counts": 3123.401483361882,
+        "counts": 13962.446673915463,
+        "snr": 118.16279733450568,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 64,
+        "time": 20.0,
+        "counts_raw": 13125.294449558995,
+        "dark_counts": 3133.7132638653793,
+        "counts": 9991.581185693616,
+        "snr": 99.95789706518248,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 112,
+        "time": 20.0,
+        "counts_raw": 10612.726962254625,
+        "dark_counts": 3133.7132638653793,
+        "counts": 7479.013698389245,
+        "snr": 86.48129103100419,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 160,
+        "time": 20.0,
+        "counts_raw": 8127.406527484929,
+        "dark_counts": 3133.7132638653793,
+        "counts": 4993.69326361955,
+        "snr": 70.66606868660199,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 51,
+        "time": 25.0,
+        "counts_raw": 27980.77673506964,
+        "dark_counts": 3144.0250443688765,
+        "counts": 24836.751690700767,
+        "snr": 157.59680101671088,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 89,
+        "time": 25.0,
+        "counts_raw": 15102.651976360883,
+        "dark_counts": 3144.0250443688765,
+        "counts": 11958.626931992007,
+        "snr": 109.35550709494244,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 128,
+        "time": 25.0,
+        "counts_raw": 3254.076559855077,
+        "dark_counts": 3144.0250443688765,
+        "counts": 110.05151548620051,
+        "snr": 10.490544098672885,
+        "quality": "Poor",
+        "trackable": false
+      }
+    ],
+    "B": [
+      {
+        "intensity": 116,
+        "time": 5.0,
+        "counts_raw": 9890.680070085826,
+        "dark_counts": 3102.7779223548873,
+        "counts": 6787.902147730938,
+        "snr": 82.38872585330434,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 204,
+        "time": 5.0,
+        "counts_raw": 15345.929231134736,
+        "dark_counts": 3102.7779223548873,
+        "counts": 12243.151308779848,
+        "snr": 110.64877454712206,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 15258.34941941615,
+        "dark_counts": 3102.7779223548873,
+        "counts": 12155.571497061263,
+        "snr": 110.25230835252958,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 64,
+        "time": 7.5,
+        "counts_raw": 12582.29961690375,
+        "dark_counts": 3107.933812606636,
+        "counts": 9474.365804297115,
+        "snr": 97.33635397063686,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 96,
+        "time": 7.5,
+        "counts_raw": 17432.27496807531,
+        "dark_counts": 3107.933812606636,
+        "counts": 14324.341155468675,
+        "snr": 119.6843396416953,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 128,
+        "time": 7.5,
+        "counts_raw": 3133.411041487245,
+        "dark_counts": 3107.933812606636,
+        "counts": 25.47722888060889,
+        "snr": 5.047497288816398,
+        "quality": "Poor",
+        "trackable": false
+      },
+      {
+        "intensity": 160,
+        "time": 7.5,
+        "counts_raw": 7921.1074154367,
+        "dark_counts": 3107.933812606636,
+        "counts": 4813.173602830064,
+        "snr": 69.37703944987898,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 45,
+        "time": 10.0,
+        "counts_raw": 22492.441867371486,
+        "dark_counts": 3113.089702858385,
+        "counts": 19379.3521645131,
+        "snr": 139.20974162935977,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 79,
+        "time": 10.0,
+        "counts_raw": 5330.691206604698,
+        "dark_counts": 3113.089702858385,
+        "counts": 2217.601503746313,
+        "snr": 47.09141645508567,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 113,
+        "time": 10.0,
+        "counts_raw": 13699.42877082529,
+        "dark_counts": 3113.089702858385,
+        "counts": 10586.339067966906,
+        "snr": 102.88993667005003,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 12.5,
+        "counts_raw": 21250.754759005733,
+        "dark_counts": 3118.2455931101335,
+        "counts": 18132.5091658956,
+        "snr": 134.6570056324423,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 69,
+        "time": 12.5,
+        "counts_raw": 25514.918480681852,
+        "dark_counts": 3118.2455931101335,
+        "counts": 22396.67288757172,
+        "snr": 149.65517995569587,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 99,
+        "time": 12.5,
+        "counts_raw": 30746.352567338818,
+        "dark_counts": 3118.2455931101335,
+        "counts": 27628.106974228685,
+        "snr": 166.21704778460204,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 15.0,
+        "counts_raw": 24738.37748344371,
+        "dark_counts": 3123.401483361882,
+        "counts": 21614.976000081828,
+        "snr": 147.020325125752,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 49,
+        "time": 15.0,
+        "counts_raw": 38083.59457131827,
+        "dark_counts": 3123.401483361882,
+        "counts": 34960.19308795639,
+        "snr": 186.97645062401946,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 66,
+        "time": 15.0,
+        "counts_raw": 25195.738722418555,
+        "dark_counts": 3123.401483361882,
+        "counts": 22072.337239056673,
+        "snr": 148.56761840676006,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 82,
+        "time": 15.0,
+        "counts_raw": 10896.874795830487,
+        "dark_counts": 3123.401483361882,
+        "counts": 7773.4733124686045,
+        "snr": 88.16730296696505,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 20.0,
+        "counts_raw": 32126.22115641612,
+        "dark_counts": 3133.7132638653793,
+        "counts": 28992.50789255074,
+        "snr": 170.27186465341458,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 48,
+        "time": 20.0,
+        "counts_raw": 47557.78398123125,
+        "dark_counts": 3133.7132638653793,
+        "counts": 44424.070717365874,
+        "snr": 210.77018460248564,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 69,
+        "time": 20.0,
+        "counts_raw": 38737.523832150386,
+        "dark_counts": 3133.7132638653793,
+        "counts": 35603.81056828501,
+        "snr": 188.6897203566877,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 39074.2195527574,
+        "dark_counts": 3144.0250443688765,
+        "counts": 35930.19450838852,
+        "snr": 189.55261672788512,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 39461.516942357375,
+        "dark_counts": 3144.0250443688765,
+        "counts": 36317.4918979885,
+        "snr": 190.57148763125218,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 55,
+        "time": 25.0,
+        "counts_raw": 12562.837436521842,
+        "dark_counts": 3144.0250443688765,
+        "counts": 9418.812392152966,
+        "snr": 97.05056616090894,
+        "quality": "Good",
+        "trackable": true
+      }
+    ],
+    "C": [
+      {
+        "intensity": 92,
+        "time": 5.0,
+        "counts_raw": 9750.552371336085,
+        "dark_counts": 3102.7779223548873,
+        "counts": 6647.774448981198,
+        "snr": 81.53388528079105,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 161,
+        "time": 5.0,
+        "counts_raw": 6346.617022540314,
+        "dark_counts": 3102.7779223548873,
+        "counts": 3243.8391001854266,
+        "snr": 56.9547109569123,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 230,
+        "time": 5.0,
+        "counts_raw": 14008.877438897633,
+        "dark_counts": 3102.7779223548873,
+        "counts": 10906.099516542745,
+        "snr": 104.43227239001719,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 59,
+        "time": 7.5,
+        "counts_raw": 8203.309030974371,
+        "dark_counts": 3107.933812606636,
+        "counts": 5095.375218367735,
+        "snr": 71.38189699333952,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 89,
+        "time": 7.5,
+        "counts_raw": 11072.034419267662,
+        "dark_counts": 3107.933812606636,
+        "counts": 7964.100606661026,
+        "snr": 89.24180974555047,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 119,
+        "time": 7.5,
+        "counts_raw": 13960.221987942863,
+        "dark_counts": 3107.933812606636,
+        "counts": 10852.288175336227,
+        "snr": 104.17431629406659,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 149,
+        "time": 7.5,
+        "counts_raw": 16714.120511982896,
+        "dark_counts": 3107.933812606636,
+        "counts": 13606.18669937626,
+        "snr": 116.64556013572167,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 10.0,
+        "counts_raw": 15647.593027054316,
+        "dark_counts": 3113.089702858385,
+        "counts": 12534.503324195932,
+        "snr": 111.95759609868342,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 66,
+        "time": 10.0,
+        "counts_raw": 16038.782852730674,
+        "dark_counts": 3113.089702858385,
+        "counts": 12925.693149872288,
+        "snr": 113.69121843780322,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 95,
+        "time": 10.0,
+        "counts_raw": 18847.17548184005,
+        "dark_counts": 3113.089702858385,
+        "counts": 15734.085778981665,
+        "snr": 125.43558418160958,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 12.5,
+        "counts_raw": 18775.16541442699,
+        "dark_counts": 3118.2455931101335,
+        "counts": 15656.919821316855,
+        "snr": 125.12761414378865,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 54,
+        "time": 12.5,
+        "counts_raw": 6169.511181064948,
+        "dark_counts": 3118.2455931101335,
+        "counts": 3051.2655879548142,
+        "snr": 55.23826199252484,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 78,
+        "time": 12.5,
+        "counts_raw": 4433.484690998723,
+        "dark_counts": 3118.2455931101335,
+        "counts": 1315.2390978885892,
+        "snr": 36.26622530521462,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 40,
+        "time": 15.0,
+        "counts_raw": 22027.295756243875,
+        "dark_counts": 3123.401483361882,
+        "counts": 18903.894272881993,
+        "snr": 137.4914334527137,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 15.0,
+        "counts_raw": 22110.98313188608,
+        "dark_counts": 3123.401483361882,
+        "counts": 18987.5816485242,
+        "snr": 137.79543406268655,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 52,
+        "time": 15.0,
+        "counts_raw": 4162.960383690197,
+        "dark_counts": 3123.401483361882,
+        "counts": 1039.5589003283148,
+        "snr": 32.242191307792886,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 65,
+        "time": 15.0,
+        "counts_raw": 21348.065660915272,
+        "dark_counts": 3123.401483361882,
+        "counts": 18224.66417755339,
+        "snr": 134.998756207431,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 20.0,
+        "counts_raw": 28523.771567724885,
+        "dark_counts": 3133.7132638653793,
+        "counts": 25390.058303859507,
+        "snr": 159.34258157774246,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 20.0,
+        "counts_raw": 28375.85899682238,
+        "dark_counts": 3133.7132638653793,
+        "counts": 25242.145732957,
+        "snr": 158.87776978846665,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 56,
+        "time": 20.0,
+        "counts_raw": 11574.158673120897,
+        "dark_counts": 3133.7132638653793,
+        "counts": 8440.445409255517,
+        "snr": 91.8718967326544,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 34837.30288361595,
+        "dark_counts": 3144.0250443688765,
+        "counts": 31693.277839247072,
+        "snr": 178.02605943863128,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 34525.90799750542,
+        "dark_counts": 3144.0250443688765,
+        "counts": 31381.88295313654,
+        "snr": 177.149323885632,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 45,
+        "time": 25.0,
+        "counts_raw": 45270.97778635702,
+        "dark_counts": 3144.0250443688765,
+        "counts": 42126.95274198814,
+        "snr": 205.24851459142926,
+        "quality": "Excellent",
+        "trackable": true
+      }
+    ],
+    "D": [
+      {
+        "intensity": 162,
+        "time": 5.0,
+        "counts_raw": 4848.029133133371,
+        "dark_counts": 3102.7779223548873,
+        "counts": 1745.2512107784837,
+        "snr": 41.77620388185699,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 8189.685504707035,
+        "dark_counts": 3102.7779223548873,
+        "counts": 5086.907582352147,
+        "snr": 71.32256012197085,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 8187.739286668844,
+        "dark_counts": 3102.7779223548873,
+        "counts": 5084.961364313956,
+        "snr": 71.30891504092567,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 108,
+        "time": 7.5,
+        "counts_raw": 4836.351824904226,
+        "dark_counts": 3107.933812606636,
+        "counts": 1728.4180122975904,
+        "snr": 41.574246984131776,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 162,
+        "time": 7.5,
+        "counts_raw": 5694.633979746384,
+        "dark_counts": 3107.933812606636,
+        "counts": 2586.7001671397484,
+        "snr": 50.85961233768646,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 216,
+        "time": 7.5,
+        "counts_raw": 6603.517803581504,
+        "dark_counts": 3107.933812606636,
+        "counts": 3495.5839909748684,
+        "snr": 59.12346396292142,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 7.5,
+        "counts_raw": 10850.165562913908,
+        "dark_counts": 3107.933812606636,
+        "counts": 7742.231750307272,
+        "snr": 87.98995255315957,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 78,
+        "time": 10.0,
+        "counts_raw": 3579.0949722329465,
+        "dark_counts": 3113.089702858385,
+        "counts": 466.0052693745615,
+        "snr": 21.587155194109332,
+        "quality": "Poor",
+        "trackable": false
+      },
+      {
+        "intensity": 138,
+        "time": 10.0,
+        "counts_raw": 7267.1781546045795,
+        "dark_counts": 3113.089702858385,
+        "counts": 4154.088451746195,
+        "snr": 64.45221836171503,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 197,
+        "time": 10.0,
+        "counts_raw": 10507.631188192321,
+        "dark_counts": 3113.089702858385,
+        "counts": 7394.541485333936,
+        "snr": 85.99151984547044,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 66,
+        "time": 12.5,
+        "counts_raw": 10776.209277462656,
+        "dark_counts": 3118.2455931101335,
+        "counts": 7657.963684352522,
+        "snr": 87.50979193411743,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 116,
+        "time": 12.5,
+        "counts_raw": 10153.419505241589,
+        "dark_counts": 3118.2455931101335,
+        "counts": 7035.173912131455,
+        "snr": 83.87594358414965,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 165,
+        "time": 12.5,
+        "counts_raw": 9005.150862708995,
+        "dark_counts": 3118.2455931101335,
+        "counts": 5886.905269598861,
+        "snr": 76.72617069552514,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 55,
+        "time": 15.0,
+        "counts_raw": 5457.195379087102,
+        "dark_counts": 3123.401483361882,
+        "counts": 2333.79389572522,
+        "snr": 48.3093561924108,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 82,
+        "time": 15.0,
+        "counts_raw": 6366.079202922223,
+        "dark_counts": 3123.401483361882,
+        "counts": 3242.677719560341,
+        "snr": 56.94451439392859,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 110,
+        "time": 15.0,
+        "counts_raw": 7870.505746443739,
+        "dark_counts": 3123.401483361882,
+        "counts": 4747.1042630818565,
+        "snr": 68.89923267411514,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 138,
+        "time": 15.0,
+        "counts_raw": 9365.2011997743,
+        "dark_counts": 3123.401483361882,
+        "counts": 6241.799716412417,
+        "snr": 79.00506133414756,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 63,
+        "time": 20.0,
+        "counts_raw": 13214.820479315773,
+        "dark_counts": 3133.7132638653793,
+        "counts": 10081.107215450393,
+        "snr": 100.40471709760648,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 110,
+        "time": 20.0,
+        "counts_raw": 9540.360823211475,
+        "dark_counts": 3133.7132638653793,
+        "counts": 6406.6475593460955,
+        "snr": 80.04153646292714,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 158,
+        "time": 20.0,
+        "counts_raw": 6792.300953286015,
+        "dark_counts": 3133.7132638653793,
+        "counts": 3658.587689420636,
+        "snr": 60.4862603358865,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 50,
+        "time": 25.0,
+        "counts_raw": 28844.89754402637,
+        "dark_counts": 3144.0250443688765,
+        "counts": 25700.872499657497,
+        "snr": 160.31491664738343,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 89,
+        "time": 25.0,
+        "counts_raw": 15933.687078668368,
+        "dark_counts": 3144.0250443688765,
+        "counts": 12789.662034299492,
+        "snr": 113.09138797582905,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 127,
+        "time": 25.0,
+        "counts_raw": 28924.692483592196,
+        "dark_counts": 3144.0250443688765,
+        "counts": 25780.667439223318,
+        "snr": 160.56359313126785,
+        "quality": "Excellent",
+        "trackable": true
+      }
+    ]
+  },
+  "P": {
+    "A": [
+      {
+        "intensity": 161,
+        "time": 5.0,
+        "counts_raw": 4890.84592997357,
+        "dark_counts": 3102.7779223548873,
+        "counts": 1788.0680076186823,
+        "snr": 42.28555317858196,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 9007.097080747186,
+        "dark_counts": 3102.7779223548873,
+        "counts": 5904.319158392298,
+        "snr": 76.83956766140929,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 9001.258426632614,
+        "dark_counts": 3102.7779223548873,
+        "counts": 5898.480504277726,
+        "snr": 76.801565767097,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 107,
+        "time": 7.5,
+        "counts_raw": 4791.588810025837,
+        "dark_counts": 3107.933812606636,
+        "counts": 1683.6549974192012,
+        "snr": 41.032365242808034,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 161,
+        "time": 7.5,
+        "counts_raw": 5768.590265197636,
+        "dark_counts": 3107.933812606636,
+        "counts": 2660.656452591,
+        "snr": 51.58155147522223,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 214,
+        "time": 7.5,
+        "counts_raw": 6523.72286401568,
+        "dark_counts": 3107.933812606636,
+        "counts": 3415.789051409044,
+        "snr": 58.44475212890413,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 7.5,
+        "counts_raw": 11953.671190568111,
+        "dark_counts": 3107.933812606636,
+        "counts": 8845.737377961475,
+        "snr": 94.05178030192451,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 78,
+        "time": 10.0,
+        "counts_raw": 3651.1050396460073,
+        "dark_counts": 3113.089702858385,
+        "counts": 538.0153367876223,
+        "snr": 23.195157615063156,
+        "quality": "Poor",
+        "trackable": false
+      },
+      {
+        "intensity": 137,
+        "time": 10.0,
+        "counts_raw": 7516.294063493006,
+        "dark_counts": 3113.089702858385,
+        "counts": 4403.2043606346215,
+        "snr": 66.35664518821474,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 197,
+        "time": 10.0,
+        "counts_raw": 11712.340153832447,
+        "dark_counts": 3113.089702858385,
+        "counts": 8599.250450974061,
+        "snr": 92.73214356939056,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 65,
+        "time": 12.5,
+        "counts_raw": 11484.632643364119,
+        "dark_counts": 3118.2455931101335,
+        "counts": 8366.387050253985,
+        "snr": 91.46795641236325,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 115,
+        "time": 12.5,
+        "counts_raw": 10809.294984111899,
+        "dark_counts": 3118.2455931101335,
+        "counts": 7691.049391001765,
+        "snr": 87.69862821619142,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 164,
+        "time": 12.5,
+        "counts_raw": 9439.15748522555,
+        "dark_counts": 3118.2455931101335,
+        "counts": 6320.911892115417,
+        "snr": 79.50416273450979,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 60,
+        "time": 15.0,
+        "counts_raw": 9569.554093784338,
+        "dark_counts": 3123.401483361882,
+        "counts": 6446.152610422456,
+        "snr": 80.28793564678604,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 91,
+        "time": 15.0,
+        "counts_raw": 13436.689335669527,
+        "dark_counts": 3123.401483361882,
+        "counts": 10313.287852307645,
+        "snr": 101.55435910047213,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 121,
+        "time": 15.0,
+        "counts_raw": 16677.142369257268,
+        "dark_counts": 3123.401483361882,
+        "counts": 13553.740885895386,
+        "snr": 116.42053464013719,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 152,
+        "time": 15.0,
+        "counts_raw": 20577.363317791704,
+        "dark_counts": 3123.401483361882,
+        "counts": 17453.96183442982,
+        "snr": 132.11344304963754,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 64,
+        "time": 20.0,
+        "counts_raw": 15606.722448252309,
+        "dark_counts": 3133.7132638653793,
+        "counts": 12473.00918438693,
+        "snr": 111.6826270481982,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 112,
+        "time": 20.0,
+        "counts_raw": 12434.387046001248,
+        "dark_counts": 3133.7132638653793,
+        "counts": 9300.67378213587,
+        "snr": 96.44000094429629,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 160,
+        "time": 20.0,
+        "counts_raw": 9345.739019392391,
+        "dark_counts": 3133.7132638653793,
+        "counts": 6212.025755527012,
+        "snr": 78.81640537050019,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 51,
+        "time": 25.0,
+        "counts_raw": 33934.25771389541,
+        "dark_counts": 3144.0250443688765,
+        "counts": 30790.23266952653,
+        "snr": 175.47145827605846,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 89,
+        "time": 25.0,
+        "counts_raw": 17920.775695661214,
+        "dark_counts": 3144.0250443688765,
+        "counts": 14776.750651292337,
+        "snr": 121.5596588153008,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 128,
+        "time": 25.0,
+        "counts_raw": 3236.5605975113594,
+        "dark_counts": 3144.0250443688765,
+        "counts": 92.53555314248297,
+        "snr": 9.619540173131092,
+        "quality": "Poor",
+        "trackable": false
+      }
+    ],
+    "B": [
+      {
+        "intensity": 116,
+        "time": 5.0,
+        "counts_raw": 10994.18569774003,
+        "dark_counts": 3102.7779223548873,
+        "counts": 7891.407775385142,
+        "snr": 88.83359598364316,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 204,
+        "time": 5.0,
+        "counts_raw": 17515.962343717518,
+        "dark_counts": 3102.7779223548873,
+        "counts": 14413.18442136263,
+        "snr": 120.05492252033079,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 17465.360674724558,
+        "dark_counts": 3102.7779223548873,
+        "counts": 14362.58275236967,
+        "snr": 119.84399339295094,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 64,
+        "time": 7.5,
+        "counts_raw": 14341.680723428266,
+        "dark_counts": 3107.933812606636,
+        "counts": 11233.74691082163,
+        "snr": 105.98937168802178,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 96,
+        "time": 7.5,
+        "counts_raw": 19841.692899355567,
+        "dark_counts": 3107.933812606636,
+        "counts": 16733.75908674893,
+        "snr": 129.35903171695796,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 128,
+        "time": 7.5,
+        "counts_raw": 3141.1959136400083,
+        "dark_counts": 3107.933812606636,
+        "counts": 33.262101033372346,
+        "snr": 5.76733049455052,
+        "quality": "Poor",
+        "trackable": false
+      },
+      {
+        "intensity": 160,
+        "time": 7.5,
+        "counts_raw": 8791.066878508003,
+        "dark_counts": 3107.933812606636,
+        "counts": 5683.133065901367,
+        "snr": 75.38655759418498,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 45,
+        "time": 10.0,
+        "counts_raw": 25908.0545243964,
+        "dark_counts": 3113.089702858385,
+        "counts": 22794.964821538015,
+        "snr": 150.98001464279307,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 79,
+        "time": 10.0,
+        "counts_raw": 5716.042378166483,
+        "dark_counts": 3113.089702858385,
+        "counts": 2602.952675308098,
+        "snr": 51.01914028389834,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 113,
+        "time": 10.0,
+        "counts_raw": 15540.55103495382,
+        "dark_counts": 3113.089702858385,
+        "counts": 12427.461332095434,
+        "snr": 111.47852408466589,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 12.5,
+        "counts_raw": 24094.179312802542,
+        "dark_counts": 3118.2455931101335,
+        "counts": 20975.93371969241,
+        "snr": 144.83070710209353,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 69,
+        "time": 12.5,
+        "counts_raw": 29253.60333204645,
+        "dark_counts": 3118.2455931101335,
+        "counts": 26135.357738936316,
+        "snr": 161.6643366328403,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 99,
+        "time": 12.5,
+        "counts_raw": 35643.03715142696,
+        "dark_counts": 3118.2455931101335,
+        "counts": 32524.791558316825,
+        "snr": 180.3463100767987,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 15.0,
+        "counts_raw": 28424.51444777715,
+        "dark_counts": 3123.401483361882,
+        "counts": 25301.112964415268,
+        "snr": 159.0632357410576,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 49,
+        "time": 15.0,
+        "counts_raw": 43967.01170076916,
+        "dark_counts": 3123.401483361882,
+        "counts": 40843.61021740727,
+        "snr": 202.09802130997542,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 66,
+        "time": 15.0,
+        "counts_raw": 29070.658836456507,
+        "dark_counts": 3123.401483361882,
+        "counts": 25947.257353094625,
+        "snr": 161.0815239346047,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 82,
+        "time": 15.0,
+        "counts_raw": 12294.259347251507,
+        "dark_counts": 3123.401483361882,
+        "counts": 9170.857863889625,
+        "snr": 95.76459608795739,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 20.0,
+        "counts_raw": 36886.6704778309,
+        "dark_counts": 3133.7132638653793,
+        "counts": 33752.95721396552,
+        "snr": 183.71977904941406,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 48,
+        "time": 20.0,
+        "counts_raw": 54618.6630237876,
+        "dark_counts": 3133.7132638653793,
+        "counts": 51484.94975992222,
+        "snr": 226.90295229441642,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 69,
+        "time": 20.0,
+        "counts_raw": 44564.50063849375,
+        "dark_counts": 3133.7132638653793,
+        "counts": 41430.78737462837,
+        "snr": 203.54554127916526,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 45356.611380037415,
+        "dark_counts": 3144.0250443688765,
+        "counts": 42212.58633566854,
+        "snr": 205.4570182195501,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 45183.397974638436,
+        "dark_counts": 3144.0250443688765,
+        "counts": 42039.37293026956,
+        "snr": 205.03505293063807,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 55,
+        "time": 25.0,
+        "counts_raw": 14185.983280372999,
+        "dark_counts": 3144.0250443688765,
+        "counts": 11041.958236004122,
+        "snr": 105.08072247564785,
+        "quality": "Excellent",
+        "trackable": true
+      }
+    ],
+    "C": [
+      {
+        "intensity": 92,
+        "time": 5.0,
+        "counts_raw": 14530.463873132778,
+        "dark_counts": 3102.7779223548873,
+        "counts": 11427.68595077789,
+        "snr": 106.90035524158883,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 161,
+        "time": 5.0,
+        "counts_raw": 8717.110593056752,
+        "dark_counts": 3102.7779223548873,
+        "counts": 5614.332670701864,
+        "snr": 74.92885072321518,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 230,
+        "time": 5.0,
+        "counts_raw": 22097.359605618745,
+        "dark_counts": 3102.7779223548873,
+        "counts": 18994.58168326386,
+        "snr": 137.82083181893753,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 59,
+        "time": 7.5,
+        "counts_raw": 11994.541769370118,
+        "dark_counts": 3107.933812606636,
+        "counts": 8886.607956763482,
+        "snr": 94.26880691280378,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 89,
+        "time": 7.5,
+        "counts_raw": 16992.429691444184,
+        "dark_counts": 3107.933812606636,
+        "counts": 13884.495878837548,
+        "snr": 117.83249076056039,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 119,
+        "time": 7.5,
+        "counts_raw": 21924.146200219762,
+        "dark_counts": 3107.933812606636,
+        "counts": 18816.212387613126,
+        "snr": 137.17219976224456,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 149,
+        "time": 7.5,
+        "counts_raw": 27011.560152050606,
+        "dark_counts": 3107.933812606636,
+        "counts": 23903.62633944397,
+        "snr": 154.60797631249162,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 10.0,
+        "counts_raw": 25028.363971134142,
+        "dark_counts": 3113.089702858385,
+        "counts": 21915.274268275756,
+        "snr": 148.03808384424516,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 66,
+        "time": 10.0,
+        "counts_raw": 25586.92854809491,
+        "dark_counts": 3113.089702858385,
+        "counts": 22473.838845236525,
+        "snr": 149.91277078767015,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 95,
+        "time": 10.0,
+        "counts_raw": 30650.987883467467,
+        "dark_counts": 3113.089702858385,
+        "counts": 27537.89818060908,
+        "snr": 165.94546749040504,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 12.5,
+        "counts_raw": 30361.00139577703,
+        "dark_counts": 3118.2455931101335,
+        "counts": 27242.7558026669,
+        "snr": 165.05379669267504,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 54,
+        "time": 12.5,
+        "counts_raw": 8442.693849671843,
+        "dark_counts": 3118.2455931101335,
+        "counts": 5324.448256561709,
+        "snr": 72.9688170149531,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 78,
+        "time": 12.5,
+        "counts_raw": 5383.239093635851,
+        "dark_counts": 3118.2455931101335,
+        "counts": 2264.993500525717,
+        "snr": 47.591947853872476,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 40,
+        "time": 15.0,
+        "counts_raw": 36005.033706530456,
+        "dark_counts": 3123.401483361882,
+        "counts": 32881.63222316858,
+        "snr": 181.3329319874594,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 15.0,
+        "counts_raw": 35931.0774210792,
+        "dark_counts": 3123.401483361882,
+        "counts": 32807.675937717315,
+        "snr": 181.1288931609679,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 52,
+        "time": 15.0,
+        "counts_raw": 4892.79214801176,
+        "dark_counts": 3123.401483361882,
+        "counts": 1769.390664649878,
+        "snr": 42.06412562564302,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 65,
+        "time": 15.0,
+        "counts_raw": 34687.44409467526,
+        "dark_counts": 3123.401483361882,
+        "counts": 31564.042611313376,
+        "snr": 177.66272150148262,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 20.0,
+        "counts_raw": 46609.975796632316,
+        "dark_counts": 3133.7132638653793,
+        "counts": 43476.26253276694,
+        "snr": 208.50962215870743,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 20.0,
+        "counts_raw": 46991.43453211772,
+        "dark_counts": 3133.7132638653793,
+        "counts": 43857.72126825234,
+        "snr": 209.4223514056041,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 56,
+        "time": 20.0,
+        "counts_raw": 17722.261455765747,
+        "dark_counts": 3133.7132638653793,
+        "counts": 14588.548191900369,
+        "snr": 120.78306252078711,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 56901.57678258546,
+        "dark_counts": 3144.0250443688765,
+        "counts": 53757.55173821658,
+        "snr": 231.8567483128679,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 40,
+        "time": 25.0,
+        "counts_raw": 56895.73812847088,
+        "dark_counts": 3144.0250443688765,
+        "counts": 53751.713084102004,
+        "snr": 231.84415689014466,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 45,
+        "time": 25.0,
+        "counts_raw": 65535.0,
+        "dark_counts": 3144.0250443688765,
+        "counts": 62390.97495563112,
+        "snr": 249.78185473655032,
+        "quality": "Excellent",
+        "trackable": true
+      }
+    ],
+    "D": [
+      {
+        "intensity": 162,
+        "time": 5.0,
+        "counts_raw": 5245.057612924302,
+        "dark_counts": 3102.7779223548873,
+        "counts": 2142.2796905694145,
+        "snr": 46.28476737080369,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 9316.54574881953,
+        "dark_counts": 3102.7779223548873,
+        "counts": 6213.767826464642,
+        "snr": 78.82745604460823,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 255,
+        "time": 5.0,
+        "counts_raw": 9271.78273394114,
+        "dark_counts": 3102.7779223548873,
+        "counts": 6169.004811586252,
+        "snr": 78.5430124937047,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 108,
+        "time": 7.5,
+        "counts_raw": 5208.079470198675,
+        "dark_counts": 3107.933812606636,
+        "counts": 2100.1456575920392,
+        "snr": 45.82734617662297,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 162,
+        "time": 7.5,
+        "counts_raw": 6297.961571585543,
+        "dark_counts": 3107.933812606636,
+        "counts": 3190.0277589789075,
+        "snr": 56.48033072653618,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 216,
+        "time": 7.5,
+        "counts_raw": 7354.757966323167,
+        "dark_counts": 3107.933812606636,
+        "counts": 4246.824153716531,
+        "snr": 65.16766187087374,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 255,
+        "time": 7.5,
+        "counts_raw": 12305.936655480653,
+        "dark_counts": 3107.933812606636,
+        "counts": 9198.002842874017,
+        "snr": 95.90621899998987,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 78,
+        "time": 10.0,
+        "counts_raw": 3721.168889020877,
+        "dark_counts": 3113.089702858385,
+        "counts": 608.0791861624921,
+        "snr": 24.659261671073853,
+        "quality": "Poor",
+        "trackable": false
+      },
+      {
+        "intensity": 138,
+        "time": 10.0,
+        "counts_raw": 8148.814925905028,
+        "dark_counts": 3113.089702858385,
+        "counts": 5035.725223046643,
+        "snr": 70.96284396109448,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 197,
+        "time": 10.0,
+        "counts_raw": 12156.077866539958,
+        "dark_counts": 3113.089702858385,
+        "counts": 9042.988163681573,
+        "snr": 95.09462741754433,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 66,
+        "time": 12.5,
+        "counts_raw": 12490.827369108782,
+        "dark_counts": 3118.2455931101335,
+        "counts": 9372.581775998648,
+        "snr": 96.81209519475676,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 116,
+        "time": 12.5,
+        "counts_raw": 11601.40572565557,
+        "dark_counts": 3118.2455931101335,
+        "counts": 8483.160132545436,
+        "snr": 92.10407229078112,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 165,
+        "time": 12.5,
+        "counts_raw": 10289.654767914946,
+        "dark_counts": 3118.2455931101335,
+        "counts": 7171.409174804812,
+        "snr": 84.68417310693192,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 55,
+        "time": 15.0,
+        "counts_raw": 6027.437264277017,
+        "dark_counts": 3123.401483361882,
+        "counts": 2904.0357809151346,
+        "snr": 53.88910632878537,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 82,
+        "time": 15.0,
+        "counts_raw": 7092.018531167404,
+        "dark_counts": 3123.401483361882,
+        "counts": 3968.617047805522,
+        "snr": 62.99696062355327,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 110,
+        "time": 15.0,
+        "counts_raw": 8913.678614914026,
+        "dark_counts": 3123.401483361882,
+        "counts": 5790.277131552144,
+        "snr": 76.09387052550385,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 138,
+        "time": 15.0,
+        "counts_raw": 10713.930300240549,
+        "dark_counts": 3123.401483361882,
+        "counts": 7590.5288168786665,
+        "snr": 87.1236409757918,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 63,
+        "time": 20.0,
+        "counts_raw": 15112.383066551836,
+        "dark_counts": 3133.7132638653793,
+        "counts": 11978.669802686458,
+        "snr": 109.44710961321208,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 110,
+        "time": 20.0,
+        "counts_raw": 10780.101713539038,
+        "dark_counts": 3133.7132638653793,
+        "counts": 7646.388449673658,
+        "snr": 87.4436301263486,
+        "quality": "Good",
+        "trackable": true
+      },
+      {
+        "intensity": 158,
+        "time": 20.0,
+        "counts_raw": 7561.057078371396,
+        "dark_counts": 3133.7132638653793,
+        "counts": 4427.343814506016,
+        "snr": 66.5382883346575,
+        "quality": "Fair",
+        "trackable": false
+      },
+      {
+        "intensity": 50,
+        "time": 25.0,
+        "counts_raw": 33905.064443322546,
+        "dark_counts": 3144.0250443688765,
+        "counts": 30761.039398953668,
+        "snr": 175.38825330948956,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 89,
+        "time": 25.0,
+        "counts_raw": 18664.23098625011,
+        "dark_counts": 3144.0250443688765,
+        "counts": 15520.205941881233,
+        "snr": 124.58011856584996,
+        "quality": "Excellent",
+        "trackable": true
+      },
+      {
+        "intensity": 127,
+        "time": 25.0,
+        "counts_raw": 34243.70638196775,
+        "dark_counts": 3144.0250443688765,
+        "counts": 31099.68133759887,
+        "snr": 176.35101739881986,
+        "quality": "Excellent",
+        "trackable": true
+      }
+    ]
+  }
+}
