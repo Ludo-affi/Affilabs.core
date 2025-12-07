@@ -1,0 +1,1446 @@
+{
+  "detector_serial": "FLMT09116",
+  "processed_date": "2025-12-07T22:07:29",
+  "calibration_type": "SPR 2D Bilinear",
+  "model_equation": "counts(I,t) = (a*t + b)*I + (c*t + d)",
+  "S": {
+    "A": {
+      "measurements": [
+        {
+          "intensity": 201,
+          "time": 10.0,
+          "counts_raw": 13855.126213880556,
+          "dark_counts": 3178.2547489557433,
+          "counts": 10676.871464924812,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts_raw": 16662.87010364387,
+          "dark_counts": 3178.2547489557433,
+          "counts": 13484.615354688125,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 15.0,
+          "counts_raw": 14921.004959463071,
+          "dark_counts": 3201.738328166153,
+          "counts": 11719.266631296918,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts_raw": 23505.772725922845,
+          "dark_counts": 3201.738328166153,
+          "counts": 20304.03439775669,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 25.0,
+          "counts_raw": 12032.168651441809,
+          "dark_counts": 3248.7054865869727,
+          "counts": 8783.463164854837,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 25.0,
+          "counts_raw": 37310.946010156506,
+          "dark_counts": 3248.7054865869727,
+          "counts": 34062.24052356953,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 40.0,
+          "counts_raw": 14452.615151605141,
+          "dark_counts": 3319.156224218202,
+          "counts": 11133.458927386939,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 201,
+          "time": 40.0,
+          "counts_raw": 46231.76075787723,
+          "dark_counts": 3319.156224218202,
+          "counts": 42912.604533659025,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts_raw": 16263.246666468685,
+          "dark_counts": 3413.090541059841,
+          "counts": 12850.156125408845,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 60.0,
+          "counts_raw": 50673.67906037477,
+          "dark_counts": 3413.090541059841,
+          "counts": 47260.58851931493,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 20726.573367386332,
+          "dark_counts": 3507.02485790148,
+          "counts": 17219.548509484852,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 120,
+          "time": 80.0,
+          "counts_raw": 54693.26804858492,
+          "dark_counts": 3507.02485790148,
+          "counts": 51186.24319068344,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 25196.38746176462,
+          "dark_counts": 3600.9591747431195,
+          "counts": 21595.428287021503,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 100.0,
+          "counts_raw": 53376.327176075785,
+          "dark_counts": 3600.9591747431195,
+          "counts": 49775.36800133267,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts_raw": 29666.850295488966,
+          "dark_counts": 3694.8934915847585,
+          "counts": 25971.956803904206,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 120.0,
+          "counts_raw": 46395.89181243133,
+          "dark_counts": 3694.8934915847585,
+          "counts": 42700.99832084657,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts_raw": 36156.18997416327,
+          "dark_counts": 3835.7949668472174,
+          "counts": 32320.395007316056,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 150.0,
+          "counts_raw": 56704.36002138211,
+          "dark_counts": 3835.7949668472174,
+          "counts": 52868.56505453489,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 200.0,
+          "counts_raw": 47034.900068303985,
+          "dark_counts": 4070.630758951315,
+          "counts": 42964.26930935267,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 200.0,
+          "counts_raw": 59374.571169779934,
+          "dark_counts": 4070.630758951315,
+          "counts": 55303.94041082862,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "S",
+      "model": {
+        "type": "bilinear",
+        "a": 5.338472134450076,
+        "b": -0.9052212895404939,
+        "c": 0.34713802009707295,
+        "d": 144.84127403451203,
+        "r_squared": 0.9999226465285295,
+        "rmse": 142.39571242972013,
+        "n_measurements": 20,
+        "led": "A",
+        "polarization": "S"
+      }
+    },
+    "B": {
+      "measurements": [
+        {
+          "intensity": 133,
+          "time": 5.0,
+          "counts_raw": 11851.819113236124,
+          "dark_counts": 3154.7711697453337,
+          "counts": 8697.04794349079,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 5.0,
+          "counts_raw": 19753.464348290916,
+          "dark_counts": 3154.7711697453337,
+          "counts": 16598.69317854558,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 10.0,
+          "counts_raw": 11808.353577049862,
+          "dark_counts": 3178.2547489557433,
+          "counts": 8630.098828094118,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts_raw": 36420.87562735723,
+          "dark_counts": 3178.2547489557433,
+          "counts": 33242.62087840149,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 15.0,
+          "counts_raw": 13402.95488967422,
+          "dark_counts": 3201.738328166153,
+          "counts": 10201.216561508067,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 228,
+          "time": 15.0,
+          "counts_raw": 47792.627624506276,
+          "dark_counts": 3201.738328166153,
+          "counts": 44590.88929634012,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 25.0,
+          "counts_raw": 16398.833189795976,
+          "dark_counts": 3248.7054865869727,
+          "counts": 13150.127703209004,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 25.0,
+          "counts_raw": 51310.74109820925,
+          "dark_counts": 3248.7054865869727,
+          "counts": 48062.035611622276,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 40.0,
+          "counts_raw": 24450.98595313753,
+          "dark_counts": 3319.156224218202,
+          "counts": 21131.82972891933,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 40.0,
+          "counts_raw": 52074.956047872176,
+          "dark_counts": 3319.156224218202,
+          "counts": 48755.79982365397,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts_raw": 35186.324651798175,
+          "dark_counts": 3413.090541059841,
+          "counts": 31773.234110738333,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 60.0,
+          "counts_raw": 55229.77548777952,
+          "dark_counts": 3413.090541059841,
+          "counts": 51816.68494671968,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 45839.92219285481,
+          "dark_counts": 3507.02485790148,
+          "counts": 42332.897334953326,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 80.0,
+          "counts_raw": 57850.033706530456,
+          "dark_counts": 3507.02485790148,
+          "counts": 54343.008848628975,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 56043.2946277433,
+          "dark_counts": 3600.9591747431195,
+          "counts": 52442.33545300018,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 42,
+          "time": 100.0,
+          "counts_raw": 58467.633563983014,
+          "dark_counts": 3600.9591747431195,
+          "counts": 54866.674389239895,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "S",
+      "model": {
+        "type": "bilinear",
+        "a": 13.03574511249387,
+        "b": -0.6652416869587845,
+        "c": 2.3312936882795743,
+        "d": 138.14217746472127,
+        "r_squared": 0.9999413986262667,
+        "rmse": 133.44580104266325,
+        "n_measurements": 16,
+        "led": "B",
+        "polarization": "S"
+      }
+    },
+    "C": {
+      "measurements": [
+        {
+          "intensity": 120,
+          "time": 5.0,
+          "counts_raw": 12782.111335491345,
+          "dark_counts": 3154.7711697453337,
+          "counts": 9627.34016574601,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 5.0,
+          "counts_raw": 23560.26683099219,
+          "dark_counts": 3154.7711697453337,
+          "counts": 20405.495661246856,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 10.0,
+          "counts_raw": 13899.889228758946,
+          "dark_counts": 3178.2547489557433,
+          "counts": 10721.634479803202,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts_raw": 43891.75793662578,
+          "dark_counts": 3178.2547489557433,
+          "counts": 40713.50318767004,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 45,
+          "time": 15.0,
+          "counts_raw": 14156.790009800136,
+          "dark_counts": 3201.738328166153,
+          "counts": 10955.051681633982,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 201,
+          "time": 15.0,
+          "counts_raw": 51489.7931577228,
+          "dark_counts": 3201.738328166153,
+          "counts": 48288.05482955665,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 25.0,
+          "counts_raw": 19545.867757550557,
+          "dark_counts": 3248.7054865869727,
+          "counts": 16297.162270963585,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 120,
+          "time": 25.0,
+          "counts_raw": 51745.39646007187,
+          "dark_counts": 3248.7054865869727,
+          "counts": 48496.690973484896,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 40.0,
+          "counts_raw": 29548.779734505388,
+          "dark_counts": 3319.156224218202,
+          "counts": 26229.623510287187,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 40.0,
+          "counts_raw": 46330.369138478905,
+          "dark_counts": 3319.156224218202,
+          "counts": 43011.2129142607,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts_raw": 42572.22210673239,
+          "dark_counts": 3413.090541059841,
+          "counts": 39159.13156567255,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 60.0,
+          "counts_raw": 54042.582484483115,
+          "dark_counts": 3413.090541059841,
+          "counts": 50629.49194342327,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 55214.205743474005,
+          "dark_counts": 3507.02485790148,
+          "counts": 51707.180885572525,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 42,
+          "time": 80.0,
+          "counts_raw": 57645.03207317435,
+          "dark_counts": 3507.02485790148,
+          "counts": 54138.00721527287,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "S",
+      "model": {
+        "type": "bilinear",
+        "a": 16.144023151374483,
+        "b": -2.8094371234284834,
+        "c": -0.8915715805663227,
+        "d": 355.0648887712795,
+        "r_squared": 0.9999020949028977,
+        "rmse": 162.71803553617974,
+        "n_measurements": 14,
+        "led": "C",
+        "polarization": "S"
+      }
+    },
+    "D": {
+      "measurements": [
+        {
+          "intensity": 147,
+          "time": 10.0,
+          "counts_raw": 11534.585573011018,
+          "dark_counts": 3178.2547489557433,
+          "counts": 8356.330824055274,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts_raw": 17597.05476197547,
+          "dark_counts": 3178.2547489557433,
+          "counts": 14418.800013019725,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 120,
+          "time": 15.0,
+          "counts_raw": 13399.062453597837,
+          "dark_counts": 3201.738328166153,
+          "counts": 10197.324125431684,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts_raw": 24853.85308704303,
+          "dark_counts": 3201.738328166153,
+          "counts": 21652.114758876876,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 25.0,
+          "counts_raw": 12642.632376087668,
+          "dark_counts": 3248.7054865869727,
+          "counts": 9393.926889500695,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 25.0,
+          "counts_raw": 39320.09176491551,
+          "dark_counts": 3248.7054865869727,
+          "counts": 36071.38627832854,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 45,
+          "time": 40.0,
+          "counts_raw": 13522.971668695987,
+          "dark_counts": 3319.156224218202,
+          "counts": 10203.815444477785,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 201,
+          "time": 40.0,
+          "counts_raw": 48818.933269978916,
+          "dark_counts": 3319.156224218202,
+          "counts": 45499.77704576071,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts_raw": 17052.7624506281,
+          "dark_counts": 3413.090541059841,
+          "counts": 13639.671909568258,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 60.0,
+          "counts_raw": 53306.912066046985,
+          "dark_counts": 3413.090541059841,
+          "counts": 49893.82152498714,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 21870.30083449648,
+          "dark_counts": 3507.02485790148,
+          "counts": 18363.275976595,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 80.0,
+          "counts_raw": 46151.317078965345,
+          "dark_counts": 3507.02485790148,
+          "counts": 42644.292221063864,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 26381.634247022837,
+          "dark_counts": 3600.9591747431195,
+          "counts": 22780.67507227972,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 100.0,
+          "counts_raw": 56342.36346627862,
+          "dark_counts": 3600.9591747431195,
+          "counts": 52741.4042915355,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts_raw": 31201.11884892941,
+          "dark_counts": 3694.8934915847585,
+          "counts": 27506.22535734465,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 120.0,
+          "counts_raw": 48973.333234342055,
+          "dark_counts": 3694.8934915847585,
+          "counts": 45278.4397427573,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts_raw": 38349.57770320435,
+          "dark_counts": 3835.7949668472174,
+          "counts": 34513.78273635713,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 150.0,
+          "counts_raw": 59695.69714608143,
+          "dark_counts": 3835.7949668472174,
+          "counts": 55859.90217923421,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 200.0,
+          "counts_raw": 49471.56505211891,
+          "dark_counts": 4070.630758951315,
+          "counts": 45400.93429316759,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 45,
+          "time": 200.0,
+          "counts_raw": 55118.841059602644,
+          "dark_counts": 4070.630758951315,
+          "counts": 51048.21030065133,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "S",
+      "model": {
+        "type": "bilinear",
+        "a": 5.656884243123054,
+        "b": -0.7299867721283497,
+        "c": 0.6849821415624107,
+        "d": 165.6368585767454,
+        "r_squared": 0.9998888250497756,
+        "rmse": 173.12135485927178,
+        "n_measurements": 20,
+        "led": "D",
+        "polarization": "S"
+      }
+    }
+  },
+  "P": {
+    "A": {
+      "measurements": [
+        {
+          "intensity": 201,
+          "time": 15.0,
+          "counts_raw": 11825.220800047515,
+          "dark_counts": 3201.738328166153,
+          "counts": 8623.482471881362,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts_raw": 14058.181629198467,
+          "dark_counts": 3201.738328166153,
+          "counts": 10856.443301032314,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 25.0,
+          "counts_raw": 13811.01193834823,
+          "dark_counts": 3248.7054865869727,
+          "counts": 10562.306451761258,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 25.0,
+          "counts_raw": 21387.63876102515,
+          "dark_counts": 3248.7054865869727,
+          "counts": 18138.93327443818,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 40.0,
+          "counts_raw": 14043.260624239003,
+          "dark_counts": 3319.156224218202,
+          "counts": 10724.1044000208,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 40.0,
+          "counts_raw": 32491.461408249932,
+          "dark_counts": 3319.156224218202,
+          "counts": 29172.30518403173,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 60.0,
+          "counts_raw": 14825.64027559172,
+          "dark_counts": 3413.090541059841,
+          "counts": 11412.54973453188,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 242,
+          "time": 60.0,
+          "counts_raw": 45077.65346123007,
+          "dark_counts": 3413.090541059841,
+          "counts": 41664.562920170225,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 45,
+          "time": 80.0,
+          "counts_raw": 13883.022005761291,
+          "dark_counts": 3507.02485790148,
+          "counts": 10375.99714785981,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 201,
+          "time": 80.0,
+          "counts_raw": 49845.88765479761,
+          "dark_counts": 3507.02485790148,
+          "counts": 46338.86279689613,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 15228.507409497222,
+          "dark_counts": 3600.9591747431195,
+          "counts": 11627.548234754104,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 100.0,
+          "counts_raw": 46349.182579514745,
+          "dark_counts": 3600.9591747431195,
+          "counts": 42748.22340477163,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts_raw": 17628.842989932586,
+          "dark_counts": 3694.8934915847585,
+          "counts": 13933.949498347827,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 120.0,
+          "counts_raw": 54723.110058503844,
+          "dark_counts": 3694.8934915847585,
+          "counts": 51028.21656691909,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts_raw": 21340.929528108576,
+          "dark_counts": 3835.7949668472174,
+          "counts": 17505.13456126136,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 150.0,
+          "counts_raw": 44574.2317286847,
+          "dark_counts": 3835.7949668472174,
+          "counts": 40738.43676183748,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 200.0,
+          "counts_raw": 27409.2373711876,
+          "dark_counts": 4070.630758951315,
+          "counts": 23338.606612236283,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 200.0,
+          "counts_raw": 57815.00178184302,
+          "dark_counts": 4070.630758951315,
+          "counts": 53744.371022891704,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "P",
+      "model": {
+        "type": "bilinear",
+        "a": 2.8958985598680465,
+        "b": -1.4441091822692387,
+        "c": 0.707073684575625,
+        "d": 67.29175402943825,
+        "r_squared": 0.9999406007474317,
+        "rmse": 121.89713678137484,
+        "n_measurements": 18,
+        "led": "A",
+        "polarization": "P"
+      }
+    },
+    "B": {
+      "measurements": [
+        {
+          "intensity": 147,
+          "time": 10.0,
+          "counts_raw": 14514.894128827253,
+          "dark_counts": 3178.2547489557433,
+          "counts": 11336.639379871509,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts_raw": 22708.472069610667,
+          "dark_counts": 3178.2547489557433,
+          "counts": 19530.217320654923,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 15.0,
+          "counts_raw": 14038.070709470494,
+          "dark_counts": 3201.738328166153,
+          "counts": 10836.33238130434,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts_raw": 32635.481543076054,
+          "dark_counts": 3201.738328166153,
+          "counts": 29433.7432149099,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 25.0,
+          "counts_raw": 13374.410358447421,
+          "dark_counts": 3248.7054865869727,
+          "counts": 10125.70487186045,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 228,
+          "time": 25.0,
+          "counts_raw": 47127.02105544502,
+          "dark_counts": 3248.7054865869727,
+          "counts": 43878.315568858045,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 40.0,
+          "counts_raw": 15837.02491610489,
+          "dark_counts": 3319.156224218202,
+          "counts": 12517.868691886688,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 40.0,
+          "counts_raw": 49164.71134143082,
+          "dark_counts": 3319.156224218202,
+          "counts": 45845.555117212614,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts_raw": 22349.71921123749,
+          "dark_counts": 3413.090541059841,
+          "counts": 18936.628670177648,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 60.0,
+          "counts_raw": 47146.48323582692,
+          "dark_counts": 3413.090541059841,
+          "counts": 43733.39269476708,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 28639.24717132421,
+          "dark_counts": 3507.02485790148,
+          "counts": 25132.222313422728,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 80.0,
+          "counts_raw": 45020.56439877647,
+          "dark_counts": 3507.02485790148,
+          "counts": 41513.53954087499,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 35057.22552193151,
+          "dark_counts": 3600.9591747431195,
+          "counts": 31456.266347188393,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 100.0,
+          "counts_raw": 54994.93184450449,
+          "dark_counts": 3600.9591747431195,
+          "counts": 51393.97266976137,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts_raw": 41500.50470703531,
+          "dark_counts": 3694.8934915847585,
+          "counts": 37805.61121545055,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 120.0,
+          "counts_raw": 52631.57440679476,
+          "dark_counts": 3694.8934915847585,
+          "counts": 48936.68091521,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts_raw": 50721.037032637425,
+          "dark_counts": 3835.7949668472174,
+          "counts": 46885.24206579021,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 45,
+          "time": 150.0,
+          "counts_raw": 56409.183618923176,
+          "dark_counts": 3835.7949668472174,
+          "counts": 52573.388652075955,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "P",
+      "model": {
+        "type": "bilinear",
+        "a": 7.8098291763455885,
+        "b": -2.962077242044215,
+        "c": -0.36413249287491656,
+        "d": 282.24284814178884,
+        "r_squared": 0.9999102828816115,
+        "rmse": 141.44024590574836,
+        "n_measurements": 18,
+        "led": "B",
+        "polarization": "P"
+      }
+    },
+    "C": {
+      "measurements": [
+        {
+          "intensity": 201,
+          "time": 5.0,
+          "counts_raw": 11951.076233183858,
+          "dark_counts": 3154.7711697453337,
+          "counts": 8796.305063438524,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 5.0,
+          "counts_raw": 14300.810144626259,
+          "dark_counts": 3154.7711697453337,
+          "counts": 11146.038974880925,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 10.0,
+          "counts_raw": 11419.758708757758,
+          "dark_counts": 3178.2547489557433,
+          "counts": 8241.503959802014,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts_raw": 25492.212603569627,
+          "dark_counts": 3178.2547489557433,
+          "counts": 22313.957854613884,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 15.0,
+          "counts_raw": 11994.541769370118,
+          "dark_counts": 3201.738328166153,
+          "counts": 8792.803441203965,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts_raw": 36727.72933804532,
+          "dark_counts": 3201.738328166153,
+          "counts": 33525.991009879166,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 25.0,
+          "counts_raw": 14889.865470852019,
+          "dark_counts": 3248.7054865869727,
+          "counts": 11641.159984265047,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 201,
+          "time": 25.0,
+          "counts_raw": 47651.85118641047,
+          "dark_counts": 3248.7054865869727,
+          "counts": 44403.1456998235,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 40.0,
+          "counts_raw": 17709.286668844477,
+          "dark_counts": 3319.156224218202,
+          "counts": 14390.130444626275,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 40.0,
+          "counts_raw": 55173.33516467199,
+          "dark_counts": 3319.156224218202,
+          "counts": 51854.178940453785,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts_raw": 25032.905146556586,
+          "dark_counts": 3413.090541059841,
+          "counts": 21619.814605496744,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 60.0,
+          "counts_raw": 53295.23475781784,
+          "dark_counts": 3413.090541059841,
+          "counts": 49882.144216757995,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 32388.960591571882,
+          "dark_counts": 3507.02485790148,
+          "counts": 28881.9357336704,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 80.0,
+          "counts_raw": 50909.17144299587,
+          "dark_counts": 3507.02485790148,
+          "counts": 47402.146585094386,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 39725.55385620526,
+          "dark_counts": 3600.9591747431195,
+          "counts": 36124.59468146214,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 100.0,
+          "counts_raw": 50172.20354586761,
+          "dark_counts": 3600.9591747431195,
+          "counts": 46571.24437112449,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts_raw": 46984.298399311025,
+          "dark_counts": 3694.8934915847585,
+          "counts": 43289.40490772627,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 120.0,
+          "counts_raw": 59087.82837881983,
+          "dark_counts": 3694.8934915847585,
+          "counts": 55392.934887235075,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts_raw": 57309.63383125947,
+          "dark_counts": 3835.7949668472174,
+          "counts": 53473.838864412246,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 42,
+          "time": 150.0,
+          "counts_raw": 59706.72571496452,
+          "dark_counts": 3835.7949668472174,
+          "counts": 55870.9307481173,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "P",
+      "model": {
+        "type": "bilinear",
+        "a": 8.848028275666957,
+        "b": -2.430853984402756,
+        "c": 1.9262779120116649,
+        "d": 352.3480789911166,
+        "r_squared": 0.9998580892850361,
+        "rmse": 207.10961262239564,
+        "n_measurements": 20,
+        "led": "C",
+        "polarization": "P"
+      }
+    },
+    "D": {
+      "measurements": [
+        {
+          "intensity": 147,
+          "time": 15.0,
+          "counts_raw": 11130.420960413387,
+          "dark_counts": 3201.738328166153,
+          "counts": 7928.682632247233,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts_raw": 16874.359130460605,
+          "dark_counts": 3201.738328166153,
+          "counts": 13672.620802294452,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 25.0,
+          "counts_raw": 11676.659489798949,
+          "dark_counts": 3248.7054865869727,
+          "counts": 8427.954003211977,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 25.0,
+          "counts_raw": 26166.901523475783,
+          "dark_counts": 3248.7054865869727,
+          "counts": 22918.19603688881,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 40.0,
+          "counts_raw": 12930.67264573991,
+          "dark_counts": 3319.156224218202,
+          "counts": 9611.516421521708,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 255,
+          "time": 40.0,
+          "counts_raw": 40119.33863926588,
+          "dark_counts": 3319.156224218202,
+          "counts": 36800.182415047675,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 52,
+          "time": 60.0,
+          "counts_raw": 14778.282303329077,
+          "dark_counts": 3413.090541059841,
+          "counts": 11365.191762269236,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 201,
+          "time": 60.0,
+          "counts_raw": 47197.73364416595,
+          "dark_counts": 3413.090541059841,
+          "counts": 43784.64310310611,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts_raw": 15172.715825735751,
+          "dark_counts": 3507.02485790148,
+          "counts": 11665.69096783427,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 80.0,
+          "counts_raw": 46497.74388976331,
+          "dark_counts": 3507.02485790148,
+          "counts": 42990.71903186183,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts_raw": 18306.126867222996,
+          "dark_counts": 3600.9591747431195,
+          "counts": 14705.167692479878,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 147,
+          "time": 100.0,
+          "counts_raw": 57050.786832180085,
+          "dark_counts": 3600.9591747431195,
+          "counts": 53449.82765743697,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts_raw": 21536.20007127372,
+          "dark_counts": 3694.8934915847585,
+          "counts": 17841.306579688964,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 120.0,
+          "counts_raw": 44844.10729664716,
+          "dark_counts": 3694.8934915847585,
+          "counts": 41149.213805062405,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts_raw": 26255.778813886496,
+          "dark_counts": 3835.7949668472174,
+          "counts": 22419.98384703928,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 93,
+          "time": 150.0,
+          "counts_raw": 54881.40245894337,
+          "dark_counts": 3835.7949668472174,
+          "counts": 51045.607492096155,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 40,
+          "time": 200.0,
+          "counts_raw": 33930.36527781902,
+          "dark_counts": 4070.630758951315,
+          "counts": 29859.734518867706,
+          "target": 0,
+          "polarization": "unknown"
+        },
+        {
+          "intensity": 66,
+          "time": 200.0,
+          "counts_raw": 52603.67861491403,
+          "dark_counts": 4070.630758951315,
+          "counts": 48533.047855962715,
+          "target": 0,
+          "polarization": "unknown"
+        }
+      ],
+      "polarization": "P",
+      "model": {
+        "type": "bilinear",
+        "a": 3.6281295812343304,
+        "b": -0.6763423571372567,
+        "c": 4.6061822241294434,
+        "d": -118.68412757447457,
+        "r_squared": 0.9999483901456698,
+        "rmse": 113.89062581710468,
+        "n_measurements": 18,
+        "led": "D",
+        "polarization": "P"
+      }
+    }
+  },
+  "dark": {
+    "rate": 4.696715842081956,
+    "offset": 3131.2875905349238
+  }
+}

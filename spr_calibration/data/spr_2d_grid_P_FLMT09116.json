@@ -1,0 +1,398 @@
+{
+  "detector_serial": "FLMT09116",
+  "detector_max": 65535,
+  "sampling_method": "2D_LINEAR",
+  "sampling_range": "20-80% detector",
+  "sampling_points": "2 per time (linear interpolation)",
+  "polarization": "P",
+  "servo_position": 8,
+  "timestamp": "2025-12-07T16:41:54.825565",
+  "leds": {
+    "LED_A": {
+      "measurements": [
+        {
+          "intensity": 201,
+          "time": 15.0,
+          "counts": 11825.220800047515
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts": 14058.181629198467
+        },
+        {
+          "intensity": 147,
+          "time": 25.0,
+          "counts": 13811.01193834823
+        },
+        {
+          "intensity": 255,
+          "time": 25.0,
+          "counts": 21387.63876102515
+        },
+        {
+          "intensity": 93,
+          "time": 40.0,
+          "counts": 14043.260624239003
+        },
+        {
+          "intensity": 255,
+          "time": 40.0,
+          "counts": 32491.461408249932
+        },
+        {
+          "intensity": 66,
+          "time": 60.0,
+          "counts": 14825.64027559172
+        },
+        {
+          "intensity": 242,
+          "time": 60.0,
+          "counts": 45077.65346123007
+        },
+        {
+          "intensity": 45,
+          "time": 80.0,
+          "counts": 13883.022005761291
+        },
+        {
+          "intensity": 201,
+          "time": 80.0,
+          "counts": 49845.88765479761
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts": 15228.507409497222
+        },
+        {
+          "intensity": 147,
+          "time": 100.0,
+          "counts": 46349.182579514745
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts": 17628.842989932586
+        },
+        {
+          "intensity": 147,
+          "time": 120.0,
+          "counts": 54723.110058503844
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts": 21340.929528108576
+        },
+        {
+          "intensity": 93,
+          "time": 150.0,
+          "counts": 44574.2317286847
+        },
+        {
+          "intensity": 40,
+          "time": 200.0,
+          "counts": 27409.2373711876
+        },
+        {
+          "intensity": 93,
+          "time": 200.0,
+          "counts": 57815.00178184302
+        }
+      ]
+    },
+    "LED_B": {
+      "measurements": [
+        {
+          "intensity": 147,
+          "time": 10.0,
+          "counts": 14514.894128827253
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts": 22708.472069610667
+        },
+        {
+          "intensity": 93,
+          "time": 15.0,
+          "counts": 14038.070709470494
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts": 32635.481543076054
+        },
+        {
+          "intensity": 52,
+          "time": 25.0,
+          "counts": 13374.410358447421
+        },
+        {
+          "intensity": 228,
+          "time": 25.0,
+          "counts": 47127.02105544502
+        },
+        {
+          "intensity": 40,
+          "time": 40.0,
+          "counts": 15837.02491610489
+        },
+        {
+          "intensity": 147,
+          "time": 40.0,
+          "counts": 49164.71134143082
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts": 22349.71921123749
+        },
+        {
+          "intensity": 93,
+          "time": 60.0,
+          "counts": 47146.48323582692
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts": 28639.24717132421
+        },
+        {
+          "intensity": 66,
+          "time": 80.0,
+          "counts": 45020.56439877647
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts": 35057.22552193151
+        },
+        {
+          "intensity": 66,
+          "time": 100.0,
+          "counts": 54994.93184450449
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts": 41500.50470703531
+        },
+        {
+          "intensity": 52,
+          "time": 120.0,
+          "counts": 52631.57440679476
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts": 50721.037032637425
+        },
+        {
+          "intensity": 45,
+          "time": 150.0,
+          "counts": 56409.183618923176
+        }
+      ]
+    },
+    "LED_C": {
+      "measurements": [
+        {
+          "intensity": 201,
+          "time": 5.0,
+          "counts": 11951.076233183858
+        },
+        {
+          "intensity": 255,
+          "time": 5.0,
+          "counts": 14300.810144626259
+        },
+        {
+          "intensity": 93,
+          "time": 10.0,
+          "counts": 11419.758708757758
+        },
+        {
+          "intensity": 255,
+          "time": 10.0,
+          "counts": 25492.212603569627
+        },
+        {
+          "intensity": 66,
+          "time": 15.0,
+          "counts": 11994.541769370118
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts": 36727.72933804532
+        },
+        {
+          "intensity": 52,
+          "time": 25.0,
+          "counts": 14889.865470852019
+        },
+        {
+          "intensity": 201,
+          "time": 25.0,
+          "counts": 47651.85118641047
+        },
+        {
+          "intensity": 40,
+          "time": 40.0,
+          "counts": 17709.286668844477
+        },
+        {
+          "intensity": 147,
+          "time": 40.0,
+          "counts": 55173.33516467199
+        },
+        {
+          "intensity": 40,
+          "time": 60.0,
+          "counts": 25032.905146556586
+        },
+        {
+          "intensity": 93,
+          "time": 60.0,
+          "counts": 53295.23475781784
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts": 32388.960591571882
+        },
+        {
+          "intensity": 66,
+          "time": 80.0,
+          "counts": 50909.17144299587
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts": 39725.55385620526
+        },
+        {
+          "intensity": 52,
+          "time": 100.0,
+          "counts": 50172.20354586761
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts": 46984.298399311025
+        },
+        {
+          "intensity": 52,
+          "time": 120.0,
+          "counts": 59087.82837881983
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts": 57309.63383125947
+        },
+        {
+          "intensity": 42,
+          "time": 150.0,
+          "counts": 59706.72571496452
+        }
+      ]
+    },
+    "LED_D": {
+      "measurements": [
+        {
+          "intensity": 147,
+          "time": 15.0,
+          "counts": 11130.420960413387
+        },
+        {
+          "intensity": 255,
+          "time": 15.0,
+          "counts": 16874.359130460605
+        },
+        {
+          "intensity": 93,
+          "time": 25.0,
+          "counts": 11676.659489798949
+        },
+        {
+          "intensity": 255,
+          "time": 25.0,
+          "counts": 26166.901523475783
+        },
+        {
+          "intensity": 66,
+          "time": 40.0,
+          "counts": 12930.67264573991
+        },
+        {
+          "intensity": 255,
+          "time": 40.0,
+          "counts": 40119.33863926588
+        },
+        {
+          "intensity": 52,
+          "time": 60.0,
+          "counts": 14778.282303329077
+        },
+        {
+          "intensity": 201,
+          "time": 60.0,
+          "counts": 47197.73364416595
+        },
+        {
+          "intensity": 40,
+          "time": 80.0,
+          "counts": 15172.715825735751
+        },
+        {
+          "intensity": 147,
+          "time": 80.0,
+          "counts": 46497.74388976331
+        },
+        {
+          "intensity": 40,
+          "time": 100.0,
+          "counts": 18306.126867222996
+        },
+        {
+          "intensity": 147,
+          "time": 100.0,
+          "counts": 57050.786832180085
+        },
+        {
+          "intensity": 40,
+          "time": 120.0,
+          "counts": 21536.20007127372
+        },
+        {
+          "intensity": 93,
+          "time": 120.0,
+          "counts": 44844.10729664716
+        },
+        {
+          "intensity": 40,
+          "time": 150.0,
+          "counts": 26255.778813886496
+        },
+        {
+          "intensity": 93,
+          "time": 150.0,
+          "counts": 54881.40245894337
+        },
+        {
+          "intensity": 40,
+          "time": 200.0,
+          "counts": 33930.36527781902
+        },
+        {
+          "intensity": 66,
+          "time": 200.0,
+          "counts": 52603.67861491403
+        }
+      ]
+    }
+  }
+}
