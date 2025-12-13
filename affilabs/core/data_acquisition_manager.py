@@ -816,13 +816,29 @@ class DataAcquisitionManager(QObject):
         self._stop_processing.set()
         self._acquiring = False
 
+        # V2.2: Send firmware stop command FIRST to halt rankbatch timer
+        try:
+            ctrl = self.hardware_mgr.ctrl
+            if ctrl and ctrl._ser and ctrl._ser.is_open:
+                # Send stop command to halt hardware timer sequencer
+                ctrl._ser.write(b"stop\n")
+                time.sleep(0.05)  # Wait for firmware to halt timer and send BATCH_STOPPED
+
+                # Flush any pending firmware responses
+                if ctrl._ser.in_waiting > 0:
+                    response = ctrl._ser.read(ctrl._ser.in_waiting)
+                    if b"BATCH_STOPPED" in response:
+                        logger.info("✅ Firmware rankbatch timer stopped")
+        except Exception as e:
+            logger.debug(f"Firmware stop command failed (non-critical): {e}")
+
         # Emergency shutdown all LEDs (V1.1+ firmware)
         try:
             ctrl = self.hardware_mgr.ctrl
             if ctrl and hasattr(ctrl, "emergency_shutdown"):
                 ctrl.emergency_shutdown()
                 logger.info("✅ Emergency shutdown - all LEDs off")
-            
+
             # Unlock servo control (P4SPR safeguard)
             if ctrl:
                 ctrl._acquisition_blocked = False
@@ -1352,7 +1368,7 @@ class DataAcquisitionManager(QObject):
                             # Just update success tracking and continue to next batch
                             spectra_acquired += len(channel_spectra)
                             batch_success = True
-                            
+
                             # Skip old synchronous processing path - using async now
                             continue
 
@@ -1704,7 +1720,7 @@ class DataAcquisitionManager(QObject):
 
     def _process_and_emit_spectrum_immediate(self, channel: str, raw_spectrum, led_intensities: dict):
         """Queue spectrum for async processing - non-blocking for continuous acquisition.
-        
+
         This queues the spectrum for background processing instead of blocking acquisition.
         Processing happens in parallel thread while we continue acquiring next channels.
         """
@@ -1728,7 +1744,7 @@ class DataAcquisitionManager(QObject):
                 args=(spectrum_data,),
                 daemon=True
             ).start()
-            
+
         except Exception as e:
             logger.error(f"[ASYNC-QUEUE] Failed to queue {channel}: {e}")
 
@@ -1736,7 +1752,7 @@ class DataAcquisitionManager(QObject):
         """Background processing thread - runs in parallel with acquisition."""
         try:
             channel = spectrum_data["channel"]
-            
+
             # Process spectrum (dark subtraction + transmission calculation)
             processed = self._process_spectrum(channel, spectrum_data)
 
@@ -1815,11 +1831,11 @@ class DataAcquisitionManager(QObject):
                 return {}
 
             # EVENT-DRIVEN RANKBATCH: Truly autonomous LED operation
-            # Very high cycle count = firmware runs LEDs for hours without Python intervention
-            # This eliminates restart gaps and provides smooth continuous operation
+            # High cycle count = firmware runs for 1 hour without Python intervention
+            # Firmware controls ALL timing via hardware timer - Python just listens
             # 3600 cycles = 14400 LED activations = ~1 hour of autonomous operation
-            # Trade-off: Pause delay is ~15 seconds (but acquisition is meant to run continuously)
-            # This allows valve operations from external devices without Python interference
+            # Python stays in listening loop, processes READY events as they arrive
+            # No need to re-send commands - firmware runs continuously for full hour
             n_cycles = 3600
 
             # Extract LED intensities (rankbatch embeds them in command - sync_test.py pattern)
@@ -1832,8 +1848,9 @@ class DataAcquisitionManager(QObject):
             # This saves ~7ms per acquisition and ensures detector is ready when LED turns on
             if not per_channel_integration:
                 usb.set_integration(integration_time_ms)
+                time.sleep(0.005)  # 5ms USB settling time - prevents race condition
                 logger.debug(f"[PRE-ARM] Integration time set to {integration_time_ms}ms before rankbatch")
-            
+
             # Build rankbatch command with CORRECT PARAMETER ORDER: A,B,C,D,SETTLE,DARK,CYCLES
             # Firmware expects: rankbatch:A,B,C,D,SETTLE,DARK,CYCLES (intensities embedded)
             rankbatch_cmd = f"rankbatch:{int_a},{int_b},{int_c},{int_d},{int(settling_ms)},{int(dark_ms)},{n_cycles}\n"
@@ -1845,59 +1862,46 @@ class DataAcquisitionManager(QObject):
             led_names = ['a', 'b', 'c', 'd']
 
             # SINGLE BATCH ACQUISITION (called repeatedly by acquisition worker)
-            # Acquire ONE batch (4 cycles), then return to let worker process data
+            # Acquire ONE batch, then return to let worker process data
 
             # Send rankbatch command to firmware
             ctrl._ser.write(rankbatch_cmd.encode())
+            logger.debug(f"[RANK-EVENT] Command sent, firmware starting autonomous execution...")
 
-            # Wait for firmware acknowledgment
-            ack_received = False
-            for _ in range(20):  # Wait up to 2 seconds
-                if ctrl._ser.in_waiting > 0:
-                    response = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
-                    if "BATCH_START" in response or "pos=" in response:
-                        ack_received = True
-                        break
-                time.sleep(0.1)
-
-            if not ack_received:
-                logger.warning(f"[RANK-EVENT] No firmware acknowledgment - proceeding anyway")
-
-            # Acquire spectra for this batch
-            current_cycle = 0
-            batch_acquisitions = 0
+            # Track acquisitions per LED (each cycle = 4 LEDs × 1 spectrum)
+            # Expected total spectra: n_cycles × 4 LEDs
+            expected_spectra_per_led = n_cycles
+            acquisitions_per_led = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            
             batch_start = time.perf_counter()
             timeout_start = time.perf_counter()
-            # Timeout should be longer than batch duration: 3600 cycles × 1s per cycle = 1 hour + buffer
-            max_wait = 4000.0  # Max ~1 hour per batch (very long for truly continuous operation)
+            # Timeout: n_cycles × ~1s per cycle + 10% buffer
+            max_wait = (n_cycles * 1.1) + 60.0  # Extra 60s startup buffer
 
             # Event-driven acquisition loop for this batch
-            while current_cycle < n_cycles:
+            # Continue until we've acquired expected spectra from all LEDs
+            while min(acquisitions_per_led.values()) < expected_spectra_per_led:
                 # Check timeout
                 if time.perf_counter() - timeout_start > max_wait:
-                    logger.warning(f"[RANK-EVENT] Batch timeout after {max_wait}s")
+                    logger.warning(f"[RANK-EVENT] Timeout after {max_wait:.1f}s")
                     break
 
-                # Check for stop signal (finish current batch gracefully)
+                # Check for stop signal
                 if self._stop_acquisition.is_set():
-                    logger.debug(f"[RANK-EVENT] Stop requested, finishing current batch")
+                    logger.info(f"[RANK-EVENT] Stop requested")
                     break
 
                 # Read serial output
                 if ctrl._ser.in_waiting > 0:
                     line = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
 
-                    # Track cycle number
-                    if line.startswith("CYCLE:"):
-                        cycle_num = int(line.split(":")[1])
-                        if cycle_num > current_cycle:
-                            current_cycle = cycle_num
-
                     # Check for LED READY events (LED just turned on)
                     for led_name in led_names:
                         if line == f"{led_name}:READY":
-                            # LED just turned ON! Wait 50ms for LED stabilization (validated optimal)
-                            time.sleep(0.050)
+                            # Track acquisition count for this LED
+                            acquisitions_per_led[led_name] += 1
+                            # V2.2: Firmware already waited 50ms for LED stabilization before sending READY
+                            # No additional delay needed - LED is stable and ready to measure
 
                             # Set integration time ONLY if using per-channel (otherwise pre-armed)
                             if per_channel_integration:
@@ -1919,39 +1923,57 @@ class DataAcquisitionManager(QObject):
 
                                     if spectra:
                                         spectrum = np.mean(spectra, axis=0)
-                                        channel_spectra[led_name] = spectrum
-                                        batch_acquisitions += 1
-                                        
-                                        # IMMEDIATE PROCESSING: Process and emit spectrum as soon as acquired
-                                        # This eliminates batch delay and provides continuous data flow
+                                        # IMMEDIATE PROCESSING: Emit as soon as acquired
                                         self._process_and_emit_spectrum_immediate(led_name, spectrum, led_intensities)
                                 else:
                                     # Single scan
                                     spectrum = usb.read_intensity()
                                     if spectrum is not None and len(spectrum) > 0:
-                                        channel_spectra[led_name] = spectrum
-                                        batch_acquisitions += 1
-                                        
-                                        # IMMEDIATE PROCESSING: Process and emit spectrum as soon as acquired
+                                        # IMMEDIATE PROCESSING: Emit as soon as acquired
                                         self._process_and_emit_spectrum_immediate(led_name, spectrum, led_intensities)
 
                             except Exception as e:
                                 logger.error(f"[RANK-EVENT] Failed to acquire {led_name}: {e}")
+                                acquisitions_per_led[led_name] -= 1  # Revert count on failure
                 else:
                     # No data available, small sleep to avoid busy-waiting
                     time.sleep(0.001)
 
-            # Drain remaining serial output after batch completes
-            time.sleep(0.1)
+            # Check if we completed successfully
+            batch_elapsed = time.perf_counter() - batch_start
+            min_acquisitions = min(acquisitions_per_led.values())
+            completed_successfully = (min_acquisitions >= expected_spectra_per_led)
+            
+            # If exiting early, send stop command to firmware
+            if not completed_successfully:
+                logger.warning(f"[RANK-EVENT] Exiting early - sending stop command to firmware")
+                try:
+                    ctrl._ser.write(b"stop\n")
+                    time.sleep(0.1)  # Give firmware time to process
+                except Exception as e:
+                    logger.error(f"[RANK-EVENT] Failed to send stop: {e}")
+            
+            # Drain remaining serial output
+            time.sleep(0.05)
             while ctrl._ser.in_waiting > 0:
                 line = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
                 if "BATCH_END" in line:
-                    logger.debug(f"[RANK-EVENT] Batch complete")
+                    logger.debug(f"[RANK-EVENT] Firmware confirmed batch end")
 
-            batch_elapsed = time.perf_counter() - batch_start
-            logger.debug(f"[RANK-EVENT] Batch: {batch_acquisitions} spectra in {batch_elapsed:.2f}s")
-            logger.debug(f"[RANK-EVENT] Returning {len(channel_spectra)} channels: {list(channel_spectra.keys())}")
+            # Log exit reason with spectrum counts
+            total_spectra = sum(acquisitions_per_led.values())
+            logger.info(f"[RANK-EVENT] Batch complete: {total_spectra} total spectra in {batch_elapsed:.1f}s")
+            logger.debug(f"[RANK-EVENT] Per-LED counts: {acquisitions_per_led}")
             
+            if self._stop_acquisition.is_set():
+                logger.info(f"[RANK-EVENT] Exit reason: User stop requested")
+            elif time.perf_counter() - timeout_start > max_wait:
+                logger.warning(f"[RANK-EVENT] Exit reason: TIMEOUT ({max_wait:.0f}s)")
+            elif completed_successfully:
+                logger.info(f"[RANK-EVENT] Exit reason: All spectra acquired successfully")
+            else:
+                logger.warning(f"[RANK-EVENT] Exit reason: INCOMPLETE - expected {expected_spectra_per_led}, got {min_acquisitions} min")
+
             return channel_spectra
 
         except Exception as e:
