@@ -1,0 +1,2 @@
+recording_start,duration_seconds,integration_time_ms,num_scans,p_led_intensities,s_led_intensities,wavelength_min,wavelength_max,wavelength_points
+2025-11-26T22:30:40.243550,300.0,45,4,"{'a': 255, 'b': 106, 'c': 96, 'd': 254}","{'a': 156, 'b': 72, 'c': 75, 'd': 183}",560.044201243574,719.9313788403352,1997
