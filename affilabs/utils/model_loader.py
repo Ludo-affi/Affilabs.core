@@ -110,18 +110,34 @@ class LEDCalibrationModelLoader:
                 "detector_max": 65535,
                 "dark": raw_data.get("dark_counts_per_time", {}),
                 "bilinear_models": {},  # Keep name for compatibility
+                "correction_factors": raw_data.get("correction_factors", {}),  # NEW: Validation-based corrections
+                "average_corrections": raw_data.get("average_corrections", {}),  # NEW: Fallback corrections
             }
 
-            # Extract slopes from 3-stage model
+            # Extract slopes from multistage model
             for led, stages in raw_data["led_models"].items():
-                # stages = [[10, slope_10], [20, slope_20], [30, slope_30]]
-                # Use 10ms slope as base (first stage)
-                slope_10ms = stages[0][1] if len(stages) > 0 else 0
+                # Handle both formats:
+                # Old: [[10, slope_10], [20, slope_20], [30, slope_30]]
+                # New: [{"time_ms": 10, "slope": slope_10}, {"time_ms": 20, "slope": slope_20}, ...]
+                
+                # Extract 10ms slope (first stage)
+                if len(stages) > 0:
+                    if isinstance(stages[0], dict):
+                        # New format: {"time_ms": 10, "slope": value}
+                        slope_10ms = stages[0].get("slope", 0)
+                    else:
+                        # Old format: [10, slope]
+                        slope_10ms = stages[0][1]
+                else:
+                    slope_10ms = 0
 
                 # Calculate linearity as R² indicator (ratio of 20ms/10ms should be ~2.0)
                 if len(stages) >= 2:
                     expected_20ms = slope_10ms * 2.0
-                    actual_20ms = stages[1][1]
+                    if isinstance(stages[1], dict):
+                        actual_20ms = stages[1].get("slope", 0)
+                    else:
+                        actual_20ms = stages[1][1]
                     linearity_20 = (
                         actual_20ms / expected_20ms if expected_20ms > 0 else 0
                     )
@@ -130,7 +146,10 @@ class LEDCalibrationModelLoader:
 
                 if len(stages) >= 3:
                     expected_30ms = slope_10ms * 3.0
-                    actual_30ms = stages[2][1]
+                    if isinstance(stages[2], dict):
+                        actual_30ms = stages[2].get("slope", 0)
+                    else:
+                        actual_30ms = stages[2][1]
                     linearity_30 = (
                         actual_30ms / expected_30ms if expected_30ms > 0 else 0
                     )
@@ -305,6 +324,12 @@ class LEDCalibrationModelLoader:
             # Calculate required intensity
             intensity_float = target_counts / (slope_10ms * (time_ms / 10.0))
 
+            # Apply correction factor if available (compensates for model non-linearity)
+            correction_factor = self._get_correction_factor(led, time_ms, slope_10ms)
+            if correction_factor != 1.0:
+                logger.debug(f"{led}: Applying correction factor {correction_factor:.4f} @ {time_ms}ms")
+                intensity_float *= correction_factor
+
             # Apply safety margin (default 1.0 = no reduction)
             intensity_float *= safety_margin
 
@@ -329,6 +354,124 @@ class LEDCalibrationModelLoader:
 
             traceback.print_exc()
             return 255
+
+    def _get_correction_factor(self, led: str, time_ms: float, slope_10ms: float = None) -> float:
+        """Get correction factor for LED at specific integration time.
+        
+        Correction factors compensate for model non-linearity at longer integration times.
+        If exact time not found, interpolates between nearest times or uses average fallback.
+        For bright LEDs (high slope) at longer times without data, applies conservative scaling.
+        
+        Args:
+            led: LED channel ('A', 'B', 'C', 'D')
+            time_ms: Integration time in milliseconds
+            slope_10ms: LED brightness (counts/intensity @ 10ms), used for conservative scaling
+        
+        Returns:
+            Correction factor (typically 0.5-1.3, lower for bright LEDs at long times)
+        """
+        if not self.model_data:
+            return 1.0
+        
+        correction_factors = self.model_data.get("correction_factors", {})
+        average_corrections = self.model_data.get("average_corrections", {})
+        
+        # Try exact match: correction_factors[time_ms][led]
+        time_key = str(int(time_ms))  # JSON keys are strings
+        if time_key in correction_factors:
+            led_corrections = correction_factors[time_key]
+            if led in led_corrections:
+                return led_corrections[led]
+        
+        # Interpolate between available times for this LED
+        available_times = sorted([int(t) for t in correction_factors.keys()])
+        if available_times and led in correction_factors.get(str(available_times[0]), {}):
+            # Collect this LED's correction factors at measured times
+            led_cf_times = []
+            led_cf_values = []
+            for t in available_times:
+                t_key = str(t)
+                if led in correction_factors.get(t_key, {}):
+                    led_cf_times.append(t)
+                    led_cf_values.append(correction_factors[t_key][led])
+            
+            if len(led_cf_times) >= 2:
+                # Interpolate between nearest times
+                if time_ms <= led_cf_times[0]:
+                    # Below first measured time - use first correction
+                    correction = led_cf_values[0]
+                    logger.debug(f"{led}: Using {led_cf_times[0]}ms correction ({correction:.4f}) for {time_ms}ms")
+                    return correction
+                elif time_ms >= led_cf_times[-1]:
+                    # Above last measured time - use last correction
+                    correction = led_cf_values[-1]
+                    logger.debug(f"{led}: Using {led_cf_times[-1]}ms correction ({correction:.4f}) for {time_ms}ms")
+                    return correction
+                else:
+                    # Interpolate between two nearest times
+                    for i in range(len(led_cf_times) - 1):
+                        t1, t2 = led_cf_times[i], led_cf_times[i + 1]
+                        if t1 <= time_ms <= t2:
+                            cf1, cf2 = led_cf_values[i], led_cf_values[i + 1]
+                            # Linear interpolation
+                            weight = (time_ms - t1) / (t2 - t1)
+                            correction = cf1 + weight * (cf2 - cf1)
+                            logger.debug(f"{led}: Interpolated correction {correction:.4f} for {time_ms}ms (between {t1}ms and {t2}ms)")
+                            return correction
+            elif len(led_cf_times) == 1:
+                # Only one measurement - use it
+                correction = led_cf_values[0]
+                logger.debug(f"{led}: Using only available correction ({correction:.4f}) for {time_ms}ms")
+                return correction
+        
+        # Fallback to average correction for this integration time
+        if time_key in average_corrections:
+            logger.debug(f"{led}: Using average correction for {time_ms}ms")
+            return average_corrections[time_key]
+        
+        # Interpolate average corrections if time not exact match
+        if average_corrections:
+            avg_times = sorted([int(t) for t in average_corrections.keys()])
+            if avg_times:
+                if time_ms <= avg_times[0]:
+                    correction = average_corrections[str(avg_times[0])]
+                    logger.debug(f"{led}: Using {avg_times[0]}ms avg correction ({correction:.4f}) for {time_ms}ms")
+                    return correction
+                elif time_ms >= avg_times[-1]:
+                    correction = average_corrections[str(avg_times[-1])]
+                    logger.debug(f"{led}: Using {avg_times[-1]}ms avg correction ({correction:.4f}) for {time_ms}ms")
+                    return correction
+                else:
+                    # Interpolate average corrections
+                    for i in range(len(avg_times) - 1):
+                        t1, t2 = avg_times[i], avg_times[i + 1]
+                        if t1 <= time_ms <= t2:
+                            cf1 = average_corrections[str(t1)]
+                            cf2 = average_corrections[str(t2)]
+                            weight = (time_ms - t1) / (t2 - t1)
+                            correction = cf1 + weight * (cf2 - cf1)
+                            logger.debug(f"{led}: Interpolated avg correction {correction:.4f} for {time_ms}ms")
+                            return correction
+        
+        # CONSERVATIVE SAFETY: For bright LEDs (high slope) at longer times without correction data,
+        # apply aggressive reduction to prevent saturation. Bright LEDs show non-linear saturation.
+        if slope_10ms and slope_10ms > 80 and time_ms > 50:
+            # LEDs with slope > 80 (like LED B=88, LED C=119) saturate at longer integration times
+            # Apply scaling: reduce intensity more aggressively for brighter LEDs at longer times
+            # Formula: correction = 0.5 + 0.5 * (50 / time_ms)
+            # At 50ms: 1.0 (no reduction)
+            # At 60ms: 0.92 (8% reduction)
+            # At 70ms: 0.86 (14% reduction)
+            # At 100ms: 0.75 (25% reduction)
+            safety_correction = 0.5 + 0.5 * (50.0 / time_ms)
+            logger.warning(
+                f"{led}: BRIGHT LED (slope={slope_10ms:.1f}) @ {time_ms}ms - "
+                f"applying conservative correction {safety_correction:.3f} to prevent saturation"
+            )
+            return safety_correction
+        
+        # No correction available
+        return 1.0
 
     def get_slopes(self, polarization: str, channels: Optional[list] = None) -> dict[str, float]:
         """Get slope_10ms calibration values for specified channels.

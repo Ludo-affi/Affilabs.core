@@ -1,0 +1,206 @@
+﻿.\.venv312\Scripts\python.exe : --- Logging error ---
+At line:1 char:1
++ .\.venv312\Scripts\python.exe main-simplified.py 2>&1 | Out-File -Fil ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (--- Logging error ---:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Traceback (most recent call last):
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 35: character maps to <undefined>
+Call stack:
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\main-simplified.py", line 187, in <module>
+    from affilabs.hardware import DeviceManager, SystemState, IController, ISpectrometer, IServo
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\hardware\__init__.py", line 23, in <module>
+    from hardware.device_interface import (
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1310, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\hardware\__init__.py", line 64, in <module>
+    from hardware.spectrometer_adapter import (
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\hardware\spectrometer_adapter.py", line 18, in 
+<module>
+    from affilabs.utils.usb4000_wrapper import USB4000
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\utils\usb4000_wrapper.py", line 31, in <module>
+    logger.info("\u2705 libusb backend configured for Ocean Optics spectrometers")
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1539, in info
+    self._log(INFO, msg, args, **kwargs)
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1684, in _log
+    self.handle(record)
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1700, in handle
+    self.callHandlers(record)
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1762, in callHandlers
+    hdlr.handle(record)
+  File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1028, in handle
+    self.emit(record)
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\utils\logger.py", line 113, in emit
+    super().emit(record)
+Message: '\u2705 libusb backend configured for Ocean Optics spectrometers'
+Arguments: ()
+2025-12-04 18:30:25,586 :: INFO ::  Global exception hook installed
+2025-12-04 18:30:25,586 :: INFO :: ======================================================================
+2025-12-04 18:30:25,586 :: INFO :: AffiLabs.core BETA - Surface Plasmon Resonance Analysis
+2025-12-04 18:30:25,586 :: INFO :: Version 0.2-beta | 2025-12-04 18:30
+2025-12-04 18:30:25,587 :: INFO :: ======================================================================
+2025-12-04 18:30:25,612 :: INFO :: Phase 2: Validation...
+2025-12-04 18:30:25,612 :: INFO :: Validating critical imports...
+2025-12-04 18:30:25,613 :: DEBUG ::   Controller classes OK
+2025-12-04 18:30:25,613 :: DEBUG ::   Settings OK
+2025-12-04 18:30:25,613 :: INFO ::   Phase 1.4 HAL available
+2025-12-04 18:30:25,613 :: INFO ::   UI Coordinators available
+2025-12-04 18:30:25,613 :: INFO ::   All critical imports validated
+2025-12-04 18:30:25,615 :: DEBUG :: Phase 2: Validation complete
+2025-12-04 18:30:25,615 :: INFO :: Phase 3: Infrastructure...
+2025-12-04 18:30:25,617 :: DEBUG :: Set CALIBRATION_HEADLESS=0 (Calibration dialog visibility)
+2025-12-04 18:30:25,617 :: DEBUG :: Phase 3: Infrastructure complete
+2025-12-04 18:30:25,617 :: INFO :: Phase 4: State Variables...
+2025-12-04 18:30:25,617 :: DEBUG :: Phase 4: State Variables complete
+2025-12-04 18:30:25,617 :: INFO :: Phase 5: Managers...
+2025-12-04 18:30:25,647 :: INFO :: Registered pipeline: fourier
+2025-12-04 18:30:25,647 :: INFO :: Registered pipeline: hybrid_original
+2025-12-04 18:30:25,648 :: INFO :: Registered pipeline: hybrid
+2025-12-04 18:30:25,648 :: INFO :: Active pipeline: fourier
+2025-12-04 18:30:25,648 :: INFO :: Initialized 3 processing pipelines
+2025-12-04 18:30:25,648 :: INFO :: Active pipeline: fourier
+2025-12-04 18:30:25,648 :: INFO ::   Baseline method: percentile
+2025-12-04 18:30:25,648 :: INFO :: Registered pipeline: fourier
+2025-12-04 18:30:25,648 :: INFO :: Registered pipeline: hybrid_original
+2025-12-04 18:30:25,649 :: INFO :: Registered pipeline: hybrid
+2025-12-04 18:30:25,649 :: INFO :: Active pipeline: fourier
+2025-12-04 18:30:25,649 :: INFO :: Initialized 3 processing pipelines
+2025-12-04 18:30:25,649 :: INFO :: Active pipeline: fourier
+2025-12-04 18:30:25,649 :: INFO ::   Baseline method: percentile
+2025-12-04 18:30:25,649 :: INFO ::   Processing pipelines initialized
+2025-12-04 18:30:25,649 :: INFO ::   DeviceManager (HAL) initialized
+2025-12-04 18:30:25,649 :: DEBUG :: Using default LED delays: PRE=45ms, POST=5ms
+2025-12-04 18:30:25,650 :: INFO ::   Segment queue initialized (TEST MODE)
+2025-12-04 18:30:25,650 :: INFO ::   All managers initialized successfully
+2025-12-04 18:30:25,650 :: DEBUG :: Phase 5: Managers complete
+2025-12-04 18:30:25,650 :: INFO :: Phase 5: Services...
+2025-12-04 18:30:25,650 :: INFO ::   Business services initialized (TransmissionCalculator, BaselineCorrector)
+2025-12-04 18:30:25,651 :: DEBUG :: Performance profiling DISABLED - set PROFILING_ENABLED=True in settings.py to enable
+2025-12-04 18:30:25,651 :: INFO ::   All services initialized successfully
+2025-12-04 18:30:25,651 :: INFO ::   Services initialized
+2025-12-04 18:30:25,651 :: DEBUG :: Phase 5: Services complete
+2025-12-04 18:30:25,651 :: INFO :: Phase 6: Main Window...
+2025-12-04 18:30:25,651 :: INFO :: Creating main window...
+2025-12-04 18:30:25,652 :: INFO :: [ICON] Attempting to load icon from: C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\ui\img\affinite2.ico
+2025-12-04 18:30:25,652 :: INFO :: [ICON] Icon file exists: True
+2025-12-04 18:30:25,661 :: INFO :: [ICON] QIcon created, isNull: False
+2025-12-04 18:30:25,661 :: INFO :: [ICON] Window icon set successfully
+
+[FORWARDING-DEBUG] Checking for transmission_plot in sidebar...
+  hasattr(self.sidebar, 'transmission_plot') = False
+2025-12-04 18:30:26,373 :: WARNING ::  transmission_plot NOT found in sidebar - plots will not work
+2025-12-04 18:30:26,373 :: WARNING ::  raw_data_plot NOT found in sidebar - plots will not work
+2025-12-04 18:30:26,373 :: INFO ::  Forwarded baseline capture button from sidebar
+2025-12-04 18:30:26,570 :: WARNING ::   Spectroscopy plots NOT found in main window - graphs will not display
+2025-12-04 18:30:26,576 :: INFO ::   Main window created
+2025-12-04 18:30:26,576 :: DEBUG :: Phase 6: Main Window complete
+2025-12-04 18:30:26,576 :: INFO :: Phase 7: Coordinators...
+2025-12-04 18:30:26,577 :: INFO :: Initializing coordinators...
+2025-12-04 18:30:26,577 :: INFO ::   UI coordinators initialized (AL_UIUpdateCoordinator, DialogManager)
+2025-12-04 18:30:26,577 :: DEBUG :: Phase 7: Coordinators complete
+2025-12-04 18:30:26,577 :: INFO :: Phase 7: ViewModels...
+2025-12-04 18:30:26,577 :: INFO :: Initializing viewmodels...
+2025-12-04 18:30:26,577 :: INFO ::   DeviceStatusViewModel initialized with HAL DeviceManager
+2025-12-04 18:30:26,581 :: INFO ::   SpectrumViewModel initialized for all channels
+2025-12-04 18:30:26,581 :: INFO ::   CalibrationViewModel initialized with validator
+2025-12-04 18:30:26,581 :: DEBUG :: Phase 7: ViewModels complete
+2025-12-04 18:30:26,581 :: INFO :: Phase 8: Signal Wiring...
+2025-12-04 18:30:26,581 :: INFO :: Connecting signals...
+2025-12-04 18:30:26,581 :: INFO :: Connected: calibration.calibration_complete -> _on_calibration_complete_status_update
+2025-12-04 18:30:26,582 :: INFO :: [OK] DeviceStatusViewModel signals connected
+2025-12-04 18:30:26,582 :: INFO :: [OK] SpectrumViewModel signals connected for all channels
+2025-12-04 18:30:26,582 :: INFO :: [OK] CalibrationViewModel signals connected
+2025-12-04 18:30:26,582 :: INFO :: [OK] CalibrationService signals already connected in _connect_signals()
+2025-12-04 18:30:26,582 :: INFO ::  Display filter changed to: None (Raw)
+2025-12-04 18:30:26,582 :: INFO ::    Method: none, Alpha: 0.0
+2025-12-04 18:30:26,582 :: INFO :: [OK] EMA display filter initialized to None (Raw)
+2025-12-04 18:30:26,583 :: INFO :: [OK] UI event signals connected (tabs/pages/filters)
+2025-12-04 18:30:26,583 :: INFO ::   All signals connected
+2025-12-04 18:30:26,583 :: DEBUG :: Phase 8: Signal Wiring complete
+2025-12-04 18:30:26,583 :: INFO :: Phase 9: Finalization...
+2025-12-04 18:30:26,583 :: INFO :: Finalizing application...
+2025-12-04 18:30:26,584 :: INFO :: [THREAD-INIT] Starting processing thread...
+2025-12-04 18:30:26,584 :: INFO :: Thread started: alive=True, name=SpectrumProcessing
+2025-12-04 18:30:26,584 :: INFO :: [OK] Processing thread started (acquisition/processing separated)
+2025-12-04 18:30:26,585 :: INFO :: Showing main window...
+2025-12-04 18:30:26,685 :: DEBUG :: [TIMEFRAME] Waiting for data...
+[!] Sidebar spectroscopy plots NOT found: transmission=False, raw=False - plots may not be loaded yet
+
+[?] [SPECTRO-DEBUG] Checking for plots in main_window:
+  - transmission_curves exists: False
+  - raw_data_curves exists: False
+2025-12-04 18:30:26,685 :: INFO ::   Window visible: True
+2025-12-04 18:30:26,686 :: INFO :: Ready - waiting for user to press Power button...
+2025-12-04 18:30:26,686 :: DEBUG :: Phase 9: Finalization complete
+2025-12-04 18:30:26,766 :: INFO :: Loading deferred UI components...
+2025-12-04 18:30:26,766 :: INFO ::  Loading sensorgram graphs...
+2025-12-04 18:30:26,850 :: INFO ::  Sensorgram graphs loaded
+2025-12-04 18:30:26,850 :: INFO ::   Graph widgets loaded
+2025-12-04 18:30:26,877 :: INFO ::   Timeline graph cursors connected
+2025-12-04 18:30:26,877 :: INFO ::   Cursor auto-follow connected
+2025-12-04 18:30:26,877 :: INFO :: [TIMEFRAME] Mode changed to: moving
+2025-12-04 18:30:26,877 :: INFO :: [TIMEFRAME] Moving window enabled - showing last 5 minutes
+2025-12-04 18:30:26,877 :: INFO ::   ========================================
+2025-12-04 18:30:26,877 :: INFO ::   TIMEFRAME MODE ENABLED (Phase 3)
+2025-12-04 18:30:26,878 :: INFO ::   ========================================
+2025-12-04 18:30:26,878 :: INFO ::   - Cursors should be HIDDEN
+2025-12-04 18:30:26,878 :: INFO ::   - Moving Window mode active
+2025-12-04 18:30:26,878 :: INFO ::   - Duration: 5 minutes
+2025-12-04 18:30:26,878 :: INFO ::   - Live Cycle shows last N minutes
+2025-12-04 18:30:26,878 :: INFO ::   ========================================
+2025-12-04 18:30:26,878 :: INFO ::     Stop cursor available: True
+2025-12-04 18:30:26,878 :: INFO ::   Polarizer toggle connected
+2025-12-04 18:30:26,878 :: INFO ::   Graph click events connected
+2025-12-04 18:30:26,878 :: INFO :: Connected: main_window.power_on_requested -> _on_power_on_requested
+2025-12-04 18:30:26,879 :: INFO :: Connected: main_window.clear_graphs_requested -> _on_clear_graphs_requested
+2025-12-04 18:30:26,879 :: INFO :: Connected: main_window.clear_flags_requested -> _on_clear_flags_requested
+2025-12-04 18:30:26,879 :: INFO :: Connected: main_window.pipeline_changed -> _on_pipeline_changed
+2025-12-04 18:30:26,879 :: INFO :: ================================================================================
+2025-12-04 18:30:26,879 :: INFO :: REGISTERING DEBUG SHORTCUTS
+2025-12-04 18:30:26,879 :: INFO :: ================================================================================
+2025-12-04 18:30:26,879 :: INFO :: [OK] Ctrl+Shift+S registered: <PySide6.QtGui.QShortcut(0x1fd4fc88f00) at 0x000001FD2F791840>
+2025-12-04 18:30:26,879 :: INFO ::    Context: ShortcutContext.ApplicationShortcut
+2025-12-04 18:30:26,879 :: INFO ::    Key: Ctrl+Shift+S
+2025-12-04 18:30:26,880 :: INFO :: [OK] Ctrl+Shift+1 registered: <PySide6.QtGui.QShortcut(0x1fd4fc888c0) at 0x000001FD2F582680>
+2025-12-04 18:30:26,880 :: INFO ::    Context: ShortcutContext.ApplicationShortcut
+2025-12-04 18:30:26,880 :: INFO ::    Key: Ctrl+Shift+1
+2025-12-04 18:30:26,880 :: INFO :: ================================================================================
+2025-12-04 18:30:26,880 :: INFO :: [DEBUG] Ctrl+Shift+S to start spectrum simulation
+2025-12-04 18:30:26,880 :: INFO :: Connected: timeframe_mode_changed -> _on_timeframe_mode_changed
+2025-12-04 18:30:26,880 :: INFO :: Connected: timeframe_duration_changed -> _on_timeframe_duration_changed
+2025-12-04 18:30:26,881 :: INFO :: [OK] Connected Polarizer Calibration button to handler
+2025-12-04 18:30:26,881 :: INFO :: [OK] Connected Baseline Capture button to handler
+2025-12-04 18:30:26,881 :: INFO :: [OK] Connected start_cycle_btn -> _on_start_button_clicked (acquisition start)
+2025-12-04 18:30:26,881 :: INFO :: [OK] Connected add_to_queue_btn -> _on_add_to_queue (TEST MODE)
+2025-12-04 18:30:26,882 :: INFO :: [OK] All signal connections registered
+2025-12-04 18:30:26,882 :: INFO ::   UI control signals connected
+2025-12-04 18:30:26,882 :: INFO :: Deferred UI components loaded successfully
+2025-12-04 18:30:27,728 :: INFO ::  Starting event loop...
+2025-12-04 18:30:30,655 :: INFO ::  System Intelligence initialized

@@ -314,7 +314,7 @@ class ArduinoController(StaticController):
         - 'sp\\n' to move to P position
 
         Returns ACK byte (0x01) on success.
-        
+
         BLOCKED during live acquisition - only available during OEM calibration.
         """
         # P4SPR safeguard: Block servo during live acquisition
@@ -322,7 +322,7 @@ class ArduinoController(StaticController):
             logger.warning("⚠️ Servo control BLOCKED during live acquisition")
             logger.warning("   Servo can only be moved during OEM calibration")
             return False
-        
+
         try:
             if mode not in {"s", "p"}:
                 logger.debug(f"Invalid mode '{mode}' passed to set_mode")
@@ -813,7 +813,7 @@ class PicoP4SPR(StaticController):
                     import time
                     time.sleep(0.1)  # 100ms settle time after DTR/RTS
                     print(f"[CONTROLLER.PY] Waited 100ms for DTR/RTS settle")
-                    
+
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
@@ -986,6 +986,11 @@ class PicoP4SPR(StaticController):
                     self._ser.reset_input_buffer()
                     time.sleep(0.01)
 
+                    # Clear serial buffer before querying (prevents CYCLE_START events from interfering)
+                    if self._ser.in_waiting > 0:
+                        self._ser.reset_input_buffer()
+                        time.sleep(0.01)
+                    
                     # Send query command
                     cmd = f"i{ch}\n"
                     self._ser.write(cmd.encode())
@@ -995,8 +1000,9 @@ class PicoP4SPR(StaticController):
                     response_bytes = self._ser.readline()
                     response = response_bytes.decode("utf-8", errors="ignore").strip()
 
-                    # Debug: log what we got
-                    logger.debug(f"LED {ch} query response: '{response}'")
+                    # Debug: log what we got (suppress CYCLE_START events)
+                    if not response.startswith("CYCLE_START"):
+                        logger.debug(f"LED {ch} query response: '{response}'")
 
                     # Try to parse as integer
                     try:
@@ -1016,7 +1022,9 @@ class PicoP4SPR(StaticController):
                             except ValueError:
                                 pass
 
-                        logger.debug(f"Invalid intensity response for {ch}: {response}")
+                        # Suppress logging for CYCLE_START events (normal in CYCLE_SYNC mode)
+                        if not response.startswith("CYCLE_START"):
+                            logger.debug(f"Invalid intensity response for {ch}: {response}")
                         return -1
         except Exception as e:
             logger.debug(f"Error reading LED intensity: {e}")
@@ -1259,18 +1267,44 @@ class PicoP4SPR(StaticController):
                     for ch, intensity in [("a", a), ("b", b), ("c", c), ("d", d)]:
                         if intensity > 0:
                             channels_to_enable.append(ch.upper())
-                    
+
                     # Send single batch enable command for all non-zero channels
                     if channels_to_enable:
                         enable_cmd = f"lm:{','.join(channels_to_enable)}\n"
                         self._ser.write(enable_cmd.encode())
-                        time.sleep(0.02)  # Brief delay for all channels to enable
+                        time.sleep(0.05)  # Wait for firmware to process
+                        # Drain any response from lm command before proceeding
+                        while self._ser.in_waiting > 0:
+                            self._ser.read(self._ser.in_waiting)
+                        time.sleep(0.01)  # Extra settling time
 
+                    # Now send batch intensity command with clean buffer
                     self._ser.reset_input_buffer()
                     self._ser.write(cmd.encode())
-                    time.sleep(0.01)  # Reduced from 50ms to 10ms for faster cycles
-                    response = self._ser.read(1)  # Read 1 byte (firmware sends '1')
-                    success = response == b"6"
+                    
+                    # Firmware v2.2 sends debug output followed by ACK '6'
+                    # Wait for firmware to process, then read all response data
+                    # V2.2.2: Increased from 0.1s to 0.15s to fix intermittent empty responses
+                    time.sleep(0.15)  # Let firmware fully process and send all debug output
+                    
+                    # Read all accumulated data
+                    max_attempts = 3
+                    success = False
+                    response = b''  # Initialize to avoid UnboundLocalError
+                    for attempt in range(max_attempts):
+                        if self._ser.in_waiting > 0:
+                            response = self._ser.read(self._ser.in_waiting)
+                            if b'6' in response:
+                                success = True
+                                break
+                            time.sleep(0.02)  # Small delay before retry
+                    
+                    if not success:
+                        # Last attempt - wait a bit more and read everything
+                        time.sleep(0.05)
+                        if self._ser.in_waiting > 0:
+                            response = self._ser.read(self._ser.in_waiting)
+                            success = b'6' in response
 
                 if success:
                     # Update enabled channels tracking
@@ -1378,7 +1412,7 @@ class PicoP4SPR(StaticController):
                 # Process channel signals
                 while time.time() - start_time < timeout_s:
                     line = self._ser.readline().decode().strip()
-                    
+
                     # DEBUG: Log EVERY line received from firmware
                     logger.info(f"[RANK PROTOCOL] Firmware sent: '{line}'")
 
@@ -1465,11 +1499,17 @@ class PicoP4SPR(StaticController):
                         )
 
                     # Check if response indicates success
-                    success = response in {b"6", b""}
+                    # v2.2 firmware may contaminate with debug output (e.g., b'6CYCLE:689')
+                    success = response == b"" or response == b"6" or response.startswith(b"6")
 
                     if success:
                         # Only log success loudly if we received explicit ack; keep empty ack as quiet success
-                        if response:
+                        if response and response != b"6":
+                            # Got ACK with trailing debug data
+                            logger.info(
+                                f"[OK] Controller confirmed: {mode_name} servo moved (response: {response[:20]}...)" if len(response) > 20 else f"[OK] Controller confirmed: {mode_name} servo moved (response: {response})",
+                            )
+                        elif response == b"6":
                             logger.info(
                                 f"[OK] Controller confirmed: {mode_name} servo moved to position from device_config",
                             )
@@ -1478,7 +1518,7 @@ class PicoP4SPR(StaticController):
                                 f"[OK] {mode_name} set with empty ack (accepted on firmware V1.1)",
                             )
                     else:
-                        # Non-empty, non-'1' byte: log once at warning, but continue
+                        # Unexpected response
                         logger.warning(
                             f"[WARN] Controller response unexpected for {mode_name}: expected b'6', got {response}",
                         )

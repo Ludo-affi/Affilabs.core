@@ -5414,6 +5414,26 @@ End of Debug Log
             if hasattr(dialog, 'post_led_delay_input'):
                 dialog.post_led_delay_input.setValue(5)  # Default POST LED
 
+        # Load current pipeline selection
+        try:
+            from affilabs.utils.processing_pipeline import get_pipeline_registry
+            registry = get_pipeline_registry()
+            active_pipeline = registry.get_active_pipeline()
+            pipeline_id = active_pipeline.pipeline_id
+            
+            # Map pipeline IDs to combo box indices
+            pipeline_index_map = {
+                'fourier': 0,
+                'hybrid_original': 1,
+                'hybrid': 2,
+            }
+            
+            if pipeline_id in pipeline_index_map and hasattr(dialog, 'pipeline_combo'):
+                dialog.pipeline_combo.setCurrentIndex(pipeline_index_map[pipeline_id])
+                logger.debug(f"Loaded pipeline: {pipeline_id} -> index {pipeline_index_map[pipeline_id]}")
+        except Exception as e:
+            logger.warning(f"Could not load pipeline selection: {e}")
+
         # Show dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Apply settings

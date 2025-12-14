@@ -708,6 +708,24 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.assoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
         self.assoc_cursor_en = False
 
+        # Add crosshair cursor for precise measurements and zoom selection
+        self.crosshair_enabled = True
+        self.vLine = InfiniteLine(angle=90, movable=False, pen=mkPen('y', width=1, style=Qt.PenStyle.DashLine))
+        self.hLine = InfiniteLine(angle=0, movable=False, pen=mkPen('y', width=1, style=Qt.PenStyle.DashLine))
+        self.plot.addItem(self.vLine, ignoreBounds=True)
+        self.plot.addItem(self.hLine, ignoreBounds=True)
+
+        # Add text label for cursor coordinates
+        from pyqtgraph import TextItem
+        self.cursorLabel = TextItem(anchor=(0, 1), color='y')
+        self.plot.addItem(self.cursorLabel)
+
+        # Connect mouse movement to update crosshair
+        self.plot.scene().sigMouseMoved.connect(self._update_crosshair)
+
+        # Enable mouse tracking for crosshair
+        self.plot.setMouseTracking(True)
+
         # Fixed annotation box for shift values (always visible in upper-left)
         self.shift_annotation = None
         for ch in CH_LIST:
@@ -912,6 +930,46 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.assoc_cursors[ch]['Start'].setPos(start)
         self.wait_to_update = False
         self.assoc_cursors[ch]['End'].setPos(end)
+
+    def _update_crosshair(self, evt):
+        """Update crosshair position and label when mouse moves."""
+        if not self.crosshair_enabled:
+            return
+
+        try:
+            # Get mouse position in plot coordinates
+            vb = self.plot.getViewBox()
+            if vb.sceneBoundingRect().contains(evt):
+                mousePoint = vb.mapSceneToView(evt)
+                x, y = mousePoint.x(), mousePoint.y()
+
+                # Update crosshair lines
+                self.vLine.setPos(x)
+                self.hLine.setPos(y)
+
+                # Update label with coordinates
+                self.cursorLabel.setText(f'Time: {x:.2f}s\nΔSPR: {y:.2f} {self.unit}')
+                self.cursorLabel.setPos(x, y)
+
+                # Show crosshair
+                self.vLine.setVisible(True)
+                self.hLine.setVisible(True)
+                self.cursorLabel.setVisible(True)
+            else:
+                # Hide crosshair when mouse outside plot
+                self.vLine.setVisible(False)
+                self.hLine.setVisible(False)
+                self.cursorLabel.setVisible(False)
+        except Exception as e:
+            logger.debug(f"Error updating crosshair: {e}")
+
+    def toggle_crosshair(self, enabled: bool):
+        """Enable or disable crosshair cursor."""
+        self.crosshair_enabled = enabled
+        if not enabled:
+            self.vLine.setVisible(False)
+            self.hLine.setVisible(False)
+            self.cursorLabel.setVisible(False)
 
     def set_plot_pen(self, ch, pen_colour):
         self.plots[ch].setPen(mkPen(color=pen_colour, width=2), connect='finite')

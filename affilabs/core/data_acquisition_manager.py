@@ -7,6 +7,36 @@ This module follows the same 4-layer architecture as calibration_6step.py:"""
 
 from __future__ import annotations
 
+# =============================================================================
+# ACQUISITION MODE CONFIGURATION
+# =============================================================================
+# Two acquisition methods available:
+#
+# 1. CYCLE_SYNC (V2.4 firmware) - Default, recommended
+#    - Firmware sends ONE CYCLE_START event per cycle
+#    - Python uses fixed timing offsets from CYCLE_START
+#    - Performance: 1.0s/cycle, 75% less USB traffic
+#    - Best for: Fast acquisition, deterministic timing
+#
+# 2. EVENT_RANK (Computer-level sync) - Fallback
+#    - Firmware sends READY event for each LED (4 events/cycle)
+#    - Python reads detector on each READY event
+#    - Performance: 1.0-1.1s/cycle, more USB traffic
+#    - Best for: Debugging, per-event validation
+#
+# Toggle between methods by changing USE_CYCLE_SYNC flag
+# =============================================================================
+USE_CYCLE_SYNC = True  # True = CYCLE_SYNC (V2.4), False = EVENT_RANK (computer-level)
+
+# =============================================================================
+# WATCHDOG CONFIGURATION
+# =============================================================================
+# Firmware watchdog prevents runaway operation if software crashes or disconnects
+# Keepalive command "ka" must be sent periodically to keep firmware running
+# =============================================================================
+ENABLE_WATCHDOG = True  # Enable firmware watchdog safety feature
+WATCHDOG_KEEPALIVE_INTERVAL = 60.0  # Send keepalive every 60 seconds
+
 """
 
 LAYER 1: UI (main_simplified.py + LiveDataDialog)
@@ -244,6 +274,9 @@ class DataAcquisitionManager(QObject):
         self._led_overlap_active = (
             False  # Track if LED is already ON from previous overlap
         )
+        
+        # V2.4 CYCLE_SYNC state tracking
+        self._rankbatch_running = False  # Track if rankbatch is active
         self._led_overlap_channel = None  # Track which LED is ON from overlap
         self._led_overlap_start_time = None  # Track when overlap LED was turned ON
 
@@ -687,10 +720,16 @@ class DataAcquisitionManager(QObject):
                 ctrl = self.hardware_mgr.ctrl
                 if ctrl and hasattr(ctrl, 'led_rank_sequence') and callable(ctrl.led_rank_sequence):
                     self._firmware_supports_rank = True
-                    # ENABLED: Use RANKBATCH mode for live acquisition
-                    self._rank_mode_enabled = True
-                    logger.info("🔧 RANK mode ENABLED - using firmware-synchronized rankbatch command")
-                    logger.info("   Firmware V2.0+ detected - using event-driven LED sequencing")
+                    # Check configuration flag for acquisition mode
+                    from affilabs.core.data_acquisition_manager import FORCE_SEQUENTIAL_MODE
+                    if FORCE_SEQUENTIAL_MODE:
+                        self._rank_mode_enabled = False
+                        logger.info("🔧 RANK mode DISABLED (config) - using sequential LED commands")
+                        logger.info("   Firmware V2.0+ detected but sequential mode forced for reliability")
+                    else:
+                        self._rank_mode_enabled = True
+                        logger.info("🔧 RANK mode ENABLED - using firmware-synchronized rankbatch command")
+                        logger.info("   Firmware V2.0+ detected - using event-driven LED sequencing")
                 else:
                     self._firmware_supports_rank = False
                     self._rank_mode_enabled = False
@@ -865,8 +904,8 @@ class DataAcquisitionManager(QObject):
                 logger.info("✅ Batch processing thread stopped cleanly")
         self._processing_thread = None
 
-        # Process remaining queue items
-        self._process_spectrum_queue()
+        # STREAMLINED: No queue processing needed - immediate emission architecture
+        # (Legacy code removed: _process_spectrum_queue() method no longer exists)
 
         # Wait for acquisition thread to finish (with timeout)
         if self._acquisition_thread and self._acquisition_thread.is_alive():
@@ -1348,20 +1387,34 @@ class DataAcquisitionManager(QObject):
                                     )
                                     per_channel_integration[ch] = ch_int_time
 
-                            # Acquire all channels via rank sequence (firmware-controlled timing)
-                            # Firmware controls full LED cycle: OFF 5ms → ON 245ms
-                            # sync_test.py validated timing: settle=245ms, dark=5ms, 50ms wait after READY event
-                            led_on_time_ms = 245.0  # Total LED ON time (firmware holds LED on)
-                            led_off_period = 5.0     # LED OFF between channels
-
-                            channel_spectra = self._acquire_all_channels_via_rank(
-                                channels=channels,
-                                led_intensities=led_intensities,
-                                integration_time_ms=p_integration_time_effective,
-                                per_channel_integration=per_channel_integration,
-                                settling_ms=led_on_time_ms,  # 245ms - Total LED ON time (sync_test validated)
-                                dark_ms=led_off_period,       # 5ms - LED OFF between channels
-                            )
+                            # === SELECT ACQUISITION METHOD ===
+                            # Both methods support same timing parameters and produce identical results
+                            # Switch between them seamlessly by changing USE_CYCLE_SYNC flag
+                            
+                            if USE_CYCLE_SYNC:
+                                # Method 1: CYCLE_SYNC (V2.4 firmware)
+                                # - ONE CYCLE_START event per cycle
+                                # - Software timing offsets
+                                # - Fastest, lowest USB traffic
+                                channel_spectra = self._acquire_all_channels_cycle_sync(
+                                    channels=channels,
+                                    led_intensities=led_intensities,
+                                    integration_time_ms=p_integration_time_effective,
+                                    per_channel_integration=per_channel_integration,
+                                )
+                            else:
+                                # Method 2: EVENT_RANK (Computer-level sync)
+                                # - READY event for each LED (4 events/cycle)
+                                # - Event-driven acquisition
+                                # - Better for debugging/validation
+                                channel_spectra = self._acquire_all_channels_via_rank(
+                                    channels=channels,
+                                    led_intensities=led_intensities,
+                                    integration_time_ms=p_integration_time_effective,
+                                    per_channel_integration=per_channel_integration,
+                                    settling_ms=250.0,  # LED ON time (matches CYCLE_SYNC)
+                                    dark_ms=0.0,        # LED OFF time (matches CYCLE_SYNC)
+                                )
 
                             # ASYNC PROCESSING: Spectra are already being processed in background threads
                             # (see _process_and_emit_spectrum_immediate called inside _acquire_all_channels_via_rank)
@@ -1788,198 +1841,388 @@ class DataAcquisitionManager(QObject):
             logger.error(f"[ASYNC-PROCESS] Traceback: {traceback.format_exc()}")
             logger.error(f"[ASYNC-PROCESS] Failed to process {spectrum_data.get('channel', '?')}: {e}")
 
+    def _acquire_all_channels_cycle_sync(
+        self,
+        channels: list,
+        led_intensities: dict,
+        integration_time_ms: float,
+        per_channel_integration: dict = None,
+    ) -> dict:
+        """Acquire all channels using V2.4 CYCLE_START synchronization.
+
+        V2.4 CYCLE_SYNC MODE:
+        - Firmware sends ONE CYCLE_START event per cycle (75% less USB traffic vs V2.3)
+        - Software uses fixed timing offsets from CYCLE_START to read each LED
+        - Deterministic timing eliminates USB latency issues
+        - Watchdog on separate Timer 1 (zero impact on LED timing)
+
+        Timing Flow (250ms LED ON, 0ms LED OFF):
+          t=0ms:    CYCLE_START, LED_A ON
+          t=60ms:   Python reads LED_A (detector_wait after LED on)
+          t=250ms:  LED_B ON
+          t=310ms:  Python reads LED_B (250 + 60ms)
+          t=500ms:  LED_C ON
+          t=560ms:  Python reads LED_C (500 + 60ms)
+          t=750ms:  LED_D ON
+          t=810ms:  Python reads LED_D (750 + 60ms)
+          t=1000ms: Next CYCLE_START
+
+        Args:
+            channels: List of channels to acquire ['a', 'b', 'c', 'd']
+            led_intensities: Dict of LED intensities per channel {ch: intensity}
+            integration_time_ms: Global integration time (ms)
+            per_channel_integration: Optional per-channel integration times
+
+        Returns:
+            dict: {channel: raw_spectrum_array} for one complete cycle
+        """
+        import time
+        
+        # Constants
+        LED_ON_TIME_MS = 250  # Firmware RANKBATCH LED ON duration
+        LED_OFF_TIME_MS = 0   # Firmware RANKBATCH LED OFF duration
+        RANKBATCH_CYCLES = 3600  # ~1 hour of continuous operation
+        
+        # LED timing in firmware (LED turns on at these offsets from CYCLE_START)
+        FIRMWARE_LED_OFFSETS = {'a': 0.000, 'b': 0.250, 'c': 0.500, 'd': 0.750}
+        
+        try:
+            ctrl = self.hardware_mgr.ctrl
+            usb = self.hardware_mgr.usb
+
+            if not ctrl or not usb:
+                logger.error("[CYCLE-SYNC] Hardware not available")
+                return {}
+
+            # Get detector wait time (software delay after LED turns on)
+            detector_wait_ms = getattr(self, 'detector_wait_ms', 60)
+            detector_wait_s = detector_wait_ms / 1000.0
+            
+            # Calculate read timing: firmware LED offset + detector wait
+            led_read_offsets = {
+                ch: FIRMWARE_LED_OFFSETS[ch] + detector_wait_s 
+                for ch in channels
+            }
+
+            # === INITIALIZATION: Start firmware rankbatch command ===
+            if not self._rankbatch_running:
+                rankbatch_cmd = (
+                    f"rankbatch:{led_intensities.get('a', 0)},"
+                    f"{led_intensities.get('b', 0)},"
+                    f"{led_intensities.get('c', 0)},"
+                    f"{led_intensities.get('d', 0)},"
+                    f"{LED_ON_TIME_MS},{LED_OFF_TIME_MS},{RANKBATCH_CYCLES}\n"
+                )
+                
+                ctrl._ser.write(rankbatch_cmd.encode())
+                logger.info(f"[CYCLE-SYNC] Rankbatch started: {rankbatch_cmd.strip()}")
+                self._rankbatch_running = True
+                
+                # Initialize watchdog
+                if ENABLE_WATCHDOG:
+                    self._last_keepalive = time.time()
+                    logger.info(f"[WATCHDOG] Enabled ({WATCHDOG_KEEPALIVE_INTERVAL}s interval)")
+
+            # === MAIN LOOP: Wait for CYCLE_START, acquire channels, return ===
+            channel_spectra = {}
+            
+            while not self._stop_acquisition.is_set():
+                # Check for CYCLE_START event
+                if ctrl._ser.in_waiting > 0:
+                    line = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
+                    
+                    if line.startswith('CYCLE_START:'):
+                        cycle_num = int(line.split(':')[1])
+                        cycle_start_time = time.time()
+                        logger.debug(f"[CYCLE-SYNC] CYCLE_START:{cycle_num} at t={cycle_start_time:.3f}")
+                        
+                        # Send watchdog keepalive (after CYCLE_START to avoid blocking)
+                        if ENABLE_WATCHDOG and (time.time() - self._last_keepalive) >= WATCHDOG_KEEPALIVE_INTERVAL:
+                            ctrl._ser.write(b"ka\n")
+                            self._last_keepalive = time.time()
+                            logger.debug(f"[WATCHDOG] Keepalive sent")
+
+                        # Acquire each channel at its scheduled time
+                        for ch in channels:
+                            if self._stop_acquisition.is_set():
+                                break
+
+                            # Wait until LED read time
+                            target_time = cycle_start_time + led_read_offsets[ch]
+                            time_to_wait = target_time - time.time()
+                            if time_to_wait > 0:
+                                time.sleep(time_to_wait)
+                            
+                            # Set integration time
+                            ch_int_time = (per_channel_integration.get(ch, integration_time_ms)
+                                         if per_channel_integration else integration_time_ms)
+                            usb.set_integration(ch_int_time)
+
+                            # Read spectrum
+                            spectrum = usb.read_intensity()
+                            actual_read_time = time.time()
+                            
+                            # Validate spectrum
+                            if spectrum is None or len(spectrum) == 0:
+                                logger.warning(f"[CYCLE-SYNC] Ch {ch}: Empty spectrum, skipping")
+                                continue
+                            if np.max(spectrum) == 0:
+                                logger.warning(f"[CYCLE-SYNC] Ch {ch}: Zero spectrum, skipping")
+                                continue
+                            
+                            logger.debug(
+                                f"[CYCLE-SYNC] Ch {ch}: Read at offset={actual_read_time - cycle_start_time:.3f}s "
+                                f"(target={led_read_offsets[ch]:.3f}s)"
+                            )
+
+                            # Store and process
+                            channel_spectra[ch] = spectrum
+                            self._process_and_emit_spectrum_immediate(ch, spectrum, led_intensities)
+
+                        # Cycle complete - return to acquisition worker
+                        logger.debug(f"[CYCLE-SYNC] Cycle complete ({len(channel_spectra)} channels)")
+                        return channel_spectra
+                    
+                    elif line == "BATCH_COMPLETE":
+                        logger.info(f"[CYCLE-SYNC] Firmware batch complete")
+                        self._rankbatch_running = False
+                        return channel_spectra
+
+                time.sleep(0.001)  # Avoid busy-wait
+
+            # Stopped - reset state
+            self._rankbatch_running = False
+            return channel_spectra
+
+        except Exception as e:
+            import traceback
+            logger.error(f"[CYCLE-SYNC] Failed: {e}")
+            logger.error(f"[CYCLE-SYNC] Traceback: {traceback.format_exc()}")
+            return {}
+
     def _acquire_all_channels_via_rank(
         self,
         channels: list,
         led_intensities: dict,
         integration_time_ms: float,
         per_channel_integration: dict = None,
-        settling_ms: float = 245,  # LED ON time: 245ms
-        dark_ms: float = 5,         # LED OFF time: 5ms
+        settling_ms: float = 250,  # LED ON time: 250ms
+        dark_ms: float = 0,         # LED OFF time: 0ms
     ) -> dict:
-        """Acquire all channels using event-driven RANKBATCH synchronization.
+        """Acquire all channels using EVENT_RANK (computer-level synchronization).
 
-        **NEW EVENT-DRIVEN APPROACH (0.3% stability):**
-        - Send rankbatch command (4 cycles at a time for responsive Stop)
-        - Listen to firmware LED events (a:READY, b:READY, c:READY, d:READY)
-        - When 'x:READY' received -> LED just turned on
-        - Wait 50ms for LED stabilization (validated optimal timing)
-        - Acquire spectrum while LED is stable
-        - Timestamp = READY event time (firmware timing, not Python prediction)
+        EVENT_RANK MODE (Computer-level sync):
+        - Firmware sends READY event for each LED turn-on
+        - Python listens for 'x:READY' events (x = a, b, c, d)
+        - On READY received → wait detector_wait_ms → read spectrum
+        - Processes spectra immediately with async emission
+
+        Timing Flow (250ms LED ON, 0ms LED OFF):
+          t=0ms:    LED_A ON, firmware sends 'a:READY'
+          t=60ms:   Python reads LED_A (detector_wait after READY)
+          t=250ms:  LED_B ON, firmware sends 'b:READY'
+          t=310ms:  Python reads LED_B
+          t=500ms:  LED_C ON, firmware sends 'c:READY'
+          t=560ms:  Python reads LED_C
+          t=750ms:  LED_D ON, firmware sends 'd:READY'
+          t=810ms:  Python reads LED_D
+          t=1000ms: Next cycle starts
 
         Args:
-            channels: List of channels to acquire (e.g., ['a', 'b', 'c', 'd'])
+            channels: List of channels to acquire ['a', 'b', 'c', 'd']
             led_intensities: Dict of LED intensities per channel {ch: intensity}
-            integration_time_ms: Global integration time (if no per-channel)
-            per_channel_integration: Optional dict of per-channel integration times
-            settling_ms: LED ON time (default 245ms - 50ms rise + 195ms stable)
-            dark_ms: LED OFF time between channels (default 5ms)
+            integration_time_ms: Global integration time (ms)
+            per_channel_integration: Optional per-channel integration times
+            settling_ms: LED ON time (default 250ms)
+            dark_ms: LED OFF time (default 0ms)
 
         Returns:
-            dict: {channel: raw_spectrum_array} for all channels acquired in this 4-cycle batch
-
-        Performance:
-            Event-driven: ~1025ms per 4-LED cycle (0.31-0.37% signal stability)
-            Stop responsiveness: <1 second (finishes current 4-cycle batch)
+            dict: Empty dict (spectra emitted immediately via async processing)
         """
+        # Constants
+        RANKBATCH_CYCLES = 3600  # ~1 hour continuous operation
+        
         try:
             ctrl = self.hardware_mgr.ctrl
             usb = self.hardware_mgr.usb
 
             if not ctrl or not usb:
-                logger.error("[RANK-EVENT] Controller or detector not available")
+                logger.error("[EVENT-RANK] Hardware not available")
                 return {}
 
-            # EVENT-DRIVEN RANKBATCH: Truly autonomous LED operation
-            # High cycle count = firmware runs for 1 hour without Python intervention
-            # Firmware controls ALL timing via hardware timer - Python just listens
-            # 3600 cycles = 14400 LED activations = ~1 hour of autonomous operation
-            # Python stays in listening loop, processes READY events as they arrive
-            # No need to re-send commands - firmware runs continuously for full hour
-            n_cycles = 3600
-
-            # Extract LED intensities (rankbatch embeds them in command - sync_test.py pattern)
-            int_a = led_intensities.get('a', 0)
-            int_b = led_intensities.get('b', 0)
-            int_c = led_intensities.get('c', 0)
-            int_d = led_intensities.get('d', 0)
-
-            # PRE-ARM OPTIMIZATION: Set integration time BEFORE rankbatch if not using per-channel
-            # This saves ~7ms per acquisition and ensures detector is ready when LED turns on
+            # === INITIALIZATION: Pre-arm detector and build command ===
+            
+            # Pre-arm optimization: Set integration time once if not using per-channel
             if not per_channel_integration:
                 usb.set_integration(integration_time_ms)
-                time.sleep(0.005)  # 5ms USB settling time - prevents race condition
-                logger.debug(f"[PRE-ARM] Integration time set to {integration_time_ms}ms before rankbatch")
+                time.sleep(0.005)  # USB settling time
+                logger.debug(f"[EVENT-RANK] Pre-armed detector: {integration_time_ms}ms")
 
-            # Build rankbatch command with CORRECT PARAMETER ORDER: A,B,C,D,SETTLE,DARK,CYCLES
-            # Firmware expects: rankbatch:A,B,C,D,SETTLE,DARK,CYCLES (intensities embedded)
-            rankbatch_cmd = f"rankbatch:{int_a},{int_b},{int_c},{int_d},{int(settling_ms)},{int(dark_ms)},{n_cycles}\n"
+            # Build rankbatch command: rankbatch:A,B,C,D,LED_ON,LED_OFF,CYCLES
+            rankbatch_cmd = (
+                f"rankbatch:{led_intensities.get('a', 0)},"
+                f"{led_intensities.get('b', 0)},"
+                f"{led_intensities.get('c', 0)},"
+                f"{led_intensities.get('d', 0)},"
+                f"{int(settling_ms)},{int(dark_ms)},{RANKBATCH_CYCLES}\n"
+            )
 
-            logger.debug(f"[RANK-EVENT] Acquiring single batch: {rankbatch_cmd.strip()}")
+            logger.info(f"[EVENT-RANK] Starting: {rankbatch_cmd.strip()}")
 
-            # Storage for spectra from THIS batch only
-            channel_spectra = {}
-            led_names = ['a', 'b', 'c', 'd']
-
-            # SINGLE BATCH ACQUISITION (called repeatedly by acquisition worker)
-            # Acquire ONE batch, then return to let worker process data
-
-            # Send rankbatch command to firmware
-            ctrl._ser.write(rankbatch_cmd.encode())
-            logger.debug(f"[RANK-EVENT] Command sent, firmware starting autonomous execution...")
-
-            # Track acquisitions per LED (each cycle = 4 LEDs × 1 spectrum)
-            # Expected total spectra: n_cycles × 4 LEDs
-            expected_spectra_per_led = n_cycles
-            acquisitions_per_led = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            # === MAIN LOOP: Event-driven acquisition ===
             
+            # Send command to start autonomous operation
+            ctrl._ser.write(rankbatch_cmd.encode())
+            logger.info(f"[EVENT-RANK] Firmware running {RANKBATCH_CYCLES} cycles autonomously")
+
+            # Get detector wait time from UI settings
+            detector_wait_ms = getattr(self, 'detector_wait_ms', 60)
+            
+            # Track progress
+            led_names = ['a', 'b', 'c', 'd']
+            expected_spectra_per_led = RANKBATCH_CYCLES
+            acquisitions_per_led = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            ready_events_received = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            
+            # Timing tracking
             batch_start = time.perf_counter()
-            timeout_start = time.perf_counter()
-            # Timeout: n_cycles × ~1s per cycle + 10% buffer
-            max_wait = (n_cycles * 1.1) + 60.0  # Extra 60s startup buffer
+            last_progress_log = time.perf_counter()
+            last_ready_time = time.perf_counter()
+            max_wait = (RANKBATCH_CYCLES * 1.1) + 60.0  # Cycle time + 10% buffer + startup
 
-            # Event-driven acquisition loop for this batch
-            # Continue until we've acquired expected spectra from all LEDs
+            # Event-driven acquisition loop
             while min(acquisitions_per_led.values()) < expected_spectra_per_led:
-                # Check timeout
-                if time.perf_counter() - timeout_start > max_wait:
-                    logger.warning(f"[RANK-EVENT] Timeout after {max_wait:.1f}s")
+                now = time.perf_counter()
+                
+                # Safety checks
+                if now - last_ready_time > 5.0:
+                    logger.error(f"[EVENT-RANK] Firmware stalled (no READY for 5s)")
+                    logger.error(f"[EVENT-RANK] Acquisitions: {acquisitions_per_led}")
                     break
-
-                # Check for stop signal
+                if now - batch_start > max_wait:
+                    logger.warning(f"[EVENT-RANK] Timeout after {max_wait:.1f}s")
+                    break
                 if self._stop_acquisition.is_set():
-                    logger.info(f"[RANK-EVENT] Stop requested")
+                    logger.info(f"[EVENT-RANK] Stop requested")
                     break
 
-                # Read serial output
+                # Check for READY events from firmware
                 if ctrl._ser.in_waiting > 0:
                     line = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
 
-                    # Check for LED READY events (LED just turned on)
-                    for led_name in led_names:
-                        if line == f"{led_name}:READY":
-                            # Track acquisition count for this LED
-                            acquisitions_per_led[led_name] += 1
-                            # V2.2: Firmware already waited 50ms for LED stabilization before sending READY
-                            # No additional delay needed - LED is stable and ready to measure
+                    # Parse READY event: "x:READY" where x = 'a', 'b', 'c', 'd'
+                    if line.endswith(':READY') and len(line) == 7 and line[0] in led_names:
+                        led_name = line[0]
+                        ready_events_received[led_name] += 1
+                        last_ready_time = time.perf_counter()
+                        
+                        # Wait for LED stabilization before reading
+                        time.sleep(detector_wait_ms / 1000.0)
 
-                            # Set integration time ONLY if using per-channel (otherwise pre-armed)
-                            if per_channel_integration:
-                                int_time = per_channel_integration.get(led_name, integration_time_ms)
-                                usb.set_integration(int_time)
-                                # Note: This adds ~7ms delay per channel but required for per-channel integration
+                        # Set integration time if per-channel (otherwise pre-armed)
+                        if per_channel_integration:
+                            int_time = per_channel_integration.get(led_name, integration_time_ms)
+                            usb.set_integration(int_time)
 
-                            # Acquire spectrum - detector is already armed and ready
-                            try:
-                                num_scans = self.calibration_data.num_scans if hasattr(self.calibration_data, 'num_scans') else 1
+                        # Read spectrum
+                        spectrum_acquired = False
+                        try:
+                            num_scans = getattr(self.calibration_data, 'num_scans', 1)
 
-                                if num_scans > 1:
-                                    # Multiple scans - average them
-                                    spectra = []
-                                    for scan_idx in range(num_scans):
-                                        scan = usb.read_intensity()
-                                        if scan is not None and len(scan) > 0:
-                                            spectra.append(scan)
-
-                                    if spectra:
-                                        spectrum = np.mean(spectra, axis=0)
-                                        # IMMEDIATE PROCESSING: Emit as soon as acquired
-                                        self._process_and_emit_spectrum_immediate(led_name, spectrum, led_intensities)
+                            if num_scans > 1:
+                                # Average multiple scans
+                                spectra = [usb.read_intensity() for _ in range(num_scans)]
+                                valid_spectra = [s for s in spectra if s is not None and len(s) > 0]
+                                
+                                if valid_spectra:
+                                    spectrum = np.mean(valid_spectra, axis=0)
+                                    self._process_and_emit_spectrum_immediate(led_name, spectrum, led_intensities)
+                                    spectrum_acquired = True
                                 else:
-                                    # Single scan
-                                    spectrum = usb.read_intensity()
-                                    if spectrum is not None and len(spectrum) > 0:
-                                        # IMMEDIATE PROCESSING: Emit as soon as acquired
-                                        self._process_and_emit_spectrum_immediate(led_name, spectrum, led_intensities)
+                                    logger.warning(f"[EVENT-RANK] {led_name}: All {num_scans} scans failed")
+                            else:
+                                # Single scan
+                                spectrum = usb.read_intensity()
+                                if spectrum is not None and len(spectrum) > 0:
+                                    self._process_and_emit_spectrum_immediate(led_name, spectrum, led_intensities)
+                                    spectrum_acquired = True
+                                else:
+                                    logger.warning(f"[EVENT-RANK] {led_name}: Empty spectrum")
 
-                            except Exception as e:
-                                logger.error(f"[RANK-EVENT] Failed to acquire {led_name}: {e}")
-                                acquisitions_per_led[led_name] -= 1  # Revert count on failure
+                        except Exception as e:
+                            logger.error(f"[EVENT-RANK] Acquisition failed for {led_name}: {e}")
+                        
+                        if spectrum_acquired:
+                            acquisitions_per_led[led_name] += 1
                 else:
-                    # No data available, small sleep to avoid busy-waiting
-                    time.sleep(0.001)
+                    time.sleep(0.001)  # Avoid busy-wait
+                
+                # Progress logging (every 60s)
+                if now - last_progress_log > 60.0:
+                    elapsed = now - batch_start
+                    min_acquired = min(acquisitions_per_led.values())
+                    progress_pct = (min_acquired / expected_spectra_per_led * 100)
+                    missed = sum(ready_events_received.values()) - sum(acquisitions_per_led.values())
+                    logger.info(
+                        f"[EVENT-RANK] Progress: {min_acquired}/{expected_spectra_per_led} "
+                        f"({progress_pct:.1f}%), Missed: {missed}, Time: {elapsed:.0f}s"
+                    )
+                    last_progress_log = now
 
-            # Check if we completed successfully
+            # === CLEANUP: Stop firmware and report results ===
+            
             batch_elapsed = time.perf_counter() - batch_start
             min_acquisitions = min(acquisitions_per_led.values())
-            completed_successfully = (min_acquisitions >= expected_spectra_per_led)
+            completed = (min_acquisitions >= expected_spectra_per_led)
             
-            # If exiting early, send stop command to firmware
-            if not completed_successfully:
-                logger.warning(f"[RANK-EVENT] Exiting early - sending stop command to firmware")
+            # Send stop if exiting early
+            if not completed:
+                logger.warning(f"[EVENT-RANK] Exiting early - stopping firmware")
                 try:
                     ctrl._ser.write(b"stop\n")
-                    time.sleep(0.1)  # Give firmware time to process
+                    time.sleep(0.1)
                 except Exception as e:
-                    logger.error(f"[RANK-EVENT] Failed to send stop: {e}")
+                    logger.error(f"[EVENT-RANK] Stop command failed: {e}")
             
-            # Drain remaining serial output
-            time.sleep(0.05)
-            while ctrl._ser.in_waiting > 0:
-                line = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
-                if "BATCH_END" in line:
-                    logger.debug(f"[RANK-EVENT] Firmware confirmed batch end")
+            # Drain serial buffer
+            drain_start = time.perf_counter()
+            while time.perf_counter() - drain_start < 0.2:
+                if ctrl._ser.in_waiting > 0:
+                    line = ctrl._ser.readline().decode('utf-8', errors='ignore').strip()
+                    if "BATCH_END" in line:
+                        logger.debug(f"[EVENT-RANK] Firmware confirmed stop")
+                        break
+                else:
+                    time.sleep(0.01)
 
-            # Log exit reason with spectrum counts
-            total_spectra = sum(acquisitions_per_led.values())
-            logger.info(f"[RANK-EVENT] Batch complete: {total_spectra} total spectra in {batch_elapsed:.1f}s")
-            logger.debug(f"[RANK-EVENT] Per-LED counts: {acquisitions_per_led}")
+            # Calculate statistics
+            total_ready = sum(ready_events_received.values())
+            total_acquired = sum(acquisitions_per_led.values())
+            missed = total_ready - total_acquired
+            throughput = f"{total_acquired/batch_elapsed:.1f} spectra/s" if batch_elapsed > 0 else "N/A"
             
-            if self._stop_acquisition.is_set():
-                logger.info(f"[RANK-EVENT] Exit reason: User stop requested")
-            elif time.perf_counter() - timeout_start > max_wait:
-                logger.warning(f"[RANK-EVENT] Exit reason: TIMEOUT ({max_wait:.0f}s)")
-            elif completed_successfully:
-                logger.info(f"[RANK-EVENT] Exit reason: All spectra acquired successfully")
-            else:
-                logger.warning(f"[RANK-EVENT] Exit reason: INCOMPLETE - expected {expected_spectra_per_led}, got {min_acquisitions} min")
-
-            return channel_spectra
+            # Log results
+            logger.info(
+                f"[EVENT-RANK] Complete: {total_acquired} spectra in {batch_elapsed:.1f}s ({throughput})"
+            )
+            logger.info(
+                f"[EVENT-RANK] READY events: {total_ready}, Acquired: {total_acquired}, Missed: {missed}"
+            )
+            logger.debug(f"[EVENT-RANK] Per-LED READY: {ready_events_received}")
+            logger.debug(f"[EVENT-RANK] Per-LED acquired: {acquisitions_per_led}")
+            
+            # Warn about missed spectra
+            if missed > 0:
+                missed_per_led = {ch: ready_events_received[ch] - acquisitions_per_led[ch] 
+                                for ch in led_names}
+                logger.warning(f"[EVENT-RANK] Missed spectra breakdown: {missed_per_led}")
+            
+            return {}  # Spectra already emitted via async processing
 
         except Exception as e:
-            logger.error(f"[RANK-EVENT] Fatal error: {e}")
+            logger.error(f"[EVENT-RANK] Fatal error: {e}")
             import traceback
-            logger.error(f"[RANK-EVENT] Traceback: {traceback.format_exc()}")
+            logger.error(traceback.format_exc())
             return {}
 
     def _acquire_raw_spectrum(
@@ -2908,6 +3151,21 @@ class DataAcquisitionManager(QObject):
             # QC warnings available in result but not printed (performance)
             # if qc_warning:
             #     print(f"[QC] Channel {channel}: {qc_warning}")
+
+            # SPIKE DETECTION: Track previous wavelength and detect sudden jumps
+            if not hasattr(self, "_prev_wavelength"):
+                self._prev_wavelength = {}
+            if channel in self._prev_wavelength:
+                prev_wl = self._prev_wavelength[channel]
+                wl_jump = abs(peak_wavelength - prev_wl)
+                # Flag spikes > 5nm (normal drift is < 1nm between measurements)
+                if wl_jump > 5.0:
+                    logger.warning(
+                        f"[SPIKE-DETECTED] Ch {channel}: Wavelength jump {wl_jump:.2f}nm "
+                        f"({prev_wl:.2f} → {peak_wavelength:.2f}nm) "
+                        f"FWHM={fwhm_nm:.1f}nm Quality={qc_quality:.2f}"
+                    )
+            self._prev_wavelength[channel] = peak_wavelength
 
             # VERIFICATION: Log object identity on first 3 spectra to prove peak finding
             # and sidebar see THE EXACT SAME transmission data (same memory address)

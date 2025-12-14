@@ -1607,8 +1607,15 @@ class SPRCalibrator:
                 averaged_spectrum = np.mean(corrected_stack, axis=0)
                 logger.debug(f"Applied jitter correction to {num_scans} {description} scans")
             else:
-                # ✨ VECTORIZED AVERAGING (2-3× faster than loop accumulation)
-                averaged_spectrum = np.mean(spectra_stack, axis=0)
+                # ✨ WEIGHTED AVERAGING - Reduce first scan influence (rise time effects)
+                # For 3 scans: weights = (0.1, 0.45, 0.45) - first scan gets 10%, last two get 45% each
+                if num_scans == 3:
+                    weights = np.array([0.1, 0.45, 0.45])
+                    averaged_spectrum = np.average(spectra_stack, axis=0, weights=weights)
+                    logger.debug(f"Applied weighted average (0.1, 0.45, 0.45) to {num_scans} {description} scans")
+                else:
+                    # Standard equal-weight average for other scan counts
+                    averaged_spectrum = np.mean(spectra_stack, axis=0)
 
             # Optionally subtract dark noise
             if subtract_dark and self.state.dark_noise is not None:

@@ -17,6 +17,8 @@ def initialize_pipelines():
     This should be called once at application startup.
     """
     from affilabs.settings import TRANSMISSION_BASELINE_METHOD, TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE
+    import json
+    from pathlib import Path
 
     registry = get_pipeline_registry()
 
@@ -25,12 +27,25 @@ def initialize_pipelines():
     registry.register('hybrid_original', HybridOriginalPipeline)  # Position 2: First attempt (8.82 RU)
     registry.register('hybrid', HybridPipeline)  # Position 3: OPTIMIZED (1.81 RU)
 
-    # Set default pipeline with config
-    fourier_config = {
+    # Load saved pipeline preference or default to fourier
+    config_file = Path(__file__).parent.parent.parent / 'settings' / 'pipeline_config.json'
+    saved_pipeline = 'fourier'  # Default
+    
+    try:
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+                saved_pipeline = config_data.get('active_pipeline', 'fourier')
+                logger.info(f"Loaded saved pipeline preference: {saved_pipeline}")
+    except Exception as e:
+        logger.warning(f"Could not load pipeline config, using default: {e}")
+    
+    # Set pipeline with config
+    pipeline_config = {
         'baseline_method': TRANSMISSION_BASELINE_METHOD,
         'baseline_degree': TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE
     }
-    registry.set_active_pipeline('fourier', config=fourier_config)
+    registry.set_active_pipeline(saved_pipeline, config=pipeline_config)
 
     logger.info(f"Initialized {len(registry.list_pipelines())} processing pipelines")
     logger.info(f"Active pipeline: {registry.active_pipeline_id}")

@@ -292,6 +292,7 @@ class SettingsTabBuilder:
         # Pipeline selector REMOVED - only Fourier method used in production
         self._build_led_settings(polarizer_led_card_layout)
         self._add_separator(polarizer_led_card_layout)
+        # Detector wait time moved to Advanced Settings dialog
         self._build_settings_buttons(polarizer_led_card_layout)
 
         hardware_section.add_content_widget(polarizer_led_card)
@@ -375,90 +376,6 @@ class SettingsTabBuilder:
 
         polarizer_row.addStretch()
         layout.addLayout(polarizer_row)
-
-    def _build_pipeline_selector(self, layout: QVBoxLayout):
-        """Build processing pipeline selector."""
-
-        pipeline_label = QLabel("Processing Pipeline:")
-        pipeline_label.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        layout.addWidget(pipeline_label)
-
-        pipeline_row = QHBoxLayout()
-        pipeline_row.setSpacing(12)
-
-        # Pipeline selector dropdown
-        self.sidebar.pipeline_selector = QComboBox()
-        self.sidebar.pipeline_selector.setFixedHeight(32)
-        self.sidebar.pipeline_selector.setMinimumWidth(200)
-        self.sidebar.pipeline_selector.setToolTip("Select data processing pipeline method")
-        self.sidebar.pipeline_selector.setStyleSheet(
-            "QComboBox {"
-            "  background: white;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 6px;"
-            "  padding: 6px 12px;"
-            "  font-size: 12px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QComboBox:hover {"
-            "  border: 1px solid rgba(0, 122, 255, 0.5);"
-            "}"
-            "QComboBox::drop-down {"
-            "  border: none;"
-            "  width: 20px;"
-            "}"
-            "QComboBox::down-arrow {"
-            "  image: none;"
-            "  border-left: 4px solid transparent;"
-            "  border-right: 4px solid transparent;"
-            "  border-top: 5px solid #86868B;"
-            "  margin-right: 8px;"
-            "}"
-            "QComboBox QAbstractItemView {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 6px;"
-            "  selection-background-color: #007AFF;"
-            "  selection-color: white;"
-            "  padding: 4px;"
-            "}"
-        )
-
-        # Add pipeline options
-        self.sidebar.pipeline_selector.addItem("Fourier Transform (Default)", "fourier")
-        self.sidebar.pipeline_selector.addItem("Batch Savitzky-Golay (GOLD STANDARD)", "batch_savgol")
-        self.sidebar.pipeline_selector.addItem("Direct ArgMin (Simple & Fast)", "direct")
-        self.sidebar.pipeline_selector.addItem("Adaptive Multi-Feature", "adaptive")
-        self.sidebar.pipeline_selector.addItem("Consensus", "consensus")
-
-        # Set default to Fourier
-        self.sidebar.pipeline_selector.setCurrentIndex(0)
-
-        pipeline_row.addWidget(self.sidebar.pipeline_selector)
-        pipeline_row.addStretch()
-
-        layout.addLayout(pipeline_row)
-
-        # Add description label
-        self.sidebar.pipeline_description = QLabel("Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.")
-        self.sidebar.pipeline_description.setWordWrap(True)
-        self.sidebar.pipeline_description.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        layout.addWidget(self.sidebar.pipeline_description)
-
     def _build_led_settings(self, layout: QVBoxLayout):
         """Build LED intensity settings for channels A, B, C, D."""
         led_intensity_label = QLabel("LED Intensity per Channel:")
@@ -499,6 +416,8 @@ class SettingsTabBuilder:
 
             channel_row.addStretch()
             layout.addLayout(channel_row)
+
+    # Detector wait time moved to Advanced Settings dialog (Nov 2024)
 
     def _build_settings_buttons(self, layout: QVBoxLayout):
         """Build settings action buttons (Load Current, Apply Settings, Advanced)."""

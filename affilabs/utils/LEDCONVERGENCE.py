@@ -222,7 +222,7 @@ def run_convergence(
     strategy: str = "intensity",  # "intensity" or "time"
     initial_integration_ms: float = 70.0,
     model_predicted_leds: Optional[dict[str, int]] = None,  # NEW: Model predictions
-    model_slopes: Optional[dict[str, float]] = None,  # NEW: Model calibration slopes
+    model_slopes: Optional[dict[str, float]] = None,  # NEW: Model calibration slopes (S-pol, valid for P-pol too)
     polarization: str = "S",  # NEW: Polarization state for model
     target_percent: float = 0.40,
     tolerance_percent: float = 0.05,
@@ -237,6 +237,7 @@ def run_convergence(
                              If provided, skips empirical ranking and uses predictions directly.
         model_slopes: Optional dict of model calibration slopes {'A': slope_10ms, 'B': slope_10ms, ...}
                      If provided, enables exact model-based saturation correction.
+                     NOTE: S-pol slopes are valid for P-pol convergence (same LED-to-counts relationship)
 
     Returns:
         (shared_integration_ms_or_None, per_channel_results, ok)
@@ -447,7 +448,6 @@ def run_convergence(
             max_iterations=max_iter_override if max_iter_override is not None else 15,
             step_name="Step 4",
             use_batch_command=use_batch_command,
-            adjust_leds=True,
             model_slopes=model_slopes,
             polarization=polarization,
             logger=logger,
@@ -465,13 +465,14 @@ def run_convergence(
         detector_params, use_batch_command, logger
     )
     
-    # SUCCESS CRITERIA: Minimal saturation (top priority) + signals in tolerance
-    # TEMPORARY: Allow up to 5 saturated pixels for RANK testing (<0.2% of detector)
-    ok_final = (sat_total <= 5) and ok
+    # SUCCESS CRITERIA: Zero saturation (top priority) + signals in tolerance
+    # Production quality: ZERO saturated pixels allowed
+    # Target reduced to 88% to ensure headroom for LED variations
+    ok_final = (sat_total == 0) and ok
     
     if logger:
         logger.info(f"[CONV] SUCCESS: convergence={'OK' if ok else 'FAIL'}, saturation={sat_total} pixels")
-        logger.info(f"[CONV] FINAL RESULT: {'PASS' if ok_final else 'FAIL'} (≤5 saturated pixels allowed for testing)")
+        logger.info(f"[CONV] FINAL RESULT: {'PASS' if ok_final else 'FAIL'} (0 saturated pixels required, {sat_total} detected)")
         logger.info(f"[CONV] shared_int={shared_int:.2f}ms results={results}")
         
         # Structured summary for parsing

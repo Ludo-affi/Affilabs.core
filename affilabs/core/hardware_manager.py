@@ -664,9 +664,10 @@ class HardwareManager(QObject):
                     logger.warning(
                         f"[WARN] {ctrl_type} incomplete: controller found but detector missing",
                     )
-                    # TEMPORARY: Allow controller-only for V2.2 testing
-                    valid_hardware.append(f"{ctrl_type} (no detector)")
-                    logger.info(f"[TEST MODE] Allowing {ctrl_type} without detector")
+                    logger.warning(
+                        f"[WARN] Power button will remain YELLOW until detector is connected",
+                    )
+                    # Do NOT add to valid_hardware - power button stays yellow
 
                 # Check kinetics (KNX) - can be standalone, mutually exclusive with AffiPump
                 knx_type = self._get_kinetic_type()

@@ -56,6 +56,7 @@ class ProcessingPipeline(ABC):
         """
         self.config = config or {}
         self._metadata: PipelineMetadata | None = None
+        self.pipeline_id: str | None = None  # Set by registry when instantiated
 
     @abstractmethod
     def get_metadata(self) -> PipelineMetadata:
@@ -194,7 +195,9 @@ class PipelineRegistry:
 
         # Create new instance if config is provided or instance doesn't exist
         if config or pipeline_id not in self._instances:
-            self._instances[pipeline_id] = self._pipelines[pipeline_id](config)
+            instance = self._pipelines[pipeline_id](config)
+            instance.pipeline_id = pipeline_id  # Set the ID on the instance
+            self._instances[pipeline_id] = instance
 
         return self._instances[pipeline_id]
 
@@ -216,7 +219,22 @@ class PipelineRegistry:
 
         # Ensure instance exists with current config
         if config:
-            self._instances[pipeline_id] = self._pipelines[pipeline_id](config)
+            instance = self._pipelines[pipeline_id](config)
+            instance.pipeline_id = pipeline_id  # Set the ID on the instance
+            self._instances[pipeline_id] = instance
+
+        # Save pipeline preference to config file
+        try:
+            import json
+            from pathlib import Path
+            config_dir = Path(__file__).parent.parent.parent / 'settings'
+            config_dir.mkdir(exist_ok=True)
+            config_file = config_dir / 'pipeline_config.json'
+            
+            with open(config_file, 'w') as f:
+                json.dump({'active_pipeline': pipeline_id}, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save pipeline preference: {e}")
 
         logger.info(f"Active pipeline: {pipeline_id}")
 

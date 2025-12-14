@@ -112,53 +112,57 @@ class AdvancedSettingsDialog(QDialog):
 
         form.addRow(unit_label, unit_container)
 
-        # LED ON Time (ms) - How long LED stays on
+        # LED ON Time (ms) - How long LED stays ON per channel (rankbatch parameter)
         led_on_label = QLabel("LED ON Time:")
         led_on_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
         self.led_on_input = QSpinBox()
         self.led_on_input.setRange(10, 500)
-        self.led_on_input.setValue(45)  # Default LED on duration
+        self.led_on_input.setValue(250)  # RANKBATCH firmware: 250ms per channel
         self.led_on_input.setSuffix(" ms")
         self.led_on_input.setFixedWidth(120)
         self.led_on_input.setStyleSheet(spinbox_style())
-        self.led_on_input.setToolTip("Duration LED remains on for measurement")
+        self.led_on_input.setToolTip("Duration LED stays ON per channel (firmware RANKBATCH timing base)")
         form.addRow(led_on_label, self.led_on_input)
 
-        # LED OFF Time (ms) - Delay after LED turns off
+        # LED OFF Time (ms) - How long LED stays OFF between channels (rankbatch parameter)
         led_off_label = QLabel("LED OFF Time:")
         led_off_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
         self.led_off_input = QSpinBox()
         self.led_off_input.setRange(0, 100)
-        self.led_off_input.setValue(5)  # Default LED off delay
+        self.led_off_input.setValue(0)  # RANKBATCH firmware: 0ms between channels
         self.led_off_input.setSuffix(" ms")
         self.led_off_input.setFixedWidth(120)
         self.led_off_input.setStyleSheet(spinbox_style())
-        self.led_off_input.setToolTip("Delay after LED turns off before next action")
+        self.led_off_input.setToolTip("Duration LED stays OFF between channels (firmware RANKBATCH parameter)")
         form.addRow(led_off_label, self.led_off_input)
 
-        # Detector ON Time (ms) - Integration time
-        detector_on_label = QLabel("Detector ON Time:")
-        detector_on_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
+        # Integration Time (ms) - Detector exposure time (rankbatch detector on time budget)
+        integration_label = QLabel("Integration Time:")
+        integration_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
         self.detector_on_input = QSpinBox()
         self.detector_on_input.setRange(5, 200)
         self.detector_on_input.setValue(50)  # Default integration time
         self.detector_on_input.setSuffix(" ms")
         self.detector_on_input.setFixedWidth(120)
         self.detector_on_input.setStyleSheet(spinbox_style())
-        self.detector_on_input.setToolTip("Detector integration/exposure time")
-        form.addRow(detector_on_label, self.detector_on_input)
+        self.detector_on_input.setToolTip("Detector exposure/integration time (rankbatch detector on time budget)")
+        form.addRow(integration_label, self.detector_on_input)
 
-        # Detector OFF Time (ms) - Readout delay
-        detector_off_label = QLabel("Detector OFF Time:")
-        detector_off_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
-        self.detector_off_input = QSpinBox()
-        self.detector_off_input.setRange(0, 50)
-        self.detector_off_input.setValue(10)  # Default readout delay
-        self.detector_off_input.setSuffix(" ms")
-        self.detector_off_input.setFixedWidth(120)
-        self.detector_off_input.setStyleSheet(spinbox_style())
-        self.detector_off_input.setToolTip("Delay after detector readout")
-        form.addRow(detector_off_label, self.detector_off_input)
+        # Detector Wait Time (ms) - Software delay after CYCLE_START before reading detector
+        detector_wait_label = QLabel("Detector Wait:")
+        detector_wait_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
+        self.detector_wait_input = QSpinBox()
+        self.detector_wait_input.setRange(0, 100)
+        self.detector_wait_input.setValue(60)  # Software waits 60ms after CYCLE_START
+        self.detector_wait_input.setSuffix(" ms")
+        self.detector_wait_input.setFixedWidth(120)
+        self.detector_wait_input.setStyleSheet(spinbox_style())
+        self.detector_wait_input.setToolTip(
+            "Software delay after receiving CYCLE_START before reading detector.\n"
+            "Allows LED to stabilize before measurement.\n"
+            "V2.4: Software offsets are 50ms(A), 300ms(B), 550ms(C), 800ms(D) + this wait."
+        )
+        form.addRow(detector_wait_label, self.detector_wait_input)
 
         # Pipeline Selection
         pipeline_label = QLabel("Data Pipeline:")
@@ -318,15 +322,22 @@ class AdvancedSettingsDialog(QDialog):
                 settings.DEFAULT_UNIT = 'nm'
                 logger.info("  Unit: nm")
 
-            # Apply Timing Parameters
-            settings.LED_ON_TIME_MS = self.led_on_input.value()
-            settings.LED_OFF_TIME_MS = self.led_off_input.value()
-            settings.DETECTOR_ON_TIME_MS = self.detector_on_input.value()
-            settings.DETECTOR_OFF_TIME_MS = self.detector_off_input.value()
-            logger.info(f"  LED ON Time: {settings.LED_ON_TIME_MS} ms")
-            logger.info(f"  LED OFF Time: {settings.LED_OFF_TIME_MS} ms")
-            logger.info(f"  Detector ON Time: {settings.DETECTOR_ON_TIME_MS} ms")
-            logger.info(f"  Detector OFF Time: {settings.DETECTOR_OFF_TIME_MS} ms")
+            # Apply Timing Parameters (firmware and software parameters)
+            settings.LED_ON_TIME_MS = self.led_on_input.value()  # Firmware: LED ON duration
+            settings.LED_OFF_TIME_MS = self.led_off_input.value()  # Firmware: LED OFF duration
+            settings.DETECTOR_ON_TIME_MS = self.detector_on_input.value()  # Integration time
+            settings.DETECTOR_WAIT_MS = self.detector_wait_input.value()  # Software: wait after CYCLE_START
+            logger.info(f"  LED ON Time: {settings.LED_ON_TIME_MS} ms (firmware timing base)")
+            logger.info(f"  LED OFF Time: {settings.LED_OFF_TIME_MS} ms (firmware parameter)")
+            logger.info(f"  Integration Time: {settings.DETECTOR_ON_TIME_MS} ms")
+            logger.info(f"  Detector Wait: {settings.DETECTOR_WAIT_MS} ms (software offset)")
+            
+            # Apply detector wait to running data acquisition manager (if available)
+            if hasattr(self.parent(), 'app') and hasattr(self.parent().app, 'data_mgr'):
+                data_mgr = self.parent().app.data_mgr
+                if data_mgr:
+                    data_mgr.detector_wait_ms = settings.DETECTOR_WAIT_MS
+                    logger.info(f"  ✓ Updated data manager detector_wait_ms = {settings.DETECTOR_WAIT_MS} ms")
 
             # Apply Pipeline Selection
             pipeline_idx = self.pipeline_combo.currentIndex()

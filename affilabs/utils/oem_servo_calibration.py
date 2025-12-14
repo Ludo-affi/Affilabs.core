@@ -57,7 +57,7 @@ from affilabs.utils.logger import logger as base_logger
 try:
     import seabreeze
 
-    seabreeze.use("cseabreeze")
+    seabreeze.use("pyseabreeze")
     from seabreeze.spectrometers import Spectrometer, list_devices
 except ImportError:
     base_logger.error("SeaBreeze not available - spectrometer functionality disabled")

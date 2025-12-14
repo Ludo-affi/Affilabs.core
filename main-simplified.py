@@ -565,6 +565,7 @@ class Application(QApplication):
         self._device_config_initialized = False
         self._initial_connection_done = False
         self._deferred_connections_pending = True
+        self._intentional_disconnect = False  # Track user-initiated disconnect
 
         # Experiment tracking
         self.experiment_start_time = None
@@ -1113,8 +1114,8 @@ class Application(QApplication):
                         f"Γ£ô SPR model path saved to device_config: {spr_model_path}"
                     )
                 else:
-                    logger.warning(
-                        f"ΓÜá∩╕Å SPR model file not found at expected path: {spr_model_path}"
+                    logger.debug(
+                        f"SPR model file not in QC folder (expected location): {spr_model_path}"
                     )
 
             # Save QC report for traceability and ML model
@@ -1387,6 +1388,9 @@ class Application(QApplication):
             "[OK] Connected start_cycle_btn -> _on_start_button_clicked (acquisition start)"
         )
 
+        # NOTE: Detector wait time and pipeline selector are in Advanced Settings dialog
+        # Values are applied when dialog is accepted
+
         # Add to Queue button (TEST MODE - segment queue)
         if hasattr(ui.sidebar, "add_to_queue_btn"):
             ui.sidebar.add_to_queue_btn.clicked.connect(self._on_add_to_queue)
@@ -1531,6 +1535,16 @@ class Application(QApplication):
     #   - self.debug.send_single_data_point() - Ctrl+Shift+1
     #   - self.debug.test_acquisition_thread() - Ctrl+Shift+T
     #   - self.debug.simulate_calibration_success()
+
+    def _on_detector_wait_changed(self, value: int):
+        """Update detector wait time for live acquisition.
+        
+        Args:
+            value: New detector wait time in milliseconds (0-100ms)
+        """
+        if self.data_mgr:
+            self.data_mgr.detector_wait_ms = value
+            logger.info(f"[OK] Detector wait time updated to {value}ms")
 
     def _on_start_button_clicked(self):
         """User clicked Start button - begin live data acquisition."""
@@ -1888,26 +1902,29 @@ class Application(QApplication):
 
         # Check if scan was successful (valid hardware combinations found)
         # Valid combinations:
-        # - P4SPR/P4PRO/ezSPR: controller + detector (both required)
+        # - P4SPR/P4PRO/ezSPR: controller + detector (BOTH required)
         # - KNX: standalone kinetic controller
         # - AffiPump: standalone pump
-        scan_successful = status.get("scan_successful", False)
-
+        
         # Validate hardware combinations
         ctrl_type = status.get("ctrl_type")
         knx_type = status.get("knx_type")
         pump_connected = status.get("pump_connected")
+        has_detector = status.get("spectrometer") == True
 
+        # For SPR controllers, BOTH controller AND detector required
+        ctrl_only = ctrl_type and not has_detector
+        
         valid_hardware = []
-        if ctrl_type:  # SPR device (already validated as controller + detector)
+        if ctrl_type and has_detector:  # SPR device requires BOTH
             valid_hardware.append(ctrl_type)
         if knx_type:  # Kinetic controller (standalone)
             valid_hardware.append(knx_type)
         if pump_connected:  # Pump (standalone)
             valid_hardware.append("AffiPump")
 
-        # Update power button based on scan success
-        if scan_successful and valid_hardware:
+        # Update power button based on valid hardware combinations
+        if valid_hardware:
             logger.info(
                 f"[OK] Scan SUCCESSFUL - found valid hardware: {', '.join(valid_hardware)}"
             )
@@ -1928,16 +1945,12 @@ class Application(QApplication):
             }
             self._update_device_status_ui(empty_status)
 
-            # Show error message with specific details
-            ctrl_only = status.get("spectrometer") == False and ctrl_type
+            # Show error message ONLY for controller-only case (don't spam if nothing found)
             if ctrl_only:
-                error_msg = f"Incomplete hardware detected.\n\n{ctrl_type} controller found but detector missing.\n\nPlease connect USB4000 spectrometer."
-            else:
-                error_msg = "No devices found.\n\nPlease check:\n╬ô├ç├│ USB connections\n╬ô├ç├│ Device power\n╬ô├ç├│ Driver installation"
-
-            from widgets.message import show_message
-
-            show_message(error_msg, msg_type="Warning", title="Connection Failed")
+                error_msg = f"Incomplete hardware detected.\n\n{ctrl_type} controller found but detector missing.\n\nBoth controller AND detector required.\nPlease connect USB4000 spectrometer."
+                from widgets.message import show_message
+                show_message(error_msg, msg_type="Warning", title="Connection Failed")
+            
             return  # Exit early if scan failed
 
         # Re-initialize device config with actual device serial number (ONLY on initial connection)
@@ -2265,9 +2278,15 @@ class Application(QApplication):
 
     def _on_hardware_disconnected(self):
         """Hardware disconnected."""
-        logger.error("ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ")
-        logger.error("CRITICAL: HARDWARE DISCONNECTED")
-        logger.error("ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ")
+        # Check if this was an intentional disconnect (user clicked power off)
+        if self._intentional_disconnect:
+            logger.info("Hardware disconnected (user-initiated)")
+            self._intentional_disconnect = False  # Reset flag
+        else:
+            # Unexpected disconnect - show critical error
+            logger.error("ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ")
+            logger.error("CRITICAL: HARDWARE DISCONNECTED")
+            logger.error("ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ")
 
         # Check if acquisition was running
         acquisition_was_running = (
@@ -2350,6 +2369,18 @@ class Application(QApplication):
         """Query hardware for LED intensities and update UI display."""
         try:
             if not self.hardware_mgr or not self.hardware_mgr.ctrl:
+                return
+
+            # SKIP LED queries during acquisition - they interfere with CYCLE_SYNC protocol
+            # Check if rankbatch/cycle_sync is running
+            if hasattr(self.hardware_mgr, 'data_acq_mgr') and self.hardware_mgr.data_acq_mgr:
+                if hasattr(self.hardware_mgr.data_acq_mgr, '_rankbatch_running'):
+                    if self.hardware_mgr.data_acq_mgr._rankbatch_running:
+                        logger.debug("Skipping LED query - rankbatch active")
+                        return
+            
+            # Also skip if any acquisition is running
+            if hasattr(self, '_acquisition_running') and self._acquisition_running:
                 return
 
             # Get current LED intensities from hardware
@@ -3103,8 +3134,20 @@ class Application(QApplication):
                 curve.setData(cycle_time, delta_spr)
 
             # Autosave cycle data when boundaries change significantly
+            # DEFER to avoid USB bus conflicts during live acquisition
             if cycle_changed and len(self.buffer_mgr.cycle_data["a"].time) > 10:
-                self._autosave_cycle_data(start_time, stop_time)
+                # Queue autosave instead of doing it immediately
+                if not hasattr(self, '_pending_autosave'):
+                    self._pending_autosave = None
+                self._pending_autosave = (start_time, stop_time)
+                # Schedule autosave with 2-second delay to avoid USB conflicts
+                # QTimer already imported at top: from PySide6.QtCore import QTimer
+                if not hasattr(self, '_autosave_timer'):
+                    self._autosave_timer = QTimer()
+                    self._autosave_timer.setSingleShot(True)
+                    self._autosave_timer.timeout.connect(self._do_deferred_autosave)
+                self._autosave_timer.stop()  # Cancel any pending autosave
+                self._autosave_timer.start(2000)  # Wait 2 seconds before saving
 
             # Update ╬ö SPR display with current values
             self._update_delta_display()
@@ -3630,6 +3673,10 @@ class Application(QApplication):
         """Emergency cleanup for unexpected exits (called by atexit)."""
         if hasattr(self, "closing") and self.closing:
             return  # Normal close already happened
+        
+        # Don't trigger for intentional disconnects
+        if hasattr(self, "_intentional_disconnect") and self._intentional_disconnect:
+            return  # Intentional disconnect, not an emergency
 
         logger.warning("╬ô├£├íΓê⌐Γòò├à Emergency cleanup triggered - forcing resource release")
 
@@ -4906,6 +4953,7 @@ class Application(QApplication):
             # Disconnect all hardware (safe shutdown of devices)
             logger.info("Γëí╞Æ├╢├« Disconnecting hardware...")
             try:
+                self._intentional_disconnect = True  # Mark as intentional before disconnect
                 self.hardware_mgr.disconnect_all()
                 logger.info("[OK] Hardware disconnected safely")
             except Exception as e:
@@ -6181,6 +6229,13 @@ class Application(QApplication):
 
             show_message(f"Export failed: {e}", "Error")
 
+    def _do_deferred_autosave(self):
+        """Execute pending autosave operation after delay to avoid USB conflicts."""
+        if hasattr(self, '_pending_autosave') and self._pending_autosave is not None:
+            start_time, stop_time = self._pending_autosave
+            self._pending_autosave = None
+            self._autosave_cycle_data(start_time, stop_time)
+    
     def _autosave_cycle_data(self, start_time: float, stop_time: float):
         """Automatically save cycle data to session folder.
 

@@ -30,7 +30,7 @@ def find_libusb_dll():
             sys.prefix, "Lib", "site-packages", "libusb_package", "libusb-1.0.dll",
         ),
     ]
-    
+
     # Also check user site-packages (for global pip install)
     try:
         import site

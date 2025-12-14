@@ -2664,7 +2664,7 @@ def run_full_7step_calibration(
                 wave_min_index=result.wave_min_index,
                 wave_max_index=result.wave_max_index,
                 device_config_det=device_config_det,
-                target_percent=0.90,  # S-mode target: 90% detector
+                target_percent=0.88,  # S-mode target: 88% detector (reduced to avoid saturation)
                 tolerance_percent=0.05,  # ±5% tolerance (realistic for hardware variations)
                 strategy="intensity",  # Shared-time convergence with fixed LEDs
                 progress_callback=progress_callback,
@@ -3971,11 +3971,12 @@ def run_convergence_calibration_steps_3_to_5(
         logger.info("")
 
         # Extract model slopes for P-mode smart saturation correction
+        # NOTE: Use S-pol slopes for P-pol too (same LED-to-counts relationship, just scaled)
         model_slopes_p = None
         if loaded_model:
             try:
-                model_slopes_p = loaded_model.get_slopes(polarization="P", channels=ch_list_upper)
-                logger.info(f"   📊 Model slopes (P-pol): {model_slopes_p}")
+                model_slopes_p = loaded_model.get_slopes(polarization="S", channels=ch_list_upper)  # Use S-pol slopes for P-pol!
+                logger.info(f"   📊 Model slopes (P-pol using S-pol slopes): {model_slopes_p}")
             except Exception as e:
                 logger.warning(f"   ⚠  Could not extract model slopes: {e}")
 
