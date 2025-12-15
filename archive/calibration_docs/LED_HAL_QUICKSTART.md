@@ -50,10 +50,10 @@ Speedup:  165x faster ⚡
 
 ## Key Features
 
-✅ **Backward compatible** - All existing code works unchanged  
-⚡ **Batch commands** - 100-200x faster LED setup (Pico controllers)  
-🔌 **Multi-controller** - Works with Pico, Arduino, etc.  
-🛡️ **Auto-fallback** - Uses sequential if batch not supported  
+✅ **Backward compatible** - All existing code works unchanged
+⚡ **Batch commands** - 100-200x faster LED setup (Pico controllers)
+🔌 **Multi-controller** - Works with Pico, Arduino, etc.
+🛡️ **Auto-fallback** - Uses sequential if batch not supported
 
 ## Test Results
 
@@ -76,12 +76,12 @@ Use batch commands when:
 
 ## Integration Status
 
-✅ HAL interface defined  
-✅ Adapter implemented with batch support  
-✅ Builder utilities created  
-✅ Test suite passing  
-✅ Application integration verified  
-✅ Documentation complete  
+✅ HAL interface defined
+✅ Adapter implemented with batch support
+✅ Builder utilities created
+✅ Test suite passing
+✅ Application integration verified
+✅ Documentation complete
 
 ## Next Steps
 
@@ -98,7 +98,7 @@ To use batch commands in acquisition code:
    self.led_controller.set_mode('s')
    self.led_controller.set_intensity('a', 180)
    self.led_controller.set_intensity('b', 200)
-   
+
    # NEW (165x faster)
    batch = LEDBatchBuilder()
    batch.set_mode('s').set_intensity('a', 180).set_intensity('b', 200).execute(self.led_controller)

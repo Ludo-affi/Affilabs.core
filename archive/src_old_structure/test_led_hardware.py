@@ -1,19 +1,19 @@
-"""
-Quick hardware test to diagnose LED calibration issue.
+"""Quick hardware test to diagnose LED calibration issue.
 Tests controller communication and LED response directly.
 """
 
 import sys
 import time
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+
 def test_hardware():
     """Test hardware communication directly."""
-
     print("=" * 70)
     print("HARDWARE COMMUNICATION TEST")
     print("=" * 70)
@@ -21,12 +21,14 @@ def test_hardware():
 
     # Import hardware classes
     try:
-        from utils.controller import PicoP4SPR, ArduinoController
+        from utils.controller import ArduinoController, PicoP4SPR
         from utils.usb4000_wrapper import USB4000
+
         print("✅ Imports successful")
     except Exception as e:
         print(f"❌ Import failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -39,7 +41,9 @@ def test_hardware():
     try:
         ctrl = PicoP4SPR()
         if ctrl.open():
-            print(f"   ✅ PicoP4SPR connected on port: {ctrl._ser.port if hasattr(ctrl, '_ser') and ctrl._ser else 'unknown'}")
+            print(
+                f"   ✅ PicoP4SPR connected on port: {ctrl._ser.port if hasattr(ctrl, '_ser') and ctrl._ser else 'unknown'}",
+            )
         else:
             print("   ❌ PicoP4SPR failed to open")
             ctrl = None
@@ -52,7 +56,9 @@ def test_hardware():
         try:
             ctrl = ArduinoController()
             if ctrl.open():
-                print(f"   ✅ ArduinoController connected on port: {ctrl._ser.port if hasattr(ctrl, '_ser') and ctrl._ser else 'unknown'}")
+                print(
+                    f"   ✅ ArduinoController connected on port: {ctrl._ser.port if hasattr(ctrl, '_ser') and ctrl._ser else 'unknown'}",
+                )
             else:
                 print("   ❌ ArduinoController failed to open")
                 return False
@@ -69,7 +75,7 @@ def test_hardware():
     try:
         usb = USB4000()
         if usb.open():
-            print(f"   ✅ Spectrometer connected")
+            print("   ✅ Spectrometer connected")
             print(f"   Model: {getattr(usb, 'model', 'unknown')}")
             print(f"   Serial: {getattr(usb, 'serial_number', 'unknown')}")
         else:
@@ -78,6 +84,7 @@ def test_hardware():
     except Exception as e:
         print(f"   ❌ Spectrometer error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -86,17 +93,17 @@ def test_hardware():
     print("-" * 70)
     try:
         print("   Setting S-mode...")
-        ctrl.set_mode('s')
+        ctrl.set_mode("s")
         time.sleep(0.1)
         print("   ✅ S-mode command sent")
 
         print("   Setting P-mode...")
-        ctrl.set_mode('p')
+        ctrl.set_mode("p")
         time.sleep(0.1)
         print("   ✅ P-mode command sent")
 
         print("   Back to S-mode...")
-        ctrl.set_mode('s')
+        ctrl.set_mode("s")
         time.sleep(0.1)
         print("   ✅ Mode switching successful")
     except Exception as e:
@@ -106,23 +113,23 @@ def test_hardware():
     # Test LED commands
     print("\n4. LED COMMAND TEST")
     print("-" * 70)
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
 
     for ch in channels:
         print(f"\n   Testing LED {ch.upper()}:")
         try:
             # Turn on LED
-            print(f"      Setting intensity to 200/255...")
+            print("      Setting intensity to 200/255...")
             result = ctrl.set_intensity(ch=ch, raw_val=200)
             print(f"      Command returned: {result}")
             time.sleep(0.3)
 
             # Read spectrum
-            print(f"      Reading spectrum...")
+            print("      Reading spectrum...")
             spectrum = usb.read_intensity()
 
             if spectrum is None:
-                print(f"      ❌ Spectrometer returned None!")
+                print("      ❌ Spectrometer returned None!")
                 continue
 
             max_signal = float(np.max(spectrum))
@@ -134,13 +141,14 @@ def test_hardware():
                 print(f"      ⚠️ LED {ch.upper()} weak signal (< 100 counts)")
 
             # Turn off LED
-            print(f"      Turning off...")
+            print("      Turning off...")
             ctrl.set_intensity(ch=ch, raw_val=0)
             time.sleep(0.2)
 
         except Exception as e:
             print(f"      ❌ Error testing LED {ch.upper()}: {e}")
             import traceback
+
             traceback.print_exc()
 
     # Test all LEDs off
@@ -162,17 +170,20 @@ def test_hardware():
             if dark_max < 1000:
                 print("   ✅ Dark signal is low (LEDs are off)")
             else:
-                print(f"   ⚠️ Dark signal is high ({dark_max:.0f} counts) - LEDs may still be on")
+                print(
+                    f"   ⚠️ Dark signal is high ({dark_max:.0f} counts) - LEDs may still be on",
+                )
     except Exception as e:
         print(f"   ❌ Error in dark test: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Test rapid LED switching (like calibration does)
     print("\n6. RAPID LED SWITCHING TEST (simulates calibration)")
     print("-" * 70)
     try:
-        ctrl.set_mode('s')
+        ctrl.set_mode("s")
         time.sleep(0.1)
 
         for i, ch in enumerate(channels):
@@ -182,7 +193,7 @@ def test_hardware():
 
             spectrum = usb.read_intensity()
             if spectrum is None:
-                print(f"      ❌ Read failed!")
+                print("      ❌ Read failed!")
             else:
                 signal = float(np.max(spectrum))
                 print(f"      Signal: {signal:.0f} counts")
@@ -192,6 +203,7 @@ def test_hardware():
     except Exception as e:
         print(f"   ❌ Rapid switching failed: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Final cleanup
@@ -212,21 +224,20 @@ def test_hardware():
 
 def test_full_calibration(ctrl, usb):
     """Run the actual LED calibration code."""
-
     print("\n\n" + "=" * 70)
     print("FULL LED CALIBRATION TEST")
     print("=" * 70)
     print()
 
     try:
-        from utils.led_calibration import perform_full_led_calibration
-        from utils.device_configuration import DeviceConfiguration
         from settings import INTEGRATION_STEP
+        from utils.device_configuration import DeviceConfiguration
+        from utils.led_calibration import perform_full_led_calibration
 
         print("✅ Calibration modules imported")
 
         # Load device configuration
-        device_serial = getattr(usb, 'serial_number', None)
+        device_serial = getattr(usb, "serial_number", None)
         device_config = DeviceConfiguration(device_serial=device_serial)
         print(f"✅ Device config loaded for S/N: {device_serial}")
 
@@ -238,13 +249,13 @@ def test_full_calibration(ctrl, usb):
         cal_result = perform_full_led_calibration(
             usb=usb,
             ctrl=ctrl,
-            device_type='P4SPR',
+            device_type="P4SPR",
             single_mode=False,
-            single_ch='a',
+            single_ch="a",
             integration_step=INTEGRATION_STEP,
             stop_flag=None,
             progress_callback=lambda msg: print(f"   Progress: {msg}"),
-            device_config=device_config
+            device_config=device_config,
         )
 
         print("\n" + "=" * 70)
@@ -255,37 +266,41 @@ def test_full_calibration(ctrl, usb):
             print("\n✅ CALIBRATION SUCCESSFUL!")
             print(f"\n   Integration time: {cal_result.integration_time}ms")
             print(f"   Number of scans: {cal_result.num_scans}")
-            print(f"\n   S-mode LED intensities:")
+            print("\n   S-mode LED intensities:")
             for ch, intensity in cal_result.s_mode_intensity.items():
                 print(f"      Channel {ch.upper()}: {intensity}/255")
 
-            print(f"\n   P-mode LED intensities:")
+            print("\n   P-mode LED intensities:")
             for ch, intensity in cal_result.p_mode_intensity.items():
                 print(f"      Channel {ch.upper()}: {intensity}/255")
 
-            print(f"\n   Reference signals acquired:")
+            print("\n   Reference signals acquired:")
             for ch, ref_sig in cal_result.s_pol_ref.items():
                 max_signal = float(np.max(ref_sig)) if ref_sig is not None else 0
                 print(f"      Channel {ch.upper()}: max={max_signal:.0f} counts")
 
             if cal_result.ch_error_list:
-                print(f"\n   ⚠️ Channels with warnings: {', '.join([c.upper() for c in cal_result.ch_error_list])}")
+                print(
+                    f"\n   ⚠️ Channels with warnings: {', '.join([c.upper() for c in cal_result.ch_error_list])}",
+                )
             else:
-                print(f"\n   ✅ All channels passed QC")
+                print("\n   ✅ All channels passed QC")
 
             print("\n" + "=" * 70)
             return True
 
-        else:
-            print("\n❌ CALIBRATION FAILED")
-            print(f"   Error: {cal_result.error if hasattr(cal_result, 'error') else 'Unknown error'}")
-            print(f"   Failed channels: {cal_result.ch_error_list}")
-            print("\n" + "=" * 70)
-            return False
+        print("\n❌ CALIBRATION FAILED")
+        print(
+            f"   Error: {cal_result.error if hasattr(cal_result, 'error') else 'Unknown error'}",
+        )
+        print(f"   Failed channels: {cal_result.ch_error_list}")
+        print("\n" + "=" * 70)
+        return False
 
     except Exception as e:
         print(f"\n❌ CALIBRATION EXCEPTION: {e}")
         import traceback
+
         traceback.print_exc()
         print("\n" + "=" * 70)
         return False
@@ -306,7 +321,7 @@ if __name__ == "__main__":
         print("\n" + "=" * 70)
         response = input("\nRun full LED calibration? (y/n): ").strip().lower()
 
-        if response == 'y':
+        if response == "y":
             success = test_full_calibration(ctrl, usb)
             if success:
                 print("\n✅ Full calibration test passed")
@@ -324,5 +339,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

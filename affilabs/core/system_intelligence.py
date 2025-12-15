@@ -184,15 +184,13 @@ class SystemIntelligence:
         self.metrics.calibration_attempts += 1
         if success:
             self.metrics.calibration_success_rate = (
-                self.metrics.calibration_success_rate
-                * (self.metrics.calibration_attempts - 1)
+                self.metrics.calibration_success_rate * (self.metrics.calibration_attempts - 1)
                 + 1.0
             ) / self.metrics.calibration_attempts
             self.metrics.last_calibration_time = datetime.now().isoformat()
         else:
             self.metrics.calibration_success_rate = (
-                self.metrics.calibration_success_rate
-                * (self.metrics.calibration_attempts - 1)
+                self.metrics.calibration_success_rate * (self.metrics.calibration_attempts - 1)
             ) / self.metrics.calibration_attempts
 
         # Analyze calibration quality
@@ -248,12 +246,13 @@ class SystemIntelligence:
             transmission_quality: Quality of transmission spectrum (0-1)
 
         """
+        # Consume reserved parameter to keep API stable
+        _ = peak_wavelength
         # Update rolling averages
         alpha = 0.1  # Exponential moving average factor
         self.metrics.avg_snr = alpha * snr + (1 - alpha) * self.metrics.avg_snr
         self.metrics.transmission_quality = (
-            alpha * transmission_quality
-            + (1 - alpha) * self.metrics.transmission_quality
+            alpha * transmission_quality + (1 - alpha) * self.metrics.transmission_quality
         )
 
         # Check for degraded signal quality
@@ -261,9 +260,7 @@ class SystemIntelligence:
             self._report_issue(
                 SystemIssue(
                     category=IssueCategory.DATA_QUALITY,
-                    severity=IssueSeverity.WARNING
-                    if snr > 5.0
-                    else IssueSeverity.ERROR,
+                    severity=IssueSeverity.WARNING if snr > 5.0 else IssueSeverity.ERROR,
                     title=f"Low SNR on Channel {channel.upper()}",
                     description=f"Signal-to-noise ratio ({snr:.1f}dB) is below threshold",
                     symptoms=[
@@ -306,8 +303,7 @@ class SystemIntelligence:
         # Exponential moving average
         alpha = 0.05
         self.metrics.led_intensity_degradation[channel] = (
-            alpha * degradation
-            + (1 - alpha) * self.metrics.led_intensity_degradation[channel]
+            alpha * degradation + (1 - alpha) * self.metrics.led_intensity_degradation[channel]
         )
 
         # Check for LED failure
@@ -315,9 +311,7 @@ class SystemIntelligence:
             self._report_issue(
                 SystemIssue(
                     category=IssueCategory.OPTICAL,
-                    severity=IssueSeverity.WARNING
-                    if degradation < 0.3
-                    else IssueSeverity.ERROR,
+                    severity=IssueSeverity.WARNING if degradation < 0.3 else IssueSeverity.ERROR,
                     title=f"LED Degradation on Channel {channel.upper()}",
                     description=f"LED intensity {intensity:.0f} is {degradation * 100:.1f}% below target {target:.0f}",
                     symptoms=["Weak signal", "Failed calibration", "Low transmission"],
@@ -483,7 +477,9 @@ class SystemIntelligence:
         return recommendations
 
     def _analyze_calibration_failures(
-        self, failed_channels: list[str], quality_scores: dict,
+        self,
+        failed_channels: list[str],
+        quality_scores: dict,
     ) -> None:
         """Analyze patterns in calibration failures to diagnose root cause."""
         if len(failed_channels) == 4:
@@ -545,10 +541,7 @@ class SystemIntelligence:
         """Register a new issue if not already active."""
         # Check if similar issue already exists
         for active_issue in self.active_issues:
-            if (
-                active_issue.category == issue.category
-                and active_issue.title == issue.title
-            ):
+            if active_issue.category == issue.category and active_issue.title == issue.title:
                 # Update existing issue
                 active_issue.metrics.update(issue.metrics)
                 active_issue.timestamp = issue.timestamp
@@ -566,13 +559,9 @@ class SystemIntelligence:
             return
 
         # Check severity of active issues
-        has_critical = any(
-            i.severity == IssueSeverity.CRITICAL for i in self.active_issues
-        )
+        has_critical = any(i.severity == IssueSeverity.CRITICAL for i in self.active_issues)
         has_error = any(i.severity == IssueSeverity.ERROR for i in self.active_issues)
-        has_warning = any(
-            i.severity == IssueSeverity.WARNING for i in self.active_issues
-        )
+        has_warning = any(i.severity == IssueSeverity.WARNING for i in self.active_issues)
 
         if has_critical:
             self.system_state = SystemState.ERROR
@@ -607,17 +596,12 @@ class SystemIntelligence:
         report = {
             "session_info": {
                 "start_time": self.session_start_time.isoformat(),
-                "duration_hours": (
-                    datetime.now() - self.session_start_time
-                ).total_seconds()
-                / 3600,
+                "duration_hours": (datetime.now() - self.session_start_time).total_seconds() / 3600,
                 "system_state": self.system_state.value,
             },
             "metrics": self.metrics.to_dict(),
             "active_issues": [issue.to_dict() for issue in self.active_issues],
-            "issue_history": [
-                issue.to_dict() for issue in self.issue_history[-100:]
-            ],  # Last 100
+            "issue_history": [issue.to_dict() for issue in self.issue_history[-100:]],  # Last 100
             "maintenance_recommendations": self.get_maintenance_recommendations(),
         }
 

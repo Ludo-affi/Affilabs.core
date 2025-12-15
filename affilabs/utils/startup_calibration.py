@@ -169,7 +169,9 @@ from settings import (
 # Set to False to use legacy Step 3-5 calibration
 USE_LED_CONVERGENCE = True  # DEFAULT: Use optimized LED convergence workflow
 # Use batch LED command in convergence & preflight for identical behavior
-CONVERGENCE_USE_BATCH_COMMAND = True  # ALWAYS use batch commands (more reliable, avoids LED-off race condition)
+CONVERGENCE_USE_BATCH_COMMAND = (
+    True  # ALWAYS use batch commands (more reliable, avoids LED-off race condition)
+)
 
 # Number of scans to use during calibration convergence (minimum 3)
 # Live acquisition num_scans is calculated based on detector window during calibration
@@ -204,10 +206,9 @@ QC_MAX_FWHM_NM = 100.0  # Maximum acceptable FWHM for SPR peak
 
 import contextlib
 
-from models.led_calibration_result import LEDCalibrationResult
-
 from affilabs.core.spectrum_preprocessor import SpectrumPreprocessor
 from affilabs.core.transmission_processor import TransmissionProcessor
+from affilabs.models.led_calibration_result import LEDCalibrationResult
 from affilabs.utils.calibration_helpers import (
     DetectorParams,
     determine_channel_list,
@@ -1270,11 +1271,7 @@ def calculate_qc_top50_metrics(
             sig_top50 = float(np.max(spectrum))
 
         # Calculate percentage of detector saturation
-        pct = (
-            (sig_top50 / detector_max_counts * 100.0)
-            if detector_max_counts
-            else 0.0
-        )
+        pct = (sig_top50 / detector_max_counts * 100.0) if detector_max_counts else 0.0
 
         top50_signals[ch] = sig_top50
         top50_percentages[ch] = pct
@@ -1464,7 +1461,10 @@ def update_channel_convergence_status(
         if channel_status[ch]["within_10pct"] >= CONVERGENCE_10PCT_ITERATIONS_REQUIRED:
             channel_status[ch]["converged"] = True
             return True, f" [CONVERGED ±10% ({CONVERGENCE_10PCT_ITERATIONS_REQUIRED}x)]"
-        return False, f" (±10% {channel_status[ch]['within_10pct']}/{CONVERGENCE_10PCT_ITERATIONS_REQUIRED})"
+        return (
+            False,
+            f" (±10% {channel_status[ch]['within_10pct']}/{CONVERGENCE_10PCT_ITERATIONS_REQUIRED})",
+        )
 
     # Outside tolerance - reset counters
     channel_status[ch]["within_5pct"] = 0
@@ -2226,7 +2226,7 @@ def run_full_7step_calibration(
             logger.error("   - device_config['hardware']['servo_s_position']")
             logger.error("   - device_config['hardware']['servo_p_position']")
             logger.error("")
-            if hasattr(device_config, 'config_file_path'):
+            if hasattr(device_config, "config_file_path"):
                 logger.error(f"   Config file path: {device_config.config_file_path}")
             logger.error("")
             logger.error("   🔧 REQUIRED: Run OEM calibration to generate positions")
@@ -2767,6 +2767,7 @@ def run_full_7step_calibration(
         # Minimum 3 scans required for noise reduction
         try:
             from settings import DETECTOR_WINDOW_MS
+
             detector_window_ms = DETECTOR_WINDOW_MS  # 210ms default
 
             # Use P-mode integration time (typically longer than S-mode)
@@ -2778,7 +2779,7 @@ def run_full_7step_calibration(
             # Set num_scans with minimum of 3
             result.num_scans = max(3, max_scans)
 
-            logger.info(f"[OK] Calculated num_scans for live data:")
+            logger.info("[OK] Calculated num_scans for live data:")
             logger.info(f"   Integration time: {integration_time_ms:.1f}ms")
             logger.info(f"   Detector window: {detector_window_ms:.0f}ms")
             logger.info(f"   Max scans in window: {max_scans}")
@@ -2830,8 +2831,12 @@ def run_full_7step_calibration(
 
                 logger.info("   [OK] S-pol raw data: 4 channels from convergence")
                 logger.info("   [OK] P-pol raw data: 4 channels from convergence")
-                logger.info("   [OK] S-mode dark references: 4 channels from convergence")
-                logger.info("   [OK] P-mode dark references: 4 channels from convergence")
+                logger.info(
+                    "   [OK] S-mode dark references: 4 channels from convergence",
+                )
+                logger.info(
+                    "   [OK] P-mode dark references: 4 channels from convergence",
+                )
                 logger.info(
                     f"   [OK] S-mode integration time: {result.s_integration_time:.2f}ms",
                 )
@@ -2900,7 +2905,9 @@ def run_full_7step_calibration(
                         logger.warning(
                             "   [WARN] Applying runtime swap for correct transmission calculation",
                         )
-                        logger.warning("   Note: Servo EEPROM positions are NOT changed")
+                        logger.warning(
+                            "   Note: Servo EEPROM positions are NOT changed",
+                        )
                         # Swap raw references for correct transmission calculation
                         s_raw_corrected = result.p_raw_data
                         p_raw_corrected = result.s_raw_data
@@ -3113,9 +3120,13 @@ def run_full_7step_calibration(
 
                 # Add model validation results to QC for reporting
                 if convergence_result.get("model_validation_s"):
-                    result.qc_results["model_validation_s"] = convergence_result["model_validation_s"]
+                    result.qc_results["model_validation_s"] = convergence_result[
+                        "model_validation_s"
+                    ]
                 if convergence_result.get("model_validation_p"):
-                    result.qc_results["model_validation_p"] = convergence_result["model_validation_p"]
+                    result.qc_results["model_validation_p"] = convergence_result[
+                        "model_validation_p"
+                    ]
 
                 result.qc_results = qc_results
                 result.ch_error_list = [
@@ -3165,10 +3176,10 @@ def run_full_7step_calibration(
                 P_MODE_INTEGRATION_CAP_MS = 65.0
                 if result.p_integration_time > P_MODE_INTEGRATION_CAP_MS:
                     logger.warning(
-                        f"⚠️  P-mode integration time ({result.p_integration_time:.1f}ms) exceeds budget cap ({P_MODE_INTEGRATION_CAP_MS}ms)"
+                        f"⚠️  P-mode integration time ({result.p_integration_time:.1f}ms) exceeds budget cap ({P_MODE_INTEGRATION_CAP_MS}ms)",
                     )
                     logger.warning(
-                        f"   This may result in below-target signal intensity but is allowed to pass QC"
+                        "   This may result in below-target signal intensity but is allowed to pass QC",
                     )
 
                 if (
@@ -3508,7 +3519,9 @@ def run_convergence_calibration_steps_3_to_5(
                 logger.error("❌ CRITICAL ERROR: NO DETECTOR SERIAL NUMBER")
                 logger.error("=" * 80)
                 logger.error(f"   Detector serial: {detector_serial}")
-                logger.error("   A valid detector serial number is required to load the model.")
+                logger.error(
+                    "   A valid detector serial number is required to load the model.",
+                )
                 logger.error("=" * 80)
                 result["error"] = f"No valid detector serial number: {detector_serial}"
                 return result
@@ -3525,6 +3538,7 @@ def run_convergence_calibration_steps_3_to_5(
             logger.error(f"   3. Current detector serial: {detector_serial}")
             logger.error("")
             from pathlib import Path
+
             model_dir = Path("led_calibration_official")
             if model_dir.exists():
                 logger.error(f"   Model directory exists: {model_dir.absolute()}")
@@ -3533,7 +3547,9 @@ def run_convergence_calibration_steps_3_to_5(
                 logger.error(f"   Model directory NOT FOUND: {model_dir.absolute()}")
             logger.error("")
             logger.error("   🔧 REQUIRED: Run OEM LED calibration to create model")
-            logger.error("   Command: python led_calibration_official/1_create_model.py")
+            logger.error(
+                "   Command: python led_calibration_official/1_create_model.py",
+            )
             logger.error("=" * 80)
             result["error"] = f"Model not found for detector {detector_serial}: {e}"
             return result
@@ -3555,8 +3571,12 @@ def run_convergence_calibration_steps_3_to_5(
             logger.error("=" * 80)
             logger.error("❌ CRITICAL ERROR: MODEL DID NOT PROVIDE INTEGRATION TIME")
             logger.error("=" * 80)
-            logger.error("   The model loaded but failed to calculate integration time.")
-            logger.error("   This indicates a problem with the model or input parameters.")
+            logger.error(
+                "   The model loaded but failed to calculate integration time.",
+            )
+            logger.error(
+                "   This indicates a problem with the model or input parameters.",
+            )
             logger.error("=" * 80)
             result["error"] = (
                 "Model failed to provide integration time - cannot proceed"
@@ -3669,7 +3689,10 @@ def run_convergence_calibration_steps_3_to_5(
         model_slopes_s = None
         if loaded_model:
             try:
-                model_slopes_s = loaded_model.get_slopes(polarization="S", channels=ch_list_upper)
+                model_slopes_s = loaded_model.get_slopes(
+                    polarization="S",
+                    channels=ch_list_upper,
+                )
                 logger.info(f"   📊 Model slopes (S-pol): {model_slopes_s}")
             except Exception as e:
                 logger.warning(f"   ⚠  Could not extract model slopes: {e}")
@@ -3703,7 +3726,7 @@ def run_convergence_calibration_steps_3_to_5(
         # CRITICAL: Turn off LED D explicitly after S-mode convergence
         # Convergence cycles A→B→C→D, each LED turning on disables previous
         # But LED D has no "next LED" so it stays ON at the end
-        ctrl.set_intensity('d', 0)
+        ctrl.set_intensity("d", 0)
         time.sleep(0.05)
         logger.debug("[S-CONV] LED D explicitly disabled after convergence")
 
@@ -3836,12 +3859,12 @@ def run_convergence_calibration_steps_3_to_5(
         # === STEP 4: Capture S-pol reference (RAW) ===
         logger.info("")
         logger.info("📸 Step 4: Capturing S-pol reference spectra...")
-        
+
         # CRITICAL: Turn off all LEDs first to ensure clean state
         # Convergence may have left LED D enabled
         ctrl.turn_off_channels()
         time.sleep(0.1)
-        
+
         # Capture S-pol reference using per-channel integration times when available
         for ch in ch_list:
             ch_time = result.get("s_channel_integration_times", {}).get(
@@ -3975,8 +3998,13 @@ def run_convergence_calibration_steps_3_to_5(
         model_slopes_p = None
         if loaded_model:
             try:
-                model_slopes_p = loaded_model.get_slopes(polarization="S", channels=ch_list_upper)  # Use S-pol slopes for P-pol!
-                logger.info(f"   📊 Model slopes (P-pol using S-pol slopes): {model_slopes_p}")
+                model_slopes_p = loaded_model.get_slopes(
+                    polarization="S",
+                    channels=ch_list_upper,
+                )  # Use S-pol slopes for P-pol!
+                logger.info(
+                    f"   📊 Model slopes (P-pol using S-pol slopes): {model_slopes_p}",
+                )
             except Exception as e:
                 logger.warning(f"   ⚠  Could not extract model slopes: {e}")
 
@@ -4011,7 +4039,7 @@ def run_convergence_calibration_steps_3_to_5(
         # CRITICAL: Turn off LED D explicitly after P-mode convergence
         # Convergence cycles A→B→C→D, each LED turning on disables previous
         # But LED D has no "next LED" so it stays ON at the end
-        ctrl.set_intensity('d', 0)
+        ctrl.set_intensity("d", 0)
         time.sleep(0.05)
         logger.debug("[P-CONV] LED D explicitly disabled after convergence")
 
@@ -4101,12 +4129,12 @@ def run_convergence_calibration_steps_3_to_5(
         # === STEP 5B: Capture P-pol reference (RAW) ===
         logger.info("")
         logger.info("📸 Step 5B: Capturing P-pol reference spectra...")
-        
+
         # CRITICAL: Turn off all LEDs first to ensure clean state
         # Convergence may have left LED D enabled
         ctrl.turn_off_channels()
         time.sleep(0.1)
-        
+
         usb.set_integration(result["p_integration_time"])
         time.sleep(0.1)
 
@@ -4163,7 +4191,9 @@ def run_convergence_calibration_steps_3_to_5(
             # Use average integration time for single dark capture
             avg_time = (s_int_time + p_int_time) / 2
             logger.info(f"   Integration times within 10ms (Δ={time_diff:.2f}ms)")
-            logger.info(f"   Capturing single dark at {avg_time:.2f}ms for both S and P")
+            logger.info(
+                f"   Capturing single dark at {avg_time:.2f}ms for both S and P",
+            )
 
             usb.set_integration(avg_time)
             time.sleep(0.2)
@@ -4181,8 +4211,10 @@ def run_convergence_calibration_steps_3_to_5(
             result["dark_p"] = dark_p_dict
             result["dark_spectrum"] = dark_full  # Keep legacy field
 
-            logger.info(f"   [OK] Single dark captured: max={np.max(dark_full):.1f} counts")
-            logger.info(f"   [OK] Applied to both S-mode and P-mode")
+            logger.info(
+                f"   [OK] Single dark captured: max={np.max(dark_full):.1f} counts",
+            )
+            logger.info("   [OK] Applied to both S-mode and P-mode")
 
         else:
             # Capture separate darks for S and P modes
@@ -4232,7 +4264,6 @@ def run_convergence_calibration_steps_3_to_5(
         logger.info("=" * 80)
 
         try:
-
             from affilabs.utils.model_loader import (
                 LEDCalibrationModelLoader,
                 ModelValidationError,

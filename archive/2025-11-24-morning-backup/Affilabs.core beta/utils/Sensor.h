@@ -10,7 +10,7 @@
 		#define SENSOR_DLL __declspec(dllimport)
 	#endif
 #else
-		#define SENSOR_DLL 
+		#define SENSOR_DLL
 #endif
 
 #include <stdio.h>

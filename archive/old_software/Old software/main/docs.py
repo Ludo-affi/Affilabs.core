@@ -16,14 +16,10 @@ def make(*, preview: bool = False) -> None:
     # Settings for hte documentation generator
     render.configure(
         edit_url_map={
-            "main":
-            "https://gitlab.com/affinite-software/ezcontrol/-/blob/main/main.py",
-            "widgets":
-            "https://gitlab.com/affinite-software/ezcontrol/-/tree/main/widgets/",
-            "utils":
-            "https://gitlab.com/affinite-software/ezcontrol/-/tree/main/utils/",
-            "settings":
-            "https://gitlab.com/affinite-software/ezcontrol/-/blob/main/settings.py",
+            "main": "https://gitlab.com/affinite-software/ezcontrol/-/blob/main/main.py",
+            "widgets": "https://gitlab.com/affinite-software/ezcontrol/-/tree/main/widgets/",
+            "utils": "https://gitlab.com/affinite-software/ezcontrol/-/tree/main/utils/",
+            "settings": "https://gitlab.com/affinite-software/ezcontrol/-/blob/main/settings.py",
         },
         logo="/ezcontrol/logo.png",
         logo_link="https://www.affiniteinstruments.com/",
@@ -57,6 +53,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     make(preview=args.preview)
+
 
 if __name__ == "__main__":
     main()

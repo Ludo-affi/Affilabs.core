@@ -1,16 +1,15 @@
 """Menu for setting reference channel, data filtering, and units."""
 
-
 from typing import Literal, Self
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QRadioButton, QVBoxLayout, QWidget
 
-from ui.ui_channelmenu import Ui_ChannelMenu
+from affilabs.ui.ui_channelmenu import Ui_ChannelMenu
 from affilabs.utils.logger import logger
-from widgets.metadata import Metadata
-import settings.settings as settings
+from affilabs.widgets.metadata import Metadata
+from settings import settings
 
 
 class ChannelMenu(QWidget):
@@ -119,12 +118,12 @@ class ChannelMenu(QWidget):
     def unit_change_ru(self: Self) -> None:
         """Change units to RU."""
         self.unit_to_ru_signal.emit()
-        self.ui.noRef.setChecked(True)  # noqa: FBT003
+        self.ui.noRef.setChecked(True)
 
     def unit_change_nm(self: Self) -> None:
         """Change units to nm."""
         self.unit_to_nm_signal.emit()
-        self.ui.noRef.setChecked(True)  # noqa: FBT003
+        self.ui.noRef.setChecked(True)
 
     def _validate_filter_window(self: Self) -> int:
         """Validate and clamp filter window size to valid range [3, 51]."""

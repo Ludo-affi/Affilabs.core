@@ -1,15 +1,23 @@
-"""
-Minimal test: Acquisition worker → Queue → Main thread → Live graph display
+"""Minimal test: Acquisition worker → Queue → Main thread → Live graph display
 Proves the data pipeline works without calibration complexity.
 """
-import sys
-import time
-import numpy as np
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton
-from PySide6.QtCore import QTimer, Signal, QObject
-import pyqtgraph as pg
+
 import queue
+import sys
 import threading
+import time
+
+import numpy as np
+import pyqtgraph as pg
+from PySide6.QtCore import QObject, QTimer
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 # Mock hardware that generates fake SPR data
 class MockHardware:
@@ -26,11 +34,14 @@ class MockHardware:
 
         # Generate baseline + SPR dip
         baseline = 1.0 + 0.05 * np.random.randn(len(self.wavelengths))
-        dip = dip_depth * np.exp(-((self.wavelengths - dip_center) ** 2) / (2 * dip_width ** 2))
+        dip = dip_depth * np.exp(
+            -((self.wavelengths - dip_center) ** 2) / (2 * dip_width**2),
+        )
         spectrum = baseline - dip
 
         self.time_offset += 0.1
         return spectrum
+
 
 # Worker thread: Acquires spectra and puts in queue
 class AcquisitionWorker(QObject):
@@ -53,17 +64,17 @@ class AcquisitionWorker(QObject):
                 time.sleep(0.1)
 
                 # Get spectrum from mock hardware
-                spectrum = self.hardware.get_spectrum('a')
+                spectrum = self.hardware.get_spectrum("a")
                 wavelengths = self.hardware.wavelengths
 
                 # Put in queue (thread-safe)
                 data = {
-                    'type': 'spectrum',
-                    'channel': 'a',
-                    'wavelengths': wavelengths,
-                    'intensity': spectrum,
-                    'timestamp': time.time(),
-                    'count': count
+                    "type": "spectrum",
+                    "channel": "a",
+                    "wavelengths": wavelengths,
+                    "intensity": spectrum,
+                    "timestamp": time.time(),
+                    "count": count,
                 }
                 self.data_queue.put_nowait(data)
                 count += 1
@@ -74,6 +85,7 @@ class AcquisitionWorker(QObject):
             except Exception as e:
                 print(f"[ERROR] Worker error: {e}")
                 import traceback
+
                 traceback.print_exc()
                 break
 
@@ -84,6 +96,7 @@ class AcquisitionWorker(QObject):
         print("Stopping worker...")
         self.running = False
         self.stop_flag.set()
+
 
 # Main window with live graph
 class LiveDisplayWindow(QMainWindow):
@@ -111,15 +124,15 @@ class LiveDisplayWindow(QMainWindow):
 
         # PyQtGraph plot
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setBackground('w')
-        self.plot_widget.setLabel('left', 'Intensity', units='AU')
-        self.plot_widget.setLabel('bottom', 'Wavelength', units='nm')
-        self.plot_widget.setTitle('Channel A - Live SPR Spectrum')
+        self.plot_widget.setBackground("w")
+        self.plot_widget.setLabel("left", "Intensity", units="AU")
+        self.plot_widget.setLabel("bottom", "Wavelength", units="nm")
+        self.plot_widget.setTitle("Channel A - Live SPR Spectrum")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         layout.addWidget(self.plot_widget)
 
         # Plot curve
-        self.curve = self.plot_widget.plot(pen=pg.mkPen(color='b', width=2))
+        self.curve = self.plot_widget.plot(pen=pg.mkPen(color="b", width=2))
 
         # Worker thread
         self.worker = None
@@ -148,7 +161,11 @@ class LiveDisplayWindow(QMainWindow):
         self.worker = AcquisitionWorker(self.data_queue)
 
         # Start worker thread
-        self.worker_thread = threading.Thread(target=self.worker.run, daemon=True, name="AcqWorker")
+        self.worker_thread = threading.Thread(
+            target=self.worker.run,
+            daemon=True,
+            name="AcqWorker",
+        )
         self.worker_thread.start()
 
         # Start queue processing timer (main thread)
@@ -179,7 +196,9 @@ class LiveDisplayWindow(QMainWindow):
             self.process_queue()
 
         elapsed = time.time() - self.start_time if self.start_time else 0
-        print(f"[OK] Acquisition stopped - {self.spectrum_count} spectra in {elapsed:.1f}s ({self.spectrum_count/elapsed:.1f} Hz)")
+        print(
+            f"[OK] Acquisition stopped - {self.spectrum_count} spectra in {elapsed:.1f}s ({self.spectrum_count/elapsed:.1f} Hz)",
+        )
 
     def process_queue(self):
         """Process data queue in main thread (Qt-safe)"""
@@ -191,22 +210,25 @@ class LiveDisplayWindow(QMainWindow):
 
                 data = self.data_queue.get_nowait()
 
-                if data['type'] == 'spectrum':
+                if data["type"] == "spectrum":
                     # Update graph (Qt operations safe in main thread)
-                    self.curve.setData(data['wavelengths'], data['intensity'])
+                    self.curve.setData(data["wavelengths"], data["intensity"])
 
                     self.spectrum_count += 1
 
                     # Update title with stats
                     elapsed = time.time() - self.start_time if self.start_time else 1
                     fps = self.spectrum_count / elapsed
-                    self.plot_widget.setTitle(f"Channel A - Live SPR Spectrum | {self.spectrum_count} spectra | {fps:.1f} Hz")
+                    self.plot_widget.setTitle(
+                        f"Channel A - Live SPR Spectrum | {self.spectrum_count} spectra | {fps:.1f} Hz",
+                    )
 
         except queue.Empty:
             pass
         except Exception as e:
             print(f"[ERROR] Error processing queue: {e}")
             import traceback
+
             traceback.print_exc()
 
     def closeEvent(self, event):
@@ -216,12 +238,13 @@ class LiveDisplayWindow(QMainWindow):
             self.stop_acquisition()
         event.accept()
 
+
 # Main entry point
 def main():
-    print("="*70)
+    print("=" * 70)
     print("Live SPR Display Test")
     print("Tests: Worker thread → Queue → Main thread → PyQtGraph display")
-    print("="*70)
+    print("=" * 70)
 
     app = QApplication(sys.argv)
 
@@ -235,5 +258,6 @@ def main():
 
     sys.exit(app.exec())
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -1,7 +1,8 @@
 """Check Step 6 S-ref signals and dark levels to diagnose suppression."""
 
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Load calibration data
 calib_dir = Path("calibration_data")
@@ -9,10 +10,10 @@ calib_dir = Path("calibration_data")
 # Find latest dark and S-ref files
 dark_latest = calib_dir / "dark_noise_latest.npy"
 s_refs = {
-    'a': calib_dir / "s_ref_a_latest.npy",
-    'b': calib_dir / "s_ref_b_latest.npy",
-    'c': calib_dir / "s_ref_c_latest.npy",
-    'd': calib_dir / "s_ref_d_latest.npy",
+    "a": calib_dir / "s_ref_a_latest.npy",
+    "b": calib_dir / "s_ref_b_latest.npy",
+    "c": calib_dir / "s_ref_c_latest.npy",
+    "d": calib_dir / "s_ref_d_latest.npy",
 }
 
 print("=" * 80)
@@ -23,7 +24,7 @@ print()
 # Check dark noise
 if dark_latest.exists():
     dark = np.load(dark_latest)
-    print(f"Dark Noise (Step 5):")
+    print("Dark Noise (Step 5):")
     print(f"  File: {dark_latest}")
     print(f"  Length: {len(dark)} pixels")
     print(f"  Mean: {np.mean(dark):.1f} counts")
@@ -60,7 +61,7 @@ for ch, path in s_refs.items():
 
         # Check if signal looks suppressed (below expected ~49,000)
         if roi_mean < 30000:
-            print(f"  ⚠️  WARNING: Signal appears SUPPRESSED (expected ~49,000)")
+            print("  ⚠️  WARNING: Signal appears SUPPRESSED (expected ~49,000)")
 
         print()
     else:

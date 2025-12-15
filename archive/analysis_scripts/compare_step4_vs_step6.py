@@ -1,26 +1,25 @@
-"""
-Compare Step 4 raw values vs Step 6 dark-subtracted values
+"""Compare Step 4 raw values vs Step 6 dark-subtracted values
 The ONLY difference should be ~3000 counts (the dark level)
 """
+
 import json
-import numpy as np
 from pathlib import Path
 
 # Load device config
-with open('config/device_config.json', 'r', encoding='utf-8') as f:
+with open("config/device_config.json", encoding="utf-8") as f:
     config = json.load(f)
 
-led_cal = config.get('led_calibration', {})
+led_cal = config.get("led_calibration", {})
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("STEP 4 vs STEP 6 SIGNAL COMPARISON")
-print("="*80)
+print("=" * 80)
 
 # Get Step 6 S-ref max intensities (dark-subtracted)
-s_ref_max = led_cal.get('s_ref_max_intensity', {})
+s_ref_max = led_cal.get("s_ref_max_intensity", {})
 
 print("\n📊 Step 6 S-ref Maximum Intensities (DARK-SUBTRACTED):")
-for ch in ['a', 'b', 'c', 'd']:
+for ch in ["a", "b", "c", "d"]:
     if ch in s_ref_max:
         print(f"  Channel {ch.upper()}: {s_ref_max[ch]:,.1f} counts")
 
@@ -45,9 +44,9 @@ if step4_diagnostics.exists():
     else:
         print("❌ No Step 6 diagnostic plots found")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("EXPECTED RELATIONSHIP:")
-print("="*80)
+print("=" * 80)
 print("""
 Step 4 Raw S-pol ≈ Step 6 S-ref + Dark Noise
 OR
@@ -61,19 +60,21 @@ If Step 6 values are DRAMATICALLY different from Step 4 values (more than
   - Hardware issue
 """)
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("CHECKING FOR RED FLAGS:")
-print("="*80)
+print("=" * 80)
 
 # Expected dark level
 expected_dark = 3000
 
 # Estimate what Step 4 raw values should have been
-print(f"\n🔍 If dark = ~{expected_dark:,} counts, then Step 4 raw S-pol should have been:")
+print(
+    f"\n🔍 If dark = ~{expected_dark:,} counts, then Step 4 raw S-pol should have been:",
+)
 print(f"   (Step 6 dark-subtracted + {expected_dark:,})")
 print()
 
-for ch in ['a', 'b', 'c', 'd']:
+for ch in ["a", "b", "c", "d"]:
     if ch in s_ref_max:
         step6_value = s_ref_max[ch]
         expected_step4 = step6_value + expected_dark
@@ -83,19 +84,19 @@ for ch in ['a', 'b', 'c', 'd']:
         print(f"    Expected Step 4 (raw):    {expected_step4:>10,.1f} counts")
 
         # Red flag check
-        if ch == 'b' and step6_value >= 65535:
-            print(f"    ⚠️  SATURATED - Channel B is at detector max")
+        if ch == "b" and step6_value >= 65535:
+            print("    ⚠️  SATURATED - Channel B is at detector max")
         elif step6_value < 30000:
-            print(f"    🚩 RED FLAG: Signal appears SUPPRESSED (too low)")
+            print("    🚩 RED FLAG: Signal appears SUPPRESSED (too low)")
         elif step6_value > 60000:
-            print(f"    🚩 RED FLAG: Signal appears TOO HIGH (approaching saturation)")
+            print("    🚩 RED FLAG: Signal appears TOO HIGH (approaching saturation)")
         else:
-            print(f"    ✅ Signal level looks reasonable")
+            print("    ✅ Signal level looks reasonable")
         print()
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("ACTION NEEDED:")
-print("="*80)
+print("=" * 80)
 print("""
 1. Look at your Step 4 diagnostic plot (step4_raw_spol_diagnostic_*.png)
    - Note the ROI mean values in Panel 2

@@ -10,13 +10,14 @@ This class manages:
 All file operations are handled safely to avoid blocking the UI.
 """
 
-from PySide6.QtCore import QObject, Signal
-from utils.logger import logger
-from typing import Optional, Dict, List
-from pathlib import Path
 import csv
-import time
 import datetime as dt
+import time
+from pathlib import Path
+
+from PySide6.QtCore import QObject, Signal
+
+from utils.logger import logger
 
 
 class RecordingManager(QObject):
@@ -49,9 +50,9 @@ class RecordingManager(QObject):
         self.auto_save_interval = 60  # seconds
         self.last_save_time = 0
 
-        pass  # Initialized silently
+        # Initialized silently
 
-    def start_recording(self, filename: Optional[str] = None):
+    def start_recording(self, filename: str | None = None):
         """Start recording data to file."""
         if self.is_recording:
             logger.warning("Recording already in progress")
@@ -70,11 +71,18 @@ class RecordingManager(QObject):
             filepath = self.output_directory / filename
 
             # Open file for writing
-            self.file_handle = open(filepath, 'w', newline='', encoding='utf-8')
+            self.file_handle = open(filepath, "w", newline="", encoding="utf-8")
             self.csv_writer = csv.writer(self.file_handle)
 
             # Write header
-            header = ['Timestamp', 'Time_Elapsed', 'Channel_A', 'Channel_B', 'Channel_C', 'Channel_D']
+            header = [
+                "Timestamp",
+                "Time_Elapsed",
+                "Channel_A",
+                "Channel_B",
+                "Channel_C",
+                "Channel_D",
+            ]
             self.csv_writer.writerow(header)
 
             # Update state
@@ -100,8 +108,8 @@ class RecordingManager(QObject):
             # Write event log as footer
             if self.events:
                 self.csv_writer.writerow([])
-                self.csv_writer.writerow(['Event Log'])
-                self.csv_writer.writerow(['Timestamp', 'Event'])
+                self.csv_writer.writerow(["Event Log"])
+                self.csv_writer.writerow(["Timestamp", "Event"])
                 for timestamp, event in self.events:
                     elapsed = timestamp - self.recording_start_time
                     self.csv_writer.writerow([elapsed, event])
@@ -131,12 +139,13 @@ class RecordingManager(QObject):
         self.current_file = None
         self.events.clear()
 
-    def record_data_point(self, data: Dict):
+    def record_data_point(self, data: dict):
         """Record a single data point to file.
 
         Args:
             data: Dictionary with keys 'channel_a', 'channel_b', 'channel_c', 'channel_d'
                   Each value should be a wavelength (float)
+
         """
         if not self.is_recording:
             return
@@ -149,10 +158,10 @@ class RecordingManager(QObject):
             row = [
                 timestamp,
                 elapsed,
-                data.get('channel_a', ''),
-                data.get('channel_b', ''),
-                data.get('channel_c', ''),
-                data.get('channel_d', '')
+                data.get("channel_a", ""),
+                data.get("channel_b", ""),
+                data.get("channel_c", ""),
+                data.get("channel_d", ""),
             ]
 
             self.csv_writer.writerow(row)
@@ -166,8 +175,13 @@ class RecordingManager(QObject):
         except Exception as e:
             logger.error(f"Failed to record data point: {e}")
 
-    def log_event(self, event: str, channel: Optional[str] = None,
-                   flow: Optional[str] = None, temp: Optional[str] = None):
+    def log_event(
+        self,
+        event: str,
+        channel: str | None = None,
+        flow: str | None = None,
+        temp: str | None = None,
+    ):
         """Log an event with timestamp.
 
         Args:
@@ -175,6 +189,7 @@ class RecordingManager(QObject):
             channel: Optional channel identifier
             flow: Optional flow rate
             temp: Optional temperature
+
         """
         try:
             timestamp = time.time()
@@ -199,24 +214,25 @@ class RecordingManager(QObject):
         except Exception as e:
             logger.error(f"Failed to log event: {e}")
 
-    def export_to_excel(self, csv_path: Path, excel_path: Optional[Path] = None):
+    def export_to_excel(self, csv_path: Path, excel_path: Path | None = None):
         """Export CSV data to Excel format.
 
         Args:
             csv_path: Path to CSV file
             excel_path: Optional output path for Excel file
+
         """
         try:
             import pandas as pd
 
             if excel_path is None:
-                excel_path = csv_path.with_suffix('.xlsx')
+                excel_path = csv_path.with_suffix(".xlsx")
 
             # Read CSV
             df = pd.read_csv(csv_path)
 
             # Write to Excel
-            df.to_excel(excel_path, index=False, engine='openpyxl')
+            df.to_excel(excel_path, index=False, engine="openpyxl")
 
             logger.info(f"Data exported to Excel: {excel_path}")
 
@@ -235,21 +251,23 @@ class RecordingManager(QObject):
             logger.error(f"Failed to set output directory: {e}")
             self.recording_error.emit(f"Invalid output directory: {e}")
 
-    def get_recording_info(self) -> Dict:
+    def get_recording_info(self) -> dict:
         """Get current recording information."""
         if not self.is_recording:
             return {
-                'recording': False,
-                'filename': None,
-                'elapsed_time': 0,
-                'event_count': 0
+                "recording": False,
+                "filename": None,
+                "elapsed_time": 0,
+                "event_count": 0,
             }
 
-        elapsed = time.time() - self.recording_start_time if self.recording_start_time else 0
+        elapsed = (
+            time.time() - self.recording_start_time if self.recording_start_time else 0
+        )
 
         return {
-            'recording': True,
-            'filename': str(self.current_file) if self.current_file else None,
-            'elapsed_time': elapsed,
-            'event_count': len(self.events)
+            "recording": True,
+            "filename": str(self.current_file) if self.current_file else None,
+            "elapsed_time": elapsed,
+            "event_count": len(self.events),
         }

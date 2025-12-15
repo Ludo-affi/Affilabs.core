@@ -45,29 +45,30 @@ Author: GitHub Copilot (generated for control-3.2.9)
 Date: October 11, 2025
 """
 
-from pathlib import Path
 import json
+from pathlib import Path
+
 import numpy as np
 from scipy.interpolate import CubicSpline
-from utils.logger import logger
 
+from utils.logger import logger
 
 # LED Type Specifications and Expected Ranges
 LED_SPECS = {
-    'LCW': {  # Luminus Cool White
-        'name': 'Luminus Cool White',
-        'tau_range_ms': (15, 26),  # Expected tau range (will refine as we learn)
-        'tau_warn_range_ms': (10, 35),  # Warning thresholds
-        'r_squared_min': 0.85,  # Minimum acceptable fit quality
-        'r_squared_good': 0.95,  # Good fit quality
+    "LCW": {  # Luminus Cool White
+        "name": "Luminus Cool White",
+        "tau_range_ms": (15, 26),  # Expected tau range (will refine as we learn)
+        "tau_warn_range_ms": (10, 35),  # Warning thresholds
+        "r_squared_min": 0.85,  # Minimum acceptable fit quality
+        "r_squared_good": 0.95,  # Good fit quality
     },
-    'OWW': {  # Osram Warm White
-        'name': 'Osram Warm White',
-        'tau_range_ms': (14, 24),  # Expected tau range (will refine as we learn)
-        'tau_warn_range_ms': (10, 35),  # Warning thresholds
-        'r_squared_min': 0.85,  # Minimum acceptable fit quality
-        'r_squared_good': 0.95,  # Good fit quality
-    }
+    "OWW": {  # Osram Warm White
+        "name": "Osram Warm White",
+        "tau_range_ms": (14, 24),  # Expected tau range (will refine as we learn)
+        "tau_warn_range_ms": (10, 35),  # Warning thresholds
+        "r_squared_min": 0.85,  # Minimum acceptable fit quality
+        "r_squared_good": 0.95,  # Good fit quality
+    },
 }
 
 
@@ -100,9 +101,13 @@ class AfterglowValidationResult:
         if self.passed and not self.warnings:
             logger.info("✅ Afterglow validation: All checks passed")
         elif self.passed and self.warnings:
-            logger.info(f"⚠️ Afterglow validation: Passed with {len(self.warnings)} warning(s)")
+            logger.info(
+                f"⚠️ Afterglow validation: Passed with {len(self.warnings)} warning(s)",
+            )
         else:
-            logger.warning(f"❌ Afterglow validation: {len(self.errors)} error(s), {len(self.warnings)} warning(s)")
+            logger.warning(
+                f"❌ Afterglow validation: {len(self.errors)} error(s), {len(self.warnings)} warning(s)",
+            )
 
 
 class AfterglowCorrection:
@@ -136,6 +141,7 @@ class AfterglowCorrection:
         Raises:
             FileNotFoundError: If calibration file doesn't exist
             ValueError: If calibration data is invalid or missing required fields
+
         """
         self.calibration_file = Path(calibration_file)
         self.calibration_data = self._load_calibration()
@@ -145,11 +151,11 @@ class AfterglowCorrection:
         logger.info(f"   Channels: {list(self.tau_interpolators.keys())}")
         logger.info(
             f"   Integration time range: "
-            f"{self.int_time_range_ms[0]:.1f}-{self.int_time_range_ms[1]:.1f} ms"
+            f"{self.int_time_range_ms[0]:.1f}-{self.int_time_range_ms[1]:.1f} ms",
         )
         logger.info(
             f"   τ range (Ch A): "
-            f"{self._get_tau_range('a')[0]:.2f}-{self._get_tau_range('a')[1]:.2f} ms"
+            f"{self._get_tau_range('a')[0]:.2f}-{self._get_tau_range('a')[1]:.2f} ms",
         )
 
         # Validate afterglow measurements against expected ranges
@@ -164,54 +170,57 @@ class AfterglowCorrection:
         Raises:
             FileNotFoundError: If file doesn't exist
             ValueError: If file format is invalid
+
         """
         if not self.calibration_file.exists():
             raise FileNotFoundError(
                 f"Optical calibration file not found: {self.calibration_file}\n"
                 f"Expected path (absolute): {self.calibration_file.resolve()}\n"
-                f"Run optical calibration first to generate this file."
+                f"Run optical calibration first to generate this file.",
             )
 
         try:
-            with open(self.calibration_file, 'r') as f:
+            with open(self.calibration_file) as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             raise ValueError(
                 f"Invalid JSON in calibration file: {self.calibration_file}\n"
-                f"Error: {e}"
+                f"Error: {e}",
             )
 
         # Validate structure
-        if 'channel_data' not in data:
+        if "channel_data" not in data:
             raise ValueError(
                 f"Invalid calibration file: missing 'channel_data' key\n"
-                f"File: {self.calibration_file}"
+                f"File: {self.calibration_file}",
             )
 
         # Validate each channel has required data
-        required_channels = ['a', 'b', 'c', 'd']
+        required_channels = ["a", "b", "c", "d"]
         for channel in required_channels:
-            if channel not in data['channel_data']:
+            if channel not in data["channel_data"]:
                 raise ValueError(
                     f"Missing channel '{channel}' in calibration data\n"
-                    f"Available channels: {list(data['channel_data'].keys())}"
+                    f"Available channels: {list(data['channel_data'].keys())}",
                 )
 
-            ch_data = data['channel_data'][channel]
-            if 'integration_time_data' not in ch_data:
+            ch_data = data["channel_data"][channel]
+            if "integration_time_data" not in ch_data:
                 raise ValueError(
                     f"Channel '{channel}' missing 'integration_time_data'\n"
-                    f"Available keys: {list(ch_data.keys())}"
+                    f"Available keys: {list(ch_data.keys())}",
                 )
 
             # Validate at least 3 data points for cubic spline
-            if len(ch_data['integration_time_data']) < 3:
+            if len(ch_data["integration_time_data"]) < 3:
                 raise ValueError(
                     f"Channel '{channel}' has insufficient data points "
-                    f"({len(ch_data['integration_time_data'])}). Need at least 3 for interpolation."
+                    f"({len(ch_data['integration_time_data'])}). Need at least 3 for interpolation.",
                 )
 
-        logger.debug(f"Calibration file validated: {len(data['channel_data'])} channels")
+        logger.debug(
+            f"Calibration file validated: {len(data['channel_data'])} channels",
+        )
         return data
 
     def _build_interpolators(self):
@@ -230,18 +239,18 @@ class AfterglowCorrection:
 
         all_int_times = []
 
-        for channel, ch_data in self.calibration_data['channel_data'].items():
+        for channel, ch_data in self.calibration_data["channel_data"].items():
             # Extract arrays for interpolation
             int_times = []
             taus = []
             amplitudes = []
             baselines = []
 
-            for data_point in ch_data['integration_time_data']:
-                int_times.append(data_point['integration_time_ms'])
-                taus.append(data_point['tau_ms'])
-                amplitudes.append(data_point['amplitude'])
-                baselines.append(data_point['baseline'])
+            for data_point in ch_data["integration_time_data"]:
+                int_times.append(data_point["integration_time_ms"])
+                taus.append(data_point["tau_ms"])
+                amplitudes.append(data_point["amplitude"])
+                baselines.append(data_point["baseline"])
 
             # Build cubic spline interpolators
             # CubicSpline provides smooth interpolation and extrapolation
@@ -251,7 +260,7 @@ class AfterglowCorrection:
 
             logger.debug(
                 f"Ch {channel.upper()}: {len(int_times)} calibration points, "
-                f"τ ∈ [{min(taus):.2f}, {max(taus):.2f}] ms"
+                f"τ ∈ [{min(taus):.2f}, {max(taus):.2f}] ms",
             )
 
             all_int_times.extend(int_times)
@@ -267,11 +276,16 @@ class AfterglowCorrection:
         different LED types.
         """
         # Extract LED type from metadata if available
-        led_type = self.calibration_data.get('metadata', {}).get('led_type', 'LCW')  # Default to Luminus
+        led_type = self.calibration_data.get("metadata", {}).get(
+            "led_type",
+            "LCW",
+        )  # Default to Luminus
 
         if led_type not in LED_SPECS:
-            logger.warning(f"⚠️ Unknown LED type '{led_type}', using LCW defaults for validation")
-            led_type = 'LCW'
+            logger.warning(
+                f"⚠️ Unknown LED type '{led_type}', using LCW defaults for validation",
+            )
+            led_type = "LCW"
 
         specs = LED_SPECS[led_type]
         validation = AfterglowValidationResult()
@@ -279,68 +293,70 @@ class AfterglowCorrection:
         logger.info(f"📊 Validating afterglow data for {specs['name']} ({led_type})")
 
         # Validate each channel
-        for channel, ch_data in self.calibration_data['channel_data'].items():
-            for data_point in ch_data['integration_time_data']:
-                int_time = data_point['integration_time_ms']
-                tau = data_point['tau_ms']
-                amplitude = data_point['amplitude']
-                baseline = data_point.get('baseline', 0)
-                r_squared = data_point.get('r_squared', 0)
+        for channel, ch_data in self.calibration_data["channel_data"].items():
+            for data_point in ch_data["integration_time_data"]:
+                int_time = data_point["integration_time_ms"]
+                tau = data_point["tau_ms"]
+                amplitude = data_point["amplitude"]
+                baseline = data_point.get("baseline", 0)
+                r_squared = data_point.get("r_squared", 0)
 
                 # Check 1: R² fit quality
-                if r_squared < specs['r_squared_min']:
+                if r_squared < specs["r_squared_min"]:
                     validation.add_error(
-                        f"Ch {channel.upper()} @ {int_time}ms: Poor fit quality (R²={r_squared:.3f} < {specs['r_squared_min']})"
+                        f"Ch {channel.upper()} @ {int_time}ms: Poor fit quality (R²={r_squared:.3f} < {specs['r_squared_min']})",
                     )
-                elif r_squared < specs['r_squared_good']:
+                elif r_squared < specs["r_squared_good"]:
                     validation.add_warning(
-                        f"Ch {channel.upper()} @ {int_time}ms: Marginal fit quality (R²={r_squared:.3f})"
+                        f"Ch {channel.upper()} @ {int_time}ms: Marginal fit quality (R²={r_squared:.3f})",
                     )
 
                 # Check 2: Tau within expected range
-                tau_min, tau_max = specs['tau_range_ms']
-                tau_warn_min, tau_warn_max = specs['tau_warn_range_ms']
+                tau_min, tau_max = specs["tau_range_ms"]
+                tau_warn_min, tau_warn_max = specs["tau_warn_range_ms"]
 
                 if tau < tau_warn_min or tau > tau_warn_max:
                     validation.add_error(
                         f"Ch {channel.upper()} @ {int_time}ms: τ={tau:.2f}ms severely outside expected range "
-                        f"[{tau_warn_min}, {tau_warn_max}]ms - possible LED timing issue"
+                        f"[{tau_warn_min}, {tau_warn_max}]ms - possible LED timing issue",
                     )
                 elif tau < tau_min or tau > tau_max:
                     validation.add_warning(
                         f"Ch {channel.upper()} @ {int_time}ms: τ={tau:.2f}ms outside typical range "
-                        f"[{tau_min}, {tau_max}]ms for {specs['name']}"
+                        f"[{tau_min}, {tau_max}]ms for {specs['name']}",
                     )
 
                 # Check 3: Amplitude reasonableness (should not be extreme)
                 if amplitude < 0:
                     validation.add_error(
-                        f"Ch {channel.upper()} @ {int_time}ms: Negative amplitude ({amplitude:.1f}) - fit error"
+                        f"Ch {channel.upper()} @ {int_time}ms: Negative amplitude ({amplitude:.1f}) - fit error",
                     )
                 elif amplitude > 10000:  # Unusually high afterglow
                     validation.add_warning(
                         f"Ch {channel.upper()} @ {int_time}ms: Very high amplitude ({amplitude:.1f} counts) - "
-                        "possible LED not fully turning off"
+                        "possible LED not fully turning off",
                     )
 
                 # Check 4: Baseline stability
                 if baseline < -100:  # Shouldn't have large negative baseline
                     validation.add_warning(
-                        f"Ch {channel.upper()} @ {int_time}ms: Negative baseline ({baseline:.1f} counts)"
+                        f"Ch {channel.upper()} @ {int_time}ms: Negative baseline ({baseline:.1f} counts)",
                     )
                 elif baseline > 1000:  # Baseline shouldn't be very high
                     validation.add_warning(
                         f"Ch {channel.upper()} @ {int_time}ms: High baseline ({baseline:.1f} counts) - "
-                        "LED may not be fully off"
+                        "LED may not be fully off",
                     )
 
         # Check 5: Tau integration time dependency
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             taus = []
             int_times = []
-            for data_point in self.calibration_data['channel_data'][channel]['integration_time_data']:
-                int_times.append(data_point['integration_time_ms'])
-                taus.append(data_point['tau_ms'])
+            for data_point in self.calibration_data["channel_data"][channel][
+                "integration_time_data"
+            ]:
+                int_times.append(data_point["integration_time_ms"])
+                taus.append(data_point["tau_ms"])
 
             # Tau should generally increase or stay stable with integration time
             # (longer exposure accumulates more phosphor energy)
@@ -349,43 +365,45 @@ class AfterglowCorrection:
                 tau_slope = np.polyfit(int_times, taus, 1)[0]  # Linear trend
 
                 # Store metrics for analysis
-                validation.add_metric(f'tau_slope_ch_{channel}', tau_slope)
+                validation.add_metric(f"tau_slope_ch_{channel}", tau_slope)
 
                 if tau_slope < -0.1:  # Decreasing trend is unexpected
                     validation.add_warning(
                         f"Ch {channel.upper()}: τ decreases with integration time (slope={tau_slope:.3f}) - "
-                        "unexpected for phosphor physics"
+                        "unexpected for phosphor physics",
                     )
 
         # Log validation summary
         validation.log_summary()
 
         # Store validation results in metadata for future reference
-        if 'validation' not in self.calibration_data:
-            self.calibration_data['validation'] = {}
+        if "validation" not in self.calibration_data:
+            self.calibration_data["validation"] = {}
 
-        self.calibration_data['validation']['afterglow'] = {
-            'led_type': led_type,
-            'passed': validation.passed,
-            'warnings': validation.warnings,
-            'errors': validation.errors,
-            'metrics': validation.metrics
+        self.calibration_data["validation"]["afterglow"] = {
+            "led_type": led_type,
+            "passed": validation.passed,
+            "warnings": validation.warnings,
+            "errors": validation.errors,
+            "metrics": validation.metrics,
         }
 
     def _get_tau_range(self, channel: str) -> tuple[float, float]:
         """Get τ range for a channel (for logging)."""
         int_times = []
         taus = []
-        for data_point in self.calibration_data['channel_data'][channel]['integration_time_data']:
-            int_times.append(data_point['integration_time_ms'])
-            taus.append(data_point['tau_ms'])
+        for data_point in self.calibration_data["channel_data"][channel][
+            "integration_time_data"
+        ]:
+            int_times.append(data_point["integration_time_ms"])
+            taus.append(data_point["tau_ms"])
         return (min(taus), max(taus))
 
     def calculate_correction(
         self,
         previous_channel: str,
         integration_time_ms: float,
-        delay_ms: float = 5.0
+        delay_ms: float = 5.0,
     ) -> float:
         """Calculate expected afterglow signal from previous channel.
 
@@ -410,6 +428,7 @@ class AfterglowCorrection:
             >>> correction = cal.calculate_correction('a', 55.0, 5.0)
             >>> print(f"Afterglow: {correction:.1f} counts")
             Afterglow: 1234.5 counts
+
         """
         # Normalize channel name to lowercase
         channel_lower = previous_channel.lower()
@@ -418,7 +437,7 @@ class AfterglowCorrection:
         if channel_lower not in self.tau_interpolators:
             raise ValueError(
                 f"Invalid channel: '{previous_channel}'. "
-                f"Available: {list(self.tau_interpolators.keys())}"
+                f"Available: {list(self.tau_interpolators.keys())}",
             )
 
         # Validate integration time
@@ -428,13 +447,13 @@ class AfterglowCorrection:
             raise ValueError(
                 f"Integration time {integration_time_ms:.1f}ms severely out of "
                 f"calibrated range [{min_int:.1f}, {max_int:.1f}]ms. "
-                f"Correction would be unreliable."
+                f"Correction would be unreliable.",
             )
-        elif not (min_int <= integration_time_ms <= max_int):
+        if not (min_int <= integration_time_ms <= max_int):
             # Warning for mild extrapolation
             logger.warning(
                 f"⚠️ Integration time {integration_time_ms:.1f}ms outside calibrated "
-                f"range [{min_int:.1f}, {max_int:.1f}]ms. Using extrapolation."
+                f"range [{min_int:.1f}, {max_int:.1f}]ms. Using extrapolation.",
             )
 
         # Interpolate τ, amplitude, baseline for this integration time
@@ -450,7 +469,7 @@ class AfterglowCorrection:
             f"Ch {previous_channel.upper()} @ {integration_time_ms:.1f}ms, "
             f"delay={delay_ms:.1f}ms → "
             f"τ={tau:.2f}ms, A={amplitude:.1f}, baseline={baseline:.1f} → "
-            f"correction={correction:.1f} counts"
+            f"correction={correction:.1f} counts",
         )
 
         return correction
@@ -460,7 +479,7 @@ class AfterglowCorrection:
         measured_signal: np.ndarray | float,
         previous_channel: str,
         integration_time_ms: float,
-        delay_ms: float = 5.0
+        delay_ms: float = 5.0,
     ) -> np.ndarray | float:
         """Apply afterglow correction to measured signal.
 
@@ -491,9 +510,12 @@ class AfterglowCorrection:
             ...     previous_channel='b',
             ...     integration_time_ms=55.0
             ... )
+
         """
         correction = self.calculate_correction(
-            previous_channel, integration_time_ms, delay_ms
+            previous_channel,
+            integration_time_ms,
+            delay_ms,
         )
 
         # Subtract correction from signal
@@ -510,7 +532,7 @@ class AfterglowCorrection:
     def get_optimal_led_delay(
         self,
         integration_time_ms: float,
-        target_residual_percent: float = 2.0
+        target_residual_percent: float = 2.0,
     ) -> float:
         """Calculate optimal LED delay based on afterglow decay characteristics.
 
@@ -536,6 +558,7 @@ class AfterglowCorrection:
             >>> delay_s = cal.get_optimal_led_delay(55.0, target_residual_percent=2.0)
             >>> print(f"Use LED delay: {delay_s:.3f}s ({delay_s*1000:.1f}ms)")
             Use LED delay: 0.050s (50.0ms)
+
         """
         # Get maximum τ across all channels (worst case = slowest decay)
         max_tau = 0.0
@@ -547,7 +570,7 @@ class AfterglowCorrection:
             int_time = np.clip(
                 integration_time_ms,
                 self.int_time_range_ms[0],
-                self.int_time_range_ms[1]
+                self.int_time_range_ms[1],
             )
 
             tau = float(tau_interp(int_time))
@@ -566,7 +589,7 @@ class AfterglowCorrection:
             f"   Max τ (slowest channel): {max_tau:.2f}ms\n"
             f"   Target residual: {target_residual_percent:.1f}%\n"
             f"   Calculated delay: {delay_ms:.1f}ms\n"
-            f"   With 10% safety margin: {delay_s*1000:.1f}ms ({delay_s:.3f}s)"
+            f"   With 10% safety margin: {delay_s*1000:.1f}ms ({delay_s:.3f}s)",
         )
 
         return delay_s
@@ -581,16 +604,16 @@ class AfterglowCorrection:
             >>> info = cal.get_calibration_info()
             >>> print(f"Calibration from: {info['metadata']['timestamp']}")
             >>> print(f"Channels: {info['channels']}")
+
         """
         return {
-            'file': str(self.calibration_file),
-            'channels': list(self.tau_interpolators.keys()),
-            'integration_time_range_ms': self.int_time_range_ms,
-            'metadata': self.calibration_data.get('metadata', {}),
-            'tau_ranges': {
-                ch: self._get_tau_range(ch)
-                for ch in self.tau_interpolators.keys()
-            }
+            "file": str(self.calibration_file),
+            "channels": list(self.tau_interpolators.keys()),
+            "integration_time_range_ms": self.int_time_range_ms,
+            "metadata": self.calibration_data.get("metadata", {}),
+            "tau_ranges": {
+                ch: self._get_tau_range(ch) for ch in self.tau_interpolators.keys()
+            },
         }
 
     def validate_correction(
@@ -600,7 +623,7 @@ class AfterglowCorrection:
         delay_ms: float,
         measured_uncorrected: float,
         measured_corrected: float,
-        expected_clean: float
+        expected_clean: float,
     ) -> dict:
         """Validate correction by comparing to known clean measurement.
 
@@ -629,9 +652,12 @@ class AfterglowCorrection:
             ...     expected_clean=23450
             ... )
             >>> print(f"Error reduction: {validation['improvement']:.1f}%")
+
         """
         correction = self.calculate_correction(
-            previous_channel, integration_time_ms, delay_ms
+            previous_channel,
+            integration_time_ms,
+            delay_ms,
         )
 
         error_before = abs(measured_uncorrected - expected_clean) / expected_clean * 100
@@ -639,11 +665,11 @@ class AfterglowCorrection:
         improvement = error_before - error_after
 
         result = {
-            'correction_value': correction,
-            'error_before_pct': error_before,
-            'error_after_pct': error_after,
-            'improvement_pct': improvement,
-            'successful': error_after < error_before
+            "correction_value": correction,
+            "error_before_pct": error_before,
+            "error_after_pct": error_after,
+            "improvement_pct": improvement,
+            "successful": error_after < error_before,
         }
 
         logger.info(
@@ -652,7 +678,7 @@ class AfterglowCorrection:
             f"   Error before: {error_before:.2f}%\n"
             f"   Error after: {error_after:.2f}%\n"
             f"   Improvement: {improvement:.2f}%\n"
-            f"   {'✅ SUCCESS' if result['successful'] else '❌ FAILED'}"
+            f"   {'✅ SUCCESS' if result['successful'] else '❌ FAILED'}",
         )
 
         return result
@@ -682,35 +708,36 @@ if __name__ == "__main__":
 
         # Get info
         info = cal.get_calibration_info()
-        print(f"\n📋 Calibration Info:")
+        print("\n📋 Calibration Info:")
         print(f"   File: {info['file']}")
         print(f"   Channels: {info['channels']}")
         print(f"   Integration time range: {info['integration_time_range_ms']}")
 
         # Test interpolation at non-calibrated points
-        print(f"\n🧪 Testing Interpolation:")
+        print("\n🧪 Testing Interpolation:")
         test_int_times = [30.0, 45.0, 60.0]  # Likely between calibrated points
 
         for int_time in test_int_times:
-            correction = cal.calculate_correction('a', int_time, 5.0)
+            correction = cal.calculate_correction("a", int_time, 5.0)
             print(f"   @ {int_time:.1f}ms: {correction:.1f} counts")
 
         # Test array correction
-        print(f"\n📊 Testing Array Correction:")
+        print("\n📊 Testing Array Correction:")
         spectrum = np.ones(2048) * 20000  # Simulated spectrum
-        corrected = cal.apply_correction(spectrum, 'b', 55.0, 5.0)
+        corrected = cal.apply_correction(spectrum, "b", 55.0, 5.0)
         print(f"   Original mean: {np.mean(spectrum):.1f}")
         print(f"   Corrected mean: {np.mean(corrected):.1f}")
         print(f"   Difference: {np.mean(spectrum) - np.mean(corrected):.1f} counts")
 
-        print(f"\n✅ All tests passed!\n")
+        print("\n✅ All tests passed!\n")
 
     except FileNotFoundError as e:
         print(f"\n❌ Error: {e}")
-        print(f"\nℹ️ Run optical calibration first to generate the calibration file.")
+        print("\nℹ️ Run optical calibration first to generate the calibration file.")
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

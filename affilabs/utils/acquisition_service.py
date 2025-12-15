@@ -22,7 +22,10 @@ class AcquisitionService:
     """Handles channel-wise acquisition with LED sequencing and averaging."""
 
     def __init__(
-        self, led: LEDController, spec_info: SpectrometerInfo, spectrum_acq,
+        self,
+        led: LEDController,
+        spec_info: SpectrometerInfo,
+        spectrum_acq,
     ) -> None:
         """Initialize the service.
 

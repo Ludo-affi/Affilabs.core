@@ -270,7 +270,8 @@ class SensorIQClassifier:
             if fwhm_category == "excellent":
                 iq_level = SensorIQLevel.EXCELLENT
                 quality_score = min(
-                    1.0, fwhm_score * 1.1,
+                    1.0,
+                    fwhm_score * 1.1,
                 )  # Bonus for excellent in good zone
             elif fwhm_category == "good":
                 iq_level = SensorIQLevel.GOOD

@@ -38,7 +38,7 @@ As you add more processing complexity (new pipelines, ML models, quality checks)
 ```python
 class SpectrumProcessor:
     """Centralized spectrum processing with pluggable pipelines.
-    
+
     Responsibilities:
     - Execute active pipeline to find resonance wavelength
     - Apply filtering (median, Kalman, etc.)
@@ -46,12 +46,12 @@ class SpectrumProcessor:
     - Track processing statistics
     - Emit quality warnings
     """
-    
+
     def __init__(self, pipeline_registry, fourier_weights):
         self.registry = pipeline_registry
         self.fourier_weights = fourier_weights
         self.processing_stats = {}
-        
+
     def process_spectrum(
         self,
         transmission: np.ndarray,
@@ -59,7 +59,7 @@ class SpectrumProcessor:
         channel: str,
     ) -> dict:
         """Process transmission spectrum and return results.
-        
+
         Returns:
             {
                 'resonance_wavelength': float,
@@ -70,7 +70,7 @@ class SpectrumProcessor:
             }
         """
         # Implementation here
-        
+
     def apply_temporal_filtering(
         self,
         raw_value: float,
@@ -98,7 +98,7 @@ class SpectrumProcessor:
 ```python
 class ChannelManager:
     """Manages channel iteration and data buffering.
-    
+
     Responsibilities:
     - Determine active channels based on device type
     - Manage channel-specific buffers
@@ -106,20 +106,20 @@ class ChannelManager:
     - Pad missing values
     - Emit per-channel events
     """
-    
+
     def __init__(self, device_config):
         self.device_config = device_config
         self.lambda_values = {ch: np.array([]) for ch in CH_LIST}
         self.lambda_times = {ch: np.array([]) for ch in CH_LIST}
         self.filtered_lambda = {ch: np.array([]) for ch in CH_LIST}
         # ... other buffers
-        
+
     def get_active_channels(self) -> list[str]:
         """Return list of channels to acquire based on mode."""
-        
+
     def append_data_point(self, channel: str, wavelength: float, timestamp: float):
         """Add new data point with automatic buffer management."""
-        
+
     def get_sensorgram_data(self) -> dict:
         """Export current state for UI display."""
 ```
@@ -135,7 +135,7 @@ class ChannelManager:
 ```python
 class HardwareCoordinator:
     """Coordinates all hardware devices (controller, spectrometer, kinetics).
-    
+
     Responsibilities:
     - Device initialization sequences
     - Graceful connection/disconnection
@@ -143,16 +143,16 @@ class HardwareCoordinator:
     - Error recovery strategies
     - Temperature monitoring
     """
-    
+
     def __init__(self):
         self.ctrl = None
         self.usb = None
         self.knx = None
         self.hw_state = HardwareStateManager()
-        
+
     def connect_devices(self):
         """Thread-safe device connection."""
-        
+
     def monitor_health(self) -> dict:
         """Check hardware status and return health report."""
 ```
@@ -184,34 +184,34 @@ def _grab_data(self):
         if self._should_pause():
             time.sleep(0.2)
             continue
-            
+
         # Get active channels
         channels = self.channel_mgr.get_active_channels()
-        
+
         # Acquire and process each channel
         for ch in channels:
             if self._b_stop.is_set():
                 break
-                
+
             # Acquire spectrum
             result = self.acq_service.acquire_channel(ch, ...)
             if result is None:
                 continue
-                
+
             # Process spectrum
             processed = self.spectrum_processor.process_spectrum(
                 result.transmission,
                 self.wave_data,
                 ch
             )
-            
+
             # Buffer data
             self.channel_mgr.append_data_point(
                 ch,
                 processed['resonance_wavelength'],
                 result.timestamp
             )
-        
+
         # Update UI
         self.emit_ui_updates()
 ```
@@ -262,10 +262,10 @@ class AffiniteApp:
     def __init__(self):
         # ... existing code ...
         self.spectrum_processor = SpectrumProcessor(...)  # NEW
-        
+
     def _grab_data(self):
         # ... existing code ...
-        
+
         # NEW: Try new processor, fall back to old code
         try:
             processed = self.spectrum_processor.process_spectrum(...)
@@ -281,7 +281,7 @@ class AffiniteApp:
 class AffiniteApp:
     def _grab_data(self):
         # ... existing code ...
-        
+
         # OLD CODE REMOVED
         # NEW: Direct use of processor
         processed = self.spectrum_processor.process_spectrum(...)

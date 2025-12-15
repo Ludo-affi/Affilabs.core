@@ -1,5 +1,4 @@
-"""
-UI Update Coordinator
+"""UI Update Coordinator
 
 Manages all UI update operations with throttling and batching.
 Separates UI update logic from Application class.
@@ -12,10 +11,10 @@ Responsibilities:
 - Prevent UI blocking from excessive updates
 """
 
-from PySide6.QtCore import QObject, QTimer
-from typing import Optional, Dict
-import numpy as np
 import logging
+
+import numpy as np
+from PySide6.QtCore import QObject, QTimer
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,7 @@ class UIUpdateCoordinator(QObject):
         Args:
             app: Application instance
             main_window: Main window instance with UI widgets
+
         """
         super().__init__()
         self.app = app
@@ -36,17 +36,17 @@ class UIUpdateCoordinator(QObject):
 
         # Pending transmission updates (queued from acquisition thread)
         self._pending_transmission_updates = {
-            'a': None,
-            'b': None,
-            'c': None,
-            'd': None
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
         }
 
         # Pending sensor IQ updates
         self._pending_sensor_iq_updates = {}
 
         # Channel index mapping for array access
-        self._channel_to_idx = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+        self._channel_to_idx = {"a": 0, "b": 1, "c": 2, "d": 3}
 
         # Setup throttled update timer (10 Hz = 100ms)
         self._update_timer = QTimer()
@@ -64,7 +64,7 @@ class UIUpdateCoordinator(QObject):
         channel: str,
         wavelengths: np.ndarray,
         transmission: np.ndarray,
-        raw_spectrum: Optional[np.ndarray] = None
+        raw_spectrum: np.ndarray | None = None,
     ):
         """Queue transmission curve update for batch processing.
 
@@ -73,11 +73,12 @@ class UIUpdateCoordinator(QObject):
             wavelengths: Wavelength array (nm)
             transmission: Transmission spectrum (%)
             raw_spectrum: Optional raw intensity data
+
         """
         self._pending_transmission_updates[channel] = {
-            'wavelengths': wavelengths,
-            'transmission': transmission,
-            'raw_spectrum': raw_spectrum
+            "wavelengths": wavelengths,
+            "transmission": transmission,
+            "raw_spectrum": raw_spectrum,
         }
 
     def queue_sensor_iq_update(self, channel: str, sensor_iq):
@@ -86,6 +87,7 @@ class UIUpdateCoordinator(QObject):
         Args:
             channel: Channel identifier
             sensor_iq: SensorIQMetrics object
+
         """
         self._pending_sensor_iq_updates[channel] = sensor_iq
 
@@ -110,42 +112,50 @@ class UIUpdateCoordinator(QObject):
 
             try:
                 channel_idx = self._channel_to_idx[channel]
-                wavelengths = update_data['wavelengths']
-                transmission = update_data['transmission']
-                raw_spectrum = update_data.get('raw_spectrum')
+                wavelengths = update_data["wavelengths"]
+                transmission = update_data["transmission"]
+                raw_spectrum = update_data.get("raw_spectrum")
 
                 # Update transmission curve
-                if (self._transmission_updates_enabled and
-                    hasattr(self.main_window, 'transmission_curves')):
+                if self._transmission_updates_enabled and hasattr(
+                    self.main_window,
+                    "transmission_curves",
+                ):
                     try:
                         self.main_window.transmission_curves[channel_idx].setData(
                             wavelengths,
-                            transmission
+                            transmission,
                         )
                     except Exception as e:
-                        logger.debug(f"Transmission curve update failed for {channel}: {e}")
+                        logger.debug(
+                            f"Transmission curve update failed for {channel}: {e}",
+                        )
 
                 # Update raw spectrum curve
-                if (self._raw_spectrum_updates_enabled and
-                    raw_spectrum is not None and
-                    hasattr(self.main_window, 'raw_data_curves')):
+                if (
+                    self._raw_spectrum_updates_enabled
+                    and raw_spectrum is not None
+                    and hasattr(self.main_window, "raw_data_curves")
+                ):
                     try:
                         self.main_window.raw_data_curves[channel_idx].setData(
                             wavelengths,
-                            raw_spectrum
+                            raw_spectrum,
                         )
                     except Exception as e:
-                        logger.debug(f"Raw spectrum curve update failed for {channel}: {e}")
+                        logger.debug(
+                            f"Raw spectrum curve update failed for {channel}: {e}",
+                        )
 
             except Exception as e:
                 logger.warning(f"Failed to update curves for channel {channel}: {e}")
 
         # Clear processed updates
         self._pending_transmission_updates = {
-            'a': None,
-            'b': None,
-            'c': None,
-            'd': None
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
         }
 
     def _update_sensor_iq_displays(self):
@@ -155,10 +165,10 @@ class UIUpdateCoordinator(QObject):
 
         try:
             from utils.sensor_iq import (
-                SENSOR_IQ_ICONS,
+                FWHM_THRESHOLDS_DISPLAY,
                 SENSOR_IQ_COLORS,
+                SENSOR_IQ_ICONS,
                 ZONE_BOUNDARIES_DISPLAY,
-                FWHM_THRESHOLDS_DISPLAY
             )
 
             for channel, sensor_iq in self._pending_sensor_iq_updates.items():
@@ -187,15 +197,19 @@ class UIUpdateCoordinator(QObject):
                 label.setText(display_text)
                 label.setStyleSheet(
                     f"font-size: 12px; color: {color}; font-weight: bold; "
-                    f"font-family: 'Consolas', 'Courier New', monospace;"
+                    f"font-family: 'Consolas', 'Courier New', monospace;",
                 )
 
                 # Update static info labels (only once, not per channel)
-                if channel == 'a':
-                    if hasattr(self.main_window, 'sensor_iq_zones_diag'):
-                        self.main_window.sensor_iq_zones_diag.setText(ZONE_BOUNDARIES_DISPLAY)
-                    if hasattr(self.main_window, 'sensor_iq_fwhm_diag'):
-                        self.main_window.sensor_iq_fwhm_diag.setText(FWHM_THRESHOLDS_DISPLAY)
+                if channel == "a":
+                    if hasattr(self.main_window, "sensor_iq_zones_diag"):
+                        self.main_window.sensor_iq_zones_diag.setText(
+                            ZONE_BOUNDARIES_DISPLAY,
+                        )
+                    if hasattr(self.main_window, "sensor_iq_fwhm_diag"):
+                        self.main_window.sensor_iq_fwhm_diag.setText(
+                            FWHM_THRESHOLDS_DISPLAY,
+                        )
 
         except Exception as e:
             logger.debug(f"Sensor IQ display update failed: {e}")

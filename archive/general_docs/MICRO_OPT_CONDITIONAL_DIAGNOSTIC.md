@@ -263,4 +263,3 @@ Ultimate achievable:  <1.0s per cycle!
 **Status**: ✅ **IMPLEMENTED AND READY**
 **Commit**: TBD
 **Next**: Test Phase 4 (40ms), then consider denoising skip
-

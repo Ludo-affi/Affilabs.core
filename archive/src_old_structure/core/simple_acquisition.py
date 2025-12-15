@@ -1,12 +1,14 @@
-"""
-Simplified acquisition system - minimal version to get live data working.
+"""Simplified acquisition system - minimal version to get live data working.
 Strips away all complexity and focuses on: Acquire → Process → Display
 """
-import time
+
 import queue
 import threading
+import time
+
 import numpy as np
-from PySide6.QtCore import QObject, Signal, QTimer
+from PySide6.QtCore import QObject, QTimer, Signal
+
 from utils.logger import logger
 
 
@@ -43,11 +45,11 @@ class SimpleAcquisitionManager(QObject):
 
     def set_calibration_data(self, cal_data: dict):
         """Set calibration data from calibration system."""
-        self.wavelengths = cal_data['wavelengths']
-        self.dark = cal_data['dark']
-        self.s_ref = cal_data['s_ref']
-        self.led_intensities = cal_data['led_intensities']
-        self.integration_time = cal_data.get('integration_time', 40)
+        self.wavelengths = cal_data["wavelengths"]
+        self.dark = cal_data["dark"]
+        self.s_ref = cal_data["s_ref"]
+        self.led_intensities = cal_data["led_intensities"]
+        self.integration_time = cal_data.get("integration_time", 40)
         self.calibrated = True
         logger.info("[SimpleAcq] Calibration data loaded")
 
@@ -68,7 +70,7 @@ class SimpleAcquisitionManager(QObject):
         try:
             ctrl = self.hardware_mgr.ctrl
             if ctrl:
-                ctrl.set_mode('p')
+                ctrl.set_mode("p")
                 time.sleep(0.3)
                 logger.info("[SimpleAcq] Polarizer in P-mode")
         except Exception as e:
@@ -80,7 +82,11 @@ class SimpleAcquisitionManager(QObject):
         # Start worker thread
         self._acquiring = True
         self._stop_flag.clear()
-        self._worker_thread = threading.Thread(target=self._worker, daemon=True, name="SimpleAcqWorker")
+        self._worker_thread = threading.Thread(
+            target=self._worker,
+            daemon=True,
+            name="SimpleAcqWorker",
+        )
         self._worker_thread.start()
 
         self.acquisition_started.emit()
@@ -114,11 +120,11 @@ class SimpleAcquisitionManager(QObject):
 
     def _worker(self):
         """Worker thread - acquire and process spectra."""
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("[SimpleAcq] WORKER STARTED")
-        print("="*70)
+        print("=" * 70)
 
-        channels = ['a', 'b', 'c', 'd']
+        channels = ["a", "b", "c", "d"]
         cycle = 0
 
         try:
@@ -140,10 +146,10 @@ class SimpleAcquisitionManager(QObject):
 
                             # Queue for main thread
                             data = {
-                                'channel': ch,
-                                'wavelength': self.wavelengths.copy(),
-                                'transmission': transmission,
-                                'timestamp': time.time()
+                                "channel": ch,
+                                "wavelength": self.wavelengths.copy(),
+                                "transmission": transmission,
+                                "timestamp": time.time(),
                             }
 
                             try:
@@ -152,10 +158,11 @@ class SimpleAcquisitionManager(QObject):
                                 pass  # Drop if queue full
 
                             if cycle % 10 == 1:
-                                print(f"[SimpleAcq] Cycle {cycle}, Ch {ch}: Acquired OK")
-                        else:
-                            if cycle % 10 == 1:
-                                print(f"[SimpleAcq] Cycle {cycle}, Ch {ch}: FAILED")
+                                print(
+                                    f"[SimpleAcq] Cycle {cycle}, Ch {ch}: Acquired OK",
+                                )
+                        elif cycle % 10 == 1:
+                            print(f"[SimpleAcq] Cycle {cycle}, Ch {ch}: FAILED")
 
                     except Exception as e:
                         if cycle % 10 == 1:
@@ -167,6 +174,7 @@ class SimpleAcquisitionManager(QObject):
         except Exception as e:
             print(f"[SimpleAcq] WORKER CRASHED: {e}")
             import traceback
+
             try:
                 print(traceback.format_exc())
             except:
@@ -199,11 +207,11 @@ class SimpleAcquisitionManager(QObject):
 
             # Trim to match wavelengths
             if len(raw_spectrum) > len(self.wavelengths):
-                raw_spectrum = raw_spectrum[:len(self.wavelengths)]
+                raw_spectrum = raw_spectrum[: len(self.wavelengths)]
 
             return raw_spectrum
 
-        except Exception as e:
+        except Exception:
             return None
 
     def _calc_transmission(self, channel: str, p_spectrum):
@@ -223,7 +231,7 @@ class SimpleAcquisitionManager(QObject):
 
             return transmission
 
-        except Exception as e:
+        except Exception:
             return None
 
     def _process_queue(self):

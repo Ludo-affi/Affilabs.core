@@ -1,7 +1,7 @@
 # Dark Noise Comparison Feature - Complete
 
-**Date**: October 11, 2025  
-**Status**: ✅ **IMPLEMENTED**  
+**Date**: October 11, 2025
+**Status**: ✅ **IMPLEMENTED**
 **Feature**: Dark before/after LED comparison with afterglow correction validation
 
 ---
@@ -50,10 +50,10 @@ self.state.dark_noise_after_leds_uncorrected = full_spectrum_dark_noise.copy()
 if self.state.dark_noise_before_leds is not None:
     before_mean = np.mean(self.state.dark_noise_before_leds)
     contamination = uncorrected_mean - before_mean
-    correction_effectiveness = ((uncorrected_mean - corrected_mean) / contamination * 100 
+    correction_effectiveness = ((uncorrected_mean - corrected_mean) / contamination * 100
                                if contamination > 0 else 0)
     residual = corrected_mean - before_mean
-    
+
     logger.info("=" * 80)
     logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
     logger.info("=" * 80)
@@ -75,7 +75,7 @@ if self.state.dark_noise_before_leds is not None:
     before_mean = np.mean(self.state.dark_noise_before_leds)
     after_mean = np.mean(full_spectrum_dark_noise)
     contamination = after_mean - before_mean
-    
+
     logger.info("=" * 80)
     logger.info("📊 DARK NOISE COMPARISON (Step 1 vs Step 5):")
     logger.info("=" * 80)
@@ -249,26 +249,26 @@ residual = corrected - before
 ## Related Features
 
 ### **Implemented**:
-✅ **Phase 1**: Afterglow correction module (`afterglow_correction.py`)  
-✅ **Phase 2**: Calibration dark noise correction  
-✅ **Dark Comparison**: This feature  
+✅ **Phase 1**: Afterglow correction module (`afterglow_correction.py`)
+✅ **Phase 2**: Calibration dark noise correction
+✅ **Dark Comparison**: This feature
 
 ### **Available But Not Used**:
-⚠️ **Batch LED Control**: `set_batch_intensities()` exists but not integrated  
-⚠️ **Array-Based Scans**: Not implemented  
+⚠️ **Batch LED Control**: `set_batch_intensities()` exists but not integrated
+⚠️ **Array-Based Scans**: Not implemented
 
 ### **Future**:
-⏳ **Step 7 Reference Correction**: Optional enhancement  
-⏳ **Batch LED Integration**: 6-23% speedup potential  
+⏳ **Step 7 Reference Correction**: Optional enhancement
+⏳ **Batch LED Integration**: 6-23% speedup potential
 
 ---
 
 ## Summary
 
-**Status**: ✅ **COMPLETE** - Ready for testing  
-**Implementation Time**: 30 minutes  
-**Validation**: Automatic during every calibration  
-**Impact**: High (validates Phase 2 correction quality)  
+**Status**: ✅ **COMPLETE** - Ready for testing
+**Implementation Time**: 30 minutes
+**Validation**: Automatic during every calibration
+**Impact**: High (validates Phase 2 correction quality)
 
 The dark noise comparison feature provides quantitative validation of afterglow correction effectiveness and enables easy diagnosis of contamination issues. It works seamlessly with or without optical calibration and provides clear, actionable metrics.
 

@@ -35,9 +35,9 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-from core.spectrum_preprocessor import SpectrumPreprocessor
-from core.transmission_processor import TransmissionProcessor
 
+from affilabs.core.spectrum_preprocessor import SpectrumPreprocessor
+from affilabs.core.transmission_processor import TransmissionProcessor
 from affilabs.utils._legacy_led_calibration import (
     DetectorParams,
     LEDCalibrationResult,
@@ -385,24 +385,23 @@ def run_adaptive_integration_calibration(
             usb.set_integration(integration_ms / 1000.0)
             time.sleep(0.05)
 
-            # Average multiple scans (Layer 2)
-            spectra = []
+            # Use HAL interface with built-in averaging
             ctrl.set_intensity(ch=ch, raw_val=FIXED_LED_INTENSITY)
             time.sleep(LED_DELAY)
 
-            for _scan_idx in range(scan_config.ref_scans):
-                spectrum = usb.read_intensity()
-                if spectrum is not None:
-                    spectra.append(spectrum[wave_min_index:wave_max_index])
-                time.sleep(0.01)
+            spectrum = usb.read_roi(
+                wave_min_index,
+                wave_max_index,
+                num_scans=scan_config.ref_scans,
+            )
 
             ctrl.turn_off_channels()
             time.sleep(0.05)
 
-            if len(spectra) > 0:
-                s_raw_data[ch] = np.mean(spectra, axis=0)
+            if spectrum is not None:
+                s_raw_data[ch] = spectrum
                 logger.info(
-                    f"      [OK] Reference captured ({len(spectra)} scans averaged)",
+                    f"      [OK] Reference captured ({scan_config.ref_scans} scans averaged via HAL)",
                 )
 
         # Store S-mode results
@@ -465,24 +464,23 @@ def run_adaptive_integration_calibration(
             usb.set_integration(integration_ms / 1000.0)
             time.sleep(0.05)
 
-            # Average multiple scans (Layer 2)
-            spectra = []
+            # Use HAL interface with built-in averaging
             ctrl.set_intensity(ch=ch, raw_val=FIXED_LED_INTENSITY)
             time.sleep(LED_DELAY)
 
-            for _scan_idx in range(scan_config.ref_scans):
-                spectrum = usb.read_intensity()
-                if spectrum is not None:
-                    spectra.append(spectrum[wave_min_index:wave_max_index])
-                time.sleep(0.01)
+            spectrum = usb.read_roi(
+                wave_min_index,
+                wave_max_index,
+                num_scans=scan_config.ref_scans,
+            )
 
             ctrl.turn_off_channels()
             time.sleep(0.05)
 
-            if len(spectra) > 0:
-                p_raw_data[ch] = np.mean(spectra, axis=0)
+            if spectrum is not None:
+                p_raw_data[ch] = spectrum
                 logger.info(
-                    f"      [OK] Reference captured ({len(spectra)} scans averaged)",
+                    f"      [OK] Reference captured ({scan_config.ref_scans} scans averaged via HAL)",
                 )
 
         # Store P-mode results
@@ -517,23 +515,18 @@ def run_adaptive_integration_calibration(
         usb.set_integration(result.p_integration_time / 1000.0)
         time.sleep(0.1)
 
-        # Average dark scans
-        dark_spectra = []
-        for _scan_idx in range(scan_config.dark_scans):
-            if stop_flag and stop_flag.is_set():
-                msg = "Calibration cancelled by user"
-                raise RuntimeError(msg)
+        # Acquire dark noise using HAL with built-in averaging
+        dark_full_spectrum = usb.read_roi(
+            0,  # Full spectrum for dark
+            len(usb.read_wavelength()),  # Full range
+            num_scans=scan_config.dark_scans,
+        )
 
-            spectrum = usb.read_intensity()
-            if spectrum is not None:
-                dark_spectra.append(spectrum)
-            time.sleep(0.01)
-
-        if len(dark_spectra) == 0:
+        if dark_full_spectrum is None:
             msg = "Failed to capture dark noise spectra"
             raise RuntimeError(msg)
 
-        # Average and filter to ROI
+        # Filter to ROI
         dark_ref = np.mean(dark_spectra, axis=0)
         dark_ref_filtered = dark_ref[wave_min_index:wave_max_index]
 

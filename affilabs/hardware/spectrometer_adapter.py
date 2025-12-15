@@ -4,21 +4,22 @@ Wraps existing spectrometer implementations (USB4000, PhasePhotonics)
 behind the ISpectrometer interface for consistent access.
 """
 
-from typing import Optional
 import numpy as np
-from .device_interface import (
-    ISpectrometer,
-    DeviceInfo,
-    SpectrometerCapabilities,
-    ConnectionError as HWConnectionError,
-    CommandError
-)
 
 # Import existing spectrometer classes
 from affilabs.utils.usb4000_wrapper import USB4000
 
+from .device_interface import (
+    CommandError,
+    DeviceInfo,
+    ISpectrometer,
+    SpectrometerCapabilities,
+)
+from .device_interface import ConnectionError as HWConnectionError
+
 try:
     from affilabs.utils.phase_photonics_wrapper import PhasePhotonics
+
     PHASE_PHOTONICS_AVAILABLE = True
 except ImportError:
     PHASE_PHOTONICS_AVAILABLE = False
@@ -30,11 +31,12 @@ class USB4000Adapter(ISpectrometer):
     Wraps existing USB4000 implementation behind ISpectrometer interface.
     """
 
-    def __init__(self, spectrometer: Optional[USB4000] = None):
+    def __init__(self, spectrometer: USB4000 | None = None):
         """Initialize adapter.
 
         Args:
             spectrometer: Existing USB4000 instance, or None to create new
+
         """
         self._spectrometer = spectrometer or USB4000()
         self._connected = False
@@ -48,6 +50,7 @@ class USB4000Adapter(ISpectrometer):
 
         Args:
             **kwargs: Optional serial_number, timeout
+
         """
         try:
             success = self._spectrometer.open()
@@ -60,7 +63,7 @@ class USB4000Adapter(ISpectrometer):
     def disconnect(self) -> None:
         """Disconnect from spectrometer."""
         try:
-            if hasattr(self._spectrometer, 'close'):
+            if hasattr(self._spectrometer, "close"):
                 self._spectrometer.close()
         except Exception:
             pass  # Never raise on disconnect
@@ -69,23 +72,23 @@ class USB4000Adapter(ISpectrometer):
 
     def is_connected(self) -> bool:
         """Check if spectrometer is connected."""
-        return self._connected and getattr(self._spectrometer, 'opened', False)
+        return self._connected and getattr(self._spectrometer, "opened", False)
 
     @property
-    def serial_number(self) -> Optional[str]:
+    def serial_number(self) -> str | None:
         """Get spectrometer serial number for device-specific calibration profiles."""
-        return getattr(self._spectrometer, 'serial_number', None)
+        return getattr(self._spectrometer, "serial_number", None)
 
     def get_info(self) -> DeviceInfo:
         """Get device identification."""
-        serial = getattr(self._spectrometer, 'serial_number', None)
+        serial = getattr(self._spectrometer, "serial_number", None)
 
         # Determine model
         model = "USB4000"
-        if hasattr(self._spectrometer, '_device') and self._spectrometer._device:
+        if hasattr(self._spectrometer, "_device") and self._spectrometer._device:
             try:
                 model = self._spectrometer._device.model
-            except:
+            except Exception:
                 pass
 
         return DeviceInfo(
@@ -94,14 +97,14 @@ class USB4000Adapter(ISpectrometer):
             serial_number=serial,
             firmware_version=None,
             hardware_version=None,
-            port=None
+            port=None,
         )
 
     def get_capabilities(self) -> SpectrometerCapabilities:
         """Get spectrometer capabilities."""
         # Get device-specific values
-        num_pixels = getattr(self._spectrometer, '_num_pixels', 3648)
-        max_counts = getattr(self._spectrometer, '_max_counts', 65535)
+        num_pixels = getattr(self._spectrometer, "_num_pixels", 3648)
+        max_counts = getattr(self._spectrometer, "_max_counts", 65535)
 
         return SpectrometerCapabilities(
             wavelength_range=(200.0, 1100.0),
@@ -117,7 +120,7 @@ class USB4000Adapter(ISpectrometer):
             backend="seabreeze",
             supports_reconnect=True,
             supports_firmware_update=False,
-            requires_calibration=False
+            requires_calibration=False,
         )
 
     # ========================================================================
@@ -128,7 +131,7 @@ class USB4000Adapter(ISpectrometer):
         """Get wavelength calibration array."""
         try:
             # USB4000 has wavelengths as a property, not a method
-            if hasattr(self._spectrometer, 'wavelengths'):
+            if hasattr(self._spectrometer, "wavelengths"):
                 wl = self._spectrometer.wavelengths
                 if callable(wl):
                     wl = wl()
@@ -152,11 +155,11 @@ class USB4000Adapter(ISpectrometer):
 
         try:
             # Try set_integration first (our wrapper convention)
-            if hasattr(self._spectrometer, 'set_integration'):
+            if hasattr(self._spectrometer, "set_integration"):
                 self._spectrometer.set_integration(time_ms)
                 return True
             # Fallback to direct _device access if needed
-            elif hasattr(self._spectrometer, '_device') and self._spectrometer._device:
+            if hasattr(self._spectrometer, "_device") and self._spectrometer._device:
                 self._spectrometer._device.integration_time_micros(int(time_ms * 1000))
                 self._spectrometer._integration_time = time_ms / 1000.0
                 return True
@@ -167,7 +170,7 @@ class USB4000Adapter(ISpectrometer):
     def get_integration_time(self) -> float:
         """Get current integration time in milliseconds."""
         try:
-            return getattr(self._spectrometer, '_integration_time', 100.0)
+            return getattr(self._spectrometer, "_integration_time", 100.0)
         except Exception:
             return 100.0
 
@@ -175,13 +178,13 @@ class USB4000Adapter(ISpectrometer):
     # ACQUISITION
     # ========================================================================
 
-    def read_spectrum(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_spectrum(self, num_scans: int = 1) -> np.ndarray | None:
         """Capture and return spectrum."""
         if num_scans < 1:
             raise ValueError(f"num_scans must be >= 1, got {num_scans}")
 
         try:
-            if hasattr(self._spectrometer, 'intensities'):
+            if hasattr(self._spectrometer, "intensities"):
                 intensities = self._spectrometer.intensities(num_scans)
                 if intensities is None:
                     return None
@@ -190,7 +193,7 @@ class USB4000Adapter(ISpectrometer):
         except Exception as e:
             raise CommandError(f"Failed to read spectrum: {e}")
 
-    def read_intensities(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_intensities(self, num_scans: int = 1) -> np.ndarray | None:
         """Alias for read_spectrum() for compatibility."""
         return self.read_spectrum(num_scans)
 
@@ -206,6 +209,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
 
         Args:
             spectrometer: Existing PhasePhotonics instance, or None to create new
+
         """
         if not PHASE_PHOTONICS_AVAILABLE:
             raise ImportError("PhasePhotonics driver not available")
@@ -230,7 +234,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
     def disconnect(self) -> None:
         """Disconnect from spectrometer."""
         try:
-            if hasattr(self._spectrometer, 'close'):
+            if hasattr(self._spectrometer, "close"):
                 self._spectrometer.close()
         except Exception:
             pass
@@ -239,7 +243,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
 
     def is_connected(self) -> bool:
         """Check if spectrometer is connected."""
-        return self._connected and getattr(self._spectrometer, 'opened', False)
+        return self._connected and getattr(self._spectrometer, "opened", False)
 
     def get_info(self) -> DeviceInfo:
         """Get device identification."""
@@ -249,7 +253,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
             serial_number=None,
             firmware_version=None,
             hardware_version=None,
-            port=None
+            port=None,
         )
 
     def get_capabilities(self) -> SpectrometerCapabilities:
@@ -268,7 +272,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
             backend="phase_photonics",
             supports_reconnect=True,
             supports_firmware_update=False,
-            requires_calibration=False
+            requires_calibration=False,
         )
 
     # ========================================================================
@@ -279,7 +283,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
         """Get wavelength calibration array."""
         try:
             # Handle both property and method patterns
-            if hasattr(self._spectrometer, 'wavelengths'):
+            if hasattr(self._spectrometer, "wavelengths"):
                 wl = self._spectrometer.wavelengths
                 if callable(wl):
                     wl = wl()
@@ -299,7 +303,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
     def set_integration_time(self, time_ms: float) -> bool:
         """Set integration time in milliseconds."""
         try:
-            if hasattr(self._spectrometer, 'set_integration'):
+            if hasattr(self._spectrometer, "set_integration"):
                 self._spectrometer.set_integration(time_ms)
                 return True
             return False
@@ -308,13 +312,13 @@ class PhasePhotonicsAdapter(ISpectrometer):
 
     def get_integration_time(self) -> float:
         """Get current integration time in milliseconds."""
-        return getattr(self._spectrometer, '_integration_time', 100.0)
+        return getattr(self._spectrometer, "_integration_time", 100.0)
 
     # ========================================================================
     # ACQUISITION
     # ========================================================================
 
-    def read_spectrum(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_spectrum(self, num_scans: int = 1) -> np.ndarray | None:
         """Capture and return spectrum."""
         try:
             intensities = self._spectrometer.intensities(num_scans)
@@ -324,7 +328,7 @@ class PhasePhotonicsAdapter(ISpectrometer):
         except Exception as e:
             raise CommandError(f"Failed to read spectrum: {e}")
 
-    def read_intensities(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_intensities(self, num_scans: int = 1) -> np.ndarray | None:
         """Alias for read_spectrum()."""
         return self.read_spectrum(num_scans)
 
@@ -333,9 +337,10 @@ class PhasePhotonicsAdapter(ISpectrometer):
 # FACTORY FUNCTIONS
 # ============================================================================
 
+
 def create_spectrometer_adapter(
     spectrometer_type: str = "usb4000",
-    **kwargs
+    **kwargs,
 ) -> ISpectrometer:
     """Factory function to create spectrometer adapter by type.
 
@@ -348,20 +353,20 @@ def create_spectrometer_adapter(
 
     Raises:
         ValueError: If spectrometer_type is unknown
+
     """
     spec_type = spectrometer_type.lower()
 
     if spec_type == "usb4000":
         return USB4000Adapter()
-    elif spec_type == "phase_photonics":
+    if spec_type == "phase_photonics":
         if not PHASE_PHOTONICS_AVAILABLE:
             raise ValueError("Phase Photonics driver not available")
         return PhasePhotonicsAdapter()
-    else:
-        raise ValueError(
-            f"Unknown spectrometer type '{spectrometer_type}'. "
-            f"Valid types: ['usb4000', 'phase_photonics']"
-        )
+    raise ValueError(
+        f"Unknown spectrometer type '{spectrometer_type}'. "
+        f"Valid types: ['usb4000', 'phase_photonics']",
+    )
 
 
 def wrap_existing_spectrometer(spectrometer) -> ISpectrometer:
@@ -372,12 +377,10 @@ def wrap_existing_spectrometer(spectrometer) -> ISpectrometer:
 
     Returns:
         ISpectrometer adapter
+
     """
     if isinstance(spectrometer, USB4000):
         return USB4000Adapter(spectrometer)
-    elif PHASE_PHOTONICS_AVAILABLE and isinstance(spectrometer, PhasePhotonics):
+    if PHASE_PHOTONICS_AVAILABLE and isinstance(spectrometer, PhasePhotonics):
         return PhasePhotonicsAdapter(spectrometer)
-    else:
-        raise ValueError(f"Unknown spectrometer type: {type(spectrometer)}")
-
-
+    raise ValueError(f"Unknown spectrometer type: {type(spectrometer)}")

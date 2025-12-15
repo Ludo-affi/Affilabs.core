@@ -1,5 +1,4 @@
-"""
-Enhanced SPR Peak Tracking Module
+"""Enhanced SPR Peak Tracking Module
 
 This module implements a 4-stage pipeline for ultra-stable peak tracking:
 1. FFT-based noise reduction (frequency domain)
@@ -14,13 +13,10 @@ Date: 2025-10-19
 """
 
 from collections import deque
-from typing import Optional
 
 import numpy as np
-from scipy.signal import savgol_filter
 
 from utils.logger import logger
-
 
 # ============================================================================
 # CENTROID METHOD (FAST ALTERNATIVE)
@@ -59,6 +55,7 @@ def find_peak_centroid(
     Performance: ~1-2ms for 1591 points
     Stability: <2 RU standard deviation (comparable to enhanced method)
     Precision: ~0.05nm (sub-pixel via weighted averaging)
+
     """
     try:
         # Extract search region
@@ -67,7 +64,9 @@ def find_peak_centroid(
         spec_region = spectrum[mask]
 
         if len(wl_region) < 3:
-            logger.warning(f"Centroid: Insufficient points in search range: {len(wl_region)}")
+            logger.warning(
+                f"Centroid: Insufficient points in search range: {len(wl_region)}",
+            )
             return wl_region[np.argmin(spec_region)] if len(wl_region) > 0 else np.nan
 
         # Invert spectrum: SPR dip → peak
@@ -99,7 +98,7 @@ def find_peak_centroid(
         logger.debug(
             f"Centroid: λ={centroid:.3f}nm, "
             f"n_points={np.sum(significant_mask)}/{len(wl_region)}, "
-            f"threshold={threshold:.2f}"
+            f"threshold={threshold:.2f}",
         )
 
         return float(centroid)
@@ -135,6 +134,7 @@ def preprocess_spectrum_fft(
 
     Performance: ~0.5ms for 1591 points
     Noise reduction: 5-10× improvement in SNR
+
     """
     try:
         # Convert to frequency domain
@@ -150,7 +150,7 @@ def preprocess_spectrum_fft(
         logger.debug(
             f"FFT filtering: {len(spectrum)} points, "
             f"cutoff={cutoff_frequency:.3f}, "
-            f"noise reduction={(np.std(spectrum) / np.std(filtered_spectrum)):.1f}×"
+            f"noise reduction={(np.std(spectrum) / np.std(filtered_spectrum)):.1f}×",
         )
 
         return filtered_spectrum
@@ -170,7 +170,7 @@ def fit_polynomial_spectrum(
     wavelengths: np.ndarray,
     search_range: tuple[float, float] = (600, 720),
     degree: int = 6,
-) -> tuple[np.ndarray, Optional[np.poly1d], np.ndarray]:
+) -> tuple[np.ndarray, np.poly1d | None, np.ndarray]:
     """Fit polynomial to spectrum for smooth, differentiable representation.
 
     6th order polynomial is optimal for SPR dips:
@@ -191,6 +191,7 @@ def fit_polynomial_spectrum(
 
     Performance: ~0.2ms
     Smoothing: Removes remaining noise after FFT
+
     """
     try:
         # Extract SPR range
@@ -200,7 +201,7 @@ def fit_polynomial_spectrum(
 
         if len(wl_spr) < degree + 1:
             logger.warning(
-                f"Insufficient points for polynomial fit: {len(wl_spr)} < {degree + 1}"
+                f"Insufficient points for polynomial fit: {len(wl_spr)} < {degree + 1}",
             )
             return spec_spr, None, wl_spr
 
@@ -214,12 +215,12 @@ def fit_polynomial_spectrum(
         # Calculate fit quality (R²)
         residuals = spec_spr - smooth_spectrum
         ss_res = np.sum(residuals**2)
-        ss_tot = np.sum((spec_spr - np.mean(spec_spr))**2)
+        ss_tot = np.sum((spec_spr - np.mean(spec_spr)) ** 2)
         r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
 
         logger.debug(
             f"Polynomial fit: degree={degree}, R²={r_squared:.4f}, "
-            f"range={search_range[0]:.0f}-{search_range[1]:.0f}nm"
+            f"range={search_range[0]:.0f}-{search_range[1]:.0f}nm",
         )
 
         return smooth_spectrum, poly_fit, wl_spr
@@ -258,13 +259,16 @@ def find_peak_from_derivative(
 
     Performance: ~0.1ms
     Precision: Limited only by polynomial fit quality (~0.01nm)
+
     """
     try:
         if poly_fit is None:
             # Fallback: numerical minimum
             logger.debug("No polynomial fit available, using numerical minimum")
             wl_dense = np.linspace(wl_range[0], wl_range[-1], 1000)
-            spec_dense = np.polyval(poly_fit, wl_dense) if poly_fit else np.zeros_like(wl_dense)
+            spec_dense = (
+                np.polyval(poly_fit, wl_dense) if poly_fit else np.zeros_like(wl_dense)
+            )
             return wl_dense[np.argmin(spec_dense)]
 
         # Calculate analytical derivative
@@ -296,7 +300,7 @@ def find_peak_from_derivative(
 
         logger.debug(
             f"Derivative peak finding: {len(valid_roots)} candidate(s), "
-            f"selected λ={peak_wavelength:.3f}nm"
+            f"selected λ={peak_wavelength:.3f}nm",
         )
 
         return peak_wavelength
@@ -334,6 +338,7 @@ class TemporalPeakSmoother:
             window_size: Number of points for moving average
             measurement_noise: Kalman R parameter (lower = trust measurements more)
             process_noise: Kalman Q parameter (lower = expect less change)
+
         """
         self.method = method
         self.window_size = window_size
@@ -352,7 +357,7 @@ class TemporalPeakSmoother:
 
             logger.info(
                 f"Kalman smoother initialized: R={measurement_noise:.2f}, "
-                f"Q={process_noise:.2f}"
+                f"Q={process_noise:.2f}",
             )
         else:
             logger.info(f"Moving average smoother initialized: window={window_size}")
@@ -365,6 +370,7 @@ class TemporalPeakSmoother:
 
         Returns:
             Smoothed peak wavelength
+
         """
         # Convert to float to avoid numpy scalar type issues
         measurement = float(measurement)
@@ -375,8 +381,7 @@ class TemporalPeakSmoother:
 
         if self.method == "kalman":
             return self._kalman_update(measurement)
-        else:
-            return self._moving_average_update(measurement)
+        return self._moving_average_update(measurement)
 
     def _kalman_update(self, measurement: float) -> float:
         """Kalman filter update (predict + correct).
@@ -408,7 +413,7 @@ class TemporalPeakSmoother:
 
         logger.debug(
             f"Kalman: meas={measurement:.3f}, pred={predicted_position:.3f}, "
-            f"corrected={self.position:.3f}, K={kalman_gain:.3f}"
+            f"corrected={self.position:.3f}, K={kalman_gain:.3f}",
         )
 
         return self.position
@@ -420,7 +425,7 @@ class TemporalPeakSmoother:
 
         logger.debug(
             f"Moving avg: meas={measurement:.3f}, smoothed={smoothed:.3f}, "
-            f"window={len(self.history)}"
+            f"window={len(self.history)}",
         )
 
         return smoothed
@@ -449,8 +454,8 @@ def find_resonance_wavelength_enhanced(
     fft_cutoff: float = 0.15,
     poly_degree: int = 6,
     search_range: tuple[float, float] = (600, 720),
-    temporal_smoother: Optional[TemporalPeakSmoother] = None,
-    method: str = 'enhanced',
+    temporal_smoother: TemporalPeakSmoother | None = None,
+    method: str = "enhanced",
 ) -> tuple[float, dict]:
     """Complete peak tracking with method selection.
 
@@ -479,10 +484,11 @@ def find_resonance_wavelength_enhanced(
     Returns:
         peak_wavelength: Smoothed peak position (nm)
         diagnostics: Dictionary with intermediate results
+
     """
     try:
         # ✨ CENTROID METHOD (FAST ALTERNATIVE)
-        if method == 'centroid':
+        if method == "centroid":
             # Direct centroid calculation (1-2ms)
             peak_raw = find_peak_centroid(
                 spectrum,
@@ -510,7 +516,7 @@ def find_resonance_wavelength_enhanced(
             return peak_smoothed, diagnostics
 
         # ✨ PARABOLIC METHOD (SIMPLE FALLBACK)
-        elif method == 'parabolic':
+        if method == "parabolic":
             # Find discrete minimum
             mask = (wavelengths >= search_range[0]) & (wavelengths <= search_range[1])
             wl_region = wavelengths[mask]
@@ -519,13 +525,19 @@ def find_resonance_wavelength_enhanced(
 
             # Parabolic interpolation if possible
             if 0 < min_idx < len(spec_region) - 1:
-                x = wl_region[min_idx-1:min_idx+2]
-                y = spec_region[min_idx-1:min_idx+2]
+                x = wl_region[min_idx - 1 : min_idx + 2]
+                y = spec_region[min_idx - 1 : min_idx + 2]
 
                 # Analytical parabolic vertex (faster than lstsq)
                 denom = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2])
-                A = (x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])) / denom
-                B = (x[2]**2 * (y[0] - y[1]) + x[1]**2 * (y[2] - y[0]) + x[0]**2 * (y[1] - y[2])) / denom
+                A = (
+                    x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])
+                ) / denom
+                B = (
+                    x[2] ** 2 * (y[0] - y[1])
+                    + x[1] ** 2 * (y[2] - y[0])
+                    + x[0] ** 2 * (y[1] - y[2])
+                ) / denom
 
                 peak_raw = -B / (2 * A) if A > 0 else wl_region[min_idx]
             else:
@@ -549,50 +561,50 @@ def find_resonance_wavelength_enhanced(
             return peak_smoothed, diagnostics
 
         # ✨ ENHANCED METHOD (ORIGINAL 4-STAGE PIPELINE)
-        else:  # method == 'enhanced' or default
-            # Stage 1: FFT filtering
-            filtered_spectrum = preprocess_spectrum_fft(spectrum, fft_cutoff)
+        # method == 'enhanced' or default
+        # Stage 1: FFT filtering
+        filtered_spectrum = preprocess_spectrum_fft(spectrum, fft_cutoff)
 
-            # Stage 2: Polynomial fitting
-            smooth_spectrum, poly_fit, wl_spr = fit_polynomial_spectrum(
-                filtered_spectrum,
-                wavelengths,
-                search_range,
-                poly_degree,
-            )
+        # Stage 2: Polynomial fitting
+        smooth_spectrum, poly_fit, wl_spr = fit_polynomial_spectrum(
+            filtered_spectrum,
+            wavelengths,
+            search_range,
+            poly_degree,
+        )
 
-            # Stage 3: Derivative-based peak finding
-            if poly_fit is not None:
-                peak_raw = find_peak_from_derivative(poly_fit, wl_spr)
-            else:
-                # Fallback: direct minimum
-                peak_raw = wl_spr[np.argmin(smooth_spectrum)]
+        # Stage 3: Derivative-based peak finding
+        if poly_fit is not None:
+            peak_raw = find_peak_from_derivative(poly_fit, wl_spr)
+        else:
+            # Fallback: direct minimum
+            peak_raw = wl_spr[np.argmin(smooth_spectrum)]
 
-            # Stage 4: Temporal smoothing
-            if temporal_smoother is not None:
-                peak_smoothed = temporal_smoother.smooth(peak_raw)
-            else:
-                peak_smoothed = peak_raw
+        # Stage 4: Temporal smoothing
+        if temporal_smoother is not None:
+            peak_smoothed = temporal_smoother.smooth(peak_raw)
+        else:
+            peak_smoothed = peak_raw
 
-            # Diagnostics
-            diagnostics = {
-                "method": "enhanced",
-                "raw_peak": peak_raw,
-                "smoothed_peak": peak_smoothed,
-                "fft_applied": True,
-                "poly_degree": poly_degree,
-                "poly_fit_quality": "good" if poly_fit is not None else "fallback",
-                "temporal_smoothing": temporal_smoother is not None,
-                "smoothing_delta": abs(peak_smoothed - peak_raw),
-                "performance": "15ms",
-            }
+        # Diagnostics
+        diagnostics = {
+            "method": "enhanced",
+            "raw_peak": peak_raw,
+            "smoothed_peak": peak_smoothed,
+            "fft_applied": True,
+            "poly_degree": poly_degree,
+            "poly_fit_quality": "good" if poly_fit is not None else "fallback",
+            "temporal_smoothing": temporal_smoother is not None,
+            "smoothing_delta": abs(peak_smoothed - peak_raw),
+            "performance": "15ms",
+        }
 
-            logger.debug(
-                f"Enhanced tracking: λ_raw={peak_raw:.3f}, λ_smooth={peak_smoothed:.3f}, "
-                f"Δ={diagnostics['smoothing_delta']:.3f}nm"
-            )
+        logger.debug(
+            f"Enhanced tracking: λ_raw={peak_raw:.3f}, λ_smooth={peak_smoothed:.3f}, "
+            f"Δ={diagnostics['smoothing_delta']:.3f}nm",
+        )
 
-            return peak_smoothed, diagnostics
+        return peak_smoothed, diagnostics
 
     except Exception as e:
         logger.exception(f"Peak tracking failed ({method}): {e}")

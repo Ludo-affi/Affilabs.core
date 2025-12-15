@@ -10,11 +10,9 @@ The resulting dict matches the structure consumed by
 
 from __future__ import annotations
 
-import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -28,19 +26,26 @@ class AfterglowFit:
     r_squared: float
 
 
-def _exp_decay(t_ms: np.ndarray, baseline: float, amplitude: float, tau_ms: float) -> np.ndarray:
+def _exp_decay(
+    t_ms: np.ndarray,
+    baseline: float,
+    amplitude: float,
+    tau_ms: float,
+) -> np.ndarray:
     return baseline + amplitude * np.exp(-t_ms / max(tau_ms, 1e-6))
 
 
 def _fit_decay(t_ms: np.ndarray, y: np.ndarray) -> AfterglowFit:
     # Robust initial guesses
     y0 = float(y[0])
-    y_end = float(np.nanmean(y[-max(3, len(y)//10):]))
+    y_end = float(np.nanmean(y[-max(3, len(y) // 10) :]))
     amp0 = max(y0 - y_end, 1.0)
     tau0 = 20.0  # ms, typical
 
-    bounds = ([y_end - abs(0.25 * amp0), 0.0, 1.0],  # baseline, amplitude, tau
-              [y_end + abs(0.25 * amp0), 1e9, 500.0])
+    bounds = (
+        [y_end - abs(0.25 * amp0), 0.0, 1.0],  # baseline, amplitude, tau
+        [y_end + abs(0.25 * amp0), 1e9, 500.0],
+    )
     try:
         popt, _pcov = curve_fit(
             _exp_decay,
@@ -55,7 +60,12 @@ def _fit_decay(t_ms: np.ndarray, y: np.ndarray) -> AfterglowFit:
         ss_res = float(np.nansum((y - y_hat) ** 2))
         ss_tot = float(np.nansum((y - np.nanmean(y)) ** 2)) or 1.0
         r2 = 1.0 - ss_res / ss_tot
-        return AfterglowFit(tau_ms=tau_ms, amplitude=amplitude, baseline=baseline, r_squared=r2)
+        return AfterglowFit(
+            tau_ms=tau_ms,
+            amplitude=amplitude,
+            baseline=baseline,
+            r_squared=r2,
+        )
     except Exception:
         # Fallback: simple estimates
         return AfterglowFit(tau_ms=tau0, amplitude=amp0, baseline=y_end, r_squared=0.0)
@@ -91,8 +101,10 @@ def run_afterglow_calibration(
 
     Returns:
         Dict with metadata and channel_data suitable for AfterglowCorrection.
+
     """
     if get_intensity is None:
+
         def get_intensity():
             return usb.read_intensity()
 
@@ -157,13 +169,15 @@ def run_afterglow_calibration(
                 # Fit exponential decay
                 fit = _fit_decay(t_arr, y_arr)
 
-                out["channel_data"][ch]["integration_time_data"].append({
-                    "integration_time_ms": float(int_ms),
-                    "tau_ms": float(fit.tau_ms),
-                    "amplitude": float(fit.amplitude),
-                    "baseline": float(fit.baseline),
-                    "r_squared": float(fit.r_squared),
-                })
+                out["channel_data"][ch]["integration_time_data"].append(
+                    {
+                        "integration_time_ms": float(int_ms),
+                        "tau_ms": float(fit.tau_ms),
+                        "amplitude": float(fit.amplitude),
+                        "baseline": float(fit.baseline),
+                        "r_squared": float(fit.r_squared),
+                    },
+                )
 
                 time.sleep(settle_delay_s)
             except Exception:

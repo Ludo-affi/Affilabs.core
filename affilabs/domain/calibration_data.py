@@ -1,14 +1,13 @@
-"""
-Calibration Data Models
+"""Calibration Data Models
 
 Pure Python data structures for calibration.
 NO Qt dependencies - fully testable.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
-import numpy as np
 from datetime import datetime
+
+import numpy as np
 
 
 @dataclass
@@ -17,6 +16,7 @@ class CalibrationMetrics:
 
     Used to assess whether calibration is acceptable.
     """
+
     snr: float  # Signal-to-noise ratio
     peak_intensity: float  # Maximum intensity in spectrum
     mean_intensity: float  # Average intensity
@@ -35,10 +35,10 @@ class CalibrationMetrics:
     def is_acceptable(self) -> bool:
         """Check if metrics indicate good calibration."""
         return (
-            not self.is_saturated() and
-            not self.is_low_signal() and
-            self.snr > 10.0 and
-            self.dynamic_range > 1.5
+            not self.is_saturated()
+            and not self.is_low_signal()
+            and self.snr > 10.0
+            and self.dynamic_range > 1.5
         )
 
 
@@ -52,13 +52,14 @@ class CalibrationData:
     This replaces the legacy CalibrationData namedtuple with
     a proper domain model.
     """
+
     # Core calibration data
-    s_pol_ref: Dict[str, np.ndarray]  # channel -> reference spectrum
+    s_pol_ref: dict[str, np.ndarray]  # channel -> reference spectrum
     wavelengths: np.ndarray  # wavelength array (nm)
 
     # LED intensities
-    p_mode_intensities: Dict[str, int]  # P-mode LED brightness
-    s_mode_intensities: Dict[str, int]  # S-mode LED brightness
+    p_mode_intensities: dict[str, int]  # P-mode LED brightness
+    s_mode_intensities: dict[str, int]  # S-mode LED brightness
 
     # Acquisition parameters
     integration_time_s: float = 0.0  # S-mode integration time (ms)
@@ -77,20 +78,26 @@ class CalibrationData:
 
     # Dark references (per-channel for S-pol and P-pol integration times)
     # CRITICAL: Dark current scales with integration time!
-    dark_s: Dict[str, np.ndarray] = field(default_factory=dict)  # S-pol dark per channel
-    dark_p: Dict[str, np.ndarray] = field(default_factory=dict)  # P-pol dark per channel
+    dark_s: dict[str, np.ndarray] = field(
+        default_factory=dict,
+    )  # S-pol dark per channel
+    dark_p: dict[str, np.ndarray] = field(
+        default_factory=dict,
+    )  # P-pol dark per channel
 
     # Per-channel integration times (alternative calibration mode)
-    channel_integration_times: Dict[str, float] = field(default_factory=dict)  # P-mode per-channel (ms)
+    channel_integration_times: dict[str, float] = field(
+        default_factory=dict,
+    )  # P-mode per-channel (ms)
 
     # Quality metrics per channel
-    metrics: Dict[str, CalibrationMetrics] = field(default_factory=dict)
+    metrics: dict[str, CalibrationMetrics] = field(default_factory=dict)
 
     # QC validation results (from 7-step calibration)
-    transmission_validation: Dict[str, dict] = field(default_factory=dict)
+    transmission_validation: dict[str, dict] = field(default_factory=dict)
 
     # Timing synchronization results (from Step 6)
-    timing_sync: Optional[dict] = None  # LED/detector timing consistency metrics
+    timing_sync: dict | None = None  # LED/detector timing consistency metrics
 
     # Metadata
     timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
@@ -106,17 +113,23 @@ class CalibrationData:
     def __post_init__(self):
         """Validate calibration data."""
         # Validate channels
-        expected_channels = {'a', 'b', 'c', 'd'}
+        expected_channels = {"a", "b", "c", "d"}
         ref_channels = set(self.s_pol_ref.keys())
         p_channels = set(self.p_mode_intensities.keys())
         s_channels = set(self.s_mode_intensities.keys())
 
         if ref_channels != expected_channels:
-            raise ValueError(f"Missing reference channels: {expected_channels - ref_channels}")
+            raise ValueError(
+                f"Missing reference channels: {expected_channels - ref_channels}",
+            )
         if p_channels != expected_channels:
-            raise ValueError(f"Missing P-mode intensities: {expected_channels - p_channels}")
+            raise ValueError(
+                f"Missing P-mode intensities: {expected_channels - p_channels}",
+            )
         if s_channels != expected_channels:
-            raise ValueError(f"Missing S-mode intensities: {expected_channels - s_channels}")
+            raise ValueError(
+                f"Missing S-mode intensities: {expected_channels - s_channels}",
+            )
 
         # Validate wavelength array
         if len(self.wavelengths) == 0:
@@ -127,7 +140,7 @@ class CalibrationData:
             if len(spectrum) != len(self.wavelengths):
                 raise ValueError(
                     f"Channel {channel} spectrum length mismatch: "
-                    f"{len(spectrum)} vs {len(self.wavelengths)} wavelengths"
+                    f"{len(spectrum)} vs {len(self.wavelengths)} wavelengths",
                 )
             if np.count_nonzero(spectrum) == 0:
                 raise ValueError(f"Channel {channel} reference spectrum is all zeros")
@@ -170,7 +183,7 @@ class CalibrationData:
             raise KeyError(f"No S-mode intensity for channel {channel}")
         return self.s_mode_intensities[channel]
 
-    def get_metrics(self, channel: str) -> Optional[CalibrationMetrics]:
+    def get_metrics(self, channel: str) -> CalibrationMetrics | None:
         """Get quality metrics for channel."""
         return self.metrics.get(channel)
 
@@ -185,7 +198,7 @@ class CalibrationData:
         """Check if all channels have acceptable calibration."""
         return all(self.is_channel_acceptable(ch) for ch in self.channels)
 
-    def copy(self) -> 'CalibrationData':
+    def copy(self) -> "CalibrationData":
         """Create a deep copy of calibration data."""
         return CalibrationData(
             s_pol_ref={k: v.copy() for k, v in self.s_pol_ref.items()},
@@ -200,7 +213,7 @@ class CalibrationData:
             metrics=self.metrics.copy(),
             timestamp=self.timestamp,
             roi_start=self.roi_start,
-            roi_end=self.roi_end
+            roi_end=self.roi_end,
         )
 
     # ============================================================================
@@ -235,7 +248,9 @@ class CalibrationData:
     @property
     def cycle_time_ms(self) -> float:
         """Total cycle time per channel (ms)."""
-        return self.led_off_period + (self.detector_wait_before + self.detector_window + self.detector_wait_after)
+        return self.led_off_period + (
+            self.detector_wait_before + self.detector_window + self.detector_wait_after
+        )
 
     @property
     def p_integration_time(self) -> float:
@@ -295,7 +310,7 @@ class CalibrationData:
             return False
 
     @property
-    def dark_noise(self) -> Optional[np.ndarray]:
+    def dark_noise(self) -> np.ndarray | None:
         """Dark noise spectrum (legacy property - not stored in domain model)."""
         # Domain model doesn't store dark noise (it's used during calibration only)
         # Return None for compatibility
@@ -309,6 +324,7 @@ class CalibrationData:
 
         Returns:
             Dictionary with all calibration data in the format expected by CalibrationQCDialog
+
         """
         # Extract P-pol and transmission data from validation results if available
         p_pol_spectra = {}
@@ -328,76 +344,92 @@ class CalibrationData:
             for channel, validation_data in self.transmission_validation.items():
                 if isinstance(validation_data, dict):
                     # Extract P-pol spectrum if available
-                    if 'p_pol_raw' in validation_data:
-                        p_pol_spectra[channel] = validation_data['p_pol_raw']
+                    if "p_pol_raw" in validation_data:
+                        p_pol_spectra[channel] = validation_data["p_pol_raw"]
                     # Extract transmission spectrum if available
-                    if 'transmission' in validation_data:
-                        transmission_spectra[channel] = validation_data['transmission']
+                    if "transmission" in validation_data:
+                        transmission_spectra[channel] = validation_data["transmission"]
                     # Extract dark scan if available (legacy single dark)
-                    if 'dark_scan' in validation_data:
-                        dark_scan[channel] = validation_data['dark_scan']
+                    if "dark_scan" in validation_data:
+                        dark_scan[channel] = validation_data["dark_scan"]
 
                     # Extract QC metrics if available
-                    if 'qc_metrics' in validation_data:
-                        qc_metrics = validation_data['qc_metrics']
+                    if "qc_metrics" in validation_data:
+                        qc_metrics = validation_data["qc_metrics"]
                         qc_validation[channel] = {
-                            'transmission_min': -qc_metrics.get('dip_depth', 0.0),  # Negative because it's a dip
-                            'ratio': qc_metrics.get('p_s_ratio', 0.0),
-                            'dip_detected': qc_metrics.get('dip_detected', False),
-                            'fwhm': qc_metrics.get('fwhm', 0.0),
-                            'reason': ', '.join(qc_metrics.get('warnings', [])) if qc_metrics.get('warnings') else 'OK',
-                            'status': 'PASS' if qc_metrics.get('overall_pass', False) else 'FAIL'
+                            "transmission_min": -qc_metrics.get(
+                                "dip_depth",
+                                0.0,
+                            ),  # Negative because it's a dip
+                            "ratio": qc_metrics.get("p_s_ratio", 0.0),
+                            "dip_detected": qc_metrics.get("dip_detected", False),
+                            "fwhm": qc_metrics.get("fwhm", 0.0),
+                            "reason": ", ".join(qc_metrics.get("warnings", []))
+                            if qc_metrics.get("warnings")
+                            else "OK",
+                            "status": "PASS" if qc_metrics.get("overall_pass", False) else "FAIL",
                         }
 
         return {
             # Spectra
-            's_pol_spectra': self.s_pol_ref.copy(),
-            'p_pol_spectra': p_pol_spectra,
-            'dark_scan': dark_scan,  # Legacy: for backward compatibility
-            'dark_s_scans': dark_s_scans,  # NEW: Per-channel S-pol darks
-            'dark_p_scans': dark_p_scans,  # NEW: Per-channel P-pol darks
-            'transmission_spectra': transmission_spectra,
-            'wavelengths': self.wavelengths,
-
+            "s_pol_spectra": self.s_pol_ref.copy(),
+            "p_pol_spectra": p_pol_spectra,
+            "dark_scan": dark_scan,  # Legacy: for backward compatibility
+            "dark_s_scans": dark_s_scans,  # NEW: Per-channel S-pol darks
+            "dark_p_scans": dark_p_scans,  # NEW: Per-channel P-pol darks
+            "transmission_spectra": transmission_spectra,
+            "wavelengths": self.wavelengths,
             # Acquisition parameters
-            'integration_time': self.integration_time_s,
-            'integration_time_s': self.integration_time_s,
-            'integration_time_p': self.integration_time_p,
-            'channel_integration_times': self.channel_integration_times.copy() if self.channel_integration_times else {},
-            'num_scans': self.num_scans,
-
+            "integration_time": self.integration_time_s,
+            "integration_time_s": self.integration_time_s,
+            "integration_time_p": self.integration_time_p,
+            "channel_integration_times": self.channel_integration_times.copy()
+            if self.channel_integration_times
+            else {},
+            "num_scans": self.num_scans,
             # LED parameters
-            'led_intensities': self.s_mode_intensities.copy(),
-            's_mode_intensities': self.s_mode_intensities.copy(),
-            'p_mode_intensities': self.p_mode_intensities.copy(),
-
+            "led_intensities": self.s_mode_intensities.copy(),
+            "s_mode_intensities": self.s_mode_intensities.copy(),
+            "p_mode_intensities": self.p_mode_intensities.copy(),
             # Timing parameters
             # Timing tracks (new architecture)
-            'led_off_period': self.led_off_period,
-            'detector_wait_before': self.detector_wait_before,
-            'detector_window': self.detector_window,
-            'detector_wait_after': self.detector_wait_after,
-            'cycle_time_ms': self.cycle_time_ms,
+            "led_off_period": self.led_off_period,
+            "detector_wait_before": self.detector_wait_before,
+            "detector_window": self.detector_window,
+            "detector_wait_after": self.detector_wait_after,
+            "cycle_time_ms": self.cycle_time_ms,
             # Legacy timing (deprecated - for backward compatibility)
-            'pre_led_delay': self.pre_led_delay,
-            'post_led_delay': self.post_led_delay,
-
+            "pre_led_delay": self.pre_led_delay,
+            "post_led_delay": self.post_led_delay,
             # Metadata
-            'timestamp': datetime.fromtimestamp(self.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
-            'device_type': 'USB4000',  # Default value
-            'detector_serial': 'Unknown',  # Not stored in domain model
-            'firmware_version': 'Unknown',  # Not stored in domain model
-
+            "timestamp": datetime.fromtimestamp(self.timestamp).strftime(
+                "%Y-%m-%d %H:%M:%S",
+            ),
+            "device_type": "USB4000",  # Default value
+            "detector_serial": "Unknown",  # Not stored in domain model
+            "firmware_version": "Unknown",  # Not stored in domain model
             # QC validation results (flattened for table display)
-            'transmission_validation': qc_validation if qc_validation else self.transmission_validation,
-
+            "transmission_validation": qc_validation
+            if qc_validation
+            else self.transmission_validation,
             # Timing synchronization (Step 6)
-            'timing_sync': (self.timing_sync.copy() if isinstance(self.timing_sync, dict) else None),
-            'timing_sync_avg_ms': (float(self.timing_sync.get('avg_cycle_ms')) if isinstance(self.timing_sync, dict) and 'avg_cycle_ms' in self.timing_sync else None),
-            'timing_sync_jitter_ms': (float(self.timing_sync.get('jitter_ms')) if isinstance(self.timing_sync, dict) and 'jitter_ms' in self.timing_sync else None),
-            'timing_sync_status': (self.timing_sync.get('status') if isinstance(self.timing_sync, dict) else None),
-
+            "timing_sync": (
+                self.timing_sync.copy() if isinstance(self.timing_sync, dict) else None
+            ),
+            "timing_sync_avg_ms": (
+                float(self.timing_sync.get("avg_cycle_ms"))
+                if isinstance(self.timing_sync, dict) and "avg_cycle_ms" in self.timing_sync
+                else None
+            ),
+            "timing_sync_jitter_ms": (
+                float(self.timing_sync.get("jitter_ms"))
+                if isinstance(self.timing_sync, dict) and "jitter_ms" in self.timing_sync
+                else None
+            ),
+            "timing_sync_status": (
+                self.timing_sync.get("status") if isinstance(self.timing_sync, dict) else None
+            ),
             # ROI
-            'roi_start': self.roi_start,
-            'roi_end': self.roi_end,
+            "roi_start": self.roi_start,
+            "roi_end": self.roi_end,
         }

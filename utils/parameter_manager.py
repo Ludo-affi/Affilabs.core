@@ -99,7 +99,8 @@ class ParameterManager:
             s_pos = 0
             p_pos = 0
             if self.hardware.ctrl is not None and hasattr(
-                self.hardware.ctrl, "servo_get"
+                self.hardware.ctrl,
+                "servo_get",
             ):
                 try:
                     polarizer_pos = self.hardware.ctrl.servo_get()
@@ -114,7 +115,8 @@ class ParameterManager:
             pump_2_correction = 1.0
             try:
                 if self.hardware.knx is not None and hasattr(
-                    self.hardware.knx, "get_pump_corrections"
+                    self.hardware.knx,
+                    "get_pump_corrections",
                 ):
                     corrections = self.hardware.knx.get_pump_corrections()
                     if corrections is not None:
@@ -210,17 +212,18 @@ class ParameterManager:
             if new_intg < MIN_INTEGRATION:
                 new_intg = MIN_INTEGRATION
                 logger.warning(
-                    f"Integration time below minimum, set to {MIN_INTEGRATION}"
+                    f"Integration time below minimum, set to {MIN_INTEGRATION}",
                 )
             elif new_intg > MAX_INTEGRATION:
                 new_intg = MAX_INTEGRATION
                 logger.warning(
-                    f"Integration time above maximum, set to {MAX_INTEGRATION}"
+                    f"Integration time above maximum, set to {MAX_INTEGRATION}",
                 )
 
             # Special handling for specific USB devices
             if self.hardware.usb is not None and hasattr(
-                self.hardware.usb, "serial_number"
+                self.hardware.usb,
+                "serial_number",
             ):
                 if self.hardware.usb.serial_number == "FLMT09793":
                     new_intg = round(new_intg / 2.5) * 2.5
@@ -305,15 +308,15 @@ class ParameterManager:
                             logger.warning(f"EEPROM flash failed for S/P update: {e}")
                         if ok:
                             logger.info(
-                                f"Updated servo positions and saved to EEPROM: s={new_s}, p={new_p}"
+                                f"Updated servo positions and saved to EEPROM: s={new_s}, p={new_p}",
                             )
                         else:
                             logger.warning(
-                                f"Updated servo positions but did NOT persist to EEPROM: s={new_s}, p={new_p}"
+                                f"Updated servo positions but did NOT persist to EEPROM: s={new_s}, p={new_p}",
                             )
                     else:
                         logger.info(
-                            f"Updated servo positions (no flash capability detected): s={new_s}, p={new_p}"
+                            f"Updated servo positions (no flash capability detected): s={new_s}, p={new_p}",
                         )
 
             return True
@@ -326,7 +329,8 @@ class ParameterManager:
         try:
             # Use capability detection instead of isinstance check
             if self.hardware.knx is None or not hasattr(
-                self.hardware.knx, "get_pump_corrections"
+                self.hardware.knx,
+                "get_pump_corrections",
             ):
                 return True  # Not applicable for this hardware
 
@@ -394,7 +398,7 @@ class ParameterManager:
             intg_time = float(params["intg_time"])
             if intg_time < MIN_INTEGRATION or intg_time > MAX_INTEGRATION:
                 errors.append(
-                    f"Integration time must be between {MIN_INTEGRATION} and {MAX_INTEGRATION}"
+                    f"Integration time must be between {MIN_INTEGRATION} and {MAX_INTEGRATION}",
                 )
         except (ValueError, KeyError):
             errors.append("Invalid integration time")

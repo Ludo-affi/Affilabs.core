@@ -9,7 +9,6 @@ Usage:
     python show_afterglow_calibration_steps.py
 """
 
-import sys
 from pathlib import Path
 
 print("=" * 80)
@@ -24,7 +23,7 @@ print("OPTION 1: Run from GUI (RECOMMENDED)")
 print("=" * 80)
 print()
 print("1. Start the main application:")
-print("   cd \"c:\\Users\\ludol\\ezControl-AI\\Affilabs.core beta\"")
+print('   cd "c:\\Users\\ludol\\ezControl-AI\\Affilabs.core beta"')
 print("   python main_simplified.py")
 print()
 print("2. Wait for hardware to connect and calibration to complete")
@@ -33,7 +32,9 @@ print("3. After calibration completes, the system should automatically run")
 print("   afterglow calibration")
 print()
 print("4. Verify the result:")
-print("   python -c \"import json; data = json.load(open(r'config\\devices\\FLMT09116\\optical_calibration.json')); print('Channels:', list(data['channel_data'].keys()))\"")
+print(
+    "   python -c \"import json; data = json.load(open(r'config\\devices\\FLMT09116\\optical_calibration.json')); print('Channels:', list(data['channel_data'].keys()))\"",
+)
 print()
 print("=" * 80)
 print("OPTION 2: Trigger via Python Console in Application")
@@ -65,8 +66,10 @@ print("updated with channel 'd' data.")
 print()
 print("Check current status:")
 print()
-print("   cd \"c:\\Users\\ludol\\ezControl-AI\\Affilabs.core beta\"")
-print("   python -c \"import json; data = json.load(open('config/devices/FLMT09116/optical_calibration.json')); channels = list(data['channel_data'].keys()); print(f'Channels: {channels}'); print(f'Count: {len(channels)}/4')\"")
+print('   cd "c:\\Users\\ludol\\ezControl-AI\\Affilabs.core beta"')
+print(
+    "   python -c \"import json; data = json.load(open('config/devices/FLMT09116/optical_calibration.json')); channels = list(data['channel_data'].keys()); print(f'Channels: {channels}'); print(f'Count: {len(channels)}/4')\"",
+)
 print()
 print("=" * 80)
 print("CURRENT FILE STATUS")
@@ -76,12 +79,13 @@ print()
 # Try to check current status
 try:
     import json
+
     cal_file = Path("config/devices/FLMT09116/optical_calibration.json")
 
     if cal_file.exists():
-        with open(cal_file, 'r') as f:
+        with open(cal_file) as f:
             data = json.load(f)
-            channels = list(data.get('channel_data', {}).keys())
+            channels = list(data.get("channel_data", {}).keys())
 
         print(f"[OK] File exists: {cal_file}")
         print(f"   Channels present: {channels}")
@@ -93,16 +97,18 @@ try:
             print("   The file seems complete. The error might be from loading it.")
             print("   Try restarting the application.")
         else:
-            missing = [ch for ch in ['a', 'b', 'c', 'd'] if ch not in channels]
+            missing = [ch for ch in ["a", "b", "c", "d"] if ch not in channels]
             print(f"   [ERROR] Missing channels: {missing}")
             print()
-            print("   ACTION REQUIRED: Re-run optical calibration using Option 1 or 2 above")
+            print(
+                "   ACTION REQUIRED: Re-run optical calibration using Option 1 or 2 above",
+            )
 
         # Show data point counts
         print()
         print("Data points per channel:")
         for ch in channels:
-            num_points = len(data['channel_data'][ch]['integration_time_data'])
+            num_points = len(data["channel_data"][ch]["integration_time_data"])
             print(f"  Channel {ch}: {num_points} integration times")
 
     else:

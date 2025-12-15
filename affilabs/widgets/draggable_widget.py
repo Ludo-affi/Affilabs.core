@@ -1,13 +1,12 @@
 """Draggable Widget System - Make UI elements draggable for layout work."""
 
-from PySide6.QtWidgets import QWidget, QLabel
-from PySide6.QtCore import Qt, QPoint, Signal
-from PySide6.QtGui import QMouseEvent, QCursor
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QCursor, QMouseEvent
+from PySide6.QtWidgets import QLabel, QWidget
 
 
 class DraggableWidget(QWidget):
-    """
-    Mixin to make any widget draggable during layout work.
+    """Mixin to make any widget draggable during layout work.
 
     Features:
     - Click and drag to move widget
@@ -44,7 +43,7 @@ class DraggableWidget(QWidget):
                 "padding: 4px 8px; "
                 "border-radius: 3px; "
                 "font-size: 9pt; "
-                "font-weight: bold;"
+                "font-weight: bold;",
             )
             self._position_label.hide()
 
@@ -78,7 +77,11 @@ class DraggableWidget(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         """Handle mouse move to drag widget."""
-        if self._drag_enabled and self._dragging and event.buttons() & Qt.MouseButton.LeftButton:
+        if (
+            self._drag_enabled
+            and self._dragging
+            and event.buttons() & Qt.MouseButton.LeftButton
+        ):
             new_pos = event.globalPosition().toPoint() - self._drag_position
             self.move(new_pos)
             self._update_position_label()
@@ -96,6 +99,7 @@ class DraggableWidget(QWidget):
             # Hide position label after a moment
             if self._position_label:
                 from PySide6.QtCore import QTimer
+
                 QTimer.singleShot(1000, self._position_label.hide)
 
             event.accept()
@@ -114,8 +118,7 @@ class DraggableWidget(QWidget):
 
 
 def make_widget_draggable(widget: QWidget) -> QWidget:
-    """
-    Convert an existing widget to be draggable by adding the DraggableWidget behavior.
+    """Convert an existing widget to be draggable by adding the DraggableWidget behavior.
 
     This is a helper function that dynamically adds drag functionality to a widget.
 
@@ -129,12 +132,13 @@ def make_widget_draggable(widget: QWidget) -> QWidget:
         my_widget = QLabel("Drag me!")
         make_widget_draggable(my_widget)
         my_widget.enable_dragging()
+
     """
     # Add the dragging methods to the widget's class
     widget.__class__ = type(
-        widget.__class__.__name__ + 'Draggable',
+        widget.__class__.__name__ + "Draggable",
         (DraggableWidget, widget.__class__),
-        {}
+        {},
     )
 
     # Initialize dragging attributes
@@ -150,8 +154,7 @@ def make_widget_draggable(widget: QWidget) -> QWidget:
 
 
 class LayoutModeManager:
-    """
-    Manager to enable/disable layout mode across multiple widgets.
+    """Manager to enable/disable layout mode across multiple widgets.
 
     Usage:
         manager = LayoutModeManager()
@@ -169,12 +172,12 @@ class LayoutModeManager:
         self.layout_mode_active = False
 
     def add_widget(self, widget: QWidget, name: str = None):
-        """
-        Add a widget to be managed for layout mode.
+        """Add a widget to be managed for layout mode.
 
         Args:
             widget: Widget to add
             name: Optional name for code generation
+
         """
         if not isinstance(widget, DraggableWidget):
             # Convert to draggable if needed
@@ -213,7 +216,7 @@ class LayoutModeManager:
         for widget in self.widgets:
             name = self.widget_names.get(widget, str(widget))
             pos = widget.pos()
-            positions[name] = {'x': pos.x(), 'y': pos.y()}
+            positions[name] = {"x": pos.x(), "y": pos.y()}
         return positions
 
     def print_positions(self):
@@ -227,7 +230,7 @@ class LayoutModeManager:
 
     def save_positions_to_file(self, filepath: str):
         """Save widget positions as Python code to a file."""
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("# Generated widget positions\n\n")
             for widget in self.widgets:
                 name = self.widget_names.get(widget, "widget")

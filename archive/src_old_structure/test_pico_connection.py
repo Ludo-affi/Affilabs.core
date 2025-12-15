@@ -1,10 +1,12 @@
 """Test Pico P4SPR connection directly."""
-import sys
+
 import logging
-sys.path.insert(0, r'c:\Users\ludol\ezControl-AI\Affilabs.core beta')
+import sys
+
+sys.path.insert(0, r"c:\Users\ludol\ezControl-AI\Affilabs.core beta")
 
 # Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(levelname)s :: %(message)s')
+logging.basicConfig(level=logging.DEBUG, format="%(levelname)s :: %(message)s")
 
 from utils.controller import PicoP4SPR
 

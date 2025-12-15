@@ -43,12 +43,13 @@ Key Functions:
 """
 
 from pathlib import Path
-from typing import Optional, Any, Dict
+from typing import Any
+
 from utils.device_manager import get_device_manager
 from utils.logger import logger
 
 
-def initialize_device_on_connection(usb_device: Any) -> Optional[Path]:
+def initialize_device_on_connection(usb_device: Any) -> Path | None:
     """Initialize device-specific configuration when spectrometer connects.
 
     Call this after successful spectrometer connection to set up device-specific
@@ -66,11 +67,15 @@ def initialize_device_on_connection(usb_device: Any) -> Optional[Path]:
             device_dir = initialize_device_on_connection(self.usb)
             if device_dir:
                 logger.info(f"Device initialized: {device_dir}")
+
     """
     try:
         # Get detector serial number
-        serial_number = getattr(usb_device, 'serial_number', None) or \
-                       getattr(usb_device, '_serial_number', None)
+        serial_number = getattr(usb_device, "serial_number", None) or getattr(
+            usb_device,
+            "_serial_number",
+            None,
+        )
 
         if not serial_number or serial_number == "Unknown":
             logger.warning("⚠️ Cannot initialize device - serial number not available")
@@ -105,6 +110,7 @@ def check_and_request_optical_calibration() -> bool:
         if check_and_request_optical_calibration():
             logger.info("🔬 Optical calibration needed - starting automatically")
             run_optical_calibration()
+
     """
     try:
         device_manager = get_device_manager()
@@ -117,9 +123,11 @@ def check_and_request_optical_calibration() -> bool:
 
         if needs_calibration:
             logger.warning(
-                f"⚠️ Optical calibration missing for device {device_manager.current_device_serial}"
+                f"⚠️ Optical calibration missing for device {device_manager.current_device_serial}",
             )
-            logger.info("   Afterglow correction will be unavailable until calibration is run")
+            logger.info(
+                "   Afterglow correction will be unavailable until calibration is run",
+            )
 
         return needs_calibration
 
@@ -128,7 +136,7 @@ def check_and_request_optical_calibration() -> bool:
         return False
 
 
-def get_device_optical_calibration_path() -> Optional[Path]:
+def get_device_optical_calibration_path() -> Path | None:
     """Get path to optical calibration file for current device.
 
     Returns:
@@ -139,6 +147,7 @@ def get_device_optical_calibration_path() -> Optional[Path]:
         optical_cal_path = get_device_optical_calibration_path()
         if optical_cal_path:
             self.afterglow_correction = AfterglowCorrection(optical_cal_path)
+
     """
     try:
         device_manager = get_device_manager()
@@ -173,6 +182,7 @@ def save_optical_calibration_result(calibration_file_path: Path) -> bool:
             json.dump(calibration_data, f, indent=2)
 
         save_optical_calibration_result(calibration_path)
+
     """
     try:
         device_manager = get_device_manager()
@@ -182,7 +192,7 @@ def save_optical_calibration_result(calibration_file_path: Path) -> bool:
             return False
 
         device_manager.set_optical_calibration_path(calibration_file_path)
-        device_manager.update_calibration_status('optical', status=True)
+        device_manager.update_calibration_status("optical", status=True)
 
         logger.info("✅ Device config updated with optical calibration path")
         return True
@@ -192,7 +202,7 @@ def save_optical_calibration_result(calibration_file_path: Path) -> bool:
         return False
 
 
-def get_device_config_dict() -> Optional[Dict[str, Any]]:
+def get_device_config_dict() -> dict[str, Any] | None:
     """Get current device configuration as dictionary.
 
     Returns:
@@ -204,6 +214,7 @@ def get_device_config_dict() -> Optional[Dict[str, Any]]:
         if device_config:
             # Use device-specific configuration
             pass
+
     """
     try:
         device_manager = get_device_manager()
@@ -230,6 +241,7 @@ def list_all_devices() -> list[str]:
         devices = list_all_devices()
         for device in devices:
             print(f"Device: {device}")
+
     """
     try:
         device_manager = get_device_manager()

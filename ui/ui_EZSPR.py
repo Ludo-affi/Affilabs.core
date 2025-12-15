@@ -60,7 +60,7 @@ class Ui_EZSPRForm:
             "	border: 2px solid rgba(46, 48, 227, 150);\n"
             "	border-radius: 3px;\n"
             "\n"
-            "}"
+            "}",
         )
         self.EZSPR.setFlat(False)
         self.EZSPR.setCheckable(False)
@@ -71,7 +71,7 @@ class Ui_EZSPRForm:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.disconnect_btn.sizePolicy().hasHeightForWidth()
+            self.disconnect_btn.sizePolicy().hasHeightForWidth(),
         )
         self.disconnect_btn.setSizePolicy(sizePolicy1)
         self.disconnect_btn.setMinimumSize(QSize(30, 30))
@@ -92,7 +92,7 @@ class Ui_EZSPRForm:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 12px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/disconnect.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -106,7 +106,7 @@ class Ui_EZSPRForm:
         self.shutdown_btn.setObjectName("shutdown_btn")
         self.shutdown_btn.setGeometry(QRect(50, 28, 30, 30))
         sizePolicy1.setHeightForWidth(
-            self.shutdown_btn.sizePolicy().hasHeightForWidth()
+            self.shutdown_btn.sizePolicy().hasHeightForWidth(),
         )
         self.shutdown_btn.setSizePolicy(sizePolicy1)
         self.shutdown_btn.setMinimumSize(QSize(30, 30))
@@ -125,7 +125,7 @@ class Ui_EZSPRForm:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 12px;\n"
-            "}"
+            "}",
         )
         icon1 = QIcon()
         icon1.addFile(":/img/img/power.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -167,7 +167,7 @@ class Ui_EZSPRForm:
         self.quick_calibrate_btn.setObjectName("quick_calibrate_btn")
         self.quick_calibrate_btn.setGeometry(QRect(20, 20, 120, 30))
         sizePolicy1.setHeightForWidth(
-            self.quick_calibrate_btn.sizePolicy().hasHeightForWidth()
+            self.quick_calibrate_btn.sizePolicy().hasHeightForWidth(),
         )
         self.quick_calibrate_btn.setSizePolicy(sizePolicy1)
         font4 = QFont()
@@ -188,7 +188,7 @@ class Ui_EZSPRForm:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout.addWidget(self.EZSPR, 0, Qt.AlignTop)
@@ -207,13 +207,13 @@ class Ui_EZSPRForm:
         self.EZSPR.setTitle(QCoreApplication.translate("EZSPRForm", "EZSPR", None))
         # if QT_CONFIG(tooltip)
         self.disconnect_btn.setToolTip(
-            QCoreApplication.translate("EZSPRForm", "Disconnect EZSPR", None)
+            QCoreApplication.translate("EZSPRForm", "Disconnect EZSPR", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.disconnect_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.shutdown_btn.setToolTip(
-            QCoreApplication.translate("EZSPRForm", "Power Off EZSPR", None)
+            QCoreApplication.translate("EZSPRForm", "Power Off EZSPR", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.shutdown_btn.setText("")
@@ -224,15 +224,15 @@ class Ui_EZSPRForm:
                 "EZSPRForm",
                 "<html><head/><body><p>Temperature:</p></body></html>",
                 None,
-            )
+            ),
         )
         # if QT_CONFIG(tooltip)
         self.quick_calibrate_btn.setToolTip(
-            QCoreApplication.translate("EZSPRForm", "Calibrate EZSPR", None)
+            QCoreApplication.translate("EZSPRForm", "Calibrate EZSPR", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.quick_calibrate_btn.setText(
-            QCoreApplication.translate("EZSPRForm", "Calibrate", None)
+            QCoreApplication.translate("EZSPRForm", "Calibrate", None),
         )
 
     # retranslateUi

@@ -130,7 +130,7 @@ self.scans_per_channel: dict[str, int] = {}  # Per-channel scan counts (future u
 ```python
 def step_4_optimize_integration_time(self, weakest_ch: str) -> bool:
     acquisition_mode = self.state.acquisition_mode
-    
+
     if acquisition_mode == "per_channel_integration":
         return self._step_4_per_channel_mode()
     else:

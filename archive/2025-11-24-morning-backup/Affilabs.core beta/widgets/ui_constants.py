@@ -6,12 +6,13 @@ are defined here for maintainability.
 """
 
 from __future__ import annotations
-from typing import Final
 
+from typing import Final
 
 # ============================================================================
 # CYCLE CONFIGURATION
 # ============================================================================
+
 
 class CycleConfig:
     """Configuration for cycle type and time controls."""
@@ -25,9 +26,9 @@ class CycleConfig:
     # Default cycle times by type (minutes)
     DEFAULT_TIMES: Final[dict[str, int | None]] = {
         "Auto-read": None,  # No time limit
-        "Baseline": 5,      # Fixed 5 minutes
-        "Flow": 15,         # Default to 15 minutes
-        "Static": 15,       # Default to 15 minutes
+        "Baseline": 5,  # Fixed 5 minutes
+        "Flow": 15,  # Default to 15 minutes
+        "Static": 15,  # Default to 15 minutes
     }
 
     # Types where time dropdown should be enabled
@@ -42,6 +43,7 @@ class CycleConfig:
 
         Returns:
             Default time in minutes, or None if no time limit
+
         """
         return cls.DEFAULT_TIMES.get(cycle_type)
 
@@ -54,6 +56,7 @@ class CycleConfig:
 
         Returns:
             True if time dropdown should be enabled
+
         """
         return cycle_type in cls.TIME_ENABLED_TYPES
 
@@ -61,6 +64,7 @@ class CycleConfig:
 # ============================================================================
 # TABLE CONFIGURATION
 # ============================================================================
+
 
 class TableConfig:
     """Configuration for cycle table views."""
@@ -75,6 +79,7 @@ class TableConfig:
 # ============================================================================
 # UI STYLING
 # ============================================================================
+
 
 class UIStyle:
     """Centralized UI styling constants."""

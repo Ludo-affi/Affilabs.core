@@ -1,5 +1,6 @@
-from utils.controller import PicoP4SPR
 import time
+
+from utils.controller import PicoP4SPR
 
 ctrl = PicoP4SPR()
 ctrl.open()

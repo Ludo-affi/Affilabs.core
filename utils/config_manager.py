@@ -41,10 +41,10 @@ class CalibrationConfiguration:
 
     integration: int = MIN_INTEGRATION
     ref_intensity: dict[str, int] = field(
-        default_factory=lambda: dict.fromkeys(CH_LIST, 0)
+        default_factory=lambda: dict.fromkeys(CH_LIST, 0),
     )
     pol_intensity: dict[str, int] = field(
-        default_factory=lambda: dict.fromkeys(CH_LIST, 0)
+        default_factory=lambda: dict.fromkeys(CH_LIST, 0),
     )
     wave_data: np.Optional[ndarray] = None
     dark_noise: np.Optional[ndarray] = None
@@ -83,7 +83,10 @@ class TemperatureConfiguration:
         self.exp.clear()
 
     def add_reading(
-        self, temperature: float, timestamp: float, exp_time: float = 0.0
+        self,
+        temperature: float,
+        timestamp: float,
+        exp_time: float = 0.0,
     ) -> None:
         """Add a temperature reading."""
         self.readings.append(temperature)
@@ -179,7 +182,11 @@ class ConfigurationManager:
         logger.info("Configuration manager initialized with defaults")
 
     def update_device_config(
-        self, ctrl: str = "", knx: str = "", pump: Optional[str] = None, usb: str = ""
+        self,
+        ctrl: str = "",
+        knx: str = "",
+        pump: Optional[str] = None,
+        usb: str = "",
     ) -> None:
         """Update device configuration.
 
@@ -238,7 +245,10 @@ class ConfigurationManager:
         return self.temperature.to_dict()
 
     def add_temperature_reading(
-        self, temperature: float, timestamp: float, exp_time: float = 0.0
+        self,
+        temperature: float,
+        timestamp: float,
+        exp_time: float = 0.0,
     ) -> None:
         """Add a temperature reading to the log."""
         self.temperature.add_reading(temperature, timestamp, exp_time)

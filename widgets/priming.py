@@ -1,13 +1,12 @@
 """Widgets and function dealing with priming the system."""
 
 from asyncio import Task, create_task, sleep
-from typing import Optional
 
 # Python version compatibility
 try:
     from typing import Self  # Python 3.11+
 except ImportError:
-    from typing_extensions import Self  # Python < 3.11
+    from typing import Self  # Python < 3.11
 
 # Pump controller import (temporary stub for missing HAL implementation)
 try:
@@ -78,7 +77,7 @@ class PrimingWindow(QDialog):
         self: Self,
         pump: PumpController,
         knx: KineticController | PicoEZSPR,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         """Create the window prompting the user for confirmation."""
         super().__init__(parent)

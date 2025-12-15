@@ -1,15 +1,15 @@
-from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Signal, Slot
+from PySide6.QtWidgets import QWidget
 
+from settings import DEV
+from ui.ui_Affipump import Ui_Affipump
+from ui.ui_device import Ui_Device
 from ui.ui_EZSPR import Ui_EZSPRForm
 from ui.ui_KNX2 import Ui_KNX2
 from ui.ui_P4SPR import Ui_P4SPR_2
 from ui.ui_QSPR import Ui_QSPR
-from ui.ui_Affipump import Ui_Affipump
-from ui.ui_device import Ui_Device
 from utils.logger import logger
 from widgets.message import show_message
-from settings import DEV
 
 
 class Device(QWidget):
@@ -49,20 +49,20 @@ class Device(QWidget):
         if self.pump_widget is not None:
             self.pump_widget.hide()
         # Set up controller
-        if ctrl_type == '':
+        if ctrl_type == "":
             self.ui.add_ctrl.show()
-        elif ctrl_type in ['P4SPR', 'PicoP4SPR']:
+        elif ctrl_type in ["P4SPR", "PicoP4SPR"]:
             self.p4spr = True
             self.ui.add_ctrl.hide()
             self.ctrl_widget = P4SPRWidget(self.ui.controller_frame)
-            if ctrl_type == 'PicoP4SPR' and DEV:
+            if ctrl_type == "PicoP4SPR" and DEV:
                 self.ctrl_widget.ui.temp_display.setVisible(True)
                 self.sensor_read_sig.emit()
             else:
                 self.ctrl_widget.ui.temp_display.setVisible(False)
             self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
             self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
-        elif ctrl_type == 'QSPR':
+        elif ctrl_type == "QSPR":
             self.up = False
             self.qspr = True
             self.ui.add_ctrl.hide()
@@ -74,8 +74,8 @@ class Device(QWidget):
             self.sensor_read_sig.emit()
             if not DEV:
                 self.ctrl_widget.ui.temp_display.hide()
-        elif ctrl_type in ['EZSPR', 'PicoEZSPR']:
-            if ctrl_type == 'PicoEZSPR':
+        elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
+            if ctrl_type == "PicoEZSPR":
                 self.ctrl_pico = True
             self.ui.add_ctrl.hide()
             self.ui.add_knx.hide()
@@ -91,21 +91,21 @@ class Device(QWidget):
             logger.debug(f"controller {ctrl_type} not supported")
 
         # Set up kinetic
-        if knx_type == '':
-            if ctrl_type == '':
+        if knx_type == "":
+            if ctrl_type == "":
                 self.ui.add_knx.hide()
                 self.ui.add_ctrl.setText("Add Devices")
-            elif ctrl_type not in ['EZSPR', 'PicoEZSPR']:
+            elif ctrl_type not in ["EZSPR", "PicoEZSPR"]:
                 self.ui.add_knx.show()
-        elif knx_type in ['KNX', 'KNX2', 'PicoKNX2']:
-            if knx_type == 'PicoKNX2':
+        elif knx_type in ["KNX", "KNX2", "PicoKNX2"]:
+            if knx_type == "PicoKNX2":
                 self.knx_pico = True
             self.ui.add_knx.hide()
             self.knx_widget = KNX2Widget(self.ui.kinetic_frame, self.knx_pico)
             self.knx_widget.disconnect_btn.connect(self.call_disconnect)
             self.knx_widget.shutdown_btn.connect(self.initiate_shutdown)
-            if knx_type == 'KNX':
-                self.knx_widget.ui.KnxBox.setTitle('KNX')
+            if knx_type == "KNX":
+                self.knx_widget.ui.KnxBox.setTitle("KNX")
             if not DEV:
                 self.knx_widget.ui.temp_display.hide()
 
@@ -140,7 +140,7 @@ class Device(QWidget):
         self.shutdown_sig.emit(device_type)
 
     def cartridge_motion(self, command):
-        if command == 'up':
+        if command == "up":
             if not self.up:
                 self.up = True
                 self.crt_sig.emit(command)
@@ -150,7 +150,7 @@ class Device(QWidget):
 
     def update_temp(self, temp_str, temp_type):
         try:
-            if temp_type == 'ctrl':
+            if temp_type == "ctrl":
                 self.ctrl_widget.update_temp(temp_str)
             else:
                 self.knx_widget.update_temp(temp_str)
@@ -200,7 +200,7 @@ class P4SPRWidget(ControlWidgetBase):
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('controller')
+        self.disconnect_btn.emit("controller")
 
     def quick_calibration(self):
         self.calibrate_btn.emit()
@@ -230,27 +230,30 @@ class QSPRWidget(ControlWidgetBase):
         self.calibrate_btn.emit()
 
     def cartridge_up(self):
-        self.crt_command.emit('up')
+        self.crt_command.emit("up")
 
     def cartridge_down(self):
-        self.crt_command.emit('down')
+        self.crt_command.emit("down")
 
     def adjust_up(self):
-        self.crt_command.emit('adj_up')
+        self.crt_command.emit("adj_up")
 
     def adjust_down(self):
-        self.crt_command.emit('adj_down')
+        self.crt_command.emit("adj_down")
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('controller')
+        self.disconnect_btn.emit("controller")
 
     def shutdown_device(self):
         self.setEnabled(False)
         if show_message(msg_type="Warning", msg="Power off QSPR?", yes_no=True):
-            show_message(msg_type="Warning", msg="Warning: DO NOT UNPLUG\n "
-                                                 "Wait until power button light is OFF to unplug the device")
-            self.shutdown_btn.emit('controller')
+            show_message(
+                msg_type="Warning",
+                msg="Warning: DO NOT UNPLUG\n "
+                "Wait until power button light is OFF to unplug the device",
+            )
+            self.shutdown_btn.emit("controller")
         else:
             self.setEnabled(True)
 
@@ -271,7 +274,7 @@ class KNX2Widget(ControlWidgetBase):
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('kinetic')
+        self.disconnect_btn.emit("kinetic")
 
     def quick_calibration(self):
         self.calibrate_btn.emit()
@@ -283,9 +286,12 @@ class KNX2Widget(ControlWidgetBase):
         self.setEnabled(False)
         if show_message(msg_type="Warning", msg="Power off KNX2?", yes_no=True):
             if not self.pico:
-                show_message(msg_type="Warning", msg="Warning: DO NOT UNPLUG\n "
-                                                     "Wait until power button light is OFF to unplug the device")
-            self.shutdown_btn.emit('kinetic')
+                show_message(
+                    msg_type="Warning",
+                    msg="Warning: DO NOT UNPLUG\n "
+                    "Wait until power button light is OFF to unplug the device",
+                )
+            self.shutdown_btn.emit("kinetic")
         else:
             self.setEnabled(True)
 
@@ -305,7 +311,7 @@ class EZSPRWidget(ControlWidgetBase):
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('both')
+        self.disconnect_btn.emit("both")
 
     def update_temp(self, temp):
         if not self.ui.temp_display.isVisible():
@@ -319,9 +325,11 @@ class EZSPRWidget(ControlWidgetBase):
         self.setEnabled(False)
         if show_message(msg_type="Warning", msg="Power off EZSPR?", yes_no=True):
             if not self.pico:
-                show_message(msg_type="Warning", msg="Warning: DO NOT UNPLUG\n "
-                                                     "Wait until power button light is OFF to unplug the device")
-            self.shutdown_btn.emit('both')
+                show_message(
+                    msg_type="Warning",
+                    msg="Warning: DO NOT UNPLUG\n "
+                    "Wait until power button light is OFF to unplug the device",
+                )
+            self.shutdown_btn.emit("both")
         else:
             self.setEnabled(True)
-

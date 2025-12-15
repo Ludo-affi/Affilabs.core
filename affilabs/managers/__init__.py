@@ -8,10 +8,16 @@ This package contains manager classes that handle specific domains of functional
 - CalibrationManager: Calibration workflow delegation
 """
 
-from .cursor_manager import CursorManager
-from .flag_manager import FlagManager
-from .export_manager import ExportManager
-from .device_config_manager import DeviceConfigManager
 from .calibration_manager import CalibrationManager
+from .cursor_manager import CursorManager
+from .device_config_manager import DeviceConfigManager
+from .export_manager import ExportManager
+from .flag_manager import FlagManager
 
-__all__ = ['CursorManager', 'FlagManager', 'ExportManager', 'DeviceConfigManager', 'CalibrationManager']
+__all__ = [
+    "CursorManager",
+    "FlagManager",
+    "ExportManager",
+    "DeviceConfigManager",
+    "CalibrationManager",
+]

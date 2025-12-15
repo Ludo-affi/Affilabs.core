@@ -1,4 +1,5 @@
 """Build the compressed folder with the executable."""
+
 from pathlib import Path
 from re import search
 from shutil import make_archive

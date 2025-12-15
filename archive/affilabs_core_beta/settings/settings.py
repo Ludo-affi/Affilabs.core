@@ -55,9 +55,9 @@ GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 100, 0
 # Colorblind-friendly palette (Okabe-Ito)
 # Designed to be distinguishable for all types of colorblindness
 GRAPH_COLORS_COLORBLIND = {
-    "a": (1, 115, 178),    # Blue
-    "b": (222, 143, 5),    # Orange
-    "c": (2, 158, 115),    # Green
+    "a": (1, 115, 178),  # Blue
+    "b": (222, 143, 5),  # Orange
+    "c": (2, 158, 115),  # Green
     "d": (204, 120, 188),  # Magenta
 }
 
@@ -96,14 +96,20 @@ CYCLE_TIME = 1.3  # cycle time for all 4 channels
 # PRE_LED_DELAY_MS: Settling time after LED turn-on before measurement
 # POST_LED_DELAY_MS: Dark time after LED turn-off before channel switch (for afterglow decay)
 PRE_LED_DELAY_MS = 45  # LED stabilization delay before measurement (default 45ms, configurable 0-200ms)
-POST_LED_DELAY_MS = 5  # Additional dark time after LED off (default 5ms, configurable 0-100ms)
+POST_LED_DELAY_MS = (
+    5  # Additional dark time after LED off (default 5ms, configurable 0-100ms)
+)
 
 # Legacy support (kept for backward compatibility with old code)
 LED_DELAY = PRE_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
 LED_POST_DELAY = POST_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
 
-USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
-LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
+USE_DYNAMIC_LED_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
+LED_DELAY_TARGET_RESIDUAL = (
+    2.0  # percent residual allowed when computing dynamic LED delay
+)
 
 # === AUTOMATIC AFTERGLOW CORRECTION STRATEGY ===
 # Three-tier system based on total acquisition delay (PRE + POST):
@@ -124,16 +130,22 @@ LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynam
 #    - Benefit: Saves computation, avoids over-correction
 #
 # The system automatically determines mode based on LED_DELAY + LED_POST_DELAY
-AFTERGLOW_FAST_THRESHOLD_MS = 50.0   # Below this: high-speed mode (correction enabled)
+AFTERGLOW_FAST_THRESHOLD_MS = 50.0  # Below this: high-speed mode (correction enabled)
 AFTERGLOW_SLOW_THRESHOLD_MS = 100.0  # Above this: slow mode (correction disabled)
-AFTERGLOW_AUTO_MODE = True  # Automatic mode selection (recommended, set False to force enable/disable)
-USE_DYNAMIC_POST_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
+AFTERGLOW_AUTO_MODE = (
+    True  # Automatic mode selection (recommended, set False to force enable/disable)
+)
+USE_DYNAMIC_POST_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 49152  # DEPRECATED: Now queried from detector HAL via usb.target_counts (75% of detector max)
-P_COUNT_THRESHOLD = 300  # DEPRECATED: Replaced by dynamic 30% of target_counts in verify_calibration()
+P_COUNT_THRESHOLD = (
+    300  # DEPRECATED: Replaced by dynamic 30% of target_counts in verify_calibration()
+)
 MIN_INTEGRATION = 10  # minimum detector integration time in milliseconds - start low and increase as needed
 INTEGRATION_STEP = 5  # integration time step in milliseconds
 MAX_INTEGRATION = 100  # maximum detector integration time in milliseconds
@@ -142,9 +154,9 @@ MAX_NUM_SCANS = 25
 
 # === SESSION QUALITY MONITORING (FWHM-Based QC System) ===
 # Quality thresholds for FWHM-based grading (nm)
-FWHM_EXCELLENT_THRESHOLD_NM = 30.0   # Green:  FWHM < 30nm
-FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
-                                      # Red:    FWHM ≥ 60nm
+FWHM_EXCELLENT_THRESHOLD_NM = 30.0  # Green:  FWHM < 30nm
+FWHM_GOOD_THRESHOLD_NM = 60.0  # Yellow: 30nm ≤ FWHM < 60nm
+# Red:    FWHM ≥ 60nm
 
 # === CALIBRATION METHOD SELECTION ===
 # Two calibration methods available:
@@ -160,7 +172,9 @@ FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
 #    - Trade-offs: Variable integration time per channel, may hit timing budget on weak channels
 #
 # IMPORTANT: Keep ALTERNATIVE method DISABLED until thoroughly tested
-USE_ALTERNATIVE_CALIBRATION = True  # Set to True to use Global LED Intensity method (EXPERIMENTAL)
+USE_ALTERNATIVE_CALIBRATION = (
+    True  # Set to True to use Global LED Intensity method (EXPERIMENTAL)
+)
 
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment
@@ -170,13 +184,15 @@ FILTERING_ON = True  # enabled/disable filtering
 MED_FILT_WIN = 3  # default median filter window size
 
 # === Display Smoothing Settings ===
-ENABLE_INTERPOLATED_DISPLAY = True  # Emit preview points during batch processing for smooth visualization
+ENABLE_INTERPOLATED_DISPLAY = (
+    True  # Emit preview points during batch processing for smooth visualization
+)
 BATCH_SIZE = 12  # Number of raw spectra to buffer before vectorized processing (balances quality vs latency)
-                 # Batch size 12 provides ~300ms processing window for advanced filtering
-                 # Recommended values:
-                 # - 8: Fast mode (~200ms window), good for monitoring
-                 # - 12: Quality mode (~300ms window), Savitzky-Golay filtering (RECOMMENDED)
-                 # - 16: Research mode (~400ms window), maximum quality
+# Batch size 12 provides ~300ms processing window for advanced filtering
+# Recommended values:
+# - 8: Fast mode (~200ms window), good for monitoring
+# - 12: Quality mode (~300ms window), Savitzky-Golay filtering (RECOMMENDED)
+# - 16: Research mode (~400ms window), maximum quality
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
@@ -195,10 +211,11 @@ PROFILING_REPORT_INTERVAL = 30  # Seconds between profiling reports (if enabled)
 
 # === Timezone Settings ===
 import datetime
+
 try:
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 except AttributeError:
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 DEFAULT_CONFIG = {
     "unit": UNIT,
@@ -212,17 +229,18 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 if not os.path.exists(CONFIG_FILE):
     import tempfile
     from pathlib import Path
+
     config_path = Path(CONFIG_FILE)
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Atomic write using temp file
     try:
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
+            mode="w",
+            encoding="utf-8",
             dir=config_path.parent,
             delete=False,
-            suffix='.tmp'
+            suffix=".tmp",
         ) as tmp_file:
             json.dump(DEFAULT_CONFIG, tmp_file, indent=2)
             tmp_path = Path(tmp_file.name)

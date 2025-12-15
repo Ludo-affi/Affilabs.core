@@ -1,19 +1,16 @@
 """Quick UI Dev Helpers - Speed up UI iteration with Copilot."""
 
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import QRect, QPoint, QSize
 
 
 class UIInspector:
-    """
-    Quick inspection and code generation for UI elements.
+    """Quick inspection and code generation for UI elements.
     Helps you rapidly iterate on UI layouts with Copilot.
     """
 
     @staticmethod
     def inspect_widget(widget: QWidget, name: str = "widget"):
-        """
-        Get current widget properties as copy-paste code.
+        """Get current widget properties as copy-paste code.
 
         Usage in Python console or debug:
             from widgets.ui_dev_helpers import UIInspector
@@ -29,13 +26,13 @@ class UIInspector:
             f"# Max Size: {widget.maximumWidth()}x{widget.maximumHeight()}",
             f"# Visible: {widget.isVisible()}",
             "",
-            f"# Apply these settings:",
+            "# Apply these settings:",
             f"{name}.move({widget.x()}, {widget.y()})",
             f"{name}.setFixedSize({widget.width()}, {widget.height()})",
-            f"# OR",
+            "# OR",
             f"{name}.setGeometry({widget.x()}, {widget.y()}, {widget.width()}, {widget.height()})",
             "",
-            f"# Quick adjustments:",
+            "# Quick adjustments:",
             f"adjust.move_widget({name}, {widget.x()}, {widget.y()})",
             f"adjust.resize_widget({name}, {widget.width()}, {widget.height()})",
         ]
@@ -54,19 +51,26 @@ class UIInspector:
             f"# Margins: {layout.contentsMargins().left()}, {layout.contentsMargins().top()}, "
             f"{layout.contentsMargins().right()}, {layout.contentsMargins().bottom()}",
             "",
-            f"# Child widgets:",
+            "# Child widgets:",
         ]
 
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item.widget():
                 w = item.widget()
-                code_lines.append(f"#   [{i}] {type(w).__name__} - {w.objectName() or 'unnamed'}")
+                code_lines.append(
+                    f"#   [{i}] {type(w).__name__} - {w.objectName() or 'unnamed'}",
+                )
 
         return "\n".join(code_lines)
 
     @staticmethod
-    def compare_widgets(widget1: QWidget, widget2: QWidget, name1="widget1", name2="widget2") -> str:
+    def compare_widgets(
+        widget1: QWidget,
+        widget2: QWidget,
+        name1="widget1",
+        name2="widget2",
+    ) -> str:
         """Compare two widgets to see differences."""
         code_lines = [
             f"# Comparison: {name1} vs {name2}",
@@ -81,8 +85,7 @@ class UIInspector:
 
 
 class QuickLayoutAdjuster:
-    """
-    Quick layout adjustments without dialog boxes.
+    """Quick layout adjustments without dialog boxes.
     Call these methods directly to adjust UI elements.
     """
 
@@ -155,8 +158,7 @@ def find_and_inspect(parent: QWidget, name: str):
 
 
 def print_widget_tree(widget: QWidget, indent: int = 0):
-    """
-    Print widget hierarchy tree.
+    """Print widget hierarchy tree.
     Helpful for understanding UI structure.
     """
     name = widget.objectName() or type(widget).__name__

@@ -15,7 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from affilabs.utils.device_integration import get_device_optical_calibration_path
-from affilabs.utils.logger import logger
 
 
 def main():
@@ -34,7 +33,7 @@ def main():
             print("   Please connect hardware first")
             return
 
-        print(f"📁 Device optical calibration path:")
+        print("📁 Device optical calibration path:")
         print(f"   {optical_cal_path}")
         print()
 
@@ -52,32 +51,34 @@ def main():
 
         # File exists - check if it has all channels
         import json
-        with open(optical_cal_path, 'r') as f:
+
+        with open(optical_cal_path) as f:
             data = json.load(f)
 
-        channels = list(data.get('channel_data', {}).keys())
-        print(f"📊 Current optical calibration file:")
+        channels = list(data.get("channel_data", {}).keys())
+        print("📊 Current optical calibration file:")
         print(f"   Channels: {channels}")
         print(f"   Created: {data.get('metadata', {}).get('created', 'unknown')}")
         print()
 
-        if len(channels) < 4 or 'd' not in channels:
+        if len(channels) < 4 or "d" not in channels:
             print("[WARN]  ISSUE DETECTED: Missing channel 'd'")
             print(f"   Found only: {channels}")
-            print(f"   Expected: ['a', 'b', 'c', 'd']")
+            print("   Expected: ['a', 'b', 'c', 'd']")
             print()
 
             response = input("Delete old calibration file? (y/n): ").strip().lower()
-            if response == 'y':
+            if response == "y":
                 # Backup first
-                backup_path = optical_cal_path.with_suffix('.json.backup')
+                backup_path = optical_cal_path.with_suffix(".json.backup")
                 import shutil
+
                 shutil.copy2(optical_cal_path, backup_path)
                 print(f"[OK] Backup created: {backup_path}")
 
                 # Delete
                 optical_cal_path.unlink()
-                print(f"[OK] Deleted old optical calibration file")
+                print("[OK] Deleted old optical calibration file")
                 print()
                 print("NEXT STEPS:")
                 print("1. Start the main application")
@@ -92,8 +93,11 @@ def main():
             print("[OK] Optical calibration file is complete (all 4 channels)")
             print()
             # Check if it has S-mode LED intensities
-            led_intensities = data.get('metadata', {}).get('led_intensities_s_mode', None)
-            polarization = data.get('metadata', {}).get('polarization_mode', 'unknown')
+            led_intensities = data.get("metadata", {}).get(
+                "led_intensities_s_mode",
+                None,
+            )
+            polarization = data.get("metadata", {}).get("polarization_mode", "unknown")
 
             print(f"   Polarization mode: {polarization}")
             if led_intensities:
@@ -106,6 +110,7 @@ def main():
     except Exception as e:
         print(f"[ERROR] Error: {e}")
         import traceback
+
         try:
             print(traceback.format_exc())
         except:

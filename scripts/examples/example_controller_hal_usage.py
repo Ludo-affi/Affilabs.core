@@ -10,26 +10,25 @@ from pathlib import Path
 # Add Old software directory to path
 sys.path.insert(0, str(Path(__file__).parent / "Old software"))
 
-from utils.controller import PicoP4SPR, PicoEZSPR
+from utils.controller import PicoP4SPR
 from utils.hal.controller_hal import create_controller_hal
 
 
 def old_way_example(device_config, ctrl):
     """OLD WAY: Fragile string matching scattered throughout code."""
-
     # Problem 1: Fragile - easy to miss a device type
     if device_config["ctrl"] in ["P4SPR", "PicoP4SPR"]:
-        ctrl.set_mode('s')  # Polarizer control
+        ctrl.set_mode("s")  # Polarizer control
 
     # Problem 2: Duplicate lists across codebase
     if device_config["ctrl"] in ["PicoP4SPR"]:
         ctrl.set_batch_intensities(a=255, b=128, c=64, d=0)
     else:
         # Sequential fallback
-        ctrl.set_intensity('a', 255)
-        ctrl.set_intensity('b', 128)
-        ctrl.set_intensity('c', 64)
-        ctrl.set_intensity('d', 0)
+        ctrl.set_intensity("a", 255)
+        ctrl.set_intensity("b", 128)
+        ctrl.set_intensity("c", 64)
+        ctrl.set_intensity("d", 0)
 
     # Problem 3: Long condition chains
     if device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]:
@@ -43,27 +42,26 @@ def old_way_example(device_config, ctrl):
 
 def new_way_example(ctrl):
     """NEW WAY: Clean, type-safe capability queries."""
-
     # Wrap controller with HAL
     hal = create_controller_hal(ctrl)
 
     # Type-safe capability check
     if hal.supports_polarizer:
-        hal.set_mode('s')
+        hal.set_mode("s")
 
     # Batch command if available, otherwise automatic fallback
     if hal.supports_batch_leds:
         hal.set_batch_intensities(a=255, b=128, c=64, d=0)
     else:
         # Fallback to sequential
-        hal.set_intensity('a', 255)
-        hal.set_intensity('b', 128)
-        hal.set_intensity('c', 64)
-        hal.set_intensity('d', 0)
-        hal.set_intensity('a', 255)
-        hal.set_intensity('b', 128)
-        hal.set_intensity('c', 64)
-        hal.set_intensity('d', 0)
+        hal.set_intensity("a", 255)
+        hal.set_intensity("b", 128)
+        hal.set_intensity("c", 64)
+        hal.set_intensity("d", 0)
+        hal.set_intensity("a", 255)
+        hal.set_intensity("b", 128)
+        hal.set_intensity("c", 64)
+        hal.set_intensity("d", 0)
 
     # Clean capability check
     if hal.supports_pump:
@@ -77,7 +75,6 @@ def new_way_example(ctrl):
 
 def real_world_example():
     """Real-world example: Hardware-dependent UI initialization."""
-
     # Simulate hardware initialization
     ctrl = PicoP4SPR()
     if not ctrl.open():
@@ -94,16 +91,16 @@ def real_world_example():
     print(f"  ✓ LED control ({hal.channel_count} channels)")
 
     if hal.supports_polarizer:
-        print(f"  ✓ Polarizer control")
+        print("  ✓ Polarizer control")
 
     if hal.supports_batch_leds:
-        print(f"  ✓ Batch LED commands (15x faster)")
+        print("  ✓ Batch LED commands (15x faster)")
 
     if hal.supports_pump:
-        print(f"  ✓ Pump control")
+        print("  ✓ Pump control")
 
     if hal.supports_firmware_update:
-        print(f"  ✓ Firmware updates")
+        print("  ✓ Firmware updates")
 
     temp = hal.get_temperature()
     if temp > 0:
@@ -117,27 +114,26 @@ def real_world_example():
         hal.set_batch_intensities(a=255, b=128, c=64, d=32)
     else:
         print("Using sequential commands...")
-        hal.set_intensity('a', 255)
-        hal.set_intensity('b', 128)
-        hal.set_intensity('c', 64)
-        hal.set_intensity('d', 32)
+        hal.set_intensity("a", 255)
+        hal.set_intensity("b", 128)
+        hal.set_intensity("c", 64)
+        hal.set_intensity("d", 32)
 
     print("✓ LEDs configured")
 
     # Polarizer control if available
     if hal.supports_polarizer:
         print("\n=== Configuring polarizer ===\n")
-        hal.set_mode('s')
+        hal.set_mode("s")
         position = hal.get_polarizer_position()
         print(f"✓ Polarizer set to S-polarization: {position}")
 
 
 def comparison_example():
     """Side-by-side comparison of old vs new approach."""
-
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("BEFORE: Fragile string matching")
-    print("="*60)
+    print("=" * 60)
     print("""
     # Scattered throughout codebase
     if self.device_config["ctrl"] in ["P4SPR", "PicoP4SPR"]:
@@ -156,9 +152,9 @@ def comparison_example():
     # - No type checking
     """)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("AFTER: Type-safe HAL")
-    print("="*60)
+    print("=" * 60)
     print("""
     # Clean and type-safe
     hal = create_controller_hal(self.ctrl)
@@ -192,6 +188,6 @@ if __name__ == "__main__":
     # Comparison
     comparison_example()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("See CONTROLLER_HAL_COMPLETE.md for full documentation")
-    print("="*60)
+    print("=" * 60)

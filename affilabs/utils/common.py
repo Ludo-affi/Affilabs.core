@@ -19,7 +19,9 @@ except Exception:
 
     # Fallback: use repo-level config path
     CONFIG_FILE = os.path.join(
-        os.path.dirname(os.path.dirname(_cur_dir)), "config", "oem_devices.json",
+        os.path.dirname(os.path.dirname(_cur_dir)),
+        "config",
+        "oem_devices.json",
     )
 import contextlib
 
@@ -156,7 +158,10 @@ def export_segments(segments, path, value_list, ts_list) -> bool:
     keys = list(data[0].keys())
     try:
         with open(
-            path_obj / "segments_table.csv", "w", newline="", encoding="utf-8",
+            path_obj / "segments_table.csv",
+            "w",
+            newline="",
+            encoding="utf-8",
         ) as output_file:
             dict_writer = csv.DictWriter(output_file, keys, delimiter="\t")
             dict_writer.writeheader()
@@ -200,7 +205,10 @@ def export_segments(segments, path, value_list, ts_list) -> bool:
 
         with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
             writer = csv.writer(
-                csv_file, delimiter="\t", quotechar="|", quoting=csv.QUOTE_MINIMAL,
+                csv_file,
+                delimiter="\t",
+                quotechar="|",
+                quoting=csv.QUOTE_MINIMAL,
             )
             writer.writerow([h for sublist in headers for h in sublist])
             for i in range(max_len):

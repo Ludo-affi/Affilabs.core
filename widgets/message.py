@@ -37,7 +37,11 @@ class TimerMessageBox(QMessageBox):
 
 
 def show_message(
-    msg, msg_type="Information", auto_close_time=None, yes_no=False, q=(False, "", "")
+    msg,
+    msg_type="Information",
+    auto_close_time=None,
+    yes_no=False,
+    q=(False, "", ""),
 ):
     """:param q:
     :param yes_no:

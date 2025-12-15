@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Customer Device Configuration Installer
+"""Customer Device Configuration Installer
 
 Automatically installs device configuration from USB drive to customer's computer.
 Run this script from the USB drive that came with your Affinité SPR device.
@@ -70,7 +69,9 @@ def get_install_directory() -> Path:
         install_dir = Path.home() / "ezControl" / "config"
     elif sys.platform == "darwin":
         # macOS: ~/Library/Application Support/ezControl/config
-        install_dir = Path.home() / "Library" / "Application Support" / "ezControl" / "config"
+        install_dir = (
+            Path.home() / "Library" / "Application Support" / "ezControl" / "config"
+        )
     else:
         # Linux: ~/.ezcontrol/config
         install_dir = Path.home() / ".ezcontrol" / "config"
@@ -164,7 +165,7 @@ def main():
 
         # Step 4: Confirm installation
         response = input("Ready to install. Continue? (Y/n): ").strip().lower()
-        if response and response != 'y':
+        if response and response != "y":
             print("\n❌ Installation cancelled by user")
             return 0
 
@@ -203,7 +204,7 @@ def main():
 
         # Show what was installed
         print("Installed files:")
-        print(f"  • device_config.json")
+        print("  • device_config.json")
         for file in calib_files:
             print(f"  • {file.name}")
         print()
@@ -217,6 +218,7 @@ def main():
     except Exception as e:
         print(f"\n\n❌ Installation failed: {e}")
         import traceback
+
         traceback.print_exc()
         input("Press Enter to exit...")
         return 1

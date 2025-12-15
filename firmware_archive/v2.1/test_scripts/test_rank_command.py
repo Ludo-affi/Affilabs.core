@@ -1,13 +1,15 @@
 """Test if V1.9 firmware supports 'rank' command for automatic LED sequencing"""
 
 import sys
+
 from affilabs.utils.controller import PicoP4SPR
+
 
 def test_rank_command():
     """Test if rank command is available in current firmware"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TESTING FIRMWARE 'rank' COMMAND")
-    print("="*70)
+    print("=" * 70)
 
     try:
         # Initialize controller
@@ -19,7 +21,7 @@ def test_rank_command():
         print("✅ Controller connected")
 
         # Test if method exists
-        if not hasattr(ctrl, 'led_rank_sequence'):
+        if not hasattr(ctrl, "led_rank_sequence"):
             print("❌ led_rank_sequence() method not found")
             return False
 
@@ -34,14 +36,14 @@ def test_rank_command():
         print("  b:READY → b:READ → b:DONE")
         print("  ... etc")
         print("\nIf firmware DOESN'T support it, this will timeout in 5 seconds...")
-        print("-"*70)
+        print("-" * 70)
 
         try:
             for ch, signal in ctrl.led_rank_sequence(
                 test_intensity=100,
                 settling_ms=35,
                 dark_ms=5,
-                timeout_s=5.0
+                timeout_s=5.0,
             ):
                 print(f"  {ch.upper()}: {signal}")
 
@@ -69,9 +71,10 @@ def test_rank_command():
         return False
 
     finally:
-        if 'ctrl' in locals():
+        if "ctrl" in locals():
             ctrl.close()
             print("\nController disconnected")
+
 
 if __name__ == "__main__":
     result = test_rank_command()

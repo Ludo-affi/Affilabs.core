@@ -68,12 +68,11 @@ Author: AI Assistant
 Date: November 20, 2025
 """
 
+import logging
+
 import numpy as np
-from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import curve_fit
-from typing import Optional, Dict, Tuple
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +85,7 @@ class AdaptiveMultiFeaturePipeline:
 
         Args:
             config: Optional configuration dict (for compatibility with pipeline registry)
+
         """
         self.name = "Adaptive Multi-Feature"
         self.description = "Advanced multi-parameter analysis with temporal filtering"
@@ -111,22 +111,27 @@ class AdaptiveMultiFeaturePipeline:
         self.max_fwhm = 100.0  # nm (broader = suspicious)
         self.fwhm_expansion_coeff = 0.05  # Width increases ~5% per 100nm wavelength
 
-    def get_metadata(self) -> Dict:
+    def get_metadata(self) -> dict:
         """Return pipeline metadata."""
         return {
-            'name': self.name,
-            'description': self.description,
-            'version': '2.0',
-            'features': ['multi_parameter', 'temporal_filtering', 'adaptive_peak', 'artifact_detection'],
+            "name": self.name,
+            "description": self.description,
+            "version": "2.0",
+            "features": [
+                "multi_parameter",
+                "temporal_filtering",
+                "adaptive_peak",
+                "artifact_detection",
+            ],
         }
 
     def find_resonance_wavelength(
         self,
         transmission: np.ndarray,
         wavelengths: np.ndarray,
-        timestamp: Optional[float] = None,
-        **kwargs
-    ) -> Tuple[float, Dict]:
+        timestamp: float | None = None,
+        **kwargs,
+    ) -> tuple[float, dict]:
         """Find resonance wavelength using multi-feature analysis.
 
         OPTIMIZED Algorithm (uses pre-calculated data):
@@ -147,6 +152,7 @@ class AdaptiveMultiFeaturePipeline:
 
         Returns:
             Tuple of (resonance_wavelength, metadata_dict)
+
         """
         if transmission is None or wavelengths is None:
             raise ValueError("Invalid input data")
@@ -154,7 +160,7 @@ class AdaptiveMultiFeaturePipeline:
             raise ValueError("Data length mismatch")
 
         # Get minimum hint if provided
-        minimum_hint_nm = kwargs.get('minimum_hint_nm', None)
+        minimum_hint_nm = kwargs.get("minimum_hint_nm")
 
         # Step 1: Light Gaussian filtering (transmission already SG-filtered)
         # OPTIMIZED: Skip heavy SG filter, only apply light Gaussian for weight smoothing
@@ -172,20 +178,28 @@ class AdaptiveMultiFeaturePipeline:
 
         # Extract FWHM and depth
         peak_fwhm, peak_depth = self._extract_features_fast(
-            filtered, wavelengths, min_idx
+            filtered,
+            wavelengths,
+            min_idx,
         )
 
         # Step 3: Peak refinement using asymmetric model
         refined_wavelength, left_slope, right_slope = self._refine_peak(
-            filtered, wavelengths, peak_wavelength
+            filtered,
+            wavelengths,
+            peak_wavelength,
         )
 
         # Step 4: Temporal filtering (Kalman filter for smooth trajectory)
         if timestamp is not None:
-            filtered_wavelength, filtered_fwhm, filtered_depth, confidence = \
+            filtered_wavelength, filtered_fwhm, filtered_depth, confidence = (
                 self._temporal_filter(
-                    refined_wavelength, peak_fwhm, peak_depth, timestamp
+                    refined_wavelength,
+                    peak_fwhm,
+                    peak_depth,
+                    timestamp,
                 )
+            )
         else:
             filtered_wavelength = refined_wavelength
             filtered_fwhm = peak_fwhm
@@ -200,16 +214,16 @@ class AdaptiveMultiFeaturePipeline:
 
         # Construct comprehensive metadata
         metadata = {
-            'fwhm': float(filtered_fwhm),
-            'depth': float(filtered_depth),
-            'confidence': float(confidence),
-            'jitter_flag': bool(jitter_flag),
-            'left_slope': float(left_slope),
-            'right_slope': float(right_slope),
-            'temporal_coherence': float(temporal_coherence),
-            'raw_wavelength': float(refined_wavelength),
-            'kalman_filtered': timestamp is not None,
-            'used_hint': minimum_hint_nm is not None,
+            "fwhm": float(filtered_fwhm),
+            "depth": float(filtered_depth),
+            "confidence": float(confidence),
+            "jitter_flag": bool(jitter_flag),
+            "left_slope": float(left_slope),
+            "right_slope": float(right_slope),
+            "temporal_coherence": float(temporal_coherence),
+            "raw_wavelength": float(refined_wavelength),
+            "kalman_filtered": timestamp is not None,
+            "used_hint": minimum_hint_nm is not None,
         }
 
         return filtered_wavelength, metadata
@@ -219,7 +233,7 @@ class AdaptiveMultiFeaturePipeline:
         transmission: np.ndarray,
         wavelengths: np.ndarray,
         min_idx: int,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """Extract FWHM and depth features (OPTIMIZED - minimum already known).
 
         Args:
@@ -229,6 +243,7 @@ class AdaptiveMultiFeaturePipeline:
 
         Returns:
             Tuple of (fwhm, depth)
+
         """
         peak_depth = transmission[min_idx]
 
@@ -270,7 +285,7 @@ class AdaptiveMultiFeaturePipeline:
         transmission: np.ndarray,
         wavelengths: np.ndarray,
         initial_peak: float,
-    ) -> Tuple[float, float, float]:
+    ) -> tuple[float, float, float]:
         """Refine peak position using advanced fitting.
 
         Args:
@@ -280,7 +295,9 @@ class AdaptiveMultiFeaturePipeline:
 
         Returns:
             Tuple of (refined_peak, left_slope, right_slope)
+
         """
+
         # Define advanced peak model
         def peak_model(x, x0, A, sigma_left, sigma_right, baseline):
             """Advanced peak model: different widths left/right of peak."""
@@ -288,8 +305,12 @@ class AdaptiveMultiFeaturePipeline:
             left_mask = x < x0
             right_mask = x >= x0
 
-            result[left_mask] = baseline - A * np.exp(-((x[left_mask] - x0) / sigma_left) ** 2)
-            result[right_mask] = baseline - A * np.exp(-((x[right_mask] - x0) / sigma_right) ** 2)
+            result[left_mask] = baseline - A * np.exp(
+                -(((x[left_mask] - x0) / sigma_left) ** 2),
+            )
+            result[right_mask] = baseline - A * np.exp(
+                -(((x[right_mask] - x0) / sigma_right) ** 2),
+            )
 
             return result
 
@@ -304,7 +325,13 @@ class AdaptiveMultiFeaturePipeline:
             # Fit with bounds
             bounds = (
                 [wavelengths[0], 0, 5, 5, 0],  # Lower bounds
-                [wavelengths[-1], 100, 100, 150, 100]  # Upper bounds (red side broader)
+                [
+                    wavelengths[-1],
+                    100,
+                    100,
+                    150,
+                    100,
+                ],  # Upper bounds (red side broader)
             )
 
             popt, _ = curve_fit(
@@ -322,7 +349,7 @@ class AdaptiveMultiFeaturePipeline:
 
             # Validate: peak must be within reasonable range of initial guess
             if abs(refined_peak - initial_peak) > 10.0:
-                logger.warning(f"Peak refinement diverged, using initial estimate")
+                logger.warning("Peak refinement diverged, using initial estimate")
                 refined_peak = initial_peak
                 left_slope = sigma_guess
                 right_slope = sigma_guess * 1.2
@@ -341,7 +368,7 @@ class AdaptiveMultiFeaturePipeline:
         fwhm: float,
         depth: float,
         timestamp: float,
-    ) -> Tuple[float, float, float, float]:
+    ) -> tuple[float, float, float, float]:
         """Apply temporal filtering using measurement history.
 
         Args:
@@ -352,6 +379,7 @@ class AdaptiveMultiFeaturePipeline:
 
         Returns:
             Tuple of (filtered_wavelength, filtered_fwhm, filtered_depth, confidence)
+
         """
         # Add to history
         self.history_wavelength.append(wavelength)
@@ -405,7 +433,7 @@ class AdaptiveMultiFeaturePipeline:
             float(confidence),
         )
 
-    def _detect_jitter(self, wavelength: float, timestamp: Optional[float]) -> bool:
+    def _detect_jitter(self, wavelength: float, timestamp: float | None) -> bool:
         """Detect if current measurement is jitter/afterglow artifact.
 
         Uses temporal derivative and correlation analysis.
@@ -416,6 +444,7 @@ class AdaptiveMultiFeaturePipeline:
 
         Returns:
             True if jitter detected, False otherwise
+
         """
         if len(self.history_wavelength) < 3:
             return False  # Need history to detect jitter
@@ -443,6 +472,7 @@ class AdaptiveMultiFeaturePipeline:
 
         Returns:
             Coherence score (0-1, higher = smoother)
+
         """
         if len(self.history_wavelength) < 3:
             return 1.0

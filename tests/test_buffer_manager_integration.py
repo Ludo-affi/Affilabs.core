@@ -1,7 +1,9 @@
 """Test DataBufferManager integration with TimeSeriesBuffer."""
 
-import numpy as np
 import time
+
+import numpy as np
+
 from settings import CH_LIST
 from utils.data_buffer_manager import DataBufferManager
 
@@ -17,7 +19,7 @@ def test_buffer_manager_basic():
     print(f"\n✓ Initialized DataBufferManager with channels: {CH_LIST}")
 
     # Add some data points
-    print(f"\n📊 Adding 1000 data points to each channel...")
+    print("\n📊 Adding 1000 data points to each channel...")
     start_time = time.time()
 
     for i in range(1000):
@@ -34,50 +36,50 @@ def test_buffer_manager_basic():
     print(f"  ({1000 * len(CH_LIST) / elapsed:.0f} points/sec)")
 
     # Verify data
-    print(f"\n📈 Verifying data integrity...")
+    print("\n📈 Verifying data integrity...")
     for ch in CH_LIST:
         count = len(buffer_mgr.lambda_values[ch])
         print(f"  Channel {ch}: {count} points")
         assert count == 1000, f"Expected 1000 points, got {count}"
 
-    print(f"✓ All channels have correct data count")
+    print("✓ All channels have correct data count")
 
     # Test memory usage
     memory = buffer_mgr.get_memory_usage()
-    print(f"\n💾 Memory usage:")
+    print("\n💾 Memory usage:")
     for ch in CH_LIST:
         print(f"  Channel {ch}: {memory[ch] / 1024:.1f} KB")
     print(f"  Total: {memory['total'] / 1024:.1f} KB")
 
     # Test buffer info
     info = buffer_mgr.get_buffer_info()
-    print(f"\n📊 Buffer info:")
+    print("\n📊 Buffer info:")
     print(f"  Max buffer size: {info['max_buffer_size']}")
     print(f"  Buffer trim size: {info['buffer_trim_size']}")
 
     # Test time shift
-    print(f"\n⏱️ Testing time shift...")
-    orig_time = buffer_mgr.lambda_times['a'][0]
+    print("\n⏱️ Testing time shift...")
+    orig_time = buffer_mgr.lambda_times["a"][0]
     buffer_mgr.shift_time_reference(10.0)
-    new_time = buffer_mgr.lambda_times['a'][0]
+    new_time = buffer_mgr.lambda_times["a"][0]
     print(f"  Original first timestamp: {orig_time:.3f}s")
     print(f"  After shift (-10.0s): {new_time:.3f}s")
     assert abs(new_time - (orig_time - 10.0)) < 0.001, "Time shift failed"
-    print(f"✓ Time shift working correctly")
+    print("✓ Time shift working correctly")
 
     # Test clear
-    print(f"\n🗑️ Testing buffer clear...")
-    buffer_mgr.clear_channel_buffers('a')
-    count_a = len(buffer_mgr.lambda_values['a'])
-    count_b = len(buffer_mgr.lambda_values['b'])
+    print("\n🗑️ Testing buffer clear...")
+    buffer_mgr.clear_channel_buffers("a")
+    count_a = len(buffer_mgr.lambda_values["a"])
+    count_b = len(buffer_mgr.lambda_values["b"])
     print(f"  Channel a after clear: {count_a} points")
     print(f"  Channel b (not cleared): {count_b} points")
     assert count_a == 0, "Clear failed"
     assert count_b == 1000, "Clear affected wrong channel"
-    print(f"✓ Selective clear working correctly")
+    print("✓ Selective clear working correctly")
 
     print(f"\n{'=' * 60}")
-    print(f"✅ All tests passed!")
+    print("✅ All tests passed!")
     print(f"{'=' * 60}")
 
 
@@ -100,18 +102,22 @@ def test_performance_comparison():
         times = np.append(times, i * 0.1)
     elapsed_legacy = time.time() - start
 
-    print(f"   Time: {elapsed_legacy:.3f}s ({n_points / elapsed_legacy:.0f} points/sec)")
+    print(
+        f"   Time: {elapsed_legacy:.3f}s ({n_points / elapsed_legacy:.0f} points/sec)",
+    )
 
     # Test 2: TimeSeriesBuffer
     print(f"\n🚀 Testing TimeSeriesBuffer with {n_points} points...")
-    buffer_mgr = DataBufferManager(channels=['a'])
+    buffer_mgr = DataBufferManager(channels=["a"])
 
     start = time.time()
     for i in range(n_points):
-        buffer_mgr.add_sensorgram_point('a', 632.8 + i * 0.001, i * 0.1)
+        buffer_mgr.add_sensorgram_point("a", 632.8 + i * 0.001, i * 0.1)
     elapsed_optimized = time.time() - start
 
-    print(f"   Time: {elapsed_optimized:.3f}s ({n_points / elapsed_optimized:.0f} points/sec)")
+    print(
+        f"   Time: {elapsed_optimized:.3f}s ({n_points / elapsed_optimized:.0f} points/sec)",
+    )
 
     # Calculate speedup
     speedup = elapsed_legacy / elapsed_optimized
@@ -134,5 +140,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         exit(1)

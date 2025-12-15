@@ -1,19 +1,20 @@
-"""
-Quick diagnostic to check signal levels and detect saturation.
+"""Quick diagnostic to check signal levels and detect saturation.
 
 This script helps diagnose saturation issues by testing each channel
 at different LED intensities and integration times.
 """
 
-import numpy as np
 import time
-from utils.logger import logger
+
+import numpy as np
+
 from utils.controller import PicoP4SPR
+from utils.logger import logger
 from utils.usb4000_oceandirect import USB4000OceanDirect
+
 
 def check_signal_levels():
     """Check signal levels at different LED intensities."""
-
     logger.info("=" * 80)
     logger.info("SATURATION DIAGNOSTIC")
     logger.info("=" * 80)
@@ -27,7 +28,7 @@ def check_signal_levels():
         logger.error("Failed to open PicoP4SPR controller")
         return
 
-    logger.info(f"✅ Controller connected")
+    logger.info("✅ Controller connected")
 
     # Connect to spectrometer
     usb = USB4000OceanDirect()
@@ -35,7 +36,7 @@ def check_signal_levels():
         logger.error("Failed to connect to USB4000 spectrometer")
         return
 
-    logger.info(f"✅ Spectrometer connected")
+    logger.info("✅ Spectrometer connected")
 
     try:
         _run_diagnostic(ctrl, usb)
@@ -46,9 +47,9 @@ def check_signal_levels():
         usb.disconnect()
         logger.info("✅ Hardware disconnected")
 
+
 def _run_diagnostic(ctrl, usb):
     """Run the actual diagnostic with connected hardware."""
-
     # Get detector max
     detector_max = 65535  # Standard for most detectors
 
@@ -58,7 +59,7 @@ def _run_diagnostic(ctrl, usb):
     # Test LED intensities
     test_led_intensities = [32, 64, 128, 192, 255]
 
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
 
     logger.info("\nTesting signal levels...")
     logger.info(f"Detector max: {detector_max} counts")
@@ -80,7 +81,9 @@ def _run_diagnostic(ctrl, usb):
         # Test each channel at each LED intensity
         for ch in channels:
             logger.info(f"\nChannel {ch.upper()}:")
-            logger.info(f"  {'LED':<5} {'Max Signal':<12} {'Mean Signal':<12} {'Status':<20}")
+            logger.info(
+                f"  {'LED':<5} {'Max Signal':<12} {'Mean Signal':<12} {'Status':<20}",
+            )
             logger.info(f"  {'-'*60}")
 
             for led in test_led_intensities:
@@ -92,7 +95,9 @@ def _run_diagnostic(ctrl, usb):
                 spectrum = usb.acquire_spectrum()
 
                 if spectrum is None:
-                    logger.warning(f"  {led:<5} {'ERROR':<12} {'ERROR':<12} {'Failed to read':<20}")
+                    logger.warning(
+                        f"  {led:<5} {'ERROR':<12} {'ERROR':<12} {'Failed to read':<20}",
+                    )
                     continue
 
                 # Calculate stats
@@ -110,14 +115,16 @@ def _run_diagnostic(ctrl, usb):
                 else:
                     status = "⚙️  Low signal"
 
-                logger.info(f"  {led:<5} {max_signal:>8.0f} ({percent:>4.1f}%)  {mean_signal:>8.0f}  {status:<20}")
+                logger.info(
+                    f"  {led:<5} {max_signal:>8.0f} ({percent:>4.1f}%)  {mean_signal:>8.0f}  {status:<20}",
+                )
 
             # Turn off channel after all intensities tested
             ctrl.turn_off_channels()
 
-    logger.info("\n" + "="*80)
+    logger.info("\n" + "=" * 80)
     logger.info("RECOMMENDATIONS:")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     # Find lowest integration time that doesn't saturate at low LED
     logger.info("\n1. If saturated at 10ms, 32 LED:")
@@ -138,6 +145,7 @@ def _run_diagnostic(ctrl, usb):
     logger.info("")
 
     logger.info("\n✅ Diagnostic complete!")
+
 
 if __name__ == "__main__":
     try:

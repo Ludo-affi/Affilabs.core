@@ -67,7 +67,7 @@ class Ui_Sidebar:
         sizePolicy2.setHorizontalStretch(0)
         sizePolicy2.setVerticalStretch(0)
         sizePolicy2.setHeightForWidth(
-            self.device_frame.sizePolicy().hasHeightForWidth()
+            self.device_frame.sizePolicy().hasHeightForWidth(),
         )
         self.device_frame.setSizePolicy(sizePolicy2)
         self.device_frame.setMinimumSize(QSize(360, 280))
@@ -89,7 +89,7 @@ class Ui_Sidebar:
         self.kinetic_frame = QFrame(Sidebar)
         self.kinetic_frame.setObjectName("kinetic_frame")
         sizePolicy2.setHeightForWidth(
-            self.kinetic_frame.sizePolicy().hasHeightForWidth()
+            self.kinetic_frame.sizePolicy().hasHeightForWidth(),
         )
         self.kinetic_frame.setSizePolicy(sizePolicy2)
         self.kinetic_frame.setMinimumSize(QSize(360, 450))
@@ -111,10 +111,10 @@ class Ui_Sidebar:
     def retranslateUi(self, Sidebar):
         Sidebar.setWindowTitle(QCoreApplication.translate("Sidebar", "Form", None))
         self.label_2.setText(
-            QCoreApplication.translate("Sidebar", "Connected Devices", None)
+            QCoreApplication.translate("Sidebar", "Connected Devices", None),
         )
         self.label.setText(
-            QCoreApplication.translate("Sidebar", "Kinetic Controls", None)
+            QCoreApplication.translate("Sidebar", "Kinetic Controls", None),
         )
 
     # retranslateUi

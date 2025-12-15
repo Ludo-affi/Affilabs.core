@@ -4,16 +4,16 @@ This script reads the calibration state and shows what LED values
 will be used during P-pol live measurements.
 """
 
-import sys
 import json
+import sys
 from pathlib import Path
 
 # Add project root to path
 ROOT_DIR = Path(__file__).parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from utils.logger import logger
 from settings.settings import CH_LIST
+from utils.logger import logger
 
 
 def check_device_config():
@@ -25,17 +25,17 @@ def check_device_config():
         return None
 
     try:
-        with open(config_file, 'r') as f:
+        with open(config_file) as f:
             config = json.load(f)
 
-        led_cal = config.get('calibration', {}).get('led_calibration', {})
+        led_cal = config.get("calibration", {}).get("led_calibration", {})
         if not led_cal:
             logger.warning("❌ No LED calibration found in device_config.json")
             return None
 
-        s_mode = led_cal.get('s_mode_intensities', {})
-        p_mode = led_cal.get('p_mode_intensities', {})
-        integration = led_cal.get('integration_time_ms', 0)
+        s_mode = led_cal.get("s_mode_intensities", {})
+        p_mode = led_cal.get("p_mode_intensities", {})
+        integration = led_cal.get("integration_time_ms", 0)
 
         logger.info("=" * 80)
         logger.info("📋 DEVICE CONFIG LED CALIBRATION")
@@ -44,21 +44,21 @@ def check_device_config():
         logger.info("")
         logger.info("S-mode LED intensities:")
         for ch in CH_LIST:
-            val = s_mode.get(ch, 'N/A')
+            val = s_mode.get(ch, "N/A")
             logger.info(f"   {ch.upper()}: {val}")
 
         logger.info("")
         logger.info("P-mode LED intensities:")
         for ch in CH_LIST:
-            val = p_mode.get(ch, 'N/A')
+            val = p_mode.get(ch, "N/A")
             logger.info(f"   {ch.upper()}: {val}")
 
         logger.info("=" * 80)
 
         return {
-            's_mode': s_mode,
-            'p_mode': p_mode,
-            'integration_ms': integration
+            "s_mode": s_mode,
+            "p_mode": p_mode,
+            "integration_ms": integration,
         }
 
     except Exception as e:
@@ -79,19 +79,19 @@ def check_calib_state():
         logger.info("📋 CALIBRATION STATE")
         logger.info("=" * 80)
 
-        if hasattr(state, 'ref_intensity') and state.ref_intensity:
+        if hasattr(state, "ref_intensity") and state.ref_intensity:
             logger.info("ref_intensity:")
             for ch in CH_LIST:
-                val = state.ref_intensity.get(ch, 'N/A')
+                val = state.ref_intensity.get(ch, "N/A")
                 logger.info(f"   {ch.upper()}: {val}")
         else:
             logger.warning("⚠️ ref_intensity not populated")
 
         logger.info("")
-        if hasattr(state, 'leds_calibrated') and state.leds_calibrated:
+        if hasattr(state, "leds_calibrated") and state.leds_calibrated:
             logger.info("leds_calibrated:")
             for ch in CH_LIST:
-                val = state.leds_calibrated.get(ch, 'N/A')
+                val = state.leds_calibrated.get(ch, "N/A")
                 logger.info(f"   {ch.upper()}: {val}")
         else:
             logger.warning("⚠️ leds_calibrated not populated")
@@ -120,7 +120,11 @@ def simulate_get_led_for_live():
             source = None
 
             # Check leds_calibrated first
-            if hasattr(state, 'leds_calibrated') and ch in getattr(state, 'leds_calibrated', {}):
+            if hasattr(state, "leds_calibrated") and ch in getattr(
+                state,
+                "leds_calibrated",
+                {},
+            ):
                 val = state.leds_calibrated.get(ch, 0)
                 if val > 0:
                     led_val = val
@@ -128,7 +132,11 @@ def simulate_get_led_for_live():
 
             # Fall back to ref_intensity
             if led_val is None:
-                if hasattr(state, 'ref_intensity') and ch in getattr(state, 'ref_intensity', {}):
+                if hasattr(state, "ref_intensity") and ch in getattr(
+                    state,
+                    "ref_intensity",
+                    {},
+                ):
                     val = state.ref_intensity.get(ch, 0)
                     if val > 0:
                         led_val = val

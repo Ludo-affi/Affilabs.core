@@ -1,8 +1,10 @@
-from PySide6.QtWidgets import QVBoxLayout, QPushButton, QWidget, QFrame
 from PySide6.QtCore import QSize
+from PySide6.QtWidgets import QFrame, QPushButton, QVBoxLayout, QWidget
+
 
 class PrimePumpWidget(QWidget):
     """Widget for the Prime Pump button, to be placed in the sidebar Flow tab."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -17,7 +19,7 @@ class PrimePumpWidget(QWidget):
             "    background-color: white;"
             "    border: 1px solid rgb(180, 180, 180);"
             "    border-radius: 8px;"
-            "}"
+            "}",
         )
         container.setFrameShape(QFrame.StyledPanel)
         container.setFrameShadow(QFrame.Raised)
@@ -44,7 +46,7 @@ class PrimePumpWidget(QWidget):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         container_layout.addWidget(self.prime_btn)
         layout.addWidget(container)

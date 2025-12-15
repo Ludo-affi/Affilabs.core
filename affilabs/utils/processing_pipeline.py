@@ -164,7 +164,9 @@ class PipelineRegistry:
         self._instances: dict[str, ProcessingPipeline] = {}
 
     def register(
-        self, pipeline_id: str, pipeline_class: type[ProcessingPipeline],
+        self,
+        pipeline_id: str,
+        pipeline_class: type[ProcessingPipeline],
     ) -> None:
         """Register a pipeline class.
 
@@ -177,7 +179,9 @@ class PipelineRegistry:
         logger.info(f"Registered pipeline: {pipeline_id}")
 
     def get_pipeline(
-        self, pipeline_id: str, config: dict[str, Any] | None = None,
+        self,
+        pipeline_id: str,
+        config: dict[str, Any] | None = None,
     ) -> ProcessingPipeline:
         """Get or create pipeline instance.
 
@@ -202,7 +206,9 @@ class PipelineRegistry:
         return self._instances[pipeline_id]
 
     def set_active_pipeline(
-        self, pipeline_id: str, config: dict[str, Any] | None = None,
+        self,
+        pipeline_id: str,
+        config: dict[str, Any] | None = None,
     ) -> None:
         """Set the active pipeline.
 
@@ -227,12 +233,13 @@ class PipelineRegistry:
         try:
             import json
             from pathlib import Path
-            config_dir = Path(__file__).parent.parent.parent / 'settings'
+
+            config_dir = Path(__file__).parent.parent.parent / "settings"
             config_dir.mkdir(exist_ok=True)
-            config_file = config_dir / 'pipeline_config.json'
-            
-            with open(config_file, 'w') as f:
-                json.dump({'active_pipeline': pipeline_id}, f, indent=2)
+            config_file = config_dir / "pipeline_config.json"
+
+            with open(config_file, "w") as f:
+                json.dump({"active_pipeline": pipeline_id}, f, indent=2)
         except Exception as e:
             logger.warning(f"Could not save pipeline preference: {e}")
 

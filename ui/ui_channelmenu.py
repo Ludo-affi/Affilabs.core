@@ -73,7 +73,10 @@ class Ui_ChannelMenu:
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.horizontalLayout_2.setContentsMargins(11, -1, 11, -1)
         self.horizontalSpacer_2 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
@@ -99,7 +102,10 @@ class Ui_ChannelMenu:
         self.horizontalLayout_2.addWidget(self.filt_win, 0, Qt.AlignLeft)
 
         self.horizontalSpacer = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer)
@@ -219,21 +225,21 @@ class Ui_ChannelMenu:
 
     def retranslateUi(self, ChannelMenu):
         ChannelMenu.setWindowTitle(
-            QCoreApplication.translate("ChannelMenu", "SPR Settings", None)
+            QCoreApplication.translate("ChannelMenu", "SPR Settings", None),
         )
         self.filter.setTitle(
-            QCoreApplication.translate("ChannelMenu", "Data Filtering", None)
+            QCoreApplication.translate("ChannelMenu", "Data Filtering", None),
         )
         self.filt_en.setText(QCoreApplication.translate("ChannelMenu", "Enabled", None))
         self.filt_off.setText(
-            QCoreApplication.translate("ChannelMenu", "Disabled", None)
+            QCoreApplication.translate("ChannelMenu", "Disabled", None),
         )
         self.label_5.setText(
-            QCoreApplication.translate("ChannelMenu", "Filter Window Size:", None)
+            QCoreApplication.translate("ChannelMenu", "Filter Window Size:", None),
         )
         self.filt_win.setText(QCoreApplication.translate("ChannelMenu", "5", None))
         self.groupBox.setTitle(
-            QCoreApplication.translate("ChannelMenu", "Reference Channel", None)
+            QCoreApplication.translate("ChannelMenu", "Reference Channel", None),
         )
         self.noRef.setText(QCoreApplication.translate("ChannelMenu", "None", None))
         self.channelA.setText(QCoreApplication.translate("ChannelMenu", " A", None))
@@ -241,21 +247,21 @@ class Ui_ChannelMenu:
         self.channelC.setText(QCoreApplication.translate("ChannelMenu", "C", None))
         self.channelD.setText(QCoreApplication.translate("ChannelMenu", "D", None))
         self.groupBox_3.setTitle(
-            QCoreApplication.translate("ChannelMenu", "Units", None)
+            QCoreApplication.translate("ChannelMenu", "Units", None),
         )
         self.label_2.setText(
-            QCoreApplication.translate("ChannelMenu", "Display Shifts:", None)
+            QCoreApplication.translate("ChannelMenu", "Display Shifts:", None),
         )
         self.unit_ru.setText(QCoreApplication.translate("ChannelMenu", "RU", None))
         self.unit_nm.setText(QCoreApplication.translate("ChannelMenu", "nm", None))
         self.groupBox_2.setTitle(
-            QCoreApplication.translate("ChannelMenu", "Live Data", None)
+            QCoreApplication.translate("ChannelMenu", "Live Data", None),
         )
         self.reset_data.setText(
-            QCoreApplication.translate("ChannelMenu", "Reset", None)
+            QCoreApplication.translate("ChannelMenu", "Reset", None),
         )
         self.export_data.setText(
-            QCoreApplication.translate("ChannelMenu", "Export", None)
+            QCoreApplication.translate("ChannelMenu", "Export", None),
         )
 
     # retranslateUi

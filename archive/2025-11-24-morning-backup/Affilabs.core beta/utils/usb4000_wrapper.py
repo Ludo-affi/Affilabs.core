@@ -9,6 +9,7 @@ Requirements:
 """
 
 import threading
+
 from utils.logger import logger
 
 # Defer all seabreeze imports until open() is called to avoid blocking on import
@@ -49,7 +50,9 @@ class USB4000:
                     logger.info("✅ USB4000 already connected and responding")
                     return True
                 except Exception as e:
-                    logger.warning(f"Existing connection invalid: {e} - reconnecting...")
+                    logger.warning(
+                        f"Existing connection invalid: {e} - reconnecting...",
+                    )
                     self.opened = False
                     self._device = None
 
@@ -58,21 +61,29 @@ class USB4000:
             # Import seabreeze only when actually opening (deferred to avoid blocking on import)
             try:
                 import seabreeze
-                seabreeze.use('pyseabreeze')
+
+                seabreeze.use("pyseabreeze")
                 from seabreeze.spectrometers import Spectrometer, list_devices
-                logger.info("USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)")
+
+                logger.info(
+                    "USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)",
+                )
             except ImportError as e:
                 logger.error(f"SeaBreeze not available: {e}")
                 logger.error("Install with: pip install seabreeze pyusb")
                 return False
 
             # Discover devices with configurable timeout
-            from core.hardware_manager import HARDWARE_DEBUG, CONNECTION_TIMEOUT
+            from core.hardware_manager import CONNECTION_TIMEOUT, HARDWARE_DEBUG
+
             if HARDWARE_DEBUG:
-                logger.debug(f"Scanning for Ocean Optics devices ({CONNECTION_TIMEOUT}s timeout)...")
+                logger.debug(
+                    f"Scanning for Ocean Optics devices ({CONNECTION_TIMEOUT}s timeout)...",
+                )
 
             # Use threading with timeout to prevent indefinite blocking
             import threading
+
             devices = []
             exception = [None]
 
@@ -88,7 +99,9 @@ class USB4000:
             scan_thread.join(timeout=CONNECTION_TIMEOUT)
 
             if scan_thread.is_alive():
-                logger.warning(f"USB device scan timed out after {CONNECTION_TIMEOUT}s - no spectrometer")
+                logger.warning(
+                    f"USB device scan timed out after {CONNECTION_TIMEOUT}s - no spectrometer",
+                )
                 return False
 
             if exception[0]:
@@ -115,38 +128,50 @@ class USB4000:
             except Exception as e:
                 if "already opened" in str(e).lower():
                     # Device is stuck open - try to find and reuse existing connection
-                    logger.warning("Device already opened - attempting to reuse existing connection...")
+                    logger.warning(
+                        "Device already opened - attempting to reuse existing connection...",
+                    )
                     try:
                         # Try to get the existing open device
-                        from seabreeze.spectrometers import list_devices, Spectrometer
+                        from seabreeze.spectrometers import Spectrometer, list_devices
+
                         for dev in list_devices():
                             if dev.serial_number == target_serial:
                                 try:
                                     # Try to instantiate from the device info
                                     self._device = Spectrometer(dev)
-                                    logger.info("✅ Successfully reused existing open connection")
+                                    logger.info(
+                                        "✅ Successfully reused existing open connection",
+                                    )
                                     break
                                 except:
                                     pass
 
                         # If reuse failed, force close all and retry
                         if self._device is None:
-                            logger.warning("Reuse failed - forcing cleanup and reconnect...")
+                            logger.warning(
+                                "Reuse failed - forcing cleanup and reconnect...",
+                            )
                             for dev in list_devices():
                                 try:
                                     spec = Spectrometer(dev)
                                     spec.close()
-                                    logger.debug(f"Closed stuck spectrometer: {dev.serial_number}")
+                                    logger.debug(
+                                        f"Closed stuck spectrometer: {dev.serial_number}",
+                                    )
                                 except:
                                     pass
 
                             # Short delay for cleanup
                             import time
+
                             time.sleep(0.5)
 
                             # Retry connection
                             logger.info("Retrying connection after cleanup...")
-                            self._device = Spectrometer.from_serial_number(target_serial)
+                            self._device = Spectrometer.from_serial_number(
+                                target_serial,
+                            )
                             logger.info("✅ Successfully connected after cleanup")
                     except Exception as retry_error:
                         logger.error(f"Cleanup and retry failed: {retry_error}")
@@ -163,7 +188,9 @@ class USB4000:
             try:
                 self._wavelengths = self._device.wavelengths()
                 self._num_pixels = len(self._wavelengths)
-                logger.debug(f"Wavelength range: {self._wavelengths[0]:.1f} - {self._wavelengths[-1]:.1f} nm")
+                logger.debug(
+                    f"Wavelength range: {self._wavelengths[0]:.1f} - {self._wavelengths[-1]:.1f} nm",
+                )
                 logger.debug(f"Number of pixels: {self._num_pixels}")
             except Exception as e:
                 logger.warning(f"Could not read wavelengths: {e}")
@@ -180,7 +207,9 @@ class USB4000:
                     # But Flame-T saturates at ~62000, not 65535
                     # Keep conservative default
                     self._max_counts = 65535
-                    logger.info(f"Detector max counts (default 16-bit): {self._max_counts}")
+                    logger.info(
+                        f"Detector max counts (default 16-bit): {self._max_counts}",
+                    )
             except Exception as e:
                 logger.warning(f"Could not determine max counts: {e}")
                 self._max_counts = 65535
@@ -188,17 +217,21 @@ class USB4000:
             # Log detector capabilities
             try:
                 # SeaBreeze provides integration_time_micros_limits as a tuple (min, max)
-                if hasattr(self._device, 'integration_time_micros_limits'):
+                if hasattr(self._device, "integration_time_micros_limits"):
                     min_max_limits = self._device.integration_time_micros_limits
                     logger.info(
                         f"Detector integration time limits: "
-                        f"{min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms"
+                        f"{min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms",
                     )
-                elif hasattr(self._device, 'minimum_integration_time_micros'):
+                elif hasattr(self._device, "minimum_integration_time_micros"):
                     min_int_us = self._device.minimum_integration_time_micros
-                    logger.info(f"Detector minimum integration time: {min_int_us/1000:.2f}ms")
+                    logger.info(
+                        f"Detector minimum integration time: {min_int_us/1000:.2f}ms",
+                    )
                 else:
-                    logger.debug("Detector does not expose integration time limits via SeaBreeze")
+                    logger.debug(
+                        "Detector does not expose integration time limits via SeaBreeze",
+                    )
             except Exception as e:
                 logger.debug(f"Could not read detector capabilities: {e}")
 
@@ -208,6 +241,7 @@ class USB4000:
         except Exception as e:
             logger.error(f"USB4000 connection failed: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return False
 
@@ -228,7 +262,7 @@ class USB4000:
     def __del__(self):
         """Destructor to ensure spectrometer is closed."""
         try:
-            if hasattr(self, '_device') and self._device is not None:
+            if hasattr(self, "_device") and self._device is not None:
                 self.close()
         except:
             pass
@@ -238,6 +272,7 @@ class USB4000:
 
         Args:
             time_ms: Integration time in milliseconds (matches settings.py)
+
         """
         if not self._device or not self.opened:
             return False
@@ -269,6 +304,7 @@ class USB4000:
             return None
         try:
             import numpy as np
+
             # CRITICAL: Protect SeaBreeze USB call with lock (NOT thread-safe!)
             with _usb_device_lock:
                 return np.array(self._device.intensities())
@@ -320,6 +356,7 @@ class USB4000:
 
         Returns:
             int: Maximum counts (e.g., 65535 for 16-bit, 62000 for Flame-T)
+
         """
         return self._max_counts
 
@@ -329,6 +366,7 @@ class USB4000:
 
         Returns:
             int: Number of pixels (e.g., 3648 for USB4000/Flame-T, 2048 for Phase Photonics)
+
         """
         return self._num_pixels
 
@@ -338,6 +376,7 @@ class USB4000:
 
         Returns:
             int: Target counts for S-mode calibration
+
         """
         return int(0.75 * self._max_counts)
 

@@ -1,10 +1,8 @@
-"""
-Python 3.12 Environment Verification Script
+"""Python 3.12 Environment Verification Script
 Run this to verify your environment is correctly set up for Python 3.12
 """
 
 import sys
-import platform
 from pathlib import Path
 
 print("=" * 60)
@@ -38,8 +36,8 @@ else:
 print()
 
 # Check if we're in a virtual environment
-in_venv = hasattr(sys, 'real_prefix') or (
-    hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
+in_venv = hasattr(sys, "real_prefix") or (
+    hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix
 )
 
 if in_venv:
@@ -72,6 +70,7 @@ except TypeError as e:
 # Test datetime.UTC (Python 3.11+)
 try:
     from datetime import UTC
+
     print("✅ datetime.UTC available (Python 3.11+)")
 except ImportError:
     print("⚠️  datetime.UTC not available (need Python 3.11+)")

@@ -11,27 +11,27 @@ Provides high-level device orchestration:
 - Synchronized state management
 """
 
-from typing import Optional, Dict, Any, List, Callable
-from dataclasses import dataclass
-from enum import Enum
 import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
 
 from .device_interface import (
-    IController,
-    ISpectrometer,
-    IServo,
     DeviceInfo,
-    ConnectionError as HWConnectionError
+    IController,
+    IServo,
+    ISpectrometer,
 )
-
 
 # ============================================================================
 # ENUMS & DATA CLASSES
 # ============================================================================
 
+
 class SystemState(Enum):
     """Overall system state."""
+
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -43,27 +43,31 @@ class SystemState(Enum):
 @dataclass
 class DeviceHealth:
     """Health status for a device."""
+
     device_type: str  # "controller", "spectrometer", "servo"
     connected: bool
     responsive: bool
     error_count: int = 0
-    last_error: Optional[str] = None
-    info: Optional[DeviceInfo] = None
+    last_error: str | None = None
+    info: DeviceInfo | None = None
 
 
 @dataclass
 class SystemHealth:
     """Overall system health."""
+
     state: SystemState
-    controller: Optional[DeviceHealth] = None
-    spectrometer: Optional[DeviceHealth] = None
-    servo: Optional[DeviceHealth] = None
+    controller: DeviceHealth | None = None
+    spectrometer: DeviceHealth | None = None
+    servo: DeviceHealth | None = None
 
     def is_ready(self) -> bool:
         """Check if system is ready for operation."""
         return (
-            self.controller and self.controller.connected and
-            self.spectrometer and self.spectrometer.connected
+            self.controller
+            and self.controller.connected
+            and self.spectrometer
+            and self.spectrometer.connected
         )
 
     def all_healthy(self) -> bool:
@@ -76,6 +80,7 @@ class SystemHealth:
 # ============================================================================
 # DEVICE MANAGER
 # ============================================================================
+
 
 class DeviceManager:
     """Manages lifecycle of multiple hardware devices.
@@ -91,9 +96,9 @@ class DeviceManager:
     def __init__(self):
         """Initialize device manager."""
         # Device references
-        self._controller: Optional[IController] = None
-        self._spectrometer: Optional[ISpectrometer] = None
-        self._servo: Optional[IServo] = None
+        self._controller: IController | None = None
+        self._spectrometer: ISpectrometer | None = None
+        self._servo: IServo | None = None
 
         # State
         self._state = SystemState.DISCONNECTED
@@ -106,14 +111,14 @@ class DeviceManager:
 
         # Reconnection
         self._auto_reconnect = False
-        self._reconnect_thread: Optional[threading.Thread] = None
+        self._reconnect_thread: threading.Thread | None = None
         self._stop_reconnect = threading.Event()
 
         # Callbacks
-        self._on_state_changed: Optional[Callable[[SystemState], None]] = None
-        self._on_device_connected: Optional[Callable[[str, DeviceInfo], None]] = None
-        self._on_device_disconnected: Optional[Callable[[str], None]] = None
-        self._on_error: Optional[Callable[[str, str], None]] = None
+        self._on_state_changed: Callable[[SystemState], None] | None = None
+        self._on_device_connected: Callable[[str, DeviceInfo], None] | None = None
+        self._on_device_disconnected: Callable[[str], None] | None = None
+        self._on_error: Callable[[str, str], None] | None = None
 
     # ========================================================================
     # DEVICE REGISTRATION
@@ -124,6 +129,7 @@ class DeviceManager:
 
         Args:
             controller: Controller implementation (real or mock)
+
         """
         with self._lock:
             self._controller = controller
@@ -133,6 +139,7 @@ class DeviceManager:
 
         Args:
             spectrometer: Spectrometer implementation (real or mock)
+
         """
         with self._lock:
             self._spectrometer = spectrometer
@@ -142,6 +149,7 @@ class DeviceManager:
 
         Args:
             servo: Servo implementation (real or mock)
+
         """
         with self._lock:
             self._servo = servo
@@ -154,7 +162,7 @@ class DeviceManager:
         self,
         require_controller: bool = True,
         require_spectrometer: bool = True,
-        require_servo: bool = False
+        require_servo: bool = False,
     ) -> bool:
         """Connect all registered devices.
 
@@ -165,6 +173,7 @@ class DeviceManager:
 
         Returns:
             True if all required devices connected successfully
+
         """
         with self._lock:
             self._set_state(SystemState.CONNECTING)
@@ -178,7 +187,10 @@ class DeviceManager:
                         self._controller_health.connected = True
                         self._controller_health.responsive = True
                         self._controller_health.info = self._controller.get_info()
-                        self._notify_device_connected("controller", self._controller_health.info)
+                        self._notify_device_connected(
+                            "controller",
+                            self._controller_health.info,
+                        )
                     elif require_controller:
                         success = False
                         self._handle_error("controller", "Connection failed")
@@ -196,7 +208,10 @@ class DeviceManager:
                         self._spectrometer_health.connected = True
                         self._spectrometer_health.responsive = True
                         self._spectrometer_health.info = self._spectrometer.get_info()
-                        self._notify_device_connected("spectrometer", self._spectrometer_health.info)
+                        self._notify_device_connected(
+                            "spectrometer",
+                            self._spectrometer_health.info,
+                        )
                     elif require_spectrometer:
                         success = False
                         self._handle_error("spectrometer", "Connection failed")
@@ -231,11 +246,13 @@ class DeviceManager:
             else:
                 # Check if any devices connected
                 any_connected = (
-                    self._controller_health.connected or
-                    self._spectrometer_health.connected or
-                    self._servo_health.connected
+                    self._controller_health.connected
+                    or self._spectrometer_health.connected
+                    or self._servo_health.connected
                 )
-                self._set_state(SystemState.PARTIAL if any_connected else SystemState.ERROR)
+                self._set_state(
+                    SystemState.PARTIAL if any_connected else SystemState.ERROR,
+                )
 
             return success
 
@@ -283,13 +300,14 @@ class DeviceManager:
 
         Returns:
             SystemHealth with status of all devices
+
         """
         with self._lock:
             return SystemHealth(
                 state=self._state,
                 controller=self._controller_health,
                 spectrometer=self._spectrometer_health,
-                servo=self._servo_health
+                servo=self._servo_health,
             )
 
     def check_health(self) -> SystemHealth:
@@ -309,7 +327,9 @@ class DeviceManager:
             # Check spectrometer
             if self._spectrometer and self._spectrometer_health.connected:
                 try:
-                    self._spectrometer_health.responsive = self._spectrometer.is_connected()
+                    self._spectrometer_health.responsive = (
+                        self._spectrometer.is_connected()
+                    )
                 except Exception as e:
                     self._spectrometer_health.responsive = False
                     self._handle_error("spectrometer", str(e))
@@ -333,6 +353,7 @@ class DeviceManager:
 
         Args:
             interval: Check interval in seconds
+
         """
         if self._auto_reconnect:
             return
@@ -359,7 +380,7 @@ class DeviceManager:
                         self.connect_all(
                             require_controller=True,
                             require_spectrometer=True,
-                            require_servo=False
+                            require_servo=False,
                         )
                     except Exception as e:
                         self._handle_error("system", f"Reconnection failed: {e}")
@@ -384,17 +405,17 @@ class DeviceManager:
     # ========================================================================
 
     @property
-    def controller(self) -> Optional[IController]:
+    def controller(self) -> IController | None:
         """Get controller device."""
         return self._controller
 
     @property
-    def spectrometer(self) -> Optional[ISpectrometer]:
+    def spectrometer(self) -> ISpectrometer | None:
         """Get spectrometer device."""
         return self._spectrometer
 
     @property
-    def servo(self) -> Optional[IServo]:
+    def servo(self) -> IServo | None:
         """Get servo device."""
         return self._servo
 
@@ -411,7 +432,10 @@ class DeviceManager:
         """Set callback for state changes."""
         self._on_state_changed = callback
 
-    def set_on_device_connected(self, callback: Callable[[str, DeviceInfo], None]) -> None:
+    def set_on_device_connected(
+        self,
+        callback: Callable[[str, DeviceInfo], None],
+    ) -> None:
         """Set callback for device connections."""
         self._on_device_connected = callback
 

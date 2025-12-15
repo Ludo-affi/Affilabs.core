@@ -1,16 +1,23 @@
 """Reusable Layout Control Dialog - Nimble, non-modal dialog for adjusting UI elements."""
 
-from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QPushButton, QSpinBox, QGroupBox, QDialogButtonBox, QCheckBox
-)
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+)
 
 
 class LayoutControlDialog(QDialog):
-    """
-    Nimble, non-modal dialog for live UI layout adjustments.
+    """Nimble, non-modal dialog for live UI layout adjustments.
 
     Features:
     - Non-modal: Can interact with main UI while open
@@ -29,14 +36,14 @@ class LayoutControlDialog(QDialog):
     values_changed = Signal(dict)  # Emits dict with control values
 
     def __init__(self, title: str, description: str, current_values: dict, parent=None):
-        """
-        Initialize the layout control dialog.
+        """Initialize the layout control dialog.
 
         Args:
             title: Dialog window title
             description: Description text shown at top
             current_values: Dict with initial values
             parent: Parent widget
+
         """
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -103,7 +110,7 @@ class LayoutControlDialog(QDialog):
 
         # Dialog buttons
         button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
@@ -111,11 +118,9 @@ class LayoutControlDialog(QDialog):
 
     def _setup_controls(self):
         """Override this method to add your specific controls to self.controls_layout."""
-        pass
 
     def _load_values(self, values: dict):
         """Override this method to load values into your controls."""
-        pass
 
     def _on_value_changed(self):
         """Called when any control value changes. Emits current values."""
@@ -128,8 +133,6 @@ class LayoutControlDialog(QDialog):
 
     def _copy_code_to_clipboard(self):
         """Copy current values as Python code to clipboard."""
-        from PySide6.QtGui import QGuiApplication
-
         values = self.get_values()
         code = self._generate_code(values)
 
@@ -139,12 +142,15 @@ class LayoutControlDialog(QDialog):
         # Visual feedback
         original_text = self.copy_code_btn.text()
         self.copy_code_btn.setText("✓ Copied!")
-        self.copy_code_btn.setStyleSheet("background: #34C759; color: white; border: none; border-radius: 8px; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;")
+        self.copy_code_btn.setStyleSheet(
+            "background: #34C759; color: white; border: none; border-radius: 8px; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+        )
 
         # Reset after 1 second
         def reset_button():
             self.copy_code_btn.setText(original_text)
             self.copy_code_btn.setStyleSheet("")
+
         QTimer.singleShot(1000, reset_button)
 
     def _generate_code(self, values: dict) -> str:
@@ -179,7 +185,7 @@ class MarginControlDialog(LayoutControlDialog):
                 "Changes apply in real-time. Click OK to save or Cancel to revert."
             ),
             current_values=current_margins,
-            parent=parent
+            parent=parent,
         )
 
     def _setup_controls(self):
@@ -244,20 +250,20 @@ class MarginControlDialog(LayoutControlDialog):
 
     def _load_values(self, values: dict):
         """Load margin values into spinboxes."""
-        self.left_spin.setValue(values.get('left', 0))
-        self.top_spin.setValue(values.get('top', 0))
-        self.right_spin.setValue(values.get('right', 0))
-        self.bottom_spin.setValue(values.get('bottom', 0))
-        self.radius_spin.setValue(values.get('radius', 6))
+        self.left_spin.setValue(values.get("left", 0))
+        self.top_spin.setValue(values.get("top", 0))
+        self.right_spin.setValue(values.get("right", 0))
+        self.bottom_spin.setValue(values.get("bottom", 0))
+        self.radius_spin.setValue(values.get("radius", 6))
 
     def get_values(self) -> dict:
         """Get the current margin values."""
         return {
-            'left': self.left_spin.value(),
-            'top': self.top_spin.value(),
-            'right': self.right_spin.value(),
-            'bottom': self.bottom_spin.value(),
-            'radius': self.radius_spin.value()
+            "left": self.left_spin.value(),
+            "top": self.top_spin.value(),
+            "right": self.right_spin.value(),
+            "bottom": self.bottom_spin.value(),
+            "radius": self.radius_spin.value(),
         }
 
     def _generate_code(self, values: dict) -> str:
@@ -273,9 +279,9 @@ class MarginControlDialog(LayoutControlDialog):
             "# Update rectangle styling",
             "if hasattr(self, 'bg_rect_widget'):",
             "    self.bg_rect_widget.setStyleSheet(",
-            "        \"background-color: rgb(255, 255, 255);\"",
-            "        \"border: 1px solid rgb(100, 100, 100);\"",
-            "        \"border-radius: {self.bg_rect_radius}px;\"",
+            '        "background-color: rgb(255, 255, 255);"',
+            '        "border: 1px solid rgb(100, 100, 100);"',
+            '        "border-radius: {self.bg_rect_radius}px;"',
             "    )",
         ]
         return "\n".join(code)
@@ -292,7 +298,7 @@ class PositionControlDialog(LayoutControlDialog):
                 "Changes apply in real-time. Click OK to save or Cancel to revert."
             ),
             current_values=current_position,
-            parent=parent
+            parent=parent,
         )
 
     def _setup_controls(self):
@@ -351,18 +357,18 @@ class PositionControlDialog(LayoutControlDialog):
 
     def _load_values(self, values: dict):
         """Load position values into controls."""
-        self.x_spin.setValue(values.get('x', 0))
-        self.y_spin.setValue(values.get('y', 0))
-        self.width_spin.setValue(values.get('width', 100))
-        self.height_spin.setValue(values.get('height', 100))
-        self.visible_check.setChecked(values.get('visible', True))
+        self.x_spin.setValue(values.get("x", 0))
+        self.y_spin.setValue(values.get("y", 0))
+        self.width_spin.setValue(values.get("width", 100))
+        self.height_spin.setValue(values.get("height", 100))
+        self.visible_check.setChecked(values.get("visible", True))
 
     def get_values(self) -> dict:
         """Get the current position values."""
         return {
-            'x': self.x_spin.value(),
-            'y': self.y_spin.value(),
-            'width': self.width_spin.value(),
-            'height': self.height_spin.value(),
-            'visible': self.visible_check.isChecked()
+            "x": self.x_spin.value(),
+            "y": self.y_spin.value(),
+            "width": self.width_spin.value(),
+            "height": self.height_spin.value(),
+            "visible": self.visible_check.isChecked(),
         }

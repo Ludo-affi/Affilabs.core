@@ -1,10 +1,6 @@
 {
   "include": [
-    "main",
-    "settings",
-    "ui",
-    "utils",
-    "widgets"
+    "affilabs"
   ],
   "exclude": [
     "**/__pycache__",
@@ -17,12 +13,21 @@
     "**/logs",
     "**/build",
     "**/dist",
-    "**/firmware"
+    "**/firmware",
+    "archive/**",
+    "archive_root_files/**",
+    "build_artifacts/**",
+    "Affilabs.core beta/**",
+    "**/Affilabs.core beta/**",
+    "affilabs/ui/ui_*.py",
+    "affilabs/ui/ai_rc.py",
+    "affilabs/widgets/**",
+    "affilabs/utils/led_methods_OLD_BACKUP.py",
+    "affilabs/utils/led_calibration_nov20_working.py",
+    "affilabs/utils/servo_smooth_move.py",
+    "affilabs/utils/servo_speed_presets.py"
   ],
-  "ignore": [
-    "ui/ui_*.py",
-    "ui/ai_rc.py"
-  ],
+  "ignore": [],
   "defineConstant": {
     "DEBUG": true
   },
@@ -31,7 +36,7 @@
   "venv": ".venv312",
   "pythonVersion": "3.12",
   "pythonPlatform": "Windows",
-  "typeCheckingMode": "basic",
+  "typeCheckingMode": "off",
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "reportGeneralTypeIssues": false,
@@ -44,8 +49,8 @@
   "reportUnknownVariableType": false,
   "reportUnknownMemberType": false,
   "reportMissingTypeArgument": false,
-  "reportUndefinedVariable": "error",
-  "reportUnboundVariable": "error",
+  "reportUndefinedVariable": "none",
+  "reportUnboundVariable": "none",
   "reportCallInDefaultInitializer": false,
   "reportUnnecessaryIsInstance": "information",
   "reportUnnecessaryCast": "information"

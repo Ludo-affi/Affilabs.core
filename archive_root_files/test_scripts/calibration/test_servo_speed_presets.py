@@ -2,13 +2,15 @@
 
 import sys
 import time
-from utils.controller import Controller
+
 from src.utils.servo_speed_presets import (
+    SPEED_PRESETS,
     move_servo_with_speed,
-    switch_sp_mode,
     print_speed_guide,
-    SPEED_PRESETS
+    switch_sp_mode,
 )
+
+from utils.controller import Controller
 from utils.logger import logger
 
 
@@ -26,7 +28,7 @@ def test_fast_switching(ctrl):
 
     # S → P
     start = time.perf_counter()
-    switch_sp_mode(ctrl, target_mode='p', s_position=s_pos, p_position=p_pos)
+    switch_sp_mode(ctrl, target_mode="p", s_position=s_pos, p_position=p_pos)
     sp_time = time.perf_counter() - start
     print(f"S → P: {sp_time:.2f} seconds")
 
@@ -34,7 +36,7 @@ def test_fast_switching(ctrl):
 
     # P → S
     start = time.perf_counter()
-    switch_sp_mode(ctrl, target_mode='s', s_position=s_pos, p_position=p_pos)
+    switch_sp_mode(ctrl, target_mode="s", s_position=s_pos, p_position=p_pos)
     ps_time = time.perf_counter() - start
     print(f"P → S: {ps_time:.2f} seconds")
 
@@ -52,16 +54,20 @@ def test_medium_sweep(ctrl):
 
     start_angle = 10
     end_angle = 170
-    expected_positions = (end_angle - start_angle) // SPEED_PRESETS['medium']['step_size']
+    expected_positions = (end_angle - start_angle) // SPEED_PRESETS["medium"][
+        "step_size"
+    ]
 
     print(f"Sweeping {start_angle}° → {end_angle}° with medium speed")
     print(f"Expected positions: ~{expected_positions}")
 
     start = time.perf_counter()
-    move_servo_with_speed(ctrl, start_angle, end_angle, speed='medium')
+    move_servo_with_speed(ctrl, start_angle, end_angle, speed="medium")
     duration = time.perf_counter() - start
 
-    print(f"\n✅ Medium sweep: {duration:.2f} seconds for ~{expected_positions} positions")
+    print(
+        f"\n✅ Medium sweep: {duration:.2f} seconds for ~{expected_positions} positions",
+    )
     print(f"   ({duration/expected_positions:.3f}s per position)")
 
 
@@ -76,16 +82,18 @@ def test_slow_sweep(ctrl):
 
     start_angle = 10
     end_angle = 170
-    expected_positions = (end_angle - start_angle) // SPEED_PRESETS['slow']['step_size']
+    expected_positions = (end_angle - start_angle) // SPEED_PRESETS["slow"]["step_size"]
 
     print(f"Sweeping {start_angle}° → {end_angle}° with slow speed")
     print(f"Expected positions: ~{expected_positions}")
 
     start = time.perf_counter()
-    move_servo_with_speed(ctrl, start_angle, end_angle, speed='slow')
+    move_servo_with_speed(ctrl, start_angle, end_angle, speed="slow")
     duration = time.perf_counter() - start
 
-    print(f"\n✅ Slow sweep: {duration:.2f} seconds for ~{expected_positions} positions")
+    print(
+        f"\n✅ Slow sweep: {duration:.2f} seconds for ~{expected_positions} positions",
+    )
     print(f"   ({duration/expected_positions:.3f}s per position)")
 
 

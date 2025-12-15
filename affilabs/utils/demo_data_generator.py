@@ -243,7 +243,11 @@ if __name__ == "__main__":
 
     for ch, data in channel_data.items():
         plt.plot(
-            time_array, data, label=f"Channel {ch.upper()}", color=colors[ch], alpha=0.8,
+            time_array,
+            data,
+            label=f"Channel {ch.upper()}",
+            color=colors[ch],
+            alpha=0.8,
         )
 
     # Mark cycle boundaries

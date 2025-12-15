@@ -239,4 +239,3 @@ If you decide to recalibrate:
 **Status**: Ready to test with any channel configuration
 **Files Modified**: `utils/spr_data_acquisition.py` (lines 151-154, 480-486)
 **Compatibility**: Works with existing afterglow calibration files
-

@@ -15,11 +15,8 @@ Date: November 23, 2025
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional
-from PySide6.QtCore import QObject, Signal, Qt
 
-if TYPE_CHECKING:
-    from typing import Any
+from PySide6.QtCore import QObject, Qt, Signal
 
 from utils.logger import logger
 
@@ -92,7 +89,10 @@ class EventBus(QObject):
     manual_scale_toggled = Signal(bool)  # enabled: manual scaling mode
     manual_range_changed = Signal()  # Triggered when user changes min/max inputs
     axis_selected = Signal(str)  # axis: 'x' or 'y'
-    cursor_position_changed = Signal(str, float)  # cursor_name ('start'/'stop'), position
+    cursor_position_changed = Signal(
+        str,
+        float,
+    )  # cursor_name ('start'/'stop'), position
     graph_clicked = Signal(object)  # event: mouse click event on graph
 
     # ========================================================================
@@ -120,18 +120,22 @@ class EventBus(QObject):
     filter_strength_changed = Signal(int)  # strength: filter strength value
     reference_channel_changed = Signal(str)  # channel: 'none', 'a', 'b', 'c', 'd'
 
-    def __init__(self, parent: Optional[QObject] = None, debug_mode: bool = False):
+    def __init__(self, parent: QObject | None = None, debug_mode: bool = False):
         super().__init__(parent)
         self.debug_mode = debug_mode
 
         if debug_mode:
-            logger.info("🚌 EventBus initialized in DEBUG mode - all events will be logged")
+            logger.info(
+                "🚌 EventBus initialized in DEBUG mode - all events will be logged",
+            )
             self._connect_debug_logging()
 
     def _connect_debug_logging(self):
         """Connect debug logging to all signals for troubleshooting."""
         # Hardware events
-        self.hardware_connected.connect(lambda d: logger.debug(f"[EventBus] hardware_connected: {d}"))
+        self.hardware_connected.connect(
+            lambda d: logger.debug(f"[EventBus] hardware_connected: {d}"),
+        )
         # self.hardware_disconnected.connect(lambda: logger.debug("[EventBus] hardware_disconnected"))
         # self.hardware_connection_progress.connect(lambda m: logger.debug(f"[EventBus] hardware_connection_progress: {m}"))
         # self.hardware_error.connect(lambda e: logger.debug(f"[EventBus] hardware_error: {e}"))
@@ -150,46 +154,100 @@ class EventBus(QObject):
         # self.calibration_progress.connect(lambda m: logger.debug(f"[EventBus] calibration_progress: {m}"))
 
         # Recording events
-        self.recording_started.connect(lambda f: logger.debug(f"[EventBus] recording_started: {f}"))
-        self.recording_stopped.connect(lambda: logger.debug("[EventBus] recording_stopped"))
-        self.recording_error.connect(lambda e: logger.debug(f"[EventBus] recording_error: {e}"))
+        self.recording_started.connect(
+            lambda f: logger.debug(f"[EventBus] recording_started: {f}"),
+        )
+        self.recording_stopped.connect(
+            lambda: logger.debug("[EventBus] recording_stopped"),
+        )
+        self.recording_error.connect(
+            lambda e: logger.debug(f"[EventBus] recording_error: {e}"),
+        )
 
         # UI events
-        self.power_on_requested.connect(lambda: logger.debug("[EventBus] power_on_requested"))
-        self.power_off_requested.connect(lambda: logger.debug("[EventBus] power_off_requested"))
-        self.recording_start_requested.connect(lambda: logger.debug("[EventBus] recording_start_requested"))
-        self.recording_stop_requested.connect(lambda: logger.debug("[EventBus] recording_stop_requested"))
+        self.power_on_requested.connect(
+            lambda: logger.debug("[EventBus] power_on_requested"),
+        )
+        self.power_off_requested.connect(
+            lambda: logger.debug("[EventBus] power_off_requested"),
+        )
+        self.recording_start_requested.connect(
+            lambda: logger.debug("[EventBus] recording_start_requested"),
+        )
+        self.recording_stop_requested.connect(
+            lambda: logger.debug("[EventBus] recording_stop_requested"),
+        )
 
     def connect_hardware_manager(self, hardware_mgr):
         """Connect hardware manager signals to event bus.
 
         Args:
             hardware_mgr: HardwareManager instance
+
         """
         # Use QueuedConnection to ensure slot execution occurs on the GUI thread.
         # HardwareManager emits from a Python threading.Thread; without queued delivery
         # Qt may attempt direct invocation causing QObject warnings when UI elements
         # (e.g., dialogs) are created in that worker context.
-        hardware_mgr.hardware_connected.connect(self.hardware_connected.emit, Qt.QueuedConnection)
-        hardware_mgr.hardware_disconnected.connect(self.hardware_disconnected.emit, Qt.QueuedConnection)
-        hardware_mgr.connection_progress.connect(self.hardware_connection_progress.emit, Qt.QueuedConnection)
-        hardware_mgr.error_occurred.connect(self.hardware_error.emit, Qt.QueuedConnection)
-        logger.info("✓ Hardware manager connected to event bus (queued for thread safety)")
+        hardware_mgr.hardware_connected.connect(
+            self.hardware_connected.emit,
+            Qt.QueuedConnection,
+        )
+        hardware_mgr.hardware_disconnected.connect(
+            self.hardware_disconnected.emit,
+            Qt.QueuedConnection,
+        )
+        hardware_mgr.connection_progress.connect(
+            self.hardware_connection_progress.emit,
+            Qt.QueuedConnection,
+        )
+        hardware_mgr.error_occurred.connect(
+            self.hardware_error.emit,
+            Qt.QueuedConnection,
+        )
+        logger.info(
+            "✓ Hardware manager connected to event bus (queued for thread safety)",
+        )
 
     def connect_data_acquisition_manager(self, data_mgr):
         """Connect data acquisition manager signals to event bus.
 
         Args:
             data_mgr: DataAcquisitionManager instance
+
         """
-        data_mgr.spectrum_acquired.connect(self.spectrum_acquired.emit, Qt.QueuedConnection)
-        data_mgr.calibration_started.connect(self.calibration_started.emit, Qt.QueuedConnection)
-        data_mgr.calibration_complete.connect(self.calibration_complete.emit, Qt.QueuedConnection)
-        data_mgr.calibration_failed.connect(self.calibration_failed.emit, Qt.QueuedConnection)
-        data_mgr.calibration_progress.connect(self.calibration_progress.emit, Qt.QueuedConnection)
-        data_mgr.acquisition_started.connect(self.acquisition_started.emit, Qt.QueuedConnection)
-        data_mgr.acquisition_stopped.connect(self.acquisition_stopped.emit, Qt.QueuedConnection)
-        data_mgr.acquisition_error.connect(self.acquisition_error.emit, Qt.QueuedConnection)
+        data_mgr.spectrum_acquired.connect(
+            self.spectrum_acquired.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.calibration_started.connect(
+            self.calibration_started.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.calibration_complete.connect(
+            self.calibration_complete.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.calibration_failed.connect(
+            self.calibration_failed.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.calibration_progress.connect(
+            self.calibration_progress.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.acquisition_started.connect(
+            self.acquisition_started.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.acquisition_stopped.connect(
+            self.acquisition_stopped.emit,
+            Qt.QueuedConnection,
+        )
+        data_mgr.acquisition_error.connect(
+            self.acquisition_error.emit,
+            Qt.QueuedConnection,
+        )
         logger.info("✓ Data acquisition manager connected to event bus")
 
     def connect_recording_manager(self, recording_mgr):
@@ -197,6 +255,7 @@ class EventBus(QObject):
 
         Args:
             recording_mgr: RecordingManager instance
+
         """
         recording_mgr.recording_started.connect(self.recording_started.emit)
         recording_mgr.recording_stopped.connect(self.recording_stopped.emit)
@@ -209,6 +268,7 @@ class EventBus(QObject):
 
         Args:
             kinetic_mgr: KineticManager instance
+
         """
         kinetic_mgr.pump_initialized.connect(self.pump_initialized.emit)
         kinetic_mgr.pump_error.connect(self.pump_error.emit)
@@ -221,6 +281,7 @@ class EventBus(QObject):
 
         Args:
             ui: UIAdapter instance
+
         """
         ui.power_on_requested.connect(self.power_on_requested.emit)
         ui.power_off_requested.connect(self.power_off_requested.emit)

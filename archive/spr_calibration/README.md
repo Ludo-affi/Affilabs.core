@@ -3,8 +3,8 @@
 ## Overview
 Production-ready bilinear calibration model for LED-intensity-time control in SPR optical systems.
 
-**Model Equation:** `counts(I, t) = (a·t + b)·I + (c·t + d)`  
-**Accuracy:** R² > 0.9999, errors < 2% (validated)  
+**Model Equation:** `counts(I, t) = (a·t + b)·I + (c·t + d)`
+**Accuracy:** R² > 0.9999, errors < 2% (validated)
 **Status:** ✅ Production-Ready (Dec 2025)
 
 **REQUIRES FIRMWARE V1.9+** for multi-LED activation and batch intensity control.
@@ -137,12 +137,12 @@ git push
 - Validation plots in `LED-Counts relationship/` directory
 
 ## Key Features
-✅ **Physics-based:** Bilinear model matches theory  
-✅ **Fast:** 4 parameters per LED (vs. hundreds for RBF)  
-✅ **Accurate:** < 2% error in operating range  
-✅ **Validated:** Multiple independent tests  
-✅ **Portable:** Single JSON file deployment  
-✅ **Efficient:** 60% faster calibration (2-point vs. 5-point sampling)  
+✅ **Physics-based:** Bilinear model matches theory
+✅ **Fast:** 4 parameters per LED (vs. hundreds for RBF)
+✅ **Accurate:** < 2% error in operating range
+✅ **Validated:** Multiple independent tests
+✅ **Portable:** Single JSON file deployment
+✅ **Efficient:** 60% faster calibration (2-point vs. 5-point sampling)
 
 ## Model Advantages Over RBF
 
@@ -205,8 +205,8 @@ Where:
 
 ## Support
 
-**Repository:** https://github.com/Ludo-affi/ezControl-AI  
-**Branch:** affilabs.core-beta  
+**Repository:** https://github.com/Ludo-affi/ezControl-AI
+**Branch:** affilabs.core-beta
 **Status:** Production-Ready ✅
 
 ---

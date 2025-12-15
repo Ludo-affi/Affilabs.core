@@ -15,9 +15,9 @@
 | `main_simplified.py` | `_connect_signals()` | 396-398 | ✅ FIXED | 2025-11-24 | Connects to `_on_power_on_requested`, removed emoji |
 | `main_simplified.py` | `_on_power_on_requested()` | 3409-3430 | ✅ FIXED | 2025-11-24 | Calls `hardware_mgr.scan_and_connect()`, removed emoji |
 
-**Verified Flow**: 
+**Verified Flow**:
 ```
-power_btn.clicked → _handle_power_click() → power_on_requested.emit() 
+power_btn.clicked → _handle_power_click() → power_on_requested.emit()
   → _on_power_on_requested() → hardware_mgr.scan_and_connect()
 ```
 

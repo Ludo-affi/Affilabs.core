@@ -93,7 +93,8 @@ class DebugController:
 
             # Enable Start button in UI
             if hasattr(self.main_window, "sidebar") and hasattr(
-                self.main_window.sidebar, "start_cycle_btn",
+                self.main_window.sidebar,
+                "start_cycle_btn",
             ):
                 self.main_window.sidebar.start_cycle_btn.setEnabled(True)
                 self.main_window.sidebar.start_cycle_btn.setToolTip(
@@ -106,7 +107,7 @@ class DebugController:
             logger.info("[OK] Recording controls enabled")
 
             # Show success message
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(
                 "Debug calibration bypass active!\n\n"
@@ -124,7 +125,7 @@ class DebugController:
 
         except Exception as e:
             logger.exception(f"[ERROR] Failed to bypass calibration: {e}")
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(
                 f"Failed to bypass calibration:\n{e}",
@@ -148,7 +149,7 @@ class DebugController:
             # Check if data_mgr exists
             if not self.data_mgr:
                 logger.error("[ERROR] No data_mgr found!")
-                from widgets.message import show_message
+                from affilabs.widgets.message import show_message
 
                 show_message("Error: Data manager not initialized!", msg_type="Error")
                 return
@@ -184,7 +185,7 @@ class DebugController:
                     "   This means the crash is likely rate/accumulation related.",
                 )
                 logger.info("=" * 80)
-                from widgets.message import show_message
+                from affilabs.widgets.message import show_message
 
                 show_message(
                     "Single Data Point Test: SUCCESS!\n\n"
@@ -201,7 +202,7 @@ class DebugController:
 
         except Exception as e:
             logger.exception(f"[ERROR] Single data point test failed: {e}")
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(f"Single data point test FAILED:\n\n{e}", msg_type="Error")
 
@@ -221,7 +222,7 @@ class DebugController:
             # Check if data_mgr exists
             if not self.data_mgr:
                 logger.error("[ERROR] No data_mgr found!")
-                from widgets.message import show_message
+                from affilabs.widgets.message import show_message
 
                 show_message(
                     "Error: Data manager not initialized!\n\n"
@@ -257,7 +258,9 @@ class DebugController:
 
                     # Generate wavelength array (match real detector: ~640-690nm range for SPR)
                     wavelengths = np.linspace(
-                        640, 690, 512,
+                        640,
+                        690,
+                        512,
                     )  # 512 points for smooth spectrum
 
                     for ch in channels:
@@ -273,10 +276,14 @@ class DebugController:
                             -((wavelengths - peak_wavelength) ** 2) / (2 * 3**2),
                         )
                         raw_spectrum += np.random.normal(
-                            0, 200, len(wavelengths),
+                            0,
+                            200,
+                            len(wavelengths),
                         )  # Add noise
                         raw_spectrum = np.clip(
-                            raw_spectrum, 1000, 65000,
+                            raw_spectrum,
+                            1000,
+                            65000,
                         )  # Realistic detector range
 
                         # Transmission spectrum: Calculate from raw (simulate P/S ratio)
@@ -306,7 +313,8 @@ class DebugController:
 
                         # Emit to spectrum_acquired signal
                         if self.data_mgr and hasattr(
-                            self.data_mgr, "spectrum_acquired",
+                            self.data_mgr,
+                            "spectrum_acquired",
                         ):
                             self.data_mgr.spectrum_acquired.emit(data)
 
@@ -331,7 +339,7 @@ class DebugController:
             logger.info("[OK] Simulation timer started at 10 Hz")
             logger.info("   Generating 4 channels (A, B, C, D) per cycle")
 
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(
                 "Simulation started!\n\n"
@@ -345,7 +353,7 @@ class DebugController:
 
         except Exception as e:
             logger.exception(f"[ERROR] Failed to start simulation: {e}")
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(
                 f"Simulation failed:\n\n{e}",

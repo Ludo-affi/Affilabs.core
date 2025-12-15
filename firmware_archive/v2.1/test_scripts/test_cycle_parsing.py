@@ -1,8 +1,10 @@
 """Test different cycle counts to isolate parsing issue"""
-import serial
+
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+import serial
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -16,18 +18,18 @@ for name, command in test_cases:
     print(f"\n{'='*60}")
     print(f"TEST: {name}")
     print(f"Command: {command.strip()}")
-    print('='*60)
-    
+    print("=" * 60)
+
     ser.reset_input_buffer()
     ser.write(command.encode())
     time.sleep(0.1)
-    
+
     start = time.time()
     cycle_count = 0
-    
+
     while time.time() - start < 15:
         if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
             if line:
                 if line.startswith("CYCLE:"):
                     cycle_count += 1
@@ -37,7 +39,7 @@ for name, command in test_cases:
                     break
                 elif "READ" in line:
                     ser.write(b"ack\n")
-    
+
     elapsed = time.time() - start
     print(f"Result: {cycle_count} cycles in {elapsed:.2f}s")
     time.sleep(1)

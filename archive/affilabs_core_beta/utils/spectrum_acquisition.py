@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
-from utils.logger import logger
+
 from utils.hal.interfaces import Spectrometer
+from utils.logger import logger
 
 
 class SpectrumAcquisition:
@@ -20,7 +19,7 @@ class SpectrumAcquisition:
         wave_min_index: int,
         wave_max_index: int,
         num_scans: int = 1,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         try:
             return self.spec.read_roi(wave_min_index, wave_max_index, num_scans)
         except Exception as e:

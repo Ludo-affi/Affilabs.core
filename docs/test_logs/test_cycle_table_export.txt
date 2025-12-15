@@ -1,5 +1,5 @@
 Name	StartTime	EndTime	ShiftA	ShiftB	ShiftC	ShiftD	Reference	CycleType	UserNote
 Cycle1	0.0	60.0	0.123	0.456	0.789	1.234	None	Baseline	First baseline
-Inserted	30.0	50.0	0.123	0.456	0.789	1.234	None	Baseline	
+Inserted	30.0	50.0	0.123	0.456	0.789	1.234	None	Baseline
 Cycle2	60.0	180.0	0.123	0.456	0.789	1.234	None	Association	Binding phase
-Cycle3	180.0	300.0	0.123	0.456	0.789	1.234	None	Dissociation	
+Cycle3	180.0	300.0	0.123	0.456	0.789	1.234	None	Dissociation

@@ -35,7 +35,9 @@ class PerformanceLogger:
             self.start_times[operation] = time.perf_counter()
 
     def end_timing(
-        self, operation: str, details: dict[str, Any] | None = None
+        self,
+        operation: str,
+        details: dict[str, Any] | None = None,
     ) -> float:
         """End timing an operation and log the result."""
         with self._lock:
@@ -75,7 +77,10 @@ class SecurityLogger:
         self.logger = logging.getLogger(logger_name)
 
     def log_access_attempt(
-        self, resource: str, user: str = "system", success: bool = True
+        self,
+        resource: str,
+        user: str = "system",
+        success: bool = True,
     ):
         """Log access attempts to sensitive resources."""
         event = {
@@ -90,7 +95,10 @@ class SecurityLogger:
         self.logger.log(level, f"SECURITY: {json.dumps(event)}")
 
     def log_configuration_change(
-        self, component: str, changes: dict[str, Any], user: str = "system"
+        self,
+        component: str,
+        changes: dict[str, Any],
+        user: str = "system",
     ):
         """Log configuration changes."""
         event = {
@@ -104,7 +112,10 @@ class SecurityLogger:
         self.logger.info(f"SECURITY: {json.dumps(event)}")
 
     def log_hardware_command(
-        self, device: str, command: str, parameters: dict[str, Any]
+        self,
+        device: str,
+        command: str,
+        parameters: dict[str, Any],
     ):
         """Log hardware commands for audit trail."""
         event = {
@@ -268,7 +279,7 @@ class SPRLogger:
                 "[{asctime}] {message}",
                 style="{",
                 datefmt="%Y-%m-%d %H:%M:%S",
-            )
+            ),
         )
 
         # Configure performance logger
@@ -291,7 +302,7 @@ class SPRLogger:
                 "[{asctime}] {message}",
                 style="{",
                 datefmt="%Y-%m-%d %H:%M:%S",
-            )
+            ),
         )
 
         # Configure security logger

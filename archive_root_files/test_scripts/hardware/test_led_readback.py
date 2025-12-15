@@ -1,9 +1,12 @@
 """Test LED control with state readback verification."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def test_led_with_readback():
     """Test LED commands and verify state readback."""
@@ -14,15 +17,15 @@ def test_led_with_readback():
         print("❌ Failed to connect to Pico")
         return
 
-    print(f"✅ Connected to Pico controller")
+    print("✅ Connected to Pico controller")
     print()
 
     # Test sequence
     channels = [
-        ('A', 255, 0, 0, 0),
-        ('B', 0, 255, 0, 0),
-        ('C', 0, 0, 255, 0),
-        ('D', 0, 0, 0, 255),
+        ("A", 255, 0, 0, 0),
+        ("B", 0, 255, 0, 0),
+        ("C", 0, 0, 255, 0),
+        ("D", 0, 0, 0, 255),
     ]
 
     for ch_name, a, b, c, d in channels:
@@ -37,7 +40,7 @@ def test_led_with_readback():
         time.sleep(0.1)  # Wait for command to take effect
 
         # Query each LED state
-        for query_ch in ['a', 'b', 'c', 'd']:
+        for query_ch in ["a", "b", "c", "d"]:
             try:
                 pico._ser.write(f"i{query_ch}\n".encode())
                 time.sleep(0.02)
@@ -55,6 +58,7 @@ def test_led_with_readback():
 
     print("Test complete!")
     pico.close()
+
 
 if __name__ == "__main__":
     test_led_with_readback()

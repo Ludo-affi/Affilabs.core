@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -31,7 +31,8 @@ try:
     # Use pyseabreeze backend (requires libusb-1.0.dll on Windows)
     # This is the ONLY supported backend - robust and reliable
     import seabreeze
-    seabreeze.use('pyseabreeze')
+
+    seabreeze.use("pyseabreeze")
 
     from seabreeze.spectrometers import Spectrometer, list_devices
 
@@ -43,6 +44,7 @@ try:
     # Verify backend selection
     try:
         import seabreeze.backends
+
         actual_backend = seabreeze.backends.get_backend()
         logger.info(f"SeaBreeze backend confirmed: {actual_backend}")
     except Exception:
@@ -81,17 +83,17 @@ class USB4000OceanDirect:
                 "OceanDirect API not available. Install with: pip install oceandirect",
             )
 
-        self._api: Optional[OceanDirectAPI] = None
+        self._api: OceanDirectAPI | None = None
         self._device = None
         self._device_ids: list[int] = []
         self._connected = False
         self._current_integration_time = self.DEFAULT_INTEGRATION_TIME
 
         # Cached device properties
-        self._wavelengths: Optional[np.ndarray] = None
-        self._serial_number: Optional[str] = None
-        self._min_integration_time: Optional[float] = None
-        self._max_integration_time: Optional[float] = None
+        self._wavelengths: np.ndarray | None = None
+        self._serial_number: str | None = None
+        self._min_integration_time: float | None = None
+        self._max_integration_time: float | None = None
 
         logger.info(f"Initialized {self.DEVICE_MODEL} OceanDirect interface")
 
@@ -107,6 +109,7 @@ class USB4000OceanDirect:
 
         Raises:
             RuntimeError: If connection times out or fails
+
         """
         if timeout_seconds is None:
             timeout_seconds = self.CONNECTION_TIMEOUT
@@ -121,7 +124,9 @@ class USB4000OceanDirect:
                     raise RuntimeError("Only SeaBreeze backend is supported")
 
                 # Create Spectrometer directly from serial number
-                logger.debug(f"SeaBreeze: Creating spectrometer for device {target_device_id}")
+                logger.debug(
+                    f"SeaBreeze: Creating spectrometer for device {target_device_id}",
+                )
                 device = Spectrometer.from_serial_number(str(target_device_id))
                 result["device"] = device
                 result["completed"] = True
@@ -142,10 +147,10 @@ class USB4000OceanDirect:
             error_msg = f"Connection to {self.DEVICE_MODEL} device {target_device_id} timed out after {timeout_seconds}s"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
-        elif result["error"]:
+        if result["error"]:
             # Connection failed
             raise result["error"]
-        elif result["device"] is None:
+        if result["device"] is None:
             # Unexpected case
             raise RuntimeError("Connection completed but no device returned")
 
@@ -166,7 +171,9 @@ class USB4000OceanDirect:
 
             # SeaBreeze is the ONLY supported backend
             if BACKEND_TYPE != "seabreeze":
-                raise RuntimeError("Only SeaBreeze backend is supported. Install with: pip install seabreeze")
+                raise RuntimeError(
+                    "Only SeaBreeze backend is supported. Install with: pip install seabreeze",
+                )
 
             # Use SeaBreeze device discovery
             devices = list_devices()
@@ -190,7 +197,7 @@ class USB4000OceanDirect:
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
 
-    def connect(self, device_id: Optional[int] = None) -> bool:
+    def connect(self, device_id: int | None = None) -> bool:
         """Connect to USB4000 device.
 
         Args:
@@ -230,7 +237,9 @@ class USB4000OceanDirect:
             logger.info(f"Connecting to {self.DEVICE_MODEL} device {target_device_id}")
 
             # Open device connection with timeout protection
-            logger.debug(f"Attempting connection with {self.CONNECTION_TIMEOUT}s timeout...")
+            logger.debug(
+                f"Attempting connection with {self.CONNECTION_TIMEOUT}s timeout...",
+            )
             self._device = self._connection_with_timeout(target_device_id)
             self._connected = True
 
@@ -300,9 +309,9 @@ class USB4000OceanDirect:
         if self._connected and self._device:
             try:
                 # Close device connection if method exists
-                if hasattr(self._device, 'close_device'):
+                if hasattr(self._device, "close_device"):
                     self._device.close_device()
-                elif hasattr(self._device, 'close'):
+                elif hasattr(self._device, "close"):
                     self._device.close()
                 logger.info(f"Disconnected from {self.DEVICE_MODEL}")
             except Exception as e:
@@ -362,7 +371,7 @@ class USB4000OceanDirect:
         """Get current integration time in seconds."""
         return self._current_integration_time
 
-    def acquire_spectrum(self) -> Optional[np.ndarray]:
+    def acquire_spectrum(self) -> np.ndarray | None:
         """Acquire spectrum from USB4000.
 
         Returns:
@@ -403,7 +412,7 @@ class USB4000OceanDirect:
             logger.error(f"Spectrum acquisition failed: {e}")
             return None
 
-    def get_wavelengths(self) -> Optional[np.ndarray]:
+    def get_wavelengths(self) -> np.ndarray | None:
         """Get wavelength calibration data.
 
         Returns:

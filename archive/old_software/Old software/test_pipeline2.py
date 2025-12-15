@@ -8,6 +8,7 @@ This script demonstrates the innovative features of Pipeline 2:
 """
 
 import numpy as np
+
 from utils.pipelines.adaptive_multifeature_pipeline import AdaptiveMultiFeaturePipeline
 
 
@@ -31,6 +32,7 @@ def generate_synthetic_spr_data(
 
     Returns:
         Tuple of (wavelengths, transmission)
+
     """
     wavelengths = np.linspace(600, 800, num_points)
 
@@ -42,9 +44,13 @@ def generate_synthetic_spr_data(
     transmission = np.zeros_like(wavelengths)
     for i, wl in enumerate(wavelengths):
         if wl < base_wavelength:
-            transmission[i] = baseline - depth * np.exp(-((wl - base_wavelength) / left_sigma) ** 2)
+            transmission[i] = baseline - depth * np.exp(
+                -(((wl - base_wavelength) / left_sigma) ** 2),
+            )
         else:
-            transmission[i] = baseline - depth * np.exp(-((wl - base_wavelength) / right_sigma) ** 2)
+            transmission[i] = baseline - depth * np.exp(
+                -(((wl - base_wavelength) / right_sigma) ** 2),
+            )
 
     # Add noise
     transmission += np.random.normal(0, noise_level, num_points)
@@ -114,26 +120,32 @@ def simulate_binding_event():
         # Process with Pipeline 2
         timestamp = frame * 0.1  # 100ms per frame
         result_wavelength, metadata = pipeline.find_resonance_wavelength(
-            transmission, wavelengths, timestamp=timestamp
+            transmission,
+            wavelengths,
+            timestamp=timestamp,
         )
 
         # Store results
         wavelengths_data.append(result_wavelength)
-        fwhm_data.append(metadata['fwhm'])
-        depth_data.append(metadata['depth'])
-        confidence_data.append(metadata['confidence'])
-        jitter_flags.append(metadata['jitter_flag'])
+        fwhm_data.append(metadata["fwhm"])
+        depth_data.append(metadata["depth"])
+        confidence_data.append(metadata["confidence"])
+        jitter_flags.append(metadata["jitter_flag"])
 
         # Print selected frames
         if frame % 10 == 0 or frame < 3:
             print(f"Frame {frame:2d}:")
-            print(f"  Wavelength: {result_wavelength:.3f} nm (raw: {metadata['raw_wavelength']:.3f} nm)")
+            print(
+                f"  Wavelength: {result_wavelength:.3f} nm (raw: {metadata['raw_wavelength']:.3f} nm)",
+            )
             print(f"  FWHM: {metadata['fwhm']:.2f} nm")
             print(f"  Depth: {metadata['depth']:.2f}%")
             print(f"  Confidence: {metadata['confidence']:.3f}")
             print(f"  Jitter Flag: {metadata['jitter_flag']}")
             print(f"  Temporal Coherence: {metadata['temporal_coherence']:.3f}")
-            print(f"  Asymmetry: L={metadata['left_slope']:.2f}, R={metadata['right_slope']:.2f}")
+            print(
+                f"  Asymmetry: L={metadata['left_slope']:.2f}, R={metadata['right_slope']:.2f}",
+            )
             print()
 
     print("-" * 80)
@@ -179,9 +191,13 @@ def simulate_binding_event():
         print("[ ] Peak broadening detected (heterogeneous binding or artifacts)")
 
     if jitter_count < num_frames * 0.2:
-        print(f"[+] Low jitter rate ({jitter_count}/{num_frames} = {100*jitter_count/num_frames:.1f}%)")
+        print(
+            f"[+] Low jitter rate ({jitter_count}/{num_frames} = {100*jitter_count/num_frames:.1f}%)",
+        )
     else:
-        print(f"[!] High jitter rate ({jitter_count}/{num_frames} = {100*jitter_count/num_frames:.1f}%)")
+        print(
+            f"[!] High jitter rate ({jitter_count}/{num_frames} = {100*jitter_count/num_frames:.1f}%)",
+        )
 
     if wavelength_fwhm_corr > 0.8:
         print("[+] Strong wavelength-FWHM correlation (expected for red broadening)")
@@ -190,7 +206,9 @@ def simulate_binding_event():
     print("=" * 80)
     print("KEY INNOVATIONS OF PIPELINE 2:")
     print("=" * 80)
-    print("1. Tracks 3 features simultaneously (wavelength, FWHM, depth) ==> more robust")
+    print(
+        "1. Tracks 3 features simultaneously (wavelength, FWHM, depth) ==> more robust",
+    )
     print("2. Temporal filtering ==> rejects jitter, smooth trajectories")
     print("3. Advanced peak model ==> accurate for complex peak shapes")
     print("4. Artifact detection ==> flags spurious measurements automatically")

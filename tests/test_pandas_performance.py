@@ -13,9 +13,10 @@ Author: AI Assistant
 Date: November 19, 2025
 """
 
-import time
 import tempfile
+import time
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -31,6 +32,7 @@ def benchmark_data_append(num_points: int) -> dict[str, float]:
 
     Returns:
         Dictionary with timing results
+
     """
     print(f"\n{'='*80}")
     print(f"Benchmark 1: Data Append Operations ({num_points:,} points)")
@@ -68,8 +70,12 @@ def benchmark_data_append(num_points: int) -> dict[str, float]:
     speedup_vs_list = list_time / ts_time
 
     print(f"  np.append():       {np_time:.4f}s")
-    print(f"  TimeSeriesBuffer:  {ts_time:.4f}s  (⚡ {speedup_vs_np:.1f}× faster than np.append)")
-    print(f"  list→array:        {list_time:.4f}s  (⚡ {speedup_vs_list:.1f}× faster than list)")
+    print(
+        f"  TimeSeriesBuffer:  {ts_time:.4f}s  (⚡ {speedup_vs_np:.1f}× faster than np.append)",
+    )
+    print(
+        f"  list→array:        {list_time:.4f}s  (⚡ {speedup_vs_list:.1f}× faster than list)",
+    )
 
     return {
         "num_points": num_points,
@@ -89,29 +95,39 @@ def benchmark_csv_import(num_rows: int) -> dict[str, float]:
 
     Returns:
         Dictionary with timing results
+
     """
     print(f"\n{'='*80}")
     print(f"Benchmark 2: CSV Import Operations ({num_rows:,} rows)")
     print(f"{'='*80}")
 
     # Create test CSV file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='') as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".csv",
+        delete=False,
+        newline="",
+    ) as f:
         csv_path = Path(f.name)
         # Write header
-        f.write("Time_A\tChannel_A\tTime_B\tChannel_B\tTime_C\tChannel_C\tTime_D\tChannel_D\n")
+        f.write(
+            "Time_A\tChannel_A\tTime_B\tChannel_B\tTime_C\tChannel_C\tTime_D\tChannel_D\n",
+        )
         # Write data
         for i in range(num_rows):
             t = i * 0.1
-            f.write(f"{t}\t{np.sin(t)}\t{t}\t{np.cos(t)}\t{t}\t{np.sin(2*t)}\t{t}\t{np.cos(2*t)}\n")
+            f.write(
+                f"{t}\t{np.sin(t)}\t{t}\t{np.cos(t)}\t{t}\t{np.sin(2*t)}\t{t}\t{np.cos(2*t)}\n",
+            )
 
     try:
         # Method 1: Row-by-row with list append (old method)
         start = time.perf_counter()
         data_old = {"a": [], "b": [], "c": [], "d": []}
-        with open(csv_path, 'r') as f:
+        with open(csv_path) as f:
             next(f)  # Skip header
             for line in f:
-                parts = line.strip().split('\t')
+                parts = line.strip().split("\t")
                 data_old["a"].append(float(parts[1]))
                 data_old["b"].append(float(parts[3]))
                 data_old["c"].append(float(parts[5]))
@@ -123,7 +139,7 @@ def benchmark_csv_import(num_rows: int) -> dict[str, float]:
 
         # Method 2: pandas read_csv with vectorized operations (new method)
         start = time.perf_counter()
-        df = pd.read_csv(csv_path, sep='\t')
+        df = pd.read_csv(csv_path, sep="\t")
         data_new = {
             "a": df["Channel_A"].to_numpy(),
             "b": df["Channel_B"].to_numpy(),
@@ -158,6 +174,7 @@ def benchmark_filter_operations(num_points: int) -> dict[str, float]:
 
     Returns:
         Dictionary with timing results
+
     """
     print(f"\n{'='*80}")
     print(f"Benchmark 3: Filter Operations ({num_points:,} points)")
@@ -181,7 +198,9 @@ def benchmark_filter_operations(num_points: int) -> dict[str, float]:
     # Method 2: pandas rolling window (new method)
     start = time.perf_counter()
     series = pd.Series(data)
-    filtered_new = series.rolling(window=window, center=True, min_periods=1).median().to_numpy()
+    filtered_new = (
+        series.rolling(window=window, center=True, min_periods=1).median().to_numpy()
+    )
     new_time = time.perf_counter() - start
 
     # Calculate speedup
@@ -206,6 +225,7 @@ def benchmark_csv_export(num_rows: int) -> dict[str, float]:
 
     Returns:
         Dictionary with timing results
+
     """
     print(f"\n{'='*80}")
     print(f"Benchmark 4: CSV Export Operations ({num_rows:,} rows)")
@@ -224,26 +244,32 @@ def benchmark_csv_export(num_rows: int) -> dict[str, float]:
     }
 
     # Method 1: Row-by-row CSV writing (old method)
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='') as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".csv",
+        delete=False,
+        newline="",
+    ) as f:
         csv_path_old = Path(f.name)
 
     start = time.perf_counter()
     import csv
-    with open(csv_path_old, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=list(data.keys()), delimiter='\t')
+
+    with open(csv_path_old, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(data.keys()), delimiter="\t")
         writer.writeheader()
         for i in range(num_rows):
-            row_dict = {key: data[key][i] for key in data.keys()}
+            row_dict = {key: data[key][i] for key in data}
             writer.writerow(row_dict)
     old_time = time.perf_counter() - start
 
     # Method 2: pandas DataFrame.to_csv() (new method)
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
         csv_path_new = Path(f.name)
 
     start = time.perf_counter()
     df = pd.DataFrame(data)
-    df.to_csv(csv_path_new, sep='\t', index=False)
+    df.to_csv(csv_path_new, sep="\t", index=False)
     new_time = time.perf_counter() - start
 
     # Calculate speedup
@@ -266,12 +292,12 @@ def benchmark_csv_export(num_rows: int) -> dict[str, float]:
 
 def run_full_benchmark():
     """Run complete performance benchmark suite."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PANDAS OPTIMIZATION PERFORMANCE BENCHMARK")
-    print("="*80)
-    print(f"Testing np.append vs TimeSeriesBuffer vs pandas operations")
+    print("=" * 80)
+    print("Testing np.append vs TimeSeriesBuffer vs pandas operations")
     print(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*80)
+    print("=" * 80)
 
     # Test with different data sizes
     test_sizes = [1000, 5000, 10000]
@@ -311,19 +337,31 @@ def run_full_benchmark():
         print(f"  {r['num_rows']:>6,} rows:   {r['speedup']:>5.1f}× speedup")
 
     # Calculate average improvements
-    avg_append_speedup = sum(r["speedup_vs_np"] for r in results["append"]) / len(results["append"])
-    avg_import_speedup = sum(r["speedup"] for r in results["import"]) / len(results["import"])
-    avg_filter_speedup = sum(r["speedup"] for r in results["filter"]) / len(results["filter"])
-    avg_export_speedup = sum(r["speedup"] for r in results["export"]) / len(results["export"])
+    avg_append_speedup = sum(r["speedup_vs_np"] for r in results["append"]) / len(
+        results["append"],
+    )
+    avg_import_speedup = sum(r["speedup"] for r in results["import"]) / len(
+        results["import"],
+    )
+    avg_filter_speedup = sum(r["speedup"] for r in results["filter"]) / len(
+        results["filter"],
+    )
+    avg_export_speedup = sum(r["speedup"] for r in results["export"]) / len(
+        results["export"],
+    )
 
     print(f"\n{'='*80}")
     print("AVERAGE IMPROVEMENTS")
     print(f"{'='*80}")
-    print(f"  Data Append:  {avg_append_speedup:.1f}× faster (np.append → TimeSeriesBuffer)")
+    print(
+        f"  Data Append:  {avg_append_speedup:.1f}× faster (np.append → TimeSeriesBuffer)",
+    )
     print(f"  CSV Import:   {avg_import_speedup:.1f}× faster (row-by-row → pandas)")
     print(f"  Filtering:    {avg_filter_speedup:.1f}× faster (loops → pandas.rolling)")
     print(f"  CSV Export:   {avg_export_speedup:.1f}× faster (row-by-row → DataFrame)")
-    print(f"\n  🎯 Overall average: {(avg_append_speedup + avg_import_speedup + avg_filter_speedup + avg_export_speedup) / 4:.1f}× performance improvement")
+    print(
+        f"\n  🎯 Overall average: {(avg_append_speedup + avg_import_speedup + avg_filter_speedup + avg_export_speedup) / 4:.1f}× performance improvement",
+    )
     print(f"{'='*80}\n")
 
     return results

@@ -1,12 +1,12 @@
 """Live Data Dialog - Side-by-side transmission and raw data graphs."""
 
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFrame
-from PySide6.QtCore import Qt
-import pyqtgraph as pg
 import sys
 
+import pyqtgraph as pg
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout
+
 # Disable PyQtGraph auto-cleanup to prevent shutdown crashes
-pg.setConfigOption('exitCleanup', False)
+pg.setConfigOption("exitCleanup", False)
 
 
 class LiveDataDialog(QDialog):
@@ -35,6 +35,7 @@ class LiveDataDialog(QDialog):
             if sys.stderr:
                 print(f"Error setting up live data dialog: {e}")
                 import traceback
+
                 try:
                     print(traceback.format_exc())
                 except:
@@ -52,7 +53,7 @@ class LiveDataDialog(QDialog):
             "font-size: 20px;"
             "font-weight: 600;"
             "color: #1D1D1F;"
-            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(title)
 
@@ -63,14 +64,14 @@ class LiveDataDialog(QDialog):
         # Left: Transmission plot
         transmission_container = self._create_plot_container(
             "Transmission (%)",
-            "transmission"
+            "transmission",
         )
         graphs_layout.addWidget(transmission_container)
 
         # Right: Raw data plot
         raw_data_container = self._create_plot_container(
             "Raw Intensity (counts)",
-            "raw_data"
+            "raw_data",
         )
         graphs_layout.addWidget(raw_data_container)
 
@@ -82,6 +83,7 @@ class LiveDataDialog(QDialog):
         Args:
             title: Plot title
             plot_type: 'transmission' or 'raw_data'
+
         """
         container = QFrame()
         container.setStyleSheet(
@@ -89,7 +91,7 @@ class LiveDataDialog(QDialog):
             "  background: #FFFFFF;"
             "  border: 1px solid #D1D1D6;"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
 
         container_layout = QVBoxLayout(container)
@@ -104,7 +106,7 @@ class LiveDataDialog(QDialog):
             "color: #1D1D1F;"
             "background: transparent;"
             "border: none;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         container_layout.addWidget(title_label)
 
@@ -113,10 +115,10 @@ class LiveDataDialog(QDialog):
         indicators_layout.setSpacing(12)
 
         channel_colors = {
-            'a': '#FF3B30',  # Red
-            'b': '#34C759',  # Green
-            'c': '#007AFF',  # Blue
-            'd': '#FF9500'   # Orange
+            "a": "#FF3B30",  # Red
+            "b": "#34C759",  # Green
+            "c": "#007AFF",  # Blue
+            "d": "#FF9500",  # Orange
         }
 
         for channel, color in channel_colors.items():
@@ -127,7 +129,7 @@ class LiveDataDialog(QDialog):
                 f"background: transparent;"
                 f"border: none;"
                 f"font-weight: 600;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             indicators_layout.addWidget(indicator)
 
@@ -136,7 +138,7 @@ class LiveDataDialog(QDialog):
 
         # Create plot widget
         plot_widget = pg.PlotWidget()
-        plot_widget.setBackground('#FAFAFA')
+        plot_widget.setBackground("#FAFAFA")
         plot_widget.showGrid(x=True, y=True, alpha=0.2)
 
         # Disable mouse interaction to prevent crashes
@@ -144,31 +146,31 @@ class LiveDataDialog(QDialog):
         plot_widget.setMenuEnabled(False)
 
         # Configure axes
-        plot_widget.setLabel('bottom', 'Wavelength', units='nm')
-        if plot_type == 'transmission':
-            plot_widget.setLabel('left', 'Transmission', units='%')
+        plot_widget.setLabel("bottom", "Wavelength", units="nm")
+        if plot_type == "transmission":
+            plot_widget.setLabel("left", "Transmission", units="%")
             # No hard axis: enable full autorange
             try:
                 plot_widget.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
             except Exception:
-                plot_widget.enableAutoRange('x', True)
-                plot_widget.enableAutoRange('y', True)
+                plot_widget.enableAutoRange("x", True)
+                plot_widget.enableAutoRange("y", True)
         else:
-            plot_widget.setLabel('left', 'Intensity', units='counts')
+            plot_widget.setLabel("left", "Intensity", units="counts")
             try:
                 plot_widget.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
             except Exception:
-                plot_widget.enableAutoRange('x', True)
-                plot_widget.enableAutoRange('y', True)
+                plot_widget.enableAutoRange("x", True)
+                plot_widget.enableAutoRange("y", True)
 
         plot_widget.setXRange(400, 1000)
 
         # Create curves for each channel
         for channel, color in channel_colors.items():
             pen = pg.mkPen(color=color, width=2)
-            curve = plot_widget.plot(pen=pen, name=f'Channel {channel.upper()}')
+            curve = plot_widget.plot(pen=pen, name=f"Channel {channel.upper()}")
 
-            if plot_type == 'transmission':
+            if plot_type == "transmission":
                 self.transmission_curves[channel] = curve
             else:
                 self.raw_data_curves[channel] = curve
@@ -176,7 +178,7 @@ class LiveDataDialog(QDialog):
         container_layout.addWidget(plot_widget)
 
         # Store plot widget reference
-        if plot_type == 'transmission':
+        if plot_type == "transmission":
             self.transmission_plot = plot_widget
         else:
             self.raw_data_plot = plot_widget
@@ -190,17 +192,21 @@ class LiveDataDialog(QDialog):
             channel: Channel identifier ('a', 'b', 'c', 'd')
             wavelength: Wavelength array in nm
             transmission_spectrum: Transmission percentage array
+
         """
         if not self._setup_complete or self._is_closing:
             return
 
         if channel in self.transmission_curves:
             try:
-                self.transmission_curves[channel].setData(wavelength, transmission_spectrum)
+                self.transmission_curves[channel].setData(
+                    wavelength,
+                    transmission_spectrum,
+                )
                 # Keep autorange fully enabled; no manual setRange
                 try:
-                    self.transmission_plot.enableAutoRange('x', True)
-                    self.transmission_plot.enableAutoRange('y', True)
+                    self.transmission_plot.enableAutoRange("x", True)
+                    self.transmission_plot.enableAutoRange("y", True)
                 except Exception:
                     pass
             except Exception:
@@ -213,6 +219,7 @@ class LiveDataDialog(QDialog):
             channel: Channel identifier ('a', 'b', 'c', 'd')
             wavelength: Wavelength array in nm
             raw_spectrum: Raw intensity array (counts)
+
         """
         if not self._setup_complete or self._is_closing:
             return

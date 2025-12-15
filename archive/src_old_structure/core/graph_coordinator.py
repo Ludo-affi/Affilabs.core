@@ -13,9 +13,9 @@ Extracted from main_simplified.py to improve modularity and testability.
 
 import numpy as np
 from PySide6.QtCore import QObject, QTimer
+
 from utils.logger import logger
 from utils.performance_profiler import measure
-from typing import Dict, Optional, Tuple
 
 
 class GraphCoordinator(QObject):
@@ -26,13 +26,24 @@ class GraphCoordinator(QObject):
 
         Args:
             app: Reference to main Application instance
+
         """
         super().__init__()
         self.app = app
 
         # UI update throttling
-        self._pending_graph_updates: Dict[str, Optional[dict]] = {'a': None, 'b': None, 'c': None, 'd': None}
-        self._pending_transmission_updates: Dict[str, Optional[dict]] = {'a': None, 'b': None, 'c': None, 'd': None}
+        self._pending_graph_updates: dict[str, dict | None] = {
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
+        }
+        self._pending_transmission_updates: dict[str, dict | None] = {
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
+        }
         self._skip_graph_updates: bool = False
 
         # Logging flags for first-time updates
@@ -55,15 +66,21 @@ class GraphCoordinator(QObject):
         Args:
             channel: Channel letter ('a', 'b', 'c', 'd')
             elapsed_time: Time elapsed since experiment start
+
         """
         if self.app.main_window.live_data_enabled:
             self._pending_graph_updates[channel] = {
-                'elapsed_time': elapsed_time,
-                'channel': channel
+                "elapsed_time": elapsed_time,
+                "channel": channel,
             }
 
-    def queue_transmission_update(self, channel: str, transmission: np.ndarray,
-                                  raw_spectrum: Optional[np.ndarray], wavelengths: np.ndarray) -> None:
+    def queue_transmission_update(
+        self,
+        channel: str,
+        transmission: np.ndarray,
+        raw_spectrum: np.ndarray | None,
+        wavelengths: np.ndarray,
+    ) -> None:
         """Queue transmission spectrum update for batch processing.
 
         Args:
@@ -71,16 +88,17 @@ class GraphCoordinator(QObject):
             transmission: Transmission spectrum data
             raw_spectrum: Optional raw spectrum data
             wavelengths: Wavelength array
+
         """
         self._pending_transmission_updates[channel] = {
-            'transmission': transmission,
-            'raw_spectrum': raw_spectrum,
-            'wavelengths': wavelengths
+            "transmission": transmission,
+            "raw_spectrum": raw_spectrum,
+            "wavelengths": wavelengths,
         }
 
     def process_pending_ui_updates(self) -> None:
         """Process queued graph updates at throttled rate (1 Hz)."""
-        with measure('ui_update_timer'):
+        with measure("ui_update_timer"):
             if not self.app.main_window.live_data_enabled:
                 return
 
@@ -98,10 +116,10 @@ class GraphCoordinator(QObject):
                     pass  # Silent fail - non-critical display errors
 
             # Clear processed updates
-            self._pending_graph_updates = {'a': None, 'b': None, 'c': None, 'd': None}
+            self._pending_graph_updates = {"a": None, "b": None, "c": None, "d": None}
 
             # Process transmission updates
-            with measure('transmission_batch_process'):
+            with measure("transmission_batch_process"):
                 self._process_transmission_updates()
 
     def _update_timeline_curve(self, channel: str) -> None:
@@ -109,6 +127,7 @@ class GraphCoordinator(QObject):
 
         Args:
             channel: Channel letter
+
         """
         channel_idx = self.app._channel_to_idx[channel]
         curve = self.app.main_window.full_timeline_graph.curves[channel_idx]
@@ -118,7 +137,10 @@ class GraphCoordinator(QObject):
         raw_wavelength = self.app.buffer_mgr.timeline_data[channel].wavelength
 
         # Validation
-        if not isinstance(raw_time, np.ndarray) or not isinstance(raw_wavelength, np.ndarray):
+        if not isinstance(raw_time, np.ndarray) or not isinstance(
+            raw_wavelength,
+            np.ndarray,
+        ):
             return
         if len(raw_time) == 0 or len(raw_wavelength) == 0:
             return
@@ -127,11 +149,11 @@ class GraphCoordinator(QObject):
 
         # Apply filtering if enabled
         if self.app._filter_enabled and len(raw_wavelength) > 2:
-            with measure('filtering.online_smoothing'):
+            with measure("filtering.online_smoothing"):
                 display_wavelength = self.app._apply_online_smoothing(
                     raw_wavelength,
                     self.app._filter_strength,
-                    channel
+                    channel,
                 )
         else:
             display_wavelength = raw_wavelength
@@ -146,12 +168,12 @@ class GraphCoordinator(QObject):
             display_time = raw_time
 
         # Update graph
-        with measure('graph_update.setData'):
+        with measure("graph_update.setData"):
             curve.setData(display_time, display_wavelength)
 
     def _process_transmission_updates(self) -> None:
         """Process queued transmission spectrum updates in batch."""
-        if not hasattr(self.app.main_window, 'transmission_curves'):
+        if not hasattr(self.app.main_window, "transmission_curves"):
             return
 
         for channel, update_data in self._pending_transmission_updates.items():
@@ -160,9 +182,9 @@ class GraphCoordinator(QObject):
 
             try:
                 channel_idx = self.app._channel_to_idx[channel]
-                transmission = update_data['transmission']
-                raw_spectrum = update_data.get('raw_spectrum')
-                wavelengths = update_data.get('wavelengths')
+                transmission = update_data["transmission"]
+                raw_spectrum = update_data.get("raw_spectrum")
+                wavelengths = update_data.get("wavelengths")
 
                 if wavelengths is None or len(wavelengths) != len(transmission):
                     continue
@@ -170,20 +192,25 @@ class GraphCoordinator(QObject):
                 # Update transmission curve
                 self.app.main_window.transmission_curves[channel_idx].setData(
                     wavelengths,
-                    transmission
+                    transmission,
                 )
 
                 # Log first update per channel
                 if channel not in self._transmission_update_logged:
-                    logger.info(f"✅ Ch {channel.upper()}: Transmission plot updated ({len(wavelengths)} points)")
+                    logger.info(
+                        f"✅ Ch {channel.upper()}: Transmission plot updated ({len(wavelengths)} points)",
+                    )
                     self._transmission_update_logged.add(channel)
                     self.app.main_window.transmission_plot.enableAutoRange()
 
                 # Update raw data plot
-                if hasattr(self.app.main_window, 'raw_data_curves') and raw_spectrum is not None:
+                if (
+                    hasattr(self.app.main_window, "raw_data_curves")
+                    and raw_spectrum is not None
+                ):
                     self.app.main_window.raw_data_curves[channel_idx].setData(
                         wavelengths,
-                        raw_spectrum
+                        raw_spectrum,
                     )
 
                     if channel not in self._raw_update_logged:
@@ -195,11 +222,16 @@ class GraphCoordinator(QObject):
                 pass  # Silent fail
 
         # Clear processed updates
-        self._pending_transmission_updates = {'a': None, 'b': None, 'c': None, 'd': None}
+        self._pending_transmission_updates = {
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
+        }
 
     def update_cycle_of_interest_graph(self) -> None:
         """Update the cycle of interest graph based on cursor positions."""
-        with measure('cycle_graph_update.total'):
+        with measure("cycle_graph_update.total"):
             # Get cursor positions
             start_time = self.app.main_window.full_timeline_graph.start_cursor.value()
             stop_time = self.app.main_window.full_timeline_graph.stop_cursor.value()
@@ -207,7 +239,9 @@ class GraphCoordinator(QObject):
         # Extract data within cursor range for each channel
         for ch_letter, ch_idx in self.app._channel_pairs:
             cycle_time, cycle_wavelength = self.app.buffer_mgr.extract_cycle_region(
-                ch_letter, start_time, stop_time
+                ch_letter,
+                start_time,
+                stop_time,
             )
 
             if len(cycle_time) == 0:
@@ -217,11 +251,12 @@ class GraphCoordinator(QObject):
             if self.app._filter_enabled and len(cycle_wavelength) > 2:
                 cycle_wavelength = self.app._apply_smoothing(
                     cycle_wavelength,
-                    self.app._filter_strength
+                    self.app._filter_strength,
                 )
 
             # Calculate Δ SPR
             from config import WAVELENGTH_TO_RU_CONVERSION
+
             baseline = self.app.buffer_mgr.baseline_wavelengths[ch_letter]
             if baseline is None:
                 baseline = cycle_wavelength[0] if len(cycle_wavelength) > 0 else 0
@@ -229,7 +264,12 @@ class GraphCoordinator(QObject):
             delta_spr = (cycle_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
 
             # Store in buffer manager
-            self.app.buffer_mgr.update_cycle_data(ch_letter, cycle_time, cycle_wavelength, delta_spr)
+            self.app.buffer_mgr.update_cycle_data(
+                ch_letter,
+                cycle_time,
+                cycle_wavelength,
+                delta_spr,
+            )
 
         # Apply reference subtraction if enabled
         self.app._apply_reference_subtraction()
@@ -270,7 +310,7 @@ class GraphCoordinator(QObject):
         # Update label
         self.app.main_window.cycle_of_interest_graph.delta_display.setText(
             f"Δ SPR: Ch A: {delta_values['a']:.1f} RU  |  Ch B: {delta_values['b']:.1f} RU  |  "
-            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU"
+            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU",
         )
 
     def redraw_timeline_graph(self) -> None:
@@ -285,7 +325,10 @@ class GraphCoordinator(QObject):
             # Apply smoothing if enabled
             display_data = wavelength_data
             if self.app._filter_enabled:
-                display_data = self.app._apply_smoothing(wavelength_data, self.app._filter_strength)
+                display_data = self.app._apply_smoothing(
+                    wavelength_data,
+                    self.app._filter_strength,
+                )
 
             # Update curve
             curve = self.app.main_window.full_timeline_graph.curves[ch_idx]
@@ -298,10 +341,10 @@ class GraphCoordinator(QObject):
 
         logger.info(f"Autoscale enabled for {self.app._selected_axis.upper()}-axis")
 
-        if self.app._selected_axis == 'x':
-            self.app.main_window.cycle_of_interest_graph.enableAutoRange(axis='x')
+        if self.app._selected_axis == "x":
+            self.app.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
         else:
-            self.app.main_window.cycle_of_interest_graph.enableAutoRange(axis='y')
+            self.app.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
 
     def on_manual_scale_toggled(self, checked: bool) -> None:
         """Handle manual scale radio button toggle."""
@@ -334,12 +377,22 @@ class GraphCoordinator(QObject):
                 logger.warning(f"Invalid range: min ({min_val}) >= max ({max_val})")
                 return
 
-            logger.info(f"Setting {self.app._selected_axis.upper()}-axis range: [{min_val}, {max_val}]")
+            logger.info(
+                f"Setting {self.app._selected_axis.upper()}-axis range: [{min_val}, {max_val}]",
+            )
 
-            if self.app._selected_axis == 'x':
-                self.app.main_window.cycle_of_interest_graph.setXRange(min_val, max_val, padding=0)
+            if self.app._selected_axis == "x":
+                self.app.main_window.cycle_of_interest_graph.setXRange(
+                    min_val,
+                    max_val,
+                    padding=0,
+                )
             else:
-                self.app.main_window.cycle_of_interest_graph.setYRange(min_val, max_val, padding=0)
+                self.app.main_window.cycle_of_interest_graph.setYRange(
+                    min_val,
+                    max_val,
+                    padding=0,
+                )
 
         except ValueError as e:
             logger.warning(f"Invalid manual range input: {e}")
@@ -350,10 +403,10 @@ class GraphCoordinator(QObject):
             return
 
         if self.app.main_window.x_axis_btn.isChecked():
-            self.app._selected_axis = 'x'
+            self.app._selected_axis = "x"
             logger.info("X-axis selected for scaling controls")
         else:
-            self.app._selected_axis = 'y'
+            self.app._selected_axis = "y"
             logger.info("Y-axis selected for scaling controls")
 
         # Re-apply current mode to new axis
@@ -379,21 +432,24 @@ class GraphCoordinator(QObject):
     def on_tab_changing(self, index: int) -> None:
         """Temporarily pause graph updates during tab transition."""
         self._skip_graph_updates = True
-        QTimer.singleShot(200, lambda: setattr(self, '_skip_graph_updates', False))
+        QTimer.singleShot(200, lambda: setattr(self, "_skip_graph_updates", False))
 
     def auto_follow_stop_cursor(self, elapsed_time: float) -> None:
         """Auto-follow latest data with stop cursor.
 
         Args:
             elapsed_time: Current elapsed time
+
         """
-        if (hasattr(self.app.main_window.full_timeline_graph, 'stop_cursor') and
-            self.app.main_window.full_timeline_graph.stop_cursor is not None):
+        if (
+            hasattr(self.app.main_window.full_timeline_graph, "stop_cursor")
+            and self.app.main_window.full_timeline_graph.stop_cursor is not None
+        ):
             stop_cursor = self.app.main_window.full_timeline_graph.stop_cursor
 
-            is_moving = getattr(stop_cursor, 'moving', False)
+            is_moving = getattr(stop_cursor, "moving", False)
 
             if not is_moving:
                 stop_cursor.setValue(elapsed_time)
-                if hasattr(stop_cursor, 'label') and stop_cursor.label:
-                    stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
+                if hasattr(stop_cursor, "label") and stop_cursor.label:
+                    stop_cursor.label.setFormat(f"Stop: {elapsed_time:.1f}s")

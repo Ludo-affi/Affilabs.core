@@ -1,5 +1,4 @@
-"""
-Quick Simulation Test
+"""Quick Simulation Test
 ======================
 Simple script to test data pipeline with simulated spectra.
 
@@ -12,11 +11,12 @@ Usage:
 This will inject simulated spectra into the running app.
 """
 
-import sys
 import time
+
 import numpy as np
-from pathlib import Path
+
 from affilabs.utils.logger import logger
+
 
 # Script can be imported or run standalone
 def generate_fake_spectrum():
@@ -24,6 +24,7 @@ def generate_fake_spectrum():
 
     Returns:
         dict: Spectrum with channels a-d and wavelengths
+
     """
     # Realistic Ocean Optics USB4000 specs
     n_pixels = 3648
@@ -33,30 +34,30 @@ def generate_fake_spectrum():
     noise = np.random.normal(0, 50, n_pixels)
 
     # Channel A: Strong peak at 650nm
-    peak_a = 15000 * np.exp(-((wavelengths - 650) ** 2) / (2 * 20 ** 2))
+    peak_a = 15000 * np.exp(-((wavelengths - 650) ** 2) / (2 * 20**2))
     channel_a = peak_a + noise + 1000
 
     # Channel B: Moderate peak at 660nm
-    peak_b = 12000 * np.exp(-((wavelengths - 660) ** 2) / (2 * 22 ** 2))
+    peak_b = 12000 * np.exp(-((wavelengths - 660) ** 2) / (2 * 22**2))
     channel_b = peak_b + noise + 800
 
     # Channel C: Weak peak at 655nm
-    peak_c = 10000 * np.exp(-((wavelengths - 655) ** 2) / (2 * 18 ** 2))
+    peak_c = 10000 * np.exp(-((wavelengths - 655) ** 2) / (2 * 18**2))
     channel_c = peak_c + noise + 900
 
     # Channel D: Strong peak at 670nm
-    peak_d = 14000 * np.exp(-((wavelengths - 670) ** 2) / (2 * 25 ** 2))
+    peak_d = 14000 * np.exp(-((wavelengths - 670) ** 2) / (2 * 25**2))
     channel_d = peak_d + noise + 1100
 
     return {
-        'wavelengths': wavelengths.astype(np.float32),
-        'channel_a': channel_a.astype(np.float32),
-        'channel_b': channel_b.astype(np.float32),
-        'channel_c': channel_c.astype(np.float32),
-        'channel_d': channel_d.astype(np.float32),
-        'timestamp': time.time(),
-        'integration_time': 40.0,
-        'simulated': True
+        "wavelengths": wavelengths.astype(np.float32),
+        "channel_a": channel_a.astype(np.float32),
+        "channel_b": channel_b.astype(np.float32),
+        "channel_c": channel_c.astype(np.float32),
+        "channel_d": channel_d.astype(np.float32),
+        "timestamp": time.time(),
+        "integration_time": 40.0,
+        "simulated": True,
     }
 
 
@@ -66,6 +67,7 @@ def inject_simulated_spectrum(data_mgr, count=1):
     Args:
         data_mgr: DataAcquisitionManager instance
         count: Number of spectra to inject
+
     """
     logger.info(f"📡 Injecting {count} simulated spectra...")
 
@@ -73,7 +75,7 @@ def inject_simulated_spectrum(data_mgr, count=1):
         spectrum = generate_fake_spectrum()
 
         # Emit directly to spectrum_acquired signal
-        if hasattr(data_mgr, 'spectrum_acquired'):
+        if hasattr(data_mgr, "spectrum_acquired"):
             data_mgr.spectrum_acquired.emit(spectrum)
 
         if count > 1:
@@ -88,9 +90,10 @@ def setup_simulation_shortcut(app):
 
     Args:
         app: AffilabsApplication instance
+
     """
-    from PySide6.QtGui import QShortcut, QKeySequence
     from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QKeySequence, QShortcut
 
     def start_continuous_simulation():
         """Start injecting spectra continuously."""
@@ -100,14 +103,15 @@ def setup_simulation_shortcut(app):
 
         try:
             # Check if data_mgr exists
-            if not hasattr(app, 'data_mgr') or app.data_mgr is None:
+            if not hasattr(app, "data_mgr") or app.data_mgr is None:
                 logger.error("[ERROR] No data_mgr found!")
-                from widgets.message import show_message
+                from affilabs.widgets.message import show_message
+
                 show_message(
                     "Error: Data manager not initialized!\n\n"
                     "Make sure the app has fully loaded.",
                     msg_type="Error",
-                    title="Simulation Failed"
+                    title="Simulation Failed",
                 )
                 return
 
@@ -122,13 +126,15 @@ def setup_simulation_shortcut(app):
             def send_one():
                 try:
                     spectrum = generate_fake_spectrum()
-                    if app.data_mgr and hasattr(app.data_mgr, 'spectrum_acquired'):
+                    if app.data_mgr and hasattr(app.data_mgr, "spectrum_acquired"):
                         app.data_mgr.spectrum_acquired.emit(spectrum)
                         spectrum_count[0] += 1
 
                         # Log every 50 spectra (5 seconds)
                         if spectrum_count[0] % 50 == 0:
-                            logger.info(f"📊 Injected {spectrum_count[0]} simulated spectra")
+                            logger.info(
+                                f"📊 Injected {spectrum_count[0]} simulated spectra",
+                            )
                     else:
                         logger.error("[ERROR] No spectrum_acquired signal!")
                         timer.stop()
@@ -144,23 +150,25 @@ def setup_simulation_shortcut(app):
 
             logger.info("[OK] Simulation timer started at 10 Hz")
 
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
+
             show_message(
                 "Simulation started!\n\n"
                 "📡 Sending fake spectra at 10 Hz\n\n"
                 "Check logs to see injection status.\n"
                 "Close the app to stop.",
                 msg_type="Info",
-                title="Simulation Active"
+                title="Simulation Active",
             )
 
         except Exception as e:
             logger.exception(f"[ERROR] Failed to start simulation: {e}")
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
+
             show_message(
                 f"Simulation failed:\n\n{e}",
                 msg_type="Error",
-                title="Simulation Error"
+                title="Simulation Error",
             )
 
     # Register Ctrl+Shift+S
@@ -173,6 +181,6 @@ def setup_simulation_shortcut(app):
         logger.exception(f"[ERROR] Failed to register simulation shortcut: {e}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("This module should be imported or used via keyboard shortcut.")
     print("Press Ctrl+Shift+S in the running application to start simulation.")

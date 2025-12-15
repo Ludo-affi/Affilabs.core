@@ -10,15 +10,14 @@ from typing import Any
 
 from utils.logger import logger
 
+# Import USB4000 implementation from utils module
+from ..usb4000_oceandirect import USB4000OceanDirect
 from .hal_exceptions import HALDeviceNotFoundError, HALError, HALIncompatibleDeviceError
 from .kinetic_hal import KineticHAL
 from .pico_ezspr_hal import PicoEZSPRHAL
 from .pico_p4spr_hal import PicoP4SPRHAL
 from .spectrometer_hal import SpectrometerHAL
 from .spr_controller_hal import SPRControllerHAL
-
-# Import USB4000 implementation from utils module
-from ..usb4000_oceandirect import USB4000OceanDirect
 
 # USB4000OceanDirect is the only supported spectrometer implementation
 
@@ -606,7 +605,10 @@ class HALFactory:
                     logger.debug(f"Failed to connect to {name}: {e}")
                     continue
 
-        raise HALDeviceNotFoundError("No kinetic controller found", expected_device="KineticController")
+        raise HALDeviceNotFoundError(
+            "No kinetic controller found",
+            expected_device="KineticController",
+        )
 
     @classmethod
     def detect_kinetic_controllers(cls) -> list[dict[str, Any]]:

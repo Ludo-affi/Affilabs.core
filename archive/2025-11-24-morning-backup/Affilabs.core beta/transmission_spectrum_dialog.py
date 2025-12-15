@@ -1,12 +1,10 @@
-"""
-Transmission Spectrum Dialog - Shows the 4-channel transmission spectra
+"""Transmission Spectrum Dialog - Shows the 4-channel transmission spectra
 that get processed into each point on the live sensorgram.
 """
 
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel
-from PySide6.QtCore import Qt
-import pyqtgraph as pg
 import numpy as np
+import pyqtgraph as pg
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout
 
 
 class TransmissionSpectrumDialog(QDialog):
@@ -19,16 +17,16 @@ class TransmissionSpectrumDialog(QDialog):
 
         # Channel colors (matching main UI) - MUST be defined before _create_plot
         self.channel_colors = {
-            'a': (255, 0, 0),      # Red
-            'b': (0, 255, 0),      # Green
-            'c': (0, 0, 255),      # Blue
-            'd': (255, 165, 0)     # Orange
+            "a": (255, 0, 0),  # Red
+            "b": (0, 255, 0),  # Green
+            "c": (0, 0, 255),  # Blue
+            "d": (255, 165, 0),  # Orange
         }
 
         # Store latest data
         self.latest_wavelengths = None
-        self.latest_transmission = {'a': None, 'b': None, 'c': None, 'd': None}
-        self.latest_raw_data = {'a': None, 'b': None, 'c': None, 'd': None}
+        self.latest_transmission = {"a": None, "b": None, "c": None, "d": None}
+        self.latest_raw_data = {"a": None, "b": None, "c": None, "d": None}
 
         # Main layout
         layout = QVBoxLayout(self)
@@ -41,13 +39,16 @@ class TransmissionSpectrumDialog(QDialog):
         layout.addWidget(title)
 
         # Info label
-        info = QLabel("Real-time transmission and raw spectra for all channels. Each spectrum is processed to generate one point in the sensorgram.")
+        info = QLabel(
+            "Real-time transmission and raw spectra for all channels. Each spectrum is processed to generate one point in the sensorgram.",
+        )
         info.setStyleSheet("font-size: 11px; color: #666;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
         # Create graphs container (side by side)
-        from PySide6.QtWidgets import QHBoxLayout, QWidget
+        from PySide6.QtWidgets import QWidget
+
         graphs_container = QWidget()
         graphs_layout = QHBoxLayout(graphs_container)
         graphs_layout.setContentsMargins(0, 0, 0, 0)
@@ -63,12 +64,12 @@ class TransmissionSpectrumDialog(QDialog):
         """Create the transmission spectrum plot."""
         # Create plot widget
         self.transmission_plot = pg.PlotWidget()
-        self.transmission_plot.setBackground('w')
+        self.transmission_plot.setBackground("w")
         self.transmission_plot.showGrid(x=True, y=True, alpha=0.3)
 
         # Configure axes
-        self.transmission_plot.setLabel('left', 'Transmission', units='%')
-        self.transmission_plot.setLabel('bottom', 'Wavelength', units='nm')
+        self.transmission_plot.setLabel("left", "Transmission", units="%")
+        self.transmission_plot.setLabel("bottom", "Wavelength", units="nm")
         self.transmission_plot.setTitle("Transmission Spectra (4 Channels)")
 
         # Set axis ranges (detector wavelength range: 560-720 nm)
@@ -77,12 +78,12 @@ class TransmissionSpectrumDialog(QDialog):
 
         # Create curves for each channel
         self.transmission_curves = {}
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             color = self.channel_colors[channel]
             pen = pg.mkPen(color=color, width=2)
             curve = self.transmission_plot.plot(
                 pen=pen,
-                name=f'Channel {channel.upper()}'
+                name=f"Channel {channel.upper()}",
             )
             self.transmission_curves[channel] = curve
 
@@ -95,12 +96,12 @@ class TransmissionSpectrumDialog(QDialog):
         """Create the raw data spectrum plot."""
         # Create plot widget
         self.raw_data_plot = pg.PlotWidget()
-        self.raw_data_plot.setBackground('w')
+        self.raw_data_plot.setBackground("w")
         self.raw_data_plot.showGrid(x=True, y=True, alpha=0.3)
 
         # Configure axes
-        self.raw_data_plot.setLabel('left', 'Intensity', units='counts')
-        self.raw_data_plot.setLabel('bottom', 'Wavelength', units='nm')
+        self.raw_data_plot.setLabel("left", "Intensity", units="counts")
+        self.raw_data_plot.setLabel("bottom", "Wavelength", units="nm")
         self.raw_data_plot.setTitle("Raw Data Spectra (4 Channels)")
 
         # Set axis ranges (detector wavelength range: 560-720 nm)
@@ -109,12 +110,12 @@ class TransmissionSpectrumDialog(QDialog):
 
         # Create curves for each channel
         self.raw_data_curves = {}
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             color = self.channel_colors[channel]
             pen = pg.mkPen(color=color, width=2)
             curve = self.raw_data_plot.plot(
                 pen=pen,
-                name=f'Channel {channel.upper()}'
+                name=f"Channel {channel.upper()}",
             )
             self.raw_data_curves[channel] = curve
 
@@ -123,7 +124,13 @@ class TransmissionSpectrumDialog(QDialog):
 
         parent_layout.addWidget(self.raw_data_plot)
 
-    def update_spectrum(self, channel: str, wavelengths: np.ndarray, transmission: np.ndarray, raw_data: np.ndarray = None):
+    def update_spectrum(
+        self,
+        channel: str,
+        wavelengths: np.ndarray,
+        transmission: np.ndarray,
+        raw_data: np.ndarray = None,
+    ):
         """Update transmission and raw data spectra for a specific channel.
 
         Args:
@@ -131,6 +138,7 @@ class TransmissionSpectrumDialog(QDialog):
             wavelengths: Wavelength array in nm
             transmission: Transmission percentage array (0-100)
             raw_data: Raw intensity data (optional)
+
         """
         if channel not in self.transmission_curves:
             return

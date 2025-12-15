@@ -1,9 +1,9 @@
-"""
-Display a prominent warning banner if Python version is incorrect.
+"""Display a prominent warning banner if Python version is incorrect.
 This module is imported early to catch version issues immediately.
 """
 
 import sys
+
 
 def check_python_version() -> None:
     """Check Python version and display prominent warning if incorrect."""
@@ -14,7 +14,9 @@ def check_python_version() -> None:
     current_minor = sys.version_info.minor
     current_micro = sys.version_info.micro
 
-    if current_major < required_major or (current_major == required_major and current_minor < required_minor):
+    if current_major < required_major or (
+        current_major == required_major and current_minor < required_minor
+    ):
         # Terminal warning
         banner_char = "█"
         warning = f"""
@@ -42,6 +44,7 @@ def check_python_version() -> None:
         return False
 
     return True
+
 
 # Auto-check on import
 if __name__ != "__main__":

@@ -1,9 +1,6 @@
 """Cycle Data Table Dialog - Popup window for managing cycle data."""
 
-from typing import Optional
-
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import (
     QDialog,
     QGraphicsEllipseItem,
@@ -11,7 +8,6 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
-from settings import CH_LIST
 from ui.ui_cycle_table_dialog import Ui_CycleTableDialog
 from widgets.delegates import CycleTypeDelegate, TextInputDelegate
 from widgets.table_manager import CycleTableManager
@@ -67,7 +63,7 @@ class CycleTableDialog(QDialog):
         # Initialize table manager
         self.table_manager = CycleTableManager(
             table_widget=self.ui.data_table,
-            toggle_indicators=self.circles
+            toggle_indicators=self.circles,
         )
 
         # Reference to parent's data
@@ -98,7 +94,6 @@ class CycleTableDialog(QDialog):
     def _on_cell_clicked(self, row, column):
         """Handle cell click."""
         # Parent will handle view mode logic
-        pass
 
     def add_table_row(self, row: int, seg, name: str, cycle_type: str, note: str):
         """Add a row to the table."""

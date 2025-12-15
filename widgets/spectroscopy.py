@@ -26,20 +26,29 @@ class Spectroscopy(QWidget):
 
         # setup plots
         self.intensity_plot_view = SpecPlot(
-            "Intensity Plot", "Wavelength (nm)", "Intensity (counts)"
+            "Intensity Plot",
+            "Wavelength (nm)",
+            "Intensity (counts)",
         )
         # Place SpecPlot widget into its container, removing any spacer-only items from the .ui that squeeze content
         layout_int = self._ensure_clean_container(self.ui.intensity_plot)
         self.intensity_plot_view.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding,
         )
         layout_int.addWidget(self.intensity_plot_view, 1)
 
         # Transmittance/Absorbance plot (optionally inverted for peak-up view)
-        trans_y_label = "Absorbance (%)" if INVERT_TRANSMISSION_VISUAL else "Transmittance (%)"
-        trans_title = "Absorbance Plot" if INVERT_TRANSMISSION_VISUAL else "Transmittance Plot"
+        trans_y_label = (
+            "Absorbance (%)" if INVERT_TRANSMISSION_VISUAL else "Transmittance (%)"
+        )
+        trans_title = (
+            "Absorbance Plot" if INVERT_TRANSMISSION_VISUAL else "Transmittance Plot"
+        )
         self.trans_plot_view = SpecPlot(
-            trans_title, "Wavelength (nm)", trans_y_label
+            trans_title,
+            "Wavelength (nm)",
+            trans_y_label,
         )
         layout_tr = self._ensure_clean_container(self.ui.transmission_plot)
         self.trans_plot_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -53,7 +62,7 @@ class Spectroscopy(QWidget):
         # connect display channel check buttons
         for ch in CH_LIST:
             getattr(self.ui, f"segment_{ch.upper()}").stateChanged.connect(
-                partial(self.display_channel_changed, ch)
+                partial(self.display_channel_changed, ch),
             )
 
         # set up controls
@@ -77,39 +86,60 @@ class Spectroscopy(QWidget):
 
     def resizeEvent(self, event):
         self.intensity_plot_view.resize(
-            self.ui.intensity_plot.width(), self.ui.intensity_plot.height()
+            self.ui.intensity_plot.width(),
+            self.ui.intensity_plot.height(),
         )
         self.trans_plot_view.resize(
-            self.ui.transmission_plot.width(), self.ui.transmission_plot.height()
+            self.ui.transmission_plot.width(),
+            self.ui.transmission_plot.height(),
         )
 
     def update_data(self, spec_data):
         try:
             if spec_data is not None:
                 # Log data status for debugging
-                int_status = {ch: "data" if spec_data["int_data"][ch] is not None else "None"
-                             for ch in CH_LIST}
-                trans_status = {ch: "data" if spec_data["trans_data"][ch] is not None else "None"
-                               for ch in CH_LIST}
-                logger.debug(f"Spectroscopy update - Intensity: {int_status}, Transmittance: {trans_status}")
+                int_status = {
+                    ch: "data" if spec_data["int_data"][ch] is not None else "None"
+                    for ch in CH_LIST
+                }
+                trans_status = {
+                    ch: "data" if spec_data["trans_data"][ch] is not None else "None"
+                    for ch in CH_LIST
+                }
+                logger.debug(
+                    f"Spectroscopy update - Intensity: {int_status}, Transmittance: {trans_status}",
+                )
 
                 self.intensity_plot_view.update_plots(
-                    spec_data["wave_data"], spec_data["int_data"], self.led_mode
+                    spec_data["wave_data"],
+                    spec_data["int_data"],
+                    self.led_mode,
                 )
                 # Optionally invert transmittance for visualization (peak-up look)
                 trans_data = spec_data["trans_data"]
                 if INVERT_TRANSMISSION_VISUAL and trans_data is not None:
                     try:
-                        inv_trans = {ch: (None if trans_data[ch] is None else (100.0 - trans_data[ch])) for ch in CH_LIST}
+                        inv_trans = {
+                            ch: (
+                                None
+                                if trans_data[ch] is None
+                                else (100.0 - trans_data[ch])
+                            )
+                            for ch in CH_LIST
+                        }
                     except Exception:
                         # Fallback: pass through if unexpected structure
                         inv_trans = trans_data
                     self.trans_plot_view.update_plots(
-                        spec_data["wave_data"], inv_trans, self.led_mode
+                        spec_data["wave_data"],
+                        inv_trans,
+                        self.led_mode,
                     )
                 else:
                     self.trans_plot_view.update_plots(
-                        spec_data["wave_data"], trans_data, self.led_mode
+                        spec_data["wave_data"],
+                        trans_data,
+                        self.led_mode,
                     )
         except Exception as e:
             logger.exception(f"Error during spectroscopy update: {e}")
@@ -126,7 +156,7 @@ class Spectroscopy(QWidget):
 
     def set_polarizer(self):
         logger.debug(
-            f"spectroscopy dropdown current text: {self.ui.polarization.currentText()}"
+            f"spectroscopy dropdown current text: {self.ui.polarization.currentText()}",
         )
         self.polarizer_sig.emit(self.ui.polarization.currentText().lower())
 
@@ -178,11 +208,11 @@ class SpecPlot(GraphicsLayoutWidget):
         setConfigOptions(antialias=True)
 
         # Set white background for better visibility
-        self.setBackground('w')
+        self.setBackground("w")
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, color='k', size="10pt")  # Black text
+        self.plot.titleLabel.setText(title_string, color="k", size="10pt")  # Black text
         self.plot.showGrid(x=True, y=True, alpha=0.3)
         if DEV:
             self.plot.setMenuEnabled(True)
@@ -191,14 +221,14 @@ class SpecPlot(GraphicsLayoutWidget):
             self.plot.setMenuEnabled(False)
             self.plot.setMouseEnabled(False)
         self.plot.setDownsampling(ds=50, mode="subsample")
-        self.plot.setLabel("left", y_axis_string, color='k')  # Black text
-        self.plot.setLabel("bottom", x_axis_string, color='k')  # Black text
+        self.plot.setLabel("left", y_axis_string, color="k")  # Black text
+        self.plot.setLabel("bottom", x_axis_string, color="k")  # Black text
 
         # Set axis colors to black for visibility on white background
-        self.plot.getAxis('left').setPen('k')
-        self.plot.getAxis('left').setTextPen('k')
-        self.plot.getAxis('bottom').setPen('k')
-        self.plot.getAxis('bottom').setTextPen('k')
+        self.plot.getAxis("left").setPen("k")
+        self.plot.getAxis("left").setTextPen("k")
+        self.plot.getAxis("bottom").setPen("k")
+        self.plot.getAxis("bottom").setTextPen("k")
 
         # create plots for channels
         self.plots = {}
@@ -216,7 +246,9 @@ class SpecPlot(GraphicsLayoutWidget):
                     self.plots[ch].setData(y=[np.nan], x=[np.nan])
                 elif (led_mode == "auto") or (ch == led_mode):
                     self.plots[ch].setData(y=y_data[ch], x=x_data)
-                    logger.debug(f"Plot updated for channel {ch}: {len(y_data[ch])} points")
+                    logger.debug(
+                        f"Plot updated for channel {ch}: {len(y_data[ch])} points",
+                    )
         except Exception as e:
             logger.exception(f"Error while plotting: {e}")
 

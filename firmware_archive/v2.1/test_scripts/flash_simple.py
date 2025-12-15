@@ -1,10 +1,10 @@
-"""
-Simple firmware flasher - just copy to BOOTSEL drive
-"""
-import sys
-import shutil
+"""Simple firmware flasher - just copy to BOOTSEL drive"""
+
 import os
+import shutil
+import sys
 import time
+
 
 def wait_for_bootsel():
     """Wait for RPI-RP2 drive to appear"""
@@ -20,21 +20,22 @@ def wait_for_bootsel():
             path = f"{drive}:\\"
             try:
                 if os.path.exists(path):
-                    with open(os.path.join(path, "INFO_UF2.TXT"), 'r') as f:
+                    with open(os.path.join(path, "INFO_UF2.TXT")) as f:
                         if "RPI-RP2" in f.read():
                             return path
             except:
                 pass
         time.sleep(1)
-        print(f"   Still waiting... ({i+1}/60)", end='\r')
+        print(f"   Still waiting... ({i+1}/60)", end="\r")
 
     return None
 
+
 def flash_simple(firmware_path):
     """Flash firmware to Pico"""
-    print("="*60)
+    print("=" * 60)
     print("Simple Firmware Flasher")
-    print("="*60)
+    print("=" * 60)
 
     if not os.path.exists(firmware_path):
         print(f"\n❌ Firmware file not found: {firmware_path}")
@@ -52,7 +53,7 @@ def flash_simple(firmware_path):
     print(f"\n✓ Found BOOTSEL drive: {bootsel_drive}")
 
     dest = os.path.join(bootsel_drive, os.path.basename(firmware_path))
-    print(f"\n📋 Copying firmware...")
+    print("\n📋 Copying firmware...")
     print(f"   {firmware_path}")
     print(f"   → {dest}")
 
@@ -64,6 +65,7 @@ def flash_simple(firmware_path):
     except Exception as e:
         print(f"\n❌ Copy failed: {e}")
         return False
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

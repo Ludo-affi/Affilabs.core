@@ -1,7 +1,7 @@
-"""
-Launcher script for ezControl Old software
+"""Launcher script for ezControl Old software
 Adds the Old software directory to Python path and runs main
 """
+
 import sys
 from pathlib import Path
 

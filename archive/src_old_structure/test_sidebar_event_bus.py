@@ -6,18 +6,17 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject
-
 from core.event_bus import EventBus
+from PySide6.QtWidgets import QApplication
+
 from widgets.sidebar import ModernSidebar
 
 
 def test_sidebar_with_event_bus():
     """Test that ModernSidebar correctly integrates with EventBus."""
-    print("="*60)
+    print("=" * 60)
     print("Testing ModernSidebar + EventBus Integration")
-    print("="*60)
+    print("=" * 60)
 
     # Create Qt application
     app = QApplication(sys.argv)
@@ -42,12 +41,12 @@ def test_sidebar_with_event_bus():
     # Check tab instances
     print("\n4. Checking tab instances...")
     tabs_to_check = [
-        ('device_status_tab', "Device Status"),
-        ('graphic_control_tab', "Graphic Control"),
-        ('static_tab', "Static"),
-        ('flow_tab', "Flow"),
-        ('export_tab', "Export"),
-        ('settings_tab', "Settings"),
+        ("device_status_tab", "Device Status"),
+        ("graphic_control_tab", "Graphic Control"),
+        ("static_tab", "Static"),
+        ("flow_tab", "Flow"),
+        ("export_tab", "Export"),
+        ("settings_tab", "Settings"),
     ]
 
     for attr_name, tab_name in tabs_to_check:
@@ -55,10 +54,10 @@ def test_sidebar_with_event_bus():
         if tab is not None:
             print(f"   ✓ {tab_name} tab instance exists")
             # Check event bus connection
-            if hasattr(tab, 'event_bus') and tab.event_bus is event_bus:
-                print(f"     - EventBus connected: ✓")
+            if hasattr(tab, "event_bus") and tab.event_bus is event_bus:
+                print("     - EventBus connected: ✓")
             else:
-                print(f"     - EventBus connected: ✗ (not connected)")
+                print("     - EventBus connected: ✗ (not connected)")
         else:
             print(f"   ✗ {tab_name} tab instance NOT found")
 
@@ -72,7 +71,11 @@ def test_sidebar_with_event_bus():
 
     # Connect to both sidebar signal and event bus signal
     sidebar.tab_changed.connect(on_tab_changed)
-    event_bus.tab_changed.connect(lambda idx, name: print(f"   → EventBus tab_changed signal: index={idx}, name='{name}'"))
+    event_bus.tab_changed.connect(
+        lambda idx, name: print(
+            f"   → EventBus tab_changed signal: index={idx}, name='{name}'",
+        ),
+    )
 
     # Change tabs programmatically
     print("\n   Switching to tab 1 (Graphic Control)...")
@@ -87,9 +90,9 @@ def test_sidebar_with_event_bus():
     sidebar.resize(900, 700)
     sidebar.show()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("✓ All checks completed successfully!")
-    print("="*60)
+    print("=" * 60)
     print("\nClose the sidebar window to exit the test.")
     print("You should see tab lifecycle events in the debug output.")
 

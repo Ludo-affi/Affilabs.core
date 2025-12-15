@@ -9,17 +9,25 @@ Builds the Static Control tab with:
 
 Extracted from sidebar.py to improve modularity.
 """
-from PySide6.QtCore import Qt, QRegularExpression
-from PySide6.QtGui import QColor, QTextCharFormat, QSyntaxHighlighter
+
+from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QWidget,
-    QComboBox, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
 )
-from ui_styles import (
-    Colors, Fonts, label_style, section_header_style, card_style
-)
-from sections import CollapsibleSection
-from cycle_table_dialog import CycleTableDialog
+
+from affilabs.cycle_table_dialog import CycleTableDialog
+from affilabs.sections import CollapsibleSection
+from affilabs.ui_styles import card_style, section_header_style
 
 
 class ChannelTagHighlighter(QSyntaxHighlighter):
@@ -41,7 +49,11 @@ class ChannelTagHighlighter(QSyntaxHighlighter):
         iterator = conc_pattern.globalMatch(text)
         while iterator.hasNext():
             match = iterator.next()
-            self.setFormat(match.capturedStart(), match.capturedLength(), self.conc_format)
+            self.setFormat(
+                match.capturedStart(),
+                match.capturedLength(),
+                self.conc_format,
+            )
 
         # Highlight [A], [B], [C], [D], [ALL] tags without concentration (dark)
         tag_pattern = QRegularExpression(r"\[(A|B|C|D|ALL)\]")
@@ -58,20 +70,20 @@ class StaticTabBuilder:
     """Builds the Static (Cycle Control) tab content."""
 
     def __init__(self, sidebar):
-        """
-        Initialize builder.
+        """Initialize builder.
 
         Args:
             sidebar: Reference to parent AffilabsSidebar instance
+
         """
         self.sidebar = sidebar
 
     def build(self, tab_layout: QVBoxLayout):
-        """
-        Build Static tab with cycle management and queue.
+        """Build Static tab with cycle management and queue.
 
         Args:
             tab_layout: QVBoxLayout to add widgets to
+
         """
         self._build_intelligence_bar(tab_layout)
         self._build_cycle_settings(tab_layout)
@@ -82,16 +94,15 @@ class StaticTabBuilder:
         intel_section = QLabel("INTELLIGENCE BAR")
         intel_section.setStyleSheet(section_header_style())
         intel_section.setFixedHeight(20)  # Reduced height from default 27 to 20
-        intel_section.setToolTip("Real-time system status and guidance powered by AI diagnostics")
+        intel_section.setToolTip(
+            "Real-time system status and guidance powered by AI diagnostics",
+        )
         tab_layout.addWidget(intel_section)
         tab_layout.addSpacing(8)
 
         intel_bar = QFrame()
         intel_bar.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
         intel_bar_layout = QHBoxLayout(intel_bar)
         intel_bar_layout.setContentsMargins(16, 12, 16, 8)
@@ -104,16 +115,14 @@ class StaticTabBuilder:
             "color: #34C759;"
             "background: transparent;"
             "font-weight: 700;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_status_label)
 
         # Separator bullet
         self.sidebar.intel_separator = QLabel("•")
         self.sidebar.intel_separator.setStyleSheet(
-            "font-size: 12px;"
-            "color: #86868B;"
-            "background: transparent;"
+            "font-size: 12px;color: #86868B;background: transparent;",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_separator)
 
@@ -123,7 +132,7 @@ class StaticTabBuilder:
             "color: #007AFF;"
             "background: transparent;"
             "font-weight: 600;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_message_label)
 
@@ -136,7 +145,7 @@ class StaticTabBuilder:
             "padding: 2px 8px;"
             "border-radius: 4px;"
             "font-weight: 700;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;",
         )
         intel_bar_layout.addWidget(self.sidebar.countdown_label)
 
@@ -147,7 +156,10 @@ class StaticTabBuilder:
 
     def _build_cycle_settings(self, tab_layout: QVBoxLayout):
         """Build cycle configuration section."""
-        cycle_settings_section = CollapsibleSection("⚙ Configure Next Cycle", is_expanded=True)
+        cycle_settings_section = CollapsibleSection(
+            "⚙ Configure Next Cycle",
+            is_expanded=True,
+        )
 
         cycle_settings_card = QFrame()
         cycle_settings_card.setStyleSheet(card_style(background="transparent"))
@@ -165,14 +177,18 @@ class StaticTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         type_row.addWidget(type_label)
 
         self.sidebar.cycle_type_combo = QComboBox()
-        self.sidebar.cycle_type_combo.addItems(["Auto-read", "Baseline", "Immobilization", "Concentration"])
+        self.sidebar.cycle_type_combo.addItems(
+            ["Auto-read", "Baseline", "Immobilization", "Concentration"],
+        )
         self.sidebar.cycle_type_combo.setCurrentIndex(0)
-        self.sidebar.cycle_type_combo.setToolTip("Select experiment type: Auto-read (automatic), Baseline (reference), Immobilization (binding), or Concentration (dose-response)")
+        self.sidebar.cycle_type_combo.setToolTip(
+            "Select experiment type: Auto-read (automatic), Baseline (reference), Immobilization (binding), or Concentration (dose-response)",
+        )
         self.sidebar.cycle_type_combo.setFixedWidth(140)
         self.sidebar.cycle_type_combo.setStyleSheet(self._combo_style())
         type_row.addWidget(self.sidebar.cycle_type_combo)
@@ -189,12 +205,14 @@ class StaticTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         length_row.addWidget(length_label)
 
         self.sidebar.cycle_length_combo = QComboBox()
-        self.sidebar.cycle_length_combo.addItems(["2 min", "5 min", "15 min", "30 min", "60 min"])
+        self.sidebar.cycle_length_combo.addItems(
+            ["2 min", "5 min", "15 min", "30 min", "60 min"],
+        )
         self.sidebar.cycle_length_combo.setCurrentIndex(1)
         self.sidebar.cycle_length_combo.setToolTip("Duration of the experiment cycle")
         self.sidebar.cycle_length_combo.setFixedWidth(100)
@@ -224,12 +242,14 @@ class StaticTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         parent_layout.addWidget(note_label)
 
         self.sidebar.note_input = QTextEdit()
-        self.sidebar.note_input.setPlaceholderText("Use tags: [A] [B] [C] [D] [ALL] or with concentration [A:10] [ALL:50]  (max 250 chars)")
+        self.sidebar.note_input.setPlaceholderText(
+            "Use tags: [A] [B] [C] [D] [ALL] or with concentration [A:10] [ALL:50]  (max 250 chars)",
+        )
         self.sidebar.note_input.setMaximumHeight(60)
         self.sidebar.note_input.setStyleSheet(
             "QTextEdit {"
@@ -243,11 +263,13 @@ class StaticTabBuilder:
             "}"
             "QTextEdit:focus {"
             "  border: 2px solid #1D1D1F;"
-            "}"
+            "}",
         )
 
         # Apply syntax highlighter
-        self.sidebar.note_highlighter = ChannelTagHighlighter(self.sidebar.note_input.document())
+        self.sidebar.note_highlighter = ChannelTagHighlighter(
+            self.sidebar.note_input.document(),
+        )
 
         # Character counter
         self.sidebar.char_count_label = QLabel("0/250 characters")
@@ -255,15 +277,19 @@ class StaticTabBuilder:
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
 
         def update_note_counter():
             text = self.sidebar.note_input.toPlainText()
             if len(text) > 250:
                 self.sidebar.note_input.setPlainText(text[:250])
-                self.sidebar.note_input.moveCursor(self.sidebar.note_input.textCursor().End)
-            self.sidebar.char_count_label.setText(f"{len(self.sidebar.note_input.toPlainText())}/250 characters")
+                self.sidebar.note_input.moveCursor(
+                    self.sidebar.note_input.textCursor().End,
+                )
+            self.sidebar.char_count_label.setText(
+                f"{len(self.sidebar.note_input.toPlainText())}/250 characters",
+            )
 
         self.sidebar.note_input.textChanged.connect(update_note_counter)
         parent_layout.addWidget(self.sidebar.note_input)
@@ -280,7 +306,7 @@ class StaticTabBuilder:
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         note_info_row.addWidget(tag_help_label)
         parent_layout.addLayout(note_info_row)
@@ -296,27 +322,42 @@ class StaticTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         units_row.addWidget(units_label)
 
         self.sidebar.units_combo = QComboBox()
-        self.sidebar.units_combo.addItems(["M (Molar)", "mM (Millimolar)", "µM (Micromolar)", "nM (Nanomolar)", "pM (Picomolar)", "mg/mL", "µg/mL", "ng/mL"])
+        self.sidebar.units_combo.addItems(
+            [
+                "M (Molar)",
+                "mM (Millimolar)",
+                "µM (Micromolar)",
+                "nM (Nanomolar)",
+                "pM (Picomolar)",
+                "mg/mL",
+                "µg/mL",
+                "ng/mL",
+            ],
+        )
         self.sidebar.units_combo.setCurrentIndex(3)  # Default to nM
-        self.sidebar.units_combo.setToolTip("Concentration units for tagged channels (applies to [A:10] style tags)")
+        self.sidebar.units_combo.setToolTip(
+            "Concentration units for tagged channels (applies to [A:10] style tags)",
+        )
         self.sidebar.units_combo.setFixedWidth(140)
         self.sidebar.units_combo.setStyleSheet(self._combo_style())
         units_row.addWidget(self.sidebar.units_combo)
         units_row.addStretch()
 
         # Info about units applying to tags
-        units_info = QLabel("Units apply to concentrations in tags (e.g., [A:10] = 10 nM)")
+        units_info = QLabel(
+            "Units apply to concentrations in tags (e.g., [A:10] = 10 nM)",
+        )
         units_info.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         parent_layout.addWidget(units_info)
 
@@ -328,7 +369,7 @@ class StaticTabBuilder:
         execution_separator.setStyleSheet(
             "background: rgba(0, 0, 0, 0.06);"
             "border: none;"
-            "margin: 12px 0px 8px 0px;"
+            "margin: 12px 0px 8px 0px;",
         )
         parent_layout.addWidget(execution_separator)
 
@@ -340,7 +381,7 @@ class StaticTabBuilder:
             "background: transparent;"
             "font-weight: 600;"
             "margin-bottom: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         parent_layout.addWidget(execution_header)
 
@@ -351,7 +392,9 @@ class StaticTabBuilder:
         # Start Cycle Button
         self.sidebar.start_cycle_btn = QPushButton("▶ Start Cycle")
         self.sidebar.start_cycle_btn.setFixedSize(120, 36)
-        self.sidebar.start_cycle_btn.setToolTip("Begin experiment immediately with current settings")
+        self.sidebar.start_cycle_btn.setToolTip(
+            "Begin experiment immediately with current settings",
+        )
         self.sidebar.start_cycle_btn.setStyleSheet(
             "QPushButton {"
             "  background: #1D1D1F;"
@@ -372,14 +415,16 @@ class StaticTabBuilder:
             "QPushButton:disabled {"
             "  background: rgba(0, 0, 0, 0.1);"
             "  color: #86868B;"
-            "}"
+            "}",
         )
         buttons_row.addWidget(self.sidebar.start_cycle_btn)
 
         # Add to Queue Button
         self.sidebar.add_to_queue_btn = QPushButton("+ Add to Queue")
         self.sidebar.add_to_queue_btn.setFixedSize(140, 36)
-        self.sidebar.add_to_queue_btn.setToolTip("Add cycle to queue for batch execution (max 5 cycles)")
+        self.sidebar.add_to_queue_btn.setToolTip(
+            "Add cycle to queue for batch execution (max 5 cycles)",
+        )
         self.sidebar.add_to_queue_btn.setStyleSheet(
             "QPushButton {"
             "  background: #636366;"
@@ -400,7 +445,7 @@ class StaticTabBuilder:
             "QPushButton:disabled {"
             "  background: rgba(0, 0, 0, 0.1);"
             "  color: #86868B;"
-            "}"
+            "}",
         )
         buttons_row.addWidget(self.sidebar.add_to_queue_btn)
         buttons_row.addStretch()
@@ -408,7 +453,9 @@ class StaticTabBuilder:
         parent_layout.addLayout(buttons_row)
 
         # Help text
-        help_text = QLabel("💡 Start Cycle: Begin immediately  |  Add to Queue: Plan batch runs (max 5 cycles)")
+        help_text = QLabel(
+            "💡 Start Cycle: Begin immediately  |  Add to Queue: Plan batch runs (max 5 cycles)",
+        )
         help_text.setWordWrap(True)
         help_text.setStyleSheet(
             "font-size: 11px;"
@@ -417,7 +464,7 @@ class StaticTabBuilder:
             "border-radius: 4px;"
             "padding: 6px 8px;"
             "margin-top: 6px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         parent_layout.addWidget(help_text)
 
@@ -428,7 +475,9 @@ class StaticTabBuilder:
         # Start Run Button
         self.sidebar.start_run_btn = QPushButton("▶ Start Queued Run")
         self.sidebar.start_run_btn.setFixedHeight(36)
-        self.sidebar.start_run_btn.setToolTip("Execute all cycles in queue sequentially")
+        self.sidebar.start_run_btn.setToolTip(
+            "Execute all cycles in queue sequentially",
+        )
         self.sidebar.start_run_btn.setStyleSheet(
             "QPushButton {"
             "  background: #3A3A3C;"
@@ -445,7 +494,7 @@ class StaticTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: #636366;"
-            "}"
+            "}",
         )
         self.sidebar.start_run_btn.setVisible(False)
         tab_layout.addWidget(self.sidebar.start_run_btn)
@@ -454,12 +503,14 @@ class StaticTabBuilder:
         queue_status_row = QHBoxLayout()
         queue_status_row.setSpacing(12)
 
-        self.sidebar.queue_status_label = QLabel("Queue: 0 cycles | Click 'Add to Queue' to plan batch runs")
+        self.sidebar.queue_status_label = QLabel(
+            "Queue: 0 cycles | Click 'Add to Queue' to plan batch runs",
+        )
         self.sidebar.queue_status_label.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         queue_status_row.addWidget(self.sidebar.queue_status_label)
 
@@ -485,7 +536,7 @@ class StaticTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: rgba(255, 59, 48, 0.2);"
-            "}"
+            "}",
         )
         queue_status_row.addWidget(self.sidebar.clear_queue_btn)
         queue_status_row.addStretch()
@@ -508,8 +559,12 @@ class StaticTabBuilder:
 
         # Summary table
         self.sidebar.summary_table = QTableWidget(5, 4)
-        self.sidebar.summary_table.setHorizontalHeaderLabels(["State", "Type", "Start", "Notes"])
-        self.sidebar.summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.sidebar.summary_table.setHorizontalHeaderLabels(
+            ["State", "Type", "Start", "Notes"],
+        )
+        self.sidebar.summary_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch,
+        )
         self.sidebar.summary_table.setColumnWidth(0, 80)
         self.sidebar.summary_table.setMaximumHeight(200)
         self.sidebar.summary_table.setStyleSheet(
@@ -537,7 +592,7 @@ class StaticTabBuilder:
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
-            "}"
+            "}",
         )
 
         # Populate with empty data
@@ -556,7 +611,7 @@ class StaticTabBuilder:
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         table_footer_row.addWidget(info_legend)
         table_footer_row.addStretch()
@@ -580,7 +635,7 @@ class StaticTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: #8E8E93;"
-            "}"
+            "}",
         )
         table_footer_row.addWidget(self.sidebar.open_table_btn)
 

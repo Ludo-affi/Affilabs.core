@@ -232,4 +232,3 @@ Then restart app and see if calibration proceeds further!
 **The config file has a DATA ENTRY ERROR** - someone typed 15.89 instead of 1.589!
 
 Should I fix the ratio in the config file now?
-

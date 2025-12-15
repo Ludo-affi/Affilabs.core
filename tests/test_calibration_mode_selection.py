@@ -1,5 +1,4 @@
-"""
-Test script for calibration mode selection feature.
+"""Test script for calibration mode selection feature.
 
 Validates:
 1. DeviceConfiguration getter/setter methods work correctly
@@ -16,7 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.device_configuration import DeviceConfiguration
-from utils.logger import logger
 
 
 def test_device_configuration():
@@ -31,21 +29,21 @@ def test_device_configuration():
     # Test getting default mode
     initial_mode = config.get_calibration_mode()
     print(f"✓ Initial mode: {initial_mode}")
-    assert initial_mode == 'global', f"Expected 'global', got '{initial_mode}'"
+    assert initial_mode == "global", f"Expected 'global', got '{initial_mode}'"
 
     # Test setting to per_channel
     print("\nSetting mode to 'per_channel'...")
-    config.set_calibration_mode('per_channel')
+    config.set_calibration_mode("per_channel")
 
     # Verify change
     new_mode = config.get_calibration_mode()
     print(f"✓ Mode after set: {new_mode}")
-    assert new_mode == 'per_channel', f"Expected 'per_channel', got '{new_mode}'"
+    assert new_mode == "per_channel", f"Expected 'per_channel', got '{new_mode}'"
 
     # Test invalid mode
     print("\nTesting invalid mode (should raise ValueError)...")
     try:
-        config.set_calibration_mode('invalid_mode')
+        config.set_calibration_mode("invalid_mode")
         print("✗ FAILED: Should have raised ValueError")
         return False
     except ValueError as e:
@@ -56,11 +54,13 @@ def test_device_configuration():
     config2 = DeviceConfiguration()
     persisted_mode = config2.get_calibration_mode()
     print(f"✓ Persisted mode: {persisted_mode}")
-    assert persisted_mode == 'per_channel', f"Expected 'per_channel', got '{persisted_mode}'"
+    assert (
+        persisted_mode == "per_channel"
+    ), f"Expected 'per_channel', got '{persisted_mode}'"
 
     # Reset to global for clean state
     print("\nResetting to 'global' mode...")
-    config2.set_calibration_mode('global')
+    config2.set_calibration_mode("global")
 
     print("\n✅ TEST 1 PASSED: DeviceConfiguration works correctly")
     return True
@@ -74,10 +74,12 @@ def test_calibrator_loading():
 
     # Set up device config with per_channel mode
     config = DeviceConfiguration()
-    config.set_calibration_mode('per_channel')
+    config.set_calibration_mode("per_channel")
     device_config = config.to_dict()
 
-    print(f"✓ Device config mode: {device_config['calibration']['preferred_calibration_mode']}")
+    print(
+        f"✓ Device config mode: {device_config['calibration']['preferred_calibration_mode']}",
+    )
 
     # Import CalibrationState to test state initialization
     from utils.spr_calibrator import CalibrationState
@@ -87,9 +89,12 @@ def test_calibrator_loading():
 
     # Simulate what SPRCalibrator.__init__ does
     print("\nSimulating SPRCalibrator mode loading logic...")
-    if device_config and 'calibration' in device_config:
-        preferred_mode = device_config['calibration'].get('preferred_calibration_mode', 'global')
-        if preferred_mode in ['global', 'per_channel']:
+    if device_config and "calibration" in device_config:
+        preferred_mode = device_config["calibration"].get(
+            "preferred_calibration_mode",
+            "global",
+        )
+        if preferred_mode in ["global", "per_channel"]:
             state.calibration_mode = preferred_mode
             print(f"✓ Loaded mode from config: {preferred_mode}")
         else:
@@ -98,19 +103,26 @@ def test_calibrator_loading():
 
     # Verify state has correct mode
     print(f"✓ CalibrationState mode: {state.calibration_mode}")
-    assert state.calibration_mode == 'per_channel', f"Expected 'per_channel', got '{state.calibration_mode}'"
+    assert (
+        state.calibration_mode == "per_channel"
+    ), f"Expected 'per_channel', got '{state.calibration_mode}'"
 
     # Test with global mode
     print("\nTesting with 'global' mode...")
-    config.set_calibration_mode('global')
+    config.set_calibration_mode("global")
     device_config = config.to_dict()
 
     state2 = CalibrationState()
-    preferred_mode = device_config['calibration'].get('preferred_calibration_mode', 'global')
+    preferred_mode = device_config["calibration"].get(
+        "preferred_calibration_mode",
+        "global",
+    )
     state2.calibration_mode = preferred_mode
 
     print(f"✓ CalibrationState mode: {state2.calibration_mode}")
-    assert state2.calibration_mode == 'global', f"Expected 'global', got '{state2.calibration_mode}'"
+    assert (
+        state2.calibration_mode == "global"
+    ), f"Expected 'global', got '{state2.calibration_mode}'"
 
     print("\n✅ TEST 2 PASSED: SPRCalibrator correctly loads mode from device config")
     return True
@@ -123,8 +135,8 @@ def test_mode_display_names():
     print("=" * 80)
 
     modes = {
-        'global': 'Global (Balanced LEDs)',
-        'per_channel': 'Per-Channel (Individual Times)'
+        "global": "Global (Balanced LEDs)",
+        "per_channel": "Per-Channel (Individual Times)",
     }
 
     for mode, display in modes.items():
@@ -150,8 +162,12 @@ def main():
         print("\n" + "=" * 80)
         print("TEST SUMMARY")
         print("=" * 80)
-        print(f"Test 1 (DeviceConfiguration): {'✅ PASSED' if test1_passed else '❌ FAILED'}")
-        print(f"Test 2 (SPRCalibrator Loading): {'✅ PASSED' if test2_passed else '❌ FAILED'}")
+        print(
+            f"Test 1 (DeviceConfiguration): {'✅ PASSED' if test1_passed else '❌ FAILED'}",
+        )
+        print(
+            f"Test 2 (SPRCalibrator Loading): {'✅ PASSED' if test2_passed else '❌ FAILED'}",
+        )
         print(f"Test 3 (Display Names): {'✅ PASSED' if test3_passed else '❌ FAILED'}")
 
         if test1_passed and test2_passed and test3_passed:
@@ -159,8 +175,12 @@ def main():
             print("\n" + "=" * 80)
             print("IMPLEMENTATION SUMMARY")
             print("=" * 80)
-            print("✓ DeviceConfiguration.get_calibration_mode() - reads mode from config")
-            print("✓ DeviceConfiguration.set_calibration_mode(mode) - saves mode to disk")
+            print(
+                "✓ DeviceConfiguration.get_calibration_mode() - reads mode from config",
+            )
+            print(
+                "✓ DeviceConfiguration.set_calibration_mode(mode) - saves mode to disk",
+            )
             print("✓ SPRCalibrator.__init__ - loads mode from device_config at startup")
             print("✓ device_settings.py - UI controls for mode selection")
             print("✓ Mode persists across sessions in config/device_config.json")
@@ -171,16 +191,16 @@ def main():
             print("4. Run calibration - mode will be applied automatically")
             print("=" * 80)
             return 0
-        else:
-            print("\n❌ SOME TESTS FAILED")
-            return 1
+        print("\n❌ SOME TESTS FAILED")
+        return 1
 
     except Exception as e:
         print(f"\n❌ TEST ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

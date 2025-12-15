@@ -1,5 +1,4 @@
-"""
-Reference Baseline Processing Method
+"""Reference Baseline Processing Method
 
 This module contains the EXACT reference implementation of the current refactored
 data processing pipeline. It serves as the baseline for comparison and validation.
@@ -20,17 +19,20 @@ Pipeline Overview:
 This method produces low peak-to-peak variation and serves as the gold standard.
 """
 
-import numpy as np
-from scipy.signal import savgol_filter
-from scipy.fftpack import dst, idct
-from scipy.stats import linregress
-from typing import Dict, Optional, Tuple
 import logging
+
+import numpy as np
+from scipy.fftpack import dst, idct
+from scipy.signal import savgol_filter
+from scipy.stats import linregress
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_fourier_weights_reference(num_points: int, alpha: float = 2e3) -> np.ndarray:
+def calculate_fourier_weights_reference(
+    num_points: int,
+    alpha: float = 2e3,
+) -> np.ndarray:
     """Calculate Fourier weights for signal denoising (REFERENCE).
 
     This is the EXACT implementation used in production.
@@ -41,6 +43,7 @@ def calculate_fourier_weights_reference(num_points: int, alpha: float = 2e3) -> 
 
     Returns:
         np.ndarray: Fourier weights array of length (num_points - 1)
+
     """
     n = num_points - 1
     phi = np.pi / n * np.arange(1, n)
@@ -52,8 +55,8 @@ def calculate_fourier_weights_reference(num_points: int, alpha: float = 2e3) -> 
 def calculate_transmission_reference(
     intensity: np.ndarray,
     reference: np.ndarray,
-    p_led_intensity: Optional[float] = None,
-    s_led_intensity: Optional[float] = None
+    p_led_intensity: float | None = None,
+    s_led_intensity: float | None = None,
 ) -> np.ndarray:
     """Calculate transmission percentage with LED correction (REFERENCE).
 
@@ -74,17 +77,24 @@ def calculate_transmission_reference(
 
     Raises:
         ValueError: If arrays have incompatible shapes
+
     """
     if intensity.shape != reference.shape:
-        raise ValueError(f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}")
+        raise ValueError(
+            f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}",
+        )
 
     # Avoid division by zero
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         # Calculate raw ratio
         transmission = (intensity / reference) * 100
 
         # Apply LED intensity correction if provided
-        if p_led_intensity is not None and s_led_intensity is not None and p_led_intensity > 0:
+        if (
+            p_led_intensity is not None
+            and s_led_intensity is not None
+            and p_led_intensity > 0
+        ):
             led_correction_factor = s_led_intensity / p_led_intensity
             transmission = transmission * led_correction_factor
 
@@ -94,7 +104,9 @@ def calculate_transmission_reference(
     return transmission
 
 
-def apply_baseline_correction_reference(transmission_spectrum: np.ndarray) -> np.ndarray:
+def apply_baseline_correction_reference(
+    transmission_spectrum: np.ndarray,
+) -> np.ndarray:
     """Apply baseline correction to transmission spectrum (REFERENCE).
 
     This is the EXACT implementation used in production.
@@ -105,6 +117,7 @@ def apply_baseline_correction_reference(transmission_spectrum: np.ndarray) -> np
 
     Returns:
         np.ndarray: Baseline-corrected transmission spectrum
+
     """
     if len(transmission_spectrum) < 2:
         return transmission_spectrum
@@ -113,7 +126,7 @@ def apply_baseline_correction_reference(transmission_spectrum: np.ndarray) -> np
     baseline = np.linspace(
         transmission_spectrum[0],
         transmission_spectrum[-1],
-        len(transmission_spectrum)
+        len(transmission_spectrum),
     )
 
     # Subtract baseline
@@ -129,7 +142,7 @@ def find_resonance_wavelength_fourier_reference(
     transmission_spectrum: np.ndarray,
     wavelengths: np.ndarray,
     fourier_weights: np.ndarray,
-    window_size: int = 165
+    window_size: int = 165,
 ) -> float:
     """Find SPR resonance wavelength using Fourier transform method (REFERENCE).
 
@@ -150,6 +163,7 @@ def find_resonance_wavelength_fourier_reference(
 
     Returns:
         float: Resonance wavelength in nm, or np.nan if not found
+
     """
     try:
         spectrum = transmission_spectrum
@@ -160,7 +174,8 @@ def find_resonance_wavelength_fourier_reference(
 
         # Apply DST with linear detrending and Fourier weights
         fourier_coeff[1:-1] = fourier_weights * dst(
-            spectrum[1:-1] - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
+            spectrum[1:-1]
+            - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
             1,
         )
 
@@ -192,13 +207,13 @@ def process_spectrum_reference(
     wavelengths: np.ndarray,
     reference_spectrum: np.ndarray,
     fourier_weights: np.ndarray,
-    dark_noise: Optional[np.ndarray] = None,
-    p_led_intensity: Optional[float] = None,
-    s_led_intensity: Optional[float] = None,
+    dark_noise: np.ndarray | None = None,
+    p_led_intensity: float | None = None,
+    s_led_intensity: float | None = None,
     window_size: int = 165,
     sg_window: int = 21,
-    sg_polyorder: int = 3
-) -> Dict:
+    sg_polyorder: int = 3,
+) -> dict:
     """Complete reference processing pipeline (REFERENCE BASELINE).
 
     This is the EXACT, COMPLETE processing pipeline used in production.
@@ -229,6 +244,7 @@ def process_spectrum_reference(
             - 'transmission': Filtered transmission spectrum (%)
             - 'resonance_wavelength': Peak wavelength (nm)
             - 'wavelengths': Wavelength array
+
     """
     # Step 1: Dark noise subtraction
     intensity_corrected = raw_spectrum.copy()
@@ -240,7 +256,7 @@ def process_spectrum_reference(
         intensity_corrected,
         reference_spectrum,
         p_led_intensity=p_led_intensity,
-        s_led_intensity=s_led_intensity
+        s_led_intensity=s_led_intensity,
     )
 
     # Step 3: Apply baseline correction
@@ -255,14 +271,14 @@ def process_spectrum_reference(
         transmission,
         wavelengths,
         fourier_weights,
-        window_size=window_size
+        window_size=window_size,
     )
 
     return {
-        'intensity': intensity_corrected,
-        'transmission': transmission,
-        'resonance_wavelength': resonance_wavelength,
-        'wavelengths': wavelengths
+        "intensity": intensity_corrected,
+        "transmission": transmission,
+        "resonance_wavelength": resonance_wavelength,
+        "wavelengths": wavelengths,
     }
 
 
@@ -271,8 +287,8 @@ def hardware_acquisition_reference(
     num_scans: int,
     wave_min_index: int,
     wave_max_index: int,
-    dark_noise: Optional[np.ndarray] = None
-) -> Optional[np.ndarray]:
+    dark_noise: np.ndarray | None = None,
+) -> np.ndarray | None:
     """Simulate hardware acquisition with averaging (REFERENCE).
 
     This is the EXACT hardware acquisition method used in production.
@@ -292,6 +308,7 @@ def hardware_acquisition_reference(
 
     Returns:
         np.ndarray: Dark-corrected, trimmed spectrum, or None if acquisition fails
+
     """
     try:
         if num_scans > 1:
@@ -333,61 +350,57 @@ def hardware_acquisition_reference(
 
 REFERENCE_PARAMETERS = {
     # Hardware acquisition
-    'num_scans': 3,  # Default number of scans to average (matches calibration)
-
+    "num_scans": 3,  # Default number of scans to average (matches calibration)
     # Spectrum parameters
-    'spr_min_wavelength': 560,  # nm
-    'spr_max_wavelength': 720,  # nm
-
+    "spr_min_wavelength": 560,  # nm
+    "spr_max_wavelength": 720,  # nm
     # Transmission processing
-    'apply_led_correction': True,
-    'apply_baseline_correction': True,
-
+    "apply_led_correction": True,
+    "apply_baseline_correction": True,
     # Savitzky-Golay filter (denoising)
-    'sg_window': 21,  # Window length (must be odd)
-    'sg_polyorder': 3,  # Polynomial order
-
+    "sg_window": 21,  # Window length (must be odd)
+    "sg_polyorder": 3,  # Polynomial order
     # Fourier peak finding
-    'fourier_alpha': 2e3,  # Regularization parameter
-    'fourier_window': 165,  # Regression window around zero-crossing
-
+    "fourier_alpha": 2e3,  # Regularization parameter
+    "fourier_window": 165,  # Regression window around zero-crossing
     # Alternative optimized window
-    'fourier_window_optimized': 1500,  # Larger window for better stability
+    "fourier_window_optimized": 1500,  # Larger window for better stability
 }
 
 
-def validate_reference_parameters() -> Dict:
+def validate_reference_parameters() -> dict:
     """Validate that reference parameters match production configuration.
 
     Returns:
         Dict with validation results and any discrepancies
+
     """
     validation_results = {
-        'sg_filter_valid': True,
-        'fourier_weights_valid': True,
-        'transmission_formula_valid': True,
-        'warnings': []
+        "sg_filter_valid": True,
+        "fourier_weights_valid": True,
+        "transmission_formula_valid": True,
+        "warnings": [],
     }
 
     # Check SG filter parameters
-    sg_window = REFERENCE_PARAMETERS['sg_window']
+    sg_window = REFERENCE_PARAMETERS["sg_window"]
     if sg_window % 2 == 0:
-        validation_results['sg_filter_valid'] = False
-        validation_results['warnings'].append(
-            f"SG window must be odd, got {sg_window}"
+        validation_results["sg_filter_valid"] = False
+        validation_results["warnings"].append(
+            f"SG window must be odd, got {sg_window}",
         )
 
-    if sg_window < REFERENCE_PARAMETERS['sg_polyorder'] + 2:
-        validation_results['sg_filter_valid'] = False
-        validation_results['warnings'].append(
-            f"SG window ({sg_window}) must be >= polyorder+2"
+    if sg_window < REFERENCE_PARAMETERS["sg_polyorder"] + 2:
+        validation_results["sg_filter_valid"] = False
+        validation_results["warnings"].append(
+            f"SG window ({sg_window}) must be >= polyorder+2",
         )
 
     # Check Fourier parameters
-    if REFERENCE_PARAMETERS['fourier_alpha'] <= 0:
-        validation_results['fourier_weights_valid'] = False
-        validation_results['warnings'].append(
-            "Fourier alpha must be positive"
+    if REFERENCE_PARAMETERS["fourier_alpha"] <= 0:
+        validation_results["fourier_weights_valid"] = False
+        validation_results["warnings"].append(
+            "Fourier alpha must be positive",
         )
 
     return validation_results

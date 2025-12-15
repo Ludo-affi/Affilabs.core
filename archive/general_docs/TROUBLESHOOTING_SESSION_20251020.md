@@ -217,4 +217,3 @@ Hardware positions: S=30, P=120
 4. **Something else** - Tell me what you'd like to investigate
 
 Let me know and I'll help you execute the fix!
-

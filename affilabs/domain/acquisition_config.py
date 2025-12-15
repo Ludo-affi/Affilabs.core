@@ -1,17 +1,16 @@
-"""
-Acquisition Configuration Models
+"""Acquisition Configuration Models
 
 Pure Python data structures for acquisition parameters.
 NO Qt dependencies - fully testable.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 from enum import Enum
 
 
 class AcquisitionMode(Enum):
     """Acquisition mode enumeration."""
+
     CALIBRATION = "calibration"  # Full calibration (S-mode + P-mode)
     LIVE = "live"  # P-only live acquisition (reuse S-ref)
     SINGLE = "single"  # Single spectrum acquisition
@@ -19,6 +18,7 @@ class AcquisitionMode(Enum):
 
 class PolarizerMode(Enum):
     """Polarizer position."""
+
     S_MODE = "s"  # S-polarizer (reference)
     P_MODE = "p"  # P-polarizer (sample)
 
@@ -29,6 +29,7 @@ class LEDConfig:
 
     Brightness values: 0-255 (8-bit)
     """
+
     a: int = 0
     b: int = 0
     c: int = 0
@@ -36,34 +37,34 @@ class LEDConfig:
 
     def __post_init__(self):
         """Validate LED intensities."""
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             value = getattr(self, channel)
             if not (0 <= value <= 255):
                 raise ValueError(f"LED {channel} intensity out of range: {value}")
 
-    def to_dict(self) -> Dict[str, int]:
+    def to_dict(self) -> dict[str, int]:
         """Convert to dictionary."""
-        return {'a': self.a, 'b': self.b, 'c': self.c, 'd': self.d}
+        return {"a": self.a, "b": self.b, "c": self.c, "d": self.d}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, int]) -> 'LEDConfig':
+    def from_dict(cls, data: dict[str, int]) -> "LEDConfig":
         """Create from dictionary."""
         return cls(
-            a=data.get('a', 0),
-            b=data.get('b', 0),
-            c=data.get('c', 0),
-            d=data.get('d', 0)
+            a=data.get("a", 0),
+            b=data.get("b", 0),
+            c=data.get("c", 0),
+            d=data.get("d", 0),
         )
 
     def get(self, channel: str) -> int:
         """Get LED intensity for channel."""
-        if channel not in ['a', 'b', 'c', 'd']:
+        if channel not in ["a", "b", "c", "d"]:
             raise KeyError(f"Invalid channel: {channel}")
         return getattr(self, channel)
 
     def set(self, channel: str, value: int):
         """Set LED intensity for channel."""
-        if channel not in ['a', 'b', 'c', 'd']:
+        if channel not in ["a", "b", "c", "d"]:
             raise KeyError(f"Invalid channel: {channel}")
         if not (0 <= value <= 255):
             raise ValueError(f"LED intensity out of range: {value}")
@@ -76,6 +77,7 @@ class TimingConfig:
 
     All values in milliseconds.
     """
+
     pre_led_delay: float = 12.0  # LED warmup time
     post_led_delay: float = 40.0  # Afterglow settling time
     servo_movement_delay: float = 150.0  # Polarizer rotation time
@@ -88,18 +90,16 @@ class TimingConfig:
         if self.post_led_delay < 0:
             raise ValueError(f"Invalid post_led_delay: {self.post_led_delay}")
         if self.servo_movement_delay < 0:
-            raise ValueError(f"Invalid servo_movement_delay: {self.servo_movement_delay}")
+            raise ValueError(
+                f"Invalid servo_movement_delay: {self.servo_movement_delay}",
+            )
         if not (3.0 <= self.integration_time <= 10000.0):
             raise ValueError(f"Integration time out of range: {self.integration_time}")
 
     @property
     def total_cycle_time(self) -> float:
         """Estimated time for one complete acquisition cycle (ms)."""
-        return (
-            self.pre_led_delay +
-            self.integration_time +
-            self.post_led_delay
-        )
+        return self.pre_led_delay + self.integration_time + self.post_led_delay
 
 
 @dataclass
@@ -108,6 +108,7 @@ class AcquisitionConfig:
 
     Defines all parameters needed for data acquisition.
     """
+
     mode: AcquisitionMode = AcquisitionMode.LIVE
 
     # Integration parameters
@@ -119,7 +120,9 @@ class AcquisitionConfig:
     num_scans: int = 5  # Number of scans to average
 
     # LED configurations
-    s_mode_leds: LEDConfig = field(default_factory=lambda: LEDConfig(255, 255, 255, 255))
+    s_mode_leds: LEDConfig = field(
+        default_factory=lambda: LEDConfig(255, 255, 255, 255),
+    )
     p_mode_leds: LEDConfig = field(default_factory=lambda: LEDConfig(204, 81, 58, 170))
 
     # Timing
@@ -142,18 +145,24 @@ class AcquisitionConfig:
         if self.num_scans < 1:
             raise ValueError(f"Invalid num_scans: {self.num_scans}")
         if not (3.0 <= self.integration_time_s <= 10000.0):
-            raise ValueError(f"S-mode integration time out of range: {self.integration_time_s}")
+            raise ValueError(
+                f"S-mode integration time out of range: {self.integration_time_s}",
+            )
         if not (3.0 <= self.integration_time_p <= 10000.0):
-            raise ValueError(f"P-mode integration time out of range: {self.integration_time_p}")
+            raise ValueError(
+                f"P-mode integration time out of range: {self.integration_time_p}",
+            )
         if self.roi_start >= self.roi_end:
             raise ValueError(f"Invalid ROI: {self.roi_start} >= {self.roi_end}")
         if self.smoothing_window < 3 or self.smoothing_window % 2 == 0:
-            raise ValueError(f"Smoothing window must be odd and >= 3: {self.smoothing_window}")
+            raise ValueError(
+                f"Smoothing window must be odd and >= 3: {self.smoothing_window}",
+            )
 
     @property
     def channels(self) -> list[str]:
         """Active channels."""
-        return ['a', 'b', 'c', 'd']
+        return ["a", "b", "c", "d"]
 
     @property
     def estimated_cycle_time(self) -> float:
@@ -171,10 +180,9 @@ class AcquisitionConfig:
         """Get LED intensity for channel and polarizer mode."""
         if polarizer == PolarizerMode.S_MODE:
             return self.s_mode_leds.get(channel)
-        else:
-            return self.p_mode_leds.get(channel)
+        return self.p_mode_leds.get(channel)
 
-    def copy(self) -> 'AcquisitionConfig':
+    def copy(self) -> "AcquisitionConfig":
         """Create a deep copy of configuration."""
         return AcquisitionConfig(
             mode=self.mode,
@@ -188,12 +196,12 @@ class AcquisitionConfig:
                 pre_led_delay=self.timing.pre_led_delay,
                 post_led_delay=self.timing.post_led_delay,
                 servo_movement_delay=self.timing.servo_movement_delay,
-                integration_time=self.timing.integration_time
+                integration_time=self.timing.integration_time,
             ),
             roi_start=self.roi_start,
             roi_end=self.roi_end,
             polarizer_mode=self.polarizer_mode,
             apply_baseline_correction=self.apply_baseline_correction,
             apply_smoothing=self.apply_smoothing,
-            smoothing_window=self.smoothing_window
+            smoothing_window=self.smoothing_window,
         )

@@ -247,10 +247,13 @@ class HardwareManager:
             # We need to load the actual DeviceConfiguration for optical fiber settings
             try:
                 from utils.device_configuration import get_device_config
+
                 dev_cfg = get_device_config()
                 optical_fiber_diameter = dev_cfg.get_optical_fiber_diameter()
                 led_pcb_model = dev_cfg.get_led_pcb_model()
-                logger.info(f"🔧 Loaded device config for calibrator: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED")
+                logger.info(
+                    f"🔧 Loaded device config for calibrator: {optical_fiber_diameter}µm fiber, {led_pcb_model} LED",
+                )
 
                 # ✨ NEW (Phase 2): Pass device config for optical calibration
                 device_config_dict = dev_cfg.to_dict()
@@ -795,9 +798,12 @@ class HardwareManager:
             if not hal_shutdown_success:
                 try:
                     import time
+
                     import serial
 
-                    logger.debug("Emergency LED shutdown via direct serial (HAL failed)...")
+                    logger.debug(
+                        "Emergency LED shutdown via direct serial (HAL failed)...",
+                    )
 
                     # Try to open port with retry in case it's briefly held
                     for retry in range(2):
@@ -823,12 +829,18 @@ class HardwareManager:
 
                 except Exception as serial_e:
                     # Don't log as warning if it's just a port access issue (HAL likely has it)
-                    if "PermissionError" in str(serial_e) or "Access is denied" in str(serial_e):
-                        logger.debug(f"Direct serial shutdown skipped (port in use by HAL): {serial_e}")
+                    if "PermissionError" in str(serial_e) or "Access is denied" in str(
+                        serial_e,
+                    ):
+                        logger.debug(
+                            f"Direct serial shutdown skipped (port in use by HAL): {serial_e}",
+                        )
                     else:
                         logger.warning(f"Direct serial LED shutdown failed: {serial_e}")
             else:
-                logger.debug("Direct serial LED shutdown skipped (HAL shutdown succeeded)")
+                logger.debug(
+                    "Direct serial LED shutdown skipped (HAL shutdown succeeded)",
+                )
 
             logger.debug("LED shutdown completed")
 

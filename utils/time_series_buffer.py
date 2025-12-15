@@ -16,10 +16,11 @@ Date: November 19, 2025
 """
 
 from __future__ import annotations
-from typing import Optional, Literal
+
+from typing import Literal
+
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
 
 from utils.logger import logger
 
@@ -38,6 +39,7 @@ class TimeSeriesBuffer:
     Attributes:
         channel: Channel identifier (a, b, c, d)
         batch_size: Number of points to accumulate before DataFrame flush
+
     """
 
     def __init__(self, channel: str, batch_size: int = 100):
@@ -46,18 +48,21 @@ class TimeSeriesBuffer:
         Args:
             channel: Channel identifier
             batch_size: Points to accumulate before flushing to DataFrame
+
         """
         self.channel = channel
         self.batch_size = batch_size
 
         # Main DataFrame storage
-        self._df = pd.DataFrame(columns=[
-            'time',           # Timestamp (seconds from experiment start)
-            'lambda',         # Raw resonance wavelength (nm)
-            'filtered',       # Median-filtered wavelength (nm)
-            'buffered',       # Unfiltered buffer value (nm)
-            'buffered_time',  # Buffer timestamp
-        ])
+        self._df = pd.DataFrame(
+            columns=[
+                "time",  # Timestamp (seconds from experiment start)
+                "lambda",  # Raw resonance wavelength (nm)
+                "filtered",  # Median-filtered wavelength (nm)
+                "buffered",  # Unfiltered buffer value (nm)
+                "buffered_time",  # Buffer timestamp
+            ],
+        )
 
         # Batch accumulator (list is O(1) append)
         self._batch: list[dict] = []
@@ -70,9 +75,9 @@ class TimeSeriesBuffer:
         self,
         timestamp: float,
         lambda_val: float,
-        filtered: Optional[float] = None,
-        buffered: Optional[float] = None,
-        buffered_time: Optional[float] = None,
+        filtered: float | None = None,
+        buffered: float | None = None,
+        buffered_time: float | None = None,
     ) -> None:
         """Append a data point to the buffer.
 
@@ -85,14 +90,19 @@ class TimeSeriesBuffer:
             filtered: Filtered wavelength (defaults to lambda_val)
             buffered: Buffered wavelength (defaults to lambda_val)
             buffered_time: Buffer timestamp (defaults to timestamp)
+
         """
-        self._batch.append({
-            'time': timestamp,
-            'lambda': lambda_val,
-            'filtered': filtered if filtered is not None else lambda_val,
-            'buffered': buffered if buffered is not None else lambda_val,
-            'buffered_time': buffered_time if buffered_time is not None else timestamp,
-        })
+        self._batch.append(
+            {
+                "time": timestamp,
+                "lambda": lambda_val,
+                "filtered": filtered if filtered is not None else lambda_val,
+                "buffered": buffered if buffered is not None else lambda_val,
+                "buffered_time": buffered_time
+                if buffered_time is not None
+                else timestamp,
+            },
+        )
 
         self._total_appends += 1
 
@@ -116,7 +126,7 @@ class TimeSeriesBuffer:
                     f"Channel {self.channel}: Flushed batch "
                     f"({len(self._df)} total points, "
                     f"{self._total_appends} appends, "
-                    f"{self._total_flushes} flushes)"
+                    f"{self._total_flushes} flushes)",
                 )
 
         except Exception as e:
@@ -138,31 +148,31 @@ class TimeSeriesBuffer:
     def lambda_values(self) -> np.ndarray:
         """Get lambda values as NumPy array (backwards compatible)."""
         self.ensure_flushed()
-        return self._df['lambda'].values
+        return self._df["lambda"].values
 
     @property
     def lambda_times(self) -> np.ndarray:
         """Get timestamps as NumPy array (backwards compatible)."""
         self.ensure_flushed()
-        return self._df['time'].values
+        return self._df["time"].values
 
     @property
     def filtered_lambda(self) -> np.ndarray:
         """Get filtered lambda values as NumPy array (backwards compatible)."""
         self.ensure_flushed()
-        return self._df['filtered'].values
+        return self._df["filtered"].values
 
     @property
     def buffered_lambda(self) -> np.ndarray:
         """Get buffered lambda values as NumPy array (backwards compatible)."""
         self.ensure_flushed()
-        return self._df['buffered'].values
+        return self._df["buffered"].values
 
     @property
     def buffered_times(self) -> np.ndarray:
         """Get buffered timestamps as NumPy array (backwards compatible)."""
         self.ensure_flushed()
-        return self._df['buffered_time'].values
+        return self._df["buffered_time"].values
 
     def __len__(self) -> int:
         """Return number of data points (including unflushed batch)."""
@@ -171,7 +181,7 @@ class TimeSeriesBuffer:
     def __getitem__(self, key: int | slice) -> float | np.ndarray:
         """Support indexing into lambda values."""
         self.ensure_flushed()
-        return self._df['lambda'].values[key]
+        return self._df["lambda"].values[key]
 
     # ========================================================================
     # Pandas DataFrame Access
@@ -199,9 +209,10 @@ class TimeSeriesBuffer:
 
         Returns:
             DataFrame with data in time range
+
         """
         self.ensure_flushed()
-        mask = (self._df['time'] >= start) & (self._df['time'] <= end)
+        mask = (self._df["time"] >= start) & (self._df["time"] <= end)
         return self._df[mask].copy()
 
     def get_last_n(self, n: int) -> pd.DataFrame:
@@ -212,6 +223,7 @@ class TimeSeriesBuffer:
 
         Returns:
             DataFrame with last N points
+
         """
         self.ensure_flushed()
         return self._df.tail(n).copy()
@@ -224,19 +236,20 @@ class TimeSeriesBuffer:
 
         Returns:
             DataFrame with data from last N seconds
+
         """
         self.ensure_flushed()
         if len(self._df) == 0:
             return self._df.copy()
 
-        last_time = self._df['time'].iloc[-1]
+        last_time = self._df["time"].iloc[-1]
         start_time = last_time - seconds
         return self.get_time_range(start_time, last_time)
 
     def rolling_average(
         self,
         window: int,
-        column: Literal['lambda', 'filtered', 'buffered'] = 'lambda',
+        column: Literal["lambda", "filtered", "buffered"] = "lambda",
         center: bool = False,
     ) -> np.ndarray:
         """Calculate rolling average.
@@ -248,6 +261,7 @@ class TimeSeriesBuffer:
 
         Returns:
             NumPy array with rolling average
+
         """
         self.ensure_flushed()
         return self._df[column].rolling(window=window, center=center).mean().values
@@ -255,7 +269,7 @@ class TimeSeriesBuffer:
     def rolling_median(
         self,
         window: int,
-        column: Literal['lambda', 'filtered', 'buffered'] = 'lambda',
+        column: Literal["lambda", "filtered", "buffered"] = "lambda",
         center: bool = False,
     ) -> np.ndarray:
         """Calculate rolling median.
@@ -267,6 +281,7 @@ class TimeSeriesBuffer:
 
         Returns:
             NumPy array with rolling median
+
         """
         self.ensure_flushed()
         return self._df[column].rolling(window=window, center=center).median().values
@@ -274,7 +289,7 @@ class TimeSeriesBuffer:
     def rolling_std(
         self,
         window: int,
-        column: Literal['lambda', 'filtered', 'buffered'] = 'lambda',
+        column: Literal["lambda", "filtered", "buffered"] = "lambda",
     ) -> np.ndarray:
         """Calculate rolling standard deviation.
 
@@ -284,6 +299,7 @@ class TimeSeriesBuffer:
 
         Returns:
             NumPy array with rolling standard deviation
+
         """
         self.ensure_flushed()
         return self._df[column].rolling(window=window).std().values
@@ -291,7 +307,7 @@ class TimeSeriesBuffer:
     def ewm_average(
         self,
         span: int,
-        column: Literal['lambda', 'filtered', 'buffered'] = 'lambda',
+        column: Literal["lambda", "filtered", "buffered"] = "lambda",
     ) -> np.ndarray:
         """Calculate exponentially weighted moving average.
 
@@ -301,6 +317,7 @@ class TimeSeriesBuffer:
 
         Returns:
             NumPy array with EWM values
+
         """
         self.ensure_flushed()
         return self._df[column].ewm(span=span, adjust=False).mean().values
@@ -308,7 +325,7 @@ class TimeSeriesBuffer:
     def resample_to_interval(
         self,
         interval: float,
-        method: Literal['mean', 'median', 'first', 'last'] = 'mean',
+        method: Literal["mean", "median", "first", "last"] = "mean",
     ) -> pd.DataFrame:
         """Resample data to fixed time intervals.
 
@@ -320,31 +337,36 @@ class TimeSeriesBuffer:
 
         Returns:
             Resampled DataFrame with uniform time intervals
+
         """
         self.ensure_flushed()
         if len(self._df) == 0:
             return self._df.copy()
 
         # Create time bins
-        min_time = self._df['time'].min()
-        max_time = self._df['time'].max()
+        min_time = self._df["time"].min()
+        max_time = self._df["time"].max()
         bins = np.arange(min_time, max_time + interval, interval)
 
         # Bin data
-        self._df['time_bin'] = pd.cut(self._df['time'], bins=bins)
+        self._df["time_bin"] = pd.cut(self._df["time"], bins=bins)
 
         # Aggregate
         agg_dict = {
-            'time': 'mean',
-            'lambda': method,
-            'filtered': method,
-            'buffered': method,
+            "time": "mean",
+            "lambda": method,
+            "filtered": method,
+            "buffered": method,
         }
 
-        resampled = self._df.groupby('time_bin', observed=True).agg(agg_dict).reset_index(drop=True)
+        resampled = (
+            self._df.groupby("time_bin", observed=True)
+            .agg(agg_dict)
+            .reset_index(drop=True)
+        )
 
         # Clean up temp column
-        self._df.drop(columns=['time_bin'], inplace=True)
+        self._df.drop(columns=["time_bin"], inplace=True)
 
         return resampled
 
@@ -352,7 +374,10 @@ class TimeSeriesBuffer:
     # Analytics Methods
     # ========================================================================
 
-    def get_statistics(self, column: Literal['lambda', 'filtered', 'buffered'] = 'lambda') -> dict:
+    def get_statistics(
+        self,
+        column: Literal["lambda", "filtered", "buffered"] = "lambda",
+    ) -> dict:
         """Get statistical summary of data.
 
         Args:
@@ -360,6 +385,7 @@ class TimeSeriesBuffer:
 
         Returns:
             Dictionary with mean, std, min, max, etc.
+
         """
         self.ensure_flushed()
         if len(self._df) == 0:
@@ -367,21 +393,21 @@ class TimeSeriesBuffer:
 
         data = self._df[column].dropna()
         return {
-            'count': len(data),
-            'mean': float(data.mean()),
-            'std': float(data.std()),
-            'min': float(data.min()),
-            'max': float(data.max()),
-            'median': float(data.median()),
-            'q25': float(data.quantile(0.25)),
-            'q75': float(data.quantile(0.75)),
+            "count": len(data),
+            "mean": float(data.mean()),
+            "std": float(data.std()),
+            "min": float(data.min()),
+            "max": float(data.max()),
+            "median": float(data.median()),
+            "q25": float(data.quantile(0.25)),
+            "q75": float(data.quantile(0.75)),
         }
 
     def detect_drift(
         self,
         window: int = 100,
         threshold: float = 0.1,
-        column: Literal['lambda', 'filtered', 'buffered'] = 'filtered',
+        column: Literal["lambda", "filtered", "buffered"] = "filtered",
     ) -> tuple[bool, float]:
         """Detect linear drift in data.
 
@@ -394,6 +420,7 @@ class TimeSeriesBuffer:
 
         Returns:
             Tuple of (has_drift, drift_rate)
+
         """
         self.ensure_flushed()
         if len(self._df) < window:
@@ -412,6 +439,7 @@ class TimeSeriesBuffer:
             return False, 0.0
 
         from scipy.stats import linregress
+
         slope, _, _, _, _ = linregress(x[valid_mask], recent[valid_mask])
 
         has_drift = abs(slope) > threshold
@@ -421,7 +449,7 @@ class TimeSeriesBuffer:
         self,
         window: int = 100,
         std_threshold: float = 0.5,
-        column: Literal['lambda', 'filtered', 'buffered'] = 'filtered',
+        column: Literal["lambda", "filtered", "buffered"] = "filtered",
     ) -> tuple[bool, float]:
         """Check if baseline is stable (low noise).
 
@@ -432,6 +460,7 @@ class TimeSeriesBuffer:
 
         Returns:
             Tuple of (is_stable, std_value)
+
         """
         self.ensure_flushed()
         if len(self._df) < window:
@@ -456,18 +485,20 @@ class TimeSeriesBuffer:
         Args:
             filename: Output file path
             **kwargs: Additional arguments for pandas.to_csv()
+
         """
         self.ensure_flushed()
         self._df.to_csv(filename, index=False, **kwargs)
         logger.info(f"Exported {len(self._df)} points to {filename}")
 
-    def to_excel(self, filename: str, sheet_name: Optional[str] = None, **kwargs) -> None:
+    def to_excel(self, filename: str, sheet_name: str | None = None, **kwargs) -> None:
         """Export to Excel file.
 
         Args:
             filename: Output file path
             sheet_name: Sheet name (defaults to channel name)
             **kwargs: Additional arguments for pandas.to_excel()
+
         """
         self.ensure_flushed()
         if sheet_name is None:
@@ -475,18 +506,19 @@ class TimeSeriesBuffer:
         self._df.to_excel(filename, sheet_name=sheet_name, index=False, **kwargs)
         logger.info(f"Exported {len(self._df)} points to {filename}")
 
-    def to_hdf5(self, filename: str, key: Optional[str] = None, **kwargs) -> None:
+    def to_hdf5(self, filename: str, key: str | None = None, **kwargs) -> None:
         """Export to HDF5 file (efficient for large datasets).
 
         Args:
             filename: Output file path
             key: HDF5 key (defaults to channel name)
             **kwargs: Additional arguments for pandas.to_hdf()
+
         """
         self.ensure_flushed()
         if key is None:
             key = f"channel_{self.channel}"
-        self._df.to_hdf(filename, key=key, mode='a', **kwargs)
+        self._df.to_hdf(filename, key=key, mode="a", **kwargs)
         logger.info(f"Exported {len(self._df)} points to {filename} (key={key})")
 
     def to_parquet(self, filename: str, **kwargs) -> None:
@@ -495,6 +527,7 @@ class TimeSeriesBuffer:
         Args:
             filename: Output file path
             **kwargs: Additional arguments for pandas.to_parquet()
+
         """
         self.ensure_flushed()
         self._df.to_parquet(filename, index=False, **kwargs)
@@ -513,12 +546,12 @@ class TimeSeriesBuffer:
     def get_performance_stats(self) -> dict:
         """Get performance statistics."""
         return {
-            'total_appends': self._total_appends,
-            'total_flushes': self._total_flushes,
-            'batch_size': self.batch_size,
-            'avg_appends_per_flush': self._total_appends / max(self._total_flushes, 1),
-            'dataframe_size': len(self._df),
-            'pending_batch_size': len(self._batch),
+            "total_appends": self._total_appends,
+            "total_flushes": self._total_flushes,
+            "batch_size": self.batch_size,
+            "avg_appends_per_flush": self._total_appends / max(self._total_flushes, 1),
+            "dataframe_size": len(self._df),
+            "pending_batch_size": len(self._batch),
         }
 
     def shift_time_reference(self, time_diff: float) -> None:
@@ -526,21 +559,25 @@ class TimeSeriesBuffer:
 
         Args:
             time_diff: Amount to subtract from timestamps
+
         """
         self.ensure_flushed()
 
-        if 'time' in self._df.columns and len(self._df) > 0:
-            self._df['time'] -= time_diff
-        if 'buffered_time' in self._df.columns and len(self._df) > 0:
-            self._df['buffered_time'] -= time_diff
+        if "time" in self._df.columns and len(self._df) > 0:
+            self._df["time"] -= time_diff
+        if "buffered_time" in self._df.columns and len(self._df) > 0:
+            self._df["buffered_time"] -= time_diff
 
-        logger.debug(f"Shifted time reference for channel {self.channel} by {time_diff:.2f}s")
+        logger.debug(
+            f"Shifted time reference for channel {self.channel} by {time_diff:.2f}s",
+        )
 
     def get_memory_usage(self) -> int:
         """Get approximate memory usage in bytes.
 
         Returns:
             Total memory usage including DataFrame and batch
+
         """
         self.ensure_flushed()
         return self._df.memory_usage(deep=True).sum()

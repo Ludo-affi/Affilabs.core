@@ -276,4 +276,3 @@ QTabBar::tab:selected {
 - Phase 4: ~50 lines of refinements
 
 **Total: ~800 lines to restore (from current 650 → target 1,450)**
-

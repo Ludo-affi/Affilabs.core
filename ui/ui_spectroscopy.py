@@ -45,7 +45,7 @@ class Ui_Spectroscopy:
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(
-            self.intensity_plot.sizePolicy().hasHeightForWidth()
+            self.intensity_plot.sizePolicy().hasHeightForWidth(),
         )
         self.intensity_plot.setSizePolicy(sizePolicy)
         self.intensity_plot.setMinimumSize(QSize(710, 250))
@@ -55,13 +55,19 @@ class Ui_Spectroscopy:
         self.horizontalLayout_2 = QHBoxLayout(self.intensity_plot)
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.horizontalSpacer = QSpacerItem(
-            959, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            959,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer)
 
         self.verticalSpacer_2 = QSpacerItem(
-            20, 378, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            378,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.horizontalLayout_2.addItem(self.verticalSpacer_2)
@@ -71,7 +77,7 @@ class Ui_Spectroscopy:
         self.transmission_plot = QFrame(Spectroscopy)
         self.transmission_plot.setObjectName("transmission_plot")
         sizePolicy.setHeightForWidth(
-            self.transmission_plot.sizePolicy().hasHeightForWidth()
+            self.transmission_plot.sizePolicy().hasHeightForWidth(),
         )
         self.transmission_plot.setSizePolicy(sizePolicy)
         self.transmission_plot.setMinimumSize(QSize(710, 250))
@@ -81,13 +87,19 @@ class Ui_Spectroscopy:
         self.horizontalLayout_3 = QHBoxLayout(self.transmission_plot)
         self.horizontalLayout_3.setObjectName("horizontalLayout_3")
         self.horizontalSpacer_2 = QSpacerItem(
-            959, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            959,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_2)
 
         self.verticalSpacer_3 = QSpacerItem(
-            20, 378, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            378,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.horizontalLayout_3.addItem(self.verticalSpacer_3)
@@ -150,7 +162,7 @@ class Ui_Spectroscopy:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_A.setChecked(True)
         self.segment_B = QCheckBox(self.groupBox_2)
@@ -163,7 +175,7 @@ class Ui_Spectroscopy:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_B.setChecked(True)
         self.segment_C = QCheckBox(self.groupBox_2)
@@ -176,7 +188,7 @@ class Ui_Spectroscopy:
             "	background:white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_C.setChecked(True)
         self.segment_D = QCheckBox(self.groupBox_2)
@@ -189,14 +201,17 @@ class Ui_Spectroscopy:
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	background:white;\n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_D.setChecked(True)
 
         self.verticalLayout_2.addWidget(self.groupBox_2, 0, Qt.AlignHCenter)
 
         self.verticalSpacer_4 = QSpacerItem(
-            20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed
+            20,
+            10,
+            QSizePolicy.Minimum,
+            QSizePolicy.Fixed,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer_4)
@@ -223,13 +238,16 @@ class Ui_Spectroscopy:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout_2.addWidget(self.new_ref_btn, 0, Qt.AlignHCenter)
 
         self.verticalSpacer_6 = QSpacerItem(
-            20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed
+            20,
+            10,
+            QSizePolicy.Minimum,
+            QSizePolicy.Fixed,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer_6)
@@ -252,13 +270,16 @@ class Ui_Spectroscopy:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout_2.addWidget(self.full_calibrate_btn, 0, Qt.AlignHCenter)
 
         self.verticalSpacer_5 = QSpacerItem(
-            20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed
+            20,
+            10,
+            QSizePolicy.Minimum,
+            QSizePolicy.Fixed,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer_5)
@@ -281,13 +302,16 @@ class Ui_Spectroscopy:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout_2.addWidget(self.prime_btn, 0, Qt.AlignHCenter)
 
         self.verticalSpacer_7 = QSpacerItem(
-            20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed
+            20,
+            10,
+            QSizePolicy.Minimum,
+            QSizePolicy.Fixed,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer_7)
@@ -318,7 +342,7 @@ class Ui_Spectroscopy:
         sizePolicy2.setHorizontalStretch(0)
         sizePolicy2.setVerticalStretch(0)
         sizePolicy2.setHeightForWidth(
-            self.polarization.sizePolicy().hasHeightForWidth()
+            self.polarization.sizePolicy().hasHeightForWidth(),
         )
         self.polarization.setSizePolicy(sizePolicy2)
         self.polarization.setMinimumSize(QSize(75, 29))
@@ -393,7 +417,10 @@ class Ui_Spectroscopy:
         self.verticalLayout_2.addWidget(self.advanced, 0, Qt.AlignHCenter)
 
         self.verticalSpacer = QSpacerItem(
-            20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            40,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer)
@@ -408,48 +435,56 @@ class Ui_Spectroscopy:
 
     def retranslateUi(self, Spectroscopy):
         Spectroscopy.setWindowTitle(
-            QCoreApplication.translate("Spectroscopy", "Form", None)
+            QCoreApplication.translate("Spectroscopy", "Form", None),
         )
         self.label_3.setText(
-            QCoreApplication.translate("Spectroscopy", "Spectroscopy", None)
+            QCoreApplication.translate("Spectroscopy", "Spectroscopy", None),
         )
         self.groupBox_2.setTitle(
-            QCoreApplication.translate("Spectroscopy", "Display ", None)
+            QCoreApplication.translate("Spectroscopy", "Display ", None),
         )
         self.segment_A.setText(QCoreApplication.translate("Spectroscopy", "A", None))
         self.segment_B.setText(QCoreApplication.translate("Spectroscopy", "B", None))
         self.segment_C.setText(QCoreApplication.translate("Spectroscopy", "C", None))
         self.segment_D.setText(QCoreApplication.translate("Spectroscopy", "D", None))
         self.new_ref_btn.setText(
-            QCoreApplication.translate("Spectroscopy", "New Reference", None)
+            QCoreApplication.translate("Spectroscopy", "New Reference", None),
         )
         self.full_calibrate_btn.setText(
-            QCoreApplication.translate("Spectroscopy", "Auto-Align\n&& Calibrate", None)
+            QCoreApplication.translate(
+                "Spectroscopy",
+                "Auto-Align\n&& Calibrate",
+                None,
+            ),
         )
         self.prime_btn.setText(
-            QCoreApplication.translate("Spectroscopy", "Prime Pumps", None)
+            QCoreApplication.translate("Spectroscopy", "Prime Pumps", None),
         )
         self.advanced.setTitle(
-            QCoreApplication.translate("Spectroscopy", "Advanced ", None)
+            QCoreApplication.translate("Spectroscopy", "Advanced ", None),
         )
         self.label.setText(
-            QCoreApplication.translate("Spectroscopy", "Polarization:", None)
+            QCoreApplication.translate("Spectroscopy", "Polarization:", None),
         )
         self.polarization.setItemText(
-            0, QCoreApplication.translate("Spectroscopy", " P ", None)
+            0,
+            QCoreApplication.translate("Spectroscopy", " P ", None),
         )
         self.polarization.setItemText(
-            1, QCoreApplication.translate("Spectroscopy", " S ", None)
+            1,
+            QCoreApplication.translate("Spectroscopy", " S ", None),
         )
 
         self.label_2.setText(
-            QCoreApplication.translate("Spectroscopy", "LED Mode:", None)
+            QCoreApplication.translate("Spectroscopy", "LED Mode:", None),
         )
         self.led_mode.setItemText(
-            0, QCoreApplication.translate("Spectroscopy", "Auto", None)
+            0,
+            QCoreApplication.translate("Spectroscopy", "Auto", None),
         )
         self.led_mode.setItemText(
-            1, QCoreApplication.translate("Spectroscopy", "Single", None)
+            1,
+            QCoreApplication.translate("Spectroscopy", "Single", None),
         )
 
         self.led_off.setText(QCoreApplication.translate("Spectroscopy", "Off", None))

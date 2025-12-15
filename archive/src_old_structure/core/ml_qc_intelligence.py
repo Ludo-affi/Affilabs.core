@@ -10,13 +10,15 @@ All models are designed to enhance QC without interfering with actual SPR measur
 """
 
 from __future__ import annotations
-import numpy as np
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List, TYPE_CHECKING
-from pathlib import Path
+
 import json
 import logging
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import numpy as np
 
 if TYPE_CHECKING:
     from core.calibration_data import CalibrationData
@@ -27,21 +29,23 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CalibrationPrediction:
     """Prediction results for next calibration quality."""
+
     failure_probability: float  # 0-1
-    predicted_fwhm: Dict[str, float]  # Channel -> FWHM (nm)
+    predicted_fwhm: dict[str, float]  # Channel -> FWHM (nm)
     confidence: float  # 0-1
-    warnings: List[str]
-    recommendations: List[str]
+    warnings: list[str]
+    recommendations: list[str]
     risk_level: str  # 'low', 'medium', 'high'
 
 
 @dataclass
 class LEDHealthStatus:
     """LED health monitoring results."""
+
     channel: str
     current_intensity: int
     intensity_trend: float  # Change per calibration
-    days_until_replacement: Optional[int]
+    days_until_replacement: int | None
     health_score: float  # 0-1 (1=excellent, 0=needs replacement)
     status: str  # 'excellent', 'good', 'degrading', 'critical'
     replacement_recommended: bool
@@ -50,9 +54,10 @@ class LEDHealthStatus:
 @dataclass
 class SensorCoatingStatus:
     """Sensor coating degradation tracking."""
+
     current_fwhm_avg: float  # nm
     fwhm_trend: float  # nm per session
-    estimated_experiments_remaining: Optional[int]
+    estimated_experiments_remaining: int | None
     coating_quality: str  # 'excellent', 'good', 'acceptable', 'poor'
     replacement_warning: bool
     confidence: float
@@ -61,12 +66,13 @@ class SensorCoatingStatus:
 @dataclass
 class OpticalAlignmentStatus:
     """Optical alignment monitoring (baseline-based, not real-time SPR)."""
+
     ps_ratio_baseline: float  # Expected P/S ratio from calibration
     ps_ratio_deviation: float  # Deviation from baseline
     orientation_confidence: float  # 0-1
     alignment_drift_detected: bool
     maintenance_recommended: bool
-    warning_message: Optional[str]
+    warning_message: str | None
 
 
 class MLQCIntelligence:
@@ -83,12 +89,13 @@ class MLQCIntelligence:
     with dynamic SPR responses during experiments.
     """
 
-    def __init__(self, device_serial: str, data_dir: Optional[Path] = None):
+    def __init__(self, device_serial: str, data_dir: Path | None = None):
         """Initialize ML QC intelligence system.
 
         Args:
             device_serial: Device serial number for history tracking
             data_dir: Directory for storing ML models and history
+
         """
         self.device_serial = device_serial
         self.data_dir = data_dir or Path(f"data/devices/{device_serial}/ml_qc")
@@ -120,32 +127,33 @@ class MLQCIntelligence:
 
         Returns:
             CalibrationPrediction with failure probability and recommendations
+
         """
         if len(self.calibration_history) < 3:
             return CalibrationPrediction(
                 failure_probability=0.1,
-                predicted_fwhm={'a': 25.0, 'b': 25.0, 'c': 25.0, 'd': 25.0},
+                predicted_fwhm={"a": 25.0, "b": 25.0, "c": 25.0, "d": 25.0},
                 confidence=0.3,
                 warnings=["Insufficient calibration history for prediction"],
                 recommendations=["Continue calibrating to build prediction baseline"],
-                risk_level='low'
+                risk_level="low",
             )
 
         # Extract features from last 10 calibrations
         recent = self.calibration_history[-10:]
 
         # Calculate failure rate
-        failures = sum(1 for cal in recent if cal.get('failed', False))
+        failures = sum(1 for cal in recent if cal.get("failed", False))
         failure_rate = failures / len(recent)
 
         # Calculate FWHM trends per channel
         fwhm_trends = {}
         predicted_fwhm = {}
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             fwhm_history = []
             for cal in recent:
-                fwhm = cal.get('transmission_qc', {}).get(ch, {}).get('fwhm')
+                fwhm = cal.get("transmission_qc", {}).get(ch, {}).get("fwhm")
                 if fwhm is not None:
                     fwhm_history.append(fwhm)
 
@@ -174,29 +182,37 @@ class MLQCIntelligence:
         avg_trend = np.mean([abs(t) for t in fwhm_trends.values()])
         if avg_trend > 2.0:  # >2nm per calibration is concerning
             failure_prob += 0.4
-            warnings.append(f"FWHM increasing rapidly ({avg_trend:.1f}nm per calibration)")
-            recommendations.append("Inspect sensor chip for coating degradation or contamination")
+            warnings.append(
+                f"FWHM increasing rapidly ({avg_trend:.1f}nm per calibration)",
+            )
+            recommendations.append(
+                "Inspect sensor chip for coating degradation or contamination",
+            )
         elif avg_trend > 1.0:
             failure_prob += 0.2
             warnings.append(f"FWHM trending upward ({avg_trend:.1f}nm per calibration)")
 
         # Factor 3: LED intensity degradation (20% weight)
         led_status = self.predict_led_health()
-        critical_leds = [led for led in led_status if led.status == 'critical']
+        critical_leds = [led for led in led_status if led.status == "critical"]
         if critical_leds:
             failure_prob += 0.2
             warnings.append(f"{len(critical_leds)} LED(s) in critical state")
-            recommendations.append(f"Replace LEDs: {', '.join([led.channel.upper() for led in critical_leds])}")
+            recommendations.append(
+                f"Replace LEDs: {', '.join([led.channel.upper() for led in critical_leds])}",
+            )
 
         # Determine risk level
         if failure_prob > 0.7:
-            risk_level = 'high'
-            recommendations.append("🚨 HIGH RISK: Perform maintenance before next calibration")
+            risk_level = "high"
+            recommendations.append(
+                "🚨 HIGH RISK: Perform maintenance before next calibration",
+            )
         elif failure_prob > 0.4:
-            risk_level = 'medium'
+            risk_level = "medium"
             recommendations.append("⚠️ MEDIUM RISK: Schedule maintenance soon")
         else:
-            risk_level = 'low'
+            risk_level = "low"
 
         # Confidence based on data quantity
         confidence = min(1.0, len(recent) / 10.0)
@@ -206,46 +222,51 @@ class MLQCIntelligence:
             predicted_fwhm=predicted_fwhm,
             confidence=confidence,
             warnings=warnings,
-            recommendations=recommendations if recommendations else ["System healthy - no action needed"],
-            risk_level=risk_level
+            recommendations=recommendations
+            if recommendations
+            else ["System healthy - no action needed"],
+            risk_level=risk_level,
         )
 
     # =========================================================================
     # MODEL 2: LED HEALTH MONITOR
     # =========================================================================
 
-    def predict_led_health(self) -> List[LEDHealthStatus]:
+    def predict_led_health(self) -> list[LEDHealthStatus]:
         """Predict LED health and days until replacement needed.
 
         Tracks LED intensity trends to predict when replacement is needed.
 
         Returns:
             List of LEDHealthStatus for each channel
+
         """
         led_statuses = []
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             # Extract LED intensity history
             intensities = []
             timestamps = []
 
             for cal in self.calibration_history:
-                intensity = cal.get('p_mode_intensity', {}).get(ch)
+                intensity = cal.get("p_mode_intensity", {}).get(ch)
                 if intensity is not None:
                     intensities.append(intensity)
-                    timestamps.append(cal.get('timestamp', datetime.now().isoformat()))
+                    timestamps.append(cal.get("timestamp", datetime.now().isoformat()))
 
             if len(intensities) < 2:
                 # Insufficient data
-                led_statuses.append(LEDHealthStatus(
-                    channel=ch,
-                    current_intensity=intensities[-1] if intensities else 0,
-                    intensity_trend=0.0,
-                    days_until_replacement=None,
-                    health_score=1.0,
-                    status='excellent',
-                    replacement_recommended=False
-                ))
+                led_statuses.append(
+                    LEDHealthStatus(
+                        channel=ch,
+                        current_intensity=intensities[-1] if intensities else 0,
+                        intensity_trend=0.0,
+                        days_until_replacement=None,
+                        health_score=1.0,
+                        status="excellent",
+                        replacement_recommended=False,
+                    ),
+                )
                 continue
 
             # Calculate intensity trend (change per calibration)
@@ -270,27 +291,29 @@ class MLQCIntelligence:
 
             # Status determination
             if current_intensity >= 250:
-                status = 'critical'
+                status = "critical"
                 replacement_recommended = True
             elif current_intensity >= 230:
-                status = 'degrading'
+                status = "degrading"
                 replacement_recommended = False
             elif current_intensity >= 200:
-                status = 'good'
+                status = "good"
                 replacement_recommended = False
             else:
-                status = 'excellent'
+                status = "excellent"
                 replacement_recommended = False
 
-            led_statuses.append(LEDHealthStatus(
-                channel=ch,
-                current_intensity=current_intensity,
-                intensity_trend=float(intensity_trend),
-                days_until_replacement=days_until_replacement,
-                health_score=float(health_score),
-                status=status,
-                replacement_recommended=replacement_recommended
-            ))
+            led_statuses.append(
+                LEDHealthStatus(
+                    channel=ch,
+                    current_intensity=current_intensity,
+                    intensity_trend=float(intensity_trend),
+                    days_until_replacement=days_until_replacement,
+                    health_score=float(health_score),
+                    status=status,
+                    replacement_recommended=replacement_recommended,
+                ),
+            )
 
         return led_statuses
 
@@ -306,23 +329,24 @@ class MLQCIntelligence:
 
         Returns:
             SensorCoatingStatus with lifespan prediction
+
         """
         if len(self.calibration_history) < 3:
             return SensorCoatingStatus(
                 current_fwhm_avg=25.0,
                 fwhm_trend=0.0,
                 estimated_experiments_remaining=None,
-                coating_quality='excellent',
+                coating_quality="excellent",
                 replacement_warning=False,
-                confidence=0.3
+                confidence=0.3,
             )
 
         # Extract FWHM history (average across all channels)
         fwhm_history = []
         for cal in self.calibration_history:
             fwhm_values = []
-            for ch in ['a', 'b', 'c', 'd']:
-                fwhm = cal.get('transmission_qc', {}).get(ch, {}).get('fwhm')
+            for ch in ["a", "b", "c", "d"]:
+                fwhm = cal.get("transmission_qc", {}).get(ch, {}).get("fwhm")
                 if fwhm is not None:
                     fwhm_values.append(fwhm)
             if fwhm_values:
@@ -334,9 +358,9 @@ class MLQCIntelligence:
                 current_fwhm_avg=current_fwhm,
                 fwhm_trend=0.0,
                 estimated_experiments_remaining=None,
-                coating_quality='excellent' if current_fwhm < 30 else 'good',
+                coating_quality="excellent" if current_fwhm < 30 else "good",
                 replacement_warning=False,
-                confidence=0.5
+                confidence=0.5,
             )
 
         # Calculate FWHM trend
@@ -355,18 +379,17 @@ class MLQCIntelligence:
 
         # Coating quality assessment
         if current_fwhm < 30:
-            coating_quality = 'excellent'
+            coating_quality = "excellent"
         elif current_fwhm < 45:
-            coating_quality = 'good'
+            coating_quality = "good"
         elif current_fwhm < 60:
-            coating_quality = 'acceptable'
+            coating_quality = "acceptable"
         else:
-            coating_quality = 'poor'
+            coating_quality = "poor"
 
         # Replacement warning
-        replacement_warning = (
-            current_fwhm > 55 or
-            (estimated_experiments is not None and estimated_experiments < 10)
+        replacement_warning = current_fwhm > 55 or (
+            estimated_experiments is not None and estimated_experiments < 10
         )
 
         # Confidence based on data quantity
@@ -378,14 +401,17 @@ class MLQCIntelligence:
             estimated_experiments_remaining=estimated_experiments,
             coating_quality=coating_quality,
             replacement_warning=replacement_warning,
-            confidence=confidence
+            confidence=confidence,
         )
 
     # =========================================================================
     # MODEL 4: OPTICAL ALIGNMENT MONITOR (BASELINE-BASED, NON-INTERFERING)
     # =========================================================================
 
-    def check_optical_alignment(self, calibration_data: CalibrationData) -> OpticalAlignmentStatus:
+    def check_optical_alignment(
+        self,
+        calibration_data: CalibrationData,
+    ) -> OpticalAlignmentStatus:
         """Check optical alignment using CALIBRATION BASELINE comparison.
 
         IMPORTANT: This does NOT analyze real-time SPR data during experiments.
@@ -400,12 +426,13 @@ class MLQCIntelligence:
 
         Returns:
             OpticalAlignmentStatus with drift detection
+
         """
         # Extract P/S ratios from calibration QC (baseline measurements)
         ps_ratios = []
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             qc = calibration_data.transmission_validation.get(ch, {})
-            ratio = qc.get('ratio')
+            ratio = qc.get("ratio")
             if ratio is not None:
                 ps_ratios.append(ratio)
 
@@ -416,7 +443,7 @@ class MLQCIntelligence:
                 orientation_confidence=0.5,
                 alignment_drift_detected=False,
                 maintenance_recommended=False,
-                warning_message="Insufficient calibration QC data"
+                warning_message="Insufficient calibration QC data",
             )
 
         current_ps_avg = float(np.mean(ps_ratios))
@@ -432,7 +459,7 @@ class MLQCIntelligence:
                 orientation_confidence=0.5,
                 alignment_drift_detected=False,
                 maintenance_recommended=False,
-                warning_message="Building alignment baseline (need 3+ calibrations)"
+                warning_message="Building alignment baseline (need 3+ calibrations)",
             )
 
         # Calculate baseline from history
@@ -474,7 +501,7 @@ class MLQCIntelligence:
             orientation_confidence=float(orientation_confidence),
             alignment_drift_detected=drift_detected,
             maintenance_recommended=maintenance_recommended,
-            warning_message=warning_message
+            warning_message=warning_message,
         )
 
     # =========================================================================
@@ -486,22 +513,23 @@ class MLQCIntelligence:
 
         Args:
             calibration_data: Latest calibration QC results
+
         """
         # Create calibration record
         cal_record = {
-            'timestamp': datetime.now().isoformat(),
-            'device_type': calibration_data.device_type,
-            'detector_serial': calibration_data.detector_serial,
-            'firmware_version': calibration_data.firmware_version,
-            's_integration_time': calibration_data.s_integration_time,
-            'p_integration_time': calibration_data.p_integration_time,
-            's_mode_intensity': calibration_data.s_mode_intensity,
-            'p_mode_intensity': calibration_data.p_mode_intensity,
-            'transmission_qc': calibration_data.transmission_validation,
-            'failed': any(
-                qc.get('status') == '❌ FAIL'
+            "timestamp": datetime.now().isoformat(),
+            "device_type": calibration_data.device_type,
+            "detector_serial": calibration_data.detector_serial,
+            "firmware_version": calibration_data.firmware_version,
+            "s_integration_time": calibration_data.s_integration_time,
+            "p_integration_time": calibration_data.p_integration_time,
+            "s_mode_intensity": calibration_data.s_mode_intensity,
+            "p_mode_intensity": calibration_data.p_mode_intensity,
+            "transmission_qc": calibration_data.transmission_validation,
+            "failed": any(
+                qc.get("status") == "❌ FAIL"
                 for qc in calibration_data.transmission_validation.values()
-            )
+            ),
         }
 
         # Append to history
@@ -514,15 +542,17 @@ class MLQCIntelligence:
         # Save to disk
         self._save_calibration_history()
 
-        logger.info(f"🤖 ML QC updated with calibration #{len(self.calibration_history)}")
+        logger.info(
+            f"🤖 ML QC updated with calibration #{len(self.calibration_history)}",
+        )
 
-    def _load_calibration_history(self) -> List[Dict]:
+    def _load_calibration_history(self) -> list[dict]:
         """Load calibration history from disk."""
         if not self.calibration_history_file.exists():
             return []
 
         try:
-            with open(self.calibration_history_file, 'r', encoding='utf-8') as f:
+            with open(self.calibration_history_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.warning(f"Failed to load calibration history: {e}")
@@ -531,42 +561,42 @@ class MLQCIntelligence:
     def _save_calibration_history(self) -> None:
         """Save calibration history to disk."""
         try:
-            with open(self.calibration_history_file, 'w', encoding='utf-8') as f:
+            with open(self.calibration_history_file, "w", encoding="utf-8") as f:
                 json.dump(self.calibration_history, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save calibration history: {e}")
 
-    def _load_led_health(self) -> Dict:
+    def _load_led_health(self) -> dict:
         """Load LED health history."""
         if not self.led_health_file.exists():
             return {}
 
         try:
-            with open(self.led_health_file, 'r', encoding='utf-8') as f:
+            with open(self.led_health_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
 
-    def _load_sensor_coating(self) -> Dict:
+    def _load_sensor_coating(self) -> dict:
         """Load sensor coating history."""
         if not self.sensor_coating_file.exists():
             return {}
 
         try:
-            with open(self.sensor_coating_file, 'r', encoding='utf-8') as f:
+            with open(self.sensor_coating_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
 
-    def _load_alignment_baseline(self) -> List[float]:
+    def _load_alignment_baseline(self) -> list[float]:
         """Load optical alignment baseline."""
         if not self.alignment_baseline_file.exists():
             return []
 
         try:
-            with open(self.alignment_baseline_file, 'r', encoding='utf-8') as f:
+            with open(self.alignment_baseline_file, encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get('ps_ratio_history', [])
+                return data.get("ps_ratio_history", [])
         except Exception:
             return []
 
@@ -580,8 +610,8 @@ class MLQCIntelligence:
 
         # Save to disk
         try:
-            with open(self.alignment_baseline_file, 'w', encoding='utf-8') as f:
-                json.dump({'ps_ratio_history': self.alignment_baseline}, f, indent=2)
+            with open(self.alignment_baseline_file, "w", encoding="utf-8") as f:
+                json.dump({"ps_ratio_history": self.alignment_baseline}, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save alignment baseline: {e}")
 
@@ -590,6 +620,7 @@ class MLQCIntelligence:
 
         Returns:
             Formatted report string with all 4 model predictions
+
         """
         lines = ["=" * 80]
         lines.append("🤖 ML QC INTELLIGENCE REPORT")
@@ -605,14 +636,14 @@ class MLQCIntelligence:
         lines.append(f"  Failure Probability: {cal_pred.failure_probability*100:.1f}%")
         lines.append(f"  Risk Level: {cal_pred.risk_level.upper()}")
         lines.append(f"  Confidence: {cal_pred.confidence*100:.0f}%")
-        lines.append(f"\n  Predicted FWHM:")
+        lines.append("\n  Predicted FWHM:")
         for ch, fwhm in cal_pred.predicted_fwhm.items():
             lines.append(f"    Ch {ch.upper()}: {fwhm:.1f} nm")
         if cal_pred.warnings:
-            lines.append(f"\n  ⚠️ Warnings:")
+            lines.append("\n  ⚠️ Warnings:")
             for w in cal_pred.warnings:
                 lines.append(f"    • {w}")
-        lines.append(f"\n  💡 Recommendations:")
+        lines.append("\n  💡 Recommendations:")
         for r in cal_pred.recommendations:
             lines.append(f"    • {r}")
 
@@ -622,51 +653,67 @@ class MLQCIntelligence:
         led_statuses = self.predict_led_health()
         for led in led_statuses:
             status_emoji = {
-                'excellent': '✅',
-                'good': '✅',
-                'degrading': '⚠️',
-                'critical': '🚨'
-            }.get(led.status, '❓')
+                "excellent": "✅",
+                "good": "✅",
+                "degrading": "⚠️",
+                "critical": "🚨",
+            }.get(led.status, "❓")
 
-            lines.append(f"  {status_emoji} Channel {led.channel.upper()}: {led.status.upper()}")
-            lines.append(f"     Intensity: {led.current_intensity}/255 (trend: {led.intensity_trend:+.1f}/cal)")
+            lines.append(
+                f"  {status_emoji} Channel {led.channel.upper()}: {led.status.upper()}",
+            )
+            lines.append(
+                f"     Intensity: {led.current_intensity}/255 (trend: {led.intensity_trend:+.1f}/cal)",
+            )
             lines.append(f"     Health Score: {led.health_score*100:.0f}%")
             if led.days_until_replacement:
-                lines.append(f"     Estimated Lifespan: {led.days_until_replacement} days")
+                lines.append(
+                    f"     Estimated Lifespan: {led.days_until_replacement} days",
+                )
             if led.replacement_recommended:
-                lines.append(f"     🚨 REPLACEMENT RECOMMENDED")
+                lines.append("     🚨 REPLACEMENT RECOMMENDED")
 
         # Model 3: Sensor Coating
         lines.append("\n🔬 MODEL 3: SENSOR COATING STATUS")
         lines.append("-" * 80)
         coating = self.predict_sensor_coating_life()
         quality_emoji = {
-            'excellent': '✅',
-            'good': '✅',
-            'acceptable': '⚠️',
-            'poor': '❌'
-        }.get(coating.coating_quality, '❓')
+            "excellent": "✅",
+            "good": "✅",
+            "acceptable": "⚠️",
+            "poor": "❌",
+        }.get(coating.coating_quality, "❓")
 
         lines.append(f"  {quality_emoji} Quality: {coating.coating_quality.upper()}")
         lines.append(f"  Current FWHM (avg): {coating.current_fwhm_avg:.1f} nm")
         lines.append(f"  FWHM Trend: {coating.fwhm_trend:+.2f} nm/calibration")
         if coating.estimated_experiments_remaining:
-            lines.append(f"  Estimated Lifespan: {coating.estimated_experiments_remaining} experiments")
+            lines.append(
+                f"  Estimated Lifespan: {coating.estimated_experiments_remaining} experiments",
+            )
         lines.append(f"  Confidence: {coating.confidence*100:.0f}%")
         if coating.replacement_warning:
-            lines.append(f"  ⚠️ REPLACEMENT WARNING: Sensor chip approaching end of life")
+            lines.append("  ⚠️ REPLACEMENT WARNING: Sensor chip approaching end of life")
 
         # Model 4: Optical Alignment (Baseline-based)
         lines.append("\n🔧 MODEL 4: OPTICAL ALIGNMENT (BASELINE MONITOR)")
         lines.append("-" * 80)
-        lines.append("  Note: This checks CALIBRATION baseline only, not real-time SPR data")
+        lines.append(
+            "  Note: This checks CALIBRATION baseline only, not real-time SPR data",
+        )
         if len(self.alignment_baseline) >= 3:
-            lines.append(f"  Baseline P/S Ratio: {np.mean(self.alignment_baseline):.3f} ± {np.std(self.alignment_baseline):.3f}")
-            lines.append(f"  Baseline History: {len(self.alignment_baseline)} calibrations")
-            lines.append(f"  Status: ✅ Baseline established")
+            lines.append(
+                f"  Baseline P/S Ratio: {np.mean(self.alignment_baseline):.3f} ± {np.std(self.alignment_baseline):.3f}",
+            )
+            lines.append(
+                f"  Baseline History: {len(self.alignment_baseline)} calibrations",
+            )
+            lines.append("  Status: ✅ Baseline established")
         else:
-            lines.append(f"  Baseline: Building... ({len(self.alignment_baseline)}/3 calibrations)")
-            lines.append(f"  Status: ⏳ Need more calibration data")
+            lines.append(
+                f"  Baseline: Building... ({len(self.alignment_baseline)}/3 calibrations)",
+            )
+            lines.append("  Status: ⏳ Need more calibration data")
 
         lines.append("\n" + "=" * 80)
 

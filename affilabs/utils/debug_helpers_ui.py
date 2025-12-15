@@ -46,7 +46,8 @@ def debug_bypass_calibration(app) -> None:
 
         # Enable Start button in UI
         if hasattr(app.main_window, "sidebar") and hasattr(
-            app.main_window.sidebar, "start_cycle_btn",
+            app.main_window.sidebar,
+            "start_cycle_btn",
         ):
             app.main_window.sidebar.start_cycle_btn.setEnabled(True)
             app.main_window.sidebar.start_cycle_btn.setToolTip(
@@ -59,7 +60,7 @@ def debug_bypass_calibration(app) -> None:
         logger.info("[OK] Recording controls enabled")
 
         # Show success message
-        from widgets.message import show_message
+        from affilabs.widgets.message import show_message
 
         show_message(
             "Debug calibration bypass active!\n\n"
@@ -77,7 +78,7 @@ def debug_bypass_calibration(app) -> None:
 
     except Exception as e:
         logger.exception(f"[ERROR] Failed to bypass calibration: {e}")
-        from widgets.message import show_message
+        from affilabs.widgets.message import show_message
 
         show_message(
             f"Failed to bypass calibration:\n{e}",
@@ -108,7 +109,7 @@ def debug_single_data_point(app) -> None:
         # Check if data_mgr exists
         if not hasattr(app, "data_mgr") or app.data_mgr is None:
             logger.error("[ERROR] No data_mgr found!")
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message("Error: Data manager not initialized!", msg_type="Error")
             return
@@ -142,7 +143,7 @@ def debug_single_data_point(app) -> None:
             logger.info("   Single data point was processed successfully.")
             logger.info("   This means the crash is likely rate/accumulation related.")
             logger.info("=" * 80)
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(
                 "Single Data Point Test: SUCCESS!\n\n"
@@ -159,7 +160,7 @@ def debug_single_data_point(app) -> None:
 
     except Exception as e:
         logger.exception(f"[ERROR] Single data point test failed: {e}")
-        from widgets.message import show_message
+        from affilabs.widgets.message import show_message
 
         show_message(f"Single data point test FAILED:\n\n{e}", msg_type="Error")
 
@@ -187,7 +188,7 @@ def debug_start_simulation(app) -> None:
         # Check if data_mgr exists
         if not hasattr(app, "data_mgr") or app.data_mgr is None:
             logger.error("[ERROR] No data_mgr found!")
-            from widgets.message import show_message
+            from affilabs.widgets.message import show_message
 
             show_message(
                 "Error: Data manager not initialized!\n\n"
@@ -223,7 +224,9 @@ def debug_start_simulation(app) -> None:
 
                 # Generate wavelength array (match real detector: ~640-690nm range for SPR)
                 wavelengths = np.linspace(
-                    640, 690, 512,
+                    640,
+                    690,
+                    512,
                 )  # 512 points for smooth spectrum
 
                 for ch in channels:
@@ -239,10 +242,14 @@ def debug_start_simulation(app) -> None:
                         -((wavelengths - peak_wavelength) ** 2) / (2 * 3**2),
                     )
                     raw_spectrum += np.random.normal(
-                        0, 200, len(wavelengths),
+                        0,
+                        200,
+                        len(wavelengths),
                     )  # Add noise
                     raw_spectrum = np.clip(
-                        raw_spectrum, 1000, 65000,
+                        raw_spectrum,
+                        1000,
+                        65000,
                     )  # Realistic detector range
 
                     # Transmission spectrum: Calculate from raw (simulate P/S ratio)
@@ -293,7 +300,7 @@ def debug_start_simulation(app) -> None:
         logger.info("[OK] Simulation timer started at 2 Hz")
         logger.info("   Generating 4 channels (A, B, C, D) per cycle")
 
-        from widgets.message import show_message
+        from affilabs.widgets.message import show_message
 
         show_message(
             "Simulation started!\n\n"
@@ -307,7 +314,7 @@ def debug_start_simulation(app) -> None:
 
     except Exception as e:
         logger.exception(f"[ERROR] Failed to start simulation: {e}")
-        from widgets.message import show_message
+        from affilabs.widgets.message import show_message
 
         show_message(
             f"Simulation failed:\n\n{e}",

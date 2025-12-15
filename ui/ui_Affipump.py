@@ -46,7 +46,7 @@ class Ui_Affipump:
             "	border: 2px solid rgba(46, 48, 227, 150);\n"
             "	border-radius: 3px;\n"
             "\n"
-            "}"
+            "}",
         )
         self.horizontalLayout = QHBoxLayout(self.groupBox)
         self.horizontalLayout.setObjectName("horizontalLayout")
@@ -62,7 +62,7 @@ class Ui_Affipump:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 12px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/disconnect.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -72,7 +72,10 @@ class Ui_Affipump:
         self.horizontalLayout.addWidget(self.disconnect_btn)
 
         self.horizontalSpacer = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
@@ -93,13 +96,16 @@ class Ui_Affipump:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout.addWidget(self.initialize_btn)
 
         self.horizontalSpacer_2 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout.addItem(self.horizontalSpacer_2)
@@ -117,7 +123,7 @@ class Ui_Affipump:
         self.groupBox.setTitle(QCoreApplication.translate("Affipump", "Pumps", None))
         self.disconnect_btn.setText("")
         self.initialize_btn.setText(
-            QCoreApplication.translate("Affipump", "Initialize", None)
+            QCoreApplication.translate("Affipump", "Initialize", None),
         )
 
     # retranslateUi

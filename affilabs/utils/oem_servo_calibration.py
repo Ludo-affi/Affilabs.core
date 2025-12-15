@@ -220,7 +220,10 @@ class PolarizerCalibrator:
         logger.info("Sweep complete. Analyzing data...")
 
         return self._analyze_sweep_results(
-            angles, max_intensities, min_angle, angle_step,
+            angles,
+            max_intensities,
+            min_angle,
+            angle_step,
         )
 
     def _run_calibration_optimized(self) -> dict:
@@ -341,7 +344,10 @@ class PolarizerCalibrator:
         logger.info("✅ Two-phase sweep complete. Analyzing final data...")
 
         return self._analyze_sweep_results(
-            all_angles, all_intensities, min_angle, fine_step,
+            all_angles,
+            all_intensities,
+            min_angle,
+            fine_step,
         )
 
     def _analyze_sweep_results(
@@ -565,7 +571,10 @@ class AfterglowCharacterizer:
 
     @staticmethod
     def exponential_decay(
-        t: np.ndarray, baseline: float, amplitude: float, tau: float,
+        t: np.ndarray,
+        baseline: float,
+        amplitude: float,
+        tau: float,
     ) -> np.ndarray:
         """Exponential decay model: signal(t) = baseline + amplitude * exp(-t/tau).
 
@@ -939,7 +948,11 @@ class DeviceProfileManager:
                         measured = np.array(int_data["measured_intensities"])
 
                         ax1.plot(
-                            times, measured, "o-", label=f"{int_time}ms", alpha=0.7,
+                            times,
+                            measured,
+                            "o-",
+                            label=f"{int_time}ms",
+                            alpha=0.7,
                         )
 
                 ax1.set_xlabel("Time after LED off (ms)")

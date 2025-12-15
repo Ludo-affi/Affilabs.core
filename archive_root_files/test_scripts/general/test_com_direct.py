@@ -1,8 +1,9 @@
 """Quick COM port test - check if we can open and communicate with serial devices."""
 
+import time
+
 import serial
 import serial.tools.list_ports
-import time
 
 print("=" * 60)
 print("COM PORT DIAGNOSTIC TEST")
@@ -34,9 +35,9 @@ else:
                 port=p.device,
                 baudrate=115200,
                 timeout=2,
-                write_timeout=2
+                write_timeout=2,
             )
-            print(f"    ✅ Port opened successfully")
+            print("    ✅ Port opened successfully")
             print(f"    Baudrate: {ser.baudrate}")
             print(f"    Timeout: {ser.timeout}s")
 
@@ -48,10 +49,10 @@ else:
                 response = ser.read(ser.in_waiting)
                 print(f"    ✅ Device responded: {response[:50]}")
             else:
-                print(f"    ⚠️  No response (device may need initialization)")
+                print("    ⚠️  No response (device may need initialization)")
 
             ser.close()
-            print(f"    ✅ Port closed")
+            print("    ✅ Port closed")
 
         except serial.SerialException as e:
             print(f"    ❌ Serial error: {e}")

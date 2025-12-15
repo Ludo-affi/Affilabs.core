@@ -1,7 +1,7 @@
 """
 Automated Serial Operation Replacements for controller.py
 
-This file contains the patterns and replacements to fix all remaining 
+This file contains the patterns and replacements to fix all remaining
 serial communication type safety issues systematically.
 """
 
@@ -13,31 +13,31 @@ REPLACEMENTS = [
         "pattern": "self._ser.write(cmd.encode())\n                    return self._ser.read() == b'1'",
         "replacement": "if not self.safe_write(cmd):\n                        return False\n                    return self.safe_read() == b'1'"
     },
-    
+
     # Pattern 2: self._ser.write(cmd.encode()) + return self._ser.read() == b"1"
     {
         "pattern": "self._ser.write(cmd.encode())\n                return self._ser.read() == b\"1\"",
         "replacement": "if not self.safe_write(cmd):\n                    return False\n                return self.safe_read() == b\"1\""
     },
-    
+
     # Pattern 3: self._ser.write(data) (bytes)
     {
         "pattern": "self._ser.write(b\"",
         "replacement": "if not self.safe_write(b\""
     },
-    
+
     # Pattern 4: self._ser.readline()
     {
         "pattern": "self._ser.readline()",
         "replacement": "self.safe_readline().encode() if isinstance(self.safe_readline(), str) else b''"
     },
-    
+
     # Pattern 5: self._ser.reset_input_buffer()
     {
         "pattern": "self._ser.reset_input_buffer()",
         "replacement": "self.safe_reset_input_buffer()"
     },
-    
+
     # Pattern 6: self._ser.read(size)
     {
         "pattern": "self._ser.read(",

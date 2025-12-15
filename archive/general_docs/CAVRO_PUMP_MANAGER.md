@@ -104,7 +104,7 @@ pump_manager = CavroPumpManager(pump_hardware)
 # Initialize pumps
 if pump_manager.initialize_pumps():
     print("Pumps ready!")
-    
+
 # Configure syringe sizes
 pump_manager.set_syringe_size(PumpAddress.PUMP_1, 5000)  # 5 mL
 pump_manager.set_syringe_size(PumpAddress.PUMP_2, 5000)  # 5 mL
@@ -142,7 +142,7 @@ pump_manager.set_valve_position(PumpAddress.PUMP_1, ValvePort.PORT_3)
 # Verify it reached the position
 if pump_manager.verify_valve_position(PumpAddress.PUMP_1, ValvePort.PORT_3, timeout=5.0):
     print("Valve in position!")
-    
+
 # Query current position
 current_port = pump_manager.get_valve_position(PumpAddress.PUMP_1)
 print(f"Valve at port {current_port}")
@@ -159,7 +159,7 @@ error_code = pump_manager.get_error_status(PumpAddress.PUMP_1)
 if error_code == PumpError.PLUNGER_OVERLOAD:
     print("Plunger overload detected!")
     pump_manager.clear_errors(PumpAddress.PUMP_1)
-    
+
     # Retry operation
     pump_manager.initialize_syringe(PumpAddress.PUMP_1)
 ```
@@ -229,13 +229,13 @@ pump_manager.operation_progress.connect(on_progress_update)
 # Signal handlers
 def on_pump_state_changed(address: int, description: str):
     print(f"Pump {address:#x}: {description}")
-    
+
 def on_valve_moved(address: int, port: int):
     print(f"Pump {address:#x} valve moved to port {port}")
-    
+
 def on_pump_error(address: int, error_msg: str):
     print(f"ERROR on pump {address:#x}: {error_msg}")
-    
+
 def on_progress_update(operation: str, percent: int):
     print(f"{operation}: {percent}%")
 ```
@@ -284,7 +284,7 @@ self.pump_manager.start_flow(PumpAddress.PUMP_1, rate_ml_per_min=60.0)
 4. **Replace flow control:**
    ```python
    # Old: self.pump.send_command(0x41, b"T")
-   # New: 
+   # New:
    self.pump_manager.stop()
    ```
 
@@ -407,26 +407,26 @@ class TestCavroPumpManager(unittest.TestCase):
         # Mock hardware
         self.mock_pump = Mock()
         self.manager = CavroPumpManager(self.mock_pump)
-        
+
     def test_aspirate_success(self):
         # Setup
         self.mock_pump.send_command.return_value = [0x00]
-        
+
         # Execute
         result = self.manager.aspirate(PumpAddress.PUMP_1, 500, 10.0)
-        
+
         # Verify
         self.assertTrue(result)
         self.mock_pump.send_command.assert_called()
-        
+
     def test_insufficient_capacity(self):
         # Setup - syringe nearly full
         state = self.manager.get_pump_state(PumpAddress.PUMP_1)
         state.syringe.position_steps = 2900  # Almost at max
-        
+
         # Execute
         result = self.manager.aspirate(PumpAddress.PUMP_1, 1000, 10.0)
-        
+
         # Verify - should fail
         self.assertFalse(result)
 ```
@@ -437,27 +437,27 @@ class TestCavroPumpManager(unittest.TestCase):
 # Test with real hardware
 async def test_pump_hardware():
     from pump_controller import PumpController
-    
+
     pump = PumpController()
     manager = CavroPumpManager(pump)
-    
+
     # Initialize
     assert manager.initialize_pumps()
-    
+
     # Test position query
     pos = manager.get_syringe_position(PumpAddress.PUMP_1)
     assert pos is not None
     print(f"Syringe at position: {pos}")
-    
+
     # Test valve
     manager.set_valve_position(PumpAddress.PUMP_1, 3)
     assert manager.verify_valve_position(PumpAddress.PUMP_1, 3)
-    
+
     # Test aspirate/dispense
     manager.aspirate(PumpAddress.PUMP_1, 100, 10.0)
     manager.wait_until_idle(PumpAddress.PUMP_1)
     manager.dispense(PumpAddress.PUMP_1, 100, 10.0)
-    
+
     print("All hardware tests passed!")
 ```
 

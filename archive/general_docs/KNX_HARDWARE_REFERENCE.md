@@ -17,8 +17,8 @@ The KNX Kinetic System is the valve control subsystem for the SPR (Surface Plasm
 
 ### 1. Six-Port Valve (Takasago Electric)
 
-**Manufacturer:** Takasago Electric  
-**Model:** Low Pressure 2-Position 6-Port Valve  
+**Manufacturer:** Takasago Electric
+**Model:** Low Pressure 2-Position 6-Port Valve
 **Product Page:** https://www.takasago-fluidics.com/products/2position-6port-valve?variant=37040799285414
 
 #### Specifications
@@ -66,9 +66,9 @@ kinetic_manager.set_six_port_valve("CH1", 1)  # INJECT
 
 ### 2. Three-Way Valve (The Lee Company)
 
-**Manufacturer:** The Lee Company  
-**Model:** XOVER 2/3-Way Isolation Solenoid Valve  
-**Voltage:** 24V  
+**Manufacturer:** The Lee Company
+**Model:** XOVER 2/3-Way Isolation Solenoid Valve
+**Voltage:** 24V
 **Product Page:** https://www.theleeco.com/product/xover-2-3-way-isolation-solenoid-valve/
 
 #### Specifications
@@ -152,7 +152,7 @@ The KNX system coordinates both valves to create four distinct operational state
          ↕                        ↕
     DISPOSE                   INJECT
     (3:0, 6:1)  ←─────────→  (3:1, 6:1)
-    
+
 Legend: (3:X, 6:Y) = 3-way position X, 6-port position Y
 ```
 
@@ -160,7 +160,7 @@ Legend: (3:X, 6:Y) = 3-way position X, 6-port position Y
 
 ### 4. Temperature Sensors
 
-**Integration:** Built into KNX controller hardware  
+**Integration:** Built into KNX controller hardware
 **Type:** Likely thermistor or RTD-based
 
 #### Specifications
@@ -203,11 +203,11 @@ device_temp = kinetic_manager.read_device_temperature()
 1. **KineticController (KNX)**
    - Standard KNX controller
    - Supports single channel operation
-   
+
 2. **KNX2**
    - Dual-channel KNX controller
    - Supports independent CH1 and CH2 operation
-   
+
 3. **PicoKNX2** (Obsolete)
    - Legacy Raspberry Pi Pico-based controller
    - No longer supported in KineticManager
@@ -529,37 +529,37 @@ error_occurred = Signal(str, str)         # channel, error_message
 
 ## References
 
-1. **Takasago Electric - Six-Port Valve:**  
+1. **Takasago Electric - Six-Port Valve:**
    https://www.takasago-fluidics.com/products/2position-6port-valve?variant=37040799285414
 
-2. **The Lee Company - Three-Way Valve (XOVER):**  
+2. **The Lee Company - Three-Way Valve (XOVER):**
    https://www.theleeco.com/product/xover-2-3-way-isolation-solenoid-valve/
 
-3. **KineticManager Documentation:**  
+3. **KineticManager Documentation:**
    See `KINETIC_MANAGER_IMPLEMENTATION.md`
 
-4. **Hardware Setup Guide:**  
+4. **Hardware Setup Guide:**
    [Add link to setup/installation documentation]
 
-5. **Calibration Procedures:**  
+5. **Calibration Procedures:**
    [Add link to calibration documentation]
 
 ---
 
 ## Contact Information
 
-**Hardware Support:**  
+**Hardware Support:**
 [Add contact information for hardware vendor]
 
-**Software Support:**  
+**Software Support:**
 [Add contact information for software maintenance]
 
-**Emergency Contact:**  
+**Emergency Contact:**
 [Add emergency support contact]
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** October 7, 2025  
-**Author:** [Your name/team]  
+**Document Version:** 1.0
+**Last Updated:** October 7, 2025
+**Author:** [Your name/team]
 **Next Review Date:** [Schedule regular reviews]

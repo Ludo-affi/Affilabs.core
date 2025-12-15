@@ -6,8 +6,8 @@ The system supports **two acquisition methods** that can be seamlessly switched 
 
 ## Method 1: CYCLE_SYNC (Default)
 
-**Status:** ✅ Recommended for production use  
-**Firmware Required:** V2.4 with CYCLE_START support  
+**Status:** ✅ Recommended for production use
+**Firmware Required:** V2.4 with CYCLE_START support
 **Performance:** 1.0s/cycle, 75% less USB traffic
 
 ### How It Works
@@ -39,8 +39,8 @@ The system supports **two acquisition methods** that can be seamlessly switched 
 
 ## Method 2: EVENT_RANK
 
-**Status:** ✅ Available for debugging/validation  
-**Firmware Required:** Any firmware with RANKBATCH support  
+**Status:** ✅ Available for debugging/validation
+**Firmware Required:** Any firmware with RANKBATCH support
 **Performance:** 1.0-1.1s/cycle, more USB traffic
 
 ### How It Works
@@ -141,8 +141,8 @@ t=1000ms: Next cycle → firmware event (CYCLE_START or a:READY)
 
 ### CYCLE_SYNC Implementation
 
-**File:** `affilabs/core/data_acquisition_manager.py`  
-**Function:** `_acquire_all_channels_cycle_sync()`  
+**File:** `affilabs/core/data_acquisition_manager.py`
+**Function:** `_acquire_all_channels_cycle_sync()`
 **Lines:** 1833-1990
 
 **Key Features:**
@@ -154,8 +154,8 @@ t=1000ms: Next cycle → firmware event (CYCLE_START or a:READY)
 
 ### EVENT_RANK Implementation
 
-**File:** `affilabs/core/data_acquisition_manager.py`  
-**Function:** `_acquire_all_channels_via_rank()`  
+**File:** `affilabs/core/data_acquisition_manager.py`
+**Function:** `_acquire_all_channels_via_rank()`
 **Lines:** 1992-2250
 
 **Key Features:**
@@ -172,22 +172,22 @@ t=1000ms: Next cycle → firmware event (CYCLE_START or a:READY)
 
 ### CYCLE_SYNC Issues
 
-**Problem:** Wavelength spikes appearing  
-**Solution:** Verify watchdog keepalive timing is AFTER CYCLE_START  
+**Problem:** Wavelength spikes appearing
+**Solution:** Verify watchdog keepalive timing is AFTER CYCLE_START
 **Check:** Lines 1920-1927 in data_acquisition_manager.py
 
-**Problem:** Firmware timeout  
-**Solution:** Ensure keepalive sent every 60s (check WATCHDOG_KEEPALIVE_INTERVAL)  
+**Problem:** Firmware timeout
+**Solution:** Ensure keepalive sent every 60s (check WATCHDOG_KEEPALIVE_INTERVAL)
 **Check:** Line 32 in data_acquisition_manager.py
 
 ### EVENT_RANK Issues
 
-**Problem:** Firmware stalled (no READY for 5s)  
-**Solution:** Check serial connection, verify firmware running  
+**Problem:** Firmware stalled (no READY for 5s)
+**Solution:** Check serial connection, verify firmware running
 **Check:** Logs for "[EVENT-RANK] Firmware stalled" message
 
-**Problem:** Many missed spectra  
-**Solution:** Reduce integration time or increase detector wait time  
+**Problem:** Many missed spectra
+**Solution:** Reduce integration time or increase detector wait time
 **Check:** Missed spectra breakdown in logs
 
 ---

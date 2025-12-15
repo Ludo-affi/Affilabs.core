@@ -1,5 +1,4 @@
-"""
-Test script to demonstrate layout customization options.
+"""Test script to demonstrate layout customization options.
 
 This shows how to move UI elements between widgets for custom layouts.
 
@@ -11,9 +10,9 @@ Usage examples:
    - settings = mainwindow.get_settings_panel()
 """
 
+
 def customize_layout_example_1(mainwindow):
-    """
-    Example 1: Move Graph Display Settings box to Device Status.
+    """Example 1: Move Graph Display Settings box to Device Status.
     This consolidates all hardware-related controls in one place.
     """
     print("Moving Graph Display Settings to Device Status...")
@@ -26,8 +25,7 @@ def customize_layout_example_1(mainwindow):
 
 
 def customize_layout_example_2(mainwindow):
-    """
-    Example 2: Move the Connect button to the bottom of Device Status.
+    """Example 2: Move the Connect button to the bottom of Device Status.
     Makes the connect button more prominent.
     """
     print("Moving Connect button to bottom...")
@@ -40,8 +38,7 @@ def customize_layout_example_2(mainwindow):
 
 
 def customize_layout_manual(mainwindow):
-    """
-    Example 3: Manual layout manipulation.
+    """Example 3: Manual layout manipulation.
     Get direct access to widgets and manipulate them as needed.
     """
     device_status = mainwindow.get_device_status_widget()

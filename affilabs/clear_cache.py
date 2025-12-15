@@ -1,12 +1,10 @@
-"""
-Aggressive Python cache cleaner for development.
+"""Aggressive Python cache cleaner for development.
 Run this if you're experiencing persistent cache issues.
 """
 
-import os
 import shutil
-import sys
 from pathlib import Path
+
 
 def clear_all_cache(root_dir="."):
     """Remove all Python cache files and directories."""
@@ -64,6 +62,7 @@ def clear_all_cache(root_dir="."):
         print("No cache files found (already clean)")
 
     return len(removed_dirs) + len(removed_files) > 0
+
 
 if __name__ == "__main__":
     # Clear from current directory

@@ -1,7 +1,7 @@
 # Servo Polarizer Calibration - Complete Analysis
 
-**Date:** December 7, 2025  
-**System:** PicoP4SPR with USB4000 Spectrometer  
+**Date:** December 7, 2025
+**System:** PicoP4SPR with USB4000 Spectrometer
 **Firmware:** V1.9
 
 ---
@@ -216,7 +216,7 @@ LED_INTENSITY = 51          # 20% of 255
 def move_to_position(hm, target_pwm, approach_pwm, settle_time=1.5):
     """
     Move to target position with directional approach.
-    
+
     Args:
         hm: HardwareManager instance
         target_pwm: Target PWM position
@@ -230,7 +230,7 @@ def move_to_position(hm, target_pwm, approach_pwm, settle_time=1.5):
     hm.ctrl._ser.write(b"ss\n")
     hm.ctrl._ser.readline()
     time.sleep(0.5)
-    
+
     # Step 2: Move to target position
     cmd = f"sv{target_pwm:03d}000\n"
     hm.ctrl._ser.write(cmd.encode())
@@ -260,12 +260,12 @@ def measure_s_position(hm):
 def calculate_intensity(spectrum, wavelengths, region_name):
     """
     Calculate intensity using spectral analysis method.
-    
+
     Args:
         spectrum: Intensity array from spectrometer
         wavelengths: Wavelength array
         region_name: "P" or "S"
-    
+
     Returns:
         Intensity value (float)
     """
@@ -276,22 +276,22 @@ def calculate_intensity(spectrum, wavelengths, region_name):
         start_idx = max(0, max_idx - 10)
         end_idx = min(len(spectrum), max_idx + 11)
         return spectrum[start_idx:end_idx].mean()
-    
+
     elif region_name == "P":
         # Find minimum in 610-680nm range
         mask = (wavelengths >= 610) & (wavelengths <= 680)
         spectrum_range = spectrum[mask]
         min_idx_in_range = np.argmin(spectrum_range)
-        
+
         # Get absolute index
         indices = np.where(mask)[0]
         min_idx = indices[min_idx_in_range]
-        
+
         # Average ±10 points around min
         start_idx = max(0, min_idx - 10)
         end_idx = min(len(spectrum), min_idx + 11)
         return spectrum[start_idx:end_idx].mean()
-    
+
     return spectrum.max()  # Fallback
 ```
 
@@ -485,7 +485,7 @@ S,65,13278.36,16.68,0.126
 
 All calibration scripts located in `tools/`:
 - `servo_continuous_sweep.py` - Initial continuous sweep
-- `servo_refined_sweep.py` - 2 PWM resolution sweep  
+- `servo_refined_sweep.py` - 2 PWM resolution sweep
 - `validate_s_p_directional.py` - Directional validation test
 - `validate_optimal_positions_sweep.py` - Final optimization sweep
 - `plot_servo_sweep.py` - Initial sweep visualization
@@ -501,6 +501,6 @@ $env:PYTHONPATH="C:\Users\ludol\ezControl-AI\src"
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** December 7, 2025  
+**Document Version:** 1.0
+**Last Updated:** December 7, 2025
 **Author:** Servo Calibration Analysis System

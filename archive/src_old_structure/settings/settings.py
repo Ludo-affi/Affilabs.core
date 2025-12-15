@@ -55,9 +55,9 @@ GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 100, 0
 # Colorblind-friendly palette (Okabe-Ito)
 # Designed to be distinguishable for all types of colorblindness
 GRAPH_COLORS_COLORBLIND = {
-    "a": (1, 115, 178),    # Blue
-    "b": (222, 143, 5),    # Orange
-    "c": (2, 158, 115),    # Green
+    "a": (1, 115, 178),  # Blue
+    "b": (222, 143, 5),  # Orange
+    "c": (2, 158, 115),  # Green
     "d": (204, 120, 188),  # Magenta
 }
 
@@ -95,21 +95,31 @@ CYCLE_TIME = 1.3  # cycle time for all 4 channels
 # PRE_LED_DELAY_MS: Settling time after LED turn-on before measurement
 # POST_LED_DELAY_MS: Dark time after LED turn-off before channel switch (allows afterglow to decay)
 # Total delay budget: 40-70ms optimal for jitter reduction
-PRE_LED_DELAY_MS = 12   # LED stabilization (LED stable in 10ms, 12ms = 1.2× safety factor)
-POST_LED_DELAY_MS = 40  # Afterglow decay + jitter reduction (combined 40ms delay budget)
+PRE_LED_DELAY_MS = (
+    12  # LED stabilization (LED stable in 10ms, 12ms = 1.2× safety factor)
+)
+POST_LED_DELAY_MS = (
+    40  # Afterglow decay + jitter reduction (combined 40ms delay budget)
+)
 
 # LED Overlap Strategy - OPTIMIZED FOR 210ms INTEGRATION TIME
 # Turn on next LED after LED_OVERLAP_MS during POST delay
 # Target: <1000ms for 4 channels with 210ms integration each
 # Timing: PRE(12) + ACQ(210) + POST(5 remaining) = 227ms first, 215ms others = 872ms total
-LED_OVERLAP_MS = 35  # Turn on next LED after 35ms of POST (5ms remaining POST after overlap)
+LED_OVERLAP_MS = (
+    35  # Turn on next LED after 35ms of POST (5ms remaining POST after overlap)
+)
 
 # Legacy support (kept for backward compatibility with old code)
 LED_DELAY = PRE_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
 LED_POST_DELAY = POST_LED_DELAY_MS / 1000.0  # Convert to seconds for legacy code
 
-USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
-LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
+USE_DYNAMIC_LED_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
+LED_DELAY_TARGET_RESIDUAL = (
+    2.0  # percent residual allowed when computing dynamic LED delay
+)
 
 # === AUTOMATIC AFTERGLOW CORRECTION STRATEGY ===
 # Three-tier system based on total acquisition delay (PRE + POST):
@@ -130,16 +140,22 @@ LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynam
 #    - Benefit: Saves computation, avoids over-correction
 #
 # The system automatically determines mode based on LED_DELAY + LED_POST_DELAY
-AFTERGLOW_FAST_THRESHOLD_MS = 50.0   # Below this: high-speed mode (correction enabled)
+AFTERGLOW_FAST_THRESHOLD_MS = 50.0  # Below this: high-speed mode (correction enabled)
 AFTERGLOW_SLOW_THRESHOLD_MS = 100.0  # Above this: slow mode (correction disabled)
-AFTERGLOW_AUTO_MODE = True  # Automatic mode selection (recommended, set False to force enable/disable)
-USE_DYNAMIC_POST_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
+AFTERGLOW_AUTO_MODE = (
+    True  # Automatic mode selection (recommended, set False to force enable/disable)
+)
+USE_DYNAMIC_POST_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 49152  # DEPRECATED: Now queried from detector HAL via usb.target_counts (75% of detector max)
-P_COUNT_THRESHOLD = 300  # DEPRECATED: Replaced by dynamic 30% of target_counts in verify_calibration()
+P_COUNT_THRESHOLD = (
+    300  # DEPRECATED: Replaced by dynamic 30% of target_counts in verify_calibration()
+)
 MIN_INTEGRATION = 10  # minimum detector integration time in milliseconds - start low and increase as needed
 INTEGRATION_STEP = 5  # integration time step in milliseconds
 MAX_INTEGRATION = 100  # maximum detector integration time in milliseconds
@@ -148,9 +164,9 @@ MAX_NUM_SCANS = 25
 
 # === SESSION QUALITY MONITORING (FWHM-Based QC System) ===
 # Quality thresholds for FWHM-based grading (nm)
-FWHM_EXCELLENT_THRESHOLD_NM = 30.0   # Green:  FWHM < 30nm
-FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
-                                      # Red:    FWHM ≥ 60nm
+FWHM_EXCELLENT_THRESHOLD_NM = 30.0  # Green:  FWHM < 30nm
+FWHM_GOOD_THRESHOLD_NM = 60.0  # Yellow: 30nm ≤ FWHM < 60nm
+# Red:    FWHM ≥ 60nm
 
 # === CALIBRATION METHOD SELECTION ===
 # Method selection ONLY affects calibration behavior.
@@ -190,7 +206,9 @@ FWHM_GOOD_THRESHOLD_NM = 60.0        # Yellow: 30nm ≤ FWHM < 60nm
 #   - Integration: VARIABLE per channel (21-63ms optimized per LED brightness)
 #   - Validated: 1.51 Hz (660ms/cycle), 0.22-0.63% noise, 50k counts all channels
 #   - Enable when ready to migrate to per-channel integration architecture
-USE_ALTERNATIVE_CALIBRATION = False  # DISABLED: Using Standard mode (global integration)
+USE_ALTERNATIVE_CALIBRATION = (
+    False  # DISABLED: Using Standard mode (global integration)
+)
 
 # === TRANSMISSION BASELINE CORRECTION ===
 # Corrects spectral tilt/skew in transmission spectra
@@ -231,10 +249,19 @@ USE_ALTERNATIVE_CALIBRATION = False  # DISABLED: Using Standard mode (global int
 # - 'none': Skip baseline correction (raw P/S ratio with LED correction only)
 #   * Good for: Debugging, checking raw data, minimal processing
 #
-TRANSMISSION_BASELINE_METHOD = 'percentile'  # Options: 'percentile', 'polynomial', 'off_spr', 'none'
-TRANSMISSION_BASELINE_PERCENTILE = 95.0  # Percentile for 'percentile' method (80-99 typical)
-TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE = 2  # Polynomial degree for 'polynomial' method (1=linear, 2=quadratic)
-TRANSMISSION_OFF_SPR_WAVELENGTH_RANGE = (560.0, 570.0)  # Wavelength range (nm) for 'off_spr' method
+TRANSMISSION_BASELINE_METHOD = (
+    "percentile"  # Options: 'percentile', 'polynomial', 'off_spr', 'none'
+)
+TRANSMISSION_BASELINE_PERCENTILE = (
+    95.0  # Percentile for 'percentile' method (80-99 typical)
+)
+TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE = (
+    2  # Polynomial degree for 'polynomial' method (1=linear, 2=quadratic)
+)
+TRANSMISSION_OFF_SPR_WAVELENGTH_RANGE = (
+    560.0,
+    570.0,
+)  # Wavelength range (nm) for 'off_spr' method
 
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment
@@ -245,7 +272,9 @@ MED_FILT_WIN = 3  # default median filter window size
 
 # Signal processing parameters - Fourier Transform Method
 # CRITICAL: alpha=9000 achieves 2nm baseline (original implementation)
-FOURIER_ALPHA = 9000  # Fourier smoothing strength (9000 = 4.5x more smoothing than 2000)
+FOURIER_ALPHA = (
+    9000  # Fourier smoothing strength (9000 = 4.5x more smoothing than 2000)
+)
 FOURIER_WINDOW_SIZE = 165  # Zero-crossing refinement window (points)
 
 # EMA Pre-smoothing (Cascaded Filtering Stage 1)
@@ -253,18 +282,18 @@ FOURIER_WINDOW_SIZE = 165  # Zero-crossing refinement window (points)
 # Targets low-frequency thermal/mechanical drift (0.003 Hz, 5-min period)
 EMA_ENABLED = True  # Enable EMA pre-smoothing before Fourier transform
 EMA_ALPHA = 0.1  # Smoothing factor (0.1 = aggressive, 0.2 = moderate, 0.5 = light)
-                  # Lower alpha = more smoothing, higher latency
-                  # Equivalent time constant τ = 1/alpha samples
-                  # 0.1 → τ=10 samples, 0.2 → τ=5 samples
+# Lower alpha = more smoothing, higher latency
+# Equivalent time constant τ = 1/alpha samples
+# 0.1 → τ=10 samples, 0.2 → τ=5 samples
 
 # === Display Smoothing Settings ===
 # Batch-only processing - no interpolation previews
 BATCH_SIZE = 1  # DISABLED: Set to 1 for immediate processing (was 12 for batching)
-                 # Batch size 12 provides ~300ms processing window for advanced filtering
-                 # Recommended values:
-                 # - 8: Fast mode (~200ms window), good for monitoring
-                 # - 12: Quality mode (~300ms window), Savitzky-Golay filtering (RECOMMENDED)
-                 # - 16: Research mode (~400ms window), maximum quality
+# Batch size 12 provides ~300ms processing window for advanced filtering
+# Recommended values:
+# - 8: Fast mode (~200ms window), good for monitoring
+# - 12: Quality mode (~300ms window), Savitzky-Golay filtering (RECOMMENDED)
+# - 16: Research mode (~400ms window), maximum quality
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
@@ -283,10 +312,11 @@ PROFILING_REPORT_INTERVAL = 30  # Seconds between profiling reports (if enabled)
 
 # === Timezone Settings ===
 import datetime
+
 try:
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 except AttributeError:
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 DEFAULT_CONFIG = {
     "unit": UNIT,
@@ -300,17 +330,18 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 if not os.path.exists(CONFIG_FILE):
     import tempfile
     from pathlib import Path
+
     config_path = Path(CONFIG_FILE)
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Atomic write using temp file
     try:
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
+            mode="w",
+            encoding="utf-8",
             dir=config_path.parent,
             delete=False,
-            suffix='.tmp'
+            suffix=".tmp",
         ) as tmp_file:
             json.dump(DEFAULT_CONFIG, tmp_file, indent=2)
             tmp_path = Path(tmp_file.name)

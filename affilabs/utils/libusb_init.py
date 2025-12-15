@@ -23,20 +23,31 @@ def find_libusb_dll():
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
     search_paths = [
+        # PyInstaller frozen exe - DLL is extracted to temp folder
+        os.path.join(getattr(sys, "_MEIPASS", ""), "libusb-1.0.dll"),
+        # PyInstaller alternate location
+        os.path.join(getattr(sys, "_MEIPASS", ""), "affilabs", "libusb-1.0.dll"),
         os.path.join(project_root, "libusb-1.0.dll"),  # Project root
         os.path.join(sys.prefix, "Scripts", "libusb-1.0.dll"),  # venv Scripts
         os.path.join(sys.prefix, "libusb-1.0.dll"),  # venv root
         os.path.join(
-            sys.prefix, "Lib", "site-packages", "libusb_package", "libusb-1.0.dll",
+            sys.prefix,
+            "Lib",
+            "site-packages",
+            "libusb_package",
+            "libusb-1.0.dll",
         ),
     ]
 
     # Also check user site-packages (for global pip install)
     try:
         import site
+
         user_site = site.getusersitepackages()
         if user_site:
-            search_paths.append(os.path.join(user_site, "libusb_package", "libusb-1.0.dll"))
+            search_paths.append(
+                os.path.join(user_site, "libusb_package", "libusb-1.0.dll"),
+            )
     except:
         pass
 
@@ -81,19 +92,23 @@ def init_libusb_paths() -> None:
     project_root = os.path.dirname(os.path.dirname(__file__))
 
     dll_search_paths = [
+        getattr(sys, "_MEIPASS", ""),  # PyInstaller temp extraction folder (CRITICAL)
         project_root,  # Project root (where libusb-1.0.dll is)
         os.path.join(sys.prefix, "Scripts"),  # venv Scripts folder
         sys.prefix,  # venv root
         os.path.join(
-            sys.prefix, "Lib", "site-packages", "libusb_package",
+            sys.prefix,
+            "Lib",
+            "site-packages",
+            "libusb_package",
         ),  # libusb-package location
     ]
 
     for path in dll_search_paths:
-        if os.path.exists(path):
+        if os.path.exists(path) and path:  # Check path is not empty string
             try:
                 os.add_dll_directory(path)
-            except (FileNotFoundError, OSError):
+            except (FileNotFoundError, OSError, AttributeError):
                 pass  # Path already added or doesn't exist
 
 

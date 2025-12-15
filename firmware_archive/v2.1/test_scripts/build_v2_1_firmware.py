@@ -1,5 +1,4 @@
-r"""
-Build and flash Firmware V2.1 with rankbatch command.
+r"""Build and flash Firmware V2.1 with rankbatch command.
 
 This script:
 1. Applies V2.1 modifications to base V2.0 firmware
@@ -13,7 +12,6 @@ Requirements:
 - Git Bash or similar build environment
 """
 
-import os
 import shutil
 import subprocess
 import sys
@@ -21,7 +19,9 @@ from pathlib import Path
 
 # Paths
 WORKSPACE = Path(__file__).parent
-FIRMWARE_DIR = Path(r"C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\pico-p4spr-firmware")
+FIRMWARE_DIR = Path(
+    r"C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\pico-p4spr-firmware",
+)
 FIRMWARE_SOURCE = FIRMWARE_DIR / "affinite_p4spr.c"
 BUILD_DIR = FIRMWARE_DIR / "build"
 OUTPUT_DIR = WORKSPACE / "firmware_v2.1"
@@ -50,13 +50,13 @@ print("\n" + "=" * 70)
 print("STEP 1: Applying V2.1 modifications")
 print("=" * 70)
 
-with open(FIRMWARE_SOURCE, 'r', encoding='utf-8') as f:
+with open(FIRMWARE_SOURCE, encoding="utf-8") as f:
     content = f.read()
 
 # Check current version
 if 'const char* VERSION = "V2.1"' in content:
     print("\n✅ Firmware is already V2.1!")
-    build = input("\nRebuild anyway? (y/n): ").strip().lower() == 'y'
+    build = input("\nRebuild anyway? (y/n): ").strip().lower() == "y"
     if not build:
         print("Exiting...")
         sys.exit(0)
@@ -66,7 +66,7 @@ elif 'const char* VERSION = "V2.0"' not in content:
     sys.exit(1)
 
 print("\n📝 Backing up current firmware...")
-backup_path = FIRMWARE_SOURCE.with_suffix('.c.v2_0_backup')
+backup_path = FIRMWARE_SOURCE.with_suffix(".c.v2_0_backup")
 shutil.copy(FIRMWARE_SOURCE, backup_path)
 print(f"   Saved to: {backup_path}")
 
@@ -75,30 +75,34 @@ print("\n📝 Applying V2.1 modifications...")
 # CHANGE 1: Update VERSION
 content = content.replace(
     'const char* VERSION = "V2.0";  // V2.0: Added rank command for firmware-controlled LED sequencing',
-    'const char* VERSION = "V2.1";  // V2.1: Enhanced rank with batch intensities and cycle counting'
+    'const char* VERSION = "V2.1";  // V2.1: Enhanced rank with batch intensities and cycle counting',
 )
 print("   ✅ Updated VERSION to V2.1")
 
 # CHANGE 2: Add function declaration
 # Find the line with bool led_rank_sequence declaration and add our new one after it
-if 'bool led_rank_batch_cycles' not in content:
+if "bool led_rank_batch_cycles" not in content:
     content = content.replace(
-        'bool led_rank_sequence(uint8_t intensity, uint16_t settling_ms, uint16_t dark_ms);',
-        '''bool led_rank_sequence(uint8_t intensity, uint16_t settling_ms, uint16_t dark_ms);
+        "bool led_rank_sequence(uint8_t intensity, uint16_t settling_ms, uint16_t dark_ms);",
+        """bool led_rank_sequence(uint8_t intensity, uint16_t settling_ms, uint16_t dark_ms);
 bool led_rank_batch_cycles(uint8_t int_a, uint8_t int_b, uint8_t int_c, uint8_t int_d,
-                           uint16_t settling_ms, uint16_t dark_ms, uint16_t num_cycles);'''
+                           uint16_t settling_ms, uint16_t dark_ms, uint16_t num_cycles);""",
     )
     print("   ✅ Added led_rank_batch_cycles() function declaration")
 
 # CHANGE 3: Add rankbatch command handler
 # Insert BEFORE the existing rank: handler
-if 'rankbatch:' not in content:
-    rank_handler_start = content.find('// NEW: Rank command for firmware-controlled LED sequencing')
+if "rankbatch:" not in content:
+    rank_handler_start = content.find(
+        "// NEW: Rank command for firmware-controlled LED sequencing",
+    )
     if rank_handler_start == -1:
-        rank_handler_start = content.find("if (command[1] == 'a' && command[2] == 'n' && command[3] == 'k' && command[4] == ':')")
+        rank_handler_start = content.find(
+            "if (command[1] == 'a' && command[2] == 'n' && command[3] == 'k' && command[4] == ':')",
+        )
 
     if rank_handler_start != -1:
-        rankbatch_handler = '''                // NEW V2.1: Rankbatch command for batch intensity cycling
+        rankbatch_handler = """                // NEW V2.1: Rankbatch command for batch intensity cycling
                 if (command[1] == 'a' && command[2] == 'n' && command[3] == 'k' &&
                     command[4] == 'b' && command[5] == 'a' && command[6] == 't' &&
                     command[7] == 'c' && command[8] == 'h' && command[9] == ':'){
@@ -170,23 +174,27 @@ if 'rankbatch:' not in content:
                     }
                 }
                 // V2.0 rank: command (backward compatibility)
-                else '''
+                else """
 
-        content = content[:rank_handler_start] + rankbatch_handler + content[rank_handler_start:]
+        content = (
+            content[:rank_handler_start]
+            + rankbatch_handler
+            + content[rank_handler_start:]
+        )
         print("   ✅ Added rankbatch command handler")
 
 # CHANGE 4: Add led_rank_batch_cycles() function implementation
-if 'BATCH_START' not in content:
+if "BATCH_START" not in content:
     # Find where to insert (after led_rank_sequence function)
     # Look for the end of led_rank_sequence function
-    search_start = content.find('/*** Function to execute LED ranking sequence')
+    search_start = content.find("/*** Function to execute LED ranking sequence")
     if search_start != -1:
         # Find the closing brace of that function
-        rank_seq_end = content.find('\n}\n', search_start)
+        rank_seq_end = content.find("\n}\n", search_start)
         if rank_seq_end != -1:
-            rank_seq_end += len('\n}\n')
+            rank_seq_end += len("\n}\n")
 
-            rankbatch_function = '''
+            rankbatch_function = """
 
 
 /*** Function to execute LED ranking with batch intensities and cycle counting ***/
@@ -259,9 +267,11 @@ bool led_rank_batch_cycles(uint8_t int_a, uint8_t int_b, uint8_t int_c, uint8_t 
     printf("BATCH_END\\n");
 
     return true;
-}'''
+}"""
 
-            content = content[:rank_seq_end] + rankbatch_function + content[rank_seq_end:]
+            content = (
+                content[:rank_seq_end] + rankbatch_function + content[rank_seq_end:]
+            )
             print("   ✅ Added led_rank_batch_cycles() function implementation")
         else:
             print("   ⚠️  Could not find insertion point for function")
@@ -270,7 +280,7 @@ bool led_rank_batch_cycles(uint8_t int_a, uint8_t int_b, uint8_t int_c, uint8_t 
 
 # Write modified firmware
 print("\n📝 Writing modified firmware...")
-with open(FIRMWARE_SOURCE, 'w', encoding='utf-8') as f:
+with open(FIRMWARE_SOURCE, "w", encoding="utf-8") as f:
     f.write(content)
 print(f"   ✅ Saved to: {FIRMWARE_SOURCE}")
 
@@ -281,7 +291,7 @@ print("=" * 70)
 
 # Create/clean build directory
 if BUILD_DIR.exists():
-    print(f"\n🗑️  Cleaning build directory...")
+    print("\n🗑️  Cleaning build directory...")
     shutil.rmtree(BUILD_DIR)
 BUILD_DIR.mkdir()
 print(f"   ✅ Created: {BUILD_DIR}")
@@ -292,7 +302,8 @@ result = subprocess.run(
     ["cmake", "-G", "Unix Makefiles", ".."],
     cwd=BUILD_DIR,
     capture_output=True,
-    text=True
+    text=True,
+    check=False,
 )
 
 if result.returncode != 0:
@@ -307,7 +318,8 @@ result = subprocess.run(
     ["make", "-j4"],
     cwd=BUILD_DIR,
     capture_output=True,
-    text=True
+    text=True,
+    check=False,
 )
 
 if result.returncode != 0:
@@ -334,7 +346,7 @@ if uf2_file.exists():
     print(f"   ✅ Generated: {uf2_file}")
     print(f"   ✅ Copied to: {output_uf2}")
 else:
-    print(f"   ⚠️  UF2 file not found, converting from BIN...")
+    print("   ⚠️  UF2 file not found, converting from BIN...")
     # TODO: Add bin_to_uf2 conversion if needed
 
 print("\n" + "=" * 70)

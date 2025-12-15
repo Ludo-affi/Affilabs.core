@@ -1,6 +1,5 @@
 """Contains the widget and code for the settings menu of the ezControl app."""
 
-
 from typing import Self
 
 from PySide6.QtWidgets import QDialog, QTabWidget, QVBoxLayout, QWidget

@@ -1,15 +1,14 @@
-"""
-Automatic Firmware Updater for PicoP4SPR
+"""Automatic Firmware Updater for PicoP4SPR
 Reboots Pico into bootloader mode and flashes new firmware
 """
 
-import serial
-import time
+import logging
 import os
 import shutil
-import logging
+import time
 from pathlib import Path
-from typing import Optional
+
+import serial
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +25,17 @@ class PicoFirmwareUpdater:
 
         Args:
             com_port: COM port where Pico is connected (e.g., 'COM4')
+
         """
         self.com_port = com_port
-        self.firmware_path = Path(__file__).parent.parent.parent / "firmware" / "pico_p4spr" / "affinite_p4spr_v1.1.uf2"
+        self.firmware_path = (
+            Path(__file__).parent.parent.parent
+            / "firmware"
+            / "pico_p4spr"
+            / "affinite_p4spr_v1.1.uf2"
+        )
 
-    def get_current_version(self, ser: serial.Serial) -> Optional[str]:
+    def get_current_version(self, ser: serial.Serial) -> str | None:
         """Query current firmware version from Pico.
 
         Args:
@@ -38,18 +43,19 @@ class PicoFirmwareUpdater:
 
         Returns:
             Version string (e.g., "V1.0") or None if query failed
+
         """
         try:
             ser.reset_input_buffer()
             ser.write(b"iv\n")
             time.sleep(0.1)
-            response = ser.read(20).decode('ascii', errors='ignore').strip()
+            response = ser.read(20).decode("ascii", errors="ignore").strip()
 
             # Response format: "V1.0" or similar
-            if response and response.startswith('V'):
+            if response and response.startswith("V"):
                 return response
 
-            logger.warning(f"Unexpected version response: {repr(response)}")
+            logger.warning(f"Unexpected version response: {response!r}")
             return None
 
         except Exception as e:
@@ -64,11 +70,14 @@ class PicoFirmwareUpdater:
 
         Returns:
             True if update needed, False otherwise
+
         """
         if current_version == self.EXPECTED_VERSION:
             return False
 
-        logger.info(f"Firmware version mismatch: current={current_version}, expected={self.EXPECTED_VERSION}")
+        logger.info(
+            f"Firmware version mismatch: current={current_version}, expected={self.EXPECTED_VERSION}",
+        )
         return True
 
     def reboot_to_bootloader(self, ser: serial.Serial) -> bool:
@@ -82,6 +91,7 @@ class PicoFirmwareUpdater:
 
         Returns:
             True if reboot command sent successfully
+
         """
         try:
             # Send custom command to trigger bootloader mode
@@ -91,7 +101,7 @@ class PicoFirmwareUpdater:
             time.sleep(0.5)
 
             response = ser.read(10)
-            logger.info(f"Bootloader reboot response: {repr(response)}")
+            logger.info(f"Bootloader reboot response: {response!r}")
 
             # Pico will disconnect and reappear as RPI-RP2 drive
             return True
@@ -100,7 +110,7 @@ class PicoFirmwareUpdater:
             logger.error(f"Failed to send bootloader command: {e}")
             return False
 
-    def wait_for_bootloader_drive(self, timeout: float = 10.0) -> Optional[Path]:
+    def wait_for_bootloader_drive(self, timeout: float = 10.0) -> Path | None:
         """Wait for RPI-RP2 drive to appear after bootloader reboot.
 
         Args:
@@ -108,12 +118,13 @@ class PicoFirmwareUpdater:
 
         Returns:
             Path to RPI-RP2 drive or None if not found
+
         """
         import platform
 
         start_time = time.time()
 
-        if platform.system() == 'Windows':
+        if platform.system() == "Windows":
             # On Windows, look for drive with label RPI-RP2
             while time.time() - start_time < timeout:
                 import string
@@ -128,7 +139,10 @@ class PicoFirmwareUpdater:
                             try:
                                 # Check volume label
                                 import win32api
-                                volume_info = win32api.GetVolumeInformation(str(drive_path))
+
+                                volume_info = win32api.GetVolumeInformation(
+                                    str(drive_path),
+                                )
                                 if volume_info[0] == "RPI-RP2":
                                     logger.info(f"Found bootloader drive: {drive_path}")
                                     return drive_path
@@ -163,6 +177,7 @@ class PicoFirmwareUpdater:
 
         Returns:
             True if firmware copied successfully
+
         """
         try:
             if not self.firmware_path.exists():
@@ -189,6 +204,7 @@ class PicoFirmwareUpdater:
 
         Returns:
             True if device reconnected successfully
+
         """
         import serial.tools.list_ports
 
@@ -217,6 +233,7 @@ class PicoFirmwareUpdater:
 
         Returns:
             True if update successful, False otherwise
+
         """
         try:
             logger.info(f"Starting firmware update on {self.com_port}")
@@ -273,11 +290,14 @@ class PicoFirmwareUpdater:
             ser.close()
 
             if new_version == self.EXPECTED_VERSION:
-                logger.info(f"✅ Firmware update successful: {current_version} -> {new_version}")
+                logger.info(
+                    f"✅ Firmware update successful: {current_version} -> {new_version}",
+                )
                 return True
-            else:
-                logger.error(f"❌ Firmware update verification failed: expected {self.EXPECTED_VERSION}, got {new_version}")
-                return False
+            logger.error(
+                f"❌ Firmware update verification failed: expected {self.EXPECTED_VERSION}, got {new_version}",
+            )
+            return False
 
         except Exception as e:
             logger.error(f"Firmware update failed with exception: {e}")
@@ -292,6 +312,7 @@ def check_and_update_firmware(com_port: str) -> bool:
 
     Returns:
         True if firmware is up to date (or update successful), False if update failed
+
     """
     updater = PicoFirmwareUpdater(com_port)
     return updater.update_firmware()
@@ -302,6 +323,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     import sys
+
     if len(sys.argv) > 1:
         com_port = sys.argv[1]
     else:

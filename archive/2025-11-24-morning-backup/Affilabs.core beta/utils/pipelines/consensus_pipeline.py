@@ -18,9 +18,9 @@ Author: AI Assistant
 Date: November 24, 2025
 """
 
-import numpy as np
-from typing import Optional, Dict, Tuple
 import logging
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class ConsensusPipeline:
 
         Args:
             config: Optional configuration dict (for compatibility with pipeline registry)
+
         """
         self.name = "Consensus"
         self.description = "Combines 3 methods (centroid, parabolic, fourier) for robust peak detection"
@@ -41,26 +42,27 @@ class ConsensusPipeline:
         # Import the consensus functions
         try:
             from utils.peak_consensus import find_peak_consensus
+
             self.find_peak_consensus = find_peak_consensus
         except ImportError:
             logger.warning("peak_consensus module not found, using fallback")
             self.find_peak_consensus = None
 
-    def get_metadata(self) -> Dict:
+    def get_metadata(self) -> dict:
         """Return pipeline metadata."""
         return {
-            'name': self.name,
-            'description': self.description,
-            'version': '1.0',
-            'features': ['multi_method', 'weighted_consensus', 'outlier_detection'],
+            "name": self.name,
+            "description": self.description,
+            "version": "1.0",
+            "features": ["multi_method", "weighted_consensus", "outlier_detection"],
         }
 
     def find_resonance_wavelength(
         self,
         transmission: np.ndarray,
         wavelengths: np.ndarray,
-        timestamp: Optional[float] = None,
-    ) -> Tuple[float, Dict]:
+        timestamp: float | None = None,
+    ) -> tuple[float, dict]:
         """Find resonance wavelength using consensus of multiple methods.
 
         Args:
@@ -70,6 +72,7 @@ class ConsensusPipeline:
 
         Returns:
             Tuple of (resonance_wavelength, metadata_dict)
+
         """
         if transmission is None or wavelengths is None:
             raise ValueError("Invalid input data")
@@ -84,14 +87,14 @@ class ConsensusPipeline:
                     spectrum=transmission,
                     wavelengths=wavelengths,
                     search_range=(600, 720),
-                    method='weighted_average'  # 60% centroid + 40% parabolic by default
+                    method="weighted_average",  # 60% centroid + 40% parabolic by default
                 )
 
                 # Add pipeline metadata
                 metadata = {
-                    'method': 'consensus',
-                    'peak_wavelength': float(peak_wavelength),
-                    **diagnostics
+                    "method": "consensus",
+                    "peak_wavelength": float(peak_wavelength),
+                    **diagnostics,
                 }
 
                 return peak_wavelength, metadata
@@ -112,12 +115,12 @@ class ConsensusPipeline:
             peak_wavelength = wavelengths[np.argmin(transmission)]
 
         metadata = {
-            'method': 'fallback_minimum',
-            'peak_wavelength': float(peak_wavelength)
+            "method": "fallback_minimum",
+            "peak_wavelength": float(peak_wavelength),
         }
 
         return peak_wavelength, metadata
 
     def reset_temporal_state(self):
         """Reset any temporal state (for compatibility with other pipelines)."""
-        pass  # Consensus pipeline is stateless
+        # Consensus pipeline is stateless

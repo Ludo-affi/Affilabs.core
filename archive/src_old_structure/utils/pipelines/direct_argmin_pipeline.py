@@ -17,8 +17,8 @@ Date: November 26, 2025
 
 import numpy as np
 
-from utils.processing_pipeline import ProcessingPipeline, PipelineMetadata
 from utils.logger import logger
+from utils.processing_pipeline import PipelineMetadata, ProcessingPipeline
 
 
 class DirectArgminPipeline(ProcessingPipeline):
@@ -43,8 +43,8 @@ class DirectArgminPipeline(ProcessingPipeline):
         super().__init__(config)
 
         # Search range parameters
-        self.search_min = self.config.get('search_min', 600.0)  # nm
-        self.search_max = self.config.get('search_max', 720.0)  # nm
+        self.search_min = self.config.get("search_min", 600.0)  # nm
+        self.search_max = self.config.get("search_max", 720.0)  # nm
 
     def get_metadata(self) -> PipelineMetadata:
         return PipelineMetadata(
@@ -53,23 +53,25 @@ class DirectArgminPipeline(ProcessingPipeline):
             version="1.0",
             author="Extracted from commit 6732a6b",
             parameters={
-                'search_min': self.search_min,
-                'search_max': self.search_max,
-                'method': 'Direct argmin (no interpolation)'
-            }
+                "search_min": self.search_min,
+                "search_max": self.search_max,
+                "method": "Direct argmin (no interpolation)",
+            },
         )
 
     def calculate_transmission(
         self,
         intensity: np.ndarray,
-        reference: np.ndarray
+        reference: np.ndarray,
     ) -> np.ndarray:
         """Calculate transmission spectrum
 
         Transmission = (Intensity / Reference) * 100
         """
         if len(intensity) != len(reference):
-            logger.error(f"Shape mismatch: intensity({len(intensity)}) vs reference({len(reference)})")
+            logger.error(
+                f"Shape mismatch: intensity({len(intensity)}) vs reference({len(reference)})",
+            )
             return np.full_like(intensity, 50.0)
 
         # Avoid division by zero
@@ -85,7 +87,7 @@ class DirectArgminPipeline(ProcessingPipeline):
         self,
         transmission_spectrum: np.ndarray,
         wavelengths: np.ndarray,
-        **kwargs
+        **kwargs,
     ) -> float:
         """Find resonance wavelength using direct argmin method
 
@@ -102,6 +104,7 @@ class DirectArgminPipeline(ProcessingPipeline):
 
         Returns:
             Peak wavelength in nm
+
         """
         try:
             # Create mask for search range
@@ -113,7 +116,9 @@ class DirectArgminPipeline(ProcessingPipeline):
 
             # Validate region
             if len(wl_region) == 0:
-                logger.warning(f"No wavelengths in search range ({self.search_min}, {self.search_max})")
+                logger.warning(
+                    f"No wavelengths in search range ({self.search_min}, {self.search_max})",
+                )
                 # Fallback to full spectrum minimum
                 min_idx = np.argmin(transmission_spectrum)
                 return float(wavelengths[min_idx])

@@ -62,7 +62,7 @@
            <string notr="true">QCheckBox{
 	color: black;
 	background: white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -87,7 +87,7 @@
            <string notr="true">QCheckBox{
 	color: rgb(255, 0, 81);
 	background:white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -112,7 +112,7 @@
            <string notr="true">QCheckBox{
 	color: rgb(0, 174, 255);
 	background: white;
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	border-radius: 3px;
 }</string>
           </property>
@@ -136,7 +136,7 @@
           <property name="styleSheet">
            <string notr="true">QCheckBox{
 	color: rgb(0, 230, 65);
-	border: 1px solid rgb(171, 171, 171); 
+	border: 1px solid rgb(171, 171, 171);
 	background: white;
 	border-radius: 3px;
 }</string>

@@ -89,7 +89,8 @@ class LEDBatchBuilder:
 
 
 def create_calibration_batch(
-    mode: str, intensities: dict[str, int],
+    mode: str,
+    intensities: dict[str, int],
 ) -> list[LEDCommand]:
     """Create a batch for calibration setup (mode + all intensities).
 
@@ -108,7 +109,9 @@ def create_calibration_batch(
 
 
 def create_measurement_batch(
-    mode: str, channel: str, intensity: int,
+    mode: str,
+    channel: str,
+    intensity: int,
 ) -> list[LEDCommand]:
     """Create a batch for single channel measurement (mode + intensity).
 

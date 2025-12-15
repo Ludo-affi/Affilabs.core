@@ -10,7 +10,7 @@ WAVELENGTH_TO_RU_CONVERSION = 1000.0  # 1 nm wavelength shift ≈ 1000 RU (Respo
 # === Filtering Defaults ===
 DEFAULT_FILTER_ENABLED = True  # Filtering ON by default (matches old software)
 DEFAULT_FILTER_STRENGTH = 1  # Strength 1 = window 3
-DEFAULT_FILTER_METHOD = 'median'  # Options: 'median', 'kalman', 'savgol'
+DEFAULT_FILTER_METHOD = "median"  # Options: 'median', 'kalman', 'savgol'
 DEFAULT_MED_FILT_WIN = 3  # Median filter window size
 
 # === Kalman Filter Tuning ===

@@ -8,6 +8,7 @@ Fourier transform methods, and median filtering.
 import numpy as np
 from scipy.fftpack import dst, idct
 from scipy.stats import linregress
+
 from utils.logger import logger
 
 
@@ -25,12 +26,15 @@ def calculate_transmission(intensity: np.ndarray, reference: np.ndarray) -> np.n
 
     Raises:
         ValueError: If arrays have incompatible shapes
+
     """
     if intensity.shape != reference.shape:
-        raise ValueError(f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}")
+        raise ValueError(
+            f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}",
+        )
 
     # Avoid division by zero
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         transmission = (intensity / reference) * 100
         transmission = np.where(reference == 0, 0, transmission)
 
@@ -41,7 +45,7 @@ def find_resonance_wavelength_fourier(
     transmission_spectrum: np.ndarray,
     wavelengths: np.ndarray,
     fourier_weights: np.ndarray,
-    window_size: int = 165
+    window_size: int = 165,
 ) -> float:
     """Find SPR resonance wavelength using Fourier transform method.
 
@@ -63,6 +67,7 @@ def find_resonance_wavelength_fourier(
 
     Returns:
         float: Resonance wavelength in nm, or np.nan if not found
+
     """
     try:
         spectrum = transmission_spectrum
@@ -73,7 +78,8 @@ def find_resonance_wavelength_fourier(
 
         # Apply DST with linear detrending and Fourier weights
         fourier_coeff[1:-1] = fourier_weights * dst(
-            spectrum[1:-1] - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
+            spectrum[1:-1]
+            - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
             1,
         )
 
@@ -103,7 +109,7 @@ def find_resonance_wavelength_fourier(
 def apply_centered_median_filter(
     values: np.ndarray,
     current_index: int,
-    window_size: int
+    window_size: int,
 ) -> float:
     """Apply centered median filter at a specific index.
 
@@ -118,6 +124,7 @@ def apply_centered_median_filter(
 
     Returns:
         float: Filtered value (median of window), or np.nan if input is NaN
+
     """
     # If current value is NaN, return NaN
     if current_index >= len(values):
@@ -129,7 +136,7 @@ def apply_centered_median_filter(
     # Not enough data for filtering yet
     if len(values) <= window_size:
         # Use all available data for initial values
-        return float(np.nanmedian(values[:current_index + 1]))
+        return float(np.nanmedian(values[: current_index + 1]))
 
     # Center the window on current point
     half_win = window_size // 2
@@ -153,6 +160,7 @@ def calculate_fourier_weights(num_points: int, alpha: float = 2e3) -> np.ndarray
 
     Returns:
         np.ndarray: Fourier weights array of length (num_points - 1)
+
     """
     n = num_points - 1
     phi = np.pi / n * np.arange(1, n)
@@ -166,7 +174,7 @@ def calculate_snr_aware_fourier_weights(
     ref_spectrum: np.ndarray,
     wavelengths: np.ndarray,
     alpha: float = 2e3,
-    snr_weight_strength: float = 0.5
+    snr_weight_strength: float = 0.5,
 ) -> np.ndarray:
     """Calculate SNR-aware Fourier weights from LED reference spectrum.
 
@@ -200,6 +208,7 @@ def calculate_snr_aware_fourier_weights(
         >>> wavelengths = np.linspace(550, 700, 7)
         >>> weights = calculate_snr_aware_fourier_weights(ref_spectrum, wavelengths)
         >>> # weights will favor the 600-650nm region (peak LED intensity)
+
     """
     n = len(ref_spectrum) - 1
 
@@ -236,7 +245,7 @@ def validate_sp_orientation(
     p_spectrum: np.ndarray,
     s_spectrum: np.ndarray,
     wavelengths: np.ndarray,
-    window_px: int = 200
+    window_px: int = 200,
 ) -> dict:
     """Validate S/P polarizer orientation by analyzing transmission spectrum ONLY.
 
@@ -288,6 +297,7 @@ def validate_sp_orientation(
             - 'right_value': float - Mean transmission right of peak
             - 'is_flat': bool - True if spectrum is flat (saturation or dark)
             - 'confidence': float - Confidence score (0-1) based on peak prominence
+
     """
     # Calculate transmission
     transmission = calculate_transmission(p_spectrum, s_spectrum)
@@ -306,16 +316,18 @@ def validate_sp_orientation(
     is_flat = spectrum_range < 5.0  # Less than 5% variation = flat
 
     if is_flat:
-        logger.warning(f"⚠️ S/P validation: Flat transmission spectrum (range={spectrum_range:.2f}%) - possible saturation or dark signal")
+        logger.warning(
+            f"⚠️ S/P validation: Flat transmission spectrum (range={spectrum_range:.2f}%) - possible saturation or dark signal",
+        )
         return {
-            'orientation_correct': None,  # Cannot determine
-            'peak_idx': min_idx,
-            'peak_wl': wavelengths[min_idx],
-            'peak_value': min_val,
-            'left_value': 0,
-            'right_value': 0,
-            'is_flat': True,
-            'confidence': 0.0
+            "orientation_correct": None,  # Cannot determine
+            "peak_idx": min_idx,
+            "peak_wl": wavelengths[min_idx],
+            "peak_value": min_val,
+            "left_value": 0,
+            "right_value": 0,
+            "is_flat": True,
+            "confidence": 0.0,
         }
 
     # NEW APPROACH: Check for local structure in SPR region (600-750nm) first
@@ -351,10 +363,16 @@ def validate_sp_orientation(
         min_deviation = local_min_val - edge_mean
         max_deviation = local_max_val - edge_mean
 
-        logger.debug(f"   S/P validation in 600-750nm region:")
-        logger.debug(f"     Min at {spr_wavelengths[local_min_idx]:.1f}nm: {local_min_val:.1f}% (deviation: {min_deviation:+.1f}%)")
-        logger.debug(f"     Max at {spr_wavelengths[local_max_idx]:.1f}nm: {local_max_val:.1f}% (deviation: {max_deviation:+.1f}%)")
-        logger.debug(f"     Edges: left={left_edge_mean:.1f}%, right={right_edge_mean:.1f}%")
+        logger.debug("   S/P validation in 600-750nm region:")
+        logger.debug(
+            f"     Min at {spr_wavelengths[local_min_idx]:.1f}nm: {local_min_val:.1f}% (deviation: {min_deviation:+.1f}%)",
+        )
+        logger.debug(
+            f"     Max at {spr_wavelengths[local_max_idx]:.1f}nm: {local_max_val:.1f}% (deviation: {max_deviation:+.1f}%)",
+        )
+        logger.debug(
+            f"     Edges: left={left_edge_mean:.1f}%, right={right_edge_mean:.1f}%",
+        )
 
         # Decision logic:
         # - If min is BELOW edges: correct orientation (has a dip)
@@ -365,22 +383,38 @@ def validate_sp_orientation(
             orientation_correct = True
             peak_idx = spr_region_start + local_min_idx
             peak_val = local_min_val
-            confidence = min(1.0, abs(min_deviation) / 30.0)  # Scale: 30% deviation = 100% confidence
-            logger.debug(f"   ✓ SPR DIP detected: {min_deviation:.1f}% below edges - CORRECT orientation")
+            confidence = min(
+                1.0,
+                abs(min_deviation) / 30.0,
+            )  # Scale: 30% deviation = 100% confidence
+            logger.debug(
+                f"   ✓ SPR DIP detected: {min_deviation:.1f}% below edges - CORRECT orientation",
+            )
         elif max_deviation > 10:  # Clear peak present (inverted)
             orientation_correct = False
             peak_idx = spr_region_start + local_max_idx
             peak_val = local_max_val
             confidence = min(1.0, max_deviation / 30.0)
-            logger.debug(f"   ✗ SPR PEAK detected: {max_deviation:+.1f}% above edges - INVERTED orientation")
-        elif abs(min_deviation) > abs(max_deviation):  # Subtle dip more prominent than peak
+            logger.debug(
+                f"   ✗ SPR PEAK detected: {max_deviation:+.1f}% above edges - INVERTED orientation",
+            )
+        elif abs(min_deviation) > abs(
+            max_deviation,
+        ):  # Subtle dip more prominent than peak
             orientation_correct = True
             peak_idx = spr_region_start + local_min_idx
             peak_val = local_min_val
-            confidence = min(0.7, abs(min_deviation) / 30.0)  # Lower confidence for weak signal
-            logger.debug(f"   ✓ Subtle SPR dip detected (weak coupling): {min_deviation:.1f}% - CORRECT orientation")
+            confidence = min(
+                0.7,
+                abs(min_deviation) / 30.0,
+            )  # Lower confidence for weak signal
+            logger.debug(
+                f"   ✓ Subtle SPR dip detected (weak coupling): {min_deviation:.1f}% - CORRECT orientation",
+            )
         else:  # Weak structure, default to checking global min/max
-            logger.warning(f"   ⚠️ Weak SPR structure in 600-750nm, falling back to global analysis")
+            logger.warning(
+                "   ⚠️ Weak SPR structure in 600-750nm, falling back to global analysis",
+            )
             # Use global min as best guess for weak coupling
             orientation_correct = True
             peak_idx = min_idx
@@ -388,20 +422,19 @@ def validate_sp_orientation(
             confidence = 0.3  # Low confidence for fallback
     else:
         # No valid SPR region - fallback to global analysis
-        logger.warning(f"   ⚠️ Invalid wavelength range for SPR analysis")
+        logger.warning("   ⚠️ Invalid wavelength range for SPR analysis")
         orientation_correct = True
         peak_idx = min_idx
         peak_val = min_val
         confidence = 0.2  # Very low confidence for invalid range
 
     return {
-        'orientation_correct': orientation_correct,
-        'peak_idx': peak_idx,
-        'peak_wl': wavelengths[peak_idx],
-        'peak_value': peak_val,
-        'left_value': left_edge_mean,
-        'right_value': right_edge_mean,
-        'is_flat': False,
-        'confidence': confidence
+        "orientation_correct": orientation_correct,
+        "peak_idx": peak_idx,
+        "peak_wl": wavelengths[peak_idx],
+        "peak_value": peak_val,
+        "left_value": left_edge_mean,
+        "right_value": right_edge_mean,
+        "is_flat": False,
+        "confidence": confidence,
     }
-

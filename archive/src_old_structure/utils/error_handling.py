@@ -6,16 +6,18 @@ to prevent crashes and ensure graceful degradation.
 
 import functools
 import traceback
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 from utils.logger import logger
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def safe_execute(
-    default_return: Optional[Any] = None,
+    default_return: Any | None = None,
     log_errors: bool = True,
-    error_message: str = "Operation failed"
+    error_message: str = "Operation failed",
 ):
     """Decorator to safely execute functions with error handling.
 
@@ -34,7 +36,9 @@ def safe_execute(
         @safe_execute(default_return=0.0, error_message="Failed to calculate")
         def calculate_something(x, y):
             return risky_operation(x, y)
+
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -45,7 +49,9 @@ def safe_execute(
                     logger.error(f"{error_message}: {func.__name__} - {e}")
                     logger.debug(f"Traceback: {traceback.format_exc()}")
                 return default_return
+
         return wrapper
+
     return decorator
 
 
@@ -63,7 +69,9 @@ def safe_property(default_value: Any = None):
         @property
         def temperature(self):
             return self.sensor.read_temperature()
+
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -72,13 +80,15 @@ def safe_property(default_value: Any = None):
             except Exception as e:
                 logger.debug(f"Property access failed: {func.__name__} - {e}")
                 return default_value
+
         return wrapper
+
     return decorator
 
 
 def with_timeout_recovery(
     timeout_value: Any,
-    timeout_message: str = "Operation timed out"
+    timeout_message: str = "Operation timed out",
 ):
     """Decorator to handle timeout exceptions gracefully.
 
@@ -92,7 +102,9 @@ def with_timeout_recovery(
         @with_timeout_recovery(timeout_value=None, timeout_message="Serial read timed out")
         def read_serial_data(self):
             return self.serial.read()
+
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -101,13 +113,15 @@ def with_timeout_recovery(
             except (TimeoutError, ConnectionError, OSError) as e:
                 logger.warning(f"{timeout_message}: {func.__name__} - {e}")
                 return timeout_value
+
         return wrapper
+
     return decorator
 
 
 def log_exceptions(
     log_level: str = "error",
-    reraise: bool = False
+    reraise: bool = False,
 ):
     """Decorator to log exceptions with optional re-raising.
 
@@ -122,7 +136,9 @@ def log_exceptions(
         def critical_operation(self):
             # Exception will be logged and then propagated
             return important_calculation()
+
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -136,7 +152,9 @@ def log_exceptions(
                 if reraise:
                     raise
                 return None
+
         return wrapper
+
     return decorator
 
 
@@ -153,13 +171,14 @@ class ErrorContext:
 
         # ctx.result contains either the value or default_return
         print(f"Sensor value: {ctx.result}")
+
     """
 
     def __init__(
         self,
         operation_name: str,
         default_return: Any = None,
-        log_errors: bool = True
+        log_errors: bool = True,
     ):
         """Initialize error context.
 
@@ -167,6 +186,7 @@ class ErrorContext:
             operation_name: Description of the operation for logging
             default_return: Value to use if operation fails
             log_errors: Whether to log exceptions
+
         """
         self.operation_name = operation_name
         self.default_return = default_return

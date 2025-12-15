@@ -18,47 +18,65 @@ def kill_stale_processes():
     COM ports (especially COM4) are released. Ghost processes from frozen/crashed
     runs can block serial port access.
     """
-    import psutil
     import os
+
+    import psutil
 
     current_pid = os.getpid()
     killed_count = 0
     workspace_path = str(Path(__file__).parent).lower()
 
     try:
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'exe']):
+        for proc in psutil.process_iter(["pid", "name", "cmdline", "exe"]):
             try:
                 # Skip ourselves
-                if proc.info['pid'] == current_pid:
+                if proc.info["pid"] == current_pid:
                     continue
 
-                if proc.info['name'] and 'python' in proc.info['name'].lower():
-                    cmdline = proc.info.get('cmdline', [])
-                    exe_path = proc.info.get('exe', '')
+                if proc.info["name"] and "python" in proc.info["name"].lower():
+                    cmdline = proc.info.get("cmdline", [])
+                    exe_path = proc.info.get("exe", "")
 
                     if cmdline or exe_path:
-                        cmdline_str = ' '.join(cmdline).lower() if cmdline else ''
-                        exe_str = exe_path.lower() if exe_path else ''
+                        cmdline_str = " ".join(cmdline).lower() if cmdline else ""
+                        exe_str = exe_path.lower() if exe_path else ""
 
                         # Skip VS Code extensions (mypy, isort, pylance, etc.)
-                        skip_patterns = ['lsp_server', 'mypy', 'isort', 'pylance', 'extensions',
-                                       'language_server', 'debugpy', 'jedi']
+                        skip_patterns = [
+                            "lsp_server",
+                            "mypy",
+                            "isort",
+                            "pylance",
+                            "extensions",
+                            "language_server",
+                            "debugpy",
+                            "jedi",
+                        ]
                         if any(skip in cmdline_str for skip in skip_patterns):
                             continue
 
                         # Skip this launcher script (but not if it's an old instance)
-                        if 'run_app.py' in cmdline_str and proc.info['pid'] == current_pid:
+                        if (
+                            "run_app.py" in cmdline_str
+                            and proc.info["pid"] == current_pid
+                        ):
                             continue
 
                         # AGGRESSIVE: Kill ANY Python process running from our workspace
                         # This catches main.py, background threads, frozen processes, etc.
                         if workspace_path in cmdline_str or workspace_path in exe_str:
-                            print(f"   Killing workspace process PID {proc.info['pid']}: {proc.info['name']}")
+                            print(
+                                f"   Killing workspace process PID {proc.info['pid']}: {proc.info['name']}",
+                            )
                             proc.kill()
                             killed_count += 1
                         # Also catch control-3.2.9 in case workspace path doesn't match
-                        elif 'control-3.2.9' in cmdline_str and 'main.py' in cmdline_str:
-                            print(f"   Killing app process PID {proc.info['pid']}: {proc.info['name']}")
+                        elif (
+                            "control-3.2.9" in cmdline_str and "main.py" in cmdline_str
+                        ):
+                            print(
+                                f"   Killing app process PID {proc.info['pid']}: {proc.info['name']}",
+                            )
                             proc.kill()
                             killed_count += 1
 

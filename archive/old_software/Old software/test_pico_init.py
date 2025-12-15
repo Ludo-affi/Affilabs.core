@@ -1,8 +1,9 @@
 """Test clearing stale data and proper initialization."""
 
+import time
+
 import serial
 import serial.tools.list_ports
-import time
 
 PICO_VID = 0x2E8A
 PICO_PID = 0x000A
@@ -59,7 +60,7 @@ try:
     print(f"   Response: {response}")
     print(f"   Decoded: '{response.decode('ascii', errors='replace').strip()}'")
 
-    if b'P4SPR' in response:
+    if b"P4SPR" in response:
         print("\n✓ SUCCESS! Device identified as P4SPR")
 
         # Try to get version
@@ -69,7 +70,9 @@ try:
         version = ser.readline()
         print(f"   Version: '{version.decode('ascii', errors='replace').strip()}'")
     else:
-        print(f"\n✗ FAILED - Expected 'P4SPR', got: '{response.decode('ascii', errors='replace').strip()}'")
+        print(
+            f"\n✗ FAILED - Expected 'P4SPR', got: '{response.decode('ascii', errors='replace').strip()}'",
+        )
 
         # Try sending multiple newlines to reset state
         print("\nStep 6: Trying to reset device state with multiple newlines...")
@@ -93,4 +96,5 @@ try:
 except Exception as e:
     print(f"\n✗ Error: {e}")
     import traceback
+
     traceback.print_exc()

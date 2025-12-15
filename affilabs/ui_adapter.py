@@ -15,7 +15,8 @@ Usage in main_simplified.py:
     self.ui.update_device_status('spectrometer', True)
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
+
 from PySide6.QtCore import QObject, Signal
 
 
@@ -39,23 +40,28 @@ class UIAdapter(QObject):
 
         Args:
             main_window: Instance of AffilabsMainWindow
+
         """
         super().__init__()
         self.ui = main_window
 
         # Forward main window signals through adapter
-        if hasattr(self.ui, 'power_on_requested'):
+        if hasattr(self.ui, "power_on_requested"):
             self.ui.power_on_requested.connect(self.power_on_requested.emit)
-        if hasattr(self.ui, 'power_off_requested'):
+        if hasattr(self.ui, "power_off_requested"):
             self.ui.power_off_requested.connect(self.power_off_requested.emit)
-        if hasattr(self.ui, 'recording_start_requested'):
-            self.ui.recording_start_requested.connect(self.recording_start_requested.emit)
-        if hasattr(self.ui, 'recording_stop_requested'):
+        if hasattr(self.ui, "recording_start_requested"):
+            self.ui.recording_start_requested.connect(
+                self.recording_start_requested.emit,
+            )
+        if hasattr(self.ui, "recording_stop_requested"):
             self.ui.recording_stop_requested.connect(self.recording_stop_requested.emit)
-        if hasattr(self.ui, 'export_requested'):
+        if hasattr(self.ui, "export_requested"):
             self.ui.export_requested.connect(self.export_requested.emit)
-        if hasattr(self.ui, 'acquisition_pause_requested'):
-            self.ui.acquisition_pause_requested.connect(self.acquisition_pause_requested.emit)
+        if hasattr(self.ui, "acquisition_pause_requested"):
+            self.ui.acquisition_pause_requested.connect(
+                self.acquisition_pause_requested.emit,
+            )
         self.ui = main_window
 
     # ==================== Power & Connection Control ====================
@@ -65,6 +71,7 @@ class UIAdapter(QObject):
 
         Args:
             state: One of 'disconnected', 'searching', 'connected'
+
         """
         self.ui.status_presenter.update_power_button_state(state)
 
@@ -73,8 +80,9 @@ class UIAdapter(QObject):
 
         Returns:
             Current state: 'disconnected', 'searching', or 'connected'
+
         """
-        if hasattr(self.ui, 'power_btn') and self.ui.power_btn:
+        if hasattr(self.ui, "power_btn") and self.ui.power_btn:
             return self.ui.power_btn.property("powerState") or "disconnected"
         return "disconnected"
 
@@ -83,18 +91,25 @@ class UIAdapter(QObject):
 
         Args:
             checked: True to check, False to uncheck
+
         """
         self.ui.power_btn.setChecked(checked)
 
     # ==================== Device Status Updates ====================
 
-    def update_device_status(self, subunit: str, ready: bool, details: Optional[Dict[str, Any]] = None) -> None:
+    def update_device_status(
+        self,
+        subunit: str,
+        ready: bool,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         """Update device subunit status indicator.
 
         Args:
             subunit: Subunit name (e.g., 'spectrometer', 'led', 'polarizer', 'pump')
             ready: True if ready, False if not ready
             details: Optional dict with additional status information
+
         """
         self.ui.status_presenter.set_subunit_status(subunit, ready, details)
 
@@ -103,10 +118,11 @@ class UIAdapter(QObject):
 
         Args:
             afterglow_seconds: Afterglow time in seconds
+
         """
         self.ui.update_afterglow_status(afterglow_seconds)
 
-    def update_hardware_status(self, status: Dict[str, Any]) -> None:
+    def update_hardware_status(self, status: dict[str, Any]) -> None:
         """Update hardware status display with real hardware information.
 
         Args:
@@ -121,6 +137,7 @@ class UIAdapter(QObject):
                 - optics_failed_channels: List of failed LED channels
                 - optics_maintenance_channels: Channels needing maintenance
                 - fluidics_ready: Boolean
+
         """
         self.ui.status_presenter.update_hardware_status(status)
         self.ui.status_presenter.update_subunit_readiness(status)
@@ -140,6 +157,7 @@ class UIAdapter(QObject):
 
         Args:
             is_recording: True if recording, False if stopped
+
         """
         self.ui.status_presenter.update_recording_state(is_recording)
 
@@ -153,7 +171,11 @@ class UIAdapter(QObject):
 
     # ==================== Calibration Progress ====================
 
-    def show_calibration_dialog(self, title: str = "Calibrating", message: str = "Please wait...") -> Any:
+    def show_calibration_dialog(
+        self,
+        title: str = "Calibrating",
+        message: str = "Please wait...",
+    ) -> Any:
         """Show calibration progress dialog.
 
         Args:
@@ -162,13 +184,15 @@ class UIAdapter(QObject):
 
         Returns:
             Reference to the dialog for progress updates
+
         """
         from affilabs_core_ui import StartupCalibProgressDialog
+
         dialog = StartupCalibProgressDialog(
             parent=self.ui,
             title=title,
             message=message,
-            show_start_button=False
+            show_start_button=False,
         )
         dialog.show()
         return dialog
@@ -182,6 +206,7 @@ class UIAdapter(QObject):
             channel_idx: Channel index (0=A, 1=B, 2=C, 3=D)
             x_data: X-axis data (time)
             y_data: Y-axis data (signal)
+
         """
         channel_data = {channel_idx: y_data}
         self.ui.sensogram_presenter.update_timeline_data(channel_data, x_data)
@@ -193,19 +218,28 @@ class UIAdapter(QObject):
             channel_idx: Channel index (0=A, 1=B, 2=C, 3=D)
             x_data: X-axis data (time)
             y_data: Y-axis data (signal)
+
         """
         channel_data = {channel_idx: y_data}
         self.ui.sensogram_presenter.update_cycle_data(channel_data, x_data)
 
-    def update_transmission_plot(self, channel_idx: int, wavelengths, transmission) -> None:
+    def update_transmission_plot(
+        self,
+        channel_idx: int,
+        wavelengths,
+        transmission,
+    ) -> None:
         """Update spectroscopy transmission plot.
 
         Args:
             channel_idx: Channel index (0=A, 1=B, 2=C, 3=D)
             wavelengths: Wavelength array
             transmission: Transmission percentage array
+
         """
-        if hasattr(self.ui, 'transmission_curves') and 0 <= channel_idx < len(self.ui.transmission_curves):
+        if hasattr(self.ui, "transmission_curves") and 0 <= channel_idx < len(
+            self.ui.transmission_curves,
+        ):
             self.ui.transmission_curves[channel_idx].setData(wavelengths, transmission)
 
     def clear_graphs(self) -> None:
@@ -220,6 +254,7 @@ class UIAdapter(QObject):
         Args:
             channel_idx: Channel index (0=A, 1=B, 2=C, 3=D)
             visible: True to show, False to hide
+
         """
         channel_letter = chr(65 + channel_idx)  # 0->A, 1->B, etc.
         self.ui.sensogram_presenter.toggle_channel_visibility(channel_letter, visible)
@@ -231,28 +266,35 @@ class UIAdapter(QObject):
 
         Returns:
             True if filter is enabled
+
         """
-        return self.ui.filter_enable.isChecked() if hasattr(self.ui, 'filter_enable') else False
+        return (
+            self.ui.filter_enable.isChecked()
+            if hasattr(self.ui, "filter_enable")
+            else False
+        )
 
     def get_filter_strength(self) -> float:
         """Get current filter strength value.
 
         Returns:
             Filter strength (0.0 - 1.0)
+
         """
-        if hasattr(self.ui, 'filter_slider'):
+        if hasattr(self.ui, "filter_slider"):
             return self.ui.filter_slider.value() / 100.0
         return 0.5
 
-    def get_reference_channel(self) -> Optional[str]:
+    def get_reference_channel(self) -> str | None:
         """Get currently selected reference channel for subtraction.
 
         Returns:
             Channel letter ('a', 'b', 'c', 'd') or None
+
         """
-        if hasattr(self.ui, 'ref_combo'):
+        if hasattr(self.ui, "ref_combo"):
             text = self.ui.ref_combo.currentText().lower()
-            if text and text != 'none':
+            if text and text != "none":
                 return text
         return None
 
@@ -261,35 +303,46 @@ class UIAdapter(QObject):
 
         Returns:
             'auto' or 'manual'
+
         """
-        if hasattr(self.ui, 'auto_radio') and self.ui.auto_radio.isChecked():
-            return 'auto'
-        return 'manual'
+        if hasattr(self.ui, "auto_radio") and self.ui.auto_radio.isChecked():
+            return "auto"
+        return "manual"
 
     def get_y_axis_range(self) -> tuple[float, float]:
         """Get manual Y-axis range if set.
 
         Returns:
             Tuple of (min, max) values
+
         """
         try:
-            min_val = float(self.ui.min_input.text()) if hasattr(self.ui, 'min_input') else -100.0
-            max_val = float(self.ui.max_input.text()) if hasattr(self.ui, 'max_input') else 100.0
+            min_val = (
+                float(self.ui.min_input.text())
+                if hasattr(self.ui, "min_input")
+                else -100.0
+            )
+            max_val = (
+                float(self.ui.max_input.text())
+                if hasattr(self.ui, "max_input")
+                else 100.0
+            )
             return (min_val, max_val)
         except (ValueError, AttributeError):
             return (-100.0, 100.0)
 
     # ==================== LED Control Settings ====================
 
-    def get_led_intensities(self) -> Dict[str, int]:
+    def get_led_intensities(self) -> dict[str, int]:
         """Get LED intensity values from all channel inputs.
 
         Returns:
             Dict with keys 'a', 'b', 'c', 'd' and intensity values (0-255)
+
         """
         intensities = {}
-        for channel in ['a', 'b', 'c', 'd']:
-            input_widget = getattr(self.ui, f'channel_{channel}_input', None)
+        for channel in ["a", "b", "c", "d"]:
+            input_widget = getattr(self.ui, f"channel_{channel}_input", None)
             if input_widget:
                 try:
                     intensities[channel] = int(input_widget.text() or 0)
@@ -303,24 +356,26 @@ class UIAdapter(QObject):
         Args:
             channel: Channel letter ('a', 'b', 'c', 'd')
             intensity: Intensity value (0-255)
+
         """
-        input_widget = getattr(self.ui, f'channel_{channel}_input', None)
+        input_widget = getattr(self.ui, f"channel_{channel}_input", None)
         if input_widget:
             input_widget.setText(str(intensity))
 
-    def get_polarizer_positions(self) -> Dict[str, int]:
+    def get_polarizer_positions(self) -> dict[str, int]:
         """Get S and P polarizer positions.
 
         Returns:
             Dict with keys 's' and 'p' and position values (0-255)
+
         """
         positions = {}
         try:
-            positions['s'] = int(self.ui.s_position_input.text() or 0)
-            positions['p'] = int(self.ui.p_position_input.text() or 0)
+            positions["s"] = int(self.ui.s_position_input.text() or 0)
+            positions["p"] = int(self.ui.p_position_input.text() or 0)
         except (ValueError, AttributeError):
-            positions['s'] = 0
-            positions['p'] = 0
+            positions["s"] = 0
+            positions["p"] = 0
         return positions
 
     # ==================== Status Bar / Messages ====================
@@ -331,13 +386,14 @@ class UIAdapter(QObject):
         Args:
             message: Message to display
             duration: Duration in milliseconds (0 = permanent)
+
         """
-        if hasattr(self.ui, 'statusBar'):
+        if hasattr(self.ui, "statusBar"):
             self.ui.statusBar().showMessage(message, duration)
 
     def clear_status_message(self) -> None:
         """Clear status bar message."""
-        if hasattr(self.ui, 'statusBar'):
+        if hasattr(self.ui, "statusBar"):
             self.ui.statusBar().clearMessage()
 
     # ==================== Window State ====================
@@ -353,6 +409,7 @@ class UIAdapter(QObject):
 
         Returns:
             True if window is visible
+
         """
         return self.ui.isVisible()
 
@@ -369,5 +426,6 @@ class UIAdapter(QObject):
 
         Returns:
             MainWindowPrototype instance
+
         """
         return self.ui

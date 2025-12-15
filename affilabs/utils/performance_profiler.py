@@ -292,7 +292,9 @@ class PerformanceProfiler:
 
         with self._lock:
             stats_list = sorted(
-                self.stats.values(), key=lambda s: s.total_time, reverse=True,
+                self.stats.values(),
+                key=lambda s: s.total_time,
+                reverse=True,
             )
 
         with open(filepath, "w", newline="") as f:

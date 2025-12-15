@@ -6,22 +6,26 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.sensor_iq import classify_spr_quality, SensorIQLevel
+from utils.sensor_iq import SensorIQLevel, classify_spr_quality
 
 
 def test_sensor_iq():
     """Test sensor IQ classification with various scenarios."""
-
-    print("="*80)
+    print("=" * 80)
     print("SENSOR IQ CLASSIFICATION SYSTEM - TEST")
-    print("="*80)
+    print("=" * 80)
     print()
 
     test_cases = [
         # (wavelength, fwhm, expected_level, description)
         (640.0, 25.0, SensorIQLevel.EXCELLENT, "Excellent: Good zone + sharp peak"),
         (645.0, 45.0, SensorIQLevel.GOOD, "Good: Good zone + normal FWHM"),
-        (655.0, 70.0, SensorIQLevel.QUESTIONABLE, "Questionable: Good zone + high FWHM"),
+        (
+            655.0,
+            70.0,
+            SensorIQLevel.QUESTIONABLE,
+            "Questionable: Good zone + high FWHM",
+        ),
         (650.0, 90.0, SensorIQLevel.POOR, "Poor: Good zone + critical FWHM"),
         (575.0, 35.0, SensorIQLevel.QUESTIONABLE, "Questionable: Low edge zone"),
         (705.0, 40.0, SensorIQLevel.QUESTIONABLE, "Questionable: High edge zone"),
@@ -36,7 +40,7 @@ def test_sensor_iq():
     failed = 0
 
     for i, (wavelength, fwhm, expected, description) in enumerate(test_cases, 1):
-        iq = classify_spr_quality(wavelength, fwhm, channel='test')
+        iq = classify_spr_quality(wavelength, fwhm, channel="test")
 
         status = "✅ PASS" if iq.iq_level == expected else "❌ FAIL"
         if iq.iq_level == expected:
@@ -59,9 +63,9 @@ def test_sensor_iq():
 
         print()
 
-    print("="*80)
+    print("=" * 80)
     print(f"RESULTS: {passed} passed, {failed} failed out of {len(test_cases)} tests")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Test zone boundaries
@@ -82,7 +86,9 @@ def test_sensor_iq():
         iq = classify_spr_quality(wavelength, 40.0)
         actual_zone = iq.zone.name
         status = "✅" if actual_zone == expected_zone else "❌"
-        print(f"{status} λ={wavelength:.1f}nm → {actual_zone} (expected: {expected_zone})")
+        print(
+            f"{status} λ={wavelength:.1f}nm → {actual_zone} (expected: {expected_zone})",
+        )
 
     print()
 
@@ -111,12 +117,14 @@ def test_sensor_iq():
             actual_category = "critical"
 
         status = "✅" if actual_category == expected_category else "❌"
-        print(f"{status} FWHM={fwhm:.1f}nm → {actual_category} (expected: {expected_category})")
+        print(
+            f"{status} FWHM={fwhm:.1f}nm → {actual_category} (expected: {expected_category})",
+        )
 
     print()
-    print("="*80)
+    print("=" * 80)
     print("TEST COMPLETE")
-    print("="*80)
+    print("=" * 80)
 
 
 if __name__ == "__main__":

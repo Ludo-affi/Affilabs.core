@@ -2,7 +2,7 @@ from PySide6.QtCore import QPoint, QPropertyAnimation, QSize, Qt, Signal  # type
 from PySide6.QtGui import QIcon  # type: ignore
 from PySide6.QtWidgets import QPushButton, QWidget  # type: ignore
 
-from settings import DEV, POP_OUT_SPEC, SW_VERSION, SW_APP_NAME
+from settings import DEV, POP_OUT_SPEC, SW_APP_NAME, SW_VERSION
 from ui.ui_main import Ui_mainWindow
 from widgets.advanced import P4SPRAdvMenu
 from widgets.analysis import AnalysisWindow
@@ -51,9 +51,11 @@ class MainWindow(QWidget):
             "}\n"
             "QPushButton:pressed{\n"
             "	background: rgb(230, 230, 230);\n"
-            "}"
+            "}",
         )
-        self.ui.adv_btn.setToolTip("Settings - Configure SPR tracking, calibration, and advanced options")
+        self.ui.adv_btn.setToolTip(
+            "Settings - Configure SPR tracking, calibration, and advanced options",
+        )
         self.device_config = {"ctrl": "", "knx": ""}
 
         # set up recording
@@ -115,7 +117,8 @@ class MainWindow(QWidget):
 
         # resize sensorgram (others lazy-loaded)
         self.sensorgram.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
+            self.ui.main_display.width(),
+            self.ui.main_display.height(),
         )
 
         self.ui.sensorgram_btn.clicked.connect(self.display_sensorgram_page)
@@ -131,12 +134,18 @@ class MainWindow(QWidget):
         try:
             self.settings = Settings(
                 self.sensorgram.reference_channel_dlg,  # Channel/SPR settings widget
-                self.advanced_menu if self.advanced_menu is not None else P4SPRAdvMenu(parent=self),
+                self.advanced_menu
+                if self.advanced_menu is not None
+                else P4SPRAdvMenu(parent=self),
                 self,
             )
         except Exception:
             # Fallback minimal settings if construction fails for any reason
-            self.settings = Settings(self.sensorgram.reference_channel_dlg, P4SPRAdvMenu(parent=self), self)
+            self.settings = Settings(
+                self.sensorgram.reference_channel_dlg,
+                P4SPRAdvMenu(parent=self),
+                self,
+            )
 
         self.ui.adv_btn.clicked.connect(self.show_adv_settings)
 
@@ -159,7 +168,8 @@ class MainWindow(QWidget):
             else:
                 self._spectroscopy.setParent(self.ui.main_display)
             self._spectroscopy.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
         return self._spectroscopy
 
@@ -177,7 +187,8 @@ class MainWindow(QWidget):
             self._data_processing = DataWindow("static")
             self._data_processing.setParent(self.ui.main_display)
             self._data_processing.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
         return self._data_processing
 
@@ -188,7 +199,8 @@ class MainWindow(QWidget):
             self._data_analysis = AnalysisWindow()
             self._data_analysis.setParent(self.ui.main_display)
             self._data_analysis.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
         return self._data_analysis
 
@@ -197,8 +209,12 @@ class MainWindow(QWidget):
         # Ensure advanced/settings menus exist; refresh when device config arrives
         if self.advanced_menu is None:
             self.advanced_menu = P4SPRAdvMenu(parent=self)
-        if not hasattr(self, 'settings') or self.settings is None:
-            self.settings = Settings(self.sensorgram.reference_channel_dlg, self.advanced_menu, self)
+        if not hasattr(self, "settings") or self.settings is None:
+            self.settings = Settings(
+                self.sensorgram.reference_channel_dlg,
+                self.advanced_menu,
+                self,
+            )
 
         # Optionally refresh advanced values for supported controllers
         if config.get("ctrl") in ["PicoP4SPR", "PicoEZSPR"]:
@@ -210,20 +226,24 @@ class MainWindow(QWidget):
 
     def main_display_resized(self):
         self.sensorgram.setFixedSize(
-            self.ui.main_display.width(), self.ui.main_display.height()
+            self.ui.main_display.width(),
+            self.ui.main_display.height(),
         )
         # Only resize lazy-loaded windows if they've been created
         if self._spectroscopy is not None:
             self._spectroscopy.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
         if self._data_processing is not None:
             self._data_processing.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
         if self._data_analysis is not None:
             self._data_analysis.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
 
     # navigate the main contents: Sensorgram, Spectroscopy, DataProcessing
@@ -295,36 +315,49 @@ class MainWindow(QWidget):
             if self.sidebar_state == "minimized":
                 self.x_pos = self.width() - self.sidebar_btn.width()
             else:
-                self.x_pos = self.width() - self.sidebar_btn.width() - self.sidebar.width()
+                self.x_pos = (
+                    self.width() - self.sidebar_btn.width() - self.sidebar.width()
+                )
 
             self.ui.main_frame.setGeometry(
-                0, 0, self.x_pos + self.sidebar_btn.width(), self.height()
+                0,
+                0,
+                self.x_pos + self.sidebar_btn.width(),
+                self.height(),
             )
 
             # Resize sensorgram (always created)
             self.sensorgram.setFixedSize(
-                self.ui.main_display.width(), self.ui.main_display.height()
+                self.ui.main_display.width(),
+                self.ui.main_display.height(),
             )
 
             # Only resize lazy-loaded windows if they've been created
-            if POP_OUT_SPEC and self._spec_pop_out is not None and self._spectroscopy is not None:
+            if (
+                POP_OUT_SPEC
+                and self._spec_pop_out is not None
+                and self._spectroscopy is not None
+            ):
                 self._spectroscopy.setFixedSize(
                     self._spec_pop_out.ui.single_frame.width(),
                     self._spec_pop_out.ui.single_frame.height(),
                 )
             elif self._spectroscopy is not None:
                 self._spectroscopy.setFixedSize(
-                    self.ui.main_display.width(), self.ui.main_display.height()
+                    self.ui.main_display.width(),
+                    self.ui.main_display.height(),
                 )
 
             if self._data_processing is not None:
                 self._data_processing.setFixedSize(
-                    self.ui.main_display.width(), self.ui.main_display.height()
+                    self.ui.main_display.width(),
+                    self.ui.main_display.height(),
                 )
 
             if self._data_analysis is not None:
                 self._data_analysis.setFixedSize(
-                    self.ui.main_display.width(), self.ui.main_display.height()
+                    self.ui.main_display.width(),
+                    self.ui.main_display.height(),
                 )
                 self._data_analysis.resizeEvent()
 
@@ -352,7 +385,7 @@ class MainWindow(QWidget):
             self.recording = False
             self.ui.recording_status.setText("NOT\nRECORDING")
             self.ui.recording_status.setStyleSheet(
-                "background: none; color: red; font: 8pt 'Segoe UI Black';"
+                "background: none; color: red; font: 8pt 'Segoe UI Black';",
             )
             self.ui.rec_btn.setIcon(QIcon(":/img/img/record.png"))
             # Hide the label when not recording to avoid "ghost button" appearance
@@ -363,7 +396,7 @@ class MainWindow(QWidget):
             self.ui.recording_status.setText("Recording\nin Progress")
             self.ui.recording_status.setStyleSheet(
                 "background: none; border: none; color: black;font: "
-                "8pt 'Segoe UI Semibold';"
+                "8pt 'Segoe UI Semibold';",
             )
             self.ui.rec_btn.setIcon(QIcon(":/img/img/stop.png"))
             # Show the label when recording is active
@@ -392,7 +425,7 @@ class MainWindow(QWidget):
         if self.sidebar_anim is None:
             self.sidebar_anim = QPropertyAnimation(self.sidebar, b"pos")
         self.sidebar_anim.setEndValue(
-            QPoint(self.x_pos + self.sidebar_btn.width(), self.sidebar.y())
+            QPoint(self.x_pos + self.sidebar_btn.width(), self.sidebar.y()),
         )
         self.sidebar_anim.setDuration(animation_time)
         self.sidebar_anim.start()
@@ -401,7 +434,7 @@ class MainWindow(QWidget):
             self.main_frame_anim = QPropertyAnimation(self.ui.main_frame, b"size")
         self.main_frame_anim.setStartValue(self.ui.main_frame.size())
         self.main_frame_anim.setEndValue(
-            QSize(self.x_pos + self.sidebar_btn.width(), self.height())
+            QSize(self.x_pos + self.sidebar_btn.width(), self.height()),
         )
         self.main_frame_anim.setDuration(animation_time)
         self.main_frame_anim.start()
@@ -410,19 +443,23 @@ class MainWindow(QWidget):
         self.setUpdatesEnabled(False)
         try:
             self.sensorgram.setFixedSize(
-                self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                self.x_pos + self.sidebar_btn.width(),
+                self.ui.main_display.height(),
             )
             if not POP_OUT_SPEC and self._spectroscopy is not None:
                 self._spectroscopy.setFixedSize(
-                    self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                    self.x_pos + self.sidebar_btn.width(),
+                    self.ui.main_display.height(),
                 )
             if self._data_processing is not None:
                 self._data_processing.setFixedSize(
-                    self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                    self.x_pos + self.sidebar_btn.width(),
+                    self.ui.main_display.height(),
                 )
             if self._data_analysis is not None:
                 self._data_analysis.setFixedSize(
-                    self.x_pos + self.sidebar_btn.width(), self.ui.main_display.height()
+                    self.x_pos + self.sidebar_btn.width(),
+                    self.ui.main_display.height(),
                 )
             self.ui.tool_bar.setFixedWidth(self.ui.main_display.width())
         finally:
@@ -437,6 +474,23 @@ class MainWindow(QWidget):
                     self.advanced_menu.refresh_values()
                 except Exception:
                     pass
+
+                # Load calibration parameters if available
+                try:
+                    if (
+                        hasattr(self, "data_mgr")
+                        and self.data_mgr
+                        and hasattr(self.data_mgr, "calibration_data")
+                    ):
+                        cal_data = self.data_mgr.calibration_data
+                        if cal_data and hasattr(
+                            self.advanced_menu,
+                            "load_calibration_params",
+                        ):
+                            self.advanced_menu.load_calibration_params(cal_data)
+                except Exception:
+                    pass
+
             self.settings.show()
             self.settings.activateWindow()
         except Exception as e:

@@ -10,14 +10,15 @@ Author: AI Assistant
 Date: November 24, 2025
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6.QtWidgets import QApplication
 from affilabs_core_ui import AffilabsMainWindow
+from PySide6.QtWidgets import QApplication
+
 from affilabs.utils.demo_data_generator import generate_demo_cycle_data
 
 
@@ -42,16 +43,16 @@ def main():
     # Load data into window buffers
     print("Loading data into UI...")
     window.time_buffer = list(time_array)
-    window.wavelength_buffer_a = list(channel_data['a'])
-    window.wavelength_buffer_b = list(channel_data['b'])
-    window.wavelength_buffer_c = list(channel_data['c'])
-    window.wavelength_buffer_d = list(channel_data['d'])
+    window.wavelength_buffer_a = list(channel_data["a"])
+    window.wavelength_buffer_b = list(channel_data["b"])
+    window.wavelength_buffer_c = list(channel_data["c"])
+    window.wavelength_buffer_d = list(channel_data["d"])
 
     # Update plots
-    if hasattr(window, '_update_plots'):
+    if hasattr(window, "_update_plots"):
         window._update_plots()
 
-    print(f"[OK] Demo data loaded successfully!")
+    print("[OK] Demo data loaded successfully!")
     print(f"   - {len(time_array)} data points")
     print(f"   - {len(cycle_boundaries)} cycles")
     print(f"   - Duration: {time_array[-1]:.0f} seconds")

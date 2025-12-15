@@ -1,9 +1,12 @@
 """Test individual LED commands vs batch commands."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def test_individual_vs_batch():
     """Compare individual LED commands vs batch commands."""
@@ -21,9 +24,9 @@ def test_individual_vs_batch():
     print("TEST 1: Individual LED command (LED A)")
     print("=" * 60)
     print(">>> LED A should LIGHT UP for 2 seconds <<<")
-    pico.set_intensity('a', 255)
+    pico.set_intensity("a", 255)
     time.sleep(2)
-    pico.set_intensity('a', 0)
+    pico.set_intensity("a", 0)
     print("LED A turned OFF\n")
     time.sleep(1)
 
@@ -60,9 +63,9 @@ def test_individual_vs_batch():
     print("TEST 4: Individual command on LED D")
     print("=" * 60)
     print(">>> LED D should LIGHT UP for 2 seconds <<<")
-    pico.set_intensity('d', 255)
+    pico.set_intensity("d", 255)
     time.sleep(2)
-    pico.set_intensity('d', 0)
+    pico.set_intensity("d", 0)
     print("LED D turned OFF\n")
 
     print("=" * 60)
@@ -74,6 +77,7 @@ def test_individual_vs_batch():
     print("- If LED C lit up: Batch commands need pre-enabled channels")
 
     pico.close()
+
 
 if __name__ == "__main__":
     test_individual_vs_batch()

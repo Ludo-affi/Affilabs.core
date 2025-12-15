@@ -191,7 +191,8 @@ class PhasePhotonics:
                 # CRITICAL: Set trigger timeout to match integration time (LabVIEW does this!)
                 # This is what enables fast acquisition!
                 trig_tmo_ms = max(
-                    20, int(integration_ms * 3),
+                    20,
+                    int(integration_ms * 3),
                 )  # 3x integration or 20ms minimum
                 logger.debug(
                     f"Setting trigger timeout to {trig_tmo_ms}ms for fast acquisition...",

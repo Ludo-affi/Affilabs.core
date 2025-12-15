@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from functools import partial
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QPushButton,
     QButtonGroup,
     QComboBox,
     QFrame,
@@ -13,8 +12,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QRadioButton,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -60,18 +59,26 @@ class SidebarSpectroscopyPanel(QWidget):
 
         for plot_widget in (self.trans_plot_view, self.intensity_plot_view):
             plot_widget.plot.showGrid(x=False, y=False)
-            for axis_name in ('left', 'bottom'):
+            for axis_name in ("left", "bottom"):
                 axis = plot_widget.plot.getAxis(axis_name)
-                axis.setStyle(tickLength=4, maxTickLevel=0, tickTextOffset=2, showValues=True)
+                axis.setStyle(
+                    tickLength=4,
+                    maxTickLevel=0,
+                    tickTextOffset=2,
+                    showValues=True,
+                )
             # Move x-axis label up by 10px
-            bottom_axis = plot_widget.plot.getAxis('bottom')
-            if bottom_axis.label is not None and hasattr(bottom_axis.label, 'setPos'):
+            bottom_axis = plot_widget.plot.getAxis("bottom")
+            if bottom_axis.label is not None and hasattr(bottom_axis.label, "setPos"):
                 orig_pos = bottom_axis.label.pos()
                 bottom_axis.label.setPos(orig_pos.x(), orig_pos.y() - 10)
-            if bottom_axis.label is not None and hasattr(bottom_axis.label, 'setPadding'):
+            if bottom_axis.label is not None and hasattr(
+                bottom_axis.label,
+                "setPadding",
+            ):
                 bottom_axis.label.setPadding(0)
-            left_axis = plot_widget.plot.getAxis('left')
-            if left_axis.label is not None and hasattr(left_axis.label, 'setPadding'):
+            left_axis = plot_widget.plot.getAxis("left")
+            if left_axis.label is not None and hasattr(left_axis.label, "setPadding"):
                 left_axis.label.setPadding(0)
             self._shrink_plot_fonts(plot_widget)
 
@@ -79,7 +86,11 @@ class SidebarSpectroscopyPanel(QWidget):
         self.toggle_bar = self._build_graph_toggle_bar()
 
         # Wrap sections - transmission gets title and toggles
-        self.trans_section = self._wrap_plot_section(self.trans_plot_view, add_title=True, add_toggles=True)
+        self.trans_section = self._wrap_plot_section(
+            self.trans_plot_view,
+            add_title=True,
+            add_toggles=True,
+        )
         self.intensity_section = self._wrap_plot_section(self.intensity_plot_view)
 
         layout.addWidget(self.trans_section)
@@ -110,20 +121,26 @@ class SidebarSpectroscopyPanel(QWidget):
         layout.addStretch(1)
         self._update_graph_visibility()
 
-    def showEvent(self, event):  # noqa: D401
+    def showEvent(self, event):
         super().showEvent(event)
         self._update_graph_aspect()
 
     def _shrink_plot_fonts(self, plot_widget: SpecPlot) -> None:
         small_font = QFont("Segoe UI", 7)
-        for axis_name in ('left', 'bottom'):
+        for axis_name in ("left", "bottom"):
             axis = plot_widget.plot.getAxis(axis_name)
             axis.setTickFont(small_font)
             if axis.label is not None:
                 axis.label.setFont(small_font)
 
-    def _wrap_plot_section(self, plot_widget: SpecPlot, add_title: bool = False, add_toggles: bool = False) -> QFrame:
-        from ui.styles import get_container_style, Colors, Spacing, Radius, Typography
+    def _wrap_plot_section(
+        self,
+        plot_widget: SpecPlot,
+        add_title: bool = False,
+        add_toggles: bool = False,
+    ) -> QFrame:
+        from ui.styles import Colors, Typography, get_container_style
+
         container = QFrame(self)
         container.setObjectName("spec_preview")
         container.setStyleSheet(get_container_style(elevated=True))
@@ -135,14 +152,18 @@ class SidebarSpectroscopyPanel(QWidget):
 
         # Add title if requested
         if add_title:
-            from ui.styles import Typography, Colors
+            from ui.styles import Colors, Typography
+
             title = QLabel("Spectroscopy", container)
-            title.setStyleSheet(f"font-weight: 600; font-size: {Typography.SIZE_TITLE}pt; color: {Colors.ON_SURFACE}; background: transparent; border: none;")
+            title.setStyleSheet(
+                f"font-weight: 600; font-size: {Typography.SIZE_TITLE}pt; color: {Colors.ON_SURFACE}; background: transparent; border: none;",
+            )
             title.setAlignment(Qt.AlignLeft)
             layout.addWidget(title)
 
         # Wrap plot in a frame with dark grey border
         from ui.styles import get_graph_border_style
+
         plot_frame = QFrame(container)
         plot_frame.setStyleSheet(get_graph_border_style())
         plot_layout = QVBoxLayout(plot_frame)
@@ -198,7 +219,8 @@ class SidebarSpectroscopyPanel(QWidget):
 
     def _build_controls_container(self) -> QFrame:
         """Build styled container for Pol and LED controls."""
-        from ui.styles import get_container_style, Colors, Spacing, Typography
+        from ui.styles import Colors, Typography, get_container_style
+
         container = QFrame(self)
         container.setObjectName("pol_led_container")
         container.setStyleSheet(get_container_style(elevated=True))
@@ -210,7 +232,9 @@ class SidebarSpectroscopyPanel(QWidget):
 
         # Add title
         title = QLabel("Pol and LED Control", container)
-        title.setStyleSheet(f"font-weight: 600; font-size: {Typography.SIZE_TITLE}pt; color: {Colors.ON_SURFACE}; background: transparent; border: none;")
+        title.setStyleSheet(
+            f"font-weight: 600; font-size: {Typography.SIZE_TITLE}pt; color: {Colors.ON_SURFACE}; background: transparent; border: none;",
+        )
         title.setAlignment(Qt.AlignLeft)
         outer_layout.addWidget(title)
 
@@ -228,7 +252,7 @@ class SidebarSpectroscopyPanel(QWidget):
         servo_label = QLabel("Polarization Servo:", box)
         self.servo_combo = QComboBox(box)
         self.servo_combo.setStyleSheet(
-            "QComboBox, QComboBox QAbstractItemView { color: black; background: white; }"
+            "QComboBox, QComboBox QAbstractItemView { color: black; background: white; }",
         )
         self.servo_combo.addItems(["P", "S"])
         self.servo_combo.currentTextChanged.connect(self._handle_servo_change)
@@ -244,7 +268,7 @@ class SidebarSpectroscopyPanel(QWidget):
         led_mode_label = QLabel("LED Mode:", box)
         self.led_mode_combo = QComboBox(box)
         self.led_mode_combo.setStyleSheet(
-            "QComboBox, QComboBox QAbstractItemView { color: black; background: white; }"
+            "QComboBox, QComboBox QAbstractItemView { color: black; background: white; }",
         )
         self.led_mode_combo.addItems(["Auto", "Single"])
         self.led_mode_combo.currentTextChanged.connect(self._handle_led_mode_change)
@@ -257,7 +281,9 @@ class SidebarSpectroscopyPanel(QWidget):
         # LED radio buttons (no separate channel labels)
         self.single_led_group = QGroupBox(box)
         self.single_led_group.setFlat(True)
-        self.single_led_group.setStyleSheet("QGroupBox { border: none; background: transparent; }")
+        self.single_led_group.setStyleSheet(
+            "QGroupBox { border: none; background: transparent; }",
+        )
         single_layout = QHBoxLayout(self.single_led_group)
         single_layout.setContentsMargins(0, 0, 0, 0)
         single_layout.setSpacing(8)
@@ -267,7 +293,7 @@ class SidebarSpectroscopyPanel(QWidget):
             button = QRadioButton(ch, self.single_led_group)
             button.setStyleSheet(
                 "QRadioButton { padding: 2px; }"
-                "QRadioButton::indicator { width: 14px; height: 14px; margin-right: 4px; }"
+                "QRadioButton::indicator { width: 14px; height: 14px; margin-right: 4px; }",
             )
             self.led_button_group.addButton(button)
             single_layout.addWidget(button)
@@ -319,8 +345,16 @@ class SidebarSpectroscopyPanel(QWidget):
         if not spec_data:
             return
         try:
-            self.intensity_plot_view.update_plots(spec_data["wave_data"], spec_data["int_data"], self.led_mode)
-            self.trans_plot_view.update_plots(spec_data["wave_data"], spec_data["trans_data"], self.led_mode)
+            self.intensity_plot_view.update_plots(
+                spec_data["wave_data"],
+                spec_data["int_data"],
+                self.led_mode,
+            )
+            self.trans_plot_view.update_plots(
+                spec_data["wave_data"],
+                spec_data["trans_data"],
+                self.led_mode,
+            )
         except Exception:
             # Keep sidebar resilient – plotting errors should not break UI
             pass
@@ -328,7 +362,9 @@ class SidebarSpectroscopyPanel(QWidget):
     def enable_controls(self, state: bool) -> None:
         self.servo_combo.setEnabled(state)
         self.led_mode_combo.setEnabled(state)
-        self.single_led_group.setEnabled(state and self.led_mode_combo.currentText().lower() == "single")
+        self.single_led_group.setEnabled(
+            state and self.led_mode_combo.currentText().lower() == "single",
+        )
 
     def sync_polarizer(self, mode: str) -> None:
         normalized = (mode or "").strip().upper()
@@ -356,8 +392,12 @@ class SidebarSpectroscopyPanel(QWidget):
             self._last_single_channel = normalized
 
     def _update_graph_visibility(self) -> None:
-        trans_selected = self.trans_toggle.isChecked() if hasattr(self, "trans_toggle") else True
-        raw_selected = self.raw_toggle.isChecked() if hasattr(self, "raw_toggle") else False
+        trans_selected = (
+            self.trans_toggle.isChecked() if hasattr(self, "trans_toggle") else True
+        )
+        raw_selected = (
+            self.raw_toggle.isChecked() if hasattr(self, "raw_toggle") else False
+        )
 
         # Show/hide only the section, don't set fixed height to 0
         # This preserves the title and toggle buttons
@@ -369,7 +409,7 @@ class SidebarSpectroscopyPanel(QWidget):
 
         self._update_graph_aspect()
 
-    def resizeEvent(self, event):  # noqa: D401
+    def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_graph_aspect()
 

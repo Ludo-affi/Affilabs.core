@@ -4,10 +4,10 @@ Manages UI state and interactions for baseline data recording.
 Extracted from affilabs_core_ui.py for better modularity.
 """
 
-from typing import Dict, Optional
 from PySide6.QtWidgets import QMessageBox
-from affilabs.utils.logger import logger
+
 from affilabs.utils.baseline_data_recorder import BaselineDataRecorder
+from affilabs.utils.logger import logger
 
 
 class BaselineRecordingPresenter:
@@ -18,15 +18,16 @@ class BaselineRecordingPresenter:
 
         Args:
             main_window: Reference to the main window (AffilabsMainWindow)
+
         """
         self.main_window = main_window
-        self._baseline_recorder: Optional[BaselineDataRecorder] = None
+        self._baseline_recorder: BaselineDataRecorder | None = None
 
     def handle_record_baseline(self) -> None:
         """Handle Record Baseline Data button click."""
         logger.info("Record Baseline Data button clicked")
 
-        if not hasattr(self.main_window, 'app') or not self.main_window.app:
+        if not hasattr(self.main_window, "app") or not self.main_window.app:
             logger.warning("Application not connected")
             return
 
@@ -40,23 +41,34 @@ class BaselineRecordingPresenter:
         if not self._baseline_recorder:
             # Get data manager (try both attribute names for compatibility)
             data_mgr = None
-            if hasattr(self.main_window, 'app') and self.main_window.app:
-                data_mgr = getattr(self.main_window.app, 'data_mgr', None) or getattr(
-                    self.main_window.app, 'data_acquisition', None
+            if hasattr(self.main_window, "app") and self.main_window.app:
+                data_mgr = getattr(self.main_window.app, "data_mgr", None) or getattr(
+                    self.main_window.app,
+                    "data_acquisition",
+                    None,
                 )
 
             if not data_mgr:
                 QMessageBox.warning(
-                    self.main_window, "Not Ready", "Data acquisition system not initialized."
+                    self.main_window,
+                    "Not Ready",
+                    "Data acquisition system not initialized.",
                 )
                 return
 
-            self._baseline_recorder = BaselineDataRecorder(data_mgr, parent=self.main_window)
+            self._baseline_recorder = BaselineDataRecorder(
+                data_mgr,
+                parent=self.main_window,
+            )
 
             # Connect signals
             self._baseline_recorder.recording_started.connect(self.on_recording_started)
-            self._baseline_recorder.recording_progress.connect(self.on_recording_progress)
-            self._baseline_recorder.recording_complete.connect(self.on_recording_complete)
+            self._baseline_recorder.recording_progress.connect(
+                self.on_recording_progress,
+            )
+            self._baseline_recorder.recording_complete.connect(
+                self.on_recording_complete,
+            )
             self._baseline_recorder.recording_error.connect(self.on_recording_error)
 
         # Confirm with user
@@ -74,7 +86,7 @@ class BaselineRecordingPresenter:
 
     def on_recording_started(self) -> None:
         """Handle recording started signal - update button to show stop state."""
-        if hasattr(self.main_window, 'baseline_capture_btn'):
+        if hasattr(self.main_window, "baseline_capture_btn"):
             self.main_window.baseline_capture_btn.setText("⏹️ Stop Capture")
             self.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
@@ -92,26 +104,28 @@ class BaselineRecordingPresenter:
                 "}"
                 "QPushButton:pressed {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E08000, stop:1 #C07000);"
-                "}"
+                "}",
             )
         logger.info("📊 Baseline recording started")
 
-    def on_recording_progress(self, progress: Dict) -> None:
+    def on_recording_progress(self, progress: dict) -> None:
         """Handle recording progress update - update button text with progress."""
-        elapsed = progress['elapsed']
-        remaining = progress['remaining']
-        count = progress['count']
-        percent = progress['percent']
+        elapsed = progress["elapsed"]
+        remaining = progress["remaining"]
+        count = progress["count"]
+        percent = progress["percent"]
 
-        if hasattr(self.main_window, 'baseline_capture_btn'):
+        if hasattr(self.main_window, "baseline_capture_btn"):
             self.main_window.baseline_capture_btn.setText(
-                f"⏹️ Capturing... {int(percent)}% ({int(remaining)}s)"
+                f"⏹️ Capturing... {int(percent)}% ({int(remaining)}s)",
             )
 
     def on_recording_complete(self, filepath: str) -> None:
         """Handle recording complete signal - reset button and show success message."""
-        if hasattr(self.main_window, 'baseline_capture_btn'):
-            self.main_window.baseline_capture_btn.setText("🔴 Record 5-Min Baseline Data")
+        if hasattr(self.main_window, "baseline_capture_btn"):
+            self.main_window.baseline_capture_btn.setText(
+                "🔴 Record 5-Min Baseline Data",
+            )
             self.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
@@ -132,7 +146,7 @@ class BaselineRecordingPresenter:
                 "QPushButton:disabled {"
                 "  background: #D1D1D6;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
 
         QMessageBox.information(
@@ -146,8 +160,10 @@ class BaselineRecordingPresenter:
 
     def on_recording_error(self, error_msg: str) -> None:
         """Handle recording error signal - reset button and show error message."""
-        if hasattr(self.main_window, 'baseline_capture_btn'):
-            self.main_window.baseline_capture_btn.setText("🔴 Record 5-Min Baseline Data")
+        if hasattr(self.main_window, "baseline_capture_btn"):
+            self.main_window.baseline_capture_btn.setText(
+                "🔴 Record 5-Min Baseline Data",
+            )
             self.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
@@ -168,10 +184,12 @@ class BaselineRecordingPresenter:
                 "QPushButton:disabled {"
                 "  background: #D1D1D6;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
 
         QMessageBox.critical(
-            self.main_window, "Recording Error", f"❌ Baseline recording failed:\n\n{error_msg}"
+            self.main_window,
+            "Recording Error",
+            f"❌ Baseline recording failed:\n\n{error_msg}",
         )
         logger.error(f"❌ Baseline recording error: {error_msg}")

@@ -128,10 +128,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
         try:
             # Lightweight check: just verify serial port is open
             # Don't do communication test on every call - it can fail if device is busy
-            return (
-                self._ser is not None
-                and getattr(self._ser, "is_open", False)
-            )
+            return self._ser is not None and getattr(self._ser, "is_open", False)
         except Exception:
             return False
 
@@ -168,10 +165,16 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Args:
             channel: ChannelID enum or string ('a', 'b', 'c', 'd')
+
         """
         # Convert string to ChannelID if needed
         if isinstance(channel, str):
-            channel_map = {'a': ChannelID.A, 'b': ChannelID.B, 'c': ChannelID.C, 'd': ChannelID.D}
+            channel_map = {
+                "a": ChannelID.A,
+                "b": ChannelID.B,
+                "c": ChannelID.C,
+                "d": ChannelID.D,
+            }
             channel_id = channel_map.get(channel.lower())
             if channel_id is None:
                 logger.warning(f"Invalid channel: {channel}")
@@ -257,6 +260,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
             - 4LED PCB: Limited to 204 max (~80% range)
             - 8LED PCB: Full 255 range
             - Commands: baXXX\n, bbXXX\n, bcXXX\n, bdXXX\n
+
         """
         if not self.validate_led_intensity(intensity):
             return False
@@ -279,16 +283,19 @@ class PicoP4SPRHAL(SPRControllerHAL):
             # Set intensity for all 4 channels WITHOUT waiting for responses
             # Safe because LED settle delay (100ms) gives hardware time to complete
             if self._ser:
-                for channel_letter in ['a', 'b', 'c', 'd']:
+                for channel_letter in ["a", "b", "c", "d"]:
                     cmd = f"b{channel_letter}{intensity_str}\n"
                     self._ser.write(cmd.encode())
 
                 import time
+
                 time.sleep(0.008)  # 8ms for 4 serial transmissions (2ms each)
 
                 # Update cached value optimistically
                 self._current_intensity = intensity
-                logger.debug(f"Set LED intensity to {intensity:.2f} (fire-and-forget, firmware: {firmware_value})")
+                logger.debug(
+                    f"Set LED intensity to {intensity:.2f} (fire-and-forget, firmware: {firmware_value})",
+                )
 
             return True
 
@@ -316,8 +323,9 @@ class PicoP4SPRHAL(SPRControllerHAL):
         Note:
             PicoP4SPR firmware doesn't support reading back intensity,
             so we return the last set value.
+
         """
-        return getattr(self, '_current_intensity', 1.0)  # Default to full intensity
+        return getattr(self, "_current_intensity", 1.0)  # Default to full intensity
 
     def emergency_shutdown(self) -> bool:
         """Emergency shutdown - turn off all LEDs and safe shutdown."""
@@ -335,9 +343,8 @@ class PicoP4SPRHAL(SPRControllerHAL):
                 self.status.active_channel = None
                 logger.info("✅ LEDs safely turned off")
                 return True
-            else:
-                logger.error("❌ Cannot turn off LEDs - device not connected")
-                return False
+            logger.error("❌ Cannot turn off LEDs - device not connected")
+            return False
         except Exception as e:
             logger.error(f"❌ Emergency shutdown failed: {e}")
             return False
@@ -354,6 +361,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Raises:
             HALOperationError: If device not connected or invalid parameters
+
         """
         if not self.is_connected():
             raise HALOperationError("Device not connected", "set_intensity")
@@ -361,7 +369,9 @@ class PicoP4SPRHAL(SPRControllerHAL):
         try:
             # Validate channel
             if ch not in {"a", "b", "c", "d"}:
-                raise ValueError(f"Invalid channel: {ch}. Must be 'a', 'b', 'c', or 'd'")
+                raise ValueError(
+                    f"Invalid channel: {ch}. Must be 'a', 'b', 'c', or 'd'",
+                )
 
             # Clamp intensity to valid range (0-255)
             if raw_val > 255:
@@ -390,7 +400,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
             # If ACK not received, fall back to fire-and-forget to improve robustness
             logger.warning(
                 f"⚠️ No ACK for intensity set on {ch.upper()} (val={raw_val}). "
-                f"Attempting fire-and-forget fallback."
+                f"Attempting fire-and-forget fallback.",
             )
             try:
                 # Best-effort: send raw command without expecting response
@@ -403,7 +413,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
                     self._ser.write(turn_on_cmd.encode())
                     time.sleep(0.002)
                     logger.debug(
-                        f"LED {ch.upper()} set to intensity {raw_val} (fallback, no ACK)"
+                        f"LED {ch.upper()} set to intensity {raw_val} (fallback, no ACK)",
                     )
                     return True
             except Exception as fe:
@@ -417,7 +427,10 @@ class PicoP4SPRHAL(SPRControllerHAL):
             raise HALOperationError(f"Invalid parameters: {e}", "set_intensity")
         except Exception as e:
             logger.error(f"❌ Error setting LED intensity: {e}")
-            raise HALOperationError(f"Failed to set LED intensity: {e}", "set_intensity")
+            raise HALOperationError(
+                f"Failed to set LED intensity: {e}",
+                "set_intensity",
+            )
 
     def set_mode(self, mode: str = "s") -> bool:
         """Set polarizer mode.
@@ -427,6 +440,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Returns:
             True if successful, False otherwise
+
         """
         if not self.is_connected():
             raise HALOperationError("Device not connected", "set_mode")
@@ -438,7 +452,9 @@ class PicoP4SPRHAL(SPRControllerHAL):
             else:
                 cmd = "sp\n"  # P-mode command
 
-            logger.debug(f"Setting polarizer to {mode.upper()}-mode (command: {cmd.strip()})")
+            logger.debug(
+                f"Setting polarizer to {mode.upper()}-mode (command: {cmd.strip()})",
+            )
 
             # Send command - firmware may not always return "1" for polarizer commands
             # Just send the command and trust it worked
@@ -466,6 +482,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Returns:
             True if successful, False otherwise
+
         """
         if not self.is_connected():
             raise HALOperationError("Device not connected", "servo_set")
@@ -480,15 +497,17 @@ class PicoP4SPRHAL(SPRControllerHAL):
             # When we send sv050165, firmware interprets as: first servo=050 (but uses it for P-mode), second servo=165 (but uses it for S-mode)
             # So we need to swap the order: send P position first, then S position
             cmd = f"sv{p:03d}{s:03d}\n"  # SWAPPED: Send P-position first, S-position second
-            logger.info(f"🔧 Setting servo positions: S={s}, P={p} (command: sv{p:03d}{s:03d} - P first due to firmware quirk)")
+            logger.info(
+                f"🔧 Setting servo positions: S={s}, P={p} (command: sv{p:03d}{s:03d} - P first due to firmware quirk)",
+            )
 
             # Send command and get response
             success = self._send_command_with_response(cmd, b"1")
 
             if success:
-                logger.info(f"✅ Servo positions set successfully")
+                logger.info("✅ Servo positions set successfully")
             else:
-                logger.warning(f"⚠️ Unexpected servo response")
+                logger.warning("⚠️ Unexpected servo response")
 
             return success
 
@@ -501,6 +520,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Returns:
             Dictionary with 's' and 'p' keys containing position bytes, or None if failed
+
         """
         if not self.is_connected():
             raise HALOperationError("Device not connected", "servo_get")
@@ -518,19 +538,22 @@ class PicoP4SPRHAL(SPRControllerHAL):
                 response_str = response.decode().strip()
 
                 # Split by comma separator
-                if ',' in response_str:
-                    parts = response_str.split(',')
+                if "," in response_str:
+                    parts = response_str.split(",")
                     if len(parts) == 2:
-                        s_pos = parts[0].encode()  # Convert back to bytes for consistency
+                        s_pos = parts[
+                            0
+                        ].encode()  # Convert back to bytes for consistency
                         p_pos = parts[1].encode()
                         logger.debug(f"Current servo positions: S={s_pos}, P={p_pos}")
                         return {"s": s_pos, "p": p_pos}
 
-                logger.warning(f"Invalid servo position response format: {response_str}")
+                logger.warning(
+                    f"Invalid servo position response format: {response_str}",
+                )
                 return None
-            else:
-                logger.warning("No servo position response received")
-                return None
+            logger.warning("No servo position response received")
+            return None
 
         except Exception as e:
             logger.error(f"❌ Error reading servo positions: {e}")
@@ -544,6 +567,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Returns:
             True if successful, False otherwise
+
         """
         if not self.is_connected():
             raise HALOperationError("Device not connected", "flash")
@@ -574,6 +598,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Returns:
             True if successful, False otherwise
+
         """
         if not self.is_connected():
             raise HALOperationError("Device not connected", "turn_off_channels")
@@ -593,7 +618,10 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         except Exception as e:
             logger.error(f"❌ Error turning off LED channels: {e}")
-            raise HALOperationError(f"Failed to turn off channels: {e}", "turn_off_channels")
+            raise HALOperationError(
+                f"Failed to turn off channels: {e}",
+                "turn_off_channels",
+            )
 
     def reset_device(self) -> bool:
         """Reset PicoP4SPR to default state."""
@@ -708,15 +736,14 @@ class PicoP4SPRHAL(SPRControllerHAL):
             if self._verify_device_identity():
                 logger.debug(f"Successfully verified PicoP4SPR identity on {port}")
                 return True
-            else:
-                logger.warning(f"Device on {port} did not respond as PicoP4SPR")
-                # Close and cleanup failed connection
-                try:
-                    self._ser.close()
-                except Exception:
-                    pass
-                self._ser = None
-                return False
+            logger.warning(f"Device on {port} did not respond as PicoP4SPR")
+            # Close and cleanup failed connection
+            try:
+                self._ser.close()
+            except Exception:
+                pass
+            self._ser = None
+            return False
 
         except Exception as e:
             logger.debug(f"Connection attempt to {port} failed: {e}")
@@ -762,7 +789,9 @@ class PicoP4SPRHAL(SPRControllerHAL):
                         return True
 
             # No valid response within timeout
-            logger.warning("⚠️ Device did not respond with P4SPR identifier within 200ms")
+            logger.warning(
+                "⚠️ Device did not respond with P4SPR identifier within 200ms",
+            )
 
         except Exception as e:
             logger.debug(f"ID verification failed: {e}")
@@ -828,6 +857,7 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
         Returns:
             True if response matches expected, False otherwise
+
         """
         if not self._ser:
             return False
@@ -847,13 +877,19 @@ class PicoP4SPRHAL(SPRControllerHAL):
 
             # Response mismatch - try recovery if allowed
             if retry_on_failure:
-                logger.debug(f"Unexpected response {response!r}, retrying after buffer flush...")
+                logger.debug(
+                    f"Unexpected response {response!r}, retrying after buffer flush...",
+                )
                 # Aggressive buffer clear
                 time.sleep(0.02)  # Let any pending data arrive
                 if self._ser.in_waiting > 0:
                     self._ser.read(self._ser.in_waiting)
                 # Retry command (recursive, but with retry disabled to prevent infinite loop)
-                return self._send_command_with_response(command, expected_response, retry_on_failure=False)
+                return self._send_command_with_response(
+                    command,
+                    expected_response,
+                    retry_on_failure=False,
+                )
 
             return False
 

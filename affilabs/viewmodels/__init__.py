@@ -1,5 +1,4 @@
-"""
-View Models (Presenters) - Qt Signal/Slot Bridge
+"""View Models (Presenters) - Qt Signal/Slot Bridge
 
 This package contains view models that bridge business services with Qt UI.
 View models manage UI state and coordinate between services and widgets.
@@ -13,13 +12,13 @@ Architecture:
 """
 
 from .calibration_viewmodel import CalibrationViewModel
-from .spectrum_viewmodel import SpectrumViewModel
-from .device_status_viewmodel import DeviceStatusViewModel
 from .cycle_config_viewmodel import CycleConfigViewModel
+from .device_status_viewmodel import DeviceStatusViewModel
+from .spectrum_viewmodel import SpectrumViewModel
 
 __all__ = [
-    'CalibrationViewModel',
-    'SpectrumViewModel',
-    'DeviceStatusViewModel',
-    'CycleConfigViewModel',
+    "CalibrationViewModel",
+    "SpectrumViewModel",
+    "DeviceStatusViewModel",
+    "CycleConfigViewModel",
 ]

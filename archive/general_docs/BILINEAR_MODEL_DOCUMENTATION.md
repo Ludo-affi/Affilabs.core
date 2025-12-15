@@ -3,8 +3,8 @@
 ## Overview
 This document describes the **validated bilinear model** for optical system calibration in the ezControl-AI SPR system. This model replaces the previous RBF interpolation approach with a physics-based, parameter-efficient solution.
 
-**Model Status:** ✅ **VALIDATED & PRODUCTION-READY**  
-**Validation Date:** December 7, 2025  
+**Model Status:** ✅ **VALIDATED & PRODUCTION-READY**
+**Validation Date:** December 7, 2025
 **Detector:** Ocean Optics USB4000 (FLMT09116)
 
 ---
@@ -184,23 +184,23 @@ models = calibration['models']
 ```python
 def predict_counts(led, pol, intensity, integration_time_ms, models):
     """Predict detector counts using bilinear model.
-    
+
     Args:
         led: 'A', 'B', 'C', or 'D'
         pol: 'S' or 'P'
         intensity: LED intensity (0-255)
         integration_time_ms: Integration time in milliseconds
         models: Loaded calibration models dict
-    
+
     Returns:
         Predicted counts (float)
     """
     params = models[pol][led]
     a, b, c, d = params['a'], params['b'], params['c'], params['d']
-    
+
     counts = (a * integration_time_ms + b) * intensity + \
              (c * integration_time_ms + d)
-    
+
     return counts
 
 # Example: LED_C, S-pol, I=100, t=30ms
@@ -212,36 +212,36 @@ print(f"Predicted counts: {predicted:.0f}")  # ~53k counts
 ```python
 def calculate_safe_params(led, pol, target_counts, models, max_counts=60000):
     """Calculate intensity/time to achieve target counts without saturation.
-    
+
     Args:
         led: 'A', 'B', 'C', or 'D'
         pol: 'S' or 'P'
         target_counts: Desired counts (typically 30k-50k)
         models: Loaded calibration models dict
         max_counts: Safety limit (default 60k)
-    
+
     Returns:
         dict with 'intensity', 'integration_time_ms', 'predicted_counts'
     """
     params = models[pol][led]
     a, b, c, d = params['a'], params['b'], params['c'], params['d']
-    
+
     # Strategy: Fix intensity at moderate level, solve for time
     intensity = 100  # moderate intensity
-    
+
     # Solve: target = (a*t + b)*I + (c*t + d)
     # -> t = (target - b*I - d) / (a*I + c)
     time_ms = (target_counts - b*intensity - d) / (a*intensity + c)
-    
+
     # Verify within safe range
     predicted = (a*time_ms + b)*intensity + (c*time_ms + d)
-    
+
     if predicted > max_counts or time_ms < 10 or time_ms > 60:
         # Adjust intensity instead
         time_ms = 30.0  # fixed at 30ms
         intensity = (target_counts - c*time_ms - d) / (a*time_ms + b)
         predicted = (a*time_ms + b)*intensity + (c*time_ms + d)
-    
+
     return {
         'intensity': int(intensity),
         'integration_time_ms': round(time_ms, 2),
@@ -338,7 +338,7 @@ MODEL_PATH = "spr_calibration/models/led_calibration_spr_processed_FLMT09116.jso
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** December 7, 2025  
-**Author:** Affilabs Core Beta Team  
+**Document Version:** 1.0
+**Last Updated:** December 7, 2025
+**Author:** Affilabs Core Beta Team
 **Status:** Production-Ready ✅

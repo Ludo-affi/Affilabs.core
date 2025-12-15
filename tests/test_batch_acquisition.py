@@ -9,7 +9,6 @@ old_software_path = Path(__file__).parent / "Old software"
 sys.path.insert(0, str(old_software_path))
 
 from core.data_acquisition_manager import DataAcquisitionManager
-from utils.logger import logger
 
 
 def test_batch_configuration():
@@ -51,16 +50,26 @@ def test_batch_buffers():
     mgr = DataAcquisitionManager(None)
 
     # Check batch buffers exist
-    assert hasattr(mgr, '_spectrum_batch'), "Should have _spectrum_batch"
-    assert hasattr(mgr, '_batch_timestamps'), "Should have _batch_timestamps"
+    assert hasattr(mgr, "_spectrum_batch"), "Should have _spectrum_batch"
+    assert hasattr(mgr, "_batch_timestamps"), "Should have _batch_timestamps"
     print("✓ Batch buffers initialized")
 
     # Check all channels have buffers
-    for ch in ['a', 'b', 'c', 'd']:
-        assert ch in mgr._spectrum_batch, f"Channel {ch} should have spectrum batch buffer"
-        assert ch in mgr._batch_timestamps, f"Channel {ch} should have timestamp batch buffer"
-        assert isinstance(mgr._spectrum_batch[ch], list), "Batch buffer should be a list"
-        assert isinstance(mgr._batch_timestamps[ch], list), "Timestamp buffer should be a list"
+    for ch in ["a", "b", "c", "d"]:
+        assert (
+            ch in mgr._spectrum_batch
+        ), f"Channel {ch} should have spectrum batch buffer"
+        assert (
+            ch in mgr._batch_timestamps
+        ), f"Channel {ch} should have timestamp batch buffer"
+        assert isinstance(
+            mgr._spectrum_batch[ch],
+            list,
+        ), "Batch buffer should be a list"
+        assert isinstance(
+            mgr._batch_timestamps[ch],
+            list,
+        ), "Timestamp buffer should be a list"
         print(f"✓ Channel {ch.upper()} batch buffers ready")
 
     print("\n✅ Batch buffer test PASSED\n")
@@ -77,30 +86,36 @@ def test_batch_logic():
 
     # Simulate adding spectra to batch
     print(f"Batch size set to: {mgr.batch_size}")
-    print(f"Simulating spectrum acquisition for channel A...")
+    print("Simulating spectrum acquisition for channel A...")
 
     for i in range(3):
         # Simulate adding spectrum data
-        mgr._spectrum_batch['a'].append({'wavelength': [], 'intensity': []})
-        mgr._batch_timestamps['a'].append(time.time())
-        print(f"  Spectrum {i+1} buffered. Batch size: {len(mgr._spectrum_batch['a'])}/{mgr.batch_size}")
+        mgr._spectrum_batch["a"].append({"wavelength": [], "intensity": []})
+        mgr._batch_timestamps["a"].append(time.time())
+        print(
+            f"  Spectrum {i+1} buffered. Batch size: {len(mgr._spectrum_batch['a'])}/{mgr.batch_size}",
+        )
 
-    assert len(mgr._spectrum_batch['a']) == 3, "Should have 3 spectra in batch"
-    print(f"✓ Batch buffer size < threshold: No processing yet")
+    assert len(mgr._spectrum_batch["a"]) == 3, "Should have 3 spectra in batch"
+    print("✓ Batch buffer size < threshold: No processing yet")
 
     # Add one more to trigger batch processing (would happen in real code)
-    mgr._spectrum_batch['a'].append({'wavelength': [], 'intensity': []})
-    mgr._batch_timestamps['a'].append(time.time())
-    print(f"  Spectrum 4 buffered. Batch size: {len(mgr._spectrum_batch['a'])}/{mgr.batch_size}")
+    mgr._spectrum_batch["a"].append({"wavelength": [], "intensity": []})
+    mgr._batch_timestamps["a"].append(time.time())
+    print(
+        f"  Spectrum 4 buffered. Batch size: {len(mgr._spectrum_batch['a'])}/{mgr.batch_size}",
+    )
 
-    assert len(mgr._spectrum_batch['a']) >= mgr.batch_size, "Should have reached batch threshold"
-    print(f"✓ Batch buffer size >= threshold: Ready for processing")
+    assert (
+        len(mgr._spectrum_batch["a"]) >= mgr.batch_size
+    ), "Should have reached batch threshold"
+    print("✓ Batch buffer size >= threshold: Ready for processing")
 
     # Simulate clearing batch
-    mgr._spectrum_batch['a'].clear()
-    mgr._batch_timestamps['a'].clear()
-    assert len(mgr._spectrum_batch['a']) == 0, "Batch should be cleared"
-    print(f"✓ Batch cleared after processing")
+    mgr._spectrum_batch["a"].clear()
+    mgr._batch_timestamps["a"].clear()
+    assert len(mgr._spectrum_batch["a"]) == 0, "Batch should be cleared"
+    print("✓ Batch cleared after processing")
 
     print("\n✅ Batch processing logic test PASSED\n")
 
@@ -158,5 +173,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ ERROR: {e}\n")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

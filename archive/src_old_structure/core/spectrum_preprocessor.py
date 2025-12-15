@@ -14,7 +14,7 @@ Architecture:
 """
 
 import numpy as np
-from typing import Optional
+
 from utils.logger import logger
 
 
@@ -30,9 +30,9 @@ class SpectrumPreprocessor:
     @staticmethod
     def process_polarization_data(
         raw_spectrum: np.ndarray,
-        dark_noise: Optional[np.ndarray] = None,
+        dark_noise: np.ndarray | None = None,
         channel_name: str = "",
-        verbose: bool = False
+        verbose: bool = False,
     ) -> np.ndarray:
         """Remove dark noise from raw spectrum.
 
@@ -60,13 +60,16 @@ class SpectrumPreprocessor:
             ...     channel_name="b",
             ...     verbose=True
             ... )
+
         """
         # Start with copy (preserve original)
         clean_spectrum = raw_spectrum.copy()
 
         if verbose and channel_name:
             logger.info(f"[Preprocessor] Channel {channel_name.upper()}:")
-            logger.info(f"   Raw spectrum: mean={np.mean(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}")
+            logger.info(
+                f"   Raw spectrum: mean={np.mean(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}",
+            )
 
         # Dark noise removal
         if dark_noise is not None:
@@ -74,7 +77,7 @@ class SpectrumPreprocessor:
                 raise ValueError(
                     "Dark noise length mismatch. Downstream expects ROI-sliced dark "
                     f"(got {len(dark_noise)} vs spectrum {len(clean_spectrum)}). "
-                    "Ensure dark uses the wavelength-adapted spectral range (same ROI)."
+                    "Ensure dark uses the wavelength-adapted spectral range (same ROI).",
                 )
 
             dark_mean = np.mean(dark_noise)
@@ -82,19 +85,23 @@ class SpectrumPreprocessor:
 
             if verbose:
                 logger.info(f"   Dark removed: mean={dark_mean:.1f} counts")
-                logger.info(f"   After dark removal: mean={np.mean(clean_spectrum):.1f}")
+                logger.info(
+                    f"   After dark removal: mean={np.mean(clean_spectrum):.1f}",
+                )
 
         if verbose and channel_name:
-            logger.info(f"   Final clean spectrum: mean={np.mean(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}")
+            logger.info(
+                f"   Final clean spectrum: mean={np.mean(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}",
+            )
 
         return clean_spectrum
 
     @staticmethod
     def process_batch_channels(
         raw_spectra: dict[str, np.ndarray],
-        dark_noise: Optional[np.ndarray],
+        dark_noise: np.ndarray | None,
         ch_list: list[str],
-        verbose: bool = False
+        verbose: bool = False,
     ) -> dict[str, np.ndarray]:
         """Process multiple channels with dark noise removal.
 
@@ -114,6 +121,7 @@ class SpectrumPreprocessor:
             ...     ch_list=['a', 'b', 'c', 'd'],
             ...     verbose=True
             ... )
+
         """
         if verbose:
             logger.info("=" * 80)
@@ -128,7 +136,7 @@ class SpectrumPreprocessor:
                 raw_spectrum=raw_spectra[ch],
                 dark_noise=dark_noise,
                 channel_name=ch,
-                verbose=verbose
+                verbose=verbose,
             )
 
         if verbose:

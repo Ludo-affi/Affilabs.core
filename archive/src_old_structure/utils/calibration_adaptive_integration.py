@@ -32,31 +32,29 @@ STATUS: Currently DISABLED (production uses Mode 1)
 """
 
 import time
-import numpy as np
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from settings import (
-    CH_LIST,
-    EZ_CH_LIST,
-    LED_DELAY,
-    PRE_LED_DELAY_MS,
-    POST_LED_DELAY_MS,
-    MIN_WAVELENGTH,
-    MAX_WAVELENGTH,
-    MIN_INTEGRATION,
-    MAX_INTEGRATION,
-)
-from utils.logger import logger
-from utils._legacy_led_calibration import (
-    LEDCalibrationResult,
-    DetectorParams,
-    get_detector_params,
-    determine_channel_list,
-    calculate_scan_counts,
-    switch_mode_safely,
-)
+import numpy as np
 from core.spectrum_preprocessor import SpectrumPreprocessor
 from core.transmission_processor import TransmissionProcessor
+
+from settings import (
+    LED_DELAY,
+    MAX_WAVELENGTH,
+    MIN_INTEGRATION,
+    MIN_WAVELENGTH,
+    POST_LED_DELAY_MS,
+    PRE_LED_DELAY_MS,
+)
+from utils._legacy_led_calibration import (
+    DetectorParams,
+    LEDCalibrationResult,
+    calculate_scan_counts,
+    determine_channel_list,
+    get_detector_params,
+    switch_mode_safely,
+)
+from utils.logger import logger
 
 if TYPE_CHECKING:
     from utils.controller import ControllerBase
@@ -70,27 +68,28 @@ if TYPE_CHECKING:
 FIXED_LED_INTENSITY = 255  # Maximum brightness for optimal stability
 
 # Optimization targets (validated for optimal SNR)
-TARGET_COUNTS = 50000        # 50k counts target per channel
-MAX_INTEGRATION_MS = 300.0   # Maximum allowed integration time
+TARGET_COUNTS = 50000  # 50k counts target per channel
+MAX_INTEGRATION_MS = 300.0  # Maximum allowed integration time
 
 # Optimization parameters
-MAX_ATTEMPTS = 5             # Maximum iterations per channel
-MARGIN_FACTOR = 1.1          # 10% safety margin
-TOLERANCE = 0.9              # Accept 90% of target
+MAX_ATTEMPTS = 5  # Maximum iterations per channel
+MARGIN_FACTOR = 1.1  # 10% safety margin
+TOLERANCE = 0.9  # Accept 90% of target
 
 
 # =============================================================================
 # STEP 4: S-MODE INTEGRATION OPTIMIZATION (PER-CHANNEL)
 # =============================================================================
 
+
 def optimize_integration_for_channel(
     usb,
-    ctrl: 'ControllerBase',
+    ctrl: "ControllerBase",
     channel: str,
     detector_params: DetectorParams,
     wave_min_index: int,
     wave_max_index: int,
-    stop_flag = None,
+    stop_flag=None,
 ) -> float:
     """Optimize integration time for a single channel at LED=255.
 
@@ -112,8 +111,11 @@ def optimize_integration_for_channel(
 
     Returns:
         Optimized integration time in milliseconds
+
     """
-    logger.info(f"   Channel {channel.upper()}: Optimizing integration time (LED=255, target {TARGET_COUNTS} counts)")
+    logger.info(
+        f"   Channel {channel.upper()}: Optimizing integration time (LED=255, target {TARGET_COUNTS} counts)",
+    )
 
     # Start at minimum integration time
     integration_ms = MIN_INTEGRATION * 1000  # Convert to ms
@@ -121,7 +123,7 @@ def optimize_integration_for_channel(
     # Iterative optimization (validated algorithm)
     for attempt in range(MAX_ATTEMPTS):
         if stop_flag and stop_flag.is_set():
-            logger.warning(f"      Optimization cancelled")
+            logger.warning("      Optimization cancelled")
             break
 
         # Set integration time
@@ -141,28 +143,38 @@ def optimize_integration_for_channel(
 
         if spectrum is None:
             logger.error(f"      Failed to read spectrum at {integration_ms:.1f}ms")
-            raise RuntimeError(f"Spectrometer read failed for channel {channel.upper()}")
+            raise RuntimeError(
+                f"Spectrometer read failed for channel {channel.upper()}",
+            )
 
         # Get peak signal in ROI
         roi_spectrum = spectrum[wave_min_index:wave_max_index]
         peak_counts = np.max(roi_spectrum)
 
-        logger.debug(f"      Attempt {attempt+1}: {integration_ms:.1f}ms → {peak_counts:.0f} counts")
+        logger.debug(
+            f"      Attempt {attempt+1}: {integration_ms:.1f}ms → {peak_counts:.0f} counts",
+        )
 
         # Check if target reached
         if peak_counts >= TARGET_COUNTS * TOLERANCE:
-            logger.info(f"      ✅ Target reached: {integration_ms:.1f}ms → {peak_counts:.0f} counts")
+            logger.info(
+                f"      ✅ Target reached: {integration_ms:.1f}ms → {peak_counts:.0f} counts",
+            )
             return integration_ms
 
         # Check for saturation
         if peak_counts >= detector_params.max_counts * 0.95:
-            logger.warning(f"      Near saturation at {integration_ms:.1f}ms, backing off")
+            logger.warning(
+                f"      Near saturation at {integration_ms:.1f}ms, backing off",
+            )
             integration_ms = integration_ms * 0.8
             continue
 
         # Calculate needed integration time
         if integration_ms >= MAX_INTEGRATION_MS:
-            logger.warning(f"      Max integration reached ({MAX_INTEGRATION_MS}ms) at {peak_counts:.0f} counts")
+            logger.warning(
+                f"      Max integration reached ({MAX_INTEGRATION_MS}ms) at {peak_counts:.0f} counts",
+            )
             return integration_ms
 
         # Increase integration based on signal ratio
@@ -170,7 +182,9 @@ def optimize_integration_for_channel(
         new_integration = integration_ms * needed_ratio * MARGIN_FACTOR
         integration_ms = min(new_integration, MAX_INTEGRATION_MS)
 
-        logger.debug(f"      Need {needed_ratio:.2f}x more signal → increasing to {integration_ms:.1f}ms")
+        logger.debug(
+            f"      Need {needed_ratio:.2f}x more signal → increasing to {integration_ms:.1f}ms",
+        )
 
     # Return final integration time
     logger.info(f"      Final: {integration_ms:.1f}ms → {peak_counts:.0f} counts")
@@ -181,9 +195,10 @@ def optimize_integration_for_channel(
 # MAIN CALIBRATION FUNCTION - MODE 2
 # =============================================================================
 
+
 def run_adaptive_integration_calibration(
     usb,
-    ctrl: 'ControllerBase',
+    ctrl: "ControllerBase",
     device_type: str,
     device_config,
     detector_serial: str,
@@ -193,7 +208,7 @@ def run_adaptive_integration_calibration(
     progress_callback=None,
     afterglow_correction=None,
     pre_led_delay_ms: float = PRE_LED_DELAY_MS,
-    post_led_delay_ms: float = POST_LED_DELAY_MS
+    post_led_delay_ms: float = POST_LED_DELAY_MS,
 ) -> LEDCalibrationResult:
     """Mode 2: Adaptive Integration Calibration (LED=255, variable integration per channel).
 
@@ -223,6 +238,7 @@ def run_adaptive_integration_calibration(
 
     Returns:
         LEDCalibrationResult with all calibration data
+
     """
     result = LEDCalibrationResult()
 
@@ -298,7 +314,7 @@ def run_adaptive_integration_calibration(
         # Calculate scan configuration (Layer 2)
         scan_config = calculate_scan_counts(device_type)
         result.num_scans = scan_config.ref_scans
-        logger.info(f"✅ Scan configuration:")
+        logger.info("✅ Scan configuration:")
         logger.info(f"   Reference scans: {scan_config.ref_scans}")
         logger.info(f"   Dark scans: {scan_config.dark_scans}\n")
 
@@ -342,10 +358,13 @@ def run_adaptive_integration_calibration(
 
             # Optimize integration time for this channel
             integration_ms = optimize_integration_for_channel(
-                usb, ctrl, ch,
+                usb,
+                ctrl,
+                ch,
                 detector_params,
-                wave_min_index, wave_max_index,
-                stop_flag
+                wave_min_index,
+                wave_max_index,
+                stop_flag,
             )
 
             # Store results
@@ -355,10 +374,12 @@ def run_adaptive_integration_calibration(
             # Update progress
             if progress_callback:
                 progress = 30 + (ch_idx * 10)
-                progress_callback(f"S-mode: Ch {ch.upper()} optimized ({integration_ms:.1f}ms)")
+                progress_callback(
+                    f"S-mode: Ch {ch.upper()} optimized ({integration_ms:.1f}ms)",
+                )
 
             # Capture raw spectrum for Step 6 processing
-            logger.info(f"      Capturing reference spectrum...")
+            logger.info("      Capturing reference spectrum...")
             usb.set_integration(integration_ms / 1000.0)
             time.sleep(0.05)
 
@@ -378,14 +399,16 @@ def run_adaptive_integration_calibration(
 
             if len(spectra) > 0:
                 s_raw_data[ch] = np.mean(spectra, axis=0)
-                logger.info(f"      ✅ Reference captured ({len(spectra)} scans averaged)")
+                logger.info(
+                    f"      ✅ Reference captured ({len(spectra)} scans averaged)",
+                )
 
         # Store S-mode results
         result.s_mode_intensity = s_led_intensities
         result.s_integration_time = max(s_integration_times.values())  # Global max
         result.s_integration_times_per_channel = s_integration_times
 
-        logger.info(f"\n" + "=" * 80)
+        logger.info("\n" + "=" * 80)
         logger.info("✅ S-MODE OPTIMIZATION COMPLETE")
         logger.info("=" * 80)
         logger.info(f"Integration times: {s_integration_times}")
@@ -421,10 +444,13 @@ def run_adaptive_integration_calibration(
 
             # Optimize integration time for this channel
             integration_ms = optimize_integration_for_channel(
-                usb, ctrl, ch,
+                usb,
+                ctrl,
+                ch,
                 detector_params,
-                wave_min_index, wave_max_index,
-                stop_flag
+                wave_min_index,
+                wave_max_index,
+                stop_flag,
             )
 
             # Store results
@@ -432,7 +458,7 @@ def run_adaptive_integration_calibration(
             p_led_intensities[ch] = FIXED_LED_INTENSITY
 
             # Capture raw spectrum for Step 6 processing
-            logger.info(f"      Capturing reference spectrum...")
+            logger.info("      Capturing reference spectrum...")
             usb.set_integration(integration_ms / 1000.0)
             time.sleep(0.05)
 
@@ -452,14 +478,16 @@ def run_adaptive_integration_calibration(
 
             if len(spectra) > 0:
                 p_raw_data[ch] = np.mean(spectra, axis=0)
-                logger.info(f"      ✅ Reference captured ({len(spectra)} scans averaged)")
+                logger.info(
+                    f"      ✅ Reference captured ({len(spectra)} scans averaged)",
+                )
 
         # Store P-mode results
         result.p_mode_intensity = p_led_intensities
         result.p_integration_time = max(p_integration_times.values())  # Global max
         result.p_integration_times_per_channel = p_integration_times
 
-        logger.info(f"\n" + "=" * 80)
+        logger.info("\n" + "=" * 80)
         logger.info("✅ P-MODE OPTIMIZATION COMPLETE")
         logger.info("=" * 80)
         logger.info(f"Integration times: {p_integration_times}")
@@ -474,7 +502,9 @@ def run_adaptive_integration_calibration(
         logger.info("DARK NOISE: Measuring common dark reference")
         logger.info("=" * 80)
         logger.info("Using P-mode integration time (max of all channels)")
-        logger.info("This common dark-ref will be used for both S-pol and P-pol processing\n")
+        logger.info(
+            "This common dark-ref will be used for both S-pol and P-pol processing\n",
+        )
 
         # Ensure all LEDs OFF
         ctrl.turn_off_channels()
@@ -510,7 +540,7 @@ def run_adaptive_integration_calibration(
         dark_max = np.max(dark_ref_filtered)
         dark_std = np.std(dark_ref_filtered)
 
-        logger.info(f"📊 Dark-ref QC:")
+        logger.info("📊 Dark-ref QC:")
         logger.info(f"   Mean: {dark_mean:.1f} counts")
         logger.info(f"   Max: {dark_max:.1f} counts")
         logger.info(f"   Std: {dark_std:.1f} counts")
@@ -519,9 +549,11 @@ def run_adaptive_integration_calibration(
         EXPECTED_DARK_MAX = 4000
 
         if EXPECTED_DARK_MIN <= dark_mean <= EXPECTED_DARK_MAX:
-            logger.info(f"   ✅ Dark-ref within expected range\n")
+            logger.info("   ✅ Dark-ref within expected range\n")
         else:
-            logger.warning(f"   ⚠️ Dark-ref outside expected range ({EXPECTED_DARK_MIN}-{EXPECTED_DARK_MAX})\n")
+            logger.warning(
+                f"   ⚠️ Dark-ref outside expected range ({EXPECTED_DARK_MIN}-{EXPECTED_DARK_MAX})\n",
+            )
 
         # ===================================================================
         # STEP 6: DATA PROCESSING & QC VALIDATION (Layer 4)
@@ -529,7 +561,9 @@ def run_adaptive_integration_calibration(
         logger.info("=" * 80)
         logger.info("STEP 6: Data Processing & QC Validation")
         logger.info("=" * 80)
-        logger.info("Processing raw data using SpectrumPreprocessor (Layer 2 architecture)\n")
+        logger.info(
+            "Processing raw data using SpectrumPreprocessor (Layer 2 architecture)\n",
+        )
 
         if progress_callback:
             progress_callback("Step 6/6: Data Processing & QC")
@@ -549,7 +583,7 @@ def run_adaptive_integration_calibration(
                 raw_spectrum=s_raw_data[ch],
                 dark_noise=dark_ref_filtered,
                 channel_name=ch,
-                verbose=False
+                verbose=False,
             )
             s_pol_ref[ch] = s_spectrum
 
@@ -558,7 +592,7 @@ def run_adaptive_integration_calibration(
                 raw_spectrum=p_raw_data[ch],
                 dark_noise=dark_ref_filtered,
                 channel_name=ch,
-                verbose=False
+                verbose=False,
             )
             p_pol_ref[ch] = p_spectrum
 
@@ -569,7 +603,7 @@ def run_adaptive_integration_calibration(
         result.p_pol_ref = p_pol_ref
 
         # Calculate transmission spectra (Layer 4)
-        logger.info(f"\n📊 Calculating transmission spectra...")
+        logger.info("\n📊 Calculating transmission spectra...")
 
         transmission_data = {}
         for ch in ch_list:
@@ -577,14 +611,14 @@ def run_adaptive_integration_calibration(
                 s_pol_ref=s_pol_ref[ch],
                 p_pol_ref=p_pol_ref[ch],
                 wave_data=result.wave_data,
-                channel_name=ch
+                channel_name=ch,
             )
             transmission_data[ch] = transmission
             logger.info(f"   ✅ {ch.upper()}: Transmission calculated")
 
         result.transmission_data = transmission_data
 
-        logger.info(f"\n" + "=" * 80)
+        logger.info("\n" + "=" * 80)
         logger.info("✅ MODE 2 CALIBRATION COMPLETE")
         logger.info("=" * 80)
         logger.info(f"Channels calibrated: {[c.upper() for c in ch_list]}")

@@ -40,8 +40,8 @@ DATA_DIR = PACKAGE_DIR / "data"
 VIZ_DIR = DATA_DIR / "visualizations"
 
 __all__ = [
-    '__version__',
-    'PACKAGE_DIR',
-    'DATA_DIR',
-    'VIZ_DIR'
+    "__version__",
+    "PACKAGE_DIR",
+    "DATA_DIR",
+    "VIZ_DIR",
 ]

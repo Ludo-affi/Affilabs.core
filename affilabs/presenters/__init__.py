@@ -11,10 +11,16 @@ Contains:
 - NavigationPresenter: Handles navigation bar creation and page switching
 """
 
-from .sensogram_presenter import SensogramPresenter
-from .status_presenter import StatusPresenter
-from .spectroscopy_presenter import SpectroscopyPresenter
 from .baseline_recording_presenter import BaselineRecordingPresenter
 from .navigation_presenter import NavigationPresenter
+from .sensogram_presenter import SensogramPresenter
+from .spectroscopy_presenter import SpectroscopyPresenter
+from .status_presenter import StatusPresenter
 
-__all__ = ['SensogramPresenter', 'StatusPresenter', 'SpectroscopyPresenter', 'BaselineRecordingPresenter', 'NavigationPresenter']
+__all__ = [
+    "SensogramPresenter",
+    "StatusPresenter",
+    "SpectroscopyPresenter",
+    "BaselineRecordingPresenter",
+    "NavigationPresenter",
+]

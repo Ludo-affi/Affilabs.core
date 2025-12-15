@@ -27,7 +27,7 @@ if self.pump:
         # Set default 5 mL syringe sizes
         self.pump_manager.set_syringe_size(PumpAddress.PUMP_1, 5000)
         self.pump_manager.set_syringe_size(PumpAddress.PUMP_2, 5000)
-        
+
         # Connect signals
         self.pump_manager.pump_state_changed.connect(self._on_pump_state_changed)
         self.pump_manager.error_occurred.connect(self._on_pump_error)
@@ -138,8 +138,8 @@ logger.info("Injection cancelled")
 # 30 lines of complex flow control logic
 self.pump.send_command(0x41, f"V{self.flow_rate:.3f},1R".encode())
 # Check pump status
-if (self.pump.send_command(0x31, b"Q")[0] 
-    & self.pump.send_command(0x32, b"Q")[0] 
+if (self.pump.send_command(0x31, b"Q")[0]
+    & self.pump.send_command(0x32, b"Q")[0]
     & 0x20):
     if v > 0:
         self.pump.send_command(0x41, b"OA0R")

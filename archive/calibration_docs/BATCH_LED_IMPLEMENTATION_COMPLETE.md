@@ -71,7 +71,7 @@ Added to `utils/spr_calibrator.py` after line 617 (`__init__` method):
 
 ### **Step 8: P-mode Calibration** ✅
 **Location**: `calibrate_led_p_mode_s_based()` line ~2067, 2125
-- **Changed**: 
+- **Changed**:
   - Baseline measurement LED activation → batch (line 2067)
   - LED boost testing → batch (line 2125)
   - Cleanup → batch off (line 2198)
@@ -79,7 +79,7 @@ Added to `utils/spr_calibrator.py` after line 617 (`__init__` method):
 
 ### **Step 9: Validation** ✅
 **Location**: `validate_calibration()` line ~2242, 2293
-- **Changed**: 
+- **Changed**:
   - Development mode validation → batch (line 2242)
   - Production mode validation → batch (line 2293)
 - **Impact**: Faster final validation
@@ -120,7 +120,7 @@ Added to `utils/spr_calibrator.py` after line 617 (`__init__` method):
 ```python
 # Test batch LED helper methods
 test_batch_led_activation()      # Single channel
-test_batch_led_multiple()        # Multiple channels  
+test_batch_led_multiple()        # Multiple channels
 test_batch_led_custom_intensity() # Custom intensities
 test_batch_led_fallback()        # Fallback to sequential
 test_batch_all_off()             # Batch turn-off
@@ -167,7 +167,7 @@ python test_batch_led_performance.py
 | Step 9 | ~8 (validation) | ~20ms |
 | **TOTAL** | | **~560ms** |
 
-**Additional savings**: 
+**Additional savings**:
 - Cleanup operations: ~50ms
 - Turn-off operations: ~30ms
 - **Grand Total**: **~650ms** (0.65 seconds) of pure LED command overhead eliminated
@@ -277,7 +277,7 @@ Now that batch LED is complete, the next optimization priorities are:
 
 ---
 
-**Implementation Date**: January 2025  
-**Implemented By**: AI Assistant  
-**Verified By**: Pending hardware testing  
+**Implementation Date**: January 2025
+**Implemented By**: AI Assistant
+**Verified By**: Pending hardware testing
 **Next Steps**: Create test script and measure actual performance gains

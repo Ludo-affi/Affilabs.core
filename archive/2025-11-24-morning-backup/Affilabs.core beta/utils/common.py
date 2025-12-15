@@ -1,6 +1,4 @@
-"""
-Common Utilities
-"""
+"""Common Utilities"""
 
 import csv
 import json
@@ -13,13 +11,12 @@ _par_dir = os.path.join(_cur_dir, os.path.pardir)
 if _par_dir not in sys.path:
     sys.path.append(_par_dir)
 
-from settings import CONFIG_FILE, CH_LIST
+from settings import CH_LIST, CONFIG_FILE
 from utils.logger import logger
 
 
 def update_dict_recursively(dest, updated):
-    """
-    Update dictionary recursively.
+    """Update dictionary recursively.
     :param dest: Destination dict.
     :type dest: dict
     :param updated: Updated dict to be applied.
@@ -39,10 +36,8 @@ def update_dict_recursively(dest, updated):
 
 
 def number_to_ordinal(n):
-    """
-    Convert number to ordinal number string
-    """
-    return "%d%s" % (n, "tsnrhtdd"[(n / 10 % 10 != 1) * (n % 10 < 4) * n % 10::4])
+    """Convert number to ordinal number string"""
+    return "%d%s" % (n, "tsnrhtdd"[(n / 10 % 10 != 1) * (n % 10 < 4) * n % 10 :: 4])
 
 
 lock = threading.Lock()
@@ -51,15 +46,15 @@ lock = threading.Lock()
 def update_config_file(data):
     old_data = update_dict_recursively(dest=get_config(), updated=data)
     with lock:
-        import tempfile
         import shutil
+        import tempfile
         from pathlib import Path
 
         config_path = Path(CONFIG_FILE)
 
         # Create backup if config exists
         if config_path.exists():
-            backup_path = config_path.with_suffix('.json.bak')
+            backup_path = config_path.with_suffix(".json.bak")
             try:
                 shutil.copy2(config_path, backup_path)
             except Exception as e:
@@ -69,11 +64,11 @@ def update_config_file(data):
         try:
             # Write to temp file in same directory (ensures same filesystem)
             with tempfile.NamedTemporaryFile(
-                mode='w',
-                encoding='utf-8',
+                mode="w",
+                encoding="utf-8",
                 dir=config_path.parent,
                 delete=False,
-                suffix='.tmp'
+                suffix=".tmp",
             ) as tmp_file:
                 json.dump(old_data, tmp_file, indent=2)
                 tmp_path = Path(tmp_file.name)
@@ -85,19 +80,21 @@ def update_config_file(data):
         except Exception as e:
             logger.error(f"Failed to update config file: {e}")
             # Try to restore from backup if it exists
-            if config_path.with_suffix('.json.bak').exists():
+            if config_path.with_suffix(".json.bak").exists():
                 try:
-                    shutil.copy2(config_path.with_suffix('.json.bak'), config_path)
+                    shutil.copy2(config_path.with_suffix(".json.bak"), config_path)
                     logger.info("Config restored from backup")
                 except Exception as restore_error:
-                    logger.error(f"Failed to restore config from backup: {restore_error}")
+                    logger.error(
+                        f"Failed to restore config from backup: {restore_error}",
+                    )
             raise
 
 
 def get_config():
     with lock:
         try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(CONFIG_FILE, encoding="utf-8") as f:
                 conf = json.load(f)
             return conf
         except FileNotFoundError:
@@ -118,11 +115,11 @@ def export_segments(segments, path, value_list, ts_list):
     def sanitize_filename(name):
         """Remove/replace unsafe characters from filename."""
         # Remove path separators and other unsafe characters
-        name = re.sub(r'[<>:"/\\|?*]', '_', name)
+        name = re.sub(r'[<>:"/\\|?*]', "_", name)
         # Remove leading/trailing dots and spaces
-        name = name.strip('. ')
+        name = name.strip(". ")
         # Limit length
-        return name[:200] if name else 'unnamed'
+        return name[:200] if name else "unnamed"
 
     if not segments:
         logger.warning("No segments to export")
@@ -133,21 +130,28 @@ def export_segments(segments, path, value_list, ts_list):
 
     data = []
     for seg in segments:
-        data.append({
-            'Name': seg['name'],
-            'StartTime': seg['start_ts'],
-            'EndTime': seg['end_ts'],
-            'ShiftA': seg.get('shift_a', ''),
-            'ShiftB': seg.get('shift_b', ''),
-            'ShiftC': seg.get('shift_c', ''),
-            'ShiftD': seg.get('shift_d', ''),
-            'ShiftM': seg.get('shift_m', ''),
-            'UserNote': seg.get('note', '')
-        })
+        data.append(
+            {
+                "Name": seg["name"],
+                "StartTime": seg["start_ts"],
+                "EndTime": seg["end_ts"],
+                "ShiftA": seg.get("shift_a", ""),
+                "ShiftB": seg.get("shift_b", ""),
+                "ShiftC": seg.get("shift_c", ""),
+                "ShiftD": seg.get("shift_d", ""),
+                "ShiftM": seg.get("shift_m", ""),
+                "UserNote": seg.get("note", ""),
+            },
+        )
     keys = list(data[0].keys())
     try:
-        with open(path_obj / 'segments_table.csv', 'w', newline='', encoding='utf-8') as output_file:
-            dict_writer = csv.DictWriter(output_file, keys, delimiter='\t')
+        with open(
+            path_obj / "segments_table.csv",
+            "w",
+            newline="",
+            encoding="utf-8",
+        ) as output_file:
+            dict_writer = csv.DictWriter(output_file, keys, delimiter="\t")
             dict_writer.writeheader()
             dict_writer.writerows(data)
     except Exception as e:
@@ -158,41 +162,62 @@ def export_segments(segments, path, value_list, ts_list):
         for ch in CH_LIST:
             start_val = None
             for i, ts in enumerate(ts_list[ch]):
-                if seg['start_ts'] <= ts <= seg['end_ts']:
+                if seg["start_ts"] <= ts <= seg["end_ts"]:
                     if start_val is None:
                         start_val = value_list[ch][i]
                         start_time = ts_list[ch][i]
-                    data[ch].append({'ts': (ts - start_time), 'val': round(value_list[ch][i] - start_val, 3)})
+                    data[ch].append(
+                        {
+                            "ts": (ts - start_time),
+                            "val": round(value_list[ch][i] - start_val, 3),
+                        },
+                    )
 
         # Fill blank cells
         max_len = max([len(v) for v in data.values()])
         for ch in CH_LIST:
             for _ in range(max_len - len(data[ch])):
-                data[ch].append({'ts': '', 'val': ''})
-        headers = [[f"X_{seg['name']}_{ch}_{seg['start_ts']}", f"Y_{seg['name']}_{ch}_{seg['start_ts']}"]
-                   for ch in ['A', 'B', 'C', 'D', 'M']]
+                data[ch].append({"ts": "", "val": ""})
+        headers = [
+            [
+                f"X_{seg['name']}_{ch}_{seg['start_ts']}",
+                f"Y_{seg['name']}_{ch}_{seg['start_ts']}",
+            ]
+            for ch in ["A", "B", "C", "D", "M"]
+        ]
 
         # Sanitize filename to prevent path traversal
-        safe_filename = sanitize_filename(seg['name'])
+        safe_filename = sanitize_filename(seg["name"])
         csv_path = path_obj / f"{safe_filename}.csv"
 
-        with open(csv_path, 'w', newline='', encoding='utf-8') as csv_file:
-            writer = csv.writer(csv_file, delimiter='\t', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(
+                csv_file,
+                delimiter="\t",
+                quotechar="|",
+                quoting=csv.QUOTE_MINIMAL,
+            )
             writer.writerow([h for sublist in headers for h in sublist])
             for i in range(max_len):
-                writer.writerow([
-                    data['a'][i]['ts'], data['a'][i]['val'],
-                    data['b'][i]['ts'], data['b'][i]['val'],
-                    data['c'][i]['ts'], data['c'][i]['val'],
-                    data['d'][i]['ts'], data['d'][i]['val'],
-                ])
+                writer.writerow(
+                    [
+                        data["a"][i]["ts"],
+                        data["a"][i]["val"],
+                        data["b"][i]["ts"],
+                        data["b"][i]["val"],
+                        data["c"][i]["ts"],
+                        data["c"][i]["val"],
+                        data["d"][i]["ts"],
+                        data["d"][i]["val"],
+                    ],
+                )
     return True
 
 
 def load_segment(path):
     try:
         seg_list = []
-        with open(path, newline='', encoding='utf-8') as csvfile:
+        with open(path, newline="", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
             for r in reader:
                 for k, v in r.items():
@@ -201,6 +226,6 @@ def load_segment(path):
                     except ValueError:
                         pass
                 seg_list.append(r)
-        return sorted(seg_list, key=lambda s: s['Concentration'])
+        return sorted(seg_list, key=lambda s: s["Concentration"])
     except Exception as e:
         logger.error(f"Failed to read segment file({path}) - {e}")

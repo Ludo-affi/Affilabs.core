@@ -28,15 +28,14 @@ core_beta_dir = Path(__file__).parent
 if str(core_beta_dir) not in sys.path:
     sys.path.insert(0, str(core_beta_dir))
 
-from utils.logger import logger
+
 from utils.device_manager import get_device_manager
-from core.hardware_manager import HardwareManager
+from utils.logger import logger
 from utils.spr_calibrator import SPRCalibrator
 
 
 def main():
     """Run afterglow calibration programmatically."""
-
     logger.info("=" * 80)
     logger.info("AFTERGLOW CALIBRATION - REGENERATE ALL 4 CHANNELS")
     logger.info("=" * 80)
@@ -51,10 +50,11 @@ def main():
 
         # Try to detect device first
         from core.hardware_manager import HardwareManager
+
         temp_hw = HardwareManager()
         temp_hw._connect_spectrometer()
 
-        if temp_hw.usb and hasattr(temp_hw.usb, 'serial_number'):
+        if temp_hw.usb and hasattr(temp_hw.usb, "serial_number"):
             serial = temp_hw.usb.serial_number
             logger.info(f"✅ Detected device serial from spectrometer: {serial}")
 
@@ -90,25 +90,28 @@ def main():
     optical_cal_file = device_dir / "optical_calibration.json"
     if optical_cal_file.exists():
         import json
-        logger.warning(f"⚠️  Existing optical calibration will be REPLACED:")
+
+        logger.warning("⚠️  Existing optical calibration will be REPLACED:")
         logger.warning(f"   {optical_cal_file}")
 
         try:
-            with open(optical_cal_file, 'r') as f:
+            with open(optical_cal_file) as f:
                 data = json.load(f)
-                channels = list(data.get('channel_data', {}).keys())
+                channels = list(data.get("channel_data", {}).keys())
                 logger.warning(f"   Current channels: {channels}")
 
                 if len(channels) == 4:
                     logger.info("   (File already has 4 channels, re-running anyway)")
                 else:
-                    logger.error(f"   ❌ File missing channels! Has {len(channels)}/4: {channels}")
-                    missing = [ch for ch in ['a', 'b', 'c', 'd'] if ch not in channels]
+                    logger.error(
+                        f"   ❌ File missing channels! Has {len(channels)}/4: {channels}",
+                    )
+                    missing = [ch for ch in ["a", "b", "c", "d"] if ch not in channels]
                     logger.error(f"   Missing: {missing}")
         except Exception as e:
             logger.warning(f"   Could not parse existing file: {e}")
     else:
-        logger.info(f"No existing optical calibration file")
+        logger.info("No existing optical calibration file")
 
     logger.info("")
     logger.info("=" * 80)
@@ -143,7 +146,7 @@ def main():
 
         logger.info(f"✅ Controller: {type(ctrl).__name__}")
         logger.info(f"✅ Spectrometer: {type(usb).__name__}")
-        if hasattr(usb, 'serial_number'):
+        if hasattr(usb, "serial_number"):
             logger.info(f"   Serial: {usb.serial_number}")
 
         # Wait for hardware to stabilize
@@ -156,36 +159,44 @@ def main():
         logger.info("=" * 80)
 
         # Load LED intensities from device_config.json
-        led_intensities = {'a': 255, 'b': 255, 'c': 255, 'd': 255}
+        led_intensities = {"a": 255, "b": 255, "c": 255, "d": 255}
         device_config_dict = None
 
         try:
             import json
+
             config_file = device_dir / "device_config.json"
             if config_file.exists():
-                with open(config_file, 'r') as f:
+                with open(config_file) as f:
                     device_config_dict = json.load(f)
-                    led_intensities = device_config_dict.get('led_intensities', led_intensities)
-                    logger.info(f"Loaded LED intensities from device_config.json:")
-                    for ch in ['a', 'b', 'c', 'd']:
-                        logger.info(f"  Channel {ch}: {led_intensities.get(ch, 'NOT SET')}")
+                    led_intensities = device_config_dict.get(
+                        "led_intensities",
+                        led_intensities,
+                    )
+                    logger.info("Loaded LED intensities from device_config.json:")
+                    for ch in ["a", "b", "c", "d"]:
+                        logger.info(
+                            f"  Channel {ch}: {led_intensities.get(ch, 'NOT SET')}",
+                        )
             else:
-                logger.warning(f"No device_config.json found, using defaults (255 for all)")
+                logger.warning(
+                    "No device_config.json found, using defaults (255 for all)",
+                )
         except Exception as e:
             logger.warning(f"Could not load device_config.json: {e}")
             logger.warning("Using default intensities (255 for all channels)")
 
         # Determine device type from controller
-        if hasattr(ctrl, '__class__'):
+        if hasattr(ctrl, "__class__"):
             ctrl_class_name = ctrl.__class__.__name__
-            if 'P4' in ctrl_class_name or 'PicoP4' in ctrl_class_name:
-                device_type = 'PicoP4SPR'
-            elif 'EZ' in ctrl_class_name or 'PicoEZ' in ctrl_class_name:
-                device_type = 'PicoEZSPR'
+            if "P4" in ctrl_class_name or "PicoP4" in ctrl_class_name:
+                device_type = "PicoP4SPR"
+            elif "EZ" in ctrl_class_name or "PicoEZ" in ctrl_class_name:
+                device_type = "PicoEZSPR"
             else:
-                device_type = 'PicoP4SPR'  # Default
+                device_type = "PicoP4SPR"  # Default
         else:
-            device_type = 'PicoP4SPR'
+            device_type = "PicoP4SPR"
 
         logger.info(f"Device type: {device_type}")
 
@@ -198,7 +209,7 @@ def main():
             calib_state=None,
             optical_fiber_diameter=100,  # Default
             led_pcb_model="4LED",  # Default
-            device_config=device_config_dict
+            device_config=device_config_dict,
         )
 
         logger.info("✅ Calibrator initialized")
@@ -235,10 +246,11 @@ def main():
 
             # Verify channels
             import json
+
             try:
-                with open(optical_cal_file, 'r') as f:
+                with open(optical_cal_file) as f:
                     data = json.load(f)
-                    channels = list(data['channel_data'].keys())
+                    channels = list(data["channel_data"].keys())
 
                 logger.info(f"✅ Calibration file saved: {optical_cal_file}")
                 logger.info(f"✅ Channels present: {channels}")
@@ -250,16 +262,17 @@ def main():
                     logger.info("")
                     logger.info("Data points per channel:")
                     for ch in channels:
-                        num_points = len(data['channel_data'][ch]['integration_time_data'])
+                        num_points = len(
+                            data["channel_data"][ch]["integration_time_data"],
+                        )
                         logger.info(f"  Channel {ch}: {num_points} integration times")
 
                     return 0
-                else:
-                    missing = [ch for ch in ['a', 'b', 'c', 'd'] if ch not in channels]
-                    logger.error(f"❌ FAILURE: Missing channels: {missing}")
-                    logger.error(f"   Only calibrated: {channels}")
-                    logger.error(f"   Check logs above for errors during measurement")
-                    return 1
+                missing = [ch for ch in ["a", "b", "c", "d"] if ch not in channels]
+                logger.error(f"❌ FAILURE: Missing channels: {missing}")
+                logger.error(f"   Only calibrated: {channels}")
+                logger.error("   Check logs above for errors during measurement")
+                return 1
 
             except Exception as e:
                 logger.error(f"❌ Failed to verify calibration file: {e}")

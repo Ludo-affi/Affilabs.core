@@ -1,5 +1,4 @@
-"""
-Enhanced Test UI - Full 6-Step Calibration with LIVE Controls
+"""Enhanced Test UI - Full 6-Step Calibration with LIVE Controls
 
 Features:
 - Live detector spectrum output during calibration
@@ -10,25 +9,35 @@ Features:
 
 import sys
 import time
-import numpy as np
 from pathlib import Path
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QGroupBox, QTextEdit, QLineEdit, QComboBox,
-    QSpinBox
-)
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread
-from PySide6.QtGui import QFont
+
+import numpy as np
 import pyqtgraph as pg
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Add project paths
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
+from core.hardware_manager import HardwareManager
+
+from utils.calibration_6step import run_full_6step_calibration
 from utils.device_configuration import DeviceConfiguration
 from utils.logger import logger
-from core.hardware_manager import HardwareManager
-from utils.calibration_6step import run_full_6step_calibration
 
 
 class CalibrationWorker(QObject):
@@ -69,12 +78,12 @@ class CalibrationWorker(QObject):
                 max_counts = np.max(result)
 
                 spectrum_data = {
-                    'wavelengths': wavelengths,
-                    'intensities': result,
-                    'max_counts': max_counts,
-                    'saturated': max_counts > 62258
+                    "wavelengths": wavelengths,
+                    "intensities": result,
+                    "max_counts": max_counts,
+                    "saturated": max_counts > 62258,
                 }
-                self.spectrum_captured.emit({'current': spectrum_data})
+                self.spectrum_captured.emit({"current": spectrum_data})
             except Exception as e:
                 logger.debug(f"Spectrum capture hook error: {e}")
 
@@ -84,10 +93,12 @@ class CalibrationWorker(QObject):
         """Execute calibration with live monitoring"""
         try:
             # Install spectrum capture hook on read_intensity
-            if hasattr(self.usb, 'read_intensity'):
+            if hasattr(self.usb, "read_intensity"):
                 self._original_read_intensity = self.usb.read_intensity
                 self.usb.read_intensity = self._capture_spectrum_hook
-                logger.info("✅ Installed live spectrum capture hook on read_intensity()")
+                logger.info(
+                    "✅ Installed live spectrum capture hook on read_intensity()",
+                )
 
             # Clear USB buffer (same as main app)
             logger.info("🔄 Clearing USB buffer...")
@@ -121,7 +132,7 @@ class CalibrationWorker(QObject):
                 detector_serial=self.detector_serial,
                 pre_led_delay_ms=pre_led_delay_ms,
                 post_led_delay_ms=post_led_delay_ms,
-                progress_callback=self._progress_callback
+                progress_callback=self._progress_callback,
             )
 
             # Restore original method
@@ -132,11 +143,16 @@ class CalibrationWorker(QObject):
             if cal_result and cal_result.success:
                 self.calibration_complete.emit(cal_result)
             else:
-                error_msg = cal_result.error if cal_result and hasattr(cal_result, 'error') else "Unknown error"
+                error_msg = (
+                    cal_result.error
+                    if cal_result and hasattr(cal_result, "error")
+                    else "Unknown error"
+                )
                 self.error_occurred.emit(f"Calibration failed: {error_msg}")
 
         except Exception as e:
             import traceback
+
             error_msg = f"Error during calibration: {e}\n{traceback.format_exc()}"
             logger.error(error_msg)
             self.error_occurred.emit(error_msg)
@@ -302,7 +318,7 @@ class LiveCalibrationUI(QMainWindow):
             "<small><b>Instructions:</b><br>"
             "• Use 'Set Mode' for configured S/P positions<br>"
             "• Use 'Set Custom Angle' to test any position<br>"
-            "• Position updates automatically above</small>"
+            "• Position updates automatically above</small>",
         )
         instructions.setWordWrap(True)
         instructions.setStyleSheet("color: #555; margin-top: 10px;")
@@ -331,35 +347,39 @@ class LiveCalibrationUI(QMainWindow):
 
         # Live spectrum display
         spectrum_group = QGroupBox("📊 Live Detector Output")
-        spectrum_group.setStyleSheet("QGroupBox { font-size: 13px; font-weight: bold; }")
+        spectrum_group.setStyleSheet(
+            "QGroupBox { font-size: 13px; font-weight: bold; }",
+        )
         spectrum_layout = QVBoxLayout(spectrum_group)
 
         # Progress label
         self.progress_label = QLabel("Ready to calibrate")
         self.progress_label.setFont(QFont("Arial", 11, QFont.Bold))
-        self.progress_label.setStyleSheet("padding: 8px; background-color: #f0f0f0; border-radius: 4px;")
+        self.progress_label.setStyleSheet(
+            "padding: 8px; background-color: #f0f0f0; border-radius: 4px;",
+        )
         spectrum_layout.addWidget(self.progress_label)
 
         # Plot widget
         self.plot_widget = pg.PlotWidget(title="Live Spectrum During Calibration")
-        self.plot_widget.setLabel('left', 'Intensity', units='counts')
-        self.plot_widget.setLabel('bottom', 'Wavelength', units='nm')
+        self.plot_widget.setLabel("left", "Intensity", units="counts")
+        self.plot_widget.setLabel("bottom", "Wavelength", units="nm")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setBackground('w')
+        self.plot_widget.setBackground("w")
         self.plot_widget.setYRange(0, 70000)
 
         # Add spectrum curve
         self.spectrum_curve = self.plot_widget.plot(
-            pen=pg.mkPen(color='#2196F3', width=2.5)
+            pen=pg.mkPen(color="#2196F3", width=2.5),
         )
 
         # Add saturation line
         saturation_line = pg.InfiniteLine(
             pos=62258,
             angle=0,
-            pen=pg.mkPen(color='r', width=2, style=Qt.DashLine),
-            label='Saturation (95%)',
-            labelOpts={'position': 0.95, 'color': 'r'}
+            pen=pg.mkPen(color="r", width=2, style=Qt.DashLine),
+            label="Saturation (95%)",
+            labelOpts={"position": 0.95, "color": "r"},
         )
         self.plot_widget.addItem(saturation_line)
 
@@ -367,7 +387,7 @@ class LiveCalibrationUI(QMainWindow):
         self.max_counts_text = pg.TextItem(
             text="Max: 0 counts",
             anchor=(1, 0),
-            color=(0, 0, 0)
+            color=(0, 0, 0),
         )
         self.max_counts_text.setPos(800, 60000)
         self.plot_widget.addItem(self.max_counts_text)
@@ -407,22 +427,22 @@ class LiveCalibrationUI(QMainWindow):
 
                 # Get servo positions from config
                 servo_positions = self.device_config.get_servo_positions()
-                s_pos = servo_positions['s']
-                p_pos = servo_positions['p']
+                s_pos = servo_positions["s"]
+                p_pos = servo_positions["p"]
                 self._log(f"✓ Servo positions: S={s_pos}°, P={p_pos}°")
 
                 # Get detector serial
-                self.detector_serial = getattr(self.usb, 'serial_number', 'Unknown')
+                self.detector_serial = getattr(self.usb, "serial_number", "Unknown")
 
                 # Update status
-                ctrl_name = info.get('ctrl_type', 'Unknown')
-                spec_name = info.get('spectrometer', 'Unknown')
+                ctrl_name = info.get("ctrl_type", "Unknown")
+                spec_name = info.get("spectrometer", "Unknown")
                 self.status_label.setText(
                     f"✓ Controller: {ctrl_name}\n"
                     f"✓ Detector: {spec_name} (SN: {self.detector_serial})\n"
                     f"✓ Configured Positions:\n"
                     f"   S-mode: {s_pos}°\n"
-                    f"   P-mode: {p_pos}°"
+                    f"   P-mode: {p_pos}°",
                 )
                 self.status_label.setStyleSheet("color: green;")
 
@@ -467,12 +487,12 @@ class LiveCalibrationUI(QMainWindow):
             # Note: Most controllers don't report actual position, so we track mode
             servo_positions = self.device_config.get_servo_positions()
 
-            if self.current_mode == 's':
-                angle = servo_positions['s']
+            if self.current_mode == "s":
+                angle = servo_positions["s"]
                 mode_text = "S-MODE (Parallel)"
                 color = "#1976D2"  # Blue
-            elif self.current_mode == 'p':
-                angle = servo_positions['p']
+            elif self.current_mode == "p":
+                angle = servo_positions["p"]
                 mode_text = "P-MODE (Perpendicular)"
                 color = "#E91E63"  # Pink
             else:
@@ -502,7 +522,7 @@ class LiveCalibrationUI(QMainWindow):
 
         try:
             mode_text = self.mode_combo.currentText()
-            mode = 's' if 'Parallel' in mode_text else 'p'
+            mode = "s" if "Parallel" in mode_text else "p"
 
             self._log(f"🔄 Setting polarizer to {mode.upper()}-mode...")
 
@@ -533,9 +553,9 @@ class LiveCalibrationUI(QMainWindow):
             self._log(f"🔄 Setting polarizer to custom position: {angle}°...")
 
             # Use controller's direct position command if available
-            if hasattr(self.controller, 'set_servo_position'):
+            if hasattr(self.controller, "set_servo_position"):
                 success = self.controller.set_servo_position(angle)
-            elif hasattr(self.controller, '_send_command'):
+            elif hasattr(self.controller, "_send_command"):
                 # Generic command sending
                 cmd = f"SERVO {angle}"
                 self.controller._send_command(cmd)
@@ -547,9 +567,11 @@ class LiveCalibrationUI(QMainWindow):
             if success:
                 self.current_mode = None  # Custom position
                 self._log(f"✅ Polarizer moved to {angle}°")
-                self._log("⚠️ Note: You're at a custom position. Run calibration to return to configured settings.")
+                self._log(
+                    "⚠️ Note: You're at a custom position. Run calibration to return to configured settings.",
+                )
             else:
-                self._log(f"❌ Failed to set custom position")
+                self._log("❌ Failed to set custom position")
 
         except Exception as e:
             self._log(f"❌ Error setting custom position: {e}")
@@ -564,9 +586,9 @@ class LiveCalibrationUI(QMainWindow):
             self._log("❌ Controller or spectrometer not connected!")
             return
 
-        self._log("\n" + "="*80)
+        self._log("\n" + "=" * 80)
         self._log("🚀 STARTING FULL 6-STEP POLARIZER CALIBRATION")
-        self._log("="*80)
+        self._log("=" * 80)
 
         self.calibrate_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -578,7 +600,7 @@ class LiveCalibrationUI(QMainWindow):
             self.usb,
             self.controller,
             self.device_config,
-            self.detector_serial
+            self.detector_serial,
         )
         self.calibration_thread = QThread()
         self.calibration_worker.moveToThread(self.calibration_thread)
@@ -612,21 +634,23 @@ class LiveCalibrationUI(QMainWindow):
     def _update_spectrum(self, spectrum_dict):
         """Update live spectrum plot"""
         try:
-            if 'current' not in spectrum_dict:
+            if "current" not in spectrum_dict:
                 return
 
-            data = spectrum_dict['current']
-            wavelengths = data['wavelengths']
-            intensities = data['intensities']
-            max_counts = data['max_counts']
-            saturated = data['saturated']
+            data = spectrum_dict["current"]
+            wavelengths = data["wavelengths"]
+            intensities = data["intensities"]
+            max_counts = data["max_counts"]
+            saturated = data["saturated"]
 
             # Update plot
             self.spectrum_curve.setData(wavelengths, intensities)
 
             # Update max counts label
             saturation_status = " ⚠️ SATURATED!" if saturated else ""
-            self.max_counts_text.setText(f"Max: {max_counts:.0f} counts{saturation_status}")
+            self.max_counts_text.setText(
+                f"Max: {max_counts:.0f} counts{saturation_status}",
+            )
 
             if saturated:
                 self.max_counts_text.setColor((255, 0, 0))
@@ -638,30 +662,32 @@ class LiveCalibrationUI(QMainWindow):
 
     def _calibration_complete(self, result):
         """Handle calibration completion"""
-        self._log("\n" + "="*80)
+        self._log("\n" + "=" * 80)
         self._log("✅ CALIBRATION COMPLETE")
-        self._log("="*80)
+        self._log("=" * 80)
 
         # Log QC results
-        if hasattr(result, 'qc_data') and result.qc_data:
+        if hasattr(result, "qc_data") and result.qc_data:
             self._log("\n📊 Quality Control Results:")
             qc = result.qc_data
 
-            for ch in ['A', 'B', 'C', 'D']:
+            for ch in ["A", "B", "C", "D"]:
                 if ch in qc:
                     data = qc[ch]
-                    ps_ratio = data.get('p_s_ratio', 0)
-                    orientation = "✓" if data.get('orientation_correct', False) else "✗"
-                    self._log(f"  Channel {ch}: P/S ratio = {ps_ratio:.3f} {orientation}")
+                    ps_ratio = data.get("p_s_ratio", 0)
+                    orientation = "✓" if data.get("orientation_correct", False) else "✗"
+                    self._log(
+                        f"  Channel {ch}: P/S ratio = {ps_ratio:.3f} {orientation}",
+                    )
 
-            overall_pass = qc.get('overall_pass', False)
+            overall_pass = qc.get("overall_pass", False)
             status = "✅ PASS" if overall_pass else "❌ FAIL"
             self._log(f"\nOverall Status: {status}")
 
         self.progress_label.setText("✅ Calibration Complete!")
         self.progress_label.setStyleSheet(
             "padding: 8px; background-color: #4CAF50; color: white; "
-            "border-radius: 4px; font-weight: bold;"
+            "border-radius: 4px; font-weight: bold;",
         )
 
         self.calibrate_button.setEnabled(True)
@@ -675,7 +701,7 @@ class LiveCalibrationUI(QMainWindow):
         self.progress_label.setText("❌ Calibration Failed")
         self.progress_label.setStyleSheet(
             "padding: 8px; background-color: #f44336; color: white; "
-            "border-radius: 4px; font-weight: bold;"
+            "border-radius: 4px; font-weight: bold;",
         )
 
         self.calibrate_button.setEnabled(True)
@@ -719,7 +745,7 @@ def main():
     app = QApplication(sys.argv)
 
     # Set application style
-    app.setStyle('Fusion')
+    app.setStyle("Fusion")
 
     window = LiveCalibrationUI()
     window.show()
@@ -727,5 +753,5 @@ def main():
     sys.exit(app.exec())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

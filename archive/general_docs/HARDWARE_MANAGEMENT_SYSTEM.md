@@ -82,7 +82,7 @@ def get_current_device_config(self) -> None:
                 self.device_config["ctrl"] = "PicoP4SPR"
             elif ctrl_name in ["pico_ezspr", "PicoEZSPR"]:
                 self.device_config["ctrl"] = "PicoEZSPR"
-    
+
     # Check kinetic system type
     if self.knx is not None:
         if hasattr(self.knx, 'name'):
@@ -91,7 +91,7 @@ def get_current_device_config(self) -> None:
                 self.device_config["knx"] = "KNX"
             elif knx_name == "KNX2":
                 self.device_config["knx"] = "KNX2"
-    
+
     # Update UI display
     mods = []
     if self.device_config["ctrl"]:
@@ -100,7 +100,7 @@ def get_current_device_config(self) -> None:
         mods.append("Kinetics")
     if self.pump:
         mods.append("Pumps")
-    
+
     dev_str = " + ".join(mods) or "No Devices"
     # Result: "SPR + Kinetics + Pumps" or "SPR + Kinetics" or "No Devices"
 ```
@@ -117,19 +117,19 @@ def open_device(self) -> None:
     # 1. Check connection status
     if self._con_tr.is_alive():
         # Handle connection errors
-        
+
     # 2. Detect and configure devices
     self.get_current_device_config()
-    
+
     # 3. Validate at least one controller exists
     if self.ctrl is None and self.knx is None:
         logger.debug("no device")
         self.stop()
         return
-    
+
     # 4. Start application
     self.startup()
-    
+
     # 5. Initialize Pump Manager (if pump hardware available)
     if self.pump:
         self.pump_manager = CavroPumpManager(self.pump)
@@ -137,15 +137,15 @@ def open_device(self) -> None:
             # Configure syringe sizes (5 mL each)
             self.pump_manager.set_syringe_size(PumpAddress.PUMP_1, 5000)
             self.pump_manager.set_syringe_size(PumpAddress.PUMP_2, 5000)
-            
+
             # Connect signals
             self.pump_manager.pump_state_changed.connect(self._on_pump_state_changed)
             self.pump_manager.error_occurred.connect(self._on_pump_error)
-    
+
     # 6. Initialize Kinetic Manager (if KNX hardware available)
     if self.knx is not None:
         self.kinetic_manager = KineticManager(self.knx, self.exp_start)
-        
+
         # Connect signals
         self.kinetic_manager.valve_state_changed.connect(self._on_valve_state_changed)
         self.kinetic_manager.sensor_reading.connect(self._on_sensor_reading)
@@ -153,7 +153,7 @@ def open_device(self) -> None:
         self.kinetic_manager.injection_started.connect(self._on_injection_started)
         self.kinetic_manager.injection_ended.connect(self._on_injection_ended)
         self.kinetic_manager.error_occurred.connect(self._on_kinetic_error)
-    
+
     # 7. Initialize SPR Calibrator (if SPR controller + spectrometer available)
     if self.ctrl is not None and self.usb is not None:
         device_type = self.device_config.get("ctrl", "") or ""
@@ -164,7 +164,7 @@ def open_device(self) -> None:
             stop_flag=self._c_stop,
         )
         self.calibrator.set_progress_callback(self.calibration_progress.emit)
-    
+
     # 8. Setup UI components
     self.main_window.sidebar.device_widget.setup(
         self.device_config["ctrl"],
@@ -265,7 +265,7 @@ if self.knx is not None:
 kinetic_manager.set_valve_position(channel, position)
 # position: "Sample", "Waste", "Regen"
 
-# Flow control  
+# Flow control
 kinetic_manager.set_flow_rate(rate)
 
 # Event logging
@@ -386,7 +386,7 @@ self.pump_manager.error_occurred.connect(self._on_pump_error)
 def _on_pump_state_changed(self, address: int, description: str) -> None:
     """Handle pump state changes."""
     ch_name = "CH1" if address == PumpAddress.PUMP_1 else "CH2"
-    
+
     # Update internal state
     if "Running" in description or "Flowing" in description:
         self.pump_states[ch_name] = "Running"
@@ -394,7 +394,7 @@ def _on_pump_state_changed(self, address: int, description: str) -> None:
         self.pump_states[ch_name] = "Off"
     else:
         self.pump_states[ch_name] = description
-    
+
     # Update UI
     self.update_pump_display.emit(self.pump_states, self.synced)
 
@@ -781,12 +781,12 @@ PORT_REGEN = 3
 
 The hardware management system provides:
 
-✅ **Modular Architecture** - Independent managers for each hardware type  
-✅ **Signal-Based Communication** - Async, thread-safe event handling  
-✅ **Automatic Configuration** - Detects and configures hardware automatically  
-✅ **Robust Error Handling** - Graceful degradation on failures  
-✅ **State Synchronization** - Consistent state across UI and hardware  
-✅ **High-Level APIs** - Simplified control through manager classes  
+✅ **Modular Architecture** - Independent managers for each hardware type
+✅ **Signal-Based Communication** - Async, thread-safe event handling
+✅ **Automatic Configuration** - Detects and configures hardware automatically
+✅ **Robust Error Handling** - Graceful degradation on failures
+✅ **State Synchronization** - Consistent state across UI and hardware
+✅ **High-Level APIs** - Simplified control through manager classes
 
 **Key Design Principles**:
 1. **Separation of Concerns** - Hardware, managers, and application logic separated

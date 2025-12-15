@@ -1,33 +1,34 @@
-"""
-Compare Step 4 vs Step 6 with ACTUAL measured dark noise
+"""Compare Step 4 vs Step 6 with ACTUAL measured dark noise
 (Not assumed ~3000 - that's specific to Ocean Optics/USB4000 class detectors)
 """
+
 import json
-import numpy as np
 from pathlib import Path
 
+import numpy as np
+
 # Load device config
-with open('config/device_config.json', 'r', encoding='utf-8') as f:
+with open("config/device_config.json", encoding="utf-8") as f:
     config = json.load(f)
 
-led_cal = config.get('led_calibration', {})
+led_cal = config.get("led_calibration", {})
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("STEP 4 vs STEP 6 SIGNAL COMPARISON")
-print("="*80)
+print("=" * 80)
 
 # Get Step 6 S-ref max intensities (dark-subtracted)
-s_ref_max = led_cal.get('s_ref_max_intensity', {})
+s_ref_max = led_cal.get("s_ref_max_intensity", {})
 
 print("\n📊 Step 6 S-ref Maximum Intensities (DARK-SUBTRACTED):")
-for ch in ['a', 'b', 'c', 'd']:
+for ch in ["a", "b", "c", "d"]:
     if ch in s_ref_max:
         print(f"  Channel {ch.upper()}: {s_ref_max[ch]:,.1f} counts")
 
 # Try to find ACTUAL measured dark noise from Step 5
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("CHECKING ACTUAL DARK NOISE (from Step 5 calibration)")
-print("="*80)
+print("=" * 80)
 
 calib_dir = Path("calibration_data")
 dark_file = calib_dir / "dark_noise_latest.npy"
@@ -61,29 +62,29 @@ if dark_file.exists():
         measured_dark = None
 else:
     print(f"\n❌ Dark noise file not found: {dark_file}")
-    print(f"   Expected location: calibration_data/dark_noise_latest.npy")
+    print("   Expected location: calibration_data/dark_noise_latest.npy")
     measured_dark = None
 
 # If we don't have measured dark, note the detector class default
 if measured_dark is None:
-    print(f"\n⚠️  No measured dark noise found.")
-    print(f"   For Ocean Optics/USB4000 class detectors (like Flame-T),")
-    print(f"   typical dark noise is ~3,000 counts @ 36ms integration.")
-    print(f"   This is DETECTOR-SPECIFIC - other detectors will differ!")
+    print("\n⚠️  No measured dark noise found.")
+    print("   For Ocean Optics/USB4000 class detectors (like Flame-T),")
+    print("   typical dark noise is ~3,000 counts @ 36ms integration.")
+    print("   This is DETECTOR-SPECIFIC - other detectors will differ!")
     assumed_dark = 3000
     print(f"\n📌 Using ASSUMED dark for Ocean Optics: {assumed_dark:,.1f} counts")
     dark_value = assumed_dark
 else:
     dark_value = measured_dark
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("EXPECTED STEP 4 RAW VALUES:")
-print("="*80)
-print(f"\nStep 4 Raw S-pol = Step 6 S-ref + Dark Noise")
+print("=" * 80)
+print("\nStep 4 Raw S-pol = Step 6 S-ref + Dark Noise")
 print(f"                 = Step 6 S-ref + {dark_value:,.1f} counts")
 print()
 
-for ch in ['a', 'b', 'c', 'd']:
+for ch in ["a", "b", "c", "d"]:
     if ch in s_ref_max:
         step6_value = s_ref_max[ch]
         expected_step4 = step6_value + dark_value
@@ -93,20 +94,21 @@ for ch in ['a', 'b', 'c', 'd']:
         print(f"  Expected Step 4 (raw):    {expected_step4:>10,.1f} counts")
 
         # Red flag check
-        if ch == 'b' and step6_value >= 65535:
-            print(f"  ⚠️  SATURATED - Channel B at detector max")
+        if ch == "b" and step6_value >= 65535:
+            print("  ⚠️  SATURATED - Channel B at detector max")
         elif step6_value < 30000:
-            print(f"  🚩 RED FLAG: Signal appears SUPPRESSED")
+            print("  🚩 RED FLAG: Signal appears SUPPRESSED")
         elif step6_value > 60000:
-            print(f"  🚩 RED FLAG: Signal TOO HIGH (near saturation)")
+            print("  🚩 RED FLAG: Signal TOO HIGH (near saturation)")
         else:
-            print(f"  ✅ Signal level reasonable")
+            print("  ✅ Signal level reasonable")
         print()
 
-print("="*80)
+print("=" * 80)
 print("VERIFY AGAINST YOUR DIAGNOSTIC PLOTS:")
-print("="*80)
-print("""
+print("=" * 80)
+print(
+    """
 Look at Panel 2 (ROI Means) in both diagnostic plots:
 
 1. Step 4 diagnostic: step4_raw_spol_diagnostic_*.png
@@ -118,7 +120,9 @@ Look at Panel 2 (ROI Means) in both diagnostic plots:
 For each channel, calculate:
   Difference = Step 4 ROI mean - Step 6 ROI mean
 
-Expected difference: """ + f"{dark_value:,.0f} counts (+/- 500 counts is normal)")
+Expected difference: """
+    + f"{dark_value:,.0f} counts (+/- 500 counts is normal)",
+)
 
 print("""
 
@@ -134,9 +138,9 @@ print("""
   - Channels maintain relative balance
 """)
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("DETECTOR CLASS NOTE:")
-print("="*80)
+print("=" * 80)
 print("""
 Your detector: Flame-T (Ocean Optics/USB4000 class)
   - Typical dark noise: ~3,000 counts @ 36ms integration

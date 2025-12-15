@@ -27,7 +27,7 @@ CONNECTION_TIMEOUT = 2.0    # USB scan timeout in seconds (2s fast, 5s safe)
 **If connection takes > 5 seconds:**
 1. Check `HARDWARE_DEBUG = True` and run again to see timing breakdown
 2. Look for which device scan is slow:
-   - `[SCAN] Spectrometer scan: X.XXs` 
+   - `[SCAN] Spectrometer scan: X.XXs`
    - `[SCAN] Controller scan: X.XXs`
    - `[SCAN] Kinetic scan: X.XXs`
    - `[SCAN] Pump scan: X.XXs`

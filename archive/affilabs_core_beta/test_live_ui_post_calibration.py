@@ -1,5 +1,4 @@
-"""
-Lightweight test UI that simulates post-calibration state and displays live SPR data.
+"""Lightweight test UI that simulates post-calibration state and displays live SPR data.
 This proves the live data display works when we bypass the calibration dialog complexity.
 
 Tests the flow:
@@ -8,16 +7,26 @@ Tests the flow:
 3. Live graph updates with real SPR spectra
 4. Proves the rewrite will work
 """
-import sys
-import time
-import numpy as np
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                               QHBoxLayout, QPushButton, QLabel)
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QFont
-import pyqtgraph as pg
+
 import queue
+import sys
 import threading
+import time
+
+import numpy as np
+import pyqtgraph as pg
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 # Mock hardware
 class MockHardware:
@@ -30,7 +39,7 @@ class MockHardware:
     def get_spectrum(self, channel):
         """Generate realistic SPR spectrum with shifting dip"""
         # Different dip positions for different channels
-        channel_dips = {'a': 650, 'b': 665, 'c': 670, 'd': 580}
+        channel_dips = {"a": 650, "b": 665, "c": 670, "d": 580}
         base_dip = channel_dips.get(channel, 650)
 
         # Oscillating dip simulating binding event
@@ -40,7 +49,9 @@ class MockHardware:
 
         # Generate spectrum
         baseline = 1.0 + 0.03 * np.random.randn(len(self.wavelengths))
-        dip = dip_depth * np.exp(-((self.wavelengths - dip_center) ** 2) / (2 * dip_width ** 2))
+        dip = dip_depth * np.exp(
+            -((self.wavelengths - dip_center) ** 2) / (2 * dip_width**2),
+        )
         spectrum = baseline - dip
 
         self.time_offset += 0.1
@@ -49,15 +60,16 @@ class MockHardware:
     def get_calibration_data(self):
         """Return fake calibration data"""
         return {
-            'wavelengths': self.wavelengths,
-            'dark': np.random.randn(len(self.wavelengths)) * 100 + 500,
-            's_ref': {
-                'a': np.random.randn(len(self.wavelengths)) * 1000 + 40000,
-                'b': np.random.randn(len(self.wavelengths)) * 1000 + 38000,
-                'c': np.random.randn(len(self.wavelengths)) * 1000 + 35000,
-                'd': np.random.randn(len(self.wavelengths)) * 1000 + 33000,
-            }
+            "wavelengths": self.wavelengths,
+            "dark": np.random.randn(len(self.wavelengths)) * 100 + 500,
+            "s_ref": {
+                "a": np.random.randn(len(self.wavelengths)) * 1000 + 40000,
+                "b": np.random.randn(len(self.wavelengths)) * 1000 + 38000,
+                "c": np.random.randn(len(self.wavelengths)) * 1000 + 35000,
+                "d": np.random.randn(len(self.wavelengths)) * 1000 + 33000,
+            },
         }
+
 
 # Acquisition worker
 class AcquisitionWorker:
@@ -66,7 +78,7 @@ class AcquisitionWorker:
         self.hardware = hardware
         self.running = False
         self.stop_flag = threading.Event()
-        self.channels = ['a', 'b', 'c', 'd']
+        self.channels = ["a", "b", "c", "d"]
 
     def run(self):
         """Worker thread: acquire and process spectra"""
@@ -76,9 +88,9 @@ class AcquisitionWorker:
 
         # Get calibration data
         cal_data = self.hardware.get_calibration_data()
-        wavelengths = cal_data['wavelengths']
-        dark = cal_data['dark']
-        s_ref = cal_data['s_ref']
+        wavelengths = cal_data["wavelengths"]
+        dark = cal_data["dark"]
+        s_ref = cal_data["s_ref"]
 
         while self.running and not self.stop_flag.is_set():
             try:
@@ -97,23 +109,26 @@ class AcquisitionWorker:
 
                     # Put in queue
                     data = {
-                        'type': 'spectrum',
-                        'channel': channel,
-                        'wavelengths': wavelengths,
-                        'transmission': transmission,
-                        'timestamp': time.time(),
-                        'count': count
+                        "type": "spectrum",
+                        "channel": channel,
+                        "wavelengths": wavelengths,
+                        "transmission": transmission,
+                        "timestamp": time.time(),
+                        "count": count,
                     }
                     self.data_queue.put_nowait(data)
 
                 count += 1
 
                 if count % 20 == 0:
-                    print(f"✅ Acquired {count} spectrum sets ({count * 4} total spectra)")
+                    print(
+                        f"✅ Acquired {count} spectrum sets ({count * 4} total spectra)",
+                    )
 
             except Exception as e:
                 print(f"❌ Worker error: {e}")
                 import traceback
+
                 traceback.print_exc()
                 break
 
@@ -122,6 +137,7 @@ class AcquisitionWorker:
     def stop(self):
         self.running = False
         self.stop_flag.set()
+
 
 # Main window
 class LiveDataWindow(QMainWindow):
@@ -144,7 +160,7 @@ class LiveDataWindow(QMainWindow):
         self.queue_timer.timeout.connect(self.process_queue)
 
         # Stats
-        self.spectrum_count = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+        self.spectrum_count = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.start_time = None
 
         print("✅ Live Data Window initialized")
@@ -229,41 +245,41 @@ class LiveDataWindow(QMainWindow):
         top_row = QHBoxLayout()
         self.plot_a = self.create_plot("Channel A", "#e74c3c")
         self.plot_b = self.create_plot("Channel B", "#3498db")
-        top_row.addWidget(self.plot_a['widget'])
-        top_row.addWidget(self.plot_b['widget'])
+        top_row.addWidget(self.plot_a["widget"])
+        top_row.addWidget(self.plot_b["widget"])
         graph_layout.addLayout(top_row)
 
         # Bottom row: Channel C and D
         bottom_row = QHBoxLayout()
         self.plot_c = self.create_plot("Channel C", "#2ecc71")
         self.plot_d = self.create_plot("Channel D", "#f39c12")
-        bottom_row.addWidget(self.plot_c['widget'])
-        bottom_row.addWidget(self.plot_d['widget'])
+        bottom_row.addWidget(self.plot_c["widget"])
+        bottom_row.addWidget(self.plot_d["widget"])
         graph_layout.addLayout(bottom_row)
 
         layout.addWidget(graph_container)
 
         # Store plot references
         self.plots = {
-            'a': self.plot_a,
-            'b': self.plot_b,
-            'c': self.plot_c,
-            'd': self.plot_d
+            "a": self.plot_a,
+            "b": self.plot_b,
+            "c": self.plot_c,
+            "d": self.plot_d,
         }
 
     def create_plot(self, title, color):
         """Create a PyQtGraph plot widget"""
         widget = pg.PlotWidget()
-        widget.setBackground('w')
-        widget.setTitle(title, color='k', size='12pt')
-        widget.setLabel('left', 'Transmission', units='AU')
-        widget.setLabel('bottom', 'Wavelength', units='nm')
+        widget.setBackground("w")
+        widget.setTitle(title, color="k", size="12pt")
+        widget.setLabel("left", "Transmission", units="AU")
+        widget.setLabel("bottom", "Wavelength", units="nm")
         widget.showGrid(x=True, y=True, alpha=0.3)
         widget.setYRange(0, 1.2)
 
         curve = widget.plot(pen=pg.mkPen(color=color, width=2))
 
-        return {'widget': widget, 'curve': curve}
+        return {"widget": widget, "curve": curve}
 
     def start_acquisition(self):
         """Start acquisition worker"""
@@ -315,7 +331,9 @@ class LiveDataWindow(QMainWindow):
 
         elapsed = time.time() - self.start_time if self.start_time else 1
         total = sum(self.spectrum_count.values())
-        print(f"✅ Stopped - {total} spectra in {elapsed:.1f}s ({total/elapsed:.1f} Hz)")
+        print(
+            f"✅ Stopped - {total} spectra in {elapsed:.1f}s ({total/elapsed:.1f} Hz)",
+        )
 
     def process_queue(self):
         """Process data queue in main thread"""
@@ -326,12 +344,12 @@ class LiveDataWindow(QMainWindow):
 
                 data = self.data_queue.get_nowait()
 
-                if data['type'] == 'spectrum':
-                    channel = data['channel']
+                if data["type"] == "spectrum":
+                    channel = data["channel"]
 
                     # Update graph
                     plot = self.plots[channel]
-                    plot['curve'].setData(data['wavelengths'], data['transmission'])
+                    plot["curve"].setData(data["wavelengths"], data["transmission"])
 
                     # Update stats
                     self.spectrum_count[channel] += 1
@@ -340,9 +358,10 @@ class LiveDataWindow(QMainWindow):
                     total = sum(self.spectrum_count.values())
                     elapsed = time.time() - self.start_time if self.start_time else 1
                     fps = total / elapsed
-                    plot['widget'].setTitle(
+                    plot["widget"].setTitle(
                         f"Channel {channel.upper()} - {self.spectrum_count[channel]} spectra ({fps:.1f} Hz)",
-                        color='k', size='11pt'
+                        color="k",
+                        size="11pt",
                     )
 
         except queue.Empty:
@@ -350,6 +369,7 @@ class LiveDataWindow(QMainWindow):
         except Exception as e:
             print(f"❌ Error processing queue: {e}")
             import traceback
+
             traceback.print_exc()
 
     def closeEvent(self, event):
@@ -359,19 +379,20 @@ class LiveDataWindow(QMainWindow):
             self.stop_acquisition()
         event.accept()
 
+
 def main():
-    print("="*70)
+    print("=" * 70)
     print("AffiLabs.core - Post-Calibration Live Data Test")
-    print("="*70)
+    print("=" * 70)
     print("This test simulates starting from calibration complete state")
     print("and proves the live data display pipeline works.")
-    print("="*70)
+    print("=" * 70)
     print()
 
     app = QApplication(sys.argv)
 
     # Set style
-    app.setStyle('Fusion')
+    app.setStyle("Fusion")
 
     window = LiveDataWindow()
     window.show()
@@ -383,5 +404,6 @@ def main():
 
     sys.exit(app.exec())
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

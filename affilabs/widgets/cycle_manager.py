@@ -5,13 +5,15 @@ Extracted from datawindow.py to improve code organization and maintainability.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional
 
-from widgets.ui_constants import CycleConfig
+from typing import TYPE_CHECKING
+
+from affilabs.widgets.ui_constants import CycleConfig
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QComboBox
-    from widgets.graphs import SensorgramGraph
+
+    from affilabs.widgets.graphs import SensorgramGraph
 
 
 class CycleManager:
@@ -29,7 +31,7 @@ class CycleManager:
         self,
         cycle_type_dropdown: QComboBox,
         cycle_time_dropdown: QComboBox,
-        sensorgram_graph: SensorgramGraph
+        sensorgram_graph: SensorgramGraph,
     ):
         """Initialize cycle manager.
 
@@ -37,6 +39,7 @@ class CycleManager:
             cycle_type_dropdown: The cycle type QComboBox
             cycle_time_dropdown: The cycle time QComboBox
             sensorgram_graph: The sensorgram graph (for shaded region)
+
         """
         self.cycle_type_dropdown = cycle_type_dropdown
         self.cycle_time_dropdown = cycle_time_dropdown
@@ -51,6 +54,7 @@ class CycleManager:
 
         Args:
             cycle_type: The selected cycle type
+
         """
         if cycle_type == "Auto-read":
             # Auto-read: disable cycle time dropdown and hide shaded region
@@ -72,37 +76,38 @@ class CycleManager:
 
         Args:
             time_text: The selected time text (e.g., "15 min")
+
         """
         # Do nothing - gray zone only appears when Start button is pressed
-        pass
 
     def get_current_type(self) -> str:
         """Get currently selected cycle type.
 
         Returns:
             The cycle type string
+
         """
         return self.cycle_type_dropdown.currentText()
 
-    def get_current_time_minutes(self) -> Optional[int]:
+    def get_current_time_minutes(self) -> int | None:
         """Get currently selected cycle time in minutes.
 
         Returns:
             Cycle time in minutes, or None for Auto-read
+
         """
         cycle_type = self.get_current_type()
 
         if cycle_type == "Auto-read":
             return None
-        elif cycle_type == "Baseline":
+        if cycle_type == "Baseline":
             return 5
-        else:
-            # Flow or Static
-            time_text = self.cycle_time_dropdown.currentText()
-            return self.parse_time_text(time_text)
+        # Flow or Static
+        time_text = self.cycle_time_dropdown.currentText()
+        return self.parse_time_text(time_text)
 
     @staticmethod
-    def parse_time_text(time_text: str) -> Optional[int]:
+    def parse_time_text(time_text: str) -> int | None:
         """Parse time text to extract minutes.
 
         Args:
@@ -110,18 +115,20 @@ class CycleManager:
 
         Returns:
             Time in minutes, or None if invalid
+
         """
         try:
             return int(time_text.split()[0])
         except (ValueError, IndexError):
             return None
 
-    def set_cycle_info(self, cycle_type: str, cycle_time: Optional[int]) -> None:
+    def set_cycle_info(self, cycle_type: str, cycle_time: int | None) -> None:
         """Set cycle type and time from saved data.
 
         Args:
             cycle_type: The cycle type to set
             cycle_time: The cycle time in minutes (or None)
+
         """
         # Block signals during programmatic update
         self.cycle_type_dropdown.blockSignals(True)
@@ -136,9 +143,7 @@ class CycleManager:
                 self.cycle_time_dropdown.setCurrentText(f"{cycle_time} min")
 
             # Update UI state based on type
-            if cycle_type == "Auto-read":
-                self.cycle_time_dropdown.setEnabled(False)
-            elif cycle_type == "Baseline":
+            if cycle_type == "Auto-read" or cycle_type == "Baseline":
                 self.cycle_time_dropdown.setEnabled(False)
             elif cycle_type in ["Flow", "Static"]:
                 self.cycle_time_dropdown.setEnabled(True)
@@ -156,7 +161,7 @@ class CycleManager:
         self.sensorgram_graph.hide_cycle_time_region()
 
     @staticmethod
-    def get_default_time(cycle_type: str) -> Optional[int]:
+    def get_default_time(cycle_type: str) -> int | None:
         """Get default cycle time for a given type.
 
         Args:
@@ -164,6 +169,7 @@ class CycleManager:
 
         Returns:
             Default time in minutes, or None
+
         """
         return CycleConfig.get_default_time(cycle_type)
 
@@ -176,5 +182,6 @@ class CycleManager:
 
         Returns:
             True if time dropdown should be enabled
+
         """
         return CycleConfig.is_time_enabled(cycle_type)

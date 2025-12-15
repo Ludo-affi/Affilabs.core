@@ -1,9 +1,12 @@
 """Test the actual commands being sent."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def test_raw_commands():
     """Send raw commands and see responses."""
@@ -27,12 +30,12 @@ def test_raw_commands():
     ]
 
     for desc, cmd in tests:
-        print(f"\n{desc}: {repr(cmd)}")
+        print(f"\n{desc}: {cmd!r}")
         pico._ser.reset_input_buffer()
         pico._ser.write(cmd.encode())
         time.sleep(0.05)
         response = pico._ser.read(20)
-        print(f"  Response: {repr(response)}")
+        print(f"  Response: {response!r}")
         time.sleep(0.5)
 
     print("\n>>> Check if LEDs A or D are lit <<<")
@@ -43,10 +46,11 @@ def test_raw_commands():
     pico._ser.write(b"lx\n")
     time.sleep(0.05)
     response = pico._ser.read(20)
-    print(f"  Response: {repr(response)}")
+    print(f"  Response: {response!r}")
 
     pico.close()
     print("\nTest complete!")
+
 
 if __name__ == "__main__":
     test_raw_commands()

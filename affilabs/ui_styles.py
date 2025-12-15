@@ -1,13 +1,12 @@
-"""
-UI Stylesheet Constants and Style Builders
+"""UI Stylesheet Constants and Style Builders
 Centralized styling for consistent UI appearance across the application.
 """
 
-from typing import Optional
 
 # ============================================================================
 # COLOR PALETTE
 # ============================================================================
+
 
 class Colors:
     """Color constants following Apple's design system."""
@@ -44,6 +43,7 @@ class Colors:
 # TYPOGRAPHY
 # ============================================================================
 
+
 class Fonts:
     """Font family constants."""
 
@@ -55,6 +55,7 @@ class Fonts:
 # ============================================================================
 # COMMON DIMENSIONS
 # ============================================================================
+
 
 class Dimensions:
     """Common sizing constants."""
@@ -72,10 +73,14 @@ class Dimensions:
 # STYLESHEET BUILDERS
 # ============================================================================
 
-def label_style(font_size: int, color: str = Colors.PRIMARY_TEXT,
-                weight: int = 400, font_family: str = Fonts.SYSTEM) -> str:
-    """
-    Generate consistent label stylesheet.
+
+def label_style(
+    font_size: int,
+    color: str = Colors.PRIMARY_TEXT,
+    weight: int = 400,
+    font_family: str = Fonts.SYSTEM,
+) -> str:
+    """Generate consistent label stylesheet.
 
     Args:
         font_size: Font size in pixels
@@ -85,6 +90,7 @@ def label_style(font_size: int, color: str = Colors.PRIMARY_TEXT,
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"font-size: {font_size}px;"
@@ -96,8 +102,7 @@ def label_style(font_size: int, color: str = Colors.PRIMARY_TEXT,
 
 
 def section_header_style(font_size: int = 11, uppercase: bool = True) -> str:
-    """
-    Generate section header stylesheet (like "HARDWARE CONNECTED").
+    """Generate section header stylesheet (like "HARDWARE CONNECTED").
 
     Args:
         font_size: Font size in pixels (default: 11)
@@ -105,6 +110,7 @@ def section_header_style(font_size: int = 11, uppercase: bool = True) -> str:
 
     Returns:
         Complete stylesheet string
+
     """
     style = (
         f"font-size: {font_size}px;"
@@ -121,14 +127,14 @@ def section_header_style(font_size: int = 11, uppercase: bool = True) -> str:
 
 
 def title_style(font_size: int = 20) -> str:
-    """
-    Generate title stylesheet for main section titles.
+    """Generate title stylesheet for main section titles.
 
     Args:
         font_size: Font size in pixels (default: 20)
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"font-size: {font_size}px;"
@@ -141,10 +147,11 @@ def title_style(font_size: int = 20) -> str:
     )
 
 
-def card_style(background: str = Colors.OVERLAY_LIGHT_3,
-               radius: str = Dimensions.BORDER_RADIUS_MD) -> str:
-    """
-    Generate card/frame stylesheet.
+def card_style(
+    background: str = Colors.OVERLAY_LIGHT_3,
+    radius: str = Dimensions.BORDER_RADIUS_MD,
+) -> str:
+    """Generate card/frame stylesheet.
 
     Args:
         background: Background color (default: light overlay)
@@ -152,24 +159,20 @@ def card_style(background: str = Colors.OVERLAY_LIGHT_3,
 
     Returns:
         Complete stylesheet string
+
     """
-    return (
-        f"QFrame {{"
-        f"  background: {background};"
-        f"  border-radius: {radius};"
-        f"}}"
-    )
+    return f"QFrame {{  background: {background};  border-radius: {radius};}}"
 
 
 def primary_button_style(height: str = Dimensions.BUTTON_HEIGHT_MD) -> str:
-    """
-    Generate primary button stylesheet (dark background).
+    """Generate primary button stylesheet (dark background).
 
     Args:
         height: Button height (default: 36px)
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QPushButton {{"
@@ -193,11 +196,11 @@ def primary_button_style(height: str = Dimensions.BUTTON_HEIGHT_MD) -> str:
 
 
 def checkbox_style() -> str:
-    """
-    Generate checkbox stylesheet with modern appearance.
+    """Generate checkbox stylesheet with modern appearance.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QCheckBox {{"
@@ -231,11 +234,11 @@ def checkbox_style() -> str:
 
 
 def radio_button_style() -> str:
-    """
-    Generate radio button stylesheet with modern appearance.
+    """Generate radio button stylesheet with modern appearance.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QRadioButton {{"
@@ -261,11 +264,11 @@ def radio_button_style() -> str:
 
 
 def slider_style() -> str:
-    """
-    Generate slider stylesheet with modern appearance.
+    """Generate slider stylesheet with modern appearance.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QSlider::groove:horizontal {{"
@@ -291,11 +294,11 @@ def slider_style() -> str:
 
 
 def scrollbar_style() -> str:
-    """
-    Generate scrollbar stylesheet for scroll areas.
+    """Generate scrollbar stylesheet for scroll areas.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QScrollArea {{"
@@ -322,28 +325,24 @@ def scrollbar_style() -> str:
 
 
 def separator_style() -> str:
-    """
-    Generate horizontal separator/divider stylesheet.
+    """Generate horizontal separator/divider stylesheet.
 
     Returns:
         Complete stylesheet string
+
     """
-    return (
-        f"background: {Colors.OVERLAY_LIGHT_6};"
-        f"max-height: 1px;"
-        f"margin: 4px 0px;"
-    )
+    return f"background: {Colors.OVERLAY_LIGHT_6};max-height: 1px;margin: 4px 0px;"
 
 
 def status_indicator_style(color: str = Colors.SECONDARY_TEXT) -> str:
-    """
-    Generate status indicator (colored dot) stylesheet.
+    """Generate status indicator (colored dot) stylesheet.
 
     Args:
         color: Indicator color (default: gray/not ready)
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"font-size: 14px;"
@@ -354,11 +353,11 @@ def status_indicator_style(color: str = Colors.SECONDARY_TEXT) -> str:
 
 
 def collapsible_header_style() -> str:
-    """
-    Generate collapsible section header button stylesheet.
+    """Generate collapsible section header button stylesheet.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         "QPushButton {"
@@ -383,11 +382,11 @@ def collapsible_header_style() -> str:
 
 
 def spinbox_style() -> str:
-    """
-    Generate spinbox stylesheet with modern appearance.
+    """Generate spinbox stylesheet with modern appearance.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QSpinBox {{"
@@ -413,15 +412,15 @@ def spinbox_style() -> str:
     )
 
 
-def combo_box_style(width: Optional[int] = None) -> str:
-    """
-    Generate combo box (dropdown) stylesheet.
+def combo_box_style(width: int | None = None) -> str:
+    """Generate combo box (dropdown) stylesheet.
 
     Args:
         width: Optional fixed width in pixels
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QComboBox {{"
@@ -451,9 +450,11 @@ def combo_box_style(width: Optional[int] = None) -> str:
     )
 
 
-def secondary_button_style(height: str = Dimensions.BUTTON_HEIGHT_SM, align: str = "left") -> str:
-    """
-    Generate secondary button stylesheet (white background with border).
+def secondary_button_style(
+    height: str = Dimensions.BUTTON_HEIGHT_SM,
+    align: str = "left",
+) -> str:
+    """Generate secondary button stylesheet (white background with border).
 
     Args:
         height: Button height (default: 32px)
@@ -461,6 +462,7 @@ def secondary_button_style(height: str = Dimensions.BUTTON_HEIGHT_SM, align: str
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QPushButton {{"
@@ -485,21 +487,23 @@ def secondary_button_style(height: str = Dimensions.BUTTON_HEIGHT_SM, align: str
 
 
 def segmented_button_style(position: str = "middle") -> str:
-    """
-    Generate segmented control button stylesheet (for grouped toggle buttons).
+    """Generate segmented control button stylesheet (for grouped toggle buttons).
 
     Args:
         position: Button position - "left", "right", or "middle"
 
     Returns:
         Complete stylesheet string
+
     """
     border_radius = ""
     border_style = f"border: 1px solid {Colors.OVERLAY_LIGHT_10};"
 
     if position == "left":
         border_radius = f"border-top-left-radius: {Dimensions.BORDER_RADIUS_SM};border-bottom-left-radius: {Dimensions.BORDER_RADIUS_SM};"
-        border_style = f"border: 1px solid {Colors.OVERLAY_LIGHT_10};border-right: none;"
+        border_style = (
+            f"border: 1px solid {Colors.OVERLAY_LIGHT_10};border-right: none;"
+        )
     elif position == "right":
         border_radius = f"border-top-right-radius: {Dimensions.BORDER_RADIUS_SM};border-bottom-right-radius: {Dimensions.BORDER_RADIUS_SM};"
         border_style = f"border: 1px solid {Colors.OVERLAY_LIGHT_10};"
@@ -526,11 +530,11 @@ def segmented_button_style(position: str = "middle") -> str:
 
 
 def line_edit_style() -> str:
-    """
-    Generate line edit (text input) stylesheet.
+    """Generate line edit (text input) stylesheet.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         f"QLineEdit {{"
@@ -553,24 +557,21 @@ def line_edit_style() -> str:
 
 
 def divider_style() -> str:
-    """
-    Generate horizontal divider stylesheet.
+    """Generate horizontal divider stylesheet.
 
     Returns:
         Complete stylesheet string
+
     """
-    return (
-        f"background: {Colors.OVERLAY_LIGHT_10};"
-        f"border: none;"
-    )
+    return f"background: {Colors.OVERLAY_LIGHT_10};border: none;"
 
 
 def group_box_style() -> str:
-    """
-    Generate QGroupBox stylesheet used for diagnostics sections.
+    """Generate QGroupBox stylesheet used for diagnostics sections.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         "QGroupBox {"
@@ -590,11 +591,11 @@ def group_box_style() -> str:
 
 
 def text_edit_log_style() -> str:
-    """
-    Generate QTextEdit style for log output area.
+    """Generate QTextEdit style for log output area.
 
     Returns:
         Complete stylesheet string
+
     """
     return (
         "QTextEdit {"

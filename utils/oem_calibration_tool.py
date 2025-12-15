@@ -1,5 +1,4 @@
-"""
-OEM Calibration Tool - Manufacturing Characterization Suite
+"""OEM Calibration Tool - Manufacturing Characterization Suite
 ============================================================
 
 This tool performs one-time device characterization during manufacturing:
@@ -43,23 +42,23 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
-from scipy.signal import find_peaks, peak_prominences, peak_widths
+from scipy.signal import find_peaks, peak_prominences
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from utils.hal.pico_p4spr_hal import ChannelID, PicoP4SPRHAL
 from utils.logger import logger as base_logger
-from utils.hal.pico_p4spr_hal import PicoP4SPRHAL, ChannelID
 
 try:
     import seabreeze
-    seabreeze.use('cseabreeze')
-    from seabreeze.spectrometers import list_devices, Spectrometer
+
+    seabreeze.use("cseabreeze")
+    from seabreeze.spectrometers import Spectrometer, list_devices
 except ImportError:
     base_logger.error("SeaBreeze not available - spectrometer functionality disabled")
     Spectrometer = None
@@ -67,7 +66,7 @@ except ImportError:
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s :: %(levelname)s :: %(message)s'
+    format="%(asctime)s :: %(levelname)s :: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -75,6 +74,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # POLARIZER CALIBRATION
 # ============================================================================
+
 
 class PolarizerCalibrator:
     """Find optimal servo positions for S and P polarization modes.
@@ -119,16 +119,17 @@ class PolarizerCalibrator:
         Args:
             ctrl: SPR controller HAL instance
             spec: Spectrometer instance
+
         """
         self.ctrl = ctrl
         self.spec = spec
         self.results = {
-            's_position': None,
-            'p_position': None,
-            's_is_high': None,  # True if S position produces HIGH signal
-            'p_is_high': None,  # True if P position produces HIGH signal
-            'intensity_curve': None,
-            'timestamp': datetime.now().isoformat()
+            "s_position": None,
+            "p_position": None,
+            "s_is_high": None,  # True if S position produces HIGH signal
+            "p_is_high": None,  # True if P position produces HIGH signal
+            "intensity_curve": None,
+            "timestamp": datetime.now().isoformat(),
         }
 
     def run_calibration(self, use_optimized: bool = True) -> dict:
@@ -139,6 +140,7 @@ class PolarizerCalibrator:
 
         Returns:
             dict: Calibration results with positions and verification
+
         """
         logger.info("=" * 80)
         logger.info("POLARIZER CALIBRATION - Finding Optimal Positions")
@@ -146,8 +148,7 @@ class PolarizerCalibrator:
 
         if use_optimized:
             return self._run_calibration_optimized()
-        else:
-            return self._run_calibration_legacy()
+        return self._run_calibration_legacy()
 
     def _run_calibration_legacy(self) -> dict:
         """Legacy sequential sweep (3 minutes, step=5).
@@ -158,7 +159,7 @@ class PolarizerCalibrator:
 
         # Set initial conditions
         logger.info("Setting up hardware for polarizer sweep...")
-        self.ctrl.set_intensity('a', 255)  # Max intensity for clear signal
+        self.ctrl.set_intensity("a", 255)  # Max intensity for clear signal
         self.spec.integration_time_micros(20000)  # 20ms integration
         time.sleep(0.5)
 
@@ -169,7 +170,7 @@ class PolarizerCalibrator:
         angle_step = 5
         steps = half_range // angle_step
 
-        logger.info(f"Sweep parameters:")
+        logger.info("Sweep parameters:")
         logger.info(f"  Range: {min_angle}-{max_angle}°")
         logger.info(f"  Step size: {angle_step}°")
         logger.info(f"  Total measurements: {2 * steps + 1}")
@@ -188,7 +189,9 @@ class PolarizerCalibrator:
         time.sleep(0.3)
         max_intensities[steps] = self.spec.intensities().max()
         angles[steps] = start_pos
-        logger.info(f"Center measurement: {start_pos}° = {max_intensities[steps]:.0f} counts")
+        logger.info(
+            f"Center measurement: {start_pos}° = {max_intensities[steps]:.0f} counts",
+        )
 
         # Sweep through angles
         logger.info("Starting servo sweep...")
@@ -216,7 +219,12 @@ class PolarizerCalibrator:
 
         logger.info("Sweep complete. Analyzing data...")
 
-        return self._analyze_sweep_results(angles, max_intensities, min_angle, angle_step)
+        return self._analyze_sweep_results(
+            angles,
+            max_intensities,
+            min_angle,
+            angle_step,
+        )
 
     def _run_calibration_optimized(self) -> dict:
         """Two-phase adaptive search (~60% faster than legacy).
@@ -228,7 +236,7 @@ class PolarizerCalibrator:
 
         # Set initial conditions
         logger.info("Setting up hardware for polarizer sweep...")
-        self.ctrl.set_intensity('a', 255)  # Max intensity for clear signal
+        self.ctrl.set_intensity("a", 255)  # Max intensity for clear signal
         self.spec.integration_time_micros(20000)  # 20ms integration
         time.sleep(0.5)
 
@@ -279,13 +287,17 @@ class PolarizerCalibrator:
             return self._run_calibration_legacy()
 
         # Get top 2 peaks
-        prominences = properties['prominences']
+        prominences = properties["prominences"]
         top_peak_indices = prominences.argsort()[-2:]
         peak_positions = coarse_angles[peaks[top_peak_indices]]
 
         logger.info(f"✅ Found {len(peaks)} peaks, refining top 2:")
-        logger.info(f"   Peak 1: ~{peak_positions[0]} (intensity: {coarse_intensities[peaks[top_peak_indices[0]]]:.0f})")
-        logger.info(f"   Peak 2: ~{peak_positions[1]} (intensity: {coarse_intensities[peaks[top_peak_indices[1]]]:.0f})")
+        logger.info(
+            f"   Peak 1: ~{peak_positions[0]} (intensity: {coarse_intensities[peaks[top_peak_indices[0]]]:.0f})",
+        )
+        logger.info(
+            f"   Peak 2: ~{peak_positions[1]} (intensity: {coarse_intensities[peaks[top_peak_indices[1]]]:.0f})",
+        )
 
         # ====================================================================
         # PHASE 2: FINE REFINEMENT (step=2 around peaks)
@@ -305,7 +317,9 @@ class PolarizerCalibrator:
             end = min(max_angle, peak_pos + refine_range)
             fine_positions = list(range(start, end + 1, fine_step))
 
-            logger.info(f"  Refining peak near {peak_pos}: range {start}-{end} (step={fine_step})")
+            logger.info(
+                f"  Refining peak near {peak_pos}: range {start}-{end} (step={fine_step})",
+            )
 
             for pos in fine_positions:
                 self.ctrl.servo_set(s=pos, p=pos)
@@ -329,14 +343,19 @@ class PolarizerCalibrator:
 
         logger.info("✅ Two-phase sweep complete. Analyzing final data...")
 
-        return self._analyze_sweep_results(all_angles, all_intensities, min_angle, fine_step)
+        return self._analyze_sweep_results(
+            all_angles,
+            all_intensities,
+            min_angle,
+            fine_step,
+        )
 
     def _analyze_sweep_results(
         self,
         angles: np.ndarray,
         intensities: np.ndarray,
         min_angle: int,
-        step_size: int
+        step_size: int,
     ) -> dict:
         """Analyze sweep data and extract optimal positions.
 
@@ -348,11 +367,12 @@ class PolarizerCalibrator:
 
         Returns:
             dict: Calibration results
+
         """
         # Store intensity curve for plotting
-        self.results['intensity_curve'] = {
-            'angles': angles.tolist(),
-            'intensities': intensities.tolist()
+        self.results["intensity_curve"] = {
+            "angles": angles.tolist(),
+            "intensities": intensities.tolist(),
         }
 
         # Find peaks
@@ -382,11 +402,19 @@ class PolarizerCalibrator:
             logger.error("=" * 80)
             logger.error("❌ INVALID POLARIZER CALIBRATION - Peaks Too Close")
             logger.error("=" * 80)
-            logger.error(f"Peak separation: {peak_separation} servo units (~{peak_separation * 0.706:.1f}°)")
-            logger.error(f"Minimum required: {MIN_SEPARATION_SERVO_UNITS} servo units (~{MIN_SEPARATION_SERVO_UNITS * 0.706:.1f}°)")
+            logger.error(
+                f"Peak separation: {peak_separation} servo units (~{peak_separation * 0.706:.1f}°)",
+            )
+            logger.error(
+                f"Minimum required: {MIN_SEPARATION_SERVO_UNITS} servo units (~{MIN_SEPARATION_SERVO_UNITS * 0.706:.1f}°)",
+            )
             logger.error("")
-            logger.error("❌ Root Cause: Two peaks detected from SAME transmission window")
-            logger.error("   (Barrel polarizers have 2 windows ~90° apart = 64 servo units)")
+            logger.error(
+                "❌ Root Cause: Two peaks detected from SAME transmission window",
+            )
+            logger.error(
+                "   (Barrel polarizers have 2 windows ~90° apart = 64 servo units)",
+            )
             logger.error("")
             logger.error("🔧 Possible Issues:")
             logger.error("   • Noisy intensity curve creating false peaks")
@@ -401,14 +429,16 @@ class PolarizerCalibrator:
             logger.error("=" * 80)
 
             # Return partial results for debugging
-            self.results.update({
-                's_position': None,
-                'p_position': None,
-                'error': 'peaks_too_close',
-                'peak_separation_servo_units': peak_separation,
-                'detected_peak1': pos1,
-                'detected_peak2': pos2
-            })
+            self.results.update(
+                {
+                    "s_position": None,
+                    "p_position": None,
+                    "error": "peaks_too_close",
+                    "peak_separation_servo_units": peak_separation,
+                    "detected_peak1": pos1,
+                    "detected_peak2": pos2,
+                },
+            )
             return self.results
 
         # Verify which position is S vs P by measuring actual behavior
@@ -426,7 +456,7 @@ class PolarizerCalibrator:
         time.sleep(0.3)
         intensity_pos2 = self.spec.intensities().max()
 
-        logger.info(f"Position verification:")
+        logger.info("Position verification:")
         logger.info(f"  Hardware 'S' position ({pos1}°): {intensity_pos1:.0f} counts")
         logger.info(f"  Hardware 'P' position ({pos2}°): {intensity_pos2:.0f} counts")
 
@@ -463,35 +493,55 @@ class PolarizerCalibrator:
         logger.info("POLARIZER CALIBRATION RESULTS:")
         logger.info("=" * 80)
         logger.info(f"{label_status}")
-        logger.info(f"Actual S position (HIGH transmission): {actual_s_position}° → {s_intensity:.0f} counts")
-        logger.info(f"Actual P position (LOW transmission):  {actual_p_position}° → {p_intensity:.0f} counts")
-        logger.info(f"S/P intensity ratio: {sp_ratio:.2f}× (ideal >3.0×, acceptable >1.5×)")
+        logger.info(
+            f"Actual S position (HIGH transmission): {actual_s_position}° → {s_intensity:.0f} counts",
+        )
+        logger.info(
+            f"Actual P position (LOW transmission):  {actual_p_position}° → {p_intensity:.0f} counts",
+        )
+        logger.info(
+            f"S/P intensity ratio: {sp_ratio:.2f}× (ideal >3.0×, acceptable >1.5×)",
+        )
         logger.info("=" * 80)
 
         # Updated thresholds: Accept 1.5× for hardware-limited systems
         if sp_ratio < 1.5:
-            logger.warning(f"⚠️ Very low S/P ratio ({sp_ratio:.2f}×) - polarizer alignment issue")
+            logger.warning(
+                f"⚠️ Very low S/P ratio ({sp_ratio:.2f}×) - polarizer alignment issue",
+            )
         elif sp_ratio < 2.5:
-            logger.info(f"✅ Acceptable S/P ratio ({sp_ratio:.2f}×) - hardware limited but usable")
+            logger.info(
+                f"✅ Acceptable S/P ratio ({sp_ratio:.2f}×) - hardware limited but usable",
+            )
         elif sp_ratio < 3.0:
-            logger.info(f"✅ Good S/P ratio ({sp_ratio:.2f}×) - within acceptable range")
+            logger.info(
+                f"✅ Good S/P ratio ({sp_ratio:.2f}×) - within acceptable range",
+            )
         else:
-            logger.info(f"✅ Excellent S/P ratio ({sp_ratio:.2f}×) - optimal performance")
+            logger.info(
+                f"✅ Excellent S/P ratio ({sp_ratio:.2f}×) - optimal performance",
+            )
 
         if p_intensity < 100:
-            logger.warning(f"⚠️ P-mode intensity very low ({p_intensity:.0f} counts) - check alignment")
+            logger.warning(
+                f"⚠️ P-mode intensity very low ({p_intensity:.0f} counts) - check alignment",
+            )
 
         # Store results (convert numpy types to Python native for JSON serialization)
-        self.results.update({
-            's_position': int(actual_s_position),
-            'p_position': int(actual_p_position),
-            's_intensity': float(s_intensity),
-            'p_intensity': float(p_intensity),
-            'sp_ratio': float(sp_ratio),  # P/S ratio (lower is better, should be < 1.0)
-            'hardware_s_position': int(pos1),
-            'hardware_p_position': int(pos2),
-            'labels_inverted': bool(labels_inverted)
-        })
+        self.results.update(
+            {
+                "s_position": int(actual_s_position),
+                "p_position": int(actual_p_position),
+                "s_intensity": float(s_intensity),
+                "p_intensity": float(p_intensity),
+                "sp_ratio": float(
+                    sp_ratio,
+                ),  # P/S ratio (lower is better, should be < 1.0)
+                "hardware_s_position": int(pos1),
+                "hardware_p_position": int(pos2),
+                "labels_inverted": bool(labels_inverted),
+            },
+        )
 
         return self.results
 
@@ -499,6 +549,7 @@ class PolarizerCalibrator:
 # ============================================================================
 # AFTERGLOW CHARACTERIZATION
 # ============================================================================
+
 
 class AfterglowCharacterizer:
     """Characterize LED phosphor afterglow across integration times."""
@@ -509,16 +560,22 @@ class AfterglowCharacterizer:
         Args:
             ctrl: SPR controller HAL instance
             spec: Spectrometer instance
+
         """
         self.ctrl = ctrl
         self.spec = spec
         self.results = {
-            'channels': {},
-            'timestamp': datetime.now().isoformat()
+            "channels": {},
+            "timestamp": datetime.now().isoformat(),
         }
 
     @staticmethod
-    def exponential_decay(t: np.ndarray, baseline: float, amplitude: float, tau: float) -> np.ndarray:
+    def exponential_decay(
+        t: np.ndarray,
+        baseline: float,
+        amplitude: float,
+        tau: float,
+    ) -> np.ndarray:
         """Exponential decay model: signal(t) = baseline + amplitude * exp(-t/tau)
 
         Args:
@@ -529,6 +586,7 @@ class AfterglowCharacterizer:
 
         Returns:
             Model predictions
+
         """
         return baseline + amplitude * np.exp(-t / tau)
 
@@ -536,7 +594,7 @@ class AfterglowCharacterizer:
         self,
         channel: str,
         integration_times_ms: list[float],
-        num_cycles: int = 5
+        num_cycles: int = 5,
     ) -> dict:
         """Characterize afterglow for one channel across integration times.
 
@@ -547,14 +605,15 @@ class AfterglowCharacterizer:
 
         Returns:
             dict: Channel characterization results
+
         """
         logger.info("=" * 80)
         logger.info(f"AFTERGLOW CHARACTERIZATION - Channel {channel.upper()}")
         logger.info("=" * 80)
 
         channel_results = {
-            'channel': channel,
-            'integration_time_data': []
+            "channel": channel,
+            "integration_time_data": [],
         }
 
         # LED intensity for testing (use high value for clear signal)
@@ -570,7 +629,9 @@ class AfterglowCharacterizer:
 
             # Measurement parameters
             led_on_time = int_time_ms * 0.003  # LED on for ~3 integration periods
-            delay_times_ms = np.array([10, 50, 100, 200, 500, 1000, 2000])  # Decay measurement points
+            delay_times_ms = np.array(
+                [10, 50, 100, 200, 500, 1000, 2000],
+            )  # Decay measurement points
 
             decay_intensities = np.zeros((num_cycles, len(delay_times_ms)))
 
@@ -596,7 +657,7 @@ class AfterglowCharacterizer:
             avg_decay = decay_intensities.mean(axis=0)
             std_decay = decay_intensities.std(axis=0)
 
-            logger.info(f"  Fitting exponential decay model...")
+            logger.info("  Fitting exponential decay model...")
 
             # Fit exponential decay
             try:
@@ -604,7 +665,7 @@ class AfterglowCharacterizer:
                 p0 = [
                     avg_decay[-1],  # baseline (final value)
                     avg_decay[0] - avg_decay[-1],  # amplitude
-                    100  # tau (ms)
+                    100,  # tau (ms)
                 ]
 
                 popt, pcov = curve_fit(
@@ -612,7 +673,7 @@ class AfterglowCharacterizer:
                     delay_times_ms,
                     avg_decay,
                     p0=p0,
-                    maxfev=5000
+                    maxfev=5000,
                 )
 
                 baseline, amplitude, tau = popt
@@ -620,10 +681,10 @@ class AfterglowCharacterizer:
                 # Calculate R²
                 residuals = avg_decay - self.exponential_decay(delay_times_ms, *popt)
                 ss_res = np.sum(residuals**2)
-                ss_tot = np.sum((avg_decay - np.mean(avg_decay))**2)
+                ss_tot = np.sum((avg_decay - np.mean(avg_decay)) ** 2)
                 r_squared = 1 - (ss_res / ss_tot)
 
-                logger.info(f"  ✅ Fit successful:")
+                logger.info("  ✅ Fit successful:")
                 logger.info(f"     τ = {tau:.2f} ms")
                 logger.info(f"     Amplitude = {amplitude:.1f} counts")
                 logger.info(f"     Baseline = {baseline:.1f} counts")
@@ -631,32 +692,32 @@ class AfterglowCharacterizer:
 
                 # Store results
                 int_time_result = {
-                    'integration_time_ms': float(int_time_ms),
-                    'tau_ms': float(tau),
-                    'amplitude': float(amplitude),
-                    'baseline': float(baseline),
-                    'r_squared': float(r_squared),
-                    'decay_times_ms': delay_times_ms.tolist(),
-                    'measured_intensities': avg_decay.tolist(),
-                    'std_intensities': std_decay.tolist()
+                    "integration_time_ms": float(int_time_ms),
+                    "tau_ms": float(tau),
+                    "amplitude": float(amplitude),
+                    "baseline": float(baseline),
+                    "r_squared": float(r_squared),
+                    "decay_times_ms": delay_times_ms.tolist(),
+                    "measured_intensities": avg_decay.tolist(),
+                    "std_intensities": std_decay.tolist(),
                 }
 
             except Exception as e:
                 logger.error(f"  ❌ Fit failed: {e}")
                 int_time_result = {
-                    'integration_time_ms': float(int_time_ms),
-                    'error': str(e)
+                    "integration_time_ms": float(int_time_ms),
+                    "error": str(e),
                 }
 
-            channel_results['integration_time_data'].append(int_time_result)
+            channel_results["integration_time_data"].append(int_time_result)
 
         logger.info("=" * 80)
         return channel_results
 
     def run_calibration(
         self,
-        channels: list[str] = ['a', 'b', 'c', 'd'],
-        integration_times_ms: list[float] = [10, 20, 35, 55, 80]
+        channels: list[str] = ["a", "b", "c", "d"],
+        integration_times_ms: list[float] = [10, 20, 35, 55, 80],
     ) -> dict:
         """Run full afterglow characterization for all channels.
 
@@ -666,18 +727,21 @@ class AfterglowCharacterizer:
 
         Returns:
             dict: Complete afterglow characterization results
+
         """
         logger.info("=" * 80)
         logger.info("AFTERGLOW CHARACTERIZATION - Full Suite")
         logger.info("=" * 80)
         logger.info(f"Channels: {[ch.upper() for ch in channels]}")
         logger.info(f"Integration times: {integration_times_ms} ms")
-        logger.info(f"Estimated time: {len(channels) * len(integration_times_ms) * 2} minutes")
+        logger.info(
+            f"Estimated time: {len(channels) * len(integration_times_ms) * 2} minutes",
+        )
         logger.info("=" * 80)
 
         for channel in channels:
             channel_results = self.characterize_channel(channel, integration_times_ms)
-            self.results['channels'][channel] = channel_results
+            self.results["channels"][channel] = channel_results
 
         return self.results
 
@@ -685,6 +749,7 @@ class AfterglowCharacterizer:
 # ============================================================================
 # DEVICE PROFILE MANAGER
 # ============================================================================
+
 
 class DeviceProfileManager:
     """Manage device-specific OEM calibration profiles."""
@@ -694,6 +759,7 @@ class DeviceProfileManager:
 
         Args:
             output_dir: Directory for storing device profiles
+
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -701,10 +767,10 @@ class DeviceProfileManager:
     def save_profile(
         self,
         serial_number: str,
-        polarizer_results: Optional[dict],
-        afterglow_results: Optional[dict],
+        polarizer_results: dict | None,
+        afterglow_results: dict | None,
         detector_model: str = "Unknown",
-        led_type: str = "LCW"
+        led_type: str = "LCW",
     ) -> Path:
         """Save unified device profile.
 
@@ -717,6 +783,7 @@ class DeviceProfileManager:
 
         Returns:
             Path to saved profile
+
         """
         timestamp = datetime.now().strftime("%Y%m%d")
         profile_name = f"device_{serial_number}_{timestamp}.json"
@@ -724,8 +791,8 @@ class DeviceProfileManager:
 
         # Expand LED type to full name for metadata
         led_type_names = {
-            'LCW': 'Luminus Cool White',
-            'OWW': 'Osram Warm White'
+            "LCW": "Luminus Cool White",
+            "OWW": "Osram Warm White",
         }
         led_type_full = led_type_names.get(led_type, led_type)
 
@@ -738,16 +805,16 @@ class DeviceProfileManager:
             "oem_calibration_version": "1.1",  # Bumped version to include LED type
             "calibration_date": datetime.now().isoformat(),
             "polarizer": polarizer_results if polarizer_results else {},
-            "afterglow": afterglow_results if afterglow_results else {}
+            "afterglow": afterglow_results if afterglow_results else {},
         }
 
         # Add LED type to afterglow metadata for validation
-        if afterglow_results and 'channels' in afterglow_results:
-            if 'metadata' not in profile_data['afterglow']:
-                profile_data['afterglow']['metadata'] = {}
-            profile_data['afterglow']['metadata']['led_type'] = led_type
+        if afterglow_results and "channels" in afterglow_results:
+            if "metadata" not in profile_data["afterglow"]:
+                profile_data["afterglow"]["metadata"] = {}
+            profile_data["afterglow"]["metadata"]["led_type"] = led_type
 
-        with profile_path.open('w') as f:
+        with profile_path.open("w") as f:
             json.dump(profile_data, f, indent=2)
 
         logger.info(f"✅ Device profile saved: {profile_path}")
@@ -755,7 +822,7 @@ class DeviceProfileManager:
         logger.info(f"   LED Type: {led_type} ({led_type_full})")
         return profile_path
 
-    def update_device_config(self, polarizer_results: Optional[dict]) -> None:
+    def update_device_config(self, polarizer_results: dict | None) -> None:
         """Update config/device_config.json with OEM calibration data.
 
         This ensures the main application can load OEM positions from the
@@ -764,44 +831,47 @@ class DeviceProfileManager:
 
         Args:
             polarizer_results: Polarizer calibration results with s_position, p_position
+
         """
         if not polarizer_results:
             logger.warning("⚠️ No polarizer results to save to device_config")
             return
 
         # Path to device_config.json
-        config_path = Path(__file__).parent.parent / 'config' / 'device_config.json'
+        config_path = Path(__file__).parent.parent / "config" / "device_config.json"
 
         try:
             # Load existing config
             if config_path.exists():
-                with open(config_path, 'r') as f:
+                with open(config_path) as f:
                     config = json.load(f)
             else:
-                logger.warning(f"⚠️ device_config.json not found at {config_path}, creating new")
+                logger.warning(
+                    f"⚠️ device_config.json not found at {config_path}, creating new",
+                )
                 config = {}
 
             # Update OEM calibration section
-            config['oem_calibration'] = {
-                'polarizer_s_position': polarizer_results['s_position'],
-                'polarizer_p_position': polarizer_results['p_position'],
-                'polarizer_sp_ratio': polarizer_results.get('sp_ratio', 0.0),
-                'calibration_date': datetime.now().isoformat(),
-                'calibration_method': polarizer_results.get('method', 'oem_tool')
+            config["oem_calibration"] = {
+                "polarizer_s_position": polarizer_results["s_position"],
+                "polarizer_p_position": polarizer_results["p_position"],
+                "polarizer_sp_ratio": polarizer_results.get("sp_ratio", 0.0),
+                "calibration_date": datetime.now().isoformat(),
+                "calibration_method": polarizer_results.get("method", "oem_tool"),
             }
 
             # Update last modified timestamp if device_info exists
-            if 'device_info' in config:
-                config['device_info']['last_modified'] = datetime.now().isoformat()
+            if "device_info" in config:
+                config["device_info"]["last_modified"] = datetime.now().isoformat()
 
             # Ensure directory exists
             config_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save updated config
-            with open(config_path, 'w') as f:
+            with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
 
-            logger.info(f"✅ Updated device_config.json with OEM calibration:")
+            logger.info("✅ Updated device_config.json with OEM calibration:")
             logger.info(f"   S position: {polarizer_results['s_position']}")
             logger.info(f"   P position: {polarizer_results['p_position']}")
             logger.info(f"   P/S ratio: {polarizer_results.get('sp_ratio', 0.0):.3f}")
@@ -813,8 +883,8 @@ class DeviceProfileManager:
     def generate_plots(
         self,
         serial_number: str,
-        polarizer_results: Optional[dict],
-        afterglow_results: Optional[dict]
+        polarizer_results: dict | None,
+        afterglow_results: dict | None,
     ) -> None:
         """Generate diagnostic plots for calibration results.
 
@@ -822,32 +892,41 @@ class DeviceProfileManager:
             serial_number: Device serial number
             polarizer_results: Polarizer calibration results
             afterglow_results: Afterglow characterization results
+
         """
         timestamp = datetime.now().strftime("%Y%m%d")
 
         # Polarizer sweep plot
-        if polarizer_results and 'intensity_curve' in polarizer_results:
+        if polarizer_results and "intensity_curve" in polarizer_results:
             plt.figure(figsize=(12, 6))
-            curve = polarizer_results['intensity_curve']
-            plt.plot(curve['angles'], curve['intensities'], 'b-', linewidth=2)
-            plt.axvline(polarizer_results['s_position'], color='r', linestyle='--',
-                       label=f"S position ({polarizer_results['s_position']}°)")
-            plt.axvline(polarizer_results['p_position'], color='g', linestyle='--',
-                       label=f"P position ({polarizer_results['p_position']}°)")
-            plt.xlabel('Servo Position (degrees)')
-            plt.ylabel('Intensity (counts)')
-            plt.title(f'Polarizer Sweep - Device {serial_number}')
+            curve = polarizer_results["intensity_curve"]
+            plt.plot(curve["angles"], curve["intensities"], "b-", linewidth=2)
+            plt.axvline(
+                polarizer_results["s_position"],
+                color="r",
+                linestyle="--",
+                label=f"S position ({polarizer_results['s_position']}°)",
+            )
+            plt.axvline(
+                polarizer_results["p_position"],
+                color="g",
+                linestyle="--",
+                label=f"P position ({polarizer_results['p_position']}°)",
+            )
+            plt.xlabel("Servo Position (degrees)")
+            plt.ylabel("Intensity (counts)")
+            plt.title(f"Polarizer Sweep - Device {serial_number}")
             plt.legend()
             plt.grid(True, alpha=0.3)
 
             plot_path = self.output_dir / f"polarizer_{serial_number}_{timestamp}.png"
-            plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+            plt.savefig(plot_path, dpi=150, bbox_inches="tight")
             plt.close()
             logger.info(f"  Plot saved: {plot_path}")
 
         # Afterglow decay plots
-        if afterglow_results and 'channels' in afterglow_results:
-            for channel_id, channel_data in afterglow_results['channels'].items():
+        if afterglow_results and "channels" in afterglow_results:
+            for channel_id, channel_data in afterglow_results["channels"].items():
                 fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
                 # Left: Decay curves for all integration times
@@ -855,36 +934,47 @@ class DeviceProfileManager:
                 int_times = []
                 taus = []
 
-                for int_data in channel_data['integration_time_data']:
-                    if 'tau_ms' in int_data:
-                        int_time = int_data['integration_time_ms']
+                for int_data in channel_data["integration_time_data"]:
+                    if "tau_ms" in int_data:
+                        int_time = int_data["integration_time_ms"]
                         int_times.append(int_time)
-                        taus.append(int_data['tau_ms'])
+                        taus.append(int_data["tau_ms"])
 
-                        times = np.array(int_data['decay_times_ms'])
-                        measured = np.array(int_data['measured_intensities'])
+                        times = np.array(int_data["decay_times_ms"])
+                        measured = np.array(int_data["measured_intensities"])
 
-                        ax1.plot(times, measured, 'o-', label=f"{int_time}ms", alpha=0.7)
+                        ax1.plot(
+                            times,
+                            measured,
+                            "o-",
+                            label=f"{int_time}ms",
+                            alpha=0.7,
+                        )
 
-                ax1.set_xlabel('Time after LED off (ms)')
-                ax1.set_ylabel('Intensity (counts)')
-                ax1.set_title(f'Channel {channel_id.upper()} - Afterglow Decay')
+                ax1.set_xlabel("Time after LED off (ms)")
+                ax1.set_ylabel("Intensity (counts)")
+                ax1.set_title(f"Channel {channel_id.upper()} - Afterglow Decay")
                 ax1.legend()
                 ax1.grid(True, alpha=0.3)
-                ax1.set_xscale('log')
+                ax1.set_xscale("log")
 
                 # Right: τ vs integration time
                 ax2 = axes[1]
                 if len(int_times) > 0:
-                    ax2.plot(int_times, taus, 'ro-', linewidth=2, markersize=8)
-                    ax2.set_xlabel('Integration Time (ms)')
-                    ax2.set_ylabel('Decay Constant τ (ms)')
-                    ax2.set_title(f'Channel {channel_id.upper()} - τ vs Integration Time')
+                    ax2.plot(int_times, taus, "ro-", linewidth=2, markersize=8)
+                    ax2.set_xlabel("Integration Time (ms)")
+                    ax2.set_ylabel("Decay Constant τ (ms)")
+                    ax2.set_title(
+                        f"Channel {channel_id.upper()} - τ vs Integration Time",
+                    )
                     ax2.grid(True, alpha=0.3)
 
                 plt.tight_layout()
-                plot_path = self.output_dir / f"afterglow_ch{channel_id}_{serial_number}_{timestamp}.png"
-                plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+                plot_path = (
+                    self.output_dir
+                    / f"afterglow_ch{channel_id}_{serial_number}_{timestamp}.png"
+                )
+                plt.savefig(plot_path, dpi=150, bbox_inches="tight")
                 plt.close()
                 logger.info(f"  Plot saved: {plot_path}")
 
@@ -893,50 +983,51 @@ class DeviceProfileManager:
 # MAIN OEM CALIBRATION WORKFLOW
 # ============================================================================
 
+
 def main():
     """Main OEM calibration workflow."""
     parser = argparse.ArgumentParser(
-        description='OEM Calibration Tool - Polarizer + Afterglow Characterization'
+        description="OEM Calibration Tool - Polarizer + Afterglow Characterization",
     )
     parser.add_argument(
-        '--serial',
+        "--serial",
         type=str,
         required=True,
-        help='Device serial number (e.g., FLMT12345)'
+        help="Device serial number (e.g., FLMT12345)",
     )
     parser.add_argument(
-        '--skip-polarizer',
-        action='store_true',
-        help='Skip polarizer calibration'
+        "--skip-polarizer",
+        action="store_true",
+        help="Skip polarizer calibration",
     )
     parser.add_argument(
-        '--skip-afterglow',
-        action='store_true',
-        help='Skip afterglow characterization'
+        "--skip-afterglow",
+        action="store_true",
+        help="Skip afterglow characterization",
     )
     parser.add_argument(
-        '--output-dir',
+        "--output-dir",
         type=str,
-        default='calibration_data/device_profiles',
-        help='Output directory for profiles'
+        default="calibration_data/device_profiles",
+        help="Output directory for profiles",
     )
     parser.add_argument(
-        '--detector',
+        "--detector",
         type=str,
-        default='Unknown',
-        help='Detector model name'
+        default="Unknown",
+        help="Detector model name",
     )
     parser.add_argument(
-        '--led-type',
+        "--led-type",
         type=str,
-        choices=['LCW', 'OWW'],
-        default='LCW',
-        help='LED PCB type: LCW (Luminus Cool White) or OWW (Osram Warm White)'
+        choices=["LCW", "OWW"],
+        default="LCW",
+        help="LED PCB type: LCW (Luminus Cool White) or OWW (Osram Warm White)",
     )
     parser.add_argument(
-        '--legacy-sweep',
-        action='store_true',
-        help='Use legacy sequential sweep instead of optimized two-phase (for validation)'
+        "--legacy-sweep",
+        action="store_true",
+        help="Use legacy sequential sweep instead of optimized two-phase (for validation)",
     )
 
     args = parser.parse_args()
@@ -946,7 +1037,9 @@ def main():
     logger.info("=" * 80)
     logger.info(f"Device Serial: {args.serial}")
     logger.info(f"Detector: {args.detector}")
-    logger.info(f"LED Type: {args.led_type} ({'Luminus Cool White' if args.led_type == 'LCW' else 'Osram Warm White'})")
+    logger.info(
+        f"LED Type: {args.led_type} ({'Luminus Cool White' if args.led_type == 'LCW' else 'Osram Warm White'})",
+    )
     logger.info(f"Output Directory: {args.output_dir}")
     logger.info("=" * 80)
 
@@ -969,7 +1062,7 @@ def main():
             logger.error("Failed to connect to SPR controller!")
             return 1
 
-        logger.info(f"✅ Controller: PicoP4SPR")
+        logger.info("✅ Controller: PicoP4SPR")
 
     except Exception as e:
         logger.error(f"Hardware initialization failed: {e}")
@@ -1021,7 +1114,7 @@ def main():
             polarizer_results=polarizer_results,
             afterglow_results=afterglow_results,
             detector_model=args.detector,
-            led_type=args.led_type
+            led_type=args.led_type,
         )
 
         # Update device_config.json with OEM calibration data
@@ -1033,7 +1126,7 @@ def main():
         profile_mgr.generate_plots(
             serial_number=args.serial,
             polarizer_results=polarizer_results,
-            afterglow_results=afterglow_results
+            afterglow_results=afterglow_results,
         )
 
         logger.info("\n" + "=" * 80)
@@ -1043,20 +1136,40 @@ def main():
         logger.info(f"Serial Number: {args.serial}")
 
         if polarizer_results:
-            logger.info(f"\nPolarizer:")
-            logger.info(f"  S position: {polarizer_results['s_position']}° (HIGH transmission)")
-            logger.info(f"  P position: {polarizer_results['p_position']}° (LOW transmission)")
-            sp_ratio = polarizer_results['sp_ratio']
-            status = "✅ EXCELLENT" if sp_ratio <= 0.4 else "✅ GOOD" if sp_ratio <= 0.7 else "✅ ACCEPTABLE" if sp_ratio <= 0.9 else "⚠️ HIGH"
+            logger.info("\nPolarizer:")
+            logger.info(
+                f"  S position: {polarizer_results['s_position']}° (HIGH transmission)",
+            )
+            logger.info(
+                f"  P position: {polarizer_results['p_position']}° (LOW transmission)",
+            )
+            sp_ratio = polarizer_results["sp_ratio"]
+            status = (
+                "✅ EXCELLENT"
+                if sp_ratio <= 0.4
+                else "✅ GOOD"
+                if sp_ratio <= 0.7
+                else "✅ ACCEPTABLE"
+                if sp_ratio <= 0.9
+                else "⚠️ HIGH"
+            )
             logger.info(f"  P/S ratio: {sp_ratio:.3f} ({status})")
 
         if afterglow_results:
-            logger.info(f"\nAfterglow:")
-            for ch, data in afterglow_results['channels'].items():
-                int_times = [d['integration_time_ms'] for d in data['integration_time_data'] if 'tau_ms' in d]
-                taus = [d['tau_ms'] for d in data['integration_time_data'] if 'tau_ms' in d]
+            logger.info("\nAfterglow:")
+            for ch, data in afterglow_results["channels"].items():
+                int_times = [
+                    d["integration_time_ms"]
+                    for d in data["integration_time_data"]
+                    if "tau_ms" in d
+                ]
+                taus = [
+                    d["tau_ms"] for d in data["integration_time_data"] if "tau_ms" in d
+                ]
                 if taus:
-                    logger.info(f"  Channel {ch.upper()}: τ range = {min(taus):.1f}-{max(taus):.1f} ms")
+                    logger.info(
+                        f"  Channel {ch.upper()}: τ range = {min(taus):.1f}-{max(taus):.1f} ms",
+                    )
 
         logger.info("=" * 80)
 
@@ -1076,7 +1189,7 @@ def main():
             ctrl.all_off()
             ctrl.disconnect()
             spec.close()
-        except (IOError, AttributeError, RuntimeError):
+        except (OSError, AttributeError, RuntimeError):
             pass  # Cleanup operations may fail if connection already closed
 
 

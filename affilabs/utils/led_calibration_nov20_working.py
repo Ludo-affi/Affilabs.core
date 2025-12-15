@@ -1027,14 +1027,14 @@ def verify_calibration(
         if s_ref_signals and ch in s_ref_signals and wave_data is not None:
             try:
                 from affilabs.utils.spr_signal_processing import validate_sp_orientation
-                
+
                 validation = validate_sp_orientation(
                     p_spectrum=intensity_data,
                     s_spectrum=s_ref_signals[ch],
                     wavelengths=wave_data,
                     window_px=200
                 )
-                
+
                 if validation['is_flat']:
                     logger.error(f"G•Ó CALIBRATION FAILED - Ch {ch.upper()}: Flat transmission spectrum!")
                     logger.error(f"   Range: {np.ptp(intensity_data / (s_ref_signals[ch] + 1e-10)):.2f}% - possible saturation or dark signal")
@@ -1052,7 +1052,7 @@ def verify_calibration(
                     continue
                 else:
                     logger.info(f"G£‡ Ch {ch.upper()}: S/P orientation validated (dip at {validation['peak_wl']:.1f}nm = {validation['peak_value']:.1f}%, confidence={validation['confidence']:.2f})")
-                    
+
             except Exception as e:
                 logger.warning(f"G‹·n+≈ S/P orientation validation failed for ch {ch.upper()}: {e}")
 

@@ -1,15 +1,14 @@
-"""
-Test rank command with clear visual indication
-"""
+"""Test rank command with clear visual indication"""
+
+import time
 
 import serial
-import time
 
 print("=" * 70)
 print("RANK COMMAND VISUAL TEST")
 print("=" * 70)
 
-ser = serial.Serial('COM5', 115200, timeout=1)
+ser = serial.Serial("COM5", 115200, timeout=1)
 time.sleep(0.5)
 
 print("\n>>> WATCH THE LEDs - Starting rank sequence in 2 seconds...")
@@ -20,7 +19,7 @@ print("\n📤 Sending rank command: rank:128,100,10")
 print("   (intensity=128, settling=100ms, dark=10ms)")
 print()
 
-ser.write(b'rank:128,100,10\n')
+ser.write(b"rank:128,100,10\n")
 time.sleep(0.05)
 
 # Read and display responses with timing
@@ -43,7 +42,7 @@ while True:
     elif "READ" in line:
         led = line[0].upper()
         print(f"⏱️  {elapsed_ms:6.1f}ms | {line} - 📸 Acquiring LED {led}")
-        ser.write(b'1\n')  # Send ACK
+        ser.write(b"1\n")  # Send ACK
     elif "DONE" in line:
         led = line[0].upper()
         print(f"⏱️  {elapsed_ms:6.1f}ms | {line} - 💡 LED {led} OFF")

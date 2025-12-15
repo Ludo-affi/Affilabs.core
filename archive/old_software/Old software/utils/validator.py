@@ -1,6 +1,6 @@
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QRegularExpressionValidator
-from PySide6.QtWidgets import QStyledItemDelegate, QLineEdit
+from PySide6.QtWidgets import QLineEdit, QStyledItemDelegate
 
 
 class NumericDelegate(QStyledItemDelegate):

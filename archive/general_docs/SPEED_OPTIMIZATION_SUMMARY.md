@@ -452,4 +452,3 @@ Total improvement: ~1.0s saved (42% faster than original)
 - [x] Zero-overhead wavelength filtering ✨ NEW
 
 **Status**: ✅ **OPTIMIZATION COMPLETE AND DEPLOYED**
-

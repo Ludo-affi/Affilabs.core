@@ -1,5 +1,4 @@
-"""
-Security and Access Control System for OEM Service Mode
+"""Security and Access Control System for OEM Service Mode
 
 Implements password-protected superadmin access for OEM personnel.
 Separates user-level access from OEM service mode.
@@ -26,16 +25,14 @@ Date: October 11, 2025
 import hashlib
 import json
 import os
-from pathlib import Path
-from typing import Optional
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from utils.logger import logger
 
 
 class SecurityManager:
-    """
-    Manages OEM superadmin access and password authentication.
+    """Manages OEM superadmin access and password authentication.
 
     Singleton pattern ensures only one security manager exists.
     """
@@ -46,12 +43,12 @@ class SecurityManager:
     # Salt for password hashing (in production, generate unique salt per installation)
     SALT = "ezControl_SPR_OEM_2025"
 
-    def __init__(self, config_dir: Optional[Path] = None):
-        """
-        Initialize security manager.
+    def __init__(self, config_dir: Path | None = None):
+        """Initialize security manager.
 
         Args:
             config_dir: Directory for security config (default: C:/Users/<user>/ezControl/config)
+
         """
         if config_dir is None:
             config_dir = Path.home() / "ezControl" / "config"
@@ -63,7 +60,7 @@ class SecurityManager:
         self.audit_log_file = self.config_dir / "access_audit.log"
 
         self.session_active = False
-        self.session_start_time: Optional[datetime] = None
+        self.session_start_time: datetime | None = None
         self.session_user = None
 
         self._load_security_config()
@@ -72,9 +69,9 @@ class SecurityManager:
         """Load or create security configuration."""
         if self.security_file.exists():
             try:
-                with open(self.security_file, 'r') as f:
+                with open(self.security_file) as f:
                     config = json.load(f)
-                    self.password_hash = config.get('oem_password_hash')
+                    self.password_hash = config.get("oem_password_hash")
                     logger.info("🔒 Security config loaded")
             except Exception as e:
                 logger.error(f"Failed to load security config: {e}")
@@ -89,15 +86,15 @@ class SecurityManager:
         self.password_hash = self._hash_password(default_password)
 
         config = {
-            'oem_password_hash': self.password_hash,
-            'password_set_date': datetime.now().isoformat(),
-            'last_changed': datetime.now().isoformat(),
-            'version': '1.0',
-            'note': 'OEM Superadmin password. Keep secure!'
+            "oem_password_hash": self.password_hash,
+            "password_set_date": datetime.now().isoformat(),
+            "last_changed": datetime.now().isoformat(),
+            "version": "1.0",
+            "note": "OEM Superadmin password. Keep secure!",
         }
 
         try:
-            with open(self.security_file, 'w') as f:
+            with open(self.security_file, "w") as f:
                 json.dump(config, f, indent=2)
 
             # Make file read-only for non-admins (Windows: read-only attribute)
@@ -117,27 +114,27 @@ class SecurityManager:
             logger.error(f"Failed to create security config: {e}")
 
     def _hash_password(self, password: str) -> str:
-        """
-        Hash password using SHA-256 with salt.
+        """Hash password using SHA-256 with salt.
 
         Args:
             password: Plain text password
 
         Returns:
             Hashed password string (hex)
+
         """
         salted_password = f"{self.SALT}{password}{self.SALT}"
         return hashlib.sha256(salted_password.encode()).hexdigest()
 
     def _audit_log(self, user: str, action: str, success: bool, details: str = ""):
-        """
-        Log access attempt to audit log.
+        """Log access attempt to audit log.
 
         Args:
             user: Username or "SYSTEM"
             action: Action attempted
             success: Whether action succeeded
             details: Additional details
+
         """
         timestamp = datetime.now().isoformat()
         status = "SUCCESS" if success else "FAILED"
@@ -147,14 +144,13 @@ class SecurityManager:
             log_entry += f" | Details: {details}"
 
         try:
-            with open(self.audit_log_file, 'a') as f:
+            with open(self.audit_log_file, "a") as f:
                 f.write(log_entry + "\n")
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")
 
     def authenticate_oem(self, password: str, username: str = "OEM") -> bool:
-        """
-        Authenticate OEM user with password.
+        """Authenticate OEM user with password.
 
         Args:
             password: Plain text password to verify
@@ -162,6 +158,7 @@ class SecurityManager:
 
         Returns:
             True if authentication successful, False otherwise
+
         """
         password_hash = self._hash_password(password)
 
@@ -174,18 +171,22 @@ class SecurityManager:
             logger.info(f"✅ OEM authentication successful for user: {username}")
             self._audit_log(username, "OEM Login", success=True)
             return True
-        else:
-            # Authentication failed
-            logger.warning(f"❌ OEM authentication failed for user: {username}")
-            self._audit_log(username, "OEM Login", success=False, details="Invalid password")
-            return False
+        # Authentication failed
+        logger.warning(f"❌ OEM authentication failed for user: {username}")
+        self._audit_log(
+            username,
+            "OEM Login",
+            success=False,
+            details="Invalid password",
+        )
+        return False
 
     def is_session_active(self) -> bool:
-        """
-        Check if OEM session is active and not expired.
+        """Check if OEM session is active and not expired.
 
         Returns:
             True if session is active and not expired, False otherwise
+
         """
         if not self.session_active:
             return False
@@ -196,7 +197,9 @@ class SecurityManager:
         # Check if session has expired
         elapsed = datetime.now() - self.session_start_time
         if elapsed > timedelta(minutes=self.SESSION_TIMEOUT_MINUTES):
-            logger.warning(f"⏱️ OEM session expired after {self.SESSION_TIMEOUT_MINUTES} minutes")
+            logger.warning(
+                f"⏱️ OEM session expired after {self.SESSION_TIMEOUT_MINUTES} minutes",
+            )
             self.end_session()
             return False
 
@@ -219,8 +222,7 @@ class SecurityManager:
         self.session_user = None
 
     def change_password(self, old_password: str, new_password: str) -> tuple[bool, str]:
-        """
-        Change OEM password.
+        """Change OEM password.
 
         Args:
             old_password: Current password
@@ -228,6 +230,7 @@ class SecurityManager:
 
         Returns:
             Tuple of (success, message)
+
         """
         # Verify old password
         if not self.authenticate_oem(old_password, username="PASSWORD_CHANGE"):
@@ -241,19 +244,23 @@ class SecurityManager:
         self.password_hash = self._hash_password(new_password)
 
         config = {
-            'oem_password_hash': self.password_hash,
-            'password_set_date': datetime.now().isoformat(),
-            'last_changed': datetime.now().isoformat(),
-            'version': '1.0',
-            'note': 'OEM Superadmin password. Keep secure!'
+            "oem_password_hash": self.password_hash,
+            "password_set_date": datetime.now().isoformat(),
+            "last_changed": datetime.now().isoformat(),
+            "version": "1.0",
+            "note": "OEM Superadmin password. Keep secure!",
         }
 
         try:
-            with open(self.security_file, 'w') as f:
+            with open(self.security_file, "w") as f:
                 json.dump(config, f, indent=2)
 
             logger.info("✅ OEM password changed successfully")
-            self._audit_log(self.session_user or "OEM", "Password Changed", success=True)
+            self._audit_log(
+                self.session_user or "OEM",
+                "Password Changed",
+                success=True,
+            )
             return True, "Password changed successfully"
 
         except Exception as e:
@@ -261,19 +268,19 @@ class SecurityManager:
             return False, f"Failed to save password: {e}"
 
     def get_session_info(self) -> dict:
-        """
-        Get current session information.
+        """Get current session information.
 
         Returns:
             Dictionary with session info
+
         """
         if not self.session_active:
             return {
-                'active': False,
-                'user': None,
-                'start_time': None,
-                'elapsed_minutes': 0,
-                'remaining_minutes': 0
+                "active": False,
+                "user": None,
+                "start_time": None,
+                "elapsed_minutes": 0,
+                "remaining_minutes": 0,
             }
 
         elapsed = datetime.now() - self.session_start_time
@@ -281,25 +288,25 @@ class SecurityManager:
         remaining_minutes = max(0, self.SESSION_TIMEOUT_MINUTES - elapsed_minutes)
 
         return {
-            'active': True,
-            'user': self.session_user,
-            'start_time': self.session_start_time.isoformat(),
-            'elapsed_minutes': elapsed_minutes,
-            'remaining_minutes': remaining_minutes,
-            'timeout_minutes': self.SESSION_TIMEOUT_MINUTES
+            "active": True,
+            "user": self.session_user,
+            "start_time": self.session_start_time.isoformat(),
+            "elapsed_minutes": elapsed_minutes,
+            "remaining_minutes": remaining_minutes,
+            "timeout_minutes": self.SESSION_TIMEOUT_MINUTES,
         }
 
 
 # Singleton instance
-_security_manager: Optional[SecurityManager] = None
+_security_manager: SecurityManager | None = None
 
 
 def get_security_manager() -> SecurityManager:
-    """
-    Get singleton security manager instance.
+    """Get singleton security manager instance.
 
     Returns:
         SecurityManager instance
+
     """
     global _security_manager
     if _security_manager is None:
@@ -308,8 +315,7 @@ def get_security_manager() -> SecurityManager:
 
 
 def require_oem_access(func):
-    """
-    Decorator to require active OEM session for function execution.
+    """Decorator to require active OEM session for function execution.
 
     Usage:
         @require_oem_access
@@ -317,6 +323,7 @@ def require_oem_access(func):
             # This will only run if OEM session is active
             pass
     """
+
     def wrapper(*args, **kwargs):
         security = get_security_manager()
         if not security.is_session_active():
@@ -352,7 +359,7 @@ if __name__ == "__main__":
 
     security = get_security_manager()
 
-    print(f"\n📝 Default password: 'Affinite2025'")
+    print("\n📝 Default password: 'Affinite2025'")
     print(f"📁 Security file: {security.security_file}")
     print(f"📋 Audit log: {security.audit_log_file}")
 
@@ -362,7 +369,7 @@ if __name__ == "__main__":
         print("✅ Authentication successful!")
 
         session_info = security.get_session_info()
-        print(f"\n📊 Session Info:")
+        print("\n📊 Session Info:")
         print(f"   User: {session_info['user']}")
         print(f"   Active: {session_info['active']}")
         print(f"   Timeout: {session_info['timeout_minutes']} minutes")

@@ -1,23 +1,24 @@
-"""
-Debug script to test calibration and show error details.
+"""Debug script to test calibration and show error details.
 
 Run this from the src directory to diagnose calibration failures.
 """
-import sys
+
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from affilabs.utils.calibration_6step import run_full_6step_calibration
-from hardware.spectrometer_usb2000 import USB2000Plus_Detector
 from controllers.controller_hal import ControllerHAL
+from hardware.spectrometer_usb2000 import USB2000Plus_Detector
+
+from affilabs.utils.calibration_6step import run_full_6step_calibration
 
 
 def main():
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("CALIBRATION DEBUG TEST")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Initialize hardware
     print("1. Initializing spectrometer...")
@@ -28,7 +29,7 @@ def main():
     print("[OK] Spectrometer connected\n")
 
     print("2. Initializing controller...")
-    ctrl = ControllerHAL('cavro')
+    ctrl = ControllerHAL("cavro")
     if not ctrl.connect():
         print("[ERROR] Failed to connect to controller")
         usb.disconnect()
@@ -41,21 +42,22 @@ def main():
 
         # Load device configuration
         from affilabs.utils.device_configuration import DeviceConfiguration
+
         device_serial = usb.serial_number
         device_config = DeviceConfiguration(device_serial=device_serial)
 
         result = run_full_6step_calibration(
             usb,
             ctrl,
-            'cavro',
+            "cavro",
             device_config=device_config,
-            detector_serial=device_serial
+            detector_serial=device_serial,
         )
 
         print("\n" + "-" * 80)
         print("CALIBRATION COMPLETE")
-        print("="*80)
-        print(f"\nResult:")
+        print("=" * 80)
+        print("\nResult:")
         print(f"  success: {result.success}")
         print(f"  ch_error_list: {result.ch_error_list}")
         print(f"  spr_fwhm: {result.spr_fwhm}")
@@ -64,18 +66,20 @@ def main():
         print(f"  integration_time: {result.integration_time}")
 
         if not result.success:
-            print(f"\n[ERROR] CALIBRATION FAILED")
-            print(f"   Channels with errors: {', '.join([ch.upper() for ch in result.ch_error_list])}")
-            print(f"\n   Review the log output above for specific error messages.")
-            print(f"   Look for lines with [ERROR] or [WARN] to identify the issues.")
+            print("\n[ERROR] CALIBRATION FAILED")
+            print(
+                f"   Channels with errors: {', '.join([ch.upper() for ch in result.ch_error_list])}",
+            )
+            print("\n   Review the log output above for specific error messages.")
+            print("   Look for lines with [ERROR] or [WARN] to identify the issues.")
             return 1
-        else:
-            print(f"\n[OK] CALIBRATION SUCCESSFUL")
-            return 0
+        print("\n[OK] CALIBRATION SUCCESSFUL")
+        return 0
 
     except Exception as e:
         print(f"\n[ERROR] Exception during calibration: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

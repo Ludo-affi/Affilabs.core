@@ -263,9 +263,7 @@ class RecordingManager(QObject):
                 "event_count": 0,
             }
 
-        elapsed = (
-            time.time() - self.recording_start_time if self.recording_start_time else 0
-        )
+        elapsed = time.time() - self.recording_start_time if self.recording_start_time else 0
 
         return {
             "recording": True,

@@ -1,15 +1,15 @@
 # Vectorized Spectrum Processing - Implementation Complete ✅
 
-**Date**: October 11, 2025  
-**Optimization**: Vectorized Spectrum Acquisition (2-3× FASTER)  
+**Date**: October 11, 2025
+**Optimization**: Vectorized Spectrum Acquisition (2-3× FASTER)
 **Status**: ✅ **COMPLETE**
 
 ---
 
 ## 🎯 Problem Statement
 
-**Issue**: Spectrum averaging uses Python loops with accumulation  
-**Location**: Steps 2, 4, 5, 6, 7 - any code that averages multiple spectrum acquisitions  
+**Issue**: Spectrum averaging uses Python loops with accumulation
+**Location**: Steps 2, 4, 5, 6, 7 - any code that averages multiple spectrum acquisitions
 **Impact**: Suboptimal performance due to interpreted loop overhead
 
 ### Old Pattern (Loop Accumulation)
@@ -42,11 +42,11 @@ def _acquire_averaged_spectrum(self, num_scans: int, apply_filter: bool = True,
                                 subtract_dark: bool = False) -> np.ndarray:
     # Pre-allocate array for ALL spectra at once
     spectra_stack = np.empty((num_scans, spectrum_length), dtype=dtype)
-    
+
     # Fill stack (minimal loop overhead)
     for i in range(num_scans):
         spectra_stack[i] = self.usb.read_intensity()
-    
+
     # ✨ VECTORIZED AVERAGING (2-3× faster than loop)
     return np.mean(spectra_stack, axis=0)
 ```
@@ -101,26 +101,26 @@ USB spectrum readout dominates total time:
 
 ### New Helper Method
 
-**Location**: `utils/spr_calibrator.py`, lines 1073-1150  
+**Location**: `utils/spr_calibrator.py`, lines 1073-1150
 **Method**: `_acquire_averaged_spectrum()`
 
 **Signature**:
 ```python
 def _acquire_averaged_spectrum(
-    self, 
-    num_scans: int, 
+    self,
+    num_scans: int,
     apply_filter: bool = True,
     subtract_dark: bool = False,
     description: str = "spectrum"
 ) -> Optional[np.ndarray]:
     """Vectorized spectrum acquisition and averaging.
-    
+
     Args:
         num_scans: Number of spectra to acquire and average
         apply_filter: Whether to apply spectral range filter (580-720nm)
         subtract_dark: Whether to subtract dark noise from each spectrum
         description: Description for logging/debugging
-        
+
     Returns:
         Averaged spectrum as numpy array, or None if error
     """
@@ -172,8 +172,8 @@ if full_spectrum_dark_noise is None:
     return False
 ```
 
-**Lines saved**: 14 → 8 (more concise)  
-**Speedup**: ~2-3× faster  
+**Lines saved**: 14 → 8 (more concise)
+**Speedup**: ~2-3× faster
 **Impact**: ~100ms per calibration
 
 ---
@@ -215,8 +215,8 @@ if averaged_signal is None:
 self.state.ref_sig[ch] = deepcopy(averaged_signal)
 ```
 
-**Lines saved**: 16 → 12 (more concise)  
-**Speedup**: ~2-3× faster  
+**Lines saved**: 16 → 12 (more concise)
+**Speedup**: ~2-3× faster
 **Impact**: ~400ms per calibration (4 channels × 100ms)
 
 ---
@@ -256,8 +256,8 @@ if dark_after_all is None:
     dark_after_all = self.state.dark_noise.copy()
 ```
 
-**Lines saved**: 13 → 10 (more concise)  
-**Speedup**: ~2-3× faster  
+**Lines saved**: 13 → 10 (more concise)
+**Speedup**: ~2-3× faster
 **Impact**: ~100ms per calibration
 
 ---
@@ -323,7 +323,7 @@ print(f"Speedup: {speedup:.2f}×")  # Should be 2-3×
 ```
 TOTAL CALIBRATION TIME: ~89.45 seconds
 
-Step 5 (dark noise):        ~8.0s  
+Step 5 (dark noise):        ~8.0s
 Step 6 (reference signals):  ~12.0s  (4 channels × ~3s each)
 Step 7 (P-mode + dark):      ~15.0s
 ```
@@ -385,7 +385,7 @@ Loop method:
   - Total: 5.5ms
 
 Vectorized method:
-  - Python loop: 100 iterations × 5μs = 500μs overhead  
+  - Python loop: 100 iterations × 5μs = 500μs overhead
   - NumPy mean: 30μs (single C call)
   - Total: 530μs
 ```
@@ -408,13 +408,13 @@ Vectorized method:
 **Impact**: Negligible on modern systems (even 100 MB is <1% of RAM)
 
 ### 2. Error Recovery
-**Old method**: Can partial succeed (some scans averaged)  
+**Old method**: Can partial succeed (some scans averaged)
 **New method**: All-or-nothing (fails if any spectrum fails)
 
 **Mitigation**: Error handling returns None, caller handles gracefully
 
 ### 3. Progress Reporting
-**Old method**: Can report progress per scan  
+**Old method**: Can report progress per scan
 **New method**: Reports once at end
 
 **Impact**: Minimal - scans complete quickly (<1s total)
@@ -430,13 +430,13 @@ import concurrent.futures
 
 def acquire_parallel(num_scans):
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(usb.read_intensity) 
+        futures = [executor.submit(usb.read_intensity)
                    for _ in range(num_scans)]
         spectra = [f.result() for f in futures]
     return np.mean(np.array(spectra), axis=0)
 ```
 
-**Potential speedup**: 2-4× (if hardware supports it)  
+**Potential speedup**: 2-4× (if hardware supports it)
 **Status**: Hardware doesn't support concurrent USB reads
 
 ### 2. GPU Acceleration (FUTURE)
@@ -449,7 +449,7 @@ def acquire_gpu(num_scans):
     return cp.mean(spectra_gpu, axis=0).get()
 ```
 
-**Potential speedup**: 10-100× (for 1000+ spectra)  
+**Potential speedup**: 10-100× (for 1000+ spectra)
 **Status**: Overkill for typical 10-100 spectra
 
 ### 3. Adaptive Scan Count (FUTURE)
@@ -458,19 +458,19 @@ Dynamically adjust based on signal quality:
 def acquire_adaptive(target_snr=50):
     min_scans = 5
     max_scans = 100
-    
+
     # Start with minimum
     spectra = acquire_n_spectra(min_scans)
     current_snr = calculate_snr(spectra)
-    
+
     while current_snr < target_snr and len(spectra) < max_scans:
         spectra.append(acquire_spectrum())
         current_snr = calculate_snr(spectra)
-    
+
     return np.mean(spectra, axis=0)
 ```
 
-**Potential benefit**: Faster when signal is clean  
+**Potential benefit**: Faster when signal is clean
 **Status**: Adds complexity, current fixed count works well
 
 ---
@@ -517,7 +517,7 @@ def acquire_adaptive(target_snr=50):
 ### Code Changes ✅
 - **New method**: `_acquire_averaged_spectrum()` (78 lines)
 - **Refactored**: Step 5 dark noise acquisition
-- **Refactored**: Step 6 reference signal acquisition  
+- **Refactored**: Step 6 reference signal acquisition
 - **Refactored**: Step 7 afterglow dark acquisition
 - **Net change**: +48 lines (new helper), -43 lines (removed loops) = +5 lines
 

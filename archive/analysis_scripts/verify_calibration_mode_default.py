@@ -1,5 +1,4 @@
-"""
-Quick verification that calibration mode change warning is implemented.
+"""Quick verification that calibration mode change warning is implemented.
 
 This script verifies:
 1. Default mode is 'global'
@@ -13,7 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.device_configuration import DeviceConfiguration
-from utils.logger import logger
 
 
 def verify_default_mode():
@@ -29,12 +27,11 @@ def verify_default_mode():
     mode = config.get_calibration_mode()
     print(f"Current mode: {mode}")
 
-    if mode == 'global':
+    if mode == "global":
         print("✅ CORRECT: Default mode is 'global' (recommended)")
         return True
-    else:
-        print(f"⚠️ WARNING: Default mode is '{mode}', expected 'global'")
-        return False
+    print(f"⚠️ WARNING: Default mode is '{mode}', expected 'global'")
+    return False
 
 
 def verify_recalibration_logic():
@@ -48,12 +45,12 @@ def verify_recalibration_logic():
     print("   - Warning dialog appears in UI")
     print("   - User must confirm the change")
     print("   - Full calibration required before measurements")
-    print("")
+    print()
     print("2. When mode changes from 'per_channel' → 'global':")
     print("   - Warning dialog appears in UI")
     print("   - User must confirm the change")
     print("   - Full calibration required before measurements")
-    print("")
+    print()
     print("3. Why recalibration is required:")
     print("   - Global mode: Varies LED intensities (0-255), single integration time")
     print("   - Per-channel mode: Fixed LEDs (255), per-channel integration times")
@@ -77,13 +74,14 @@ def verify_ui_components():
         print("⚠️ WARNING: device_settings.py not found")
         return False
 
-    content = settings_file.read_text(encoding='utf-8')
+    content = settings_file.read_text(encoding="utf-8")
 
     checks = {
         "Warning label in UI": "calib_mode_warning" in content,
         "Warning dialog on save": "Calibration Mode Change" in content,
         "User confirmation required": "Do you want to proceed" in content,
-        "Mode comparison in dialog": "current_mode" in content and "calib_mode" in content,
+        "Mode comparison in dialog": "current_mode" in content
+        and "calib_mode" in content,
     }
 
     all_present = True
@@ -140,16 +138,16 @@ def main():
             print("   → User must run full calibration before measurements")
             print("=" * 80)
             return 0
-        else:
-            print("\n❌ SOME VERIFICATIONS FAILED")
-            return 1
+        print("\n❌ SOME VERIFICATIONS FAILED")
+        return 1
 
     except Exception as e:
         print(f"\n❌ VERIFICATION ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

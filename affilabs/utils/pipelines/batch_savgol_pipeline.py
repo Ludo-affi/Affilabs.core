@@ -15,12 +15,12 @@ Date: November 26, 2025
 """
 
 import numpy as np
-from scipy.signal import savgol_filter
 from scipy.fft import dst, idct
+from scipy.signal import savgol_filter
 from scipy.stats import linregress
 
-from affilabs.utils.processing_pipeline import ProcessingPipeline, PipelineMetadata
 from affilabs.utils.logger import logger
+from affilabs.utils.processing_pipeline import PipelineMetadata, ProcessingPipeline
 
 
 class BatchSavgolPipeline(ProcessingPipeline):
@@ -39,17 +39,23 @@ class BatchSavgolPipeline(ProcessingPipeline):
         super().__init__(config)
 
         # Batch processing parameters (from GOLD STANDARD)
-        self.batch_size = self.config.get('batch_size', 12)  # 12 spectra = ~300ms window
-        self.batch_savgol_window = self.config.get('batch_savgol_window', 5)
-        self.batch_savgol_poly = self.config.get('batch_savgol_poly', 2)
+        self.batch_size = self.config.get(
+            "batch_size",
+            12,
+        )  # 12 spectra = ~300ms window
+        self.batch_savgol_window = self.config.get("batch_savgol_window", 5)
+        self.batch_savgol_poly = self.config.get("batch_savgol_poly", 2)
 
         # Transmission smoothing parameters
-        self.transmission_savgol_window = self.config.get('transmission_savgol_window', 21)
-        self.transmission_savgol_poly = self.config.get('transmission_savgol_poly', 3)
+        self.transmission_savgol_window = self.config.get(
+            "transmission_savgol_window",
+            21,
+        )
+        self.transmission_savgol_poly = self.config.get("transmission_savgol_poly", 3)
 
         # Fourier transform parameters
-        self.fourier_alpha = self.config.get('fourier_alpha', 9000)
-        self.fourier_window = self.config.get('fourier_window', 165)
+        self.fourier_alpha = self.config.get("fourier_alpha", 9000)
+        self.fourier_window = self.config.get("fourier_window", 165)
 
         # Batch buffers
         self._wavelength_batch = []
@@ -65,21 +71,21 @@ class BatchSavgolPipeline(ProcessingPipeline):
             version="1.0",
             author="Extracted from commit 069ff60",
             parameters={
-                'batch_size': self.batch_size,
-                'batch_savgol_window': self.batch_savgol_window,
-                'batch_savgol_poly': self.batch_savgol_poly,
-                'transmission_savgol_window': self.transmission_savgol_window,
-                'transmission_savgol_poly': self.transmission_savgol_poly,
-                'fourier_alpha': self.fourier_alpha,
-                'fourier_window': self.fourier_window,
-                'method': 'Hardware Averaging + Batch SG + Transmission SG + Fourier DST/IDCT'
-            }
+                "batch_size": self.batch_size,
+                "batch_savgol_window": self.batch_savgol_window,
+                "batch_savgol_poly": self.batch_savgol_poly,
+                "transmission_savgol_window": self.transmission_savgol_window,
+                "transmission_savgol_poly": self.transmission_savgol_poly,
+                "fourier_alpha": self.fourier_alpha,
+                "fourier_window": self.fourier_window,
+                "method": "Hardware Averaging + Batch SG + Transmission SG + Fourier DST/IDCT",
+            },
         )
 
     def calculate_transmission(
         self,
         intensity: np.ndarray,
-        reference: np.ndarray
+        reference: np.ndarray,
     ) -> np.ndarray:
         """Calculate transmission with LED boost correction
 
@@ -87,7 +93,9 @@ class BatchSavgolPipeline(ProcessingPipeline):
         With LED intensity correction for P vs S mode
         """
         if len(intensity) != len(reference):
-            logger.error(f"Shape mismatch: intensity({len(intensity)}) vs reference({len(reference)})")
+            logger.error(
+                f"Shape mismatch: intensity({len(intensity)}) vs reference({len(reference)})",
+            )
             return np.full_like(intensity, 50.0)
 
         # Avoid division by zero
@@ -104,6 +112,7 @@ class BatchSavgolPipeline(ProcessingPipeline):
         Args:
             wavelength: Peak wavelength in nm
             timestamp: Measurement timestamp
+
         """
         self._wavelength_batch.append(wavelength)
         self._timestamp_batch.append(timestamp)
@@ -113,6 +122,7 @@ class BatchSavgolPipeline(ProcessingPipeline):
 
         Returns:
             tuple: (filtered_wavelengths, timestamps) or (None, None) if batch too small
+
         """
         if len(self._wavelength_batch) < self.batch_savgol_window:
             # Batch too small for SG filter, return None
@@ -128,7 +138,7 @@ class BatchSavgolPipeline(ProcessingPipeline):
             filtered_wavelengths = savgol_filter(
                 wavelength_array,
                 window_length=self.batch_savgol_window,
-                polyorder=self.batch_savgol_poly
+                polyorder=self.batch_savgol_poly,
             )
 
             # Clear batch
@@ -159,7 +169,7 @@ class BatchSavgolPipeline(ProcessingPipeline):
         self,
         transmission_spectrum: np.ndarray,
         wavelengths: np.ndarray,
-        apply_sg_filter: bool = True
+        apply_sg_filter: bool = True,
     ) -> float:
         """Find resonance wavelength using GOLD STANDARD method
 
@@ -174,21 +184,27 @@ class BatchSavgolPipeline(ProcessingPipeline):
 
         Returns:
             Peak wavelength in nm
+
         """
         try:
             if len(transmission_spectrum) < 50:
-                logger.warning(f"Spectrum too short: {len(transmission_spectrum)} points")
+                logger.warning(
+                    f"Spectrum too short: {len(transmission_spectrum)} points",
+                )
                 # Fallback to simple minimum
                 min_idx = np.argmin(transmission_spectrum)
                 return wavelengths[min_idx]
 
             # STAGE 3: Apply Savitzky-Golay filter to transmission
             # This is the CRITICAL preprocessing step from GOLD STANDARD
-            if apply_sg_filter and len(transmission_spectrum) >= self.transmission_savgol_window:
+            if (
+                apply_sg_filter
+                and len(transmission_spectrum) >= self.transmission_savgol_window
+            ):
                 filtered_transmission = savgol_filter(
                     transmission_spectrum,
                     window_length=self.transmission_savgol_window,
-                    polyorder=self.transmission_savgol_poly
+                    polyorder=self.transmission_savgol_poly,
                 )
             else:
                 filtered_transmission = transmission_spectrum
@@ -197,11 +213,16 @@ class BatchSavgolPipeline(ProcessingPipeline):
             spectrum = filtered_transmission
 
             # Calculate Fourier weights if not already done
-            if self.fourier_weights is None or len(self.fourier_weights) != len(spectrum) - 1:
+            if (
+                self.fourier_weights is None
+                or len(self.fourier_weights) != len(spectrum) - 1
+            ):
                 n = len(spectrum) - 1
                 phi = np.pi / n * np.arange(1, n)
                 phi2 = phi**2
-                self.fourier_weights = phi / (1 + self.fourier_alpha * phi2 * (1 + phi2))
+                self.fourier_weights = phi / (
+                    1 + self.fourier_alpha * phi2 * (1 + phi2)
+                )
 
             # Calculate Fourier coefficients
             fourier_coeff = np.zeros_like(spectrum)
@@ -239,7 +260,10 @@ class BatchSavgolPipeline(ProcessingPipeline):
                 return wavelengths[zero_idx]
 
             # Linear regression
-            slope, intercept, r_value, p_value, std_err = linregress(wl_window, deriv_window)
+            slope, intercept, r_value, p_value, std_err = linregress(
+                wl_window,
+                deriv_window,
+            )
 
             if abs(slope) < 1e-10:
                 # Slope too small, use zero-crossing index
@@ -249,7 +273,10 @@ class BatchSavgolPipeline(ProcessingPipeline):
             peak_wavelength = -intercept / slope
 
             # Sanity check: peak should be within search window
-            if peak_wavelength < wavelengths[start_idx] or peak_wavelength > wavelengths[end_idx]:
+            if (
+                peak_wavelength < wavelengths[start_idx]
+                or peak_wavelength > wavelengths[end_idx]
+            ):
                 return wavelengths[zero_idx]
 
             return peak_wavelength

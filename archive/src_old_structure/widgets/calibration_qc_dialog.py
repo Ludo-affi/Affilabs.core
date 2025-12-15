@@ -7,20 +7,30 @@ Shows:
 4. Transmission spectra (all 4 channels)
 """
 
+import matplotlib
 import numpy as np
+import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QGridLayout, QFrame,
-    QTableWidget, QTableWidgetItem, QWidget, QScrollArea, QTabWidget
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-import pyqtgraph as pg
+
 from utils.logger import logger
-import matplotlib
-matplotlib.use('Qt5Agg')
+
+matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-import numpy as np
 
 
 class CalibrationQCDialog(QDialog):
@@ -43,6 +53,7 @@ class CalibrationQCDialog(QDialog):
                 - detector_serial: str (detector serial number)
                 - firmware_version: str (controller firmware)
                 - timestamp: str (calibration timestamp)
+
         """
         super().__init__(parent)
         self.calibration_data = calibration_data or {}
@@ -170,7 +181,10 @@ class CalibrationQCDialog(QDialog):
         graphs_layout.addWidget(p_pol_graph, 0, 1)
 
         # Row 1: Transmission and Dark
-        transmission_graph = self._create_graph("Transmission (transmission_spectra)", "transmission")
+        transmission_graph = self._create_graph(
+            "Transmission (transmission_spectra)",
+            "transmission",
+        )
         dark_graph = self._create_graph("Dark Scan (dark_scan)", "dark")
         graphs_layout.addWidget(transmission_graph, 1, 0)
         graphs_layout.addWidget(dark_graph, 1, 1)
@@ -202,18 +216,24 @@ class CalibrationQCDialog(QDialog):
 
         # Title
         title = QLabel("📄 Calibration Metadata")
-        title.setStyleSheet("font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent; border: none; padding: 0px;")
+        title.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent; border: none; padding: 0px;",
+        )
         layout.addWidget(title)
 
         # Metadata grid - more compact
         from datetime import datetime
-        timestamp = self.calibration_data.get('timestamp', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        device_type = self.calibration_data.get('device_type', 'Unknown')
-        detector_serial = self.calibration_data.get('detector_serial', 'N/A')
-        detector_number = self.calibration_data.get('detector_number', 'N/A')
-        firmware_version = self.calibration_data.get('firmware_version', 'N/A')
-        integration_time = self.calibration_data.get('integration_time', 0)
-        num_scans = self.calibration_data.get('num_scans', 'N/A')
+
+        timestamp = self.calibration_data.get(
+            "timestamp",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        device_type = self.calibration_data.get("device_type", "Unknown")
+        detector_serial = self.calibration_data.get("detector_serial", "N/A")
+        detector_number = self.calibration_data.get("detector_number", "N/A")
+        firmware_version = self.calibration_data.get("firmware_version", "N/A")
+        integration_time = self.calibration_data.get("integration_time", 0)
+        num_scans = self.calibration_data.get("num_scans", "N/A")
 
         metadata_text = f"""
         <table style='width: 100%; border-collapse: collapse;'>
@@ -255,21 +275,34 @@ class CalibrationQCDialog(QDialog):
         """Create combined QC validation table with both orientation and transmission data."""
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }")
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+        )
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
         title = QLabel("🔬 Quality Control Validation")
-        title.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F; padding-bottom: 3px;")
+        title.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #1D1D1F; padding-bottom: 3px;",
+        )
         layout.addWidget(title)
 
         table = QTableWidget()
         table.setColumnCount(8)
-        table.setHorizontalHeaderLabels([
-            "Ch", "Polarity", "Min Trans%", "P/S Ratio", "Dip", "FWHM", "Diagnostic", "Status"
-        ])
+        table.setHorizontalHeaderLabels(
+            [
+                "Ch",
+                "Polarity",
+                "Min Trans%",
+                "P/S Ratio",
+                "Dip",
+                "FWHM",
+                "Diagnostic",
+                "Status",
+            ],
+        )
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setStyleSheet("""
@@ -289,10 +322,13 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        orientation_data = self.calibration_data.get('orientation_validation', {})
-        transmission_validation = self.calibration_data.get('transmission_validation', {})
+        orientation_data = self.calibration_data.get("orientation_validation", {})
+        transmission_validation = self.calibration_data.get(
+            "transmission_validation",
+            {},
+        )
 
-        channels = ['a', 'b', 'c', 'd']
+        channels = ["a", "b", "c", "d"]
         table.setRowCount(4)
 
         global_pass_orientation = False
@@ -307,8 +343,8 @@ class CalibrationQCDialog(QDialog):
             # === ORIENTATION DATA (Column 1) ===
             if ch in orientation_data:
                 if isinstance(orientation_data[ch], dict):
-                    passed = orientation_data[ch].get('passed', None)
-                    reason = orientation_data[ch].get('reason', 'Unknown')
+                    passed = orientation_data[ch].get("passed", None)
+                    reason = orientation_data[ch].get("reason", "Unknown")
                 else:
                     fwhm = orientation_data[ch]
                     passed = True
@@ -339,7 +375,7 @@ class CalibrationQCDialog(QDialog):
                 ch_data = transmission_validation[ch]
 
                 # Min Transmission %
-                trans_min = ch_data.get('transmission_min')
+                trans_min = ch_data.get("transmission_min")
                 if trans_min is not None:
                     trans_item = QTableWidgetItem(f"{trans_min:.1f}")
                     trans_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -354,7 +390,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
                 # P/S Ratio
-                ratio = ch_data.get('ratio')
+                ratio = ch_data.get("ratio")
                 if ratio is not None:
                     ratio_item = QTableWidgetItem(f"{ratio:.2f}")
                     ratio_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -367,14 +403,14 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 3, QTableWidgetItem("N/A"))
 
                 # Dip Detected
-                dip_detected = ch_data.get('dip_detected', False)
+                dip_detected = ch_data.get("dip_detected", False)
                 dip_text = "✅" if dip_detected else "❌"
                 dip_item = QTableWidgetItem(dip_text)
                 dip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 table.setItem(idx, 4, dip_item)
 
                 # FWHM
-                fwhm = ch_data.get('fwhm')
+                fwhm = ch_data.get("fwhm")
                 if fwhm is not None:
                     fwhm_item = QTableWidgetItem(f"{fwhm:.1f}")
                     fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -389,19 +425,24 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 5, QTableWidgetItem("N/A"))
 
                 # Diagnostic reason (combined from both)
-                diagnostic = ch_data.get('reason', reason if ch in orientation_data else 'N/A')
+                diagnostic = ch_data.get(
+                    "reason",
+                    reason if ch in orientation_data else "N/A",
+                )
                 diag_item = QTableWidgetItem(diagnostic)
                 diag_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
                 table.setItem(idx, 6, diag_item)
 
                 # Status
-                status = ch_data.get('status', 'INDETERMINATE')
-                status_item = QTableWidgetItem(status.replace('✅ ', '').replace('❌ ', '').replace('⚠️ ', ''))
+                status = ch_data.get("status", "INDETERMINATE")
+                status_item = QTableWidgetItem(
+                    status.replace("✅ ", "").replace("❌ ", "").replace("⚠️ ", ""),
+                )
                 status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if '✅' in status or 'PASS' in status:
+                if "✅" in status or "PASS" in status:
                     status_item.setForeground(QColor("#34C759"))
                     global_pass_transmission = True
-                elif '❌' in status or 'FAIL' in status:
+                elif "❌" in status or "FAIL" in status:
                     status_item.setForeground(QColor("#FF3B30"))
                 else:
                     status_item.setForeground(QColor("#FF9500"))
@@ -414,20 +455,25 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, col, item)
 
         # Optimize column widths
-        table.setColumnWidth(0, 40)   # Ch
-        table.setColumnWidth(1, 60)   # Polarity
-        table.setColumnWidth(2, 80)   # Min Trans%
-        table.setColumnWidth(3, 70)   # P/S Ratio
-        table.setColumnWidth(4, 50)   # Dip
-        table.setColumnWidth(5, 60)   # FWHM
+        table.setColumnWidth(0, 40)  # Ch
+        table.setColumnWidth(1, 60)  # Polarity
+        table.setColumnWidth(2, 80)  # Min Trans%
+        table.setColumnWidth(3, 70)  # P/S Ratio
+        table.setColumnWidth(4, 50)  # Dip
+        table.setColumnWidth(5, 60)  # FWHM
         table.setColumnWidth(6, 280)  # Diagnostic
-        table.horizontalHeader().setSectionResizeMode(7, table.horizontalHeader().ResizeMode.Stretch)  # Status
+        table.horizontalHeader().setSectionResizeMode(
+            7,
+            table.horizontalHeader().ResizeMode.Stretch,
+        )  # Status
         table.setMaximumHeight(160)
         layout.addWidget(table)
 
         # Combined status summary
         if global_pass_orientation and global_pass_transmission:
-            result_text = "✅ ALL CHECKS PASSED: Polarizer orientation correct, SPR dip detected"
+            result_text = (
+                "✅ ALL CHECKS PASSED: Polarizer orientation correct, SPR dip detected"
+            )
             result_color = "#34C759"
         elif not global_pass_orientation and not global_pass_transmission:
             result_text = "❌ CALIBRATION ISSUES: Check polarizer and sensor hydration"
@@ -457,19 +503,25 @@ class CalibrationQCDialog(QDialog):
         """Create polarizer orientation validation table."""
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }")
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+        )
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(12)
 
         title = QLabel("🔄 Polarizer Orientation Validation")
-        title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1D1D1F; padding-bottom: 5px;")
+        title.setStyleSheet(
+            "font-size: 14px; font-weight: 600; color: #1D1D1F; padding-bottom: 5px;",
+        )
         layout.addWidget(title)
 
         table = QTableWidget()
         table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Channel", "Orientation", "Diagnostic Reason", "Status"])
+        table.setHorizontalHeaderLabels(
+            ["Channel", "Orientation", "Diagnostic Reason", "Status"],
+        )
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setStyleSheet("""
@@ -487,18 +539,20 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        orientation_data = self.calibration_data.get('orientation_validation', {})
+        orientation_data = self.calibration_data.get("orientation_validation", {})
 
         # DEBUG: Log orientation data
         if not orientation_data:
             logger.warning("⚠️ No orientation_validation data in QC report")
         else:
-            logger.info(f"✅ Orientation validation data for channels: {list(orientation_data.keys())}")
+            logger.info(
+                f"✅ Orientation validation data for channels: {list(orientation_data.keys())}",
+            )
 
         table.setRowCount(4)
         global_pass = False  # If any channel is correct, polarizer is OK
 
-        for idx, ch in enumerate(['a', 'b', 'c', 'd']):
+        for idx, ch in enumerate(["a", "b", "c", "d"]):
             # Channel name
             ch_item = QTableWidgetItem(f"Channel {ch.upper()}")
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -508,8 +562,8 @@ class CalibrationQCDialog(QDialog):
                 # Handle both old format (dict) and new format (float FWHM)
                 if isinstance(orientation_data[ch], dict):
                     # Old format: {'passed': bool, 'reason': str}
-                    passed = orientation_data[ch].get('passed', None)
-                    reason = orientation_data[ch].get('reason', 'Unknown')
+                    passed = orientation_data[ch].get("passed", None)
+                    reason = orientation_data[ch].get("reason", "Unknown")
                 else:
                     # New format: float FWHM value
                     fwhm = orientation_data[ch]
@@ -571,7 +625,9 @@ class CalibrationQCDialog(QDialog):
             result_text = "✅ GLOBAL POLARIZER ORIENTATION: CORRECT (at least one channel validates polarizer position)"
             result_color = "#34C759"
         else:
-            result_text = "⚠️ GLOBAL POLARIZER ORIENTATION: CANNOT VALIDATE (check all channels)"
+            result_text = (
+                "⚠️ GLOBAL POLARIZER ORIENTATION: CANNOT VALIDATE (check all channels)"
+            )
             result_color = "#FF9500"
 
         result_label = QLabel(result_text)
@@ -595,26 +651,32 @@ class CalibrationQCDialog(QDialog):
         """Create transmission dip validation table showing P/S ratio, dip shape, FWHM."""
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }")
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+        )
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(12)
 
         title = QLabel("🔬 Transmission Validation (SPR Dip Detection)")
-        title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1D1D1F; padding-bottom: 5px;")
+        title.setStyleSheet(
+            "font-size: 14px; font-weight: 600; color: #1D1D1F; padding-bottom: 5px;",
+        )
         layout.addWidget(title)
 
         table = QTableWidget()
         table.setColumnCount(6)
-        table.setHorizontalHeaderLabels([
-            "Channel",
-            "Min Trans %",
-            "P/S Ratio",
-            "Dip Detected",
-            "FWHM (nm)",
-            "Status"
-        ])
+        table.setHorizontalHeaderLabels(
+            [
+                "Channel",
+                "Min Trans %",
+                "P/S Ratio",
+                "Dip Detected",
+                "FWHM (nm)",
+                "Status",
+            ],
+        )
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setStyleSheet("""
@@ -632,18 +694,23 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        transmission_validation = self.calibration_data.get('transmission_validation', {})
+        transmission_validation = self.calibration_data.get(
+            "transmission_validation",
+            {},
+        )
 
         # DEBUG: Log transmission validation data
         if not transmission_validation:
             logger.warning("⚠️ No transmission_validation data in QC report")
         else:
-            logger.info(f"✅ Transmission validation keys: {list(transmission_validation.keys())}")
+            logger.info(
+                f"✅ Transmission validation keys: {list(transmission_validation.keys())}",
+            )
             for ch, data in transmission_validation.items():
                 logger.info(f"   Ch {ch}: {data}")
 
         # Display per-channel transmission results
-        channels = ['a', 'b', 'c', 'd']
+        channels = ["a", "b", "c", "d"]
         table.setRowCount(len(channels))
 
         for idx, ch in enumerate(channels):
@@ -656,7 +723,7 @@ class CalibrationQCDialog(QDialog):
                 ch_data = transmission_validation[ch]
 
                 # Min Transmission %
-                trans_min = ch_data.get('transmission_min')
+                trans_min = ch_data.get("transmission_min")
                 if trans_min is not None:
                     trans_item = QTableWidgetItem(f"{trans_min:.1f}%")
                     trans_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -672,7 +739,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
                 # P/S Ratio
-                ratio = ch_data.get('ratio')
+                ratio = ch_data.get("ratio")
                 if ratio is not None:
                     ratio_item = QTableWidgetItem(f"{ratio:.3f}")
                     ratio_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -688,7 +755,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
                 # Dip Detected
-                dip_detected = ch_data.get('dip_detected', False)
+                dip_detected = ch_data.get("dip_detected", False)
                 dip_text = "✅ YES" if dip_detected else "❌ NO"
                 dip_item = QTableWidgetItem(dip_text)
                 dip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -699,7 +766,7 @@ class CalibrationQCDialog(QDialog):
                 table.setItem(idx, 3, dip_item)
 
                 # FWHM
-                fwhm = ch_data.get('fwhm')
+                fwhm = ch_data.get("fwhm")
                 if fwhm is not None:
                     fwhm_item = QTableWidgetItem(f"{fwhm:.1f}")
                     fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -715,12 +782,12 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 4, QTableWidgetItem("N/A"))
 
                 # Status (now column 5 after adding Min Trans %)
-                status = ch_data.get('status', 'INDETERMINATE')
+                status = ch_data.get("status", "INDETERMINATE")
                 status_item = QTableWidgetItem(status)
                 status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if '✅ PASS' in status:
+                if "✅ PASS" in status:
                     status_item.setForeground(QColor("#34C759"))
-                elif '❌ FAIL' in status:
+                elif "❌ FAIL" in status:
                     status_item.setForeground(QColor("#FF3B30"))
                 else:
                     status_item.setForeground(QColor("#FF9500"))
@@ -740,14 +807,25 @@ class CalibrationQCDialog(QDialog):
         table.setColumnWidth(2, 100)  # P/S Ratio
         table.setColumnWidth(3, 120)  # Dip Detected
         table.setColumnWidth(4, 100)  # FWHM
-        table.horizontalHeader().setSectionResizeMode(5, table.horizontalHeader().ResizeMode.Stretch)  # Status
+        table.horizontalHeader().setSectionResizeMode(
+            5,
+            table.horizontalHeader().ResizeMode.Stretch,
+        )  # Status
         table.setMinimumHeight(180)
         table.setMaximumHeight(220)
         layout.addWidget(table)
 
         # Overall result - check if all channels passed
-        passed_channels = [ch for ch, data in transmission_validation.items() if '✅ PASS' in data.get('status', '')]
-        failed_channels = [ch for ch, data in transmission_validation.items() if '❌ FAIL' in data.get('status', '')]
+        passed_channels = [
+            ch
+            for ch, data in transmission_validation.items()
+            if "✅ PASS" in data.get("status", "")
+        ]
+        failed_channels = [
+            ch
+            for ch, data in transmission_validation.items()
+            if "❌ FAIL" in data.get("status", "")
+        ]
 
         if len(passed_channels) == len(channels) and len(failed_channels) == 0:
             result_text = "✅ TRANSMISSION VALIDATION: ALL CHANNELS PASSED (SPR dip detected, P/S ratio valid)"
@@ -756,7 +834,9 @@ class CalibrationQCDialog(QDialog):
             result_text = f"❌ TRANSMISSION VALIDATION: {len(failed_channels)} CHANNEL(S) FAILED (check sensor hydration)"
             result_color = "#FF3B30"
         else:
-            result_text = "⚠️ TRANSMISSION VALIDATION: INDETERMINATE (check calibration data)"
+            result_text = (
+                "⚠️ TRANSMISSION VALIDATION: INDETERMINATE (check calibration data)"
+            )
             result_color = "#FF9500"
 
         result_label = QLabel(result_text)
@@ -780,20 +860,25 @@ class CalibrationQCDialog(QDialog):
         """Create compact summary information section."""
         data = self.calibration_data
 
-        integration_time = data.get('integration_time', 0)
-        led_intensities = data.get('led_intensities', {})
-        sp_swap_applied = data.get('sp_swap_applied', False)
+        integration_time = data.get("integration_time", 0)
+        led_intensities = data.get("led_intensities", {})
+        sp_swap_applied = data.get("sp_swap_applied", False)
 
-        led_str = ", ".join([f"{ch.upper()}:{led_intensities.get(ch, 0)}" for ch in ['a', 'b', 'c', 'd']])
+        led_str = ", ".join(
+            [
+                f"{ch.upper()}:{led_intensities.get(ch, 0)}"
+                for ch in ["a", "b", "c", "d"]
+            ],
+        )
 
         # Calculate S-pol and P-pol max counts
-        s_pol_spectra = data.get('s_pol_spectra', {})
-        p_pol_spectra = data.get('p_pol_spectra', {})
+        s_pol_spectra = data.get("s_pol_spectra", {})
+        p_pol_spectra = data.get("p_pol_spectra", {})
 
         s_max_str_parts = []
         p_max_str_parts = []
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             if ch in s_pol_spectra and s_pol_spectra[ch] is not None:
                 s_max = np.max(s_pol_spectra[ch])
                 s_max_str_parts.append(f"{ch.upper()}:{s_max:.0f}")
@@ -805,7 +890,11 @@ class CalibrationQCDialog(QDialog):
         s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
         p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
 
-        swap_badge = "  |  <span style='color:#FF9500'><b>QC Display:</b> S/P swapped</span>" if sp_swap_applied else ""
+        swap_badge = (
+            "  |  <span style='color:#FF9500'><b>QC Display:</b> S/P swapped</span>"
+            if sp_swap_applied
+            else ""
+        )
 
         summary_text = (
             f"<b>Integration:</b> {integration_time:.2f}ms  |  "
@@ -835,6 +924,7 @@ class CalibrationQCDialog(QDialog):
 
         Returns:
             QFrame containing the graph
+
         """
         container = QFrame()
         container.setFrameShape(QFrame.Shape.StyledPanel)
@@ -862,18 +952,18 @@ class CalibrationQCDialog(QDialog):
 
         # Create plot widget
         plot_widget = pg.PlotWidget()
-        plot_widget.setBackground('w')
+        plot_widget.setBackground("w")
         plot_widget.showGrid(x=True, y=True, alpha=0.3)
 
         # Configure axes
-        plot_widget.setLabel('bottom', 'Wavelength', units='nm')
+        plot_widget.setLabel("bottom", "Wavelength", units="nm")
 
-        if data_type == 'transmission':
-            plot_widget.setLabel('left', 'Transmission', units='%')
+        if data_type == "transmission":
+            plot_widget.setLabel("left", "Transmission", units="%")
             # Enable auto-range for transmission - don't constrain the Y-axis
-            plot_widget.enableAutoRange(axis='y')
+            plot_widget.enableAutoRange(axis="y")
         else:
-            plot_widget.setLabel('left', 'Intensity', units='counts')
+            plot_widget.setLabel("left", "Intensity", units="counts")
 
         # Plot data
         self._plot_data(plot_widget, data_type)
@@ -888,50 +978,58 @@ class CalibrationQCDialog(QDialog):
         Args:
             plot_widget: PyQtGraph PlotWidget
             data_type: Type of data to plot
+
         """
         data = self.calibration_data
-        wavelengths = data.get('wavelengths', None)
+        wavelengths = data.get("wavelengths", None)
 
         if wavelengths is None:
             wavelengths = np.linspace(560, 720, 3648)  # Default wavelength array
-            logger.warning(f"No wavelengths in QC data, using default range")
+            logger.warning("No wavelengths in QC data, using default range")
 
         # Channel colors (matching existing UI)
         colors = {
-            'a': (0, 0, 0, 200),        # Black
-            'b': (255, 0, 81, 200),     # Red
-            'c': (0, 174, 255, 200),    # Blue
-            'd': (0, 150, 80, 200)      # Green (matches main UI)
+            "a": (0, 0, 0, 200),  # Black
+            "b": (255, 0, 81, 200),  # Red
+            "c": (0, 174, 255, 200),  # Blue
+            "d": (0, 150, 80, 200),  # Green (matches main UI)
         }
 
         # Get data based on type
         data_dict = {}
-        if data_type == 's_pol':
-            data_dict = data.get('s_pol_spectra', {})
-        elif data_type == 'p_pol':
-            data_dict = data.get('p_pol_spectra', {})
-        elif data_type == 'dark':
-            data_dict = data.get('dark_scan', {})
-        elif data_type == 'transmission':
-            data_dict = data.get('transmission_spectra', {})
+        if data_type == "s_pol":
+            data_dict = data.get("s_pol_spectra", {})
+        elif data_type == "p_pol":
+            data_dict = data.get("p_pol_spectra", {})
+        elif data_type == "dark":
+            data_dict = data.get("dark_scan", {})
+        elif data_type == "transmission":
+            data_dict = data.get("transmission_spectra", {})
 
         # Plot each channel
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             if channel in data_dict:
                 spectrum = data_dict[channel]
                 if spectrum is not None and len(spectrum) > 0:
                     # Handle wavelength array length mismatch
                     if len(wavelengths) != len(spectrum):
-                        wavelengths_plot = np.linspace(wavelengths[0], wavelengths[-1], len(spectrum))
+                        wavelengths_plot = np.linspace(
+                            wavelengths[0],
+                            wavelengths[-1],
+                            len(spectrum),
+                        )
                     else:
                         wavelengths_plot = wavelengths
 
-                    pen = pg.mkPen(color=colors.get(channel, (128, 128, 128, 200)), width=2)
+                    pen = pg.mkPen(
+                        color=colors.get(channel, (128, 128, 128, 200)),
+                        width=2,
+                    )
                     plot_widget.plot(
                         wavelengths_plot,
                         spectrum,
                         pen=pen,
-                        name=f"Channel {channel.upper()}"
+                        name=f"Channel {channel.upper()}",
                     )
 
         # Add legend
@@ -945,10 +1043,10 @@ class CalibrationQCDialog(QDialog):
         layout.setSpacing(10)
 
         # Get QC results
-        qc_results = self.calibration_data.get('qc_results', {})
+        qc_results = self.calibration_data.get("qc_results", {})
 
         # Check if this is a failed calibration with limited data
-        has_channel_data = any(ch in qc_results for ch in ['a', 'b', 'c', 'd'])
+        has_channel_data = any(ch in qc_results for ch in ["a", "b", "c", "d"])
 
         if not qc_results and not has_channel_data:
             # No QC data at all
@@ -963,19 +1061,19 @@ class CalibrationQCDialog(QDialog):
             return self._create_failure_diagnostic(layout, qc_results)
 
         # Create matplotlib figure
-        fig = Figure(figsize=(14, 8), facecolor='white')
+        fig = Figure(figsize=(14, 8), facecolor="white")
         canvas = FigureCanvasQTAgg(fig)
 
-        channels = ['a', 'b', 'c', 'd']
-        channel_labels = ['A', 'B', 'C', 'D']
-        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A']
+        channels = ["a", "b", "c", "d"]
+        channel_labels = ["A", "B", "C", "D"]
+        colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A"]
 
         # Check if polarizer is inverted
         ps_ratios = []
         all_inverted = True
         for ch in channels:
             if ch in qc_results:
-                ratio = qc_results[ch].get('p_s_ratio', 0)
+                ratio = qc_results[ch].get("p_s_ratio", 0)
                 ps_ratios.append(ratio)
                 if ratio < 1.15:  # Threshold for warning
                     all_inverted = False
@@ -984,98 +1082,198 @@ class CalibrationQCDialog(QDialog):
                 all_inverted = False
 
         # Title with warning if inverted
-        title_text = 'Calibration Analysis'
-        title_color = 'black'
+        title_text = "Calibration Analysis"
+        title_color = "black"
         if all_inverted and any(r > 1.15 for r in ps_ratios):
-            title_text = 'Calibration Analysis - WARNING: Polarizer May Be Inverted'
-            title_color = 'red'
+            title_text = "Calibration Analysis - WARNING: Polarizer May Be Inverted"
+            title_color = "red"
 
-        fig.suptitle(title_text, fontsize=14, fontweight='bold', color=title_color)
+        fig.suptitle(title_text, fontsize=14, fontweight="bold", color=title_color)
 
         # Plot 1: S-pol max counts
         ax1 = fig.add_subplot(2, 3, 1)
-        s_max = [qc_results.get(ch, {}).get('s_max_counts', 0) for ch in channels]
-        bars1 = ax1.bar(channel_labels, s_max, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
-        ax1.set_ylabel('Max Counts', fontsize=11, fontweight='bold')
-        ax1.set_title('S-Polarization Peak\n(Should be HIGHER than P)', fontsize=10, fontweight='bold')
+        s_max = [qc_results.get(ch, {}).get("s_max_counts", 0) for ch in channels]
+        bars1 = ax1.bar(
+            channel_labels,
+            s_max,
+            color=colors,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=2,
+        )
+        ax1.set_ylabel("Max Counts", fontsize=11, fontweight="bold")
+        ax1.set_title(
+            "S-Polarization Peak\n(Should be HIGHER than P)",
+            fontsize=10,
+            fontweight="bold",
+        )
         ax1.grid(True, alpha=0.3)
         ax1.set_ylim(0, max(s_max) * 1.2 if s_max else 70000)
-        for bar, val in zip(bars1, s_max):
+        for bar, val in zip(bars1, s_max, strict=False):
             if val > 0:
-                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(s_max)*0.02,
-                         f'{val:.0f}', ha='center', va='bottom', fontweight='bold', fontsize=9)
+                ax1.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + max(s_max) * 0.02,
+                    f"{val:.0f}",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=9,
+                )
 
         # Plot 2: P-pol max counts
         ax2 = fig.add_subplot(2, 3, 2)
-        p_max = [qc_results.get(ch, {}).get('p_max_counts', 0) for ch in channels]
-        bars2 = ax2.bar(channel_labels, p_max, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
-        ax2.set_ylabel('Max Counts', fontsize=11, fontweight='bold')
-        ax2.set_title('P-Polarization Peak\n(Should be LOWER than S)', fontsize=10, fontweight='bold')
+        p_max = [qc_results.get(ch, {}).get("p_max_counts", 0) for ch in channels]
+        bars2 = ax2.bar(
+            channel_labels,
+            p_max,
+            color=colors,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=2,
+        )
+        ax2.set_ylabel("Max Counts", fontsize=11, fontweight="bold")
+        ax2.set_title(
+            "P-Polarization Peak\n(Should be LOWER than S)",
+            fontsize=10,
+            fontweight="bold",
+        )
         ax2.grid(True, alpha=0.3)
         ax2.set_ylim(0, max(p_max) * 1.2 if p_max else 70000)
-        for bar, val in zip(bars2, p_max):
+        for bar, val in zip(bars2, p_max, strict=False):
             if val > 0:
-                ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(p_max)*0.02,
-                         f'{val:.0f}', ha='center', va='bottom', fontweight='bold', fontsize=9)
+                ax2.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + max(p_max) * 0.02,
+                    f"{val:.0f}",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=9,
+                )
 
         # Plot 3: P/S Ratio
         ax3 = fig.add_subplot(2, 3, 3)
-        bar_colors = ['red' if r > 1.15 else 'green' for r in ps_ratios]
-        bars3 = ax3.bar(channel_labels, ps_ratios, color=bar_colors, alpha=0.7, edgecolor='black', linewidth=2)
-        ax3.axhline(y=1.0, color='green', linestyle='--', linewidth=2, label='Expected: P/S < 1.0')
-        ax3.axhline(y=1.15, color='orange', linestyle='--', linewidth=2, label='Warning: 1.15')
-        ax3.set_ylabel('P/S Ratio', fontsize=11, fontweight='bold')
-        title_suffix = '\n(INVERTED!)' if all_inverted and any(r > 1.15 for r in ps_ratios) else '\n(Expected < 1.0)'
-        ax3.set_title('P/S Ratio' + title_suffix, fontsize=10, fontweight='bold',
-                     color='red' if all_inverted else 'black')
+        bar_colors = ["red" if r > 1.15 else "green" for r in ps_ratios]
+        bars3 = ax3.bar(
+            channel_labels,
+            ps_ratios,
+            color=bar_colors,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=2,
+        )
+        ax3.axhline(
+            y=1.0,
+            color="green",
+            linestyle="--",
+            linewidth=2,
+            label="Expected: P/S < 1.0",
+        )
+        ax3.axhline(
+            y=1.15,
+            color="orange",
+            linestyle="--",
+            linewidth=2,
+            label="Warning: 1.15",
+        )
+        ax3.set_ylabel("P/S Ratio", fontsize=11, fontweight="bold")
+        title_suffix = (
+            "\n(INVERTED!)"
+            if all_inverted and any(r > 1.15 for r in ps_ratios)
+            else "\n(Expected < 1.0)"
+        )
+        ax3.set_title(
+            "P/S Ratio" + title_suffix,
+            fontsize=10,
+            fontweight="bold",
+            color="red" if all_inverted else "black",
+        )
         ax3.grid(True, alpha=0.3)
-        ax3.legend(loc='upper right', fontsize=8)
+        ax3.legend(loc="upper right", fontsize=8)
         max_ratio = max(ps_ratios) if ps_ratios else 8
         ax3.set_ylim(0, max(max_ratio * 1.2, 8))
-        for bar, val in zip(bars3, ps_ratios):
+        for bar, val in zip(bars3, ps_ratios, strict=False):
             if val > 0:
-                ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max_ratio*0.02,
-                         f'{val:.2f}x', ha='center', va='bottom', fontweight='bold', fontsize=9,
-                         color='red' if val > 1.15 else 'black')
+                ax3.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + max_ratio * 0.02,
+                    f"{val:.2f}x",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=9,
+                    color="red" if val > 1.15 else "black",
+                )
 
         # Plot 4: LED Intensities
         ax4 = fig.add_subplot(2, 3, 4)
-        led_intensities = self.calibration_data.get('s_mode_intensity', {})
+        led_intensities = self.calibration_data.get("s_mode_intensity", {})
         led_vals = [led_intensities.get(ch, 0) for ch in channels]
-        bars4 = ax4.bar(channel_labels, led_vals, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
-        ax4.set_ylabel('LED Intensity (0-255)', fontsize=11, fontweight='bold')
-        ax4.set_title('LED Intensities (Calibrated)', fontsize=10, fontweight='bold')
+        bars4 = ax4.bar(
+            channel_labels,
+            led_vals,
+            color=colors,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=2,
+        )
+        ax4.set_ylabel("LED Intensity (0-255)", fontsize=11, fontweight="bold")
+        ax4.set_title("LED Intensities (Calibrated)", fontsize=10, fontweight="bold")
         ax4.set_ylim(0, 280)
         ax4.grid(True, alpha=0.3)
-        for bar, val in zip(bars4, led_vals):
+        for bar, val in zip(bars4, led_vals, strict=False):
             if val > 0:
-                ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5,
-                         f'{val}', ha='center', va='bottom', fontweight='bold', fontsize=9)
+                ax4.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 5,
+                    f"{val}",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=9,
+                )
 
         # Plot 5: SPR Wavelengths
         ax5 = fig.add_subplot(2, 3, 5)
-        spr_wl = [qc_results.get(ch, {}).get('spr_wavelength', 0) for ch in channels]
-        bars5 = ax5.bar(channel_labels, spr_wl, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
-        ax5.set_ylabel('Wavelength (nm)', fontsize=11, fontweight='bold')
-        ax5.set_title('SPR Peak Wavelengths', fontsize=10, fontweight='bold')
-        min_wl = min([w for w in spr_wl if w > 0]) if any(w > 0 for w in spr_wl) else 620
+        spr_wl = [qc_results.get(ch, {}).get("spr_wavelength", 0) for ch in channels]
+        bars5 = ax5.bar(
+            channel_labels,
+            spr_wl,
+            color=colors,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=2,
+        )
+        ax5.set_ylabel("Wavelength (nm)", fontsize=11, fontweight="bold")
+        ax5.set_title("SPR Peak Wavelengths", fontsize=10, fontweight="bold")
+        min_wl = (
+            min([w for w in spr_wl if w > 0]) if any(w > 0 for w in spr_wl) else 620
+        )
         max_wl = max(spr_wl) if spr_wl else 680
         ax5.set_ylim(min_wl - 20, max_wl + 20)
         ax5.grid(True, alpha=0.3)
-        for bar, val in zip(bars5, spr_wl):
+        for bar, val in zip(bars5, spr_wl, strict=False):
             if val > 0:
-                ax5.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
-                         f'{val:.1f}nm', ha='center', va='bottom', fontweight='bold', fontsize=9)
+                ax5.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 1,
+                    f"{val:.1f}nm",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=9,
+                )
 
         # Plot 6: QC Summary
         ax6 = fig.add_subplot(2, 3, 6)
-        ax6.axis('off')
+        ax6.axis("off")
 
         # Build summary text
-        s_integration = self.calibration_data.get('s_integration_time', 0)
-        p_integration = self.calibration_data.get('p_integration_time', 0)
-        polarizer_s = self.calibration_data.get('polarizer_s_position', 'N/A')
-        polarizer_p = self.calibration_data.get('polarizer_p_position', 'N/A')
+        s_integration = self.calibration_data.get("s_integration_time", 0)
+        p_integration = self.calibration_data.get("p_integration_time", 0)
+        polarizer_s = self.calibration_data.get("polarizer_s_position", "N/A")
+        polarizer_p = self.calibration_data.get("polarizer_p_position", "N/A")
 
         summary_text = ""
         if all_inverted and any(r > 1.15 for r in ps_ratios):
@@ -1088,8 +1286,12 @@ class CalibrationQCDialog(QDialog):
             summary_text += "Configuration:\n\n"
 
         # Check FWHM
-        fwhm_vals = [qc_results.get(ch, {}).get('fwhm', 0) for ch in channels]
-        avg_fwhm = sum(fwhm_vals) / len([f for f in fwhm_vals if f > 0]) if any(f > 0 for f in fwhm_vals) else 0
+        fwhm_vals = [qc_results.get(ch, {}).get("fwhm", 0) for ch in channels]
+        avg_fwhm = (
+            sum(fwhm_vals) / len([f for f in fwhm_vals if f > 0])
+            if any(f > 0 for f in fwhm_vals)
+            else 0
+        )
         if avg_fwhm > 50:
             summary_text += f"2. Wide FWHM ({avg_fwhm:.1f}nm avg)\n"
             summary_text += "   -> Poor sensor contact\n"
@@ -1105,16 +1307,31 @@ class CalibrationQCDialog(QDialog):
             summary_text += "2. Swap S/P positions\n"
             summary_text += "3. Restart & recalibrate\n"
 
-        ax6.text(0.05, 0.95, summary_text, transform=ax6.transAxes,
-                 fontsize=9, verticalalignment='top', fontfamily='monospace',
-                 bbox=dict(boxstyle='round', facecolor='wheat' if all_inverted else 'lightblue', alpha=0.5))
+        ax6.text(
+            0.05,
+            0.95,
+            summary_text,
+            transform=ax6.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            fontfamily="monospace",
+            bbox=dict(
+                boxstyle="round",
+                facecolor="wheat" if all_inverted else "lightblue",
+                alpha=0.5,
+            ),
+        )
 
         fig.tight_layout(rect=[0, 0, 1, 0.97])
         layout.addWidget(canvas)
 
         return widget
 
-    def _create_failure_diagnostic(self, layout: QVBoxLayout, qc_results: dict) -> QWidget:
+    def _create_failure_diagnostic(
+        self,
+        layout: QVBoxLayout,
+        qc_results: dict,
+    ) -> QWidget:
         """Create diagnostic view for failed calibration."""
         widget = QWidget()
         diag_layout = QVBoxLayout(widget)
@@ -1128,34 +1345,56 @@ class CalibrationQCDialog(QDialog):
         diag_layout.addWidget(title)
 
         # Get error info
-        old_s = qc_results.get('old_s_pos', 'N/A')
-        old_p = qc_results.get('old_p_pos', 'N/A')
+        old_s = qc_results.get("old_s_pos", "N/A")
+        old_p = qc_results.get("old_p_pos", "N/A")
 
         # Create matplotlib figure for diagnostic plots
-        fig = Figure(figsize=(12, 6), facecolor='white')
+        fig = Figure(figsize=(12, 6), facecolor="white")
         canvas = FigureCanvasQTAgg(fig)
 
         # Plot 1: Servo position comparison
         ax1 = fig.add_subplot(1, 2, 1)
-        positions = ['Old S-pos', 'Old P-pos', 'New S-pos\n(expected)', 'New P-pos\n(expected)']
-        values = [old_s if isinstance(old_s, (int, float)) else 0,
-                  old_p if isinstance(old_p, (int, float)) else 0,
-                  89, 179]
-        colors = ['red', 'red', 'green', 'green']
-        bars = ax1.bar(positions, values, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
-        ax1.set_ylabel('Servo Angle (degrees)', fontsize=11, fontweight='bold')
-        ax1.set_title('Servo Position Issue', fontsize=12, fontweight='bold')
-        ax1.grid(True, alpha=0.3, axis='y')
+        positions = [
+            "Old S-pos",
+            "Old P-pos",
+            "New S-pos\n(expected)",
+            "New P-pos\n(expected)",
+        ]
+        values = [
+            old_s if isinstance(old_s, (int, float)) else 0,
+            old_p if isinstance(old_p, (int, float)) else 0,
+            89,
+            179,
+        ]
+        colors = ["red", "red", "green", "green"]
+        bars = ax1.bar(
+            positions,
+            values,
+            color=colors,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=2,
+        )
+        ax1.set_ylabel("Servo Angle (degrees)", fontsize=11, fontweight="bold")
+        ax1.set_title("Servo Position Issue", fontsize=12, fontweight="bold")
+        ax1.grid(True, alpha=0.3, axis="y")
         ax1.set_ylim(0, 200)
 
-        for bar, val in zip(bars, values):
+        for bar, val in zip(bars, values, strict=False):
             if val > 0:
-                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5,
-                        f'{val}°', ha='center', va='bottom', fontweight='bold', fontsize=10)
+                ax1.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 5,
+                    f"{val}°",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=10,
+                )
 
         # Plot 2: Expected behavior diagram
         ax2 = fig.add_subplot(1, 2, 2)
-        ax2.axis('off')
+        ax2.axis("off")
 
         diagnostic_text = f"""
 FAILURE DIAGNOSIS:
@@ -1191,9 +1430,16 @@ FAILURE DIAGNOSIS:
    • P/S ratio should be < 1.0
         """
 
-        ax2.text(0.05, 0.95, diagnostic_text, transform=ax2.transAxes,
-                fontsize=9, verticalalignment='top', family='monospace',
-                bbox=dict(boxstyle='round', facecolor='#FFF9C4', alpha=0.9))
+        ax2.text(
+            0.05,
+            0.95,
+            diagnostic_text,
+            transform=ax2.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            family="monospace",
+            bbox=dict(boxstyle="round", facecolor="#FFF9C4", alpha=0.9),
+        )
 
         fig.tight_layout()
         diag_layout.addWidget(canvas)
@@ -1201,7 +1447,7 @@ FAILURE DIAGNOSIS:
         # Add instruction label
         instruction = QLabel(
             "💡 Restart the application and run calibration again. "
-            "The EEPROM sync will update the controller with correct positions."
+            "The EEPROM sync will update the controller with correct positions.",
         )
         instruction.setStyleSheet("""
             QLabel {
@@ -1228,10 +1474,13 @@ FAILURE DIAGNOSIS:
 
         Returns:
             The dialog instance (returns after the dialog is closed)
+
         """
         print("🔵 DEBUG: CalibrationQCDialog.show_qc_report() started")
         print(f"🔵 DEBUG: parent = {parent}")
-        print(f"🔵 DEBUG: calibration_data keys = {list(calibration_data.keys()) if calibration_data else None}")
+        print(
+            f"🔵 DEBUG: calibration_data keys = {list(calibration_data.keys()) if calibration_data else None}",
+        )
 
         print("🔵 DEBUG: Creating CalibrationQCDialog instance...")
         dialog = CalibrationQCDialog(parent=parent, calibration_data=calibration_data)

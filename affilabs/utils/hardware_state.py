@@ -94,7 +94,9 @@ class HardwareStateManager:
             self._callbacks[event_type].append(callback)
 
     def _notify_callbacks(
-        self: HardwareStateManager, event_type: str, **kwargs,
+        self: HardwareStateManager,
+        event_type: str,
+        **kwargs,
     ) -> None:
         """Notify all registered callbacks of a state change.
 

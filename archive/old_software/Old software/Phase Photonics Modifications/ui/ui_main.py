@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 ################################################################################
 ## Form generated from reading UI file 'main.ui'
 ##
@@ -8,37 +6,40 @@
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
-from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
-    QMetaObject, QObject, QPoint, QRect,
-    QSize, QTime, QUrl, Qt)
-from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
-    QFont, QFontDatabase, QGradient, QIcon,
-    QImage, QKeySequence, QLinearGradient, QPainter,
-    QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout,
-    QLabel, QPushButton, QSizePolicy, QSpacerItem,
-    QVBoxLayout, QWidget)
-import ui.ai_rc
+from PySide6.QtCore import QCoreApplication, QMetaObject, QSize, Qt
+from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QPalette, QPixmap
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
 
-class Ui_mainWindow(object):
+
+class Ui_mainWindow:
     def setupUi(self, mainWindow):
         if not mainWindow.objectName():
-            mainWindow.setObjectName(u"mainWindow")
+            mainWindow.setObjectName("mainWindow")
         mainWindow.resize(1200, 700)
         mainWindow.setMinimumSize(QSize(1200, 700))
         font = QFont()
-        font.setFamilies([u"Segoe UI"])
+        font.setFamilies(["Segoe UI"])
         mainWindow.setFont(font)
         icon = QIcon()
-        icon.addFile(u":/img/img/affinite2.ico", QSize(), QIcon.Normal, QIcon.Off)
+        icon.addFile(":/img/img/affinite2.ico", QSize(), QIcon.Normal, QIcon.Off)
         mainWindow.setWindowIcon(icon)
-        mainWindow.setStyleSheet(u"")
+        mainWindow.setStyleSheet("")
         self.gridLayout_2 = QGridLayout(mainWindow)
         self.gridLayout_2.setSpacing(0)
-        self.gridLayout_2.setObjectName(u"gridLayout_2")
+        self.gridLayout_2.setObjectName("gridLayout_2")
         self.gridLayout_2.setContentsMargins(0, 0, 0, 0)
         self.main_frame = QFrame(mainWindow)
-        self.main_frame.setObjectName(u"main_frame")
+        self.main_frame.setObjectName("main_frame")
         palette = QPalette()
         brush = QBrush(QColor(218, 228, 238, 255))
         brush.setStyle(Qt.SolidPattern)
@@ -56,31 +57,31 @@ class Ui_mainWindow(object):
         palette.setBrush(QPalette.Disabled, QPalette.Base, brush2)
         palette.setBrush(QPalette.Disabled, QPalette.Window, brush2)
         self.main_frame.setPalette(palette)
-        self.main_frame.setStyleSheet(u"")
+        self.main_frame.setStyleSheet("")
         self.main_frame.setFrameShape(QFrame.NoFrame)
         self.main_frame.setFrameShadow(QFrame.Sunken)
         self.main_frame.setLineWidth(0)
         self.verticalLayout = QVBoxLayout(self.main_frame)
         self.verticalLayout.setSpacing(0)
-        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.verticalLayout.setObjectName("verticalLayout")
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.tool_bar = QFrame(self.main_frame)
-        self.tool_bar.setObjectName(u"tool_bar")
+        self.tool_bar.setObjectName("tool_bar")
         self.tool_bar.setMaximumSize(QSize(16777215, 80))
         font1 = QFont()
-        font1.setFamilies([u"Segoe UI"])
+        font1.setFamilies(["Segoe UI"])
         font1.setPointSize(8)
         self.tool_bar.setFont(font1)
-        self.tool_bar.setStyleSheet(u"")
+        self.tool_bar.setStyleSheet("")
         self.tool_bar.setFrameShape(QFrame.NoFrame)
         self.tool_bar.setFrameShadow(QFrame.Plain)
         self.tool_bar.setLineWidth(0)
         self.horizontalLayout = QHBoxLayout(self.tool_bar)
         self.horizontalLayout.setSpacing(2)
-        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.horizontalLayout.setObjectName("horizontalLayout")
         self.horizontalLayout.setContentsMargins(5, 0, 5, 0)
         self.label = QLabel(self.tool_bar)
-        self.label.setObjectName(u"label")
+        self.label.setObjectName("label")
         sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(1)
@@ -90,49 +91,53 @@ class Ui_mainWindow(object):
         self.label.setMaximumSize(QSize(150, 60))
         self.label.setFrameShape(QFrame.NoFrame)
         self.label.setFrameShadow(QFrame.Raised)
-        self.label.setPixmap(QPixmap(u":/img/img/affinite-no-background.png"))
+        self.label.setPixmap(QPixmap(":/img/img/affinite-no-background.png"))
         self.label.setScaledContents(True)
-        self.label.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
+        self.label.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.label.setMargin(0)
 
         self.horizontalLayout.addWidget(self.label)
 
         self.frame_2 = QFrame(self.tool_bar)
-        self.frame_2.setObjectName(u"frame_2")
+        self.frame_2.setObjectName("frame_2")
         self.frame_2.setMinimumSize(QSize(500, 40))
         self.frame_2.setMaximumSize(QSize(600, 60))
         self.frame_2.setFrameShape(QFrame.StyledPanel)
         self.frame_2.setFrameShadow(QFrame.Raised)
         self.horizontalLayout_4 = QHBoxLayout(self.frame_2)
-        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
         self.sensorgram_btn = QPushButton(self.frame_2)
-        self.sensorgram_btn.setObjectName(u"sensorgram_btn")
+        self.sensorgram_btn.setObjectName("sensorgram_btn")
         sizePolicy1 = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.sensorgram_btn.sizePolicy().hasHeightForWidth())
+        sizePolicy1.setHeightForWidth(
+            self.sensorgram_btn.sizePolicy().hasHeightForWidth(),
+        )
         self.sensorgram_btn.setSizePolicy(sizePolicy1)
         self.sensorgram_btn.setMinimumSize(QSize(90, 35))
         self.sensorgram_btn.setMaximumSize(QSize(110, 16777215))
         font2 = QFont()
-        font2.setFamilies([u"Segoe UI"])
+        font2.setFamilies(["Segoe UI"])
         font2.setPointSize(9)
         self.sensorgram_btn.setFont(font2)
         self.sensorgram_btn.setLayoutDirection(Qt.LeftToRight)
         self.sensorgram_btn.setAutoFillBackground(False)
-        self.sensorgram_btn.setStyleSheet(u"QPushButton {\n"
-"\n"
-"	background-color: rgb(240, 240, 240); \n"
-"	border: 1px solid; \n"
-"	border-radius: 3px;\n"
-"\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: rgb(253, 253, 253);\n"
-"	border: 1px raised;\n"
-"	border-radius: 5px;\n"
-"}")
+        self.sensorgram_btn.setStyleSheet(
+            "QPushButton {\n"
+            "\n"
+            "	background-color: rgb(240, 240, 240); \n"
+            "	border: 1px solid; \n"
+            "	border-radius: 3px;\n"
+            "\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: rgb(253, 253, 253);\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 5px;\n"
+            "}",
+        )
         self.sensorgram_btn.setAutoRepeat(False)
         self.sensorgram_btn.setAutoExclusive(False)
         self.sensorgram_btn.setAutoDefault(False)
@@ -141,27 +146,31 @@ class Ui_mainWindow(object):
         self.horizontalLayout_4.addWidget(self.sensorgram_btn)
 
         self.spectroscopy_btn = QPushButton(self.frame_2)
-        self.spectroscopy_btn.setObjectName(u"spectroscopy_btn")
-        sizePolicy1.setHeightForWidth(self.spectroscopy_btn.sizePolicy().hasHeightForWidth())
+        self.spectroscopy_btn.setObjectName("spectroscopy_btn")
+        sizePolicy1.setHeightForWidth(
+            self.spectroscopy_btn.sizePolicy().hasHeightForWidth(),
+        )
         self.spectroscopy_btn.setSizePolicy(sizePolicy1)
         self.spectroscopy_btn.setMinimumSize(QSize(102, 35))
         self.spectroscopy_btn.setMaximumSize(QSize(110, 16777215))
         self.spectroscopy_btn.setFont(font2)
         self.spectroscopy_btn.setLayoutDirection(Qt.LeftToRight)
         self.spectroscopy_btn.setAutoFillBackground(False)
-        self.spectroscopy_btn.setStyleSheet(u"QPushButton {\n"
-"\n"
-"	background-color: rgb(240, 240, 240); \n"
-"	border: 1px solid; \n"
-"	border-radius: 3px;\n"
-"\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: rgb(253, 253, 253);\n"
-"	border: 1px raised;\n"
-"	border-radius: 5px;\n"
-"}")
+        self.spectroscopy_btn.setStyleSheet(
+            "QPushButton {\n"
+            "\n"
+            "	background-color: rgb(240, 240, 240); \n"
+            "	border: 1px solid; \n"
+            "	border-radius: 3px;\n"
+            "\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: rgb(253, 253, 253);\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 5px;\n"
+            "}",
+        )
         self.spectroscopy_btn.setAutoRepeat(False)
         self.spectroscopy_btn.setAutoExclusive(False)
         self.spectroscopy_btn.setAutoDefault(False)
@@ -170,27 +179,31 @@ class Ui_mainWindow(object):
         self.horizontalLayout_4.addWidget(self.spectroscopy_btn)
 
         self.data_processing_btn = QPushButton(self.frame_2)
-        self.data_processing_btn.setObjectName(u"data_processing_btn")
-        sizePolicy1.setHeightForWidth(self.data_processing_btn.sizePolicy().hasHeightForWidth())
+        self.data_processing_btn.setObjectName("data_processing_btn")
+        sizePolicy1.setHeightForWidth(
+            self.data_processing_btn.sizePolicy().hasHeightForWidth(),
+        )
         self.data_processing_btn.setSizePolicy(sizePolicy1)
         self.data_processing_btn.setMinimumSize(QSize(112, 35))
         self.data_processing_btn.setMaximumSize(QSize(120, 16777215))
         self.data_processing_btn.setFont(font2)
         self.data_processing_btn.setLayoutDirection(Qt.LeftToRight)
         self.data_processing_btn.setAutoFillBackground(False)
-        self.data_processing_btn.setStyleSheet(u"QPushButton {\n"
-"\n"
-"	background-color: rgb(240, 240, 240); \n"
-"	border: 1px solid; \n"
-"	border-radius: 3px;\n"
-"\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: rgb(253, 253, 253);\n"
-"	border: 1px raised;\n"
-"	border-radius: 5px;\n"
-"}")
+        self.data_processing_btn.setStyleSheet(
+            "QPushButton {\n"
+            "\n"
+            "	background-color: rgb(240, 240, 240); \n"
+            "	border: 1px solid; \n"
+            "	border-radius: 3px;\n"
+            "\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: rgb(253, 253, 253);\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 5px;\n"
+            "}",
+        )
         self.data_processing_btn.setAutoRepeat(False)
         self.data_processing_btn.setAutoExclusive(False)
         self.data_processing_btn.setAutoDefault(False)
@@ -199,28 +212,32 @@ class Ui_mainWindow(object):
         self.horizontalLayout_4.addWidget(self.data_processing_btn)
 
         self.data_analysis_btn = QPushButton(self.frame_2)
-        self.data_analysis_btn.setObjectName(u"data_analysis_btn")
+        self.data_analysis_btn.setObjectName("data_analysis_btn")
         self.data_analysis_btn.setEnabled(True)
-        sizePolicy1.setHeightForWidth(self.data_analysis_btn.sizePolicy().hasHeightForWidth())
+        sizePolicy1.setHeightForWidth(
+            self.data_analysis_btn.sizePolicy().hasHeightForWidth(),
+        )
         self.data_analysis_btn.setSizePolicy(sizePolicy1)
         self.data_analysis_btn.setMinimumSize(QSize(100, 35))
         self.data_analysis_btn.setMaximumSize(QSize(110, 16777215))
         self.data_analysis_btn.setFont(font2)
         self.data_analysis_btn.setLayoutDirection(Qt.LeftToRight)
         self.data_analysis_btn.setAutoFillBackground(False)
-        self.data_analysis_btn.setStyleSheet(u"QPushButton {\n"
-"\n"
-"	background-color: rgb(240, 240, 240);  \n"
-"	border: 1px solid rgb(127, 127, 127);\n"
-"	border-radius: 3px;\n"
-"\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: rgb(253, 253, 253);\n"
-"	border: 1px raised;\n"
-"	border-radius: 5px;\n"
-"}")
+        self.data_analysis_btn.setStyleSheet(
+            "QPushButton {\n"
+            "\n"
+            "	background-color: rgb(240, 240, 240);  \n"
+            "	border: 1px solid rgb(127, 127, 127);\n"
+            "	border-radius: 3px;\n"
+            "\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: rgb(253, 253, 253);\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 5px;\n"
+            "}",
+        )
         self.data_analysis_btn.setAutoRepeat(False)
         self.data_analysis_btn.setAutoExclusive(False)
         self.data_analysis_btn.setAutoDefault(False)
@@ -228,15 +245,19 @@ class Ui_mainWindow(object):
 
         self.horizontalLayout_4.addWidget(self.data_analysis_btn)
 
-
         self.horizontalLayout.addWidget(self.frame_2)
 
-        self.horizontalSpacer_3 = QSpacerItem(10, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer_3 = QSpacerItem(
+            10,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
+        )
 
         self.horizontalLayout.addItem(self.horizontalSpacer_3)
 
         self.adv_btn = QPushButton(self.tool_bar)
-        self.adv_btn.setObjectName(u"adv_btn")
+        self.adv_btn.setObjectName("adv_btn")
         self.adv_btn.setEnabled(False)
         sizePolicy2 = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         sizePolicy2.setHorizontalStretch(0)
@@ -246,24 +267,26 @@ class Ui_mainWindow(object):
         self.adv_btn.setMinimumSize(QSize(35, 35))
         self.adv_btn.setMaximumSize(QSize(35, 35))
         font3 = QFont()
-        font3.setFamilies([u"Segoe UI"])
+        font3.setFamilies(["Segoe UI"])
         font3.setPointSize(5)
         self.adv_btn.setFont(font3)
         self.adv_btn.setMouseTracking(True)
         self.adv_btn.setLayoutDirection(Qt.LeftToRight)
         self.adv_btn.setAutoFillBackground(False)
-        self.adv_btn.setStyleSheet(u"QPushButton{\n"
-"	border: none;\n"
-"	background: none;\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: white;\n"
-"	border: 1px raised;\n"
-"	border-radius: 8px;\n"
-"}")
+        self.adv_btn.setStyleSheet(
+            "QPushButton{\n"
+            "	border: none;\n"
+            "	background: none;\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: white;\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 8px;\n"
+            "}",
+        )
         icon1 = QIcon()
-        icon1.addFile(u":/img/img/settings.png", QSize(), QIcon.Normal, QIcon.Off)
+        icon1.addFile(":/img/img/settings.png", QSize(), QIcon.Normal, QIcon.Off)
         self.adv_btn.setIcon(icon1)
         self.adv_btn.setIconSize(QSize(28, 28))
         self.adv_btn.setAutoRepeat(False)
@@ -271,10 +294,14 @@ class Ui_mainWindow(object):
         self.adv_btn.setAutoDefault(False)
         self.adv_btn.setFlat(False)
 
-        self.horizontalLayout.addWidget(self.adv_btn, 0, Qt.AlignHCenter|Qt.AlignVCenter)
+        self.horizontalLayout.addWidget(
+            self.adv_btn,
+            0,
+            Qt.AlignHCenter | Qt.AlignVCenter,
+        )
 
         self.rec_btn = QPushButton(self.tool_bar)
-        self.rec_btn.setObjectName(u"rec_btn")
+        self.rec_btn.setObjectName("rec_btn")
         sizePolicy2.setHeightForWidth(self.rec_btn.sizePolicy().hasHeightForWidth())
         self.rec_btn.setSizePolicy(sizePolicy2)
         self.rec_btn.setMinimumSize(QSize(37, 35))
@@ -283,19 +310,21 @@ class Ui_mainWindow(object):
         self.rec_btn.setMouseTracking(True)
         self.rec_btn.setLayoutDirection(Qt.LeftToRight)
         self.rec_btn.setAutoFillBackground(False)
-        self.rec_btn.setStyleSheet(u"QPushButton{\n"
-"	border: none;\n"
-"	background: none;\n"
-"	margin: 0px;\n"
-"}\n"
-"\n"
-"QPushButton::hover{\n"
-"	background: white;\n"
-"	border: 1px raised;\n"
-"	border-radius: 8px;\n"
-"}")
+        self.rec_btn.setStyleSheet(
+            "QPushButton{\n"
+            "	border: none;\n"
+            "	background: none;\n"
+            "	margin: 0px;\n"
+            "}\n"
+            "\n"
+            "QPushButton::hover{\n"
+            "	background: white;\n"
+            "	border: 1px raised;\n"
+            "	border-radius: 8px;\n"
+            "}",
+        )
         icon2 = QIcon()
-        icon2.addFile(u":/img/img/record.png", QSize(), QIcon.Normal, QIcon.Off)
+        icon2.addFile(":/img/img/record.png", QSize(), QIcon.Normal, QIcon.Off)
         self.rec_btn.setIcon(icon2)
         self.rec_btn.setIconSize(QSize(23, 23))
         self.rec_btn.setAutoRepeat(False)
@@ -303,45 +332,57 @@ class Ui_mainWindow(object):
         self.rec_btn.setAutoDefault(False)
         self.rec_btn.setFlat(False)
 
-        self.horizontalLayout.addWidget(self.rec_btn, 0, Qt.AlignHCenter|Qt.AlignVCenter)
+        self.horizontalLayout.addWidget(
+            self.rec_btn,
+            0,
+            Qt.AlignHCenter | Qt.AlignVCenter,
+        )
 
         self.recording_status = QLabel(self.tool_bar)
-        self.recording_status.setObjectName(u"recording_status")
+        self.recording_status.setObjectName("recording_status")
         sizePolicy3 = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
         sizePolicy3.setHorizontalStretch(0)
         sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.recording_status.sizePolicy().hasHeightForWidth())
+        sizePolicy3.setHeightForWidth(
+            self.recording_status.sizePolicy().hasHeightForWidth(),
+        )
         self.recording_status.setSizePolicy(sizePolicy3)
         self.recording_status.setMinimumSize(QSize(85, 40))
         self.recording_status.setMaximumSize(QSize(85, 16777215))
         font4 = QFont()
-        font4.setFamilies([u"Segoe UI Black"])
+        font4.setFamilies(["Segoe UI Black"])
         font4.setPointSize(8)
         font4.setItalic(False)
         self.recording_status.setFont(font4)
         self.recording_status.setAutoFillBackground(False)
-        self.recording_status.setStyleSheet(u"background:none;\n"
-"color: red;\n"
-"font: 87 8pt \"Segoe UI Black\";\n"
-"\n"
-"\n"
-"\n"
-"")
+        self.recording_status.setStyleSheet(
+            "background:none;\n"
+            "color: red;\n"
+            'font: 87 8pt "Segoe UI Black";\n'
+            "\n"
+            "\n"
+            "\n"
+            "",
+        )
         self.recording_status.setAlignment(Qt.AlignCenter)
 
         self.horizontalLayout.addWidget(self.recording_status)
 
-        self.horizontalSpacer_2 = QSpacerItem(90, 20, QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.horizontalSpacer_2 = QSpacerItem(
+            90,
+            20,
+            QSizePolicy.Preferred,
+            QSizePolicy.Minimum,
+        )
 
         self.horizontalLayout.addItem(self.horizontalSpacer_2)
-
 
         self.verticalLayout.addWidget(self.tool_bar)
 
         self.main_display = QFrame(self.main_frame)
-        self.main_display.setObjectName(u"main_display")
+        self.main_display.setObjectName("main_display")
         self.main_display.setFont(font2)
-        self.main_display.setStyleSheet(u"")
+        self.main_display.setStyleSheet("")
         self.main_display.setFrameShape(QFrame.NoFrame)
         self.main_display.setFrameShadow(QFrame.Raised)
         self.main_display.setLineWidth(0)
@@ -349,66 +390,72 @@ class Ui_mainWindow(object):
         self.verticalLayout.addWidget(self.main_display)
 
         self.statusBar = QWidget(self.main_frame)
-        self.statusBar.setObjectName(u"statusBar")
+        self.statusBar.setObjectName("statusBar")
         sizePolicy1.setHeightForWidth(self.statusBar.sizePolicy().hasHeightForWidth())
         self.statusBar.setSizePolicy(sizePolicy1)
         font5 = QFont()
-        font5.setFamilies([u"Segoe UI"])
+        font5.setFamilies(["Segoe UI"])
         font5.setPointSize(10)
         font5.setBold(False)
         self.statusBar.setFont(font5)
-        self.statusBar.setStyleSheet(u"")
+        self.statusBar.setStyleSheet("")
         self.layout_statusbar = QHBoxLayout(self.statusBar)
         self.layout_statusbar.setSpacing(5)
-        self.layout_statusbar.setObjectName(u"layout_statusbar")
+        self.layout_statusbar.setObjectName("layout_statusbar")
         self.layout_statusbar.setContentsMargins(0, 0, 5, 0)
         self.frame = QFrame(self.statusBar)
-        self.frame.setObjectName(u"frame")
+        self.frame.setObjectName("frame")
         self.frame.setFrameShape(QFrame.StyledPanel)
         self.frame.setFrameShadow(QFrame.Raised)
         self.horizontalLayout_2 = QHBoxLayout(self.frame)
         self.horizontalLayout_2.setSpacing(0)
-        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.horizontalLayout_2.setContentsMargins(2, 3, 2, 3)
         self.device = QLabel(self.frame)
-        self.device.setObjectName(u"device")
+        self.device.setObjectName("device")
         font6 = QFont()
-        font6.setFamilies([u"Segoe UI"])
+        font6.setFamilies(["Segoe UI"])
         font6.setPointSize(11)
         font6.setBold(True)
         self.device.setFont(font6)
-        self.device.setStyleSheet(u"QLabel#device{\n"
-"\n"
-"	background-color: rgb(46, 48, 227);\n"
-"	color: 'white';\n"
-"	border-radius: 3px;\n"
-"\n"
-"}")
+        self.device.setStyleSheet(
+            "QLabel#device{\n"
+            "\n"
+            "	background-color: rgb(46, 48, 227);\n"
+            "	color: 'white';\n"
+            "	border-radius: 3px;\n"
+            "\n"
+            "}",
+        )
         self.device.setAlignment(Qt.AlignCenter)
         self.device.setMargin(1)
         self.device.setIndent(0)
 
         self.horizontalLayout_2.addWidget(self.device)
 
-
         self.layout_statusbar.addWidget(self.frame)
 
         self.status = QLabel(self.statusBar)
-        self.status.setObjectName(u"status")
+        self.status.setObjectName("status")
         self.status.setFont(font6)
         self.status.setMargin(0)
         self.status.setIndent(0)
 
         self.layout_statusbar.addWidget(self.status)
 
-        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer = QSpacerItem(
+            0,
+            0,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
+        )
 
         self.layout_statusbar.addItem(self.horizontalSpacer)
 
         self.version = QLabel(self.statusBar)
-        self.version.setObjectName(u"version")
+        self.version.setObjectName("version")
         font7 = QFont()
-        font7.setFamilies([u"Segoe UI"])
+        font7.setFamilies(["Segoe UI"])
         font7.setPointSize(9)
         font7.setBold(False)
         self.version.setFont(font7)
@@ -416,16 +463,18 @@ class Ui_mainWindow(object):
 
         self.layout_statusbar.addWidget(self.version, 0, Qt.AlignHCenter)
 
-        self.horizontalSpacer_4 = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalSpacer_4 = QSpacerItem(
+            0,
+            0,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
+        )
 
         self.layout_statusbar.addItem(self.horizontalSpacer_4)
 
-
         self.verticalLayout.addWidget(self.statusBar)
 
-
         self.gridLayout_2.addWidget(self.main_frame, 0, 0, 1, 1)
-
 
         self.retranslateUi(mainWindow)
 
@@ -436,30 +485,46 @@ class Ui_mainWindow(object):
         self.adv_btn.setDefault(False)
         self.rec_btn.setDefault(False)
 
-
         QMetaObject.connectSlotsByName(mainWindow)
+
     # setupUi
 
     def retranslateUi(self, mainWindow):
-        mainWindow.setWindowTitle(QCoreApplication.translate("mainWindow", u"ezControl Software", None))
+        mainWindow.setWindowTitle(
+            QCoreApplication.translate("mainWindow", "ezControl Software", None),
+        )
         self.label.setText("")
-        self.sensorgram_btn.setText(QCoreApplication.translate("mainWindow", u"Sensorgram", None))
-        self.spectroscopy_btn.setText(QCoreApplication.translate("mainWindow", u"Spectroscopy", None))
-        self.data_processing_btn.setText(QCoreApplication.translate("mainWindow", u"Data Processing", None))
-        self.data_analysis_btn.setText(QCoreApplication.translate("mainWindow", u"Data Analysis", None))
-#if QT_CONFIG(tooltip)
-        self.adv_btn.setToolTip(QCoreApplication.translate("mainWindow", u"Advanced Settings", None))
-#endif // QT_CONFIG(tooltip)
+        self.sensorgram_btn.setText(
+            QCoreApplication.translate("mainWindow", "Sensorgram", None),
+        )
+        self.spectroscopy_btn.setText(
+            QCoreApplication.translate("mainWindow", "Spectroscopy", None),
+        )
+        self.data_processing_btn.setText(
+            QCoreApplication.translate("mainWindow", "Data Processing", None),
+        )
+        self.data_analysis_btn.setText(
+            QCoreApplication.translate("mainWindow", "Data Analysis", None),
+        )
+        # if QT_CONFIG(tooltip)
+        self.adv_btn.setToolTip(
+            QCoreApplication.translate("mainWindow", "Advanced Settings", None),
+        )
+        # endif // QT_CONFIG(tooltip)
         self.adv_btn.setText("")
-#if QT_CONFIG(tooltip)
-        self.rec_btn.setToolTip(QCoreApplication.translate("mainWindow", u"Start/Stop\n"
-"Recording", None))
-#endif // QT_CONFIG(tooltip)
+        # if QT_CONFIG(tooltip)
+        self.rec_btn.setToolTip(
+            QCoreApplication.translate("mainWindow", "Start/Stop\nRecording", None),
+        )
+        # endif // QT_CONFIG(tooltip)
         self.rec_btn.setText("")
-        self.recording_status.setText(QCoreApplication.translate("mainWindow", u"NOT\n"
-"RECORDING", None))
-        self.device.setText(QCoreApplication.translate("mainWindow", u"No Devices", None))
-        self.status.setText(QCoreApplication.translate("mainWindow", u"Status", None))
-        self.version.setText(QCoreApplication.translate("mainWindow", u"Version", None))
-    # retranslateUi
+        self.recording_status.setText(
+            QCoreApplication.translate("mainWindow", "NOT\nRECORDING", None),
+        )
+        self.device.setText(
+            QCoreApplication.translate("mainWindow", "No Devices", None),
+        )
+        self.status.setText(QCoreApplication.translate("mainWindow", "Status", None))
+        self.version.setText(QCoreApplication.translate("mainWindow", "Version", None))
 
+    # retranslateUi

@@ -453,7 +453,8 @@ def validate_sp_orientation(
             peak_idx = spr_region_start + local_min_idx
             peak_val = local_min_val
             confidence = min(
-                1.0, abs(min_deviation) / 30.0,
+                1.0,
+                abs(min_deviation) / 30.0,
             )  # Scale: 30% deviation = 100% confidence
             logger.debug(
                 f"   ✓ SPR DIP detected: {min_deviation:.1f}% below edges - CORRECT orientation",
@@ -473,7 +474,8 @@ def validate_sp_orientation(
             peak_idx = spr_region_start + local_min_idx
             peak_val = local_min_val
             confidence = min(
-                0.7, abs(min_deviation) / 30.0,
+                0.7,
+                abs(min_deviation) / 30.0,
             )  # Lower confidence for weak signal
             logger.debug(
                 f"   ✓ Subtle SPR dip detected (weak coupling): {min_deviation:.1f}% - CORRECT orientation",

@@ -16,8 +16,7 @@ from pathlib import Path
 try:
     from typing import Optional, Self  # Python 3.11+
 except ImportError:
-    from typing_extensions import Self  # Python < 3.11
-    from typing import Optional
+    from typing import Self  # Python < 3.11
 
 import numpy as np
 import pandas as pd
@@ -38,10 +37,11 @@ from widgets.message import show_message
 # Python version compatibility for UTC
 try:
     from datetime import UTC  # Python 3.11+
+
     TIMEZONE = datetime.datetime.now(UTC).astimezone().tzinfo
 except ImportError:
     # Python < 3.11
-    TIMEZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIMEZONE = datetime.datetime.now(UTC).astimezone().tzinfo
 SEGMENT_COLORS = [
     "#c93c8a",
     "#ff8e1c",
@@ -123,8 +123,8 @@ class AnalysisWindow(QWidget):
         self.ui.reset_analysis_btn.clicked.connect(self.clear_analysis_segments)
         self.ui.fit_wizard_btn.clicked.connect(self._show_kd_wizard)
         self.ui.kin_wizard_btn.clicked.connect(self._show_ka_kd_wizard)
-        self._kd_dlg: Optional[KDWizardDialog] = None
-        self._ka_kd_dlg: Optional[KAKDWizardDialog] = None
+        self._kd_dlg: KDWizardDialog | None = None
+        self._ka_kd_dlg: KAKDWizardDialog | None = None
 
         # Stacked Graph Setup
         self.ui.stack_graph.getAxis("bottom").enableAutoSIPrefix(enable=False)
@@ -713,13 +713,17 @@ class AnalysisWindow(QWidget):
                                 len(seg.seg_y[ch]) == len(seg.seg_x[ch])
                             ):
                                 # Find minimum end time across all segments
-                                end_time = min(seg.seg_x[ch][-1] for seg in self.auto_segments)
+                                end_time = min(
+                                    seg.seg_x[ch][-1] for seg in self.auto_segments
+                                )
 
                                 # Build DataFrame columns for all segments
                                 data_dict = {}
                                 for i, seg in enumerate(self.auto_segments):
                                     # Filter data within time range
-                                    mask = (seg.seg_x[ch] >= 0) & (seg.seg_x[ch] < end_time)
+                                    mask = (seg.seg_x[ch] >= 0) & (
+                                        seg.seg_x[ch] < end_time
+                                    )
                                     x_filtered = np.array(seg.seg_x[ch])[mask]
                                     y_filtered = np.array(seg.seg_y[ch])[mask]
 
@@ -728,10 +732,17 @@ class AnalysisWindow(QWidget):
                                     data_dict[fieldnames[2 * i + 1]] = y_filtered
 
                                 # Create DataFrame and fill missing values with None
-                                df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in data_dict.items()]))
+                                df = pd.DataFrame(
+                                    dict(
+                                        [
+                                            (k, pd.Series(v))
+                                            for k, v in data_dict.items()
+                                        ],
+                                    ),
+                                )
 
                                 # Write to CSV
-                                df.to_csv(file, index=False, header=False, mode='a')
+                                df.to_csv(file, index=False, header=False, mode="a")
 
                 with Path(f"{export_dir}/AnalysisRawData.json").open("w") as json_file:
                     analysis_data: list[object] = [self.unit]
@@ -993,10 +1004,10 @@ class AnalysisSegment:
 
     def __init__(
         self: Self,
-        base_segment: Optional[Segment],
+        base_segment: Segment | None,
         *,
         json_load: bool = False,
-        json_data: Optional[dict] = None,  # type: ignore[type-arg]
+        json_data: dict | None = None,  # type: ignore[type-arg]
     ) -> None:
         """Make new segment."""
         try:
@@ -1115,7 +1126,7 @@ class AnalysisSegment:
         self: Self,
         new_start: dict[str, int],
         new_end: dict[str, int],
-        single_ch: Optional[str] = None,
+        single_ch: str | None = None,
     ) -> None:
         """Adjust a segment."""
         try:

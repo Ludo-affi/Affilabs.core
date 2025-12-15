@@ -1,15 +1,15 @@
-"""
-LED Hardware Diagnostic - Check communication and power
-"""
-import time
+"""LED Hardware Diagnostic - Check communication and power"""
+
 import sys
-sys.path.insert(0, 'src')
+import time
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
 
-print("="*70)
+print("=" * 70)
 print("LED HARDWARE DIAGNOSTIC")
-print("="*70)
+print("=" * 70)
 
 # Connect
 print("\n1. Connecting to Pico...")
@@ -23,7 +23,7 @@ print("✅ Pico connected")
 
 # Test firmware version
 print("\n2. Checking firmware version...")
-if hasattr(ctrl, 'version') and ctrl.version:
+if hasattr(ctrl, "version") and ctrl.version:
     print(f"✅ Firmware: {ctrl.version}")
 else:
     print("⚠️ Could not read firmware version")
@@ -83,9 +83,9 @@ try:
 except Exception as e:
     print(f"❌ Legacy command error: {e}")
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("DIAGNOSTIC RESULTS")
-print("="*70)
+print("=" * 70)
 print("\n❓ Did you see ANY LEDs light up during this test?")
 print("\n   YES → Software working, check:")
 print("         • LED intensity settings too low")
@@ -102,4 +102,4 @@ print("   1. Check LED PCB has external power connected")
 print("   2. Check physical connections between Pico and LED PCB")
 print("   3. Verify LED PCB model number")
 print("   4. Test LEDs with multimeter if available")
-print("="*70)
+print("=" * 70)

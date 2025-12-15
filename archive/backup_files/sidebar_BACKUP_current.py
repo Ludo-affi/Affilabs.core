@@ -1,22 +1,42 @@
 """SidebarPrototype extracted from LL_UI_v1_0.py for modularity."""
+
+import pyqtgraph as pg
+from plot_helpers import add_channel_curves, create_spectroscopy_plot, create_time_plot
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QTabWidget, QScrollArea, QFrame, QLabel,
-    QHBoxLayout, QPushButton, QButtonGroup, QCheckBox, QTableWidget,
-    QTableWidgetItem, QSpinBox, QLineEdit, QSlider, QComboBox, QRadioButton
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSlider,
+    QSpinBox,
+    QTableWidget,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 from ui_styles import (
-    Colors, label_style, section_header_style, title_style, card_style,
-    primary_button_style, status_indicator_style, divider_style,
-    separator_style, segmented_button_style, checkbox_style, spinbox_style,
-    scrollbar_style
+    Colors,
+    card_style,
+    checkbox_style,
+    label_style,
+    primary_button_style,
+    scrollbar_style,
+    section_header_style,
+    segmented_button_style,
+    spinbox_style,
+    title_style,
 )
-from plot_helpers import create_time_plot, create_spectroscopy_plot, add_channel_curves
-import pyqtgraph as pg
 
 # Colorblind-safe palette (Tol bright scheme)
-COLORBLIND_PALETTE = ['#4477AA', '#EE6677', '#228833', '#CCBB44']
+COLORBLIND_PALETTE = ["#4477AA", "#EE6677", "#228833", "#CCBB44"]
+
 
 class SidebarPrototype(QWidget):
     """Simplified sidebar prototype containing tabbed UI sections."""
@@ -27,7 +47,7 @@ class SidebarPrototype(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        if getattr(self, '_ui_setup_done', False):
+        if getattr(self, "_ui_setup_done", False):
             return
         self._ui_setup_done = True
         self.setStyleSheet(f"background: {Colors.BACKGROUND_LIGHT};")
@@ -128,13 +148,18 @@ class SidebarPrototype(QWidget):
         self.hw_device_labels = []
         for i in range(3):
             device_label = QLabel(f"• Device {i+1}: Not connected")
-            device_label.setStyleSheet(label_style(13, Colors.SUCCESS) + "padding: 4px 0px;")
+            device_label.setStyleSheet(
+                label_style(13, Colors.SUCCESS) + "padding: 4px 0px;",
+            )
             device_label.setVisible(False)
             hw_card_layout.addWidget(device_label)
             self.hw_device_labels.append(device_label)
 
         self.hw_no_devices = QLabel("No hardware detected")
-        self.hw_no_devices.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT) + "padding: 8px 0px;font-style: italic;")
+        self.hw_no_devices.setStyleSheet(
+            label_style(13, Colors.SECONDARY_TEXT)
+            + "padding: 8px 0px;font-style: italic;",
+        )
         hw_card_layout.addWidget(self.hw_no_devices)
 
         self.scan_btn = QPushButton("🔍 Scan for Hardware")
@@ -149,12 +174,14 @@ class SidebarPrototype(QWidget):
         hw_card_layout.addWidget(subunit_section)
 
         self.subunit_status = {}
-        subunit_names = ['Sensor', 'Optics', 'Fluidics']
+        subunit_names = ["Sensor", "Optics", "Fluidics"]
         for idx, name in enumerate(subunit_names):
             if idx > 0:  # Add separator between items
                 separator = QFrame()
                 separator.setFrameShape(QFrame.Shape.HLine)
-                separator.setStyleSheet("background: rgba(0, 0, 0, 0.06); border: none; margin: 4px 0;")
+                separator.setStyleSheet(
+                    "background: rgba(0, 0, 0, 0.06); border: none; margin: 4px 0;",
+                )
                 hw_card_layout.addWidget(separator)
 
             status_row = QHBoxLayout()
@@ -167,7 +194,10 @@ class SidebarPrototype(QWidget):
             status_row.addWidget(indicator)
             status_row.addWidget(status_label, 1)
             hw_card_layout.addLayout(status_row)
-            self.subunit_status[name.lower()] = {'indicator': indicator, 'status_label': status_label}
+            self.subunit_status[name.lower()] = {
+                "indicator": indicator,
+                "status_label": status_label,
+            }
 
         tab_layout.addWidget(hw_card)
         tab_layout.addSpacing(16)
@@ -185,14 +215,16 @@ class SidebarPrototype(QWidget):
         modes_card_layout.setSpacing(8)
 
         self.operation_modes = {}
-        for mode_name, mode_label in [('static', 'Static'), ('flow', 'Flow')]:
+        for mode_name, mode_label in [("static", "Static"), ("flow", "Flow")]:
             mode_row = QHBoxLayout()
             mode_row.setSpacing(8)
             indicator = QLabel("●")
             indicator.setStyleSheet(f"color: {Colors.SECONDARY_TEXT}; font-size: 16px;")
             indicator.setFixedWidth(20)
             label = QLabel(mode_label)
-            label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;")
+            label.setStyleSheet(
+                label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;",
+            )
             status_label = QLabel("Disabled")
             status_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
             mode_row.addWidget(indicator)
@@ -201,9 +233,9 @@ class SidebarPrototype(QWidget):
             mode_row.addWidget(status_label)
             modes_card_layout.addLayout(mode_row)
             self.operation_modes[mode_name] = {
-                'indicator': indicator,
-                'label': label,
-                'status_label': status_label
+                "indicator": indicator,
+                "label": label,
+                "status_label": status_label,
             }
 
         tab_layout.addWidget(modes_card)
@@ -211,7 +243,9 @@ class SidebarPrototype(QWidget):
 
         # Maintenance section
         maint_title = QLabel("Maintenance")
-        maint_title.setStyleSheet(label_style(15, Colors.PRIMARY_TEXT) + "font-weight: 600; margin-top: 8px;")
+        maint_title.setStyleSheet(
+            label_style(15, Colors.PRIMARY_TEXT) + "font-weight: 600; margin-top: 8px;",
+        )
         tab_layout.addWidget(maint_title)
         tab_layout.addSpacing(8)
 
@@ -232,7 +266,9 @@ class SidebarPrototype(QWidget):
         hours_label = QLabel("Operation Hours:")
         hours_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
         self.hours_value = QLabel("1,247 hrs")
-        self.hours_value.setStyleSheet(label_style(12, Colors.PRIMARY_TEXT) + "font-weight: 600;")
+        self.hours_value.setStyleSheet(
+            label_style(12, Colors.PRIMARY_TEXT) + "font-weight: 600;",
+        )
         hours_row.addWidget(hours_label)
         hours_row.addStretch()
         hours_row.addWidget(self.hours_value)
@@ -243,7 +279,9 @@ class SidebarPrototype(QWidget):
         last_op_label = QLabel("Last Operation:")
         last_op_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
         self.last_op_value = QLabel("Nov 19, 2025")
-        self.last_op_value.setStyleSheet(label_style(12, Colors.PRIMARY_TEXT) + "font-weight: 600;")
+        self.last_op_value.setStyleSheet(
+            label_style(12, Colors.PRIMARY_TEXT) + "font-weight: 600;",
+        )
         last_op_row.addWidget(last_op_label)
         last_op_row.addStretch()
         last_op_row.addWidget(self.last_op_value)
@@ -254,7 +292,9 @@ class SidebarPrototype(QWidget):
         next_maint_label = QLabel("Annual Maintenance:")
         next_maint_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
         self.next_maintenance_value = QLabel("November 2025")
-        self.next_maintenance_value.setStyleSheet(label_style(12, Colors.WARNING) + "font-weight: 600;")
+        self.next_maintenance_value.setStyleSheet(
+            label_style(12, Colors.WARNING) + "font-weight: 600;",
+        )
         next_maint_row.addWidget(next_maint_label)
         next_maint_row.addStretch()
         next_maint_row.addWidget(self.next_maintenance_value)
@@ -278,7 +318,9 @@ class SidebarPrototype(QWidget):
         # Software Version
         version_label = QLabel("AffiLabs.core Beta")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-weight: 500;")
+        version_label.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT) + "font-weight: 500;",
+        )
         tab_layout.addWidget(version_label)
 
     def _build_graphic_control_tab(self, tab_layout: QVBoxLayout):
@@ -330,13 +372,17 @@ class SidebarPrototype(QWidget):
 
         def _toggle_x():
             self._x_auto = not self._x_auto
-            self.x_axis_btn.setText("X Axis Auto" if not self._x_auto else "X Axis Manual")
-            _apply_axis_mode('x', self._x_auto)
+            self.x_axis_btn.setText(
+                "X Axis Auto" if not self._x_auto else "X Axis Manual",
+            )
+            _apply_axis_mode("x", self._x_auto)
 
         def _toggle_y():
             self._y_auto = not self._y_auto
-            self.y_axis_btn.setText("Y Axis Auto" if not self._y_auto else "Y Axis Manual")
-            _apply_axis_mode('y', self._y_auto)
+            self.y_axis_btn.setText(
+                "Y Axis Auto" if not self._y_auto else "Y Axis Manual",
+            )
+            _apply_axis_mode("y", self._y_auto)
 
         self.x_axis_btn.clicked.connect(_toggle_x)
         self.y_axis_btn.clicked.connect(_toggle_y)
@@ -345,6 +391,7 @@ class SidebarPrototype(QWidget):
         def _toggle_grid(checked: bool):
             for plot in (self.transmission_plot, self.raw_data_plot):
                 plot.showGrid(x=checked, y=checked, alpha=0.15 if checked else 0.0)
+
         self.grid_check.toggled.connect(_toggle_grid)
 
         # Reference combo
@@ -354,7 +401,9 @@ class SidebarPrototype(QWidget):
         ref_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
         ref_row.addWidget(ref_label)
         self.ref_combo = QComboBox()
-        self.ref_combo.addItems(["None", "Channel A", "Channel B", "Channel C", "Channel D"])
+        self.ref_combo.addItems(
+            ["None", "Channel A", "Channel B", "Channel C", "Channel D"],
+        )
         self.ref_combo.setFixedWidth(120)
         ref_row.addWidget(self.ref_combo)
         ref_row.addStretch()
@@ -362,18 +411,22 @@ class SidebarPrototype(QWidget):
 
         # Reference info text
         ref_info = QLabel("Selected channel shown as faded dashed line")
-        ref_info.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;")
+        ref_info.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;",
+        )
         gc_layout.addWidget(ref_info)
 
         # Wire reference combo
         self.ref_combo.currentIndexChanged.connect(
-            lambda idx: print(f"Reference changed to: {self.ref_combo.currentText()}")
+            lambda idx: print(f"Reference changed to: {self.ref_combo.currentText()}"),
         )
 
         # Filter controls
         gc_layout.addSpacing(12)
         filter_header = QLabel("Data Filtering")
-        filter_header.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;")
+        filter_header.setStyleSheet(
+            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;",
+        )
         gc_layout.addWidget(filter_header)
 
         self.filter_enable = QCheckBox("Enable Filter")
@@ -383,7 +436,7 @@ class SidebarPrototype(QWidget):
         self.filter_slider.setValue(5)
         self.filter_value_label = QLabel("Filter Size: 5")
         self.filter_slider.valueChanged.connect(
-            lambda v: self.filter_value_label.setText(f"Filter Size: {v}")
+            lambda v: self.filter_value_label.setText(f"Filter Size: {v}"),
         )
         gc_layout.addWidget(self.filter_enable)
         gc_layout.addWidget(self.filter_slider)
@@ -404,8 +457,13 @@ class SidebarPrototype(QWidget):
         def _filter_enable_changed(checked: bool):
             self.filter_slider.setEnabled(checked)
             self.filter_value_label.setEnabled(checked)
-            for w in (self.median_filter_radio, self.kalman_filter_radio, self.sg_filter_radio):
+            for w in (
+                self.median_filter_radio,
+                self.kalman_filter_radio,
+                self.sg_filter_radio,
+            ):
                 w.setEnabled(checked)
+
         self.filter_enable.toggled.connect(_filter_enable_changed)
         _filter_enable_changed(False)
 
@@ -453,7 +511,10 @@ class SidebarPrototype(QWidget):
         tab_layout.addWidget(display_section)
 
         display_note = QLabel("Applied to cycle of interest")
-        display_note.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic; margin-top: 2px;")
+        display_note.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT)
+            + "font-style: italic; margin-top: 2px;",
+        )
         tab_layout.addWidget(display_note)
         tab_layout.addSpacing(8)
 
@@ -512,20 +573,31 @@ class SidebarPrototype(QWidget):
         accessibility_card_layout.addWidget(self.colorblind_check)
 
         # Info text about colorblind palette
-        colorblind_info = QLabel("Uses optimized colors for deuteranopia and protanopia")
-        colorblind_info.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;")
+        colorblind_info = QLabel(
+            "Uses optimized colors for deuteranopia and protanopia",
+        )
+        colorblind_info.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;",
+        )
         accessibility_card_layout.addWidget(colorblind_info)
 
         # Colorblind palette toggle logic
         def _toggle_colorblind(checked: bool):
-            palette = COLORBLIND_PALETTE if checked else ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
-            for plot, curves in [(self.transmission_plot, self.transmission_curves),
-                                  (self.raw_data_plot, self.raw_data_curves)]:
+            palette = (
+                COLORBLIND_PALETTE
+                if checked
+                else ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
+            )
+            for plot, curves in [
+                (self.transmission_plot, self.transmission_curves),
+                (self.raw_data_plot, self.raw_data_curves),
+            ]:
                 for i, curve in enumerate(curves):
                     new_pen = pg.mkPen(color=palette[i], width=2)
                     curve.setPen(new_pen)
                     curve.original_pen = new_pen
                     curve.selected_pen = pg.mkPen(color=palette[i], width=4)
+
         self.colorblind_check.toggled.connect(_toggle_colorblind)
 
         tab_layout.addWidget(accessibility_card)
@@ -546,22 +618,24 @@ class SidebarPrototype(QWidget):
         self.start_cycle_btn.setFixedHeight(36)
         self.start_cycle_btn.setStyleSheet(primary_button_style())
         static_layout.addWidget(self.start_cycle_btn)
-        
+
         self.add_to_queue_btn = QPushButton("Add to Queue")
         self.add_to_queue_btn.setFixedHeight(36)
         self.add_to_queue_btn.setStyleSheet(primary_button_style())
         static_layout.addWidget(self.add_to_queue_btn)
-        
+
         self.open_table_btn = QPushButton("Open Full Table")
         self.open_table_btn.setFixedHeight(36)
         self.open_table_btn.setStyleSheet(primary_button_style())
         static_layout.addWidget(self.open_table_btn)
-        
+
         static_layout.addSpacing(8)
 
         # Summary table with styling
         self.summary_table = QTableWidget(0, 4)
-        self.summary_table.setHorizontalHeaderLabels(["State", "Type", "Start", "Notes"])
+        self.summary_table.setHorizontalHeaderLabels(
+            ["State", "Type", "Start", "Notes"],
+        )
         self.summary_table.setAlternatingRowColors(True)
         self.summary_table.setStyleSheet(f"""
             QTableWidget {{
@@ -599,57 +673,63 @@ class SidebarPrototype(QWidget):
 
         # Polarizer controls
         polarizer_label = QLabel("Polarizer Positions:")
-        polarizer_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;")
+        polarizer_label.setStyleSheet(
+            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;",
+        )
         flow_layout.addWidget(polarizer_label)
-        
+
         pol_row = QHBoxLayout()
         pol_row.setSpacing(12)
-        
+
         s_label = QLabel("S:")
         s_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
         pol_row.addWidget(s_label)
-        
+
         self.s_position_input = QSpinBox()
         self.s_position_input.setRange(0, 255)
         self.s_position_input.setValue(0)
         self.s_position_input.setFixedWidth(70)
         self.s_position_input.setStyleSheet(spinbox_style())
         pol_row.addWidget(self.s_position_input)
-        
+
         pol_row.addSpacing(16)
-        
+
         p_label = QLabel("P:")
         p_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
         pol_row.addWidget(p_label)
-        
+
         self.p_position_input = QSpinBox()
         self.p_position_input.setRange(0, 255)
         self.p_position_input.setValue(0)
         self.p_position_input.setFixedWidth(70)
         self.p_position_input.setStyleSheet(spinbox_style())
         pol_row.addWidget(self.p_position_input)
-        
+
         self.polarizer_toggle_btn = QPushButton("Position: S")
         self.polarizer_toggle_btn.setFixedSize(100, 28)
         self.polarizer_toggle_btn.setStyleSheet(primary_button_style())
         pol_row.addWidget(self.polarizer_toggle_btn)
         pol_row.addStretch()
-        
+
         flow_layout.addLayout(pol_row)
         flow_layout.addSpacing(12)
-        
+
         # Separator
         separator = QFrame()
         separator.setFixedHeight(1)
-        separator.setStyleSheet(f"background: {Colors.OVERLAY_LIGHT_6}; border: none; margin: 4px 0;")
+        separator.setStyleSheet(
+            f"background: {Colors.OVERLAY_LIGHT_6}; border: none; margin: 4px 0;",
+        )
         flow_layout.addWidget(separator)
         flow_layout.addSpacing(8)
 
         # Channel inputs
         led_label = QLabel("LED Intensity per Channel:")
-        led_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;")
+        led_label.setStyleSheet(
+            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;",
+        )
         flow_layout.addWidget(led_label)
-        
+
         self.channel_a_input = QLineEdit()
         self.channel_a_input.setPlaceholderText("0-4095")
         self.channel_b_input = QLineEdit()
@@ -658,9 +738,13 @@ class SidebarPrototype(QWidget):
         self.channel_c_input.setPlaceholderText("0-4095")
         self.channel_d_input = QLineEdit()
         self.channel_d_input.setPlaceholderText("0-4095")
-        
-        for lbl, w in [("Channel A:", self.channel_a_input), ("Channel B:", self.channel_b_input),
-                       ("Channel C:", self.channel_c_input), ("Channel D:", self.channel_d_input)]:
+
+        for lbl, w in [
+            ("Channel A:", self.channel_a_input),
+            ("Channel B:", self.channel_b_input),
+            ("Channel C:", self.channel_c_input),
+            ("Channel D:", self.channel_d_input),
+        ]:
             ch_row = QHBoxLayout()
             ch_row.setSpacing(10)
             ch_label = QLabel(lbl)
@@ -671,13 +755,15 @@ class SidebarPrototype(QWidget):
             ch_row.addWidget(w)
             ch_row.addStretch()
             flow_layout.addLayout(ch_row)
-        
+
         flow_layout.addSpacing(8)
-        
+
         # Separator
         separator2 = QFrame()
         separator2.setFixedHeight(1)
-        separator2.setStyleSheet(f"background: {Colors.OVERLAY_LIGHT_6}; border: none; margin: 4px 0;")
+        separator2.setStyleSheet(
+            f"background: {Colors.OVERLAY_LIGHT_6}; border: none; margin: 4px 0;",
+        )
         flow_layout.addWidget(separator2)
         flow_layout.addSpacing(8)
 
@@ -687,22 +773,24 @@ class SidebarPrototype(QWidget):
         flow_layout.addWidget(self.apply_settings_btn)
 
         flow_layout.addSpacing(12)
-        
+
         # Calibration buttons
         calib_label = QLabel("Calibration:")
-        calib_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600; margin-top: 8px;")
+        calib_label.setStyleSheet(
+            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600; margin-top: 8px;",
+        )
         flow_layout.addWidget(calib_label)
-        
+
         self.simple_led_calibration_btn = QPushButton("Simple LED Calibration")
         self.simple_led_calibration_btn.setFixedHeight(32)
         self.simple_led_calibration_btn.setStyleSheet(primary_button_style())
         flow_layout.addWidget(self.simple_led_calibration_btn)
-        
+
         self.full_calibration_btn = QPushButton("Full Calibration")
         self.full_calibration_btn.setFixedHeight(32)
         self.full_calibration_btn.setStyleSheet(primary_button_style())
         flow_layout.addWidget(self.full_calibration_btn)
-        
+
         self.oem_led_calibration_btn = QPushButton("OEM Calibration")
         self.oem_led_calibration_btn.setFixedHeight(32)
         self.oem_led_calibration_btn.setStyleSheet(primary_button_style())
@@ -726,7 +814,7 @@ class SidebarPrototype(QWidget):
         self.quick_export_csv_btn.setFixedHeight(36)
         self.quick_export_csv_btn.setStyleSheet(primary_button_style())
         export_layout.addWidget(self.quick_export_csv_btn)
-        
+
         self.quick_export_image_btn = QPushButton("Quick Image Export")
         self.quick_export_image_btn.setFixedHeight(36)
         self.quick_export_image_btn.setStyleSheet(primary_button_style())
@@ -736,10 +824,10 @@ class SidebarPrototype(QWidget):
 
         # Placeholder actions
         self.quick_export_csv_btn.clicked.connect(
-            lambda: print("CSV export triggered - wire to actual handler")
+            lambda: print("CSV export triggered - wire to actual handler"),
         )
         self.quick_export_image_btn.clicked.connect(
-            lambda: print("Image export triggered - wire to actual handler")
+            lambda: print("Image export triggered - wire to actual handler"),
         )
 
         tab_layout.addWidget(export_card)

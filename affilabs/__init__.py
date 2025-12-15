@@ -1,4 +1,5 @@
 """Affilabs package root."""
+
 """AffiLabs.core - SPR Control Software Core Package
 
 This package contains the core functionality for the ezControl-AI SPR control system.

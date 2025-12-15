@@ -35,7 +35,7 @@ try:
         slopes_s = loader.get_slopes("S")
         slopes_p = loader.get_slopes("P")
 
-        print(f"✓ Model loaded successfully")
+        print("✓ Model loaded successfully")
         print(f"  S-pol slopes: {slopes_s}")
         print(f"  P-pol slopes: {slopes_p}")
 
@@ -51,6 +51,7 @@ try:
 except Exception as e:
     print(f"❌ Test 1 FAILED: {e}")
     import traceback
+
     traceback.print_exc()
     exit(1)
 
@@ -60,6 +61,7 @@ print()
 print("Test 2: Checking LEDconverge() signature...")
 try:
     import inspect
+
     from affilabs.utils.led_methods import LEDconverge
 
     sig = inspect.signature(LEDconverge)
@@ -85,6 +87,7 @@ try:
 except Exception as e:
     print(f"❌ Test 2 FAILED: {e}")
     import traceback
+
     traceback.print_exc()
     exit(1)
 
@@ -94,6 +97,7 @@ print()
 print("Test 3: Checking run_convergence() signature...")
 try:
     import inspect
+
     from affilabs.utils.LEDCONVERGENCE import run_convergence
 
     sig = inspect.signature(run_convergence)
@@ -114,6 +118,7 @@ try:
 except Exception as e:
     print(f"❌ Test 3 FAILED: {e}")
     import traceback
+
     traceback.print_exc()
     exit(1)
 
@@ -136,7 +141,9 @@ try:
     exact_led = (target * 10.0) / (slope * time_ms)
     expected = 52.5
 
-    assert abs(exact_led - expected) < 0.1, f"❌ Calculation wrong: {exact_led} vs {expected}"
+    assert (
+        abs(exact_led - expected) < 0.1
+    ), f"❌ Calculation wrong: {exact_led} vs {expected}"
     print(f"✓ Exact LED calculation: {exact_led:.1f} (expected {expected:.1f})")
 
     # Compare with old arbitrary method
@@ -145,11 +152,14 @@ try:
 
     print(f"  Old method (arbitrary ×0.75): {old_penalty:.1f}")
     print(f"  New method (model-based): {exact_led:.1f}")
-    print(f"  Improvement: {abs(old_penalty - exact_led):.1f} intensity units more accurate")
+    print(
+        f"  Improvement: {abs(old_penalty - exact_led):.1f} intensity units more accurate",
+    )
 
 except Exception as e:
     print(f"❌ Test 4 FAILED: {e}")
     import traceback
+
     traceback.print_exc()
     exit(1)
 

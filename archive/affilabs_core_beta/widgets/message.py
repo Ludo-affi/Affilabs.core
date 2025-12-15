@@ -1,20 +1,25 @@
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
-from ui import ai_rc
+from PySide6.QtWidgets import QMessageBox
 
 
 class TimerMessageBox(QMessageBox):
-
-    def __init__(self, timeout=None, parent=None, yn=False, q=(False, '', ''), title=None):
+    def __init__(
+        self,
+        timeout=None,
+        parent=None,
+        yn=False,
+        q=(False, "", ""),
+        title=None,
+    ):
         super(TimerMessageBox, self).__init__(parent)
         self.setWindowTitle(title or "Affinite Instruments")
         self.setWindowIcon(QIcon(":/img/img/affinite2.ico"))
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(600, 320)
         if yn:
-            self.y_btn = self.addButton('Yes', QMessageBox.ButtonRole.AcceptRole)
-            self.n_btn = self.addButton('No', QMessageBox.ButtonRole.RejectRole)
+            self.y_btn = self.addButton("Yes", QMessageBox.ButtonRole.AcceptRole)
+            self.n_btn = self.addButton("No", QMessageBox.ButtonRole.RejectRole)
             self.wait_for_button = True
         elif q[0]:
             self.y_btn = self.addButton(q[1], QMessageBox.ButtonRole.AcceptRole)
@@ -34,14 +39,20 @@ class TimerMessageBox(QMessageBox):
         self.close()
 
     def closeEvent(self, event):
-        if hasattr(self, 'timer'):
+        if hasattr(self, "timer"):
             self.timer.stop()
         event.accept()
 
 
-def show_message(msg, msg_type='Information', auto_close_time=None, yes_no=False, q=(False, '', ''), title=None):
-    """
-    :param q:
+def show_message(
+    msg,
+    msg_type="Information",
+    auto_close_time=None,
+    yes_no=False,
+    q=(False, "", ""),
+    title=None,
+):
+    """:param q:
     :param yes_no:
     :param auto_close_time:
     :param msg:
@@ -55,5 +66,5 @@ def show_message(msg, msg_type='Information', auto_close_time=None, yes_no=False
     if m.wait_for_button:
         if m.clickedButton() == m.y_btn:
             return True
-        elif m.clickedButton() == m.n_btn:
+        if m.clickedButton() == m.n_btn:
             return False

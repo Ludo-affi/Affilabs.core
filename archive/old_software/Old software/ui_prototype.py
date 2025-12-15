@@ -1,13 +1,27 @@
 """Standalone UI prototype for main window design."""
 
 import sys
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QParallelAnimationGroup
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTabWidget, QLabel, QFrame, QToolButton, QScrollArea, QGraphicsDropShadowEffect,
-    QSlider, QSpinBox, QSplitter, QMenu
+
+from PySide6.QtCore import (
+    Qt,
+    QTimer,
 )
-from PySide6.QtGui import QIcon, QColor, QFont, QAction
+from PySide6.QtGui import QAction, QColor
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class ElementInspector:
@@ -24,20 +38,22 @@ class ElementInspector:
             info_parts.append(f"ObjectName: {widget.objectName()}")
 
         # Text content (if applicable)
-        if hasattr(widget, 'text') and callable(widget.text):
+        if hasattr(widget, "text") and callable(widget.text):
             text = widget.text()
             if text:
                 info_parts.append(f"Text: {text}")
 
         # Window title (if applicable)
-        if hasattr(widget, 'windowTitle') and callable(widget.windowTitle):
+        if hasattr(widget, "windowTitle") and callable(widget.windowTitle):
             title = widget.windowTitle()
             if title:
                 info_parts.append(f"WindowTitle: {title}")
 
         # Geometry
         geo = widget.geometry()
-        info_parts.append(f"Geometry: x={geo.x()}, y={geo.y()}, w={geo.width()}, h={geo.height()}")
+        info_parts.append(
+            f"Geometry: x={geo.x()}, y={geo.y()}, w={geo.width()}, h={geo.height()}",
+        )
 
         # Size
         size = widget.size()
@@ -63,7 +79,7 @@ class ElementInspector:
         # Stylesheet (first 200 chars)
         stylesheet = widget.styleSheet()
         if stylesheet:
-            preview = stylesheet[:200].replace('\n', ' ')
+            preview = stylesheet[:200].replace("\n", " ")
             if len(stylesheet) > 200:
                 preview += "..."
             info_parts.append(f"StyleSheet: {preview}")
@@ -75,7 +91,7 @@ class ElementInspector:
         """Install right-click inspector on a widget and all its children."""
         widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         widget.customContextMenuRequested.connect(
-            lambda pos: ElementInspector.show_inspector_menu(widget, pos)
+            lambda pos: ElementInspector.show_inspector_menu(widget, pos),
         )
 
         # Recursively install on all children
@@ -83,7 +99,7 @@ class ElementInspector:
             if not child.testAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent):
                 child.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
                 child.customContextMenuRequested.connect(
-                    lambda pos, w=child: ElementInspector.show_inspector_menu(w, pos)
+                    lambda pos, w=child: ElementInspector.show_inspector_menu(w, pos),
                 )
 
     @staticmethod
@@ -94,7 +110,7 @@ class ElementInspector:
         # Inspect action
         inspect_action = QAction("🔍 Copy Element Info", menu)
         inspect_action.triggered.connect(
-            lambda: ElementInspector.copy_element_info(widget)
+            lambda: ElementInspector.copy_element_info(widget),
         )
         menu.addAction(inspect_action)
 
@@ -149,7 +165,7 @@ class CollapsibleSection(QWidget):
             "QPushButton:checked {"
             "  background: rgba(0, 0, 0, 0.06);"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
         self.header_btn.clicked.connect(self.toggle)
         main_layout.addWidget(self.header_btn)
@@ -195,7 +211,7 @@ class SidebarPrototype(QWidget):
 
     def _setup_ui(self):
         """Setup the sidebar UI."""
-        if getattr(self, '_ui_setup_done', False):
+        if getattr(self, "_ui_setup_done", False):
             return
         self._ui_setup_done = True
         self.setStyleSheet("background: #F5F5F7;")
@@ -240,7 +256,7 @@ class SidebarPrototype(QWidget):
                 "}"
                 "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
                 "  height: 0px;"
-                "}"
+                "}",
             )
 
             tab_content = QWidget()
@@ -258,7 +274,7 @@ class SidebarPrototype(QWidget):
                 "background: transparent;"
                 "line-height: 1.2;"
                 "letter-spacing: -0.3px;"
-                "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;",
             )
             tab_layout.addWidget(title)
 
@@ -276,7 +292,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "letter-spacing: 0.5px;"
                     "margin-left: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(hw_section)
 
@@ -288,7 +304,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 hw_card_layout = QVBoxLayout(hw_card)
                 hw_card_layout.setContentsMargins(12, 12, 12, 12)
@@ -303,9 +319,11 @@ class SidebarPrototype(QWidget):
                         "color: #34C759;"
                         "background: transparent;"
                         "padding: 4px 0px;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
-                    device_label.setVisible(False)  # Hidden by default until devices are found
+                    device_label.setVisible(
+                        False,
+                    )  # Hidden by default until devices are found
                     hw_card_layout.addWidget(device_label)
                     self.hw_device_labels.append(device_label)
 
@@ -317,7 +335,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "padding: 8px 0px;"
                     "font-style: italic;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 hw_card_layout.addWidget(self.hw_no_devices)
 
@@ -345,7 +363,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: #48484A;"
-                    "}"
+                    "}",
                 )
                 hw_card_layout.addWidget(self.scan_btn)
 
@@ -362,7 +380,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "letter-spacing: 0.5px;"
                     "margin-left: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(subunit_section)
 
@@ -374,7 +392,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 subunit_card_layout = QVBoxLayout(subunit_card)
                 subunit_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -397,7 +415,7 @@ class SidebarPrototype(QWidget):
                         "font-size: 14px;"
                         "color: #86868B;"  # Gray for not ready
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     subunit_row.addWidget(status_indicator)
 
@@ -408,7 +426,7 @@ class SidebarPrototype(QWidget):
                         "color: #1D1D1F;"
                         "background: transparent;"
                         "font-weight: 500;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     subunit_row.addWidget(name_label)
 
@@ -420,14 +438,14 @@ class SidebarPrototype(QWidget):
                         "font-size: 12px;"
                         "color: #86868B;"
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     subunit_row.addWidget(status_label)
 
                     # Store references for later updates
                     self.subunit_status[subunit_name] = {
-                        'indicator': status_indicator,
-                        'status_label': status_label
+                        "indicator": status_indicator,
+                        "status_label": status_label,
                     }
 
                     # Add to card layout
@@ -442,7 +460,7 @@ class SidebarPrototype(QWidget):
                         separator.setStyleSheet(
                             "background: rgba(0, 0, 0, 0.06);"
                             "max-height: 1px;"
-                            "margin: 4px 0px;"
+                            "margin: 4px 0px;",
                         )
                         subunit_card_layout.addWidget(separator)
 
@@ -459,7 +477,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "letter-spacing: 0.5px;"
                     "margin-left: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(mode_section)
 
@@ -471,7 +489,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 mode_card_layout = QVBoxLayout(mode_card)
                 mode_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -494,7 +512,7 @@ class SidebarPrototype(QWidget):
                         "font-size: 14px;"
                         "color: #86868B;"  # Gray for disabled
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     mode_row.addWidget(mode_indicator)
 
@@ -505,7 +523,7 @@ class SidebarPrototype(QWidget):
                         "color: #86868B;"  # Gray when disabled
                         "background: transparent;"
                         "font-weight: 500;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     mode_row.addWidget(mode_label)
 
@@ -517,15 +535,15 @@ class SidebarPrototype(QWidget):
                         "font-size: 12px;"
                         "color: #86868B;"
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     mode_row.addWidget(status_label)
 
                     # Store references for later updates
                     self.operation_modes[mode_name] = {
-                        'indicator': mode_indicator,
-                        'label': mode_label,
-                        'status_label': status_label
+                        "indicator": mode_indicator,
+                        "label": mode_label,
+                        "status_label": status_label,
                     }
 
                     mode_card_layout.addLayout(mode_row)
@@ -541,7 +559,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(maint_section)
 
@@ -551,8 +569,7 @@ class SidebarPrototype(QWidget):
                 maint_divider = QFrame()
                 maint_divider.setFixedHeight(1)
                 maint_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(maint_divider)
 
@@ -564,7 +581,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
 
                 # Operational Statistics Container
@@ -581,7 +598,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 13px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 hours_row.addWidget(hours_label)
 
@@ -591,7 +608,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 hours_row.addWidget(self.hours_value)
                 hours_row.addStretch()
@@ -605,7 +622,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 13px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 last_op_row.addWidget(last_op_label)
 
@@ -615,7 +632,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 last_op_row.addWidget(self.last_op_value)
                 last_op_row.addStretch()
@@ -628,7 +645,7 @@ class SidebarPrototype(QWidget):
                     "color: #86868B;"
                     "background: transparent;"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 stats_layout.addWidget(upcoming_label)
 
@@ -637,7 +654,7 @@ class SidebarPrototype(QWidget):
                 maintenance_steps = [
                     ("Clean optics", "at 1,500 hrs"),
                     ("Replace flow cell", "at 2,000 hrs"),
-                    ("Calibration check", "every 250 hrs")
+                    ("Calibration check", "every 250 hrs"),
                 ]
 
                 for step, timing in maintenance_steps:
@@ -650,7 +667,7 @@ class SidebarPrototype(QWidget):
                         "font-size: 13px;"
                         "color: #1D1D1F;"
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     item_row.addWidget(bullet)
 
@@ -659,7 +676,7 @@ class SidebarPrototype(QWidget):
                         "font-size: 12px;"
                         "color: #1D1D1F;"
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     item_row.addWidget(step_label)
 
@@ -669,7 +686,7 @@ class SidebarPrototype(QWidget):
                         "color: #86868B;"
                         "background: transparent;"
                         "font-style: italic;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     item_row.addWidget(timing_label)
                     item_row.addStretch()
@@ -687,7 +704,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 debug_btn_layout = QVBoxLayout(debug_btn_container)
                 debug_btn_layout.setContentsMargins(12, 10, 12, 10)
@@ -710,7 +727,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "    background: #48484A;"
-                    "}"
+                    "}",
                 )
                 debug_btn_layout.addWidget(self.debug_log_btn)
                 tab_layout.addWidget(debug_btn_container)
@@ -725,7 +742,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(filter_section)
 
@@ -735,8 +752,7 @@ class SidebarPrototype(QWidget):
                 filter_divider = QFrame()
                 filter_divider.setFixedHeight(1)
                 filter_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(filter_divider)
 
@@ -748,7 +764,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 filter_card_layout = QVBoxLayout(filter_card)
                 filter_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -756,6 +772,7 @@ class SidebarPrototype(QWidget):
 
                 # Enable filtering checkbox
                 from PySide6.QtWidgets import QCheckBox, QSlider
+
                 filter_enable = QCheckBox("Enable data filtering")
                 filter_enable.setStyleSheet(
                     "QCheckBox {"
@@ -776,7 +793,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 filter_card_layout.addWidget(filter_enable)
 
@@ -788,7 +805,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 param_row.addWidget(param_label)
 
@@ -815,7 +832,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QSlider::handle:horizontal:disabled {"
                     "  background: #86868B;"
-                    "}"
+                    "}",
                 )
                 param_row.addWidget(filter_slider)
 
@@ -826,7 +843,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 param_row.addWidget(param_value)
 
@@ -847,7 +864,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(ref_section)
 
@@ -856,8 +873,7 @@ class SidebarPrototype(QWidget):
                 ref_divider = QFrame()
                 ref_divider.setFixedHeight(1)
                 ref_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(ref_divider)
 
@@ -869,7 +885,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 ref_card_layout = QVBoxLayout(ref_card)
                 ref_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -881,12 +897,13 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 ref_card_layout.addWidget(ref_desc)
 
                 # Reference Channel selection
                 from PySide6.QtWidgets import QComboBox
+
                 ref_channel_row = QHBoxLayout()
                 ref_channel_row.setSpacing(10)
                 ref_channel_label = QLabel("Reference:")
@@ -895,13 +912,15 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 ref_channel_row.addWidget(ref_channel_label)
                 ref_channel_row.addStretch()
 
                 ref_combo = QComboBox()
-                ref_combo.addItems(["None", "Channel A", "Channel B", "Channel C", "Channel D"])
+                ref_combo.addItems(
+                    ["None", "Channel A", "Channel B", "Channel C", "Channel D"],
+                )
                 ref_combo.setFixedWidth(120)
                 ref_combo.setStyleSheet(
                     "QComboBox {"
@@ -927,7 +946,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: white;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 ref_channel_row.addWidget(ref_combo)
                 ref_card_layout.addLayout(ref_channel_row)
@@ -939,7 +958,7 @@ class SidebarPrototype(QWidget):
                     "color: #86868B;"
                     "background: transparent;"
                     "font-style: italic;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 ref_card_layout.addWidget(ref_info)
 
@@ -958,7 +977,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(display_section)
 
@@ -970,7 +989,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "margin-top: 2px;"
                     "font-style: italic;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(display_note)
 
@@ -979,8 +998,7 @@ class SidebarPrototype(QWidget):
                 display_divider = QFrame()
                 display_divider.setFixedHeight(1)
                 display_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(display_divider)
 
@@ -992,7 +1010,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 display_card_layout = QVBoxLayout(display_card)
                 display_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -1002,7 +1020,13 @@ class SidebarPrototype(QWidget):
                 axis_selector_row = QHBoxLayout()
                 axis_selector_row.setSpacing(0)
 
-                from PySide6.QtWidgets import QComboBox, QLineEdit, QRadioButton, QButtonGroup
+                from PySide6.QtWidgets import (
+                    QButtonGroup,
+                    QComboBox,
+                    QLineEdit,
+                    QRadioButton,
+                )
+
                 axis_button_group = QButtonGroup()
                 axis_button_group.setExclusive(True)
 
@@ -1029,7 +1053,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:hover:!checked {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 axis_button_group.addButton(x_axis_btn, 0)
                 axis_selector_row.addWidget(x_axis_btn)
@@ -1055,7 +1079,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:hover:!checked {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 axis_button_group.addButton(y_axis_btn, 1)
                 axis_selector_row.addWidget(y_axis_btn)
@@ -1084,7 +1108,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 axis_selector_row.addWidget(grid_check)
 
@@ -1117,7 +1141,7 @@ class SidebarPrototype(QWidget):
                     "  background: #1D1D1F;"
                     "  border: 4px solid white;"
                     "  outline: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 scale_radio_group.addButton(auto_radio, 0)
                 display_card_layout.addWidget(auto_radio)
@@ -1148,7 +1172,7 @@ class SidebarPrototype(QWidget):
                     "  background: #1D1D1F;"
                     "  border: 4px solid white;"
                     "  outline: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 scale_radio_group.addButton(manual_radio, 1)
                 manual_layout.addWidget(manual_radio)
@@ -1163,7 +1187,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 inputs_row.addWidget(min_label)
 
@@ -1187,7 +1211,7 @@ class SidebarPrototype(QWidget):
                     "QLineEdit:disabled {"
                     "  background: rgba(0, 0, 0, 0.02);"
                     "  color: #86868B;"
-                    "}"
+                    "}",
                 )
                 inputs_row.addWidget(min_input)
 
@@ -1196,7 +1220,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 inputs_row.addWidget(max_label)
 
@@ -1220,7 +1244,7 @@ class SidebarPrototype(QWidget):
                     "QLineEdit:disabled {"
                     "  background: rgba(0, 0, 0, 0.02);"
                     "  color: #86868B;"
-                    "}"
+                    "}",
                 )
                 inputs_row.addWidget(max_input)
                 inputs_row.addStretch()
@@ -1234,7 +1258,7 @@ class SidebarPrototype(QWidget):
                 separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "border: none;"
-                    "margin: 8px 0px;"
+                    "margin: 8px 0px;",
                 )
                 display_card_layout.addWidget(separator)
 
@@ -1248,7 +1272,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 options_row.addWidget(channel_label)
 
@@ -1279,7 +1303,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: white;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 options_row.addWidget(channel_combo)
 
@@ -1289,7 +1313,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 options_row.addWidget(marker_label)
 
@@ -1320,7 +1344,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: white;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 options_row.addWidget(marker_combo)
 
@@ -1339,7 +1363,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(accessibility_section)
 
@@ -1348,8 +1372,7 @@ class SidebarPrototype(QWidget):
                 accessibility_divider = QFrame()
                 accessibility_divider.setFixedHeight(1)
                 accessibility_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(accessibility_divider)
 
@@ -1361,7 +1384,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 accessibility_card_layout = QVBoxLayout(accessibility_card)
                 accessibility_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -1388,18 +1411,20 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 accessibility_card_layout.addWidget(colorblind_check)
 
                 # Info text about colorblind palette
-                colorblind_info = QLabel("Uses optimized colors for deuteranopia and protanopia")
+                colorblind_info = QLabel(
+                    "Uses optimized colors for deuteranopia and protanopia",
+                )
                 colorblind_info.setStyleSheet(
                     "font-size: 11px;"
                     "color: #86868B;"
                     "background: transparent;"
                     "font-style: italic;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 accessibility_card_layout.addWidget(colorblind_info)
 
@@ -1415,7 +1440,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(graph_section)
 
@@ -1424,8 +1449,7 @@ class SidebarPrototype(QWidget):
                 graph_divider = QFrame()
                 graph_divider.setFixedHeight(1)
                 graph_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(graph_divider)
 
@@ -1437,7 +1461,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 graph_card_layout = QVBoxLayout(graph_card)
                 graph_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -1472,7 +1496,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:hover:!checked {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 graph_button_group.addButton(transmission_btn, 0)
                 graph_toggle_row.addWidget(transmission_btn)
@@ -1498,7 +1522,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:hover:!checked {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 graph_button_group.addButton(raw_data_btn, 1)
                 graph_toggle_row.addWidget(raw_data_btn)
@@ -1516,7 +1540,7 @@ class SidebarPrototype(QWidget):
                     "border-radius: 6px;"
                     "color: #86868B;"
                     "font-size: 12px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 graph_card_layout.addWidget(graph_placeholder)
 
@@ -1532,7 +1556,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(polarizer_led_section)
 
@@ -1541,8 +1565,7 @@ class SidebarPrototype(QWidget):
                 polarizer_led_divider = QFrame()
                 polarizer_led_divider.setFixedHeight(1)
                 polarizer_led_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(polarizer_led_divider)
 
@@ -1554,7 +1577,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 polarizer_led_card_layout = QVBoxLayout(polarizer_led_card)
                 polarizer_led_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -1567,7 +1590,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 polarizer_led_card_layout.addWidget(polarizer_label)
 
@@ -1580,7 +1603,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 polarizer_row.addWidget(s_position_label)
 
@@ -1599,7 +1622,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 polarizer_row.addWidget(s_position_input)
 
@@ -1611,7 +1634,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 polarizer_row.addWidget(p_position_label)
 
@@ -1630,7 +1653,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 polarizer_row.addWidget(p_position_input)
 
@@ -1644,7 +1667,7 @@ class SidebarPrototype(QWidget):
                 separator1.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "border: none;"
-                    "margin: 2px 0px;"
+                    "margin: 2px 0px;",
                 )
                 polarizer_led_card_layout.addWidget(separator1)
 
@@ -1655,7 +1678,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 polarizer_led_card_layout.addWidget(led_intensity_label)
 
@@ -1669,7 +1692,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #1D1D1F;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 channel_a_row.addWidget(channel_a_label)
 
@@ -1688,7 +1711,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 channel_a_row.addWidget(channel_a_input)
                 channel_a_row.addStretch()
@@ -1705,7 +1728,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #1D1D1F;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 channel_b_row.addWidget(channel_b_label)
 
@@ -1724,7 +1747,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 channel_b_row.addWidget(channel_b_input)
                 channel_b_row.addStretch()
@@ -1741,7 +1764,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #1D1D1F;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 channel_c_row.addWidget(channel_c_label)
 
@@ -1760,7 +1783,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 channel_c_row.addWidget(channel_c_input)
                 channel_c_row.addStretch()
@@ -1777,7 +1800,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #1D1D1F;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 channel_d_row.addWidget(channel_d_label)
 
@@ -1796,7 +1819,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 channel_d_row.addWidget(channel_d_input)
                 channel_d_row.addStretch()
@@ -1809,7 +1832,7 @@ class SidebarPrototype(QWidget):
                 separator2.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "border: none;"
-                    "margin: 4px 0px;"
+                    "margin: 4px 0px;",
                 )
                 polarizer_led_card_layout.addWidget(separator2)
 
@@ -1832,7 +1855,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: #48484A;"
-                    "}"
+                    "}",
                 )
                 polarizer_led_card_layout.addWidget(apply_settings_btn)
 
@@ -1848,7 +1871,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(unit_section)
 
@@ -1857,8 +1880,7 @@ class SidebarPrototype(QWidget):
                 unit_divider = QFrame()
                 unit_divider.setFixedHeight(1)
                 unit_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(unit_divider)
 
@@ -1870,7 +1892,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 unit_card_layout = QVBoxLayout(unit_card)
                 unit_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -1906,7 +1928,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:hover:!checked {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 unit_button_group.addButton(ru_btn, 0)
                 unit_toggle_row.addWidget(ru_btn)
@@ -1932,7 +1954,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:hover:!checked {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 unit_button_group.addButton(nm_btn, 1)
                 unit_toggle_row.addWidget(nm_btn)
@@ -1952,7 +1974,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(calibration_section)
 
@@ -1961,8 +1983,7 @@ class SidebarPrototype(QWidget):
                 calibration_divider = QFrame()
                 calibration_divider.setFixedHeight(1)
                 calibration_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(calibration_divider)
 
@@ -1974,7 +1995,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 calibration_card_layout = QVBoxLayout(calibration_card)
                 calibration_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -1999,7 +2020,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: #48484A;"
-                    "}"
+                    "}",
                 )
                 calibration_card_layout.addWidget(full_calibration_btn)
 
@@ -2022,7 +2043,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 calibration_card_layout.addWidget(simple_led_calibration_btn)
 
@@ -2045,7 +2066,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 calibration_card_layout.addWidget(oem_led_calibration_btn)
 
@@ -2060,7 +2081,7 @@ class SidebarPrototype(QWidget):
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
                     "  padding: 12px;"
-                    "}"
+                    "}",
                 )
                 signal_layout = QVBoxLayout(signal_card)
                 signal_layout.setContentsMargins(12, 12, 12, 12)
@@ -2072,7 +2093,7 @@ class SidebarPrototype(QWidget):
                     "font-weight: 600;"
                     "color: #1D1D1F;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 signal_layout.addWidget(signal_title)
 
@@ -2088,7 +2109,7 @@ class SidebarPrototype(QWidget):
                     "background: rgba(0, 0, 0, 0.06);"
                     "padding: 4px 12px;"
                     "border-radius: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 signal_status_layout.addWidget(signal_status)
                 signal_status_layout.addStretch()
@@ -2104,7 +2125,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 next_step_layout.addWidget(next_step_label)
                 next_step_layout.addStretch()
@@ -2117,7 +2138,7 @@ class SidebarPrototype(QWidget):
                     "padding: 3px 8px;"
                     "border-radius: 4px;"
                     "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+                    "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;",
                 )
                 next_step_layout.addWidget(countdown_label)
 
@@ -2127,7 +2148,10 @@ class SidebarPrototype(QWidget):
                 tab_layout.addSpacing(8)
 
                 # Section 1: Cycle Settings (Expanded by default)
-                cycle_settings_section = CollapsibleSection("Cycle Settings", is_expanded=True)
+                cycle_settings_section = CollapsibleSection(
+                    "Cycle Settings",
+                    is_expanded=True,
+                )
 
                 # Card container for cycle settings
                 cycle_settings_card = QFrame()
@@ -2135,7 +2159,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 cycle_settings_card_layout = QVBoxLayout(cycle_settings_card)
                 cycle_settings_card_layout.setContentsMargins(10, 6, 10, 6)
@@ -2152,13 +2176,16 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 type_row.addWidget(type_label)
 
                 from PySide6.QtWidgets import QComboBox
+
                 type_combo = QComboBox()
-                type_combo.addItems(["Auto-read", "Baseline", "Immobilization", "Concentration"])
+                type_combo.addItems(
+                    ["Auto-read", "Baseline", "Immobilization", "Concentration"],
+                )
                 type_combo.setCurrentIndex(0)
                 type_combo.setFixedWidth(140)
                 type_combo.setStyleSheet(
@@ -2185,7 +2212,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: #1D1D1F;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 type_row.addWidget(type_combo)
                 type_row.addStretch()
@@ -2203,7 +2230,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 length_row.addWidget(length_label)
 
@@ -2235,7 +2262,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: #1D1D1F;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 length_row.addWidget(length_combo)
                 length_row.addStretch()
@@ -2249,13 +2276,17 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 cycle_settings_card_layout.addWidget(note_label)
 
-                from PySide6.QtWidgets import QTextEdit
-                from PySide6.QtGui import QTextCharFormat, QColor, QSyntaxHighlighter, QTextDocument
                 from PySide6.QtCore import QRegularExpression
+                from PySide6.QtGui import (
+                    QColor,
+                    QSyntaxHighlighter,
+                    QTextCharFormat,
+                )
+                from PySide6.QtWidgets import QTextEdit
 
                 # Custom syntax highlighter for channel tags with concentration support
                 class ChannelTagHighlighter(QSyntaxHighlighter):
@@ -2271,11 +2302,17 @@ class SidebarPrototype(QWidget):
 
                     def highlightBlock(self, text):
                         # Highlight [A:10], [B:50], [ALL:20] concentration tags (green)
-                        conc_pattern = QRegularExpression(r"\[(A|B|C|D|ALL):(\d+\.?\d*)\]")
+                        conc_pattern = QRegularExpression(
+                            r"\[(A|B|C|D|ALL):(\d+\.?\d*)\]",
+                        )
                         iterator = conc_pattern.globalMatch(text)
                         while iterator.hasNext():
                             match = iterator.next()
-                            self.setFormat(match.capturedStart(), match.capturedLength(), self.conc_format)
+                            self.setFormat(
+                                match.capturedStart(),
+                                match.capturedLength(),
+                                self.conc_format,
+                            )
 
                         # Highlight [A], [B], [C], [D], [ALL] tags without concentration (blue)
                         tag_pattern = QRegularExpression(r"\[(A|B|C|D|ALL)\]")
@@ -2284,11 +2321,19 @@ class SidebarPrototype(QWidget):
                             match = iterator.next()
                             # Only highlight if not already highlighted as concentration
                             start = match.capturedStart()
-                            if self.format(start).foreground().color() != QColor("#34C759"):
-                                self.setFormat(start, match.capturedLength(), self.tag_format)
+                            if self.format(start).foreground().color() != QColor(
+                                "#34C759",
+                            ):
+                                self.setFormat(
+                                    start,
+                                    match.capturedLength(),
+                                    self.tag_format,
+                                )
 
                 note_input = QTextEdit()
-                note_input.setPlaceholderText("Use tags: [A] [B] [C] [D] [ALL] or with concentration [A:10] [ALL:50]  (max 250 chars)")
+                note_input.setPlaceholderText(
+                    "Use tags: [A] [B] [C] [D] [ALL] or with concentration [A:10] [ALL:50]  (max 250 chars)",
+                )
                 note_input.setMaximumHeight(60)
                 note_input.setStyleSheet(
                     "QTextEdit {"
@@ -2302,7 +2347,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QTextEdit:focus {"
                     "  border: 2px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
 
                 # Apply syntax highlighter to detect and highlight channel tags
@@ -2314,7 +2359,9 @@ class SidebarPrototype(QWidget):
                     if len(text) > 250:
                         note_input.setPlainText(text[:250])
                         note_input.moveCursor(note_input.textCursor().End)
-                    char_count_label.setText(f"{len(note_input.toPlainText())}/250 characters")
+                    char_count_label.setText(
+                        f"{len(note_input.toPlainText())}/250 characters",
+                    )
 
                 note_input.textChanged.connect(update_note_counter)
                 cycle_settings_card_layout.addWidget(note_input)
@@ -2328,18 +2375,20 @@ class SidebarPrototype(QWidget):
                     "font-size: 11px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 note_info_row.addWidget(char_count_label)
                 note_info_row.addStretch()
 
-                tag_help_label = QLabel("💡 [A] [B] [C] [D] [ALL] channels | [A:10] [ALL:50] with concentration")
+                tag_help_label = QLabel(
+                    "💡 [A] [B] [C] [D] [ALL] channels | [A:10] [ALL:50] with concentration",
+                )
                 tag_help_label.setStyleSheet(
                     "font-size: 11px;"
                     "color: #86868B;"
                     "background: transparent;"
                     "font-style: italic;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 note_info_row.addWidget(tag_help_label)
 
@@ -2356,13 +2405,25 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 units_row.addWidget(units_label)
 
                 from PySide6.QtWidgets import QComboBox
+
                 units_combo = QComboBox()
-                units_combo.addItems(["M (Molar)", "mM (Millimolar)", "µM (Micromolar)", "nM (Nanomolar)", "pM (Picomolar)", "mg/mL", "µg/mL", "ng/mL"])
+                units_combo.addItems(
+                    [
+                        "M (Molar)",
+                        "mM (Millimolar)",
+                        "µM (Micromolar)",
+                        "nM (Nanomolar)",
+                        "pM (Picomolar)",
+                        "mg/mL",
+                        "µg/mL",
+                        "ng/mL",
+                    ],
+                )
                 units_combo.setCurrentIndex(3)  # Default to nM
                 units_combo.setFixedWidth(140)
                 units_combo.setStyleSheet(
@@ -2389,20 +2450,22 @@ class SidebarPrototype(QWidget):
                     "  selection-color: #1D1D1F;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 units_row.addWidget(units_combo)
                 units_row.addStretch()
 
                 # Info about units applying to tags
-                units_info = QLabel("Units apply to concentrations in tags (e.g., [A:10] = 10 nM)")
+                units_info = QLabel(
+                    "Units apply to concentrations in tags (e.g., [A:10] = 10 nM)",
+                )
                 units_info.setStyleSheet(
                     "font-size: 11px;"
                     "color: #86868B;"
                     "background: transparent;"
                     "font-style: italic;"
                     "margin-top: 2px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 cycle_settings_card_layout.addLayout(units_row)
                 cycle_settings_card_layout.addWidget(units_info)
@@ -2413,7 +2476,7 @@ class SidebarPrototype(QWidget):
                 start_separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "border: none;"
-                    "margin: 8px 0px;"
+                    "margin: 8px 0px;",
                 )
                 cycle_settings_card_layout.addWidget(start_separator)
 
@@ -2444,7 +2507,7 @@ class SidebarPrototype(QWidget):
                     "QPushButton:disabled {"
                     "  background: rgba(0, 0, 0, 0.1);"
                     "  color: #86868B;"
-                    "}"
+                    "}",
                 )
                 buttons_row.addWidget(start_now_btn)
 
@@ -2471,7 +2534,7 @@ class SidebarPrototype(QWidget):
                     "QPushButton:disabled {"
                     "  background: rgba(0, 0, 0, 0.1);"
                     "  color: #86868B;"
-                    "}"
+                    "}",
                 )
                 buttons_row.addWidget(add_to_queue_btn)
                 buttons_row.addStretch()
@@ -2479,7 +2542,9 @@ class SidebarPrototype(QWidget):
                 cycle_settings_card_layout.addLayout(buttons_row)
 
                 # Help text
-                help_text = QLabel("▶ Start Now: Begin this cycle immediately | + Add to Queue: Plan multiple cycles (up to 5)")
+                help_text = QLabel(
+                    "▶ Start Now: Begin this cycle immediately | + Add to Queue: Plan multiple cycles (up to 5)",
+                )
                 help_text.setWordWrap(True)
                 help_text.setStyleSheet(
                     "font-size: 11px;"
@@ -2487,7 +2552,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "font-style: italic;"
                     "margin-top: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 cycle_settings_card_layout.addWidget(help_text)
 
@@ -2497,7 +2562,10 @@ class SidebarPrototype(QWidget):
                 tab_layout.addSpacing(8)
 
                 # Section 2: Cycle History & Queue (Expanded by default)
-                summary_section = CollapsibleSection("Cycle History & Queue", is_expanded=True)
+                summary_section = CollapsibleSection(
+                    "Cycle History & Queue",
+                    is_expanded=True,
+                )
 
                 # Start Run Button (shown when queue has items)
                 start_run_btn = QPushButton("▶ Start Queued Run")
@@ -2518,19 +2586,23 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: #636366;"
-                    "}"
+                    "}",
                 )
-                start_run_btn.setVisible(False)  # Hidden by default, shown when queue has items
+                start_run_btn.setVisible(
+                    False,
+                )  # Hidden by default, shown when queue has items
                 tab_layout.addWidget(start_run_btn)
 
                 # Queue status label
-                queue_status_label = QLabel("Queue: 0 cycles | Click 'Add to Queue' to plan batch runs")
+                queue_status_label = QLabel(
+                    "Queue: 0 cycles | Click 'Add to Queue' to plan batch runs",
+                )
                 queue_status_label.setStyleSheet(
                     "font-size: 11px;"
                     "color: #86868B;"
                     "background: transparent;"
                     "margin-bottom: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(queue_status_label)
 
@@ -2540,17 +2612,20 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 summary_card_layout = QVBoxLayout(summary_card)
                 summary_card_layout.setContentsMargins(12, 8, 12, 8)
                 summary_card_layout.setSpacing(8)
 
                 # Summary table
-                from PySide6.QtWidgets import QTableWidget, QHeaderView
+                from PySide6.QtWidgets import QHeaderView, QTableWidget
+
                 summary_table = QTableWidget(5, 3)
                 summary_table.setHorizontalHeaderLabels(["Type", "Note", "Start Time"])
-                summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+                summary_table.horizontalHeader().setSectionResizeMode(
+                    QHeaderView.ResizeMode.Stretch,
+                )
                 summary_table.setMaximumHeight(200)
                 summary_table.setStyleSheet(
                     "QTableWidget {"
@@ -2577,11 +2652,12 @@ class SidebarPrototype(QWidget):
                     "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
                     "  font-weight: 600;"
                     "  font-size: 11px;"
-                    "}"
+                    "}",
                 )
 
                 # Populate with sample data
                 from PySide6.QtWidgets import QTableWidgetItem
+
                 sample_data = [
                     ("Baseline", "Initial baseline [A][B][C][D]", "00:00:00"),
                     ("Concentration", "Sample A 10nM [A][B]", "00:02:30"),
@@ -2602,12 +2678,14 @@ class SidebarPrototype(QWidget):
                 table_footer_row.setSpacing(10)
 
                 # Info legend
-                info_legend = QLabel("Showing last 5 cycles | Use tags [A] [B] [C] [D] [ALL] or [A:10] [B:50] [ALL:20] with concentrations")
+                info_legend = QLabel(
+                    "Showing last 5 cycles | Use tags [A] [B] [C] [D] [ALL] or [A:10] [B:50] [ALL:20] with concentrations",
+                )
                 info_legend.setStyleSheet(
                     "font-size: 11px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 table_footer_row.addWidget(info_legend)
                 table_footer_row.addStretch()
@@ -2631,7 +2709,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: #8E8E93;"
-                    "}"
+                    "}",
                 )
                 table_footer_row.addWidget(open_table_btn)
 
@@ -2650,7 +2728,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(data_selection_section)
 
@@ -2659,8 +2737,7 @@ class SidebarPrototype(QWidget):
                 data_selection_divider = QFrame()
                 data_selection_divider.setFixedHeight(1)
                 data_selection_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(data_selection_divider)
 
@@ -2672,7 +2749,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 data_selection_card_layout = QVBoxLayout(data_selection_card)
                 data_selection_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -2700,7 +2777,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 data_selection_card_layout.addWidget(raw_data_check)
 
@@ -2725,7 +2802,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 data_selection_card_layout.addWidget(processed_data_check)
 
@@ -2750,7 +2827,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 data_selection_card_layout.addWidget(cycle_segments_check)
 
@@ -2775,7 +2852,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 data_selection_card_layout.addWidget(summary_table_check)
 
@@ -2785,7 +2862,7 @@ class SidebarPrototype(QWidget):
                 time_separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "border: none;"
-                    "margin: 4px 0px;"
+                    "margin: 4px 0px;",
                 )
                 data_selection_card_layout.addWidget(time_separator)
 
@@ -2794,12 +2871,19 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 data_selection_card_layout.addWidget(time_range_label)
 
                 time_range_combo = QComboBox()
-                time_range_combo.addItems(["Full Experiment", "Current View", "Selected Cycles", "Custom Range..."])
+                time_range_combo.addItems(
+                    [
+                        "Full Experiment",
+                        "Current View",
+                        "Selected Cycles",
+                        "Custom Range...",
+                    ],
+                )
                 time_range_combo.setStyleSheet(
                     "QComboBox {"
                     "  background: white;"
@@ -2824,7 +2908,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: #1D1D1F;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 data_selection_card_layout.addWidget(time_range_combo)
 
@@ -2840,7 +2924,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(channel_section)
 
@@ -2849,8 +2933,7 @@ class SidebarPrototype(QWidget):
                 channel_divider = QFrame()
                 channel_divider.setFixedHeight(1)
                 channel_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(channel_divider)
 
@@ -2862,7 +2945,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 channel_card_layout = QVBoxLayout(channel_card)
                 channel_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -2894,7 +2977,7 @@ class SidebarPrototype(QWidget):
                         "QCheckBox::indicator:checked {"
                         "  background: #1D1D1F;"
                         "  border: 1px solid #1D1D1F;"
-                        "}"
+                        "}",
                     )
                     channel_row.addWidget(ch_check)
 
@@ -2921,7 +3004,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 channel_card_layout.addWidget(select_all_btn)
 
@@ -2937,7 +3020,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(format_section)
 
@@ -2946,8 +3029,7 @@ class SidebarPrototype(QWidget):
                 format_divider = QFrame()
                 format_divider.setFixedHeight(1)
                 format_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(format_divider)
 
@@ -2959,14 +3041,15 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 format_card_layout = QVBoxLayout(format_card)
                 format_card_layout.setContentsMargins(12, 10, 12, 10)
                 format_card_layout.setSpacing(6)
 
                 # Format radio buttons
-                from PySide6.QtWidgets import QRadioButton, QButtonGroup
+                from PySide6.QtWidgets import QButtonGroup, QRadioButton
+
                 format_group = QButtonGroup()
 
                 excel_radio = QRadioButton("Excel (.xlsx) - Multi-tab workbook")
@@ -2990,7 +3073,7 @@ class SidebarPrototype(QWidget):
                     "QRadioButton::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 format_group.addButton(excel_radio)
                 format_card_layout.addWidget(excel_radio)
@@ -3015,7 +3098,7 @@ class SidebarPrototype(QWidget):
                     "QRadioButton::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 format_group.addButton(csv_radio)
                 format_card_layout.addWidget(csv_radio)
@@ -3040,7 +3123,7 @@ class SidebarPrototype(QWidget):
                     "QRadioButton::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 format_group.addButton(json_radio)
                 format_card_layout.addWidget(json_radio)
@@ -3065,7 +3148,7 @@ class SidebarPrototype(QWidget):
                     "QRadioButton::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 format_group.addButton(hdf5_radio)
                 format_card_layout.addWidget(hdf5_radio)
@@ -3082,7 +3165,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(options_section)
 
@@ -3091,8 +3174,7 @@ class SidebarPrototype(QWidget):
                 options_divider = QFrame()
                 options_divider.setFixedHeight(1)
                 options_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(options_divider)
 
@@ -3104,14 +3186,16 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 options_card_layout = QVBoxLayout(options_card)
                 options_card_layout.setContentsMargins(12, 10, 12, 10)
                 options_card_layout.setSpacing(8)
 
                 # Options checkboxes
-                metadata_check = QCheckBox("Include Metadata (instrument settings, calibration)")
+                metadata_check = QCheckBox(
+                    "Include Metadata (instrument settings, calibration)",
+                )
                 metadata_check.setChecked(True)
                 metadata_check.setStyleSheet(
                     "QCheckBox {"
@@ -3132,7 +3216,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 options_card_layout.addWidget(metadata_check)
 
@@ -3157,7 +3241,7 @@ class SidebarPrototype(QWidget):
                     "QCheckBox::indicator:checked {"
                     "  background: #1D1D1F;"
                     "  border: 1px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 options_card_layout.addWidget(events_check)
 
@@ -3170,7 +3254,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 precision_row.addWidget(precision_label)
 
@@ -3202,7 +3286,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: #1D1D1F;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 precision_row.addWidget(precision_combo)
                 precision_row.addStretch()
@@ -3217,12 +3301,14 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "  background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 timestamp_row.addWidget(timestamp_label)
 
                 timestamp_combo = QComboBox()
-                timestamp_combo.addItems(["Relative (00:00:00)", "Absolute (datetime)", "Elapsed seconds"])
+                timestamp_combo.addItems(
+                    ["Relative (00:00:00)", "Absolute (datetime)", "Elapsed seconds"],
+                )
                 timestamp_combo.setFixedWidth(180)
                 timestamp_combo.setStyleSheet(
                     "QComboBox {"
@@ -3248,7 +3334,7 @@ class SidebarPrototype(QWidget):
                     "  selection-color: #1D1D1F;"
                     "  outline: none;"
                     "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 timestamp_row.addWidget(timestamp_combo)
                 timestamp_row.addStretch()
@@ -3266,7 +3352,7 @@ class SidebarPrototype(QWidget):
                     "color: #1D1D1F;"
                     "background: transparent;"
                     "margin-top: 8px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(file_section)
 
@@ -3275,8 +3361,7 @@ class SidebarPrototype(QWidget):
                 file_divider = QFrame()
                 file_divider.setFixedHeight(1)
                 file_divider.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.1);"
-                    "border: none;"
+                    "background: rgba(0, 0, 0, 0.1);border: none;",
                 )
                 tab_layout.addWidget(file_divider)
 
@@ -3288,7 +3373,7 @@ class SidebarPrototype(QWidget):
                     "QFrame {"
                     "  background: rgba(0, 0, 0, 0.03);"
                     "  border-radius: 8px;"
-                    "}"
+                    "}",
                 )
                 file_card_layout = QVBoxLayout(file_card)
                 file_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -3300,7 +3385,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 file_card_layout.addWidget(filename_label)
 
@@ -3318,7 +3403,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 2px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 file_card_layout.addWidget(filename_input)
 
@@ -3328,7 +3413,7 @@ class SidebarPrototype(QWidget):
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 file_card_layout.addWidget(dest_label)
 
@@ -3349,7 +3434,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QLineEdit:focus {"
                     "  border: 2px solid #1D1D1F;"
-                    "}"
+                    "}",
                 )
                 dest_row.addWidget(dest_input)
 
@@ -3372,7 +3457,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.1);"
-                    "}"
+                    "}",
                 )
                 dest_row.addWidget(browse_btn)
                 file_card_layout.addLayout(dest_row)
@@ -3385,7 +3470,7 @@ class SidebarPrototype(QWidget):
                     "background: transparent;"
                     "font-style: italic;"
                     "margin-top: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 file_card_layout.addWidget(filesize_label)
 
@@ -3412,7 +3497,7 @@ class SidebarPrototype(QWidget):
                     "QPushButton:disabled {"
                     "  background: rgba(0, 0, 0, 0.1);"
                     "  color: #86868B;"
-                    "}"
+                    "}",
                 )
                 file_card_layout.addWidget(export_btn)
 
@@ -3428,7 +3513,7 @@ class SidebarPrototype(QWidget):
                     "color: #86868B;"
                     "background: transparent;"
                     "margin-top: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(presets_label)
 
@@ -3457,7 +3542,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 preset_row.addWidget(quick_csv_btn)
 
@@ -3480,7 +3565,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 preset_row.addWidget(analysis_btn)
 
@@ -3503,7 +3588,7 @@ class SidebarPrototype(QWidget):
                     "}"
                     "QPushButton:pressed {"
                     "  background: rgba(0, 0, 0, 0.06);"
-                    "}"
+                    "}",
                 )
                 preset_row.addWidget(publication_btn)
                 preset_row.addStretch()
@@ -3511,7 +3596,13 @@ class SidebarPrototype(QWidget):
                 tab_layout.addLayout(preset_row)
 
             # Only add placeholder content for remaining tabs
-            elif label not in ["Device Status", "Graphic Control", "Settings", "Static", "Export"]:
+            elif label not in [
+                "Device Status",
+                "Graphic Control",
+                "Settings",
+                "Static",
+                "Export",
+            ]:
                 # Placeholder content for other tabs
                 placeholder = QLabel("(Placeholder content)")
                 placeholder.setStyleSheet(
@@ -3519,7 +3610,7 @@ class SidebarPrototype(QWidget):
                     "color: #86868B;"
                     "background: transparent;"
                     "margin-top: 20px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(placeholder)
 
@@ -3558,13 +3649,15 @@ class SidebarPrototype(QWidget):
             "QTabBar::tab:hover:!selected {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
         main_layout.addWidget(self.tab_widget, 1)
         main_layout.setSpacing(0)
 
+
 class MainWindowPrototype(QMainWindow):
     """Prototype of the main window UI."""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ezControl UI Prototype")
@@ -3575,6 +3668,7 @@ class MainWindowPrototype(QMainWindow):
         self.record_button = None
         self._setup_ui()
         self._connect_signals()
+
     def _setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -3594,7 +3688,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: rgba(0, 0, 0, 0.15);"
-            "}"
+            "}",
         )
 
         self.sidebar = SidebarPrototype()
@@ -3612,6 +3706,7 @@ class MainWindowPrototype(QMainWindow):
 
         # Stacked widget to hold different content pages
         from PySide6.QtWidgets import QStackedWidget
+
         self.content_stack = QStackedWidget()
 
         # Create content for each tab
@@ -3674,7 +3769,7 @@ class MainWindowPrototype(QMainWindow):
                 "  background: rgba(46, 48, 227, 1.0);"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
 
             # Connect to switch page
@@ -3696,7 +3791,7 @@ class MainWindowPrototype(QMainWindow):
             "  border-radius: 4px;"
             "  padding: 4px 8px;"
             "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
-            "}"
+            "}",
         )
         timer_label.setVisible(False)  # Hidden until recording starts
         nav_layout.addWidget(timer_label)
@@ -3717,7 +3812,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #86868B;"
             "  font-size: 16px;"
             "  background: transparent;"
-            "}"
+            "}",
         )
         indicator_layout.addWidget(self.rec_status_dot)
 
@@ -3729,16 +3824,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  font-weight: 500;"
-            "}"
+            "}",
         )
         indicator_layout.addWidget(self.rec_status_text)
         indicator_layout.addStretch()
 
         self.recording_indicator.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.04);"
-            "  border-radius: 6px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.04);  border-radius: 6px;}",
         )
         nav_layout.addWidget(self.recording_indicator)
 
@@ -3767,7 +3859,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover:checked {"
             "  background: #E6342A;"
-            "}"
+            "}",
         )
         self.record_btn.setToolTip("Start/Stop Recording (Ctrl+R)")
         self.record_btn.clicked.connect(self._toggle_recording)
@@ -3777,9 +3869,14 @@ class MainWindowPrototype(QMainWindow):
         self.power_btn = QPushButton("⏻")
         self.power_btn.setCheckable(True)
         self.power_btn.setFixedSize(40, 40)
-        self.power_btn.setProperty("powerState", "disconnected")  # Track state: disconnected, searching, connected
+        self.power_btn.setProperty(
+            "powerState",
+            "disconnected",
+        )  # Track state: disconnected, searching, connected
         self._update_power_button_style()
-        self.power_btn.setToolTip("Power On Device (Ctrl+P)\nGray = Disconnected | Yellow = Searching | Green = Connected")
+        self.power_btn.setToolTip(
+            "Power On Device (Ctrl+P)\nGray = Disconnected | Yellow = Searching | Green = Connected",
+        )
         self.power_btn.clicked.connect(self._handle_power_toggle)
         nav_layout.addWidget(self.power_btn)
 
@@ -3789,10 +3886,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern)."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -3805,6 +3899,7 @@ class MainWindowPrototype(QMainWindow):
 
         # Create QSplitter for resizable graph panels (30/70 split)
         from PySide6.QtWidgets import QSplitter
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(8)
         splitter.setChildrenCollapsible(False)
@@ -3813,14 +3908,14 @@ class MainWindowPrototype(QMainWindow):
         top_graph = self._create_graph_container(
             "Full Experiment Timeline",
             height=200,
-            show_delta_spr=False
+            show_delta_spr=False,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
         bottom_graph = self._create_graph_container(
             "Cycle of Interest",
             height=400,
-            show_delta_spr=True
+            show_delta_spr=True,
         )
 
         splitter.addWidget(top_graph)
@@ -3847,7 +3942,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: #1D1D1F;"
-            "}"
+            "}",
         )
 
         content_layout.addWidget(splitter, 1)
@@ -3870,12 +3965,17 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  font-weight: 500;"
-            "}"
+            "}",
         )
         header_layout.addWidget(channels_label)
 
         # Channel toggles - consistent colors (Black, Red, Blue, Green)
-        for ch, color in [("A", "#1D1D1F"), ("B", "#FF3B30"), ("C", "#1D1D1F"), ("D", "#34C759")]:
+        for ch, color in [
+            ("A", "#1D1D1F"),
+            ("B", "#FF3B30"),
+            ("C", "#1D1D1F"),
+            ("D", "#34C759"),
+        ]:
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)
@@ -3896,7 +3996,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             header_layout.addWidget(ch_btn)
 
@@ -3913,7 +4013,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         # Add shadow
         shadow = QGraphicsDropShadowEffect()
@@ -3938,7 +4038,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         title_row.addWidget(title_label)
 
@@ -3946,7 +4046,9 @@ class MainWindowPrototype(QMainWindow):
 
         # Delta SPR signal display (only for Cycle of Interest graph)
         if show_delta_spr:
-            delta_display = QLabel("Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm")
+            delta_display = QLabel(
+                "Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm",
+            )
             delta_display.setStyleSheet(
                 "QLabel {"
                 "  background: rgba(0, 0, 0, 0.04);"
@@ -3957,14 +4059,14 @@ class MainWindowPrototype(QMainWindow):
                 "  color: #1D1D1F;"
                 "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
                 "  font-weight: 500;"
-                "}"
+                "}",
             )
             title_row.addWidget(delta_display)
 
         # Zoom/Reset controls
         control_buttons = [
             ("↻", "Reset View (Double-click)"),
-            ("+", "Zoom In (Scroll or drag box)")
+            ("+", "Zoom In (Scroll or drag box)"),
         ]
         for icon, tooltip in control_buttons:
             control_btn = QPushButton(icon)
@@ -3984,7 +4086,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.14);"
-                "}"
+                "}",
             )
             control_btn.setToolTip(tooltip)
             title_row.addWidget(control_btn)
@@ -3998,7 +4100,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_layout = QVBoxLayout(graph_area)
         graph_layout.setContentsMargins(8, 8, 8, 8)
@@ -4019,7 +4121,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  font-weight: 500;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         y_axis_label.setMaximumWidth(20)
         y_axis_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -4031,7 +4133,7 @@ class MainWindowPrototype(QMainWindow):
             "Grid: rgba(0,0,0,0.06)\n"
             "Data lines: 2px width\n"
             "Ch A (Black), Ch B (Red)\n"
-            "Ch C (Blue), Ch D (Green)"
+            "Ch C (Blue), Ch D (Green)",
         )
         graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         graph_placeholder.setStyleSheet(
@@ -4041,7 +4143,7 @@ class MainWindowPrototype(QMainWindow):
             "  line-height: 1.5;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         canvas_layout.addWidget(graph_placeholder, 1)
 
@@ -4053,7 +4155,9 @@ class MainWindowPrototype(QMainWindow):
         x_axis_layout.setContentsMargins(24, 4, 0, 0)
         x_axis_layout.setSpacing(0)
 
-        x_axis_label = QLabel("Time (seconds)" if not show_delta_spr else "Time (seconds) - Cycle View")
+        x_axis_label = QLabel(
+            "Time (seconds)" if not show_delta_spr else "Time (seconds) - Cycle View",
+        )
         x_axis_label.setStyleSheet(
             "QLabel {"
             "  font-size: 11px;"
@@ -4061,7 +4165,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  font-weight: 500;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         x_axis_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         x_axis_layout.addWidget(x_axis_label)
@@ -4077,17 +4181,14 @@ class MainWindowPrototype(QMainWindow):
         # Special handling for different tabs
         if tab_name == "Edits":
             return self._create_edits_content()
-        elif tab_name == "Analyze":
+        if tab_name == "Analyze":
             return self._create_analyze_content()
-        elif tab_name == "Report":
+        if tab_name == "Report":
             return self._create_report_content()
 
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -4097,10 +4198,7 @@ class MainWindowPrototype(QMainWindow):
         # Empty state message
         empty_icon = QLabel("📑")
         empty_icon.setStyleSheet(
-            "QLabel {"
-            "  font-size: 64px;"
-            "  background: transparent;"
-            "}"
+            "QLabel {  font-size: 64px;  background: transparent;}",
         )
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_icon)
@@ -4114,7 +4212,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  margin-top: 16px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_title)
@@ -4127,7 +4225,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  margin-top: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_desc)
@@ -4138,10 +4236,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Edits tab content with cycle data table and graph editing tools."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -4162,10 +4257,7 @@ class MainWindowPrototype(QMainWindow):
         """Create left panel with cycle data table and editing tools."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -4179,7 +4271,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4201,7 +4293,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         table_header.addWidget(table_title)
         table_header.addStretch()
@@ -4222,14 +4314,15 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         table_header.addWidget(filter_btn)
 
         table_layout.addLayout(table_header)
 
         # Table placeholder
-        from PySide6.QtWidgets import QTableWidget, QHeaderView
+        from PySide6.QtWidgets import QHeaderView, QTableWidget
+
         table = QTableWidget(10, 4)
         table.setHorizontalHeaderLabels(["Cycle", "Time", "Status", "Notes"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -4258,15 +4351,20 @@ class MainWindowPrototype(QMainWindow):
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
-            "}"
+            "}",
         )
 
         # Populate with sample data
         for row in range(10):
             from PySide6.QtWidgets import QTableWidgetItem
+
             table.setItem(row, 0, QTableWidgetItem(f"Cycle {row + 1}"))
             table.setItem(row, 1, QTableWidgetItem(f"{row * 30}s"))
-            table.setItem(row, 2, QTableWidgetItem("Active" if row % 3 != 0 else "Flagged"))
+            table.setItem(
+                row,
+                2,
+                QTableWidgetItem("Active" if row % 3 != 0 else "Flagged"),
+            )
             table.setItem(row, 3, QTableWidgetItem(""))
 
         table_layout.addWidget(table, 1)
@@ -4280,7 +4378,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4301,7 +4399,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         tools_layout.addWidget(tools_title)
 
@@ -4335,7 +4433,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.12);"
-                "}"
+                "}",
             )
             tools_grid.addWidget(tool_btn)
 
@@ -4363,7 +4461,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         action_buttons.addWidget(apply_btn)
 
@@ -4382,7 +4480,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
-            "}"
+            "}",
         )
         action_buttons.addWidget(reset_btn)
 
@@ -4396,10 +4494,7 @@ class MainWindowPrototype(QMainWindow):
         """Create right panel with primary graph and thumbnail selectors."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -4413,7 +4508,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4435,13 +4530,18 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_header.addWidget(graph_title)
         graph_header.addStretch()
 
         # Channel toggles (compact)
-        for ch, color in [("A", "#1D1D1F"), ("B", "#FF3B30"), ("C", "#1D1D1F"), ("D", "#34C759")]:
+        for ch, color in [
+            ("A", "#1D1D1F"),
+            ("B", "#FF3B30"),
+            ("C", "#1D1D1F"),
+            ("D", "#34C759"),
+        ]:
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)
@@ -4459,7 +4559,7 @@ class MainWindowPrototype(QMainWindow):
                 "QPushButton:!checked {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
             graph_header.addWidget(ch_btn)
 
@@ -4472,13 +4572,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_canvas_layout = QVBoxLayout(graph_canvas)
         graph_placeholder = QLabel(
             "[Primary Graph Canvas]\n\n"
             "Selected cycle data displayed here\n"
-            "Interactive editing enabled"
+            "Interactive editing enabled",
         )
         graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         graph_placeholder.setStyleSheet(
@@ -4487,7 +4587,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_canvas_layout.addWidget(graph_placeholder)
 
@@ -4502,7 +4602,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4523,7 +4623,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         thumbnails_layout.addWidget(thumb_label)
 
@@ -4551,7 +4651,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 122, 255, 0.2);"
-                "}"
+                "}",
             )
             thumb_grid.addWidget(thumb)
 
@@ -4565,10 +4665,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Analyze tab content with processed data graph, statistics, and kinetic analysis."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -4589,10 +4686,7 @@ class MainWindowPrototype(QMainWindow):
         """Create left panel with processed data and statistics graphs."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -4606,7 +4700,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4628,7 +4722,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_header.addWidget(graph_title)
         graph_header.addStretch()
@@ -4658,7 +4752,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             graph_header.addWidget(view_btn)
 
@@ -4671,13 +4765,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         canvas_layout = QVBoxLayout(graph_canvas)
         canvas_placeholder = QLabel(
             "[Processed Data Graph]\n\n"
             "Fitted curves with model overlay\n"
-            "Interactive zoom and pan enabled"
+            "Interactive zoom and pan enabled",
         )
         canvas_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         canvas_placeholder.setStyleSheet(
@@ -4686,7 +4780,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         canvas_layout.addWidget(canvas_placeholder)
         main_graph_layout.addWidget(graph_canvas, 1)
@@ -4700,7 +4794,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4722,7 +4816,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         stats_header.addWidget(stats_title)
         stats_header.addStretch()
@@ -4739,7 +4833,7 @@ class MainWindowPrototype(QMainWindow):
             "  font-size: 12px;"
             "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
-            "}"
+            "}",
         )
         stats_header.addWidget(r_squared)
 
@@ -4752,13 +4846,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         stats_canvas_layout = QVBoxLayout(stats_canvas)
         stats_placeholder = QLabel(
             "[Residuals / Chi-Square Plot]\n\n"
             "Statistical analysis visualization\n"
-            "Chi² = 1.23e-4, RMSE = 0.012"
+            "Chi² = 1.23e-4, RMSE = 0.012",
         )
         stats_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_placeholder.setStyleSheet(
@@ -4767,7 +4861,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         stats_canvas_layout.addWidget(stats_placeholder)
         stats_layout.addWidget(stats_canvas, 1)
@@ -4780,10 +4874,7 @@ class MainWindowPrototype(QMainWindow):
         """Create right panel with model selection, data table, and export options."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -4797,7 +4888,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4818,21 +4909,24 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(model_title)
 
         # Model selection dropdown
         from PySide6.QtWidgets import QComboBox
+
         model_dropdown = QComboBox()
-        model_dropdown.addItems([
-            "Langmuir 1:1",
-            "Two-State Binding",
-            "Bivalent Analyte",
-            "Mass Transport Limited",
-            "Heterogeneous Ligand",
-            "Custom Model"
-        ])
+        model_dropdown.addItems(
+            [
+                "Langmuir 1:1",
+                "Two-State Binding",
+                "Bivalent Analyte",
+                "Mass Transport Limited",
+                "Heterogeneous Ligand",
+                "Custom Model",
+            ],
+        )
         model_dropdown.setFixedHeight(36)
         model_dropdown.setStyleSheet(
             "QComboBox {"
@@ -4855,7 +4949,7 @@ class MainWindowPrototype(QMainWindow):
             "QComboBox::down-arrow {"
             "  image: none;"
             "  border: none;"
-            "}"
+            "}",
         )
         model_layout.addWidget(model_dropdown)
 
@@ -4877,7 +4971,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         model_layout.addWidget(fit_btn)
 
@@ -4891,7 +4985,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  margin-top: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(params_label)
 
@@ -4899,7 +4993,7 @@ class MainWindowPrototype(QMainWindow):
             "ka: Association rate constant\n"
             "kd: Dissociation rate constant\n"
             "KD: Equilibrium constant\n"
-            "Rmax: Maximum response"
+            "Rmax: Maximum response",
         )
         params_info.setStyleSheet(
             "QLabel {"
@@ -4908,7 +5002,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  line-height: 1.6;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(params_info)
 
@@ -4921,7 +5015,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -4943,7 +5037,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         data_header.addWidget(data_title)
         data_header.addStretch()
@@ -4963,18 +5057,25 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         data_header.addWidget(copy_btn)
 
         data_layout.addLayout(data_header)
 
         # Data table
-        from PySide6.QtWidgets import QTableWidget, QHeaderView
+        from PySide6.QtWidgets import QHeaderView, QTableWidget
+
         data_table = QTableWidget(4, 2)
         data_table.setHorizontalHeaderLabels(["Parameter", "Value"])
-        data_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        data_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        data_table.horizontalHeader().setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        data_table.horizontalHeader().setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch,
+        )
         data_table.setStyleSheet(
             "QTableWidget {"
             "  background: #FFFFFF;"
@@ -4996,16 +5097,17 @@ class MainWindowPrototype(QMainWindow):
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
-            "}"
+            "}",
         )
 
         # Sample data
         from PySide6.QtWidgets import QTableWidgetItem
+
         results = [
             ("ka (M⁻¹s⁻¹)", "1.23e5 ± 0.04e5"),
             ("kd (s⁻¹)", "3.45e-4 ± 0.12e-4"),
             ("KD (M)", "2.80e-9 ± 0.15e-9"),
-            ("Δ SPR (nm)", "0.45 ± 0.02")
+            ("Δ SPR (nm)", "0.45 ± 0.02"),
         ]
 
         for row, (param, value) in enumerate(results):
@@ -5023,7 +5125,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -5043,7 +5145,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         export_layout.addWidget(export_title)
 
@@ -5065,7 +5167,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
-            "}"
+            "}",
         )
         export_btns.addWidget(csv_btn)
 
@@ -5086,10 +5188,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Report tab content for generating PDF reports with graphs, tables, and notes."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -5110,10 +5209,7 @@ class MainWindowPrototype(QMainWindow):
         """Create left panel with report preview canvas."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -5131,7 +5227,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         header.addWidget(report_title)
         header.addStretch()
@@ -5156,7 +5252,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #CC2E25;"
-            "}"
+            "}",
         )
         header.addWidget(pdf_btn)
 
@@ -5169,7 +5265,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(12)
@@ -5185,10 +5281,7 @@ class MainWindowPrototype(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet(
-            "QScrollArea {"
-            "  border: none;"
-            "  background: transparent;"
-            "}"
+            "QScrollArea {  border: none;  background: transparent;}",
         )
 
         scroll_content = QWidget()
@@ -5207,7 +5300,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(title_edit)
 
@@ -5221,7 +5314,7 @@ class MainWindowPrototype(QMainWindow):
             "  padding: 4px 8px;"
             "  line-height: 1.6;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(info_label)
 
@@ -5233,7 +5326,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: rgba(0, 122, 255, 0.05);"
             "  border: 2px dashed rgba(0, 0, 0, 0.1);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_label = QLabel("[Graph Element]\n\nClick to insert graph")
         graph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5244,7 +5337,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  border: none;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_layout = QVBoxLayout(graph_placeholder)
         graph_layout.addWidget(graph_label)
@@ -5260,13 +5353,16 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(notes_label)
 
         from PySide6.QtWidgets import QTextEdit
+
         notes_edit = QTextEdit()
-        notes_edit.setPlaceholderText("Add experiment notes, observations, or conclusions...")
+        notes_edit.setPlaceholderText(
+            "Add experiment notes, observations, or conclusions...",
+        )
         notes_edit.setFixedHeight(120)
         notes_edit.setStyleSheet(
             "QTextEdit {"
@@ -5277,7 +5373,7 @@ class MainWindowPrototype(QMainWindow):
             "  font-size: 13px;"
             "  color: #1D1D1F;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(notes_edit)
 
@@ -5289,7 +5385,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: rgba(52, 199, 89, 0.05);"
             "  border: 2px dashed rgba(52, 199, 89, 0.3);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         table_label = QLabel("[Table Element]\n\nClick to insert data table")
         table_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5300,7 +5396,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  border: none;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         table_layout = QVBoxLayout(table_placeholder)
         table_layout.addWidget(table_label)
@@ -5319,10 +5415,7 @@ class MainWindowPrototype(QMainWindow):
         """Create right panel with report tools and content library."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -5336,7 +5429,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -5356,7 +5449,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         elements_layout.addWidget(elements_title)
 
@@ -5390,7 +5483,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.12);"
-                "}"
+                "}",
             )
             elements_layout.addWidget(elem_btn)
 
@@ -5403,7 +5496,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -5423,7 +5516,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(chart_title)
 
@@ -5450,7 +5543,7 @@ class MainWindowPrototype(QMainWindow):
                 "  background: #1D1D1F;"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
             chart_types.addWidget(type_btn)
 
@@ -5464,17 +5557,20 @@ class MainWindowPrototype(QMainWindow):
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(source_label)
 
         from PySide6.QtWidgets import QComboBox
+
         source_dropdown = QComboBox()
-        source_dropdown.addItems([
-            "Kinetic Results",
-            "Cycle Statistics",
-            "Custom Data"
-        ])
+        source_dropdown.addItems(
+            [
+                "Kinetic Results",
+                "Cycle Statistics",
+                "Custom Data",
+            ],
+        )
         source_dropdown.setFixedHeight(32)
         source_dropdown.setStyleSheet(
             "QComboBox {"
@@ -5485,7 +5581,7 @@ class MainWindowPrototype(QMainWindow):
             "  padding: 6px 10px;"
             "  font-size: 12px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(source_dropdown)
 
@@ -5504,7 +5600,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: #3A3A3C;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(create_chart_btn)
 
@@ -5517,7 +5613,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -5537,7 +5633,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         library_layout.addWidget(library_title)
 
@@ -5565,7 +5661,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "}"
+                "}",
             )
             library_layout.addWidget(item_btn)
 
@@ -5601,7 +5697,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Power On Device (Ctrl+P)\nGray = Disconnected")
         elif state == "searching":
@@ -5618,9 +5714,11 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: #E6B800;"
-                "}"
+                "}",
             )
-            self.power_btn.setToolTip("Searching for Device...\nYellow = Device Not Found\nClick to cancel")
+            self.power_btn.setToolTip(
+                "Searching for Device...\nYellow = Device Not Found\nClick to cancel",
+            )
         elif state == "connected":
             # Green - Device powered and connected
             self.power_btn.setStyleSheet(
@@ -5635,9 +5733,11 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: #2EAF4F;"
-                "}"
+                "}",
             )
-            self.power_btn.setToolTip("Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off")
+            self.power_btn.setToolTip(
+                "Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off",
+            )
 
     def _handle_power_toggle(self, checked):
         """Handle power button toggle with device search and warning dialog on power off."""
@@ -5651,6 +5751,7 @@ class MainWindowPrototype(QMainWindow):
 
             # Simulate device search with timer (in real implementation, this would be async device detection)
             from PySide6.QtCore import QTimer
+
             self.device_search_timer = QTimer()
             self.device_search_timer.setSingleShot(True)
             self.device_search_timer.timeout.connect(self._simulate_device_search)
@@ -5659,7 +5760,7 @@ class MainWindowPrototype(QMainWindow):
         elif current_state == "searching" and not checked:
             # Cancel search if user clicks while searching
             print("[PROTOTYPE] Device search cancelled by user")
-            if hasattr(self, 'device_search_timer'):
+            if hasattr(self, "device_search_timer"):
                 self.device_search_timer.stop()
             self.power_btn.setProperty("powerState", "disconnected")
             self._update_power_button_style()
@@ -5673,8 +5774,12 @@ class MainWindowPrototype(QMainWindow):
             warning.setWindowTitle("Power Off Device")
             warning.setIcon(QMessageBox.Icon.Warning)
             warning.setText("Are you sure you want to power off the device?")
-            warning.setInformativeText("The software will exit gracefully and the device will be powered down.")
-            warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+            warning.setInformativeText(
+                "The software will exit gracefully and the device will be powered down.",
+            )
+            warning.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
             warning.setDefaultButton(QMessageBox.StandardButton.Cancel)
 
             # Style the warning dialog
@@ -5707,7 +5812,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:default:hover {"
                 "  background: #E6342A;"
-                "}"
+                "}",
             )
 
             result = warning.exec()
@@ -5756,22 +5861,22 @@ class MainWindowPrototype(QMainWindow):
         """Reset all subunit status indicators to 'Not Ready' state."""
         for subunit_name in ["Sensor", "Optics", "Fluidics"]:
             if subunit_name in self.sidebar.subunit_status:
-                indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-                status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+                indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+                status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
                 # Gray indicator and "Not Ready" text
                 indicator.setStyleSheet(
                     "font-size: 10px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
         # Also disable all operation modes when disconnecting
@@ -5785,13 +5890,14 @@ class MainWindowPrototype(QMainWindow):
         Args:
             has_detector: True if a detector/spectrometer is connected
             has_pump: True if a pump controller is connected
+
         """
         # Static mode: Enabled when detector is connected
         if "Static" in self.sidebar.operation_modes:
             static_enabled = has_detector
-            indicator = self.sidebar.operation_modes["Static"]['indicator']
-            label = self.sidebar.operation_modes["Static"]['label']
-            status_label = self.sidebar.operation_modes["Static"]['status_label']
+            indicator = self.sidebar.operation_modes["Static"]["indicator"]
+            label = self.sidebar.operation_modes["Static"]["label"]
+            status_label = self.sidebar.operation_modes["Static"]["status_label"]
 
             if static_enabled:
                 # Green indicator and "Enabled" text
@@ -5799,20 +5905,20 @@ class MainWindowPrototype(QMainWindow):
                     "font-size: 10px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #1D1D1F;"  # Black when enabled
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Enabled")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
             else:
                 # Gray indicator and "Disabled" text
@@ -5820,28 +5926,28 @@ class MainWindowPrototype(QMainWindow):
                     "font-size: 10px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray when disabled
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Disabled")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
         # Flow mode: Enabled when BOTH detector AND pump are connected
         if "Flow" in self.sidebar.operation_modes:
             flow_enabled = has_detector and has_pump
-            indicator = self.sidebar.operation_modes["Flow"]['indicator']
-            label = self.sidebar.operation_modes["Flow"]['label']
-            status_label = self.sidebar.operation_modes["Flow"]['status_label']
+            indicator = self.sidebar.operation_modes["Flow"]["indicator"]
+            label = self.sidebar.operation_modes["Flow"]["label"]
+            status_label = self.sidebar.operation_modes["Flow"]["status_label"]
 
             if flow_enabled:
                 # Green indicator and "Enabled" text
@@ -5849,20 +5955,20 @@ class MainWindowPrototype(QMainWindow):
                     "font-size: 10px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #1D1D1F;"  # Black when enabled
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Enabled")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
             else:
                 # Gray indicator and "Disabled" text (or show reason)
@@ -5870,13 +5976,13 @@ class MainWindowPrototype(QMainWindow):
                     "font-size: 10px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray when disabled
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 # Show specific reason if detector is present but pump is missing
                 if has_detector and not has_pump:
@@ -5887,11 +5993,13 @@ class MainWindowPrototype(QMainWindow):
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
-        print(f"[PROTOTYPE] Operation Modes - Static: {'Enabled' if has_detector else 'Disabled'}, "
-              f"Flow: {'Enabled' if has_detector and has_pump else 'Disabled'}")
+        print(
+            f"[PROTOTYPE] Operation Modes - Static: {'Enabled' if has_detector else 'Disabled'}, "
+            f"Flow: {'Enabled' if has_detector and has_pump else 'Disabled'}",
+        )
 
     def _handle_scan_hardware(self):
         """Handle hardware scan button click."""
@@ -5915,7 +6023,12 @@ class MainWindowPrototype(QMainWindow):
 
         # Randomly find 0-3 devices
         num_devices = random.randint(0, 3)
-        device_types = ["Spectrometer", "Pump Controller", "Temperature Sensor", "Flow Meter"]
+        device_types = [
+            "Spectrometer",
+            "Pump Controller",
+            "Temperature Sensor",
+            "Flow Meter",
+        ]
 
         # Track what types of devices are connected
         has_detector = False
@@ -5933,14 +6046,16 @@ class MainWindowPrototype(QMainWindow):
                 elif device_type == "Pump Controller":
                     has_pump = True
 
-                self.sidebar.hw_device_labels[i].setText(f"• {device_type} ({device_id})")
+                self.sidebar.hw_device_labels[i].setText(
+                    f"• {device_type} ({device_id})",
+                )
                 self.sidebar.hw_device_labels[i].setStyleSheet(
                     "font-size: 13px;"
                     "color: #34C759;"  # Green for connected
                     "background: transparent;"
                     "margin-left: 12px;"
                     "margin-top: 4px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 self.sidebar.hw_device_labels[i].setVisible(True)
             else:
@@ -5974,8 +6089,8 @@ class MainWindowPrototype(QMainWindow):
             is_ready = random.choice([True, False])
 
             if subunit_name in self.sidebar.subunit_status:
-                indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-                status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+                indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+                status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
                 if is_ready:
                     # Green indicator and "Ready" text
@@ -5983,14 +6098,14 @@ class MainWindowPrototype(QMainWindow):
                         "font-size: 10px;"
                         "color: #34C759;"  # Green
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     status_label.setText("Ready")
                     status_label.setStyleSheet(
                         "font-size: 13px;"
                         "color: #34C759;"  # Green
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                 else:
                     # Gray indicator and "Not Ready" text
@@ -5998,17 +6113,19 @@ class MainWindowPrototype(QMainWindow):
                         "font-size: 10px;"
                         "color: #86868B;"  # Gray
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     status_label.setText("Not Ready")
                     status_label.setStyleSheet(
                         "font-size: 13px;"
                         "color: #86868B;"  # Gray
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
 
-                print(f"[PROTOTYPE] {subunit_name}: {'Ready' if is_ready else 'Not Ready'}")
+                print(
+                    f"[PROTOTYPE] {subunit_name}: {'Ready' if is_ready else 'Not Ready'}",
+                )
 
     def _update_scan_button_style(self):
         """Update scan button style based on scanning state."""
@@ -6030,7 +6147,7 @@ class MainWindowPrototype(QMainWindow):
                 "  margin-left: 12px;"
                 "  margin-top: 8px;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
+                "}",
             )
         else:
             # Normal state (blue/clickable)
@@ -6054,13 +6171,14 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: #48484A;"
-                "}"
+                "}",
             )
 
     def _handle_debug_log_download(self):
         """Handle debug log download button click."""
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
         import datetime
+
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         # Generate filename with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -6071,7 +6189,7 @@ class MainWindowPrototype(QMainWindow):
             self,
             "Save Debug Log",
             default_filename,
-            "Log Files (*.txt *.log);;All Files (*.*)"
+            "Log Files (*.txt *.log);;All Files (*.*)",
         )
 
         if file_path:
@@ -6137,7 +6255,7 @@ End of Debug Log
 """
 
                 # Write to file
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(debug_content)
 
                 # Show success message
@@ -6169,7 +6287,7 @@ End of Debug Log
                     "}"
                     "QPushButton:hover {"
                     "  background: #3A3A3C;"
-                    "}"
+                    "}",
                 )
                 msg.exec()
 
@@ -6181,7 +6299,7 @@ End of Debug Log
                 error_msg.setWindowTitle("Error")
                 error_msg.setIcon(QMessageBox.Icon.Critical)
                 error_msg.setText("Failed to save debug log")
-                error_msg.setInformativeText(f"Error: {str(e)}")
+                error_msg.setInformativeText(f"Error: {e!s}")
                 error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 error_msg.setStyleSheet(
                     "QMessageBox {"
@@ -6193,7 +6311,7 @@ End of Debug Log
                     "  border: none;"
                     "  border-radius: 6px;"
                     "  padding: 6px 16px;"
-                    "}"
+                    "}",
                 )
                 error_msg.exec()
 
@@ -6204,11 +6322,12 @@ End of Debug Log
         if not self.is_recording:
             # User pressed Record - show save dialog
             from PySide6.QtWidgets import QFileDialog
+
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Recording As",
                 "experiment_data.h5",
-                "HDF5 Files (*.h5);;CSV Files (*.csv);;All Files (*.*)"
+                "HDF5 Files (*.h5);;CSV Files (*.csv);;All Files (*.*)",
             )
 
             if file_path:
@@ -6222,9 +6341,11 @@ End of Debug Log
                     "  color: #FF3B30;"
                     "  font-size: 16px;"
                     "  background: transparent;"
-                    "}"
+                    "}",
                 )
-                self.rec_status_text.setText(f"Recording to: {file_path.split('/')[-1]}")
+                self.rec_status_text.setText(
+                    f"Recording to: {file_path.split('/')[-1]}",
+                )
                 self.rec_status_text.setStyleSheet(
                     "QLabel {"
                     "  font-size: 12px;"
@@ -6232,14 +6353,14 @@ End of Debug Log
                     "  background: transparent;"
                     "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                     "  font-weight: 600;"
-                    "}"
+                    "}",
                 )
                 self.recording_indicator.setStyleSheet(
                     "QFrame {"
                     "  background: rgba(255, 59, 48, 0.1);"
                     "  border: 1px solid rgba(255, 59, 48, 0.3);"
                     "  border-radius: 6px;"
-                    "}"
+                    "}",
                 )
             else:
                 # User cancelled - uncheck the button
@@ -6255,7 +6376,7 @@ End of Debug Log
                 "  color: #86868B;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
             self.rec_status_text.setText("Viewing (not saved)")
             self.rec_status_text.setStyleSheet(
@@ -6265,13 +6386,13 @@ End of Debug Log
                 "  background: transparent;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "  font-weight: 500;"
-                "}"
+                "}",
             )
             self.recording_indicator.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(0, 0, 0, 0.04);"
                 "  border-radius: 6px;"
-                "}"
+                "}",
             )
 
     def _connect_signals(self):
@@ -6290,5 +6411,3 @@ if __name__ == "__main__":
     window = MainWindowPrototype()
     window.show()
     sys.exit(app.exec())
-
-

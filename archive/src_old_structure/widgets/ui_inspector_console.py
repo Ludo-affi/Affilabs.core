@@ -1,18 +1,23 @@
 """Interactive UI Inspector Console - Access dev tools while app is running."""
 
-from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit,
-    QPushButton, QLabel, QSplitter
-)
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QTextCursor
 import sys
 from io import StringIO
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QTextCursor
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+)
+
 
 class UIInspectorConsole(QDialog):
-    """
-    Interactive Python console for inspecting and adjusting UI in real-time.
+    """Interactive Python console for inspecting and adjusting UI in real-time.
     Access with Ctrl+Shift+I or from Advanced menu.
     """
 
@@ -40,7 +45,9 @@ class UIInspectorConsole(QDialog):
         header_font.setPointSize(11)
         header_font.setBold(True)
         header.setFont(header_font)
-        header.setStyleSheet("padding: 5px; background: rgb(46, 48, 227); color: white;")
+        header.setStyleSheet(
+            "padding: 5px; background: rgb(46, 48, 227); color: white;",
+        )
         layout.addWidget(header)
 
         # Output display
@@ -67,7 +74,9 @@ class UIInspectorConsole(QDialog):
         # Command input
         command_row = QHBoxLayout()
         self.input = QLineEdit()
-        self.input.setPlaceholderText("e.g., inspect(mw.sidebar.device_widget, 'device')")
+        self.input.setPlaceholderText(
+            "e.g., inspect(mw.sidebar.device_widget, 'device')",
+        )
         self.input.setStyleSheet("""
             QLineEdit {
                 background-color: rgb(50, 50, 50);
@@ -113,7 +122,11 @@ class UIInspectorConsole(QDialog):
 
         self._add_quick_btn(quick_layout, "Help", "help()")
         self._add_quick_btn(quick_layout, "Tree", "tree(mw)")
-        self._add_quick_btn(quick_layout, "Device", "inspect(mw.sidebar.device_widget.device_status_widget, 'device_status')")
+        self._add_quick_btn(
+            quick_layout,
+            "Device",
+            "inspect(mw.sidebar.device_widget.device_status_widget, 'device_status')",
+        )
         self._add_quick_btn(quick_layout, "Sidebar", "inspect(mw.sidebar, 'sidebar')")
         self._add_quick_btn(quick_layout, "Clear", "clear()")
 
@@ -145,33 +158,38 @@ class UIInspectorConsole(QDialog):
     def _setup_namespace(self):
         """Setup the execution namespace with useful imports and references."""
         from widgets.ui_dev_helpers import (
-            inspect, inspect_layout, compare, adjust,
-            print_widget_tree, find_widget_by_name, get_all_widgets_of_type,
-            find_and_inspect
+            adjust,
+            compare,
+            find_and_inspect,
+            find_widget_by_name,
+            get_all_widgets_of_type,
+            inspect,
+            inspect_layout,
+            print_widget_tree,
         )
 
         self.namespace = {
             # Main window reference
-            'mw': self.mainwindow,
-
+            "mw": self.mainwindow,
             # UI dev helpers
-            'inspect': inspect,
-            'inspect_layout': inspect_layout,
-            'compare': compare,
-            'adjust': adjust,
-            'tree': print_widget_tree,
-            'find': find_widget_by_name,
-            'find_all': get_all_widgets_of_type,
-            'fi': find_and_inspect,  # Shortcut: fi(mw, 'widget_name')
-
+            "inspect": inspect,
+            "inspect_layout": inspect_layout,
+            "compare": compare,
+            "adjust": adjust,
+            "tree": print_widget_tree,
+            "find": find_widget_by_name,
+            "find_all": get_all_widgets_of_type,
+            "fi": find_and_inspect,  # Shortcut: fi(mw, 'widget_name')
             # Common Qt widgets
-            'QPushButton': __import__('PySide6.QtWidgets', fromlist=['QPushButton']).QPushButton,
-            'QLabel': __import__('PySide6.QtWidgets', fromlist=['QLabel']).QLabel,
-            'QWidget': __import__('PySide6.QtWidgets', fromlist=['QWidget']).QWidget,
-
+            "QPushButton": __import__(
+                "PySide6.QtWidgets",
+                fromlist=["QPushButton"],
+            ).QPushButton,
+            "QLabel": __import__("PySide6.QtWidgets", fromlist=["QLabel"]).QLabel,
+            "QWidget": __import__("PySide6.QtWidgets", fromlist=["QWidget"]).QWidget,
             # Helper functions
-            'help': self._show_help,
-            'clear': self._clear_output,
+            "help": self._show_help,
+            "clear": self._clear_output,
         }
 
     def _print_welcome(self):
@@ -277,6 +295,7 @@ EXAMPLES:
             if result is not None:
                 # Don't print widget objects directly - they show ugly repr
                 from PySide6.QtWidgets import QWidget
+
                 if not isinstance(result, QWidget):
                     self._append_output(str(result), "result")
 
@@ -308,17 +327,19 @@ EXAMPLES:
         """Append text with color coding."""
         colors = {
             "command": "#4A9EFF",  # Blue
-            "output": "#A8E6CF",   # Green
-            "result": "#FFD93D",   # Yellow
-            "error": "#FF6B6B",    # Red
-            "info": "#C3C3C3"      # Gray
+            "output": "#A8E6CF",  # Green
+            "result": "#FFD93D",  # Yellow
+            "error": "#FF6B6B",  # Red
+            "info": "#C3C3C3",  # Gray
         }
 
         color = colors.get(style, "#FFFFFF")
 
         cursor = self.output.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.insertHtml(f'<span style="color: {color};">{text.replace("<", "&lt;").replace(">", "&gt;")}</span><br>')
+        cursor.insertHtml(
+            f'<span style="color: {color};">{text.replace("<", "&lt;").replace(">", "&gt;")}</span><br>',
+        )
 
     def keyPressEvent(self, event):
         """Handle arrow keys for command history."""
@@ -338,14 +359,16 @@ EXAMPLES:
 
 
 def install_inspector_shortcut(mainwindow):
-    """
-    Install Ctrl+Shift+I shortcut to open UI inspector console.
+    """Install Ctrl+Shift+I shortcut to open UI inspector console.
     Call this in mainwindow.__init__()
     """
-    from PySide6.QtGui import QShortcut, QKeySequence
+    from PySide6.QtGui import QKeySequence, QShortcut
 
     def open_inspector():
-        if not hasattr(mainwindow, '_inspector_console') or mainwindow._inspector_console is None:
+        if (
+            not hasattr(mainwindow, "_inspector_console")
+            or mainwindow._inspector_console is None
+        ):
             mainwindow._inspector_console = UIInspectorConsole(mainwindow)
         mainwindow._inspector_console.show()
         mainwindow._inspector_console.raise_()

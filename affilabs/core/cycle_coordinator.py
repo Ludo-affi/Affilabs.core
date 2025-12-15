@@ -12,9 +12,6 @@ Extracted from main_simplified.py to improve modularity and testability.
 
 from __future__ import annotations
 
-from __future__ import annotations
-
-
 import datetime as dt
 from pathlib import Path
 from typing import Any
@@ -43,9 +40,7 @@ class CycleCoordinator(QObject):
 
         # Flagging system
         self._selected_channel: int | None = None  # 0-3 for A-D
-        self._flag_data: list[
-            dict[str, Any]
-        ] = []  # List of {channel, time, annotation} dicts
+        self._flag_data: list[dict[str, Any]] = []  # List of {channel, time, annotation} dicts
 
     def check_cycle_changed(self, start_time: float, stop_time: float) -> bool:
         """Check if cycle region has changed significantly.
@@ -125,9 +120,7 @@ class CycleCoordinator(QObject):
 
             # Create session-specific directory
             session_timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-            self._session_cycles_dir = (
-                Path(DATA_DIR) / "cycles" / f"session_{session_timestamp}"
-            )
+            self._session_cycles_dir = Path(DATA_DIR) / "cycles" / f"session_{session_timestamp}"
             self._session_cycles_dir.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"📁 Created cycles directory: {self._session_cycles_dir}")

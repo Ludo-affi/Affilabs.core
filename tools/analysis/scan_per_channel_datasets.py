@@ -14,34 +14,35 @@ and ~0.011 nm p-p around ~01:00.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
-import numpy as np
 
 # Ensure repository root is on sys.path for absolute imports
 import sys
+from pathlib import Path
 from pathlib import Path as _Path
+
+import numpy as np
+
 sys.path.append(str(_Path(__file__).resolve().parents[2]))
 
 from settings.settings import (
-    SPR_PEAK_EXPECTED_MIN,
     SPR_PEAK_EXPECTED_MAX,
+    SPR_PEAK_EXPECTED_MIN,
 )
 from utils.spr_data_processor import SPRDataProcessor
-
 
 DATA_DIR = Path("training_data") / "used_current"
 
 
-def load_npz_safe(path: Path) -> Dict[str, np.ndarray]:
+def load_npz_safe(path: Path) -> dict[str, np.ndarray]:
     data = np.load(path)
     return {k: data[k] for k in data.files}
 
 
-def pair_runs_by_timestamp_channel(base: Path) -> List[Tuple[str, str, Path, Path, Optional[Path]]]:
+def pair_runs_by_timestamp_channel(
+    base: Path,
+) -> list[tuple[str, str, Path, Path, Path | None]]:
     """Return list of (timestamp, channel, s_npz, p_npz, metadata_json)."""
-    runs: Dict[Tuple[str, str], Dict[str, Path]] = {}
+    runs: dict[tuple[str, str], dict[str, Path]] = {}
     for npz in base.glob("*_channel_*_s_mode.npz"):
         name = npz.name
         try:
@@ -60,7 +61,7 @@ def pair_runs_by_timestamp_channel(base: Path) -> List[Tuple[str, str, Path, Pat
             continue
         runs.setdefault((timestamp, channel), {})["p"] = npz
 
-    out: List[Tuple[str, str, Path, Path, Optional[Path]]] = []
+    out: list[tuple[str, str, Path, Path, Path | None]] = []
     for (ts, ch), files in sorted(runs.items()):
         s_npz = files.get("s")
         p_npz = files.get("p")
@@ -74,10 +75,19 @@ def pair_runs_by_timestamp_channel(base: Path) -> List[Tuple[str, str, Path, Pat
 def build_processor(wavelengths: np.ndarray) -> SPRDataProcessor:
     # Compute Fourier weights with helper to avoid mismatch
     fourier_weights = SPRDataProcessor.calculate_fourier_weights(len(wavelengths))
-    return SPRDataProcessor(wave_data=wavelengths, fourier_weights=fourier_weights, med_filt_win=5)
+    return SPRDataProcessor(
+        wave_data=wavelengths,
+        fourier_weights=fourier_weights,
+        med_filt_win=5,
+    )
 
 
-def compute_resonance_series(proc: SPRDataProcessor, wl: np.ndarray, s_npz: Path, p_npz: Path) -> Tuple[np.ndarray, np.ndarray]:
+def compute_resonance_series(
+    proc: SPRDataProcessor,
+    wl: np.ndarray,
+    s_npz: Path,
+    p_npz: Path,
+) -> tuple[np.ndarray, np.ndarray]:
     s = load_npz_safe(s_npz)
     p = load_npz_safe(p_npz)
 
@@ -117,15 +127,20 @@ def compute_resonance_series(proc: SPRDataProcessor, wl: np.ndarray, s_npz: Path
         s_corr = s_spectra[i] - s_dark
         p_corr = p_spectra[i] - p_dark
         # Calculate transmission percentage with denoise=True to apply dynamic SG
-        trans = proc.calculate_transmission(p_corr, s_corr, dark_noise=None, denoise=True)
+        trans = proc.calculate_transmission(
+            p_corr,
+            s_corr,
+            dark_noise=None,
+            denoise=True,
+        )
         # Restrict to expected range indices
-        pos_nm = proc.find_resonance_wavelength(trans, channel='a')
+        pos_nm = proc.find_resonance_wavelength(trans, channel="a")
         positions[i] = float(pos_nm) if np.isfinite(pos_nm) else np.nan
 
     return positions, t
 
 
-def summarize(x: np.ndarray) -> Dict[str, float]:
+def summarize(x: np.ndarray) -> dict[str, float]:
     x_clean = x[np.isfinite(x)]
     if x_clean.size == 0:
         return {"mean": np.nan, "std": np.nan, "p2p": np.nan, "n": 0}
@@ -144,7 +159,7 @@ def main():
         return
 
     print("Scanning per-channel runs in training_data/used_current ...\n")
-    results: List[Tuple[str, str, Dict[str, float], Optional[float]]] = []
+    results: list[tuple[str, str, dict[str, float], float | None]] = []
 
     for ts, ch, s_npz, p_npz, meta in pairs:
         # Load wavelengths from NPZ if present; otherwise skip to next
@@ -168,10 +183,16 @@ def main():
             except Exception:
                 print(f"Skipping {ts} ch {ch}: unable to infer wavelengths")
                 continue
-            wl = np.linspace(SPR_PEAK_EXPECTED_MIN - 40.0, SPR_PEAK_EXPECTED_MAX + 40.0, m)
+            wl = np.linspace(
+                SPR_PEAK_EXPECTED_MIN - 40.0,
+                SPR_PEAK_EXPECTED_MAX + 40.0,
+                m,
+            )
 
         # If NPZ wavelengths contain full range, mask to expected sensor range
-        mask = (wl >= (SPR_PEAK_EXPECTED_MIN - 40.0)) & (wl <= (SPR_PEAK_EXPECTED_MAX + 40.0))
+        mask = (wl >= (SPR_PEAK_EXPECTED_MIN - 40.0)) & (
+            wl <= (SPR_PEAK_EXPECTED_MAX + 40.0)
+        )
         wl_masked = wl[mask] if np.any(mask) else wl
 
         proc = build_processor(wavelengths=wl_masked)
@@ -182,27 +203,45 @@ def main():
             if meta is not None:
                 try:
                     m = json.loads(meta.read_text())
-                    bias_applied = m.get("processing_params", {}).get("bias_offset_applied_nm")
+                    bias_applied = m.get("processing_params", {}).get(
+                        "bias_offset_applied_nm",
+                    )
                 except Exception:
                     bias_applied = None
             results.append((ts, ch, stats, bias_applied))
-            print(f"{ts}  ch {ch}  n={stats['n']:3d}  mean={stats['mean']:.3f} nm  std={stats['std']*1000:.2f} pm  p-p={stats['p2p']*1000:.2f} pm"
-                  + (f"  (bias +{bias_applied:.3f} nm)" if bias_applied is not None else ""))
+            print(
+                f"{ts}  ch {ch}  n={stats['n']:3d}  mean={stats['mean']:.3f} nm  std={stats['std']*1000:.2f} pm  p-p={stats['p2p']*1000:.2f} pm"
+                + (
+                    f"  (bias +{bias_applied:.3f} nm)"
+                    if bias_applied is not None
+                    else ""
+                ),
+            )
         except Exception as e:
             print(f"{ts}  ch {ch}  ERROR: {e}")
 
     # Rank by std then p2p
-    ranked = sorted(results, key=lambda r: (np.inf if np.isnan(r[2]["std"]) else r[2]["std"], np.inf if np.isnan(r[2]["p2p"]) else r[2]["p2p"]))
+    ranked = sorted(
+        results,
+        key=lambda r: (
+            np.inf if np.isnan(r[2]["std"]) else r[2]["std"],
+            np.inf if np.isnan(r[2]["p2p"]) else r[2]["p2p"],
+        ),
+    )
     print("\nTop candidates by lowest std:")
     for ts, ch, stats, bias in ranked[:5]:
-        print(f"- {ts} ch {ch}  std={stats['std']*1000:.2f} pm  p-p={stats['p2p']*1000:.2f} pm  mean={stats['mean']:.3f} nm")
+        print(
+            f"- {ts} ch {ch}  std={stats['std']*1000:.2f} pm  p-p={stats['p2p']*1000:.2f} pm  mean={stats['mean']:.3f} nm",
+        )
 
     # Highlight runs near 01:00 specifically
-    near_1am = [r for r in results if r[0].split('_')[1].startswith('01')]
+    near_1am = [r for r in results if r[0].split("_")[1].startswith("01")]
     if near_1am:
         print("\nRuns near ~01:00:")
         for ts, ch, stats, _ in near_1am:
-            print(f"- {ts} ch {ch}  std={stats['std']*1000:.2f} pm  p-p={stats['p2p']*1000:.2f} pm  mean={stats['mean']:.3f} nm")
+            print(
+                f"- {ts} ch {ch}  std={stats['std']*1000:.2f} pm  p-p={stats['p2p']*1000:.2f} pm  mean={stats['mean']:.3f} nm",
+            )
 
 
 if __name__ == "__main__":

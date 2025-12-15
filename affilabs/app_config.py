@@ -8,8 +8,12 @@ LEAK_THRESHOLD_RATIO = 1.5  # intensity must be > dark_noise * ratio to be valid
 WAVELENGTH_TO_RU_CONVERSION = 355.0  # 1 nm wavelength shift = 355 RU (Response Units)
 
 # === Filtering Defaults ===
-DEFAULT_FILTER_ENABLED = False  # Disable filtering by default (SG filter already applied to transmission)
-DEFAULT_FILTER_STRENGTH = 3  # Strength 1 = minimal smoothing, 10 = maximum smoothing (3 = light smoothing)
+DEFAULT_FILTER_ENABLED = (
+    False  # Disable filtering by default (SG filter already applied to transmission)
+)
+DEFAULT_FILTER_STRENGTH = (
+    3  # Strength 1 = minimal smoothing, 10 = maximum smoothing (3 = light smoothing)
+)
 # Uses adaptive online filtering: windowed for live display, batch for cycle analysis
 
 # === Graph Display Settings ===
@@ -61,15 +65,25 @@ STATUS_UPDATE_INTERVAL_MS = 100  # milliseconds between status bar updates
 PROGRESS_BAR_UPDATE_MS = 100  # milliseconds between progress bar updates
 
 # === Live Data Performance Settings ===
-DEBUG_LOG_THROTTLE_FACTOR = 10  # Log debug messages every Nth acquisition (1=all, 10=every 10th)
-TRANSMISSION_UPDATE_INTERVAL = 1.0  # seconds between transmission spectrum updates (QC graphs)
-SENSORGRAM_DOWNSAMPLE_FACTOR = 1  # Show all points (1=all, 2=half) - no throttling for smooth 1 Hz updates
+DEBUG_LOG_THROTTLE_FACTOR = (
+    10  # Log debug messages every Nth acquisition (1=all, 10=every 10th)
+)
+TRANSMISSION_UPDATE_INTERVAL = (
+    1.0  # seconds between transmission spectrum updates (QC graphs)
+)
+SENSORGRAM_DOWNSAMPLE_FACTOR = (
+    1  # Show all points (1=all, 2=half) - no throttling for smooth 1 Hz updates
+)
 
 # Timeline graph (main sensorgram) is EVENT-DRIVEN via signal, not timer-based
 # Cycle of interest graph (bottom graph) uses timer for smooth cursor following
 CYCLE_OF_INTEREST_UPDATE_INTERVAL_MS = 33  # milliseconds = 30 Hz for bottom graph only
-ENABLE_TRANSMISSION_UPDATES_DEFAULT = True  # Enable transmission plot updates during live acquisition
-ENABLE_RAW_SPECTRUM_UPDATES_DEFAULT = True  # Enable raw spectrum plot updates during live acquisition
+ENABLE_TRANSMISSION_UPDATES_DEFAULT = (
+    True  # Enable transmission plot updates during live acquisition
+)
+ENABLE_RAW_SPECTRUM_UPDATES_DEFAULT = (
+    True  # Enable raw spectrum plot updates during live acquisition
+)
 
 # === Advanced Performance (Experimental) ===
 # ENABLE_OPENGL = False  # Set True to enable GPU acceleration (requires compatible drivers)

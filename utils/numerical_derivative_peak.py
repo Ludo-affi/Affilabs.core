@@ -1,5 +1,4 @@
-"""
-Numerical Derivative Peak Finding - EXACT OLD SOFTWARE METHOD
+"""Numerical Derivative Peak Finding - EXACT OLD SOFTWARE METHOD
 
 This is the EXACT algorithm from old software (line 1516-1539):
 1. Linear baseline subtraction
@@ -17,6 +16,7 @@ Date: 2025-10-21
 import numpy as np
 from scipy.fftpack import dst, idct
 from scipy.stats import linregress
+
 from utils.logger import logger
 
 
@@ -49,6 +49,7 @@ def find_peak_numerical_derivative(
 
     Returns:
         Peak wavelength in nm
+
     """
     try:
         # Step 1: Extract search region
@@ -71,6 +72,7 @@ def find_peak_numerical_derivative(
         # phi = pi/n * [1, 2, ..., n-1]
         # weights = phi / (1 + alpha * phi^2 * (1 + phi^2))
         from settings.settings import FOURIER_ALPHA
+
         alpha = FOURIER_ALPHA  # Get from settings (default: 2000)
         n = len(spec_region) - 1
         phi = np.pi / n * np.arange(1, n)
@@ -94,7 +96,7 @@ def find_peak_numerical_derivative(
         # Validate zero-crossing
         if zero_idx < window or zero_idx > len(derivative) - window:
             logger.warning(
-                f"Zero-crossing at edge (idx={zero_idx}/{len(derivative)}), using direct minimum"
+                f"Zero-crossing at edge (idx={zero_idx}/{len(derivative)}), using direct minimum",
             )
             min_idx = np.argmin(spec_region)
             return float(wl_region[min_idx])
@@ -126,7 +128,7 @@ def find_peak_numerical_derivative(
         if not (search_range[0] <= peak_wavelength <= search_range[1]):
             logger.warning(
                 f"Peak {peak_wavelength:.2f}nm outside range "
-                f"({search_range[0]}, {search_range[1]}), using zero-crossing"
+                f"({search_range[0]}, {search_range[1]}), using zero-crossing",
             )
             return float(wl_region[zero_idx])
 
@@ -147,7 +149,7 @@ def find_peak_numerical_derivative(
         if zero_idx < window or zero_idx > len(derivative) - window:
             logger.warning(
                 f"Zero-crossing at edge of search range (idx={zero_idx}/{len(derivative)}), "
-                "using direct minimum"
+                "using direct minimum",
             )
             min_idx = np.argmin(smoothed)
             return float(wl_region[min_idx])
@@ -161,7 +163,9 @@ def find_peak_numerical_derivative(
         deriv_fit = derivative[start:end]
 
         if len(wl_fit) < 10:
-            logger.warning("Too few points for linear regression, using zero-crossing index")
+            logger.warning(
+                "Too few points for linear regression, using zero-crossing index",
+            )
             return float(wl_region[zero_idx])
 
         # Fit line: derivative = slope * wavelength + intercept
@@ -180,13 +184,13 @@ def find_peak_numerical_derivative(
         if not (search_range[0] <= peak_wavelength <= search_range[1]):
             logger.warning(
                 f"Peak wavelength {peak_wavelength:.2f}nm outside search range "
-                f"{search_range}, using zero-crossing index"
+                f"{search_range}, using zero-crossing index",
             )
             return float(wl_region[zero_idx])
 
         logger.debug(
             f"Numerical derivative peak: λ={peak_wavelength:.3f}nm "
-            f"(zero_idx={zero_idx}, window=±{window}, R²={result.rvalue**2:.4f})"
+            f"(zero_idx={zero_idx}, window=±{window}, R²={result.rvalue**2:.4f})",
         )
 
         return float(peak_wavelength)

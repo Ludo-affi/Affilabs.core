@@ -1,9 +1,12 @@
 """Test if LEDs physically light even if query says 0."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def test_led_physical():
     """Test if LEDs physically light."""
@@ -23,12 +26,12 @@ def test_led_physical():
     pico._ser.reset_input_buffer()
     pico._ser.write(b"la\n")
     time.sleep(0.05)
-    print(f"Enable response: {repr(pico._ser.read(10))}")
+    print(f"Enable response: {pico._ser.read(10)!r}")
 
     pico._ser.reset_input_buffer()
     pico._ser.write(b"ba255\n")
     time.sleep(0.05)
-    print(f"Intensity response: {repr(pico._ser.read(10))}")
+    print(f"Intensity response: {pico._ser.read(10)!r}")
 
     print("\n>>> LOOK AT LED A - IS IT LIT? <<<")
     print("Waiting 5 seconds...")
@@ -38,7 +41,7 @@ def test_led_physical():
     pico._ser.reset_input_buffer()
     pico._ser.write(b"ia\n")
     time.sleep(0.05)
-    print(f"\nQuery LED A state: {repr(pico._ser.read(10))}")
+    print(f"\nQuery LED A state: {pico._ser.read(10)!r}")
 
     # Turn off
     pico._ser.write(b"ba000\n")
@@ -54,12 +57,12 @@ def test_led_physical():
     pico._ser.reset_input_buffer()
     pico._ser.write(b"ld\n")
     time.sleep(0.05)
-    print(f"Enable response: {repr(pico._ser.read(10))}")
+    print(f"Enable response: {pico._ser.read(10)!r}")
 
     pico._ser.reset_input_buffer()
     pico._ser.write(b"bd255\n")
     time.sleep(0.05)
-    print(f"Intensity response: {repr(pico._ser.read(10))}")
+    print(f"Intensity response: {pico._ser.read(10)!r}")
 
     print("\n>>> LOOK AT LED D - IS IT LIT? <<<")
     print("Waiting 5 seconds...")
@@ -69,7 +72,7 @@ def test_led_physical():
     pico._ser.reset_input_buffer()
     pico._ser.write(b"id\n")
     time.sleep(0.05)
-    print(f"\nQuery LED D state: {repr(pico._ser.read(10))}")
+    print(f"\nQuery LED D state: {pico._ser.read(10)!r}")
 
     # Turn off
     pico._ser.write(b"bd000\n")
@@ -78,6 +81,7 @@ def test_led_physical():
 
     pico.close()
     print("Test complete!")
+
 
 if __name__ == "__main__":
     test_led_physical()

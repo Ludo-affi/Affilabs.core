@@ -236,7 +236,10 @@ class DataExporter:
             raise
 
     def _record_export(
-        self, filepath: Path, format: ExportFormat, row_count: int,
+        self,
+        filepath: Path,
+        format: ExportFormat,
+        row_count: int,
     ) -> None:
         """Record exported file in manifest.
 
@@ -261,7 +264,10 @@ class DataExporter:
             logger.error(f"Failed to record export for {filepath}: {e}")
 
     def export_raw_data(
-        self, data: dict, metadata=None, references: list | None = None,
+        self,
+        data: dict,
+        metadata=None,
+        references: list | None = None,
     ) -> None:
         """Export raw sensorgram data with validation.
 
@@ -314,18 +320,23 @@ class DataExporter:
             # Write metadata header if available
             if metadata:
                 metadata.write_tracedrawer_header(
-                    writer, fieldnames, "Raw data", references,
+                    writer,
+                    fieldnames,
+                    "Raw data",
+                    references,
                 )
 
             # Build DataFrame for vectorized writing
             data_dict = {}
             for i, ch in enumerate(CH_LIST):
                 data_dict[f"X_RawData{ch.upper()}"] = np.round(
-                    l_time_data[ch][:row_count], 4,
+                    l_time_data[ch][:row_count],
+                    4,
                 )
                 values = l_val_data[ch][:row_count]
                 data_dict[f"Y_RawData{ch.upper()}"] = np.round(
-                    (values - references[i]) * 355, 4,
+                    (values - references[i]) * 355,
+                    4,
                 )
 
             df = pd.DataFrame(data_dict)
@@ -376,16 +387,21 @@ class DataExporter:
 
             if metadata:
                 metadata.write_tracedrawer_header(
-                    writer, fieldnames, "Filtered data", [0, 0, 0, 0],
+                    writer,
+                    fieldnames,
+                    "Filtered data",
+                    [0, 0, 0, 0],
                 )
 
             data_dict = {}
             for ch in CH_LIST:
                 data_dict[f"X_Data{ch.upper()}"] = np.round(
-                    l_time_data[ch][:row_count], 4,
+                    l_time_data[ch][:row_count],
+                    4,
                 )
                 data_dict[f"Y_Data{ch.upper()}"] = np.round(
-                    l_val_data[ch][:row_count], 4,
+                    l_val_data[ch][:row_count],
+                    4,
                 )
 
             df = pd.DataFrame(data_dict)
@@ -481,7 +497,10 @@ class DataExporter:
                     for ch in ["A", "B", "C", "D", "M"]
                 ]
                 writer = csv.writer(
-                    f, delimiter="\t", quotechar="|", quoting=csv.QUOTE_MINIMAL,
+                    f,
+                    delimiter="\t",
+                    quotechar="|",
+                    quoting=csv.QUOTE_MINIMAL,
                 )
                 writer.writerow([h for sublist in headers for h in sublist])
 
@@ -514,7 +533,8 @@ class DataExporter:
 
         """
         is_valid, error_msg = DataValidator.validate_dataframe(
-            temp_log, "Temperature log",
+            temp_log,
+            "Temperature log",
         )
         if not is_valid:
             logger.warning(f"Temperature log validation failed: {error_msg}")
@@ -545,7 +565,8 @@ class DataExporter:
         """
         # Export Channel A
         is_valid, error_msg = DataValidator.validate_dataframe(
-            log_ch1, "Kinetic log Ch1",
+            log_ch1,
+            "Kinetic log Ch1",
         )
         if not is_valid:
             logger.warning(f"Kinetic Ch1 validation failed: {error_msg}")
@@ -593,7 +614,8 @@ class DataExporter:
         # Export Channel B if provided
         if log_ch2 is not None:
             is_valid, error_msg = DataValidator.validate_dataframe(
-                log_ch2, "Kinetic log Ch2",
+                log_ch2,
+                "Kinetic log Ch2",
             )
             if not is_valid:
                 logger.warning(f"Kinetic Ch2 validation failed: {error_msg}")
@@ -635,7 +657,9 @@ class DataExporter:
 
                 self._atomic_write(filepath_ch2, write_ch2)
                 self._record_export(
-                    filepath_ch2, ExportFormat.CSV_SIMPLE, len(ch2_export),
+                    filepath_ch2,
+                    ExportFormat.CSV_SIMPLE,
+                    len(ch2_export),
                 )
                 logger.info(f"Exported kinetic Ch B: {len(ch2_export)} rows")
 

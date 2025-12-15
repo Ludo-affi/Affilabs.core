@@ -1,22 +1,25 @@
-"""
-Flash P4SPR V2.0 Firmware with Rank Command
+"""Flash P4SPR V2.0 Firmware with Rank Command
 Automatically updates from V1.9 to V2.0 using software BOOTSEL
 """
 
-import serial
-import time
 import os
 import shutil
+import time
 
-def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v2.0.uf2'):
-    """
-    Flash V2.0 firmware with rank command support
+import serial
+
+
+def flash_v2_firmware(
+    port="COM5",
+    firmware_file="firmware_v2.0/affinite_p4spr_v2.0.uf2",
+):
+    """Flash V2.0 firmware with rank command support
 
     Args:
         port: COM port where P4SPR is connected
         firmware_file: Path to V2.0 .uf2 firmware file
-    """
 
+    """
     print("=" * 70)
     print("P4SPR FIRMWARE UPDATE: V1.9 → V2.0")
     print("=" * 70)
@@ -31,7 +34,9 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
     if not os.path.exists(firmware_file):
         print(f"❌ Error: Firmware file not found: {firmware_file}")
         print("\nYou need to:")
-        print("1. Clone firmware repo: git clone https://github.com/Ludo-affi/pico-p4spr-firmware")
+        print(
+            "1. Clone firmware repo: git clone https://github.com/Ludo-affi/pico-p4spr-firmware",
+        )
         print("2. Apply V2.0 modifications from affinite_p4spr_v2.0_modifications.c")
         print("3. Build firmware (see RANK_COMMAND_IMPLEMENTATION.md)")
         print("4. Copy .uf2 file to firmware_v2.0/ directory")
@@ -43,9 +48,9 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
         ser = serial.Serial(port, 115200, timeout=1)
         time.sleep(2)
 
-        ser.write(b'iv\n')
+        ser.write(b"iv\n")
         time.sleep(0.1)
-        current_version = ser.read(100).decode('utf-8', errors='ignore').strip()
+        current_version = ser.read(100).decode("utf-8", errors="ignore").strip()
         print(f"   Current version: {current_version}")
 
         if "V2.0" in current_version:
@@ -55,9 +60,9 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
 
         # Step 2: Test rank command (should fail on V1.9)
         print("\n[2/6] Testing rank command availability...")
-        ser.write(b'rank:128,35,5\n')
+        ser.write(b"rank:128,35,5\n")
         time.sleep(0.5)
-        response = ser.read(100).decode('utf-8', errors='ignore')
+        response = ser.read(100).decode("utf-8", errors="ignore")
 
         if "START" in response:
             print("   ⚠️  Rank command already works - firmware may be V2.0")
@@ -68,7 +73,7 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
         # Step 3: Trigger BOOTSEL mode
         print("\n[3/6] Triggering BOOTSEL mode...")
         print("   Sending ib command (software BOOTSEL)...")
-        ser.write(b'ib\n')
+        ser.write(b"ib\n")
         time.sleep(0.5)
         ser.close()
 
@@ -80,7 +85,9 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
         bootsel_drive = None
 
         for attempt in range(20):  # Wait up to 20 seconds
-            drives = [chr(x) + ":" for x in range(65, 91) if os.path.exists(chr(x) + ":")]
+            drives = [
+                chr(x) + ":" for x in range(65, 91) if os.path.exists(chr(x) + ":")
+            ]
             for drive in drives:
                 try:
                     if os.path.exists(f"{drive}\\INFO_UF2.TXT"):
@@ -92,7 +99,7 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
             if bootsel_drive:
                 break
 
-            print(f"   Waiting... ({attempt + 1}/20)", end='\r')
+            print(f"   Waiting... ({attempt + 1}/20)", end="\r")
             time.sleep(1)
 
         if not bootsel_drive:
@@ -124,19 +131,21 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
                 ser = serial.Serial(port, 115200, timeout=1)
                 time.sleep(2)
 
-                ser.write(b'iv\n')
+                ser.write(b"iv\n")
                 time.sleep(0.1)
-                new_version = ser.read(100).decode('utf-8', errors='ignore').strip()
+                new_version = ser.read(100).decode("utf-8", errors="ignore").strip()
 
                 if "V2.0" in new_version:
                     print(f"   ✅ SUCCESS! Firmware updated to: {new_version}")
 
                     # Test rank command
                     print("\n   Testing new rank command...")
-                    ser.write(b'ba128\n'); time.sleep(0.05); ser.read(10)
-                    ser.write(b'rank:128,35,5\n')
+                    ser.write(b"ba128\n")
+                    time.sleep(0.05)
+                    ser.read(10)
+                    ser.write(b"rank:128,35,5\n")
                     time.sleep(0.1)
-                    rank_response = ser.read(100).decode('utf-8', errors='ignore')
+                    rank_response = ser.read(100).decode("utf-8", errors="ignore")
 
                     if "START" in rank_response:
                         print("   ✅ Rank command working!")
@@ -144,7 +153,7 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
 
                         # Send ACKs to complete sequence
                         for _ in range(4):
-                            ser.write(b'1\n')
+                            ser.write(b"1\n")
                             time.sleep(0.1)
 
                     print("\n" + "=" * 70)
@@ -155,7 +164,9 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
                     print("- Firmware-controlled LED sequencing")
                     print("- Automatic A→B→C→D LED timing")
                     print("\nUSAGE:")
-                    print("  ctrl.led_rank_sequence(test_intensity=128, settling_ms=35, dark_ms=5)")
+                    print(
+                        "  ctrl.led_rank_sequence(test_intensity=128, settling_ms=35, dark_ms=5)",
+                    )
                     print("\nEXPECTED PERFORMANCE:")
                     print("  - 4-channel cycle: ~800ms (was ~960ms)")
                     print("  - 17% faster acquisition")
@@ -182,14 +193,13 @@ def flash_v2_firmware(port='COM5', firmware_file='firmware_v2.0/affinite_p4spr_v
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
-def test_rank_command(port='COM5'):
-    """
-    Test the rank command with full protocol
-    """
+def test_rank_command(port="COM5"):
+    """Test the rank command with full protocol"""
     print("\n" + "=" * 70)
     print("TESTING RANK COMMAND PROTOCOL")
     print("=" * 70)
@@ -200,19 +210,19 @@ def test_rank_command(port='COM5'):
 
         # Set brightness
         print("\n1. Setting LED brightness to 128...")
-        for led in ['a', 'b', 'c', 'd']:
-            ser.write(f'b{led}128\n'.encode())
+        for led in ["a", "b", "c", "d"]:
+            ser.write(f"b{led}128\n".encode())
             time.sleep(0.05)
             ser.read(10)
         print("   ✓ Brightness set")
 
         # Execute rank command
         print("\n2. Executing rank command (rank:128,35,5)...")
-        ser.write(b'rank:128,35,5\n')
+        ser.write(b"rank:128,35,5\n")
 
         led_count = 0
         while True:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
             if not line:
                 continue
 
@@ -228,8 +238,8 @@ def test_rank_command(port='COM5'):
                 led_count += 1
                 print(f"   → Acquiring spectrum {led_count}/4...")
                 time.sleep(0.1)  # Simulate detector read
-                ser.write(b'1\n')  # Send ACK
-                print(f"   → ACK sent")
+                ser.write(b"1\n")  # Send ACK
+                print("   → ACK sent")
             elif line.endswith(":DONE"):
                 ch = line[0]
                 print(f"   → LED {ch.upper()} off")
@@ -249,6 +259,7 @@ def test_rank_command(port='COM5'):
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -256,7 +267,7 @@ def test_rank_command(port='COM5'):
 if __name__ == "__main__":
     import sys
 
-    port = 'COM5'
+    port = "COM5"
     if len(sys.argv) > 1:
         port = sys.argv[1]
 

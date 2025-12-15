@@ -1,8 +1,10 @@
 """Test script to verify baseline correction is working"""
 
 import sys
+
 import numpy as np
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 # Import settings to check current values
 from settings import TRANSMISSION_BASELINE_CORRECTION, TRANSMISSION_BASELINE_DEGREE
@@ -15,7 +17,6 @@ print(f"TRANSMISSION_BASELINE_DEGREE = {TRANSMISSION_BASELINE_DEGREE}")
 print()
 
 # Initialize pipeline (this triggers initialization by importing)
-import utils.pipelines  # This auto-initializes pipelines on import
 from utils.processing_pipeline import get_pipeline_registry
 
 registry = get_pipeline_registry()
@@ -51,7 +52,9 @@ print()
 # Check if transmission is flatter when correction is enabled
 # Raw P/S ratio would show tilt, corrected should be flatter
 raw_transmission = (p_ref / s_ref) * 100
-print(f"Raw transmission range: {raw_transmission.min():.1f}% - {raw_transmission.max():.1f}%")
+print(
+    f"Raw transmission range: {raw_transmission.min():.1f}% - {raw_transmission.max():.1f}%",
+)
 print(f"Raw transmission std: {raw_transmission.std():.1f}%")
 print()
 

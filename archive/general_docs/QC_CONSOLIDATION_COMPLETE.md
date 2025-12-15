@@ -257,4 +257,3 @@ PASS = (
 - **FWHM Thresholds**: Based on empirical SPR sensor data
 - **Orientation Logic**: Derived from `spr_signal_processing.validate_sp_orientation()`
 - **Metadata Fields**: Aligned with `device_configuration.py` schema
-

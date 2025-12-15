@@ -1,7 +1,14 @@
 """Collapsible/Expandable box widget for organizing controls."""
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolButton, QFrame, QScrollArea, QSizePolicy
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtWidgets import (
+    QFrame,
+    QScrollArea,
+    QSizePolicy,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class CollapsibleBox(QWidget):
@@ -13,6 +20,7 @@ class CollapsibleBox(QWidget):
         Args:
             title: The title text to display on the toggle button
             parent: Parent widget
+
         """
         super().__init__(parent)
 
@@ -36,14 +44,19 @@ class CollapsibleBox(QWidget):
                 background-color: rgb(200, 200, 200);
             }
         """)
-        self.toggle_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
+        )
         self.toggle_button.setArrowType(Qt.ArrowType.DownArrow)
         self.toggle_button.clicked.connect(self.toggle)
 
         self.content_area = QScrollArea(self)
         self.content_area.setMaximumHeight(0)
         self.content_area.setMinimumHeight(0)
-        self.content_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.content_area.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self.content_area.setFrameShape(QFrame.Shape.NoFrame)
         self.content_area.setWidgetResizable(True)
 
@@ -92,6 +105,7 @@ class CollapsibleBox(QWidget):
 
         Args:
             widget: The widget to add to the content area
+
         """
         self.content_layout.addWidget(widget)
 
@@ -100,6 +114,7 @@ class CollapsibleBox(QWidget):
 
         Args:
             layout: The layout to add to the content area
+
         """
         self.content_layout.addLayout(layout)
 
@@ -108,6 +123,7 @@ class CollapsibleBox(QWidget):
 
         Args:
             expanded: True to expand, False to collapse
+
         """
         if expanded != self.toggle_button.isChecked():
             self.toggle_button.setChecked(expanded)

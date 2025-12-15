@@ -226,7 +226,10 @@ class SessionQualityMonitor:
         )
 
     def _calculate_grade(
-        self, fwhm_mean: float, fwhm_trend: float, snr_mean: float,
+        self,
+        fwhm_mean: float,
+        fwhm_trend: float,
+        snr_mean: float,
     ) -> str:
         """Calculate overall quality grade based on FWHM thresholds."""
         # Degrading rapidly = poor
@@ -241,7 +244,9 @@ class SessionQualityMonitor:
         return "poor"
 
     def _calculate_rgb_status(
-        self, fwhm_mean: float, fwhm_trend: float,
+        self,
+        fwhm_mean: float,
+        fwhm_trend: float,
     ) -> tuple[int, int, int]:
         """Calculate RGB LED color based on FWHM.
 

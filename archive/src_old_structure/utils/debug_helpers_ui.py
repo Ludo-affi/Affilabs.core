@@ -26,9 +26,13 @@ def debug_bypass_calibration(app):
 
     Args:
         app: Application instance with access to data_mgr and main_window
+
     """
     try:
-        from utils.debug_helpers import inject_fake_calibration, save_fake_calibration_to_config
+        from utils.debug_helpers import (
+            inject_fake_calibration,
+            save_fake_calibration_to_config,
+        )
 
         logger.info("=" * 80)
         logger.info("🔧 DEBUG BYPASS: Marking system as calibrated (NO HARDWARE)")
@@ -41,9 +45,14 @@ def debug_bypass_calibration(app):
         save_fake_calibration_to_config(app.main_window.device_config)
 
         # Enable Start button in UI
-        if hasattr(app.main_window, 'sidebar') and hasattr(app.main_window.sidebar, 'start_cycle_btn'):
+        if hasattr(app.main_window, "sidebar") and hasattr(
+            app.main_window.sidebar,
+            "start_cycle_btn",
+        ):
             app.main_window.sidebar.start_cycle_btn.setEnabled(True)
-            app.main_window.sidebar.start_cycle_btn.setToolTip("Start Live Acquisition (Debug Mode)")
+            app.main_window.sidebar.start_cycle_btn.setToolTip(
+                "Start Live Acquisition (Debug Mode)",
+            )
             logger.info("✅ Start button enabled")
 
         # Enable recording controls
@@ -52,6 +61,7 @@ def debug_bypass_calibration(app):
 
         # Show success message
         from widgets.message import show_message
+
         show_message(
             "Debug calibration bypass active!\n\n"
             "• System marked as calibrated\n"
@@ -59,7 +69,7 @@ def debug_bypass_calibration(app):
             "• Recording controls enabled\n\n"
             "Press 'Start' to test UI without hardware.",
             msg_type="Info",
-            title="Calibration Bypassed (Debug)"
+            title="Calibration Bypassed (Debug)",
         )
 
         logger.info("=" * 80)
@@ -69,10 +79,11 @@ def debug_bypass_calibration(app):
     except Exception as e:
         logger.exception(f"❌ Failed to bypass calibration: {e}")
         from widgets.message import show_message
+
         show_message(
             f"Failed to bypass calibration:\n{e}",
             msg_type="Error",
-            title="Bypass Failed"
+            title="Bypass Failed",
         )
 
 
@@ -86,6 +97,7 @@ def debug_single_data_point(app):
 
     Args:
         app: Application instance with access to data_mgr
+
     """
     import time
 
@@ -95,9 +107,10 @@ def debug_single_data_point(app):
 
     try:
         # Check if data_mgr exists
-        if not hasattr(app, 'data_mgr') or app.data_mgr is None:
+        if not hasattr(app, "data_mgr") or app.data_mgr is None:
             logger.error("❌ No data_mgr found!")
             from widgets.message import show_message
+
             show_message("Error: Data manager not initialized!", msg_type="Error")
             return
 
@@ -105,12 +118,12 @@ def debug_single_data_point(app):
 
         # Create a single data point
         data = {
-            'channel': 'a',
-            'wavelength': 650.0,
-            'intensity': 15000.0,
-            'timestamp': time.time(),
-            'is_preview': False,
-            'simulated': True
+            "channel": "a",
+            "wavelength": 650.0,
+            "intensity": 15000.0,
+            "timestamp": time.time(),
+            "is_preview": False,
+            "simulated": True,
         }
 
         logger.info(f"📤 Emitting single data point: {data}")
@@ -123,6 +136,7 @@ def debug_single_data_point(app):
 
         # Use QTimer to check status after delay
         from PySide6.QtCore import QTimer
+
         def check_status():
             logger.info("=" * 80)
             logger.info("✅ SUCCESS - No crash after 2 seconds!")
@@ -130,6 +144,7 @@ def debug_single_data_point(app):
             logger.info("   This means the crash is likely rate/accumulation related.")
             logger.info("=" * 80)
             from widgets.message import show_message
+
             show_message(
                 "Single Data Point Test: SUCCESS!\n\n"
                 "✅ No crash detected\n"
@@ -138,7 +153,7 @@ def debug_single_data_point(app):
                 "- High data rate overwhelming Qt\n"
                 "- Event queue flooding\n"
                 "- Accumulated state issues",
-                msg_type="Info"
+                msg_type="Info",
             )
 
         QTimer.singleShot(2000, check_status)
@@ -146,6 +161,7 @@ def debug_single_data_point(app):
     except Exception as e:
         logger.exception(f"❌ Single data point test failed: {e}")
         from widgets.message import show_message
+
         show_message(f"Single data point test FAILED:\n\n{e}", msg_type="Error")
 
 
@@ -157,10 +173,12 @@ def debug_start_simulation(app):
 
     Args:
         app: Application instance with access to data_mgr
+
     """
-    from PySide6.QtCore import QTimer
-    import numpy as np
     import time
+
+    import numpy as np
+    from PySide6.QtCore import QTimer
 
     logger.info("=" * 80)
     logger.info("🎬 SIMULATION MODE ACTIVATED (Ctrl+Shift+S)")
@@ -168,21 +186,24 @@ def debug_start_simulation(app):
 
     try:
         # Check if data_mgr exists
-        if not hasattr(app, 'data_mgr') or app.data_mgr is None:
+        if not hasattr(app, "data_mgr") or app.data_mgr is None:
             logger.error("❌ No data_mgr found!")
             from widgets.message import show_message
+
             show_message(
                 "Error: Data manager not initialized!\n\n"
                 "Make sure the app has fully loaded.",
-                msg_type="Error"
+                msg_type="Error",
             )
             return
 
         logger.info(f"✅ Data manager found: {app.data_mgr}")
 
         # Check if acquisition is running
-        if hasattr(app.data_mgr, '_acquiring') and not app.data_mgr._acquiring:
-            logger.warning("⚠️ Acquisition not running - simulation works best with acquisition active")
+        if hasattr(app.data_mgr, "_acquiring") and not app.data_mgr._acquiring:
+            logger.warning(
+                "⚠️ Acquisition not running - simulation works best with acquisition active",
+            )
             logger.warning("   Press Ctrl+Shift+C then click Start first")
 
         # Create timer to inject spectra at SLOW rate (2 Hz to prevent Qt flooding)
@@ -195,14 +216,18 @@ def debug_start_simulation(app):
         def send_one():
             try:
                 # Generate fake SPR wavelength data for each channel
-                channels = ['a', 'b', 'c', 'd']
-                peak_positions = {'a': 650, 'b': 660, 'c': 655, 'd': 670}
-                intensities = {'a': 15000, 'b': 12000, 'c': 10000, 'd': 14000}
+                channels = ["a", "b", "c", "d"]
+                peak_positions = {"a": 650, "b": 660, "c": 655, "d": 670}
+                intensities = {"a": 15000, "b": 12000, "c": 10000, "d": 14000}
 
                 elapsed = time.time() - start_time[0]
 
                 # Generate wavelength array (match real detector: ~640-690nm range for SPR)
-                wavelengths = np.linspace(640, 690, 512)  # 512 points for smooth spectrum
+                wavelengths = np.linspace(
+                    640,
+                    690,
+                    512,
+                )  # 512 points for smooth spectrum
 
                 for ch in channels:
                     # Generate realistic SPR peak wavelength with drift
@@ -213,9 +238,19 @@ def debug_start_simulation(app):
 
                     # Generate full spectrum arrays (simulate SPR dip)
                     # Raw spectrum: Gaussian dip around resonance wavelength
-                    raw_spectrum = intensities[ch] - 5000 * np.exp(-((wavelengths - peak_wavelength) ** 2) / (2 * 3 ** 2))
-                    raw_spectrum += np.random.normal(0, 200, len(wavelengths))  # Add noise
-                    raw_spectrum = np.clip(raw_spectrum, 1000, 65000)  # Realistic detector range
+                    raw_spectrum = intensities[ch] - 5000 * np.exp(
+                        -((wavelengths - peak_wavelength) ** 2) / (2 * 3**2),
+                    )
+                    raw_spectrum += np.random.normal(
+                        0,
+                        200,
+                        len(wavelengths),
+                    )  # Add noise
+                    raw_spectrum = np.clip(
+                        raw_spectrum,
+                        1000,
+                        65000,
+                    )  # Realistic detector range
 
                     # Transmission spectrum: Calculate from raw (simulate P/S ratio)
                     # Assume S_ref is constant baseline
@@ -225,28 +260,32 @@ def debug_start_simulation(app):
 
                     # Create data dict with full spectrum arrays (matching real format)
                     data = {
-                        'channel': ch,
-                        'wavelength': float(peak_wavelength),  # Resonance peak for timeline
-                        'intensity': float(intensities[ch]),    # Average intensity
-                        'raw_spectrum': raw_spectrum,           # Full raw spectrum array
-                        'full_spectrum': raw_spectrum,          # Alias for compatibility
-                        'transmission_spectrum': transmission_spectrum,  # Full transmission array
-                        'wavelengths': wavelengths,             # Wavelength array for plots
-                        'timestamp': time.time(),
-                        'elapsed_time': elapsed,
-                        'is_preview': False,
-                        'simulated': True
+                        "channel": ch,
+                        "wavelength": float(
+                            peak_wavelength,
+                        ),  # Resonance peak for timeline
+                        "intensity": float(intensities[ch]),  # Average intensity
+                        "raw_spectrum": raw_spectrum,  # Full raw spectrum array
+                        "full_spectrum": raw_spectrum,  # Alias for compatibility
+                        "transmission_spectrum": transmission_spectrum,  # Full transmission array
+                        "wavelengths": wavelengths,  # Wavelength array for plots
+                        "timestamp": time.time(),
+                        "elapsed_time": elapsed,
+                        "is_preview": False,
+                        "simulated": True,
                     }
 
                     # Emit to spectrum_acquired signal
-                    if app.data_mgr and hasattr(app.data_mgr, 'spectrum_acquired'):
+                    if app.data_mgr and hasattr(app.data_mgr, "spectrum_acquired"):
                         app.data_mgr.spectrum_acquired.emit(data)
 
                 spectrum_count[0] += 1
 
                 # Log every 50 cycles (5 seconds)
                 if spectrum_count[0] % 50 == 0:
-                    logger.info(f"📊 Injected {spectrum_count[0]} simulated data cycles ({spectrum_count[0] * 4} points)")
+                    logger.info(
+                        f"📊 Injected {spectrum_count[0]} simulated data cycles ({spectrum_count[0] * 4} points)",
+                    )
 
             except Exception as e:
                 logger.exception(f"❌ Simulation error: {e}")
@@ -262,6 +301,7 @@ def debug_start_simulation(app):
         logger.info("   Generating 4 channels (A, B, C, D) per cycle")
 
         from widgets.message import show_message
+
         show_message(
             "Simulation started!\n\n"
             "📡 Sending fake SPR data at 2 Hz\n"
@@ -269,20 +309,22 @@ def debug_start_simulation(app):
             "Check logs to see injection status.\n"
             "Watch the graph for updates!\n\n"
             "Close the app to stop.",
-            msg_type="Info"
+            msg_type="Info",
         )
 
     except Exception as e:
         logger.exception(f"❌ Failed to start simulation: {e}")
         from widgets.message import show_message
+
         show_message(
             f"Simulation failed:\n\n{e}",
-            msg_type="Error"
+            msg_type="Error",
         )
 
 
 # Unused debug functions (kept for reference, not connected to UI)
 # These can be removed entirely if never needed
+
 
 def debug_simulate_calibration_success(app):
     """Force a simulated successful calibration (debug/testing only).
@@ -292,26 +334,27 @@ def debug_simulate_calibration_success(app):
 
     Args:
         app: Application instance with access to data_mgr
+
     """
     try:
         from utils.debug_helpers import inject_fake_calibration
 
-        if getattr(app.data_mgr, 'calibrated', False):
-            logger.info('🧪 Debug: system already calibrated; skipping simulation')
+        if getattr(app.data_mgr, "calibrated", False):
+            logger.info("🧪 Debug: system already calibrated; skipping simulation")
             return
 
-        logger.info('🧪 Debug: simulating calibration success (no hardware checks)')
+        logger.info("🧪 Debug: simulating calibration success (no hardware checks)")
         inject_fake_calibration(app.data_mgr)
 
         # Override with lighter settings for simulation
         app.data_mgr.integration_time = 36
         app.data_mgr.num_scans = 1
-        app.data_mgr.p_mode_intensity = {'a':180,'b':180,'c':180,'d':180}
-        app.data_mgr.s_mode_intensity = {'a':180,'b':180,'c':180,'d':180}
+        app.data_mgr.p_mode_intensity = {"a": 180, "b": 180, "c": 180, "d": 180}
+        app.data_mgr.s_mode_intensity = {"a": 180, "b": 180, "c": 180, "d": 180}
 
-        logger.info('🧪 Debug: calibration bypassed (no signal emitted)')
+        logger.info("🧪 Debug: calibration bypassed (no signal emitted)")
     except Exception as e:
-        logger.error(f'🧪 Debug: calibration simulation failed: {e}')
+        logger.error(f"🧪 Debug: calibration simulation failed: {e}")
 
 
 def debug_test_acquisition_thread(app):
@@ -322,25 +365,27 @@ def debug_test_acquisition_thread(app):
 
     Args:
         app: Application instance with access to hardware_mgr and data_mgr
+
     """
     try:
         from utils.debug_helpers import create_mock_hardware, inject_fake_calibration
 
-        logger.info('🧪 DEBUG: Testing acquisition thread (no hardware needed)')
+        logger.info("🧪 DEBUG: Testing acquisition thread (no hardware needed)")
 
         # Create mock hardware if not connected
         create_mock_hardware(app.hardware_mgr)
 
         # Inject minimal fake calibration data into data manager
         inject_fake_calibration(app.data_mgr)
-        logger.info('🧪 DEBUG: Fake calibration data injected')
+        logger.info("🧪 DEBUG: Fake calibration data injected")
 
         # Now start acquisition - this should trigger the Qt threading error if it exists
         app.data_mgr.start_acquisition()
-        logger.info('🧪 DEBUG: Acquisition started - watch for Qt threading errors')
-        logger.info('🧪 DEBUG: If app crashes now, it\'s the Qt threading bug')
+        logger.info("🧪 DEBUG: Acquisition started - watch for Qt threading errors")
+        logger.info("🧪 DEBUG: If app crashes now, it's the Qt threading bug")
 
     except Exception as e:
-        logger.error(f'🧪 DEBUG: Thread test failed: {e}')
+        logger.error(f"🧪 DEBUG: Thread test failed: {e}")
         import traceback
+
         logger.error(traceback.format_exc())

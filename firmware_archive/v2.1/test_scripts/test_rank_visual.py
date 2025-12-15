@@ -1,9 +1,8 @@
-"""
-Visual test of rank command showing successive LED flashing
-"""
+"""Visual test of rank command showing successive LED flashing"""
+
+import time
 
 import serial
-import time
 
 print("=" * 70)
 print("RANK COMMAND TEST - Successive LED Flashing")
@@ -11,13 +10,13 @@ print("=" * 70)
 print("\nThis will show LEDs flashing one at a time: A → B → C → D\n")
 
 # Connect to P4SPR
-ser = serial.Serial('COM5', 115200, timeout=2)
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(0.5)
 
 # Send rank command
 print("📤 Sending: rank:128,35,5")
 print("   (intensity=128, settling=35ms, dark=5ms)\n")
-ser.write(b'rank:128,35,5\n')
+ser.write(b"rank:128,35,5\n")
 time.sleep(0.05)
 
 print("📥 Firmware Response:")
@@ -46,7 +45,7 @@ while True:
         led = line[0].upper()
         print(f"⏱️  {elapsed:6.1f}ms | 📸 LED {led} READY - Acquire now!")
         # Send ACK to continue
-        ser.write(b'1\n')
+        ser.write(b"1\n")
 
     elif "DONE" in line:
         led = line[0].upper()
@@ -65,7 +64,7 @@ while True:
 total_time = (time.perf_counter() - start_time) * 1000
 
 print("-" * 70)
-print(f"\n✅ Test Complete!")
+print("\n✅ Test Complete!")
 print(f"   Total time: {total_time:.1f}ms")
 print(f"   LEDs sequenced: {led_count}/4")
 print(f"   Time per LED: {total_time/4:.1f}ms")

@@ -14,7 +14,7 @@ A flexible, pluggable architecture for SPR data processing that allows you to:
 - Uses DST/IDCT for derivative zero-crossing detection
 - Best for: Standard SPR measurements
 
-### 2. **Centroid Method** 
+### 2. **Centroid Method**
 - Finds center of mass of transmission dip
 - Best for: Symmetric peaks, quick comparison
 
@@ -64,7 +64,7 @@ from utils.spr_signal_processing import (
 
 All three pipelines tested on synthetic SPR data (620 nm resonance):
 - **Fourier**: 620.01 nm (0.01 nm error) ✓
-- **Centroid**: 619.91 nm (0.09 nm error) ✓  
+- **Centroid**: 619.91 nm (0.09 nm error) ✓
 - **Polynomial**: 620.01 nm (0.01 nm error) ✓
 
 Maximum difference between pipelines: **0.10 nm**
@@ -95,7 +95,7 @@ python test_pipelines.py
 
 Should show:
 - ✓ 3 pipelines registered
-- ✓ All pipelines process synthetic data successfully  
+- ✓ All pipelines process synthetic data successfully
 - ✓ Results within 0.1 nm of each other
 
 ## Integration with Main App
@@ -144,11 +144,11 @@ self.pipeline_selector.pipeline_changed.connect(self.on_pipeline_changed)
 
 ## Benefits
 
-✅ **Backward Compatible** - Existing code works unchanged  
-✅ **Flexible** - Easy to add new methods  
-✅ **User-Friendly** - Switch pipelines from UI  
-✅ **Testable** - Each pipeline independently verifiable  
-✅ **Documented** - Metadata describes each method  
+✅ **Backward Compatible** - Existing code works unchanged
+✅ **Flexible** - Easy to add new methods
+✅ **User-Friendly** - Switch pipelines from UI
+✅ **Testable** - Each pipeline independently verifiable
+✅ **Documented** - Metadata describes each method
 
 ---
 

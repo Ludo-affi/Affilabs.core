@@ -9,11 +9,17 @@ Provides access to all past calibration reports for:
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QTableWidget, QTableWidgetItem, QHeaderView, QFrame
+    QDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
+
 from affilabs.utils.logger import logger
-from pathlib import Path
 
 
 class QCHistoryDialog(QDialog):
@@ -25,6 +31,7 @@ class QCHistoryDialog(QDialog):
         Args:
             device_serial: Device serial number
             parent: Parent widget
+
         """
         super().__init__(parent)
         self.device_serial = device_serial
@@ -96,9 +103,16 @@ class QCHistoryDialog(QDialog):
         # Reports table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels([
-            "Date/Time", "Status", "Failed Channels", "Operator", "Actions", "File"
-        ])
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Date/Time",
+                "Status",
+                "Failed Channels",
+                "Operator",
+                "Actions",
+                "File",
+            ],
+        )
 
         # Configure table appearance
         header = self.table.horizontalHeader()
@@ -154,24 +168,29 @@ class QCHistoryDialog(QDialog):
         """Load and display QC reports."""
         try:
             from affilabs.managers.qc_report_manager import QCReportManager
+
             qc_manager = QCReportManager()
 
             self.reports_list = qc_manager.list_qc_reports(self.device_serial)
 
             # Update summary
-            self.summary_label.setText(f"Found {len(self.reports_list)} calibration reports")
+            self.summary_label.setText(
+                f"Found {len(self.reports_list)} calibration reports",
+            )
 
             # Populate table
             self.table.setRowCount(len(self.reports_list))
 
             for row, report_info in enumerate(self.reports_list):
                 # Date/Time
-                timestamp_item = QTableWidgetItem(report_info['timestamp'][:19].replace('T', ' '))
+                timestamp_item = QTableWidgetItem(
+                    report_info["timestamp"][:19].replace("T", " "),
+                )
                 timestamp_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, 0, timestamp_item)
 
                 # Status
-                status = report_info['status']
+                status = report_info["status"]
                 status_item = QTableWidgetItem(status)
                 status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if status == "PASS":
@@ -181,13 +200,13 @@ class QCHistoryDialog(QDialog):
                 self.table.setItem(row, 1, status_item)
 
                 # Failed Channels
-                failed = report_info['failed_channels']
+                failed = report_info["failed_channels"]
                 failed_item = QTableWidgetItem(str(failed) if failed > 0 else "None")
                 failed_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, 2, failed_item)
 
                 # Operator
-                user_item = QTableWidgetItem(report_info['user'])
+                user_item = QTableWidgetItem(report_info["user"])
                 self.table.setItem(row, 3, user_item)
 
                 # Actions (View button)
@@ -196,15 +215,15 @@ class QCHistoryDialog(QDialog):
                 self.table.setCellWidget(row, 4, view_btn)
 
                 # Filename
-                file_item = QTableWidgetItem(report_info['filename'])
-                file_item.setToolTip(report_info['file_path'])
+                file_item = QTableWidgetItem(report_info["filename"])
+                file_item.setToolTip(report_info["file_path"])
                 self.table.setItem(row, 5, file_item)
 
             logger.info(f"Loaded {len(self.reports_list)} QC reports for display")
 
         except Exception as e:
             logger.error(f"Failed to load QC reports: {e}")
-            self.summary_label.setText(f"Error loading reports: {str(e)}")
+            self.summary_label.setText(f"Error loading reports: {e!s}")
 
     def _on_report_double_clicked(self, row: int, column: int):
         """Handle double-click on report row."""
@@ -215,6 +234,7 @@ class QCHistoryDialog(QDialog):
 
         Args:
             row: Table row index
+
         """
         try:
             if row >= len(self.reports_list):
@@ -223,45 +243,55 @@ class QCHistoryDialog(QDialog):
             report_info = self.reports_list[row]
 
             from affilabs.managers.qc_report_manager import QCReportManager
+
             qc_manager = QCReportManager()
 
             # Extract timestamp from filename
-            timestamp = report_info['filename'].replace('qc_report_', '').replace('.json', '')
+            timestamp = (
+                report_info["filename"].replace("qc_report_", "").replace(".json", "")
+            )
 
             # Load full report
             report = qc_manager.load_qc_report(self.device_serial, timestamp)
 
             if report:
                 # Extract calibration data from raw_calibration_data
-                calibration_data = report.get('raw_calibration_data', {})
+                calibration_data = report.get("raw_calibration_data", {})
 
                 # Show QC dialog
                 from affilabs.widgets.calibration_qc_dialog import CalibrationQCDialog
-                qc_dialog = CalibrationQCDialog(parent=self, calibration_data=calibration_data)
+
+                qc_dialog = CalibrationQCDialog(
+                    parent=self,
+                    calibration_data=calibration_data,
+                )
                 qc_dialog.exec()
             else:
-                from widgets.message import show_message
+                from affilabs.widgets.message import show_message
+
                 show_message(
                     "Failed to load QC report.",
                     "Load Error",
-                    "Error"
+                    "Error",
                 )
 
         except Exception as e:
             logger.error(f"Failed to view report: {e}")
-            from widgets.message import show_message
-            show_message(f"Failed to view report:\n{str(e)}", "Error", "Error")
+            from affilabs.widgets.message import show_message
+
+            show_message(f"Failed to view report:\n{e!s}", "Error", "Error")
 
     def _view_ml_features(self):
         """View ML features extracted from recent reports."""
         try:
             from affilabs.managers.qc_report_manager import QCReportManager
+
             qc_manager = QCReportManager()
 
             # Extract ML features from last 10 reports
             features = qc_manager.get_ml_features(self.device_serial, n_reports=10)
 
-            if features and features.get('timestamps'):
+            if features and features.get("timestamps"):
                 # Create simple display dialog
                 from PySide6.QtWidgets import QDialog, QTextEdit
 
@@ -283,31 +313,35 @@ class QCHistoryDialog(QDialog):
                 feature_text += f"Reports Analyzed: {len(features['timestamps'])}\n\n"
 
                 feature_text += "SNR TRENDS (by channel):\n"
-                for ch in ['a', 'b', 'c', 'd']:
-                    values = [v for v in features['snr_trends'][ch] if v is not None]
+                for ch in ["a", "b", "c", "d"]:
+                    values = [v for v in features["snr_trends"][ch] if v is not None]
                     if values:
                         feature_text += f"  Channel {ch.upper()}: {values}\n"
 
                 feature_text += "\nPEAK COUNTS TRENDS:\n"
-                for ch in ['a', 'b', 'c', 'd']:
-                    values = [v for v in features['peak_counts_trends'][ch] if v is not None]
+                for ch in ["a", "b", "c", "d"]:
+                    values = [
+                        v for v in features["peak_counts_trends"][ch] if v is not None
+                    ]
                     if values:
                         feature_text += f"  Channel {ch.upper()}: {values}\n"
 
-                feature_text += f"\nMODEL ACCURACY:\n"
+                feature_text += "\nMODEL ACCURACY:\n"
                 feature_text += f"  S-pol: {[v for v in features['model_accuracy_s'] if v is not None]}\n"
                 feature_text += f"  P-pol: {[v for v in features['model_accuracy_p'] if v is not None]}\n"
 
-                feature_text += f"\nCONVERGENCE ITERATIONS:\n"
+                feature_text += "\nCONVERGENCE ITERATIONS:\n"
                 feature_text += f"  {[v for v in features['convergence_iterations'] if v is not None]}\n"
 
-                feature_text += f"\nDEVICE USAGE:\n"
+                feature_text += "\nDEVICE USAGE:\n"
                 feature_text += f"  Hours: {[v for v in features['device_hours'] if v is not None]}\n"
                 feature_text += f"  Failed Channels: {[v for v in features['failed_channels_count'] if v is not None]}\n"
 
                 feature_text += "\n" + "=" * 60 + "\n"
                 feature_text += "These features can be used for ML-based predictive maintenance models\n"
-                feature_text += "to forecast calibration drift, LED degradation, and system health."
+                feature_text += (
+                    "to forecast calibration drift, LED degradation, and system health."
+                )
 
                 text_edit.setText(feature_text)
                 layout.addWidget(text_edit)
@@ -320,15 +354,17 @@ class QCHistoryDialog(QDialog):
 
                 logger.info("ML features displayed")
             else:
-                from widgets.message import show_message
+                from affilabs.widgets.message import show_message
+
                 show_message(
                     "Not enough calibration history to extract ML features.\n\n"
                     "At least 2 calibrations required.",
                     "Insufficient Data",
-                    "Information"
+                    "Information",
                 )
 
         except Exception as e:
             logger.error(f"Failed to view ML features: {e}")
-            from widgets.message import show_message
-            show_message(f"Failed to view ML features:\n{str(e)}", "Error", "Error")
+            from affilabs.widgets.message import show_message
+
+            show_message(f"Failed to view ML features:\n{e!s}", "Error", "Error")

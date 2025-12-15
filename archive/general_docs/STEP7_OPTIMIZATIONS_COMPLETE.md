@@ -1,7 +1,7 @@
 # ✨ Priority 3 & 10: Step 7 Optimizations - COMPLETE
 
-**Date**: January 2025  
-**Priorities Implemented**: #3 (Add Step 7 Afterglow Correction) + #10 (Optimize Step 7 Dark Measurements)  
+**Date**: January 2025
+**Priorities Implemented**: #3 (Add Step 7 Afterglow Correction) + #10 (Optimize Step 7 Dark Measurements)
 **Status**: ✅ **FULLY IMPLEMENTED**
 
 ---
@@ -29,7 +29,7 @@ Successfully implemented two key optimizations for Step 7 (Reference Signal Meas
 
 **Background**:
 - Phase 1: ✅ Production data acquisition (multi-channel switching)
-- Phase 2: 
+- Phase 2:
   - Step 5 (dark noise): ✅ Complete
   - Step 6 (integration time): ✅ N/A (integration time calibration, no dark involved)
   - Step 7 (reference signals): ✅ **NOW COMPLETE**
@@ -77,7 +77,7 @@ Time: ~10 seconds (2s per measurement)
 Savings: ~6 seconds (37.5% faster)
 ```
 
-**Key Insight**: 
+**Key Insight**:
 The afterglow contamination affects all measurements similarly within a short time window. A single dark measurement after all channels provides sufficient information to correct all reference signals.
 
 ---
@@ -127,18 +127,18 @@ if self.afterglow_correction and last_ch:
     dark_before_correction = dark_after_all.copy()
     dark_mean_before = float(np.mean(dark_before_correction))
     baseline_dark_mean = float(np.mean(self.state.dark_noise))
-    
+
     # Apply correction
     corrected_dark = self.afterglow_correction.correct_spectrum(
         spectrum=dark_after_all,
         last_active_channel=last_ch,
         integration_time_ms=self.state.integration * 1000
     )
-    
+
     # Calculate metrics
     contamination = dark_mean_before - baseline_dark_mean
     correction_effectiveness = dark_mean_before - dark_mean_after
-    
+
     # Log effectiveness
     logger.info(
         f"   ✨ Step 7 afterglow correction: "
@@ -147,10 +147,10 @@ if self.afterglow_correction and last_ch:
         f"corrected={dark_mean_after:.1f} "
         f"({correction_effectiveness/contamination*100:.1f}% effective)"
     )
-    
+
     # Apply correction delta to ALL reference signals
     dark_correction_delta = corrected_dark - dark_after_all
-    
+
     for ch in ch_list:
         if self.state.ref_sig[ch] is not None:
             self.state.ref_sig[ch] = self.state.ref_sig[ch] + dark_correction_delta
@@ -293,13 +293,13 @@ def test_step7_single_dark_measurement():
     # Mock USB read_intensity() to track calls
     # Run measure_reference_signals()
     # Assert: 4 channel measurements + 1 dark measurement = 5 total
-    
+
 def test_step7_afterglow_correction():
     """Verify afterglow correction applied to all ref_sigs."""
     # Setup calibrator with afterglow correction
     # Run measure_reference_signals()
     # Assert: ref_sig[ch] corrected for all channels
-    
+
 def test_step7_no_afterglow_graceful():
     """Verify graceful behavior without afterglow correction."""
     # Setup calibrator WITHOUT afterglow correction
@@ -417,8 +417,8 @@ python -m utils.spr_calibrator --full-calibration
 
 ---
 
-**Implementation Date**: January 2025  
-**Implemented By**: AI Assistant  
-**Priorities Completed**: #3 (Step 7 Afterglow) + #10 (Step 7 Single Dark)  
-**Phase 2 Status**: ✅ **COMPLETE**  
+**Implementation Date**: January 2025
+**Implemented By**: AI Assistant
+**Priorities Completed**: #3 (Step 7 Afterglow) + #10 (Step 7 Single Dark)
+**Phase 2 Status**: ✅ **COMPLETE**
 **Next Priority**: #2 (Remove redundant dark in Step 2)

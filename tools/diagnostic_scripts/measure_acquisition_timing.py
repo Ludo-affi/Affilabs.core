@@ -1,5 +1,4 @@
-"""
-Measure acquisition timing for single-channel spectrum and full A→D cycle.
+"""Measure acquisition timing for single-channel spectrum and full A→D cycle.
 
 It uses:
 - Controller: PicoP4SPR (LED control + S/P mode)
@@ -16,7 +15,9 @@ Usage (from repo root or with PYTHONPATH set to project root):
 Notes:
 - Integration time dominates timing; overhead includes USB and controller commands.
 - For stable estimates, the script takes multiple repeats and reports mean/median.
+
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,7 +49,14 @@ def _measure_spectrometer_only(usb: USB4000, repeats: int) -> list[float]:
     return times_ms
 
 
-def _measure_single_channel(usb: USB4000, ctrl: PicoP4SPR, ch: str, intensity: int, mode: str, settle_s: float) -> float:
+def _measure_single_channel(
+    usb: USB4000,
+    ctrl: PicoP4SPR,
+    ch: str,
+    intensity: int,
+    mode: str,
+    settle_s: float,
+) -> float:
     # LED on, set mode, settle, read, LED off
     ctrl.set_intensity(ch=ch, raw_val=intensity)
     if mode.lower() in ("s", "p"):
@@ -63,7 +71,13 @@ def _measure_single_channel(usb: USB4000, ctrl: PicoP4SPR, ch: str, intensity: i
     return (t1 - t0) * 1000.0
 
 
-def _measure_cycle(usb: USB4000, ctrl: PicoP4SPR, intensities: dict[str, int], mode: str, settle_s: float) -> float:
+def _measure_cycle(
+    usb: USB4000,
+    ctrl: PicoP4SPR,
+    intensities: dict[str, int],
+    mode: str,
+    settle_s: float,
+) -> float:
     t0 = time.perf_counter()
     for ch in CHANNELS:
         ctrl.set_intensity(ch=ch, raw_val=int(intensities.get(ch, 255)))
@@ -79,14 +93,53 @@ def _measure_cycle(usb: USB4000, ctrl: PicoP4SPR, intensities: dict[str, int], m
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Measure acquisition timing for single-channel and A→D cycle")
-    ap.add_argument("--integration-ms", type=float, default=50.0, help="Integration time in ms (default 50)")
-    ap.add_argument("--mode", type=str, default="p", choices=["s", "p"], help="Polarizer mode")
-    ap.add_argument("--channel", type=str, default="a", choices=CHANNELS, help="Channel for single-channel timing")
-    ap.add_argument("--intensity", type=int, default=180, help="LED intensity for single-channel timing (0-255)")
-    ap.add_argument("--repeats", type=int, default=5, help="Number of repeats to average timings")
-    ap.add_argument("--settle-ms", type=float, default=30.0, help="Settle delay after LED/mode change (ms)")
-    ap.add_argument("--cycle-intensity", type=int, default=180, help="LED intensity used for all channels in cycle")
+    ap = argparse.ArgumentParser(
+        description="Measure acquisition timing for single-channel and A→D cycle",
+    )
+    ap.add_argument(
+        "--integration-ms",
+        type=float,
+        default=50.0,
+        help="Integration time in ms (default 50)",
+    )
+    ap.add_argument(
+        "--mode",
+        type=str,
+        default="p",
+        choices=["s", "p"],
+        help="Polarizer mode",
+    )
+    ap.add_argument(
+        "--channel",
+        type=str,
+        default="a",
+        choices=CHANNELS,
+        help="Channel for single-channel timing",
+    )
+    ap.add_argument(
+        "--intensity",
+        type=int,
+        default=180,
+        help="LED intensity for single-channel timing (0-255)",
+    )
+    ap.add_argument(
+        "--repeats",
+        type=int,
+        default=5,
+        help="Number of repeats to average timings",
+    )
+    ap.add_argument(
+        "--settle-ms",
+        type=float,
+        default=30.0,
+        help="Settle delay after LED/mode change (ms)",
+    )
+    ap.add_argument(
+        "--cycle-intensity",
+        type=int,
+        default=180,
+        help="LED intensity used for all channels in cycle",
+    )
     args = ap.parse_args()
 
     settle_s = max(0.0, args.settle_ms / 1000.0)
@@ -103,7 +156,9 @@ def main() -> None:
     ctrl.turn_off_channels()
 
     print("\n=== Acquisition Timing Measurement ===")
-    print(f"Integration: {args.integration_ms:.1f} ms, Mode: {args.mode.upper()}, Settle: {args.settle_ms:.0f} ms")
+    print(
+        f"Integration: {args.integration_ms:.1f} ms, Mode: {args.mode.upper()}, Settle: {args.settle_ms:.0f} ms",
+    )
 
     # Spectrometer-only timing
     spec_times = _measure_spectrometer_only(usb, max(1, args.repeats))
@@ -115,9 +170,18 @@ def main() -> None:
     # Single-channel timing
     single_times: list[float] = []
     for _ in range(max(1, args.repeats)):
-        t_ms = _measure_single_channel(usb, ctrl, args.channel.lower(), args.intensity, args.mode.lower(), settle_s)
+        t_ms = _measure_single_channel(
+            usb,
+            ctrl,
+            args.channel.lower(),
+            args.intensity,
+            args.mode.lower(),
+            settle_s,
+        )
         single_times.append(t_ms)
-    print(f"\nSingle-channel acquisition timing (LED {args.channel.upper()}, intensity {args.intensity}):")
+    print(
+        f"\nSingle-channel acquisition timing (LED {args.channel.upper()}, intensity {args.intensity}):",
+    )
     print(f"  mean:   {statistics.mean(single_times):6.2f} ms")
     print(f"  median: {statistics.median(single_times):6.2f} ms")
     print(f"  min:    {min(single_times):6.2f} ms  |  max: {max(single_times):6.2f} ms")
@@ -128,7 +192,9 @@ def main() -> None:
     for _ in range(max(1, args.repeats)):
         t_ms = _measure_cycle(usb, ctrl, intensities, args.mode.lower(), settle_s)
         cycle_times.append(t_ms)
-    print(f"\nFull cycle timing (A→D, intensity {args.cycle_intensity} for all channels):")
+    print(
+        f"\nFull cycle timing (A→D, intensity {args.cycle_intensity} for all channels):",
+    )
     print(f"  mean:   {statistics.mean(cycle_times):7.2f} ms")
     print(f"  median: {statistics.median(cycle_times):7.2f} ms")
     print(f"  min:    {min(cycle_times):7.2f} ms  |  max: {max(cycle_times):7.2f} ms")

@@ -6,21 +6,36 @@ Dialog to collect device configuration information (LED model, controller type,
 fiber diameter, polarizer type, device ID) with optional EEPROM sync.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QPushButton, QComboBox, QLineEdit, QMessageBox,
-    QGraphicsDropShadowEffect
-)
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class DeviceConfigDialog(QDialog):
     """Dialog to collect missing device configuration information."""
 
-    def __init__(self, parent: Optional[QWidget] = None, device_serial: Optional[str] = None,
-                 controller_type: str = '', controller=None, device_config=None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        device_serial: str | None = None,
+        controller_type: str = "",
+        controller=None,
+        device_config=None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Device Configuration Required")
         self.setFixedWidth(500)
@@ -39,7 +54,7 @@ class DeviceConfigDialog(QDialog):
             "QLabel {"
             "  color: #1D1D1F;"
             "  font-size: 13px;"
-            "}"
+            "}",
         )
 
         layout = QVBoxLayout(self)
@@ -49,18 +64,17 @@ class DeviceConfigDialog(QDialog):
         # Title
         title = QLabel("⚙️ Device Configuration")
         title.setStyleSheet(
-            "font-size: 20px;"
-            "font-weight: 600;"
-            "color: #1D1D1F;"
+            "font-size: 20px;font-weight: 600;color: #1D1D1F;",
         )
         layout.addWidget(title)
 
         # Description
-        desc = QLabel(f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>")
+        desc = QLabel(
+            f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>",
+        )
         desc.setTextFormat(Qt.TextFormat.RichText)  # Enable HTML formatting
         desc.setStyleSheet(
-            "font-size: 13px;"
-            "color: #86868B;"
+            "font-size: 13px;color: #86868B;",
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -72,7 +86,7 @@ class DeviceConfigDialog(QDialog):
             "color: #86868B;"
             "padding: 8px 12px;"
             "background: #F5F5F7;"
-            "border-radius: 6px;"
+            "border-radius: 6px;",
         )
         self._update_config_source_indicator()
         layout.addWidget(self.config_source_label)
@@ -157,17 +171,17 @@ class DeviceConfigDialog(QDialog):
 
         # LED Model (LCW or OWW)
         self.led_model_combo = QComboBox()
-        self.led_model_combo.addItems(['LCW', 'OWW'])
+        self.led_model_combo.addItems(["LCW", "OWW"])
         self.led_model_combo.setStyleSheet(combo_style)
         form.addRow("LED Model:", self.led_model_combo)
 
         # Controller Options (hardware types excluding pumps)
         self.controller_combo = QComboBox()
-        self.controller_combo.addItems(['Arduino', 'PicoP4SPR', 'PicoEZSPR'])
+        self.controller_combo.addItems(["Arduino", "PicoP4SPR", "PicoEZSPR"])
         self.controller_combo.setStyleSheet(combo_style)
 
         # Pre-select based on detected controller type
-        if self.controller_type in ['Arduino', 'PicoP4SPR', 'PicoEZSPR']:
+        if self.controller_type in ["Arduino", "PicoP4SPR", "PicoEZSPR"]:
             index = self.controller_combo.findText(self.controller_type)
             if index >= 0:
                 self.controller_combo.setCurrentIndex(index)
@@ -178,13 +192,13 @@ class DeviceConfigDialog(QDialog):
 
         # Fiber Diameter (A=100, B=200)
         self.fiber_diameter_combo = QComboBox()
-        self.fiber_diameter_combo.addItems(['A (100 µm)', 'B (200 µm)'])
+        self.fiber_diameter_combo.addItems(["A (100 µm)", "B (200 µm)"])
         self.fiber_diameter_combo.setStyleSheet(combo_style)
         form.addRow("Fiber Diameter:", self.fiber_diameter_combo)
 
         # Polarizer Type (barrel or circle, default circle for Arduino/PicoP4SPR)
         self.polarizer_type_combo = QComboBox()
-        self.polarizer_type_combo.addItems(['circle', 'barrel'])
+        self.polarizer_type_combo.addItems(["circle", "barrel"])
         self.polarizer_type_combo.setStyleSheet(combo_style)
 
         # Set default based on controller
@@ -195,7 +209,9 @@ class DeviceConfigDialog(QDialog):
         # Device ID (detector serial number)
         self.device_id_input = QLineEdit()
         self.device_id_input.setPlaceholderText("Enter detector serial number")
-        self.device_id_input.setText(device_serial or "")  # Pre-fill with detected serial
+        self.device_id_input.setText(
+            device_serial or "",
+        )  # Pre-fill with detected serial
         self.device_id_input.setStyleSheet(input_style)
         form.addRow("Device ID:", self.device_id_input)
 
@@ -218,7 +234,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QPushButton:hover {"
             "  background: #E5E5E7;"
-            "}"
+            "}",
         )
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
@@ -242,9 +258,11 @@ class DeviceConfigDialog(QDialog):
                 "QPushButton:disabled {"
                 "  background: #E5E5E7;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
-            eeprom_btn.setToolTip("Save configuration to device EEPROM for portable backup")
+            eeprom_btn.setToolTip(
+                "Save configuration to device EEPROM for portable backup",
+            )
             eeprom_btn.clicked.connect(self._on_push_to_eeprom)
             button_layout.addWidget(eeprom_btn)
 
@@ -261,7 +279,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QPushButton:hover {"
             "  background: #0051D5;"
-            "}"
+            "}",
         )
         save_btn.clicked.connect(self.accept)
         button_layout.addWidget(save_btn)
@@ -283,10 +301,10 @@ class DeviceConfigDialog(QDialog):
 
     def _update_polarizer_default(self) -> None:
         """Set polarizer default based on controller type."""
-        if self.controller_type in ['Arduino', 'PicoP4SPR']:
-            self.polarizer_type_combo.setCurrentText('circle')
-        elif self.controller_type == 'PicoEZSPR':
-            self.polarizer_type_combo.setCurrentText('barrel')
+        if self.controller_type in ["Arduino", "PicoP4SPR"]:
+            self.polarizer_type_combo.setCurrentText("circle")
+        elif self.controller_type == "PicoEZSPR":
+            self.polarizer_type_combo.setCurrentText("barrel")
 
     def _update_config_source_indicator(self) -> None:
         """Update the config source indicator label."""
@@ -294,14 +312,17 @@ class DeviceConfigDialog(QDialog):
             self.config_source_label.setText("ℹ️ New configuration")
             return
 
-        if hasattr(self.device_config, 'loaded_from_eeprom') and self.device_config.loaded_from_eeprom:
+        if (
+            hasattr(self.device_config, "loaded_from_eeprom")
+            and self.device_config.loaded_from_eeprom
+        ):
             self.config_source_label.setText("📦 Configuration loaded from EEPROM")
             self.config_source_label.setStyleSheet(
                 "font-size: 12px;"
                 "color: #FF9500;"
                 "padding: 8px 12px;"
                 "background: #FFF3E0;"
-                "border-radius: 6px;"
+                "border-radius: 6px;",
             )
         else:
             self.config_source_label.setText("💾 Configuration loaded from JSON file")
@@ -310,7 +331,7 @@ class DeviceConfigDialog(QDialog):
                 "color: #34C759;"
                 "padding: 8px 12px;"
                 "background: #E8F5E9;"
-                "border-radius: 6px;"
+                "border-radius: 6px;",
             )
 
     def _on_push_to_eeprom(self) -> None:
@@ -319,7 +340,7 @@ class DeviceConfigDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "No Controller",
-                "Cannot push to EEPROM: No controller connected."
+                "Cannot push to EEPROM: No controller connected.",
             )
             return
 
@@ -327,13 +348,14 @@ class DeviceConfigDialog(QDialog):
         if self.device_config is not None:
             config_data = self.get_config_data()
             self.device_config.set_hardware_config(
-                led_pcb_model=config_data['led_pcb_model'],
-                optical_fiber_diameter_um=config_data['optical_fiber_diameter_um'],
-                polarizer_type=config_data['polarizer_type']
+                led_pcb_model=config_data["led_pcb_model"],
+                optical_fiber_diameter_um=config_data["optical_fiber_diameter_um"],
+                polarizer_type=config_data["polarizer_type"],
             )
 
         # Sync to EEPROM
         from affilabs.utils.logger import logger
+
         logger.info("Pushing configuration to EEPROM...")
 
         if self.device_config is not None:
@@ -343,7 +365,7 @@ class DeviceConfigDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Save First",
-                "Please save the configuration to JSON first, then push to EEPROM."
+                "Please save the configuration to JSON first, then push to EEPROM.",
             )
             return
 
@@ -353,7 +375,7 @@ class DeviceConfigDialog(QDialog):
                 self,
                 "EEPROM Sync Complete",
                 "✓ Configuration successfully pushed to device EEPROM.\n\n"
-                "The device can now be used on other computers without reconfiguration."
+                "The device can now be used on other computers without reconfiguration.",
             )
             logger.info("✓ EEPROM sync successful")
         else:
@@ -361,23 +383,23 @@ class DeviceConfigDialog(QDialog):
                 self,
                 "EEPROM Sync Failed",
                 "Failed to push configuration to EEPROM.\n\n"
-                "Check the logs for details."
+                "Check the logs for details.",
             )
             logger.error("✗ EEPROM sync failed")
 
-    def get_config_data(self) -> Dict[str, Any]:
+    def get_config_data(self) -> dict[str, Any]:
         """Get the configuration data from the form."""
         # Map LED model abbreviations to full names
         led_model_map = {
-            'LCW': 'luminus_cool_white',
-            'OWW': 'osram_warm_white'
+            "LCW": "luminus_cool_white",
+            "OWW": "osram_warm_white",
         }
 
         # Extract fiber diameter from selection (e.g., "A (100 µm)" -> 100)
         fiber_text = self.fiber_diameter_combo.currentText()
-        if 'A' in fiber_text:
+        if "A" in fiber_text:
             fiber_diameter = 100
-        elif 'B' in fiber_text:
+        elif "B" in fiber_text:
             fiber_diameter = 200
         else:
             fiber_diameter = 200  # Default
@@ -386,19 +408,22 @@ class DeviceConfigDialog(QDialog):
         controller_type = self.controller_combo.currentText()
 
         # Determine controller model name from type
-        controller_model = 'Raspberry Pi Pico P4SPR'  # Default
-        if controller_type == 'Arduino':
-            controller_model = 'Arduino P4SPR'
-        elif controller_type == 'PicoP4SPR':
-            controller_model = 'Raspberry Pi Pico P4SPR'
-        elif controller_type == 'PicoEZSPR':
-            controller_model = 'Raspberry Pi Pico EZSPR'
+        controller_model = "Raspberry Pi Pico P4SPR"  # Default
+        if controller_type == "Arduino":
+            controller_model = "Arduino P4SPR"
+        elif controller_type == "PicoP4SPR":
+            controller_model = "Raspberry Pi Pico P4SPR"
+        elif controller_type == "PicoEZSPR":
+            controller_model = "Raspberry Pi Pico EZSPR"
 
         return {
-            'led_pcb_model': led_model_map.get(self.led_model_combo.currentText(), 'luminus_cool_white'),
-            'optical_fiber_diameter_um': fiber_diameter,
-            'polarizer_type': self.polarizer_type_combo.currentText(),
-            'device_id': self.device_id_input.text().strip() or None,
-            'controller_model': controller_model,
-            'controller_type': controller_type,
+            "led_pcb_model": led_model_map.get(
+                self.led_model_combo.currentText(),
+                "luminus_cool_white",
+            ),
+            "optical_fiber_diameter_um": fiber_diameter,
+            "polarizer_type": self.polarizer_type_combo.currentText(),
+            "device_id": self.device_id_input.text().strip() or None,
+            "controller_model": controller_model,
+            "controller_type": controller_type,
         }

@@ -1,6 +1,6 @@
 # Batch Processing and Acceleration Analysis
 
-**Date**: October 11, 2025  
+**Date**: October 11, 2025
 **Status**: 📊 Analysis Complete - Implementation Needed
 
 ---
@@ -9,10 +9,10 @@
 
 **Your question**: "Having a dark before and after the LEDs will be interesting to compare especially with the Afterglow correction. Is the arrayed scan method, batch processing method, and no overhead batch LED signal implemented to accelerate data processing?"
 
-**Answer**: 
-✅ **Batch LED control EXISTS** (`set_batch_intensities()`) but is **NOT USED**  
-❌ **Array-based scan methods**: Not fully implemented  
-❌ **No overhead batch processing**: Not implemented  
+**Answer**:
+✅ **Batch LED control EXISTS** (`set_batch_intensities()`) but is **NOT USED**
+❌ **Array-based scan methods**: Not fully implemented
+❌ **No overhead batch processing**: Not implemented
 ✅ **Dark before/after comparison**: Easy to add with current structure
 
 ---
@@ -26,18 +26,18 @@
 ```python
 def set_batch_intensities(self, a=0, b=0, c=0, d=0):
     """Set all LED intensities in a single batch command.
-    
+
     Performance:
         Sequential commands: ~12ms for 4 LEDs (3ms per LED)
         Batch command: ~0.8ms for 4 LEDs
         Speedup: 15x faster
-    
+
     Command Format: batch:A,B,C,D\n
     Example: batch:255,128,64,0\n
     """
 ```
 
-**Status**: 
+**Status**:
 - ✅ Implemented in controller
 - ❌ NOT used in data acquisition
 - ❌ NOT used in calibration
@@ -117,11 +117,11 @@ else:
     # Step 5: Second dark (after LEDs)
     self.state.dark_noise_after_leds_uncorrected = full_spectrum_dark_noise_before_correction
     self.state.dark_noise_after_leds_corrected = full_spectrum_dark_noise
-    
+
     # Calculate contamination
     contamination = mean(uncorrected) - mean(before_leds)
     correction_effectiveness = mean(uncorrected) - mean(corrected)
-    
+
     logger.info("📊 Dark Comparison:")
     logger.info(f"   Before LEDs: {mean(before_leds):.1f} counts")
     logger.info(f"   After LEDs (uncorrected): {mean(uncorrected):.1f} counts")
@@ -200,8 +200,8 @@ Improvement: ~23% faster than current
 ## Implementation Recommendations
 
 ### **Priority 1: Dark Before/After Comparison** (Easy Win)
-**Estimated Time**: 30 minutes  
-**Complexity**: Low  
+**Estimated Time**: 30 minutes
+**Complexity**: Low
 **Impact**: High (validation of afterglow correction)
 
 **Implementation**:
@@ -218,8 +218,8 @@ Improvement: ~23% faster than current
 ---
 
 ### **Priority 2: Batch LED Control** (Medium Win)
-**Estimated Time**: 2-3 hours  
-**Complexity**: Medium  
+**Estimated Time**: 2-3 hours
+**Complexity**: Medium
 **Impact**: Medium (~6% speedup, or ~23% with afterglow correction)
 
 **Implementation**:
@@ -236,8 +236,8 @@ Improvement: ~23% faster than current
 ---
 
 ### **Priority 3: Array-Based Scan Processing** (Small Win)
-**Estimated Time**: 4-5 hours  
-**Complexity**: High  
+**Estimated Time**: 4-5 hours
+**Complexity**: High
 **Impact**: Low (~2-3% speedup from vectorization)
 
 **Implementation**:
@@ -324,19 +324,19 @@ else:
     # Step 5: Compare and correct
     before_mean = np.mean(self.state.dark_noise_before_leds)
     uncorrected_mean = np.mean(full_spectrum_dark_noise)
-    
+
     # Store uncorrected for comparison
     self.state.dark_noise_after_leds_uncorrected = full_spectrum_dark_noise.copy()
-    
+
     # Apply afterglow correction
     # ... correction code ...
-    
+
     corrected_mean = np.mean(full_spectrum_dark_noise)
     contamination = uncorrected_mean - before_mean
     correction_effectiveness = (uncorrected_mean - corrected_mean) / contamination * 100
-    
+
     self.state.dark_noise_contamination = contamination
-    
+
     logger.info(f"📊 Dark Noise Comparison:")
     logger.info(f"   Before LEDs (Step 1): {before_mean:.1f} counts")
     logger.info(f"   After LEDs (uncorrected): {uncorrected_mean:.1f} counts")
@@ -353,26 +353,26 @@ else:
 # In spr_data_acquisition.py:
 def _read_all_channels_batch(self, ch_list):
     """Read all channels using batch LED control (experimental).
-    
+
     Speedup: ~15x faster LED switching (12ms → 0.8ms)
     """
     try:
         # Set all LED intensities at once
         intensities = {ch: self.state.leds_calibrated.get(ch, 0) for ch in ch_list}
-        
+
         # Batch command (all LEDs off except active channel)
         for ch in ch_list:
             led_vals = {ch: intensities[ch] if ch == ch else 0 for ch in ['a', 'b', 'c', 'd']}
             success = self.ctrl.set_batch_intensities(**led_vals)
-            
+
             if not success:
                 logger.warning("Batch LED command failed, falling back to sequential")
                 return self._read_all_channels_sequential(ch_list)
-            
+
             time.sleep(self.led_delay)
             # Measure this channel
             # ...
-    
+
     except Exception as e:
         logger.error(f"Batch processing failed: {e}, falling back to sequential")
         return self._read_all_channels_sequential(ch_list)
@@ -407,5 +407,5 @@ def _read_all_channels_batch(self, ch_list):
 
 ---
 
-**Status**: Analysis complete, recommendations provided  
+**Status**: Analysis complete, recommendations provided
 **Last Updated**: October 11, 2025

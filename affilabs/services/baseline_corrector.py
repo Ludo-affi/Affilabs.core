@@ -4,11 +4,11 @@ Pure business logic for baseline correction of transmission spectra.
 NO Qt dependencies - fully testable.
 """
 
+import logging
+
 import numpy as np
-from typing import Optional, Tuple
 from scipy import signal
 from scipy.ndimage import minimum_filter1d
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,13 @@ class BaselineCorrector:
     - Asymmetric least squares (ALS)
     """
 
-    def __init__(self, method: str = 'polynomial', poly_order: int = 1):
+    def __init__(self, method: str = "polynomial", poly_order: int = 1):
         """Initialize baseline corrector.
 
         Args:
             method: Correction method ('polynomial', 'moving_min', 'als')
             poly_order: Polynomial order for polynomial method (1=linear, 2=quadratic)
+
         """
         self.method = method
         self.poly_order = poly_order
@@ -35,7 +36,7 @@ class BaselineCorrector:
     def correct(
         self,
         transmission: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None
+        wavelengths: np.ndarray | None = None,
     ) -> np.ndarray:
         """Apply baseline correction to transmission spectrum.
 
@@ -45,6 +46,7 @@ class BaselineCorrector:
 
         Returns:
             Baseline-corrected transmission (%)
+
         """
         if len(transmission) == 0:
             raise ValueError("Empty transmission spectrum")
@@ -53,20 +55,19 @@ class BaselineCorrector:
             raise ValueError("Transmission contains non-finite values")
 
         # Choose correction method
-        if self.method == 'polynomial':
+        if self.method == "polynomial":
             return self._polynomial_correction(transmission, wavelengths)
-        elif self.method == 'moving_min':
+        if self.method == "moving_min":
             return self._moving_min_correction(transmission)
-        elif self.method == 'als':
+        if self.method == "als":
             return self._als_correction(transmission)
-        else:
-            logger.warning(f"Unknown method '{self.method}', using polynomial")
-            return self._polynomial_correction(transmission, wavelengths)
+        logger.warning(f"Unknown method '{self.method}', using polynomial")
+        return self._polynomial_correction(transmission, wavelengths)
 
     def correct_baseline(
         self,
         transmission: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None
+        wavelengths: np.ndarray | None = None,
     ) -> np.ndarray:
         """Compatibility shim: some UI layers expect `correct_baseline`.
 
@@ -77,7 +78,7 @@ class BaselineCorrector:
     def correct_batch(
         self,
         transmissions: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None
+        wavelengths: np.ndarray | None = None,
     ) -> np.ndarray:
         """Apply baseline correction to multiple spectra.
 
@@ -87,6 +88,7 @@ class BaselineCorrector:
 
         Returns:
             Array of corrected transmissions (N x wavelengths)
+
         """
         corrected = np.zeros_like(transmissions)
         for i, transmission in enumerate(transmissions):
@@ -96,7 +98,7 @@ class BaselineCorrector:
     def _polynomial_correction(
         self,
         transmission: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None
+        wavelengths: np.ndarray | None = None,
     ) -> np.ndarray:
         """Polynomial baseline correction (linear or higher order).
 
@@ -115,15 +117,16 @@ class BaselineCorrector:
         # Subtract baseline (shift to mean instead of zero)
         corrected = transmission - baseline + np.mean(transmission)
 
-        logger.debug(f"Polynomial baseline correction (order={self.poly_order}): "
-                    f"coefficients={coeffs}")
+        logger.debug(
+            f"Polynomial baseline correction (order={self.poly_order}): " f"coefficients={coeffs}",
+        )
 
         return corrected
 
     def _moving_min_correction(
         self,
         transmission: np.ndarray,
-        window_size: Optional[int] = None
+        window_size: int | None = None,
     ) -> np.ndarray:
         """Moving minimum baseline correction.
 
@@ -137,10 +140,15 @@ class BaselineCorrector:
                 window_size += 1
 
         # Apply minimum filter (baseline estimation)
-        baseline = minimum_filter1d(transmission, size=window_size, mode='nearest')
+        baseline = minimum_filter1d(transmission, size=window_size, mode="nearest")
 
         # Smooth the baseline
-        baseline = signal.savgol_filter(baseline, window_size, polyorder=2, mode='nearest')
+        baseline = signal.savgol_filter(
+            baseline,
+            window_size,
+            polyorder=2,
+            mode="nearest",
+        )
 
         # Subtract baseline
         corrected = transmission - baseline + np.mean(transmission)
@@ -154,7 +162,7 @@ class BaselineCorrector:
         transmission: np.ndarray,
         lam: float = 1e5,
         p: float = 0.01,
-        max_iter: int = 10
+        max_iter: int = 10,
     ) -> np.ndarray:
         """Asymmetric Least Squares (ALS) baseline correction.
 
@@ -162,6 +170,7 @@ class BaselineCorrector:
             lam: Smoothness parameter (larger = smoother)
             p: Asymmetry parameter (0.001-0.1, smaller = more asymmetric)
             max_iter: Maximum iterations
+
         """
         L = len(transmission)
         D = np.diff(np.eye(L), 2, axis=0)
@@ -183,8 +192,8 @@ class BaselineCorrector:
     def estimate_baseline(
         self,
         transmission: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        wavelengths: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Estimate baseline without applying correction.
 
         Args:
@@ -193,6 +202,7 @@ class BaselineCorrector:
 
         Returns:
             Tuple of (baseline, corrected_transmission)
+
         """
         if wavelengths is not None and len(wavelengths) == len(transmission):
             x = wavelengths
@@ -215,13 +225,14 @@ class BaselineCorrector:
 
         Returns:
             Dictionary with correction info (method, params, baseline shift)
+
         """
         baseline, corrected = self.estimate_baseline(transmission)
 
         return {
-            'method': self.method,
-            'poly_order': self.poly_order if self.method == 'polynomial' else None,
-            'baseline_mean': float(np.mean(baseline)),
-            'baseline_range': float(np.max(baseline) - np.min(baseline)),
-            'shift': float(np.mean(transmission) - np.mean(corrected))
+            "method": self.method,
+            "poly_order": self.poly_order if self.method == "polynomial" else None,
+            "baseline_mean": float(np.mean(baseline)),
+            "baseline_range": float(np.max(baseline) - np.min(baseline)),
+            "shift": float(np.mean(transmission) - np.mean(corrected)),
         }

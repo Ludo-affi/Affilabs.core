@@ -1,5 +1,4 @@
-"""
-Test LED overlap timing strategy for 210ms integration time.
+"""Test LED overlap timing strategy for 210ms integration time.
 Target: 900-1100ms cycle time for 4 channels.
 
 Timing configuration:
@@ -16,33 +15,30 @@ Expected per channel:
 
 import sys
 import time
-import json
-import numpy as np
 from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from settings import (
+    LED_OVERLAP_MS,
+    POST_LED_DELAY_MS,
+    PRE_LED_DELAY_MS,
+)
 from utils.controller import PicoP4SPR
 from utils.usb4000_wrapper import USB4000
-from settings import (
-    PRE_LED_DELAY_MS,
-    POST_LED_DELAY_MS,
-    LED_OVERLAP_MS,
-)
 
 
 def test_timing_cycle():
     """Test acquisition timing with LED overlap strategy."""
-
     print("=" * 80)
     print("LED OVERLAP TIMING TEST - 210ms Integration")
     print("=" * 80)
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  PRE delay: {PRE_LED_DELAY_MS}ms")
     print(f"  POST delay: {POST_LED_DELAY_MS}ms")
     print(f"  LED overlap: {LED_OVERLAP_MS}ms")
-    print(f"  Expected cycle time: 900-1100ms")
+    print("  Expected cycle time: 900-1100ms")
     print("=" * 80)
     print()
 
@@ -52,7 +48,7 @@ def test_timing_cycle():
 
     try:
         ctrl.open()
-        print(f"✅ Connected to controller")
+        print("✅ Connected to controller")
     except Exception as e:
         print(f"❌ Failed to connect: {e}")
         return False
@@ -61,7 +57,7 @@ def test_timing_cycle():
     detector = USB4000(parent=None)
     try:
         detector.open()
-        print(f"✅ Connected to detector")
+        print("✅ Connected to detector")
     except Exception as e:
         print(f"❌ Failed to connect to detector: {e}")
         ctrl.close()
@@ -76,7 +72,7 @@ def test_timing_cycle():
     print()
 
     # Run timing test
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     num_cycles = 5
 
     print(f"Running {num_cycles} acquisition cycles...")
@@ -98,7 +94,7 @@ def test_timing_cycle():
 
             try:
                 # Turn ON current LED
-                led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+                led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
                 led_values[ch] = 255
                 ctrl.set_batch_intensities(**led_values)
 
@@ -127,7 +123,7 @@ def test_timing_cycle():
 
                     # Turn ON next LED during POST
                     next_ch = channels[idx + 1]
-                    next_led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+                    next_led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
                     next_led_values[next_ch] = 255
                     ctrl.set_batch_intensities(**next_led_values)
 
@@ -155,11 +151,11 @@ def test_timing_cycle():
             print(f"✅ Cycle {cycle + 1} complete: {cycle_time_ms:.1f}ms")
 
             if cycle_time_ms < 900:
-                print(f"   ⚠️ Faster than expected (target: 900-1100ms)")
+                print("   ⚠️ Faster than expected (target: 900-1100ms)")
             elif cycle_time_ms > 1100:
-                print(f"   ⚠️ Slower than expected (target: 900-1100ms)")
+                print("   ⚠️ Slower than expected (target: 900-1100ms)")
             else:
-                print(f"   ✅ Within target range")
+                print("   ✅ Within target range")
         else:
             print(f"❌ Cycle {cycle + 1} failed")
 
@@ -186,8 +182,8 @@ def test_timing_cycle():
         if 900 <= avg_time <= 1100:
             print("✅ PASS: Average cycle time within target (900-1100ms)")
         else:
-            print(f"❌ FAIL: Average cycle time outside target")
-            print(f"   Expected: 900-1100ms")
+            print("❌ FAIL: Average cycle time outside target")
+            print("   Expected: 900-1100ms")
             print(f"   Actual: {avg_time:.1f}ms")
 
         print()
@@ -218,5 +214,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\n❌ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

@@ -1,5 +1,4 @@
-"""
-Consensus Peak Tracking for SPR Measurements
+"""Consensus Peak Tracking for SPR Measurements
 
 Combines centroid and parabolic methods to achieve robust peak detection
 that is invariant to peak shape and intensity variations.
@@ -16,8 +15,8 @@ Date: 2025-10-21
 Version: 0.2.0-phase1
 """
 
-from typing import Tuple, Optional, Dict
 from collections import deque
+
 import numpy as np
 from scipy.signal import savgol_filter
 
@@ -28,12 +27,12 @@ class CentroidTracker:
     """Centroid-based peak detection with adaptive thresholding"""
 
     def __init__(self, target_pixels: int = 20):
-        """
-        Initialize centroid tracker.
+        """Initialize centroid tracker.
 
         Args:
             target_pixels: Target number of pixels to include in centroid
                           (maintains consistent noise averaging)
+
         """
         self.target_pixels = target_pixels
 
@@ -41,11 +40,10 @@ class CentroidTracker:
         self,
         wavelengths: np.ndarray,
         spectrum: np.ndarray,
-        search_range: Tuple[float, float] = (600, 720),
-        channel: str = ''
-    ) -> Tuple[float, int, float]:
-        """
-        Find peak using weighted centroid with adaptive threshold.
+        search_range: tuple[float, float] = (600, 720),
+        channel: str = "",
+    ) -> tuple[float, int, float]:
+        """Find peak using weighted centroid with adaptive threshold.
 
         Args:
             wavelengths: Wavelength array (nm)
@@ -55,6 +53,7 @@ class CentroidTracker:
 
         Returns:
             (peak_wavelength, num_pixels_used, threshold_used)
+
         """
         # Extract search region
         mask = (wavelengths >= search_range[0]) & (wavelengths <= search_range[1])
@@ -62,23 +61,28 @@ class CentroidTracker:
         spec_region = spectrum[mask]
 
         if len(wl_region) < 3:
-            logger.warning(f"Centroid Ch {channel}: Insufficient points ({len(wl_region)})")
+            logger.warning(
+                f"Centroid Ch {channel}: Insufficient points ({len(wl_region)})",
+            )
             if len(wl_region) > 0:
                 return wl_region[np.argmin(spec_region)], len(wl_region), 0.0
-            else:
-                return np.nan, 0, 0.0
+            return np.nan, 0, 0.0
 
         # Invert spectrum (SPR dip becomes peak)
         inverted = 1.0 - spec_region
         max_signal = np.max(inverted)
 
         if max_signal < 0.01:
-            logger.warning(f"Centroid Ch {channel}: Very low signal (max={max_signal:.3f})")
+            logger.warning(
+                f"Centroid Ch {channel}: Very low signal (max={max_signal:.3f})",
+            )
             return wl_region[np.argmin(spec_region)], len(wl_region), 0.0
 
         # Adaptive threshold to maintain target pixel count
         threshold_fraction = self._adaptive_threshold(
-            inverted, max_signal, self.target_pixels
+            inverted,
+            max_signal,
+            self.target_pixels,
         )
 
         # Apply threshold
@@ -87,7 +91,9 @@ class CentroidTracker:
         num_pixels = np.sum(significant_mask)
 
         if num_pixels < 3:
-            logger.debug(f"Centroid Ch {channel}: Too few pixels ({num_pixels}), using min")
+            logger.debug(
+                f"Centroid Ch {channel}: Too few pixels ({num_pixels}), using min",
+            )
             peak_idx = np.argmin(spec_region)
             return wl_region[peak_idx], num_pixels, threshold_fraction
 
@@ -98,7 +104,7 @@ class CentroidTracker:
 
         logger.debug(
             f"Centroid Ch {channel}: λ={centroid:.3f}nm, "
-            f"n_pixels={num_pixels}, thresh={threshold_fraction:.2f}"
+            f"n_pixels={num_pixels}, thresh={threshold_fraction:.2f}",
         )
 
         return float(centroid), num_pixels, threshold_fraction
@@ -107,10 +113,9 @@ class CentroidTracker:
         self,
         inverted: np.ndarray,
         max_signal: float,
-        target_pixels: int
+        target_pixels: int,
     ) -> float:
-        """
-        Adjust threshold to maintain approximately target_pixels above threshold.
+        """Adjust threshold to maintain approximately target_pixels above threshold.
 
         Uses binary search to find threshold that gives target_pixels ± 5.
 
@@ -121,6 +126,7 @@ class CentroidTracker:
 
         Returns:
             Threshold fraction (0.0-1.0) relative to max_signal
+
         """
         # Start with standard 0.5 threshold
         low_thresh = 0.2
@@ -137,7 +143,7 @@ class CentroidTracker:
             if abs(num_pixels - target_pixels) <= 5:
                 best_thresh = mid_thresh
                 break
-            elif num_pixels > target_pixels:
+            if num_pixels > target_pixels:
                 # Too many pixels, increase threshold
                 low_thresh = mid_thresh
             else:
@@ -156,11 +162,10 @@ class ParabolicTracker:
         self,
         wavelengths: np.ndarray,
         spectrum: np.ndarray,
-        search_range: Tuple[float, float] = (600, 720),
-        channel: str = ''
-    ) -> Tuple[float, bool]:
-        """
-        Find peak by fitting parabola to minimum point.
+        search_range: tuple[float, float] = (600, 720),
+        channel: str = "",
+    ) -> tuple[float, bool]:
+        """Find peak by fitting parabola to minimum point.
 
         Uses 3-point analytical solution for parabolic vertex.
 
@@ -172,6 +177,7 @@ class ParabolicTracker:
 
         Returns:
             (peak_wavelength, fit_success)
+
         """
         # Extract search region
         mask = (wavelengths >= search_range[0]) & (wavelengths <= search_range[1])
@@ -179,11 +185,12 @@ class ParabolicTracker:
         spec_region = spectrum[mask]
 
         if len(wl_region) < 3:
-            logger.warning(f"Parabolic Ch {channel}: Insufficient points ({len(wl_region)})")
+            logger.warning(
+                f"Parabolic Ch {channel}: Insufficient points ({len(wl_region)})",
+            )
             if len(wl_region) > 0:
                 return wl_region[np.argmin(spec_region)], False
-            else:
-                return np.nan, False
+            return np.nan, False
 
         # Find discrete minimum
         min_idx = np.argmin(spec_region)
@@ -218,7 +225,9 @@ class ParabolicTracker:
 
             # Check if it's actually a minimum (A > 0)
             if A < 0:
-                logger.debug(f"Parabolic Ch {channel}: Parabola is maximum, not minimum")
+                logger.debug(
+                    f"Parabolic Ch {channel}: Parabola is maximum, not minimum",
+                )
                 return wl_region[min_idx], False
 
             # Vertex position
@@ -228,7 +237,7 @@ class ParabolicTracker:
             if abs(vertex_x - x1) > 2.0:  # More than 2nm away
                 logger.debug(
                     f"Parabolic Ch {channel}: Vertex too far "
-                    f"({vertex_x:.3f} vs {x1:.3f})"
+                    f"({vertex_x:.3f} vs {x1:.3f})",
                 )
                 return wl_region[min_idx], False
 
@@ -241,8 +250,7 @@ class ParabolicTracker:
 
 
 class ConsensusTracker:
-    """
-    Consensus peak tracker combining centroid + parabolic methods.
+    """Consensus peak tracker combining centroid + parabolic methods.
     Phase 1: Fixed filtering, no adaptive behavior.
     """
 
@@ -253,10 +261,9 @@ class ConsensusTracker:
         target_pixels: int = 20,
         history_size: int = 10,
         outlier_threshold_mad: float = 3.0,
-        search_range: Tuple[float, float] = (600, 720)
+        search_range: tuple[float, float] = (600, 720),
     ):
-        """
-        Initialize consensus tracker.
+        """Initialize consensus tracker.
 
         Args:
             savgol_window: Savitzky-Golay window size (odd number)
@@ -265,6 +272,7 @@ class ConsensusTracker:
             history_size: Number of recent peaks to keep for outlier detection
             outlier_threshold_mad: MAD multiplier for outlier threshold
             search_range: SPR wavelength range (min, max) in nm
+
         """
         self.savgol_window = savgol_window
         self.savgol_polyorder = savgol_polyorder
@@ -277,20 +285,19 @@ class ConsensusTracker:
         self.parabolic_tracker = ParabolicTracker()
 
         # History for outlier detection (per channel)
-        self.peak_history: Dict[str, deque] = {
-            ch: deque(maxlen=history_size) for ch in 'abcd'
+        self.peak_history: dict[str, deque] = {
+            ch: deque(maxlen=history_size) for ch in "abcd"
         }
-        self.outlier_count: Dict[str, int] = {ch: 0 for ch in 'abcd'}
-        self.total_count: Dict[str, int] = {ch: 0 for ch in 'abcd'}
+        self.outlier_count: dict[str, int] = {ch: 0 for ch in "abcd"}
+        self.total_count: dict[str, int] = {ch: 0 for ch in "abcd"}
 
     def find_peak(
         self,
         wavelengths: np.ndarray,
         spectrum: np.ndarray,
-        channel: str
-    ) -> Dict:
-        """
-        Find peak using consensus method.
+        channel: str,
+    ) -> dict:
+        """Find peak using consensus method.
 
         Args:
             wavelengths: Wavelength array (nm)
@@ -309,6 +316,7 @@ class ConsensusTracker:
                 'is_outlier': bool
                 'confidence': 0.0-1.0
                 'outlier_rate': fraction of outliers detected
+
         """
         self.total_count[channel] += 1
 
@@ -318,7 +326,7 @@ class ConsensusTracker:
                 smoothed = savgol_filter(
                     spectrum,
                     window_length=self.savgol_window,
-                    polyorder=self.savgol_polyorder
+                    polyorder=self.savgol_polyorder,
                 )
             except Exception as e:
                 logger.warning(f"Consensus Ch {channel}: Savgol failed: {e}")
@@ -328,11 +336,17 @@ class ConsensusTracker:
 
         # Step 2: Find peaks with both methods
         centroid_peak, num_pixels, centroid_threshold = self.centroid_tracker.find_peak(
-            wavelengths, smoothed, self.search_range, channel
+            wavelengths,
+            smoothed,
+            self.search_range,
+            channel,
         )
 
         parabolic_peak, parabolic_success = self.parabolic_tracker.find_peak(
-            wavelengths, smoothed, self.search_range, channel
+            wavelengths,
+            smoothed,
+            self.search_range,
+            channel,
         )
 
         # Check for NaN results
@@ -361,7 +375,7 @@ class ConsensusTracker:
                 predicted = self._predict_next_value(channel)
                 logger.info(
                     f"Consensus Ch {channel}: Outlier detected "
-                    f"({consensus_peak:.3f}nm) → replaced ({predicted:.3f}nm)"
+                    f"({consensus_peak:.3f}nm) → replaced ({predicted:.3f}nm)",
                 )
                 self.outlier_count[channel] += 1
                 consensus_peak = predicted
@@ -371,26 +385,28 @@ class ConsensusTracker:
 
         # Step 6: Calculate confidence
         confidence = self._calculate_confidence(
-            disagreement, parabolic_success, num_pixels
+            disagreement,
+            parabolic_success,
+            num_pixels,
         )
 
         # Return detailed results
         return {
-            'peak_nm': consensus_peak,
-            'centroid_nm': centroid_peak,
-            'parabolic_nm': parabolic_peak,
-            'num_pixels': num_pixels,
-            'centroid_threshold': centroid_threshold,
-            'parabolic_success': parabolic_success,
-            'disagreement_nm': disagreement,
-            'is_outlier': is_outlier,
-            'confidence': confidence,
-            'outlier_rate': self.outlier_count[channel] / max(1, self.total_count[channel])
+            "peak_nm": consensus_peak,
+            "centroid_nm": centroid_peak,
+            "parabolic_nm": parabolic_peak,
+            "num_pixels": num_pixels,
+            "centroid_threshold": centroid_threshold,
+            "parabolic_success": parabolic_success,
+            "disagreement_nm": disagreement,
+            "is_outlier": is_outlier,
+            "confidence": confidence,
+            "outlier_rate": self.outlier_count[channel]
+            / max(1, self.total_count[channel]),
         }
 
     def _is_outlier(self, peak: float, channel: str) -> bool:
-        """
-        Detect outliers using Median Absolute Deviation (MAD).
+        """Detect outliers using Median Absolute Deviation (MAD).
 
         MAD is robust to outliers (unlike std dev).
 
@@ -400,6 +416,7 @@ class ConsensusTracker:
 
         Returns:
             True if peak is an outlier
+
         """
         history = list(self.peak_history[channel])
         median = np.median(history)
@@ -414,8 +431,7 @@ class ConsensusTracker:
         return deviation > threshold
 
     def _predict_next_value(self, channel: str) -> float:
-        """
-        Predict next value using linear extrapolation.
+        """Predict next value using linear extrapolation.
 
         Uses last 3 points to fit linear trend and extrapolate.
 
@@ -424,6 +440,7 @@ class ConsensusTracker:
 
         Returns:
             Predicted peak position
+
         """
         history = list(self.peak_history[channel])
 
@@ -442,7 +459,7 @@ class ConsensusTracker:
             if abs(predicted - history[-1]) > 5.0:  # More than 5nm away
                 logger.debug(
                     f"Consensus Ch {channel}: Prediction too far "
-                    f"({predicted:.3f} vs {history[-1]:.3f}), using median"
+                    f"({predicted:.3f} vs {history[-1]:.3f}), using median",
                 )
                 return np.median(history)
 
@@ -455,10 +472,9 @@ class ConsensusTracker:
         self,
         disagreement: float,
         parabolic_success: bool,
-        num_pixels: int
+        num_pixels: int,
     ) -> float:
-        """
-        Calculate confidence score (0.0-1.0) based on method agreement.
+        """Calculate confidence score (0.0-1.0) based on method agreement.
 
         High confidence: Methods agree, good pixel count
         Low confidence: Methods disagree, poor fit, few pixels
@@ -470,6 +486,7 @@ class ConsensusTracker:
 
         Returns:
             Confidence score (0.0-1.0)
+
         """
         confidence = 1.0
 
@@ -491,45 +508,50 @@ class ConsensusTracker:
 
         return confidence
 
-    def _create_error_result(self, channel: str) -> Dict:
+    def _create_error_result(self, channel: str) -> dict:
         """Create error result dictionary"""
         return {
-            'peak_nm': np.nan,
-            'centroid_nm': np.nan,
-            'parabolic_nm': None,
-            'num_pixels': 0,
-            'centroid_threshold': 0.0,
-            'parabolic_success': False,
-            'disagreement_nm': 0.0,
-            'is_outlier': False,
-            'confidence': 0.0,
-            'outlier_rate': self.outlier_count[channel] / max(1, self.total_count[channel]),
-            'error': True
+            "peak_nm": np.nan,
+            "centroid_nm": np.nan,
+            "parabolic_nm": None,
+            "num_pixels": 0,
+            "centroid_threshold": 0.0,
+            "parabolic_success": False,
+            "disagreement_nm": 0.0,
+            "is_outlier": False,
+            "confidence": 0.0,
+            "outlier_rate": self.outlier_count[channel]
+            / max(1, self.total_count[channel]),
+            "error": True,
         }
 
-    def get_statistics(self, channel: str) -> Dict:
-        """
-        Get performance statistics for a channel.
+    def get_statistics(self, channel: str) -> dict:
+        """Get performance statistics for a channel.
 
         Args:
             channel: Channel identifier
 
         Returns:
             dict with mean, std, peak-to-peak, outlier_rate, etc.
+
         """
         history = list(self.peak_history[channel])
 
         if len(history) < 2:
-            return {'error': 'Insufficient data', 'total_samples': self.total_count[channel]}
+            return {
+                "error": "Insufficient data",
+                "total_samples": self.total_count[channel],
+            }
 
         return {
-            'mean': np.mean(history),
-            'std': np.std(history),
-            'peak_to_peak': np.max(history) - np.min(history),
-            'min': np.min(history),
-            'max': np.max(history),
-            'outlier_rate': self.outlier_count[channel] / max(1, self.total_count[channel]),
-            'outlier_count': self.outlier_count[channel],
-            'total_samples': self.total_count[channel],
-            'history_size': len(history)
+            "mean": np.mean(history),
+            "std": np.std(history),
+            "peak_to_peak": np.max(history) - np.min(history),
+            "min": np.min(history),
+            "max": np.max(history),
+            "outlier_rate": self.outlier_count[channel]
+            / max(1, self.total_count[channel]),
+            "outlier_count": self.outlier_count[channel],
+            "total_samples": self.total_count[channel],
+            "history_size": len(history),
         }

@@ -1,12 +1,14 @@
 """Diagnostic test to see what cycle count firmware sees"""
-import serial
+
 import time
 
-print("="*60)
-print("CYCLE COUNT DIAGNOSTIC TEST")
-print("="*60)
+import serial
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+print("=" * 60)
+print("CYCLE COUNT DIAGNOSTIC TEST")
+print("=" * 60)
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -23,7 +25,7 @@ for test_name, command in test_cases:
     print(f"\n{'='*60}")
     print(f"Testing: {test_name}")
     print(f"Command: {command.strip()}")
-    print('-'*60)
+    print("-" * 60)
 
     ser.reset_input_buffer()
     ser.write(command.encode())
@@ -33,7 +35,7 @@ for test_name, command in test_cases:
 
     while time.time() - start < 30:  # 30 second timeout per test
         if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
 
             if line:
                 if line.startswith("CYCLE:"):
@@ -57,7 +59,7 @@ for test_name, command in test_cases:
                     print(f"\n  BATCH_END - Time: {elapsed:.1f}s")
                     print(f"  ✅ Expected: {test_name}, Got: {cycles_seen} cycles")
                     if cycles_seen != int(test_name.split()[0]):
-                        print(f"  ⚠️  MISMATCH!")
+                        print("  ⚠️  MISMATCH!")
                     break
 
     # Small delay between tests

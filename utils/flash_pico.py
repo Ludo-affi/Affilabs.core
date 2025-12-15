@@ -122,7 +122,7 @@ def resolve_uf2_path(cli_path: Optional[str]) -> Path:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Flash RP2040 Pico by sending 'ub' and copying UF2"
+        description="Flash RP2040 Pico by sending 'ub' and copying UF2",
     )
     parser.add_argument(
         "--uf2",
@@ -142,7 +142,9 @@ def main(argv: list[str]) -> int:
         help="Don't send 'ub'; assume Pico is already in BOOTSEL mode",
     )
     parser.add_argument(
-        "--dry-run", action="store_true", help="Print actions without sending/copying"
+        "--dry-run",
+        action="store_true",
+        help="Print actions without sending/copying",
     )
     args = parser.parse_args(argv)
 
@@ -158,7 +160,7 @@ def main(argv: list[str]) -> int:
         port = find_pico_port()
         if not port:
             print(
-                "ERROR: Pico serial device not found (VID=2E8A, PID=000A). Use --no-ub if already in BOOTSEL."
+                "ERROR: Pico serial device not found (VID=2E8A, PID=000A). Use --no-ub if already in BOOTSEL.",
             )
             return 2
         print(f"Sending 'ub' to {port} ...")
@@ -168,7 +170,7 @@ def main(argv: list[str]) -> int:
             ok = send_ub(port)
             if not ok:
                 print(
-                    "ERROR: Failed to send 'ub'. Close any app using the COM port and try again."
+                    "ERROR: Failed to send 'ub'. Close any app using the COM port and try again.",
                 )
                 return 2
 
@@ -180,7 +182,7 @@ def main(argv: list[str]) -> int:
     drive = find_rpi_rp2_drive(timeout=args.timeout)
     if not drive:
         print(
-            "ERROR: RPI-RP2 drive not detected. You can press BOOTSEL manually or increase --timeout."
+            "ERROR: RPI-RP2 drive not detected. You can press BOOTSEL manually or increase --timeout.",
         )
         return 3
 

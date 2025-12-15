@@ -1,13 +1,22 @@
-"""
-Test script to verify cycle marker rendering (gray zone and vertical lines).
+"""Test script to verify cycle marker rendering (gray zone and vertical lines).
 Run this standalone to verify pyqtgraph rendering works correctly.
 """
+
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, QHBoxLayout, QRadioButton, QButtonGroup
-from PySide6.QtGui import QBrush, QColor
-import pyqtgraph as pg
-from pyqtgraph import PlotWidget, InfiniteLine, LinearRegionItem, mkPen
+
 import numpy as np
+from pyqtgraph import InfiniteLine, LinearRegionItem, PlotWidget, mkPen
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (
+    QApplication,
+    QButtonGroup,
+    QHBoxLayout,
+    QMainWindow,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class CycleMarkerTest(QMainWindow):
@@ -49,10 +58,10 @@ class CycleMarkerTest(QMainWindow):
 
         # Plot widget
         self.plot_widget = PlotWidget()
-        self.plot_widget.setBackground('w')
+        self.plot_widget.setBackground("w")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setLabel('left', 'Response Units (RU)')
-        self.plot_widget.setLabel('bottom', 'Time (seconds)')
+        self.plot_widget.setLabel("left", "Response Units (RU)")
+        self.plot_widget.setLabel("bottom", "Time (seconds)")
         layout.addWidget(self.plot_widget)
 
         # Plot data
@@ -61,7 +70,11 @@ class CycleMarkerTest(QMainWindow):
         # Generate initial data
         self.time_data = np.linspace(0, 100, 1000)
         self.signal_data = np.sin(self.time_data / 10) * 50 + 100
-        self.data_curve = self.plot.plot(self.time_data, self.signal_data, pen=mkPen('b', width=2))
+        self.data_curve = self.plot.plot(
+            self.time_data,
+            self.signal_data,
+            pen=mkPen("b", width=2),
+        )
 
         # Cycle markers
         self.cycle_time_region = None
@@ -86,7 +99,7 @@ class CycleMarkerTest(QMainWindow):
         start_time = self.left_cursor_pos
         end_time = start_time + (cycle_time_minutes * 60)
 
-        print(f"\n=== Showing Cycle Markers ===")
+        print("\n=== Showing Cycle Markers ===")
         print(f"Start: {start_time:.1f}s, End: {end_time:.1f}s")
 
         # Remove existing markers
@@ -99,19 +112,19 @@ class CycleMarkerTest(QMainWindow):
             self.cycle_start_line = InfiniteLine(
                 pos=start_time,
                 angle=90,
-                pen=mkPen('g', width=3, style=2),
+                pen=mkPen("g", width=3, style=2),
                 movable=False,
-                label='Start',
-                labelOpts={'position': 0.9, 'color': (0, 200, 0), 'movable': False}
+                label="Start",
+                labelOpts={"position": 0.9, "color": (0, 200, 0), "movable": False},
             )
 
             self.cycle_end_line = InfiniteLine(
                 pos=end_time,
                 angle=90,
-                pen=mkPen('r', width=3, style=2),
+                pen=mkPen("r", width=3, style=2),
                 movable=False,
-                label='End',
-                labelOpts={'position': 0.9, 'color': (200, 0, 0), 'movable': False}
+                label="End",
+                labelOpts={"position": 0.9, "color": (200, 0, 0), "movable": False},
             )
 
             self.cycle_start_line.setZValue(100)
@@ -119,16 +132,18 @@ class CycleMarkerTest(QMainWindow):
 
             self.plot.addItem(self.cycle_start_line)
             self.plot.addItem(self.cycle_end_line)
-            print("✓ Vertical line markers added (green Start at z=100, red End at z=100)")
+            print(
+                "✓ Vertical line markers added (green Start at z=100, red End at z=100)",
+            )
         else:
             # Gray shaded region
             print("Mode: GRAY ZONE (LinearRegionItem)")
 
             self.cycle_time_region = LinearRegionItem(
                 values=[start_time, end_time],
-                orientation='vertical',
+                orientation="vertical",
                 brush=QBrush(QColor(100, 100, 255, 40)),
-                movable=False
+                movable=False,
             )
             self.cycle_time_region.setZValue(-10)
             self.plot.addItem(self.cycle_time_region)

@@ -82,7 +82,7 @@ class DataIOManager:
                             "Timestamp": temp_log["times"][i],
                             "Experiment Time": temp_log["exp"][i],
                             "Device Temp": temp_log["readings"][i],
-                        }
+                        },
                     )
 
             logger.info(f"Temperature log saved: {file_path} ({num_entries} entries)")
@@ -158,7 +158,7 @@ class DataIOManager:
         try:
             if rec_dir is None:
                 logger.warning(
-                    f"No recording directory specified for kinetic log {channel}"
+                    f"No recording directory specified for kinetic log {channel}",
                 )
                 return False
 
@@ -208,7 +208,7 @@ class DataIOManager:
                                 "Flow Rate": log_data["flow"][i],
                                 "Sensor Temp": log_data["temp"][i],
                                 "Device Temp": log_data["dev"][i],
-                            }
+                            },
                         )
                     else:
                         writer.writerow(
@@ -218,11 +218,11 @@ class DataIOManager:
                                 "Event Type": log_data["events"][i],
                                 "Flow Rate": log_data["flow"][i],
                                 "Temperature": log_data["temp"][i],
-                            }
+                            },
                         )
 
             logger.info(
-                f"Kinetic log Ch {channel_letter} saved: {file_path} ({num_entries} entries)"
+                f"Kinetic log Ch {channel_letter} saved: {file_path} ({num_entries} entries)",
             )
             return True
 
@@ -306,7 +306,9 @@ class DataIOManager:
         """
         try:
             with Path(file_path).open(
-                "w", newline="", encoding=self.encoding
+                "w",
+                newline="",
+                encoding=self.encoding,
             ) as txtfile:
                 writer = csv.writer(txtfile, dialect=self.csv_dialect)
 
@@ -318,7 +320,7 @@ class DataIOManager:
                     writer.writerow([f"{time_val:.2f}", f"{wavelength:.4f}"])
 
             logger.debug(
-                f"SPR channel {channel} data saved: {file_path} ({len(times)} points)"
+                f"SPR channel {channel} data saved: {file_path} ({len(times)} points)",
             )
             return True
 
@@ -347,7 +349,9 @@ class DataIOManager:
         """
         try:
             with Path(file_path).open(
-                "w", newline="", encoding=self.encoding
+                "w",
+                newline="",
+                encoding=self.encoding,
             ) as txtfile:
                 writer = csv.writer(txtfile, dialect=self.csv_dialect)
 
@@ -372,7 +376,7 @@ class DataIOManager:
                     writer.writerow(row)
 
             logger.info(
-                f"Processed SPR data saved: {file_path} ({len(times)} points, {len(channels)} channels)"
+                f"Processed SPR data saved: {file_path} ({len(times)} points, {len(channels)} channels)",
             )
             return True
 
@@ -401,7 +405,9 @@ class DataIOManager:
         """
         try:
             with Path(file_path).open(
-                "w", newline="", encoding=self.encoding
+                "w",
+                newline="",
+                encoding=self.encoding,
             ) as txtfile:
                 fieldnames = ["Segment", "Start Time (s)", "End Time (s)", "Type"]
                 writer = csv.DictWriter(
@@ -418,7 +424,7 @@ class DataIOManager:
                             "Start Time (s)": f"{seg.get('start_time', 0):.2f}",
                             "End Time (s)": f"{seg.get('end_time', 0):.2f}",
                             "Type": seg.get("type", ""),
-                        }
+                        },
                     )
 
             logger.info(f"Segment table saved: {file_path} ({len(segments)} segments)")
@@ -523,7 +529,9 @@ class DataIOManager:
         """
         try:
             with Path(file_path).open(
-                "w", newline="", encoding=self.encoding
+                "w",
+                newline="",
+                encoding=self.encoding,
             ) as txtfile:
                 writer = csv.writer(txtfile, dialect=self.csv_dialect)
                 writer.writerow(headers)
@@ -554,7 +562,9 @@ class DataIOManager:
         """
         try:
             with Path(file_path).open(
-                "w", newline="", encoding=self.encoding
+                "w",
+                newline="",
+                encoding=self.encoding,
             ) as txtfile:
                 fieldnames = [
                     "Segment",
@@ -580,7 +590,7 @@ class DataIOManager:
                             "KD (M)": f"{params.get('KD', 0):.3e}",
                             "R_max": f"{params.get('R_max', 0):.4f}",
                             "Chi²": f"{params.get('chi_squared', 0):.4f}",
-                        }
+                        },
                     )
 
             logger.info(f"Kinetic parameters saved: {file_path}")

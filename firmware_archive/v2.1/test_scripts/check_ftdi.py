@@ -23,16 +23,18 @@ else:
         if port.vid and port.pid:
             vid_hex = f"0x{port.vid:04X}"
             pid_hex = f"0x{port.pid:04X}"
-            print(f"   VID:PID:      {vid_hex}:{pid_hex} (decimal: {port.vid}:{port.pid})")
+            print(
+                f"   VID:PID:      {vid_hex}:{pid_hex} (decimal: {port.vid}:{port.pid})",
+            )
         else:
-            print(f"   VID:PID:      None")
+            print("   VID:PID:      None")
 
         print(f"   Serial:       {port.serial_number}")
         print(f"   HWID:         {port.hwid}")
 
         # Check if FTDI
         if port.vid == 0x0403:  # FTDI Vendor ID
-            print(f"   ✓✓✓ THIS IS AN FTDI DEVICE! ✓✓✓")
+            print("   ✓✓✓ THIS IS AN FTDI DEVICE! ✓✓✓")
             ftdi_found = True
 
         print()

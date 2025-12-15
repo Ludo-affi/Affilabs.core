@@ -1,5 +1,4 @@
-"""
-Dialog Manager
+"""Dialog Manager
 
 Manages all application dialog windows with lazy loading.
 Centralizes dialog lifecycle management and reduces code duplication.
@@ -24,6 +23,7 @@ class DialogManager:
 
         Args:
             main_window: Main window instance (parent for dialogs)
+
         """
         self.main_window = main_window
         self._dialogs = {}
@@ -34,24 +34,28 @@ class DialogManager:
 
         Returns:
             TransmissionSpectrumDialog instance
+
         """
-        if 'transmission' not in self._dialogs:
+        if "transmission" not in self._dialogs:
             from transmission_spectrum_dialog import TransmissionSpectrumDialog
-            self._dialogs['transmission'] = TransmissionSpectrumDialog(self.main_window)
+
+            self._dialogs["transmission"] = TransmissionSpectrumDialog(self.main_window)
             logger.info("✅ Transmission dialog created (lazy-loaded)")
-        return self._dialogs['transmission']
+        return self._dialogs["transmission"]
 
     def get_live_data_dialog(self):
         """Get or create live data dialog.
 
         Returns:
             LiveDataDialog instance
+
         """
-        if 'live_data' not in self._dialogs:
+        if "live_data" not in self._dialogs:
             from live_data_dialog import LiveDataDialog
-            self._dialogs['live_data'] = LiveDataDialog(parent=self.main_window)
+
+            self._dialogs["live_data"] = LiveDataDialog(parent=self.main_window)
             logger.info("✅ Live data dialog created (lazy-loaded)")
-        return self._dialogs['live_data']
+        return self._dialogs["live_data"]
 
     def show_transmission_dialog(self):
         """Show the transmission spectrum dialog."""
@@ -71,21 +75,21 @@ class DialogManager:
 
     def hide_live_data_dialog(self):
         """Hide the live data dialog."""
-        if 'live_data' in self._dialogs:
-            self._dialogs['live_data'].hide()
+        if "live_data" in self._dialogs:
+            self._dialogs["live_data"].hide()
             logger.debug("Live data dialog hidden")
 
     def is_transmission_dialog_visible(self) -> bool:
         """Check if transmission dialog is visible."""
-        if 'transmission' not in self._dialogs:
+        if "transmission" not in self._dialogs:
             return False
-        return self._dialogs['transmission'].isVisible()
+        return self._dialogs["transmission"].isVisible()
 
     def is_live_data_dialog_visible(self) -> bool:
         """Check if live data dialog is visible."""
-        if 'live_data' not in self._dialogs:
+        if "live_data" not in self._dialogs:
             return False
-        return self._dialogs['live_data'].isVisible()
+        return self._dialogs["live_data"].isVisible()
 
     def cleanup_all(self):
         """Cleanup all dialogs on shutdown."""

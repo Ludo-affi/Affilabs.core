@@ -1,14 +1,14 @@
 """Flash the fixed V2.1 firmware to the device"""
-import os
+
 import shutil
 import time
 from pathlib import Path
 
-print("="*70)
+print("=" * 70)
 print("FIRMWARE V2.1 FIXED - FLASH SCRIPT")
-print("="*70)
+print("=" * 70)
 print("\nThis firmware includes debug output for parsing verification.")
-print("="*70)
+print("=" * 70)
 
 firmware_file = Path("firmware_v2.1/affinite_p4spr_v2.1_FIXED.uf2")
 
@@ -20,9 +20,9 @@ if not firmware_file.exists():
 print(f"\n✅ Found firmware: {firmware_file}")
 print(f"   Size: {firmware_file.stat().st_size} bytes")
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("FLASHING INSTRUCTIONS")
-print("="*70)
+print("=" * 70)
 print("\n1. Unplug the Pico from USB")
 print("2. Hold down the BOOTSEL button (white button on the board)")
 print("3. While holding BOOTSEL, plug in the USB cable")
@@ -56,10 +56,10 @@ if not bootsel_drive:
         print(f"\n❌ Drive {letter}: not found")
         exit(1)
 
-print(f"\n📋 BOOTSEL drive info:")
+print("\n📋 BOOTSEL drive info:")
 info_file = bootsel_drive / "INFO_UF2.TXT"
 if info_file.exists():
-    with open(info_file, 'r') as f:
+    with open(info_file) as f:
         for line in f:
             print(f"   {line.strip()}")
 
@@ -73,9 +73,9 @@ try:
     time.sleep(3)
 
     print("\n✅ Firmware flash complete!")
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("VERIFICATION")
-    print("="*70)
+    print("=" * 70)
     print("\nThe device should now have:")
     print("  - V2.1 firmware with rankbatch command")
     print("  - Debug output for parameter parsing")

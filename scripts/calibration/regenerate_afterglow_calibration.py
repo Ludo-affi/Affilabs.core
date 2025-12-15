@@ -18,13 +18,12 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from utils.logger import logger
 from utils.device_manager import get_device_manager
+from utils.logger import logger
 
 
 def main():
     """Run afterglow calibration to regenerate optical_calibration.json."""
-
     logger.info("=" * 80)
     logger.info("REGENERATING AFTERGLOW CALIBRATION")
     logger.info("=" * 80)
@@ -43,22 +42,27 @@ def main():
     # Check if optical calibration file exists
     optical_cal_file = device_manager.current_device_dir / "optical_calibration.json"
     if optical_cal_file.exists():
-        logger.warning(f"⚠️  Existing optical calibration file will be replaced:")
+        logger.warning("⚠️  Existing optical calibration file will be replaced:")
         logger.warning(f"   {optical_cal_file}")
 
         # Show which channels are in current file
         import json
+
         try:
-            with open(optical_cal_file, 'r') as f:
+            with open(optical_cal_file) as f:
                 data = json.load(f)
-                channels = list(data.get('channel_data', {}).keys())
+                channels = list(data.get("channel_data", {}).keys())
                 logger.warning(f"   Current channels: {channels}")
 
                 if len(channels) == 4:
-                    logger.info("✅ File already has all 4 channels. Re-running anyway to ensure quality.")
+                    logger.info(
+                        "✅ File already has all 4 channels. Re-running anyway to ensure quality.",
+                    )
                 else:
-                    logger.error(f"❌ File missing channels! Has {len(channels)}/4: {channels}")
-                    missing = [ch for ch in ['a', 'b', 'c', 'd'] if ch not in channels]
+                    logger.error(
+                        f"❌ File missing channels! Has {len(channels)}/4: {channels}",
+                    )
+                    missing = [ch for ch in ["a", "b", "c", "d"] if ch not in channels]
                     logger.error(f"   Missing: {missing}")
         except Exception as e:
             logger.warning(f"   Could not parse existing file: {e}")
@@ -97,7 +101,11 @@ def main():
     logger.error(f"     {optical_cal_file}")
     logger.error("")
     logger.error("4. After completion, verify all channels present:")
-    logger.error("   python -c \"import json; print(list(json.load(open(r'" + str(optical_cal_file) + "'))['channel_data'].keys()))\"")
+    logger.error(
+        "   python -c \"import json; print(list(json.load(open(r'"
+        + str(optical_cal_file)
+        + "'))['channel_data'].keys()))\"",
+    )
     logger.error("")
     logger.error("=" * 80)
 

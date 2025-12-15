@@ -118,16 +118,17 @@ CRITICAL PRE-PROCESSING CONSISTENCY:
 All operations run in background threads to avoid blocking the UI.
 """
 
-from PySide6.QtCore import QObject, Signal, QTimer
-from utils.logger import logger
-from typing import Optional, Dict
-import threading
 import gc
+import threading
+
+from core.spectrum_preprocessor import SpectrumPreprocessor
+from core.transmission_processor import TransmissionProcessor
 
 # Phase 1.1 Domain Model (replacing legacy CalibrationData type alias)
 from domain import CalibrationData
-from core.spectrum_preprocessor import SpectrumPreprocessor
-from core.transmission_processor import TransmissionProcessor
+from PySide6.QtCore import QObject, QTimer, Signal
+
+from utils.logger import logger
 
 # ============================================================================
 # SHARED PROCESSING ALIASES (Same processors used in calibration & live)
@@ -153,13 +154,15 @@ TransmissionCalculator = TransmissionProcessor
 # ✅ OPTIMIZATION: Disable automatic GC to eliminate random 10-50ms pauses
 # Manual GC will be called periodically during safe times
 gc.disable()
-import time
-import numpy as np
 import queue
+import time
+
+import numpy as np
 
 # System Intelligence integration (DISABLED - will be refined later)
 try:
     from core.system_intelligence import get_system_intelligence
+
     SYSTEM_INTELLIGENCE_AVAILABLE = False  # Disabled for now
 except ImportError:
     SYSTEM_INTELLIGENCE_AVAILABLE = False
@@ -174,7 +177,9 @@ class DataAcquisitionManager(QObject):
     """
 
     # Signals for data updates
-    spectrum_acquired = Signal(dict)  # {channel: str, wavelength: float, intensity: float, timestamp: float}
+    spectrum_acquired = Signal(
+        dict,
+    )  # {channel: str, wavelength: float, intensity: float, timestamp: float}
     # CALIBRATION SIGNALS REMOVED - handled by CalibrationManager
     # calibration_started = Signal()
     # calibration_complete = Signal(dict)
@@ -200,7 +205,9 @@ class DataAcquisitionManager(QObject):
         # No duplication, no conflicts, single source of truth.
         # ===================================================================
         self.calibrated = False
-        self.calibration_data = None  # CalibrationData instance (set by apply_calibration)
+        self.calibration_data = (
+            None  # CalibrationData instance (set by apply_calibration)
+        )
 
         # Derived/computed data (not part of calibration)
         self.fourier_weights = {}  # {channel: weights_array} - computed from calibration
@@ -210,48 +217,60 @@ class DataAcquisitionManager(QObject):
         self.ch_error_list = []  # Failed channels from calibration
 
         # LED timing (from device config, can override calibration_data)
-        self._pre_led_delay_ms = None  # PRE LED delay (device-specific, loaded from config)
-        self._post_led_delay_ms = None  # POST LED delay (device-specific, loaded from config)
-        self._led_overlap_active = False  # Track if LED is already ON from previous overlap
+        self._pre_led_delay_ms = (
+            None  # PRE LED delay (device-specific, loaded from config)
+        )
+        self._post_led_delay_ms = (
+            None  # POST LED delay (device-specific, loaded from config)
+        )
+        self._led_overlap_active = (
+            False  # Track if LED is already ON from previous overlap
+        )
         self._led_overlap_channel = None  # Track which LED is ON from overlap
         self._led_overlap_start_time = None  # Track when overlap LED was turned ON
 
         # Timing jitter tracking for SNR optimization
-        self._timing_jitter_stats = {ch: [] for ch in ['a', 'b', 'c', 'd']}
+        self._timing_jitter_stats = {ch: [] for ch in ["a", "b", "c", "d"]}
         self._jitter_window_size = 100  # Track last 100 measurements per channel
         self._last_jitter_report = 0  # Time of last jitter statistics report
 
         # S/P orientation validation tracking
         self._sp_validation_results = {}  # {channel: {orientation_correct, confidence, peak_wl, timestamp}}
-        self._sp_orientation_validated = set()  # Set of channels validated during runtime
+        self._sp_orientation_validated = (
+            set()
+        )  # Set of channels validated during runtime
 
         # FWHM tracking for quality control
         self._fwhm_values = {}  # {channel: fwhm_nm}
         self._last_peak_wavelength = {}  # {channel: wavelength_nm} for continuity checking
 
         # Batched acquisition settings (from settings.py)
-        from settings import BATCH_SIZE
         from collections import deque
+
+        from settings import BATCH_SIZE
+
         self.batch_size = BATCH_SIZE  # Minimum raw spectra to buffer before processing (reduces USB overhead)
         # ✅ OPTIMIZATION: Use deque for O(1) append without reallocation (saves 1-2ms per batch)
         self._spectrum_batch = {
-            'a': deque(maxlen=BATCH_SIZE * 2),
-            'b': deque(maxlen=BATCH_SIZE * 2),
-            'c': deque(maxlen=BATCH_SIZE * 2),
-            'd': deque(maxlen=BATCH_SIZE * 2)
+            "a": deque(maxlen=BATCH_SIZE * 2),
+            "b": deque(maxlen=BATCH_SIZE * 2),
+            "c": deque(maxlen=BATCH_SIZE * 2),
+            "d": deque(maxlen=BATCH_SIZE * 2),
         }
         self._batch_timestamps = {
-            'a': deque(maxlen=BATCH_SIZE * 2),
-            'b': deque(maxlen=BATCH_SIZE * 2),
-            'c': deque(maxlen=BATCH_SIZE * 2),
-            'd': deque(maxlen=BATCH_SIZE * 2)
+            "a": deque(maxlen=BATCH_SIZE * 2),
+            "b": deque(maxlen=BATCH_SIZE * 2),
+            "c": deque(maxlen=BATCH_SIZE * 2),
+            "d": deque(maxlen=BATCH_SIZE * 2),
         }
 
         # Load LED timing delays from device config (device-specific, persisted)
         self._load_led_delays_from_config()
 
         # Thread-safe queue for worker → main thread communication
-        self._spectrum_queue = queue.Queue(maxsize=1000)  # Buffer up to 1000 spectrum events
+        self._spectrum_queue = queue.Queue(
+            maxsize=1000,
+        )  # Buffer up to 1000 spectrum events
 
         # QTimer to process queue in main thread (initialized here to ensure main thread ownership)
         self._queue_timer = QTimer()
@@ -261,16 +280,18 @@ class DataAcquisitionManager(QObject):
         self._acquiring = False
         self._acquisition_thread = None
         self._stop_acquisition = threading.Event()
-        self._pause_acquisition = threading.Event()  # Pause flag (set=paused, clear=running)
+        self._pause_acquisition = (
+            threading.Event()
+        )  # Pause flag (set=paused, clear=running)
 
         # Data buffers (using channel manager pattern)
-        self.channel_buffers = {ch: [] for ch in ['a', 'b', 'c', 'd']}
-        self.time_buffers = {ch: [] for ch in ['a', 'b', 'c', 'd']}
+        self.channel_buffers = {ch: [] for ch in ["a", "b", "c", "d"]}
+        self.time_buffers = {ch: [] for ch in ["a", "b", "c", "d"]}
 
         # Spectrum processor (will be imported when needed)
         self.spectrum_processor = None
 
-        pass  # Initialized silently
+        # Initialized silently
 
         # One-time run parameter summary flag (reset on each start)
         self._run_params_logged = False
@@ -289,20 +310,30 @@ class DataAcquisitionManager(QObject):
         """
         try:
             from utils.device_configuration import DeviceConfiguration
-            device_serial = getattr(self.hardware_mgr.usb, 'serial_number', None) if self.hardware_mgr.usb else None
+
+            device_serial = (
+                getattr(self.hardware_mgr.usb, "serial_number", None)
+                if self.hardware_mgr.usb
+                else None
+            )
 
             # Silent load - don't trigger verbose config summary at startup
-            device_config = DeviceConfiguration(device_serial=device_serial, silent_load=True)
+            device_config = DeviceConfiguration(
+                device_serial=device_serial,
+                silent_load=True,
+            )
 
             self._pre_led_delay_ms = device_config.get_pre_led_delay_ms()
             self._post_led_delay_ms = device_config.get_post_led_delay_ms()
 
-            logger.debug(f"Loaded LED timing delays from device config: PRE={self._pre_led_delay_ms}ms, POST={self._post_led_delay_ms}ms")
-        except Exception as e:
+            logger.debug(
+                f"Loaded LED timing delays from device config: PRE={self._pre_led_delay_ms}ms, POST={self._post_led_delay_ms}ms",
+            )
+        except Exception:
             # Fall back to defaults if config loading fails
             self._pre_led_delay_ms = 45.0
             self._post_led_delay_ms = 5.0
-            logger.debug(f"Using default LED delays: PRE=45ms, POST=5ms")
+            logger.debug("Using default LED delays: PRE=45ms, POST=5ms")
 
     def set_batch_size(self, batch_size: int) -> None:
         """Set minimum batch size for spectrum acquisition.
@@ -311,6 +342,7 @@ class DataAcquisitionManager(QObject):
             batch_size: Minimum number of raw spectra to buffer before processing.
                        Higher values reduce USB overhead but increase latency.
                        Recommended: 4-8 for balance, 1 for real-time, 16+ for throughput.
+
         """
         if batch_size < 1:
             logger.warning(f"Invalid batch_size {batch_size}, using minimum of 1")
@@ -337,6 +369,7 @@ class DataAcquisitionManager(QObject):
 
         All calibration parameters (integration times, LED intensities, spectra, etc.)
         are accessed via self.calibration_data.* throughout acquisition.
+
         """
         try:
             logger.info("=" * 80)
@@ -358,16 +391,24 @@ class DataAcquisitionManager(QObject):
             logger.info(f"  Integration Time: {calibration_data.integration_time}ms")
             logger.info(f"  Scans per Spectrum: {calibration_data.num_scans}")
             logger.info(f"  Calibrated Channels: {calibration_data.get_channels()}")
-            logger.info(f"  Wavelength Range: {calibration_data.wavelength_min:.1f}-{calibration_data.wavelength_max:.1f}nm")
-            logger.info(f"  SPR Range Indices: {calibration_data.wave_min_index}-{calibration_data.wave_max_index}")
+            logger.info(
+                f"  Wavelength Range: {calibration_data.wavelength_min:.1f}-{calibration_data.wavelength_max:.1f}nm",
+            )
+            logger.info(
+                f"  SPR Range Indices: {calibration_data.wave_min_index}-{calibration_data.wave_max_index}",
+            )
 
             # 🔍 CRITICAL DEBUG: Check LED intensities
             print("\n🔍 CRITICAL DEBUG - CALIBRATION DATA CHECK:")
-            print(f"  S-mode integration time: {calibration_data.s_mode_integration_time}ms")
+            print(
+                f"  S-mode integration time: {calibration_data.s_mode_integration_time}ms",
+            )
             print(f"  P-mode integration time: {calibration_data.p_integration_time}ms")
             print(f"  S-mode LED intensities: {calibration_data.s_mode_intensities}")
             print(f"  P-mode LED intensities: {calibration_data.p_mode_intensities}")
-            print(f"  Dark noise: {np.mean(calibration_data.dark_noise) if calibration_data.dark_noise is not None else 'None':.1f} (mean)")
+            print(
+                f"  Dark noise: {np.mean(calibration_data.dark_noise) if calibration_data.dark_noise is not None else 'None':.1f} (mean)",
+            )
             print(f"  Number of scans: {calibration_data.num_scans}")
             print()
 
@@ -379,12 +420,18 @@ class DataAcquisitionManager(QObject):
                 if ref_spectrum is not None:
                     try:
                         # Use SPR region for Fourier analysis
-                        spr_spectrum = ref_spectrum[calibration_data.wave_min_index:calibration_data.wave_max_index]
+                        spr_spectrum = ref_spectrum[
+                            calibration_data.wave_min_index : calibration_data.wave_max_index
+                        ]
                         weights = np.fft.rfft(spr_spectrum)
                         self.fourier_weights[ch] = np.abs(weights)
-                        logger.debug(f"  Channel {ch}: Fourier weights computed (shape={weights.shape})")
+                        logger.debug(
+                            f"  Channel {ch}: Fourier weights computed (shape={weights.shape})",
+                        )
                     except Exception as e:
-                        logger.warning(f"  Channel {ch}: Failed to compute Fourier weights: {e}")
+                        logger.warning(
+                            f"  Channel {ch}: Failed to compute Fourier weights: {e}",
+                        )
                         self.fourier_weights[ch] = None
 
             # Compute spectral correction weights (normalize LED profiles)
@@ -395,30 +442,40 @@ class DataAcquisitionManager(QObject):
                 if ref_spectrum is not None:
                     try:
                         # Normalize to mean=1 for correction
-                        spr_spectrum = ref_spectrum[calibration_data.wave_min_index:calibration_data.wave_max_index]
+                        spr_spectrum = ref_spectrum[
+                            calibration_data.wave_min_index : calibration_data.wave_max_index
+                        ]
                         mean_intensity = np.mean(spr_spectrum)
                         if mean_intensity > 0:
                             correction = spr_spectrum / mean_intensity
                             self.spectral_correction[ch] = correction
-                            logger.debug(f"  Channel {ch}: Spectral correction computed")
+                            logger.debug(
+                                f"  Channel {ch}: Spectral correction computed",
+                            )
                         else:
-                            logger.warning(f"  Channel {ch}: Zero mean intensity, skipping correction")
+                            logger.warning(
+                                f"  Channel {ch}: Zero mean intensity, skipping correction",
+                            )
                             self.spectral_correction[ch] = None
                     except Exception as e:
-                        logger.warning(f"  Channel {ch}: Failed to compute spectral correction: {e}")
+                        logger.warning(
+                            f"  Channel {ch}: Failed to compute spectral correction: {e}",
+                        )
                         self.spectral_correction[ch] = None
 
             # Update LED timing delays from calibration data (single source of truth)
             # These are the delays that were actually used during calibration
             self._pre_led_delay_ms = calibration_data.pre_led_delay_ms
             self._post_led_delay_ms = calibration_data.post_led_delay_ms
-            logger.info(f"✅ LED timing updated: PRE={self._pre_led_delay_ms}ms, POST={self._post_led_delay_ms}ms")
+            logger.info(
+                f"✅ LED timing updated: PRE={self._pre_led_delay_ms}ms, POST={self._post_led_delay_ms}ms",
+            )
 
             # Mark as calibrated (enables start_acquisition)
             self.calibrated = True
 
             logger.info("✅ Calibration data applied successfully")
-            logger.info(f"✅ Acquisition manager ready for live measurements")
+            logger.info("✅ Acquisition manager ready for live measurements")
             logger.info("=" * 80)
             logger.info("")
 
@@ -452,30 +509,56 @@ class DataAcquisitionManager(QObject):
 
             # ✨ CRITICAL: Validate calibration data before starting acquisition
             if not self.calibration_data:
-                logger.error("❌ FATAL: calibration_data is None - cannot start acquisition")
-                self.acquisition_error.emit("Calibration data missing. Please recalibrate.")
+                logger.error(
+                    "❌ FATAL: calibration_data is None - cannot start acquisition",
+                )
+                self.acquisition_error.emit(
+                    "Calibration data missing. Please recalibrate.",
+                )
                 return
 
-            if not self.calibration_data.s_pol_ref or len(self.calibration_data.s_pol_ref) == 0:
-                logger.error("❌ FATAL: S-pol reference spectra are empty - cannot start acquisition")
-                self.acquisition_error.emit("S-pol reference data missing. Please recalibrate.")
+            if (
+                not self.calibration_data.s_pol_ref
+                or len(self.calibration_data.s_pol_ref) == 0
+            ):
+                logger.error(
+                    "❌ FATAL: S-pol reference spectra are empty - cannot start acquisition",
+                )
+                self.acquisition_error.emit(
+                    "S-pol reference data missing. Please recalibrate.",
+                )
                 return
 
-            if self.calibration_data.wavelengths is None or len(self.calibration_data.wavelengths) == 0:
-                logger.error("❌ FATAL: wavelength data is empty - cannot start acquisition")
-                self.acquisition_error.emit("Wavelength calibration missing. Please recalibrate.")
+            if (
+                self.calibration_data.wavelengths is None
+                or len(self.calibration_data.wavelengths) == 0
+            ):
+                logger.error(
+                    "❌ FATAL: wavelength data is empty - cannot start acquisition",
+                )
+                self.acquisition_error.emit(
+                    "Wavelength calibration missing. Please recalibrate.",
+                )
                 return
 
             # Validate ref_sig shapes match wavelength data
             invalid_channels = []
             for ch, ref_spectrum in self.calibration_data.s_pol_ref.items():
-                if ref_spectrum is None or len(ref_spectrum) != len(self.calibration_data.wavelengths):
+                if ref_spectrum is None or len(ref_spectrum) != len(
+                    self.calibration_data.wavelengths,
+                ):
                     invalid_channels.append(ch)
-                    logger.error(f"❌ Channel {ch}: Invalid ref_sig (len={len(ref_spectrum) if ref_spectrum is not None else 'None'} vs wave={len(self.calibration_data.wavelengths)})")
+                    logger.error(
+                        f"❌ Channel {ch}: Invalid ref_sig (len={len(ref_spectrum) if ref_spectrum is not None else 'None'} vs wave={len(self.calibration_data.wavelengths)})",
+                    )
 
             if invalid_channels:
-                logger.error(f"❌ FATAL: Invalid calibration data for channels: {invalid_channels}")
-                self.acquisition_error.emit(f"Calibration corrupted for channels {invalid_channels}. Please recalibrate.")
+                logger.error(
+                    f"❌ FATAL: Invalid calibration data for channels: {invalid_channels}",
+                )
+                self.acquisition_error.emit(
+                    f"Calibration corrupted for channels {invalid_channels}. Please recalibrate.",
+                )
                 return
 
             logger.info("✅ Calibration data validation passed")
@@ -489,24 +572,45 @@ class DataAcquisitionManager(QObject):
             logger.info("=" * 80)
             logger.info("Using calibration parameters (method-agnostic):")
             try:
-                p_it = getattr(self.calibration_data, 'p_integration_time', None)
-                s_it = getattr(self.calibration_data, 's_integration_time', None)
-                per_ch_times = getattr(self.calibration_data, 'channel_integration_times', {}) or {}
+                p_it = getattr(self.calibration_data, "p_integration_time", None)
+                s_it = getattr(self.calibration_data, "s_integration_time", None)
+                per_ch_times = (
+                    getattr(self.calibration_data, "channel_integration_times", {})
+                    or {}
+                )
                 if per_ch_times:
-                    logger.info(f"  Integration Time: per-channel ({len(per_ch_times)} channels), P-mode default {p_it}ms")
+                    logger.info(
+                        f"  Integration Time: per-channel ({len(per_ch_times)} channels), P-mode default {p_it}ms",
+                    )
                 else:
-                    logger.info(f"  Integration Time: P-mode {p_it}ms (S-mode {s_it}ms)")
+                    logger.info(
+                        f"  Integration Time: P-mode {p_it}ms (S-mode {s_it}ms)",
+                    )
             except Exception:
-                logger.info(f"  Integration Time: {self.calibration_data.integration_time}ms")
+                logger.info(
+                    f"  Integration Time: {self.calibration_data.integration_time}ms",
+                )
 
             # LED timing delays actually used during calibration (fallback to device defaults)
-            pre_led_delay = self.calibration_data.pre_led_delay_ms if getattr(self.calibration_data, 'pre_led_delay_ms', None) else self._pre_led_delay_ms
-            post_led_delay = self.calibration_data.post_led_delay_ms if getattr(self.calibration_data, 'post_led_delay_ms', None) else self._post_led_delay_ms
+            pre_led_delay = (
+                self.calibration_data.pre_led_delay_ms
+                if getattr(self.calibration_data, "pre_led_delay_ms", None)
+                else self._pre_led_delay_ms
+            )
+            post_led_delay = (
+                self.calibration_data.post_led_delay_ms
+                if getattr(self.calibration_data, "post_led_delay_ms", None)
+                else self._post_led_delay_ms
+            )
             logger.info(f"  LED Delays: PRE={pre_led_delay}ms, POST={post_led_delay}ms")
 
             logger.info(f"  Scans per Spectrum: {self.calibration_data.num_scans}")
-            logger.info(f"  P-mode LED Intensities: {self.calibration_data.p_mode_intensities}")
-            logger.info(f"  S-mode LED Intensities: {self.calibration_data.s_mode_intensities}")
+            logger.info(
+                f"  P-mode LED Intensities: {self.calibration_data.p_mode_intensities}",
+            )
+            logger.info(
+                f"  S-mode LED Intensities: {self.calibration_data.s_mode_intensities}",
+            )
             logger.info("")
             logger.info("CONSISTENCY GUARANTEE: Live data will match calibration QC")
             logger.info("=" * 80)
@@ -514,26 +618,34 @@ class DataAcquisitionManager(QObject):
 
             # Ensure any previous acquisition thread is fully stopped
             if self._acquisition_thread and self._acquisition_thread.is_alive():
-                logger.warning("Previous acquisition thread still running - waiting for cleanup...")
+                logger.warning(
+                    "Previous acquisition thread still running - waiting for cleanup...",
+                )
                 self._stop_acquisition.set()
                 self._acquisition_thread.join(timeout=3.0)
                 if self._acquisition_thread.is_alive():
-                    logger.error("Failed to stop previous acquisition thread - forcing new start")
+                    logger.error(
+                        "Failed to stop previous acquisition thread - forcing new start",
+                    )
 
             # ✨ CRITICAL: Switch polarizer to P-mode ONCE before starting acquisition
             # S-ref and dark were already measured during calibration and are reused
             try:
                 ctrl = self.hardware_mgr.ctrl
-                if ctrl and hasattr(ctrl, 'set_mode'):
-                    logger.info("🔄 Switching polarizer to P-mode for live measurements...")
-                    ctrl.set_mode('p')
+                if ctrl and hasattr(ctrl, "set_mode"):
+                    logger.info(
+                        "🔄 Switching polarizer to P-mode for live measurements...",
+                    )
+                    ctrl.set_mode("p")
                     time.sleep(0.4)  # Wait for servo to settle
-                    logger.info("✅ Polarizer in P-mode - using calibrated S-ref and dark")
+                    logger.info(
+                        "✅ Polarizer in P-mode - using calibrated S-ref and dark",
+                    )
             except Exception as e:
                 logger.warning(f"⚠️ Failed to switch polarizer: {e}")
 
             # Clear batch buffers for fresh start
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 self._spectrum_batch[ch].clear()
                 self._batch_timestamps[ch].clear()
 
@@ -548,7 +660,9 @@ class DataAcquisitionManager(QObject):
             self._queue_timer.start(10)  # Process queue every 10ms
 
             # Diagnostic: verify calibration data is present
-            logger.info(f"[ACQ] Starting acquisition with: wave_data={'present' if self.calibration_data and self.calibration_data.wavelengths is not None else 'MISSING'}, ref_sig={'present' if self.calibration_data and self.calibration_data.s_pol_ref else 'MISSING'}")
+            logger.info(
+                f"[ACQ] Starting acquisition with: wave_data={'present' if self.calibration_data and self.calibration_data.wavelengths is not None else 'MISSING'}, ref_sig={'present' if self.calibration_data and self.calibration_data.s_pol_ref else 'MISSING'}",
+            )
 
             def _launch_worker():
                 try:
@@ -561,25 +675,34 @@ class DataAcquisitionManager(QObject):
                     self.acquisition_started.emit()
                     logger.info("✅ [DAQ] Acquisition started signal emitted")
 
-                    self._acquisition_thread = threading.Thread(target=self._acquisition_worker, daemon=True, name="AcquisitionWorker")
+                    self._acquisition_thread = threading.Thread(
+                        target=self._acquisition_worker,
+                        daemon=True,
+                        name="AcquisitionWorker",
+                    )
                     self._acquisition_thread.start()
                     logger.info("✅ [DAQ] Acquisition worker thread launched")
                 except Exception as e:
                     logger.error(f"❌ CRASH in _launch_worker: {e}", exc_info=True)
                     import traceback
+
                     try:
                         print(traceback.format_exc())
                     except:
                         print(f"Error: {e}")
 
             logger.info("Scheduling worker launch in 50ms...")
-            QTimer.singleShot(50, _launch_worker)  # Small delay for UI thread to finish calibration updates
+            QTimer.singleShot(
+                50,
+                _launch_worker,
+            )  # Small delay for UI thread to finish calibration updates
             logger.info("✅ start_acquisition completed successfully")
             # Reset one-time applied-parameters summary flag for this run
             self._run_params_logged = False
         except Exception as e:
             logger.error(f"❌ CRASH in start_acquisition: {e}", exc_info=True)
             import traceback
+
             try:
                 print(traceback.format_exc())
             except:
@@ -604,7 +727,7 @@ class DataAcquisitionManager(QObject):
         # Emergency shutdown all LEDs (V1.1+ firmware)
         try:
             ctrl = self.hardware_mgr.ctrl
-            if ctrl and hasattr(ctrl, 'emergency_shutdown'):
+            if ctrl and hasattr(ctrl, "emergency_shutdown"):
                 ctrl.emergency_shutdown()
                 logger.info("✅ Emergency shutdown - all LEDs off")
         except Exception as e:
@@ -675,8 +798,8 @@ class DataAcquisitionManager(QObject):
                     data = self._spectrum_queue.get_nowait()
 
                     # Check if this is an error message (special key '_error')
-                    if isinstance(data, dict) and '_error' in data:
-                        self.acquisition_error.emit(data['_error'])
+                    if isinstance(data, dict) and "_error" in data:
+                        self.acquisition_error.emit(data["_error"])
                     else:
                         # Regular spectrum data
                         self.spectrum_acquired.emit(data)
@@ -687,11 +810,12 @@ class DataAcquisitionManager(QObject):
 
             # Log queue depth if accumulating (debug)
             if queue_depth > 100 and items_processed > 0:
-                print(f"[QUEUE] Depth={queue_depth}, processed={items_processed}, remaining={self._spectrum_queue.qsize()}")
+                print(
+                    f"[QUEUE] Depth={queue_depth}, processed={items_processed}, remaining={self._spectrum_queue.qsize()}",
+                )
 
         except Exception as e:
             logger.error(f"Error processing spectrum queue: {e}")
-
 
     # ========================================================================
     # LAYER 2: COORDINATOR (_acquisition_worker)
@@ -718,18 +842,18 @@ class DataAcquisitionManager(QObject):
         - Batch LED commands (15x faster)
         - LED overlap strategy (saves 40ms per transition)
         """
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("ACQUISITION WORKER THREAD ENTERED - BATCH MODE")
-        print("="*70)
+        print("=" * 70)
 
         try:
             print("[Worker] Starting batched acquisition (12 spectra/batch)")
 
-            print("\n" + "="*70)
+            print("\n" + "=" * 70)
             print("ACQUISITION WORKER STARTED")
-            print("="*70)
+            print("=" * 70)
 
-            channels = ['a', 'b', 'c', 'd']
+            channels = ["a", "b", "c", "d"]
             consecutive_errors = 0
             max_consecutive_errors = 5
             cycle_count = 0
@@ -738,21 +862,29 @@ class DataAcquisitionManager(QObject):
             # Connection resilience tracking
             connection_recovery_attempts = 0
             max_recovery_attempts = 3
-            channel_error_counts = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-            channel_disabled = {'a': False, 'b': False, 'c': False, 'd': False}
+            channel_error_counts = {"a": 0, "b": 0, "c": 0, "d": 0}
+            channel_disabled = {"a": False, "b": False, "c": False, "d": False}
 
             # Pre-flight check
-            print(f"[Worker] Hardware check: ctrl={self.hardware_mgr.ctrl is not None}, usb={self.hardware_mgr.usb is not None}")
-            print(f"[Worker] Calibration check: calibration_data={'present' if self.calibration_data else 'MISSING'}, channels={len(self.calibration_data.p_mode_intensities) if self.calibration_data else 0}")
+            print(
+                f"[Worker] Hardware check: ctrl={self.hardware_mgr.ctrl is not None}, usb={self.hardware_mgr.usb is not None}",
+            )
+            print(
+                f"[Worker] Calibration check: calibration_data={'present' if self.calibration_data else 'MISSING'}, channels={len(self.calibration_data.p_mode_intensities) if self.calibration_data else 0}",
+            )
             print(f"[Worker] Batch size: {BATCH_SIZE} spectra (3 cycles × 4 channels)")
-            print(f"[Worker] TIMING JITTER OPTIMIZATION: Pre-armed integration, high-res timestamps, batch LEDs")
+            print(
+                "[Worker] TIMING JITTER OPTIMIZATION: Pre-armed integration, high-res timestamps, batch LEDs",
+            )
 
             # Prepare LED intensities for batch command
-            led_a = self.calibration_data.p_mode_intensities.get('a', 0)
-            led_b = self.calibration_data.p_mode_intensities.get('b', 0)
-            led_c = self.calibration_data.p_mode_intensities.get('c', 0)
-            led_d = self.calibration_data.p_mode_intensities.get('d', 0)
-            print(f"[Worker] LED intensities: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
+            led_a = self.calibration_data.p_mode_intensities.get("a", 0)
+            led_b = self.calibration_data.p_mode_intensities.get("b", 0)
+            led_c = self.calibration_data.p_mode_intensities.get("c", 0)
+            led_d = self.calibration_data.p_mode_intensities.get("d", 0)
+            print(
+                f"[Worker] LED intensities: A={led_a}, B={led_b}, C={led_c}, D={led_d}",
+            )
 
             # ===================================================================
             # SMART PARAMETER ANALYSIS: Detect what's common across channels
@@ -760,50 +892,83 @@ class DataAcquisitionManager(QObject):
             # Integration time analysis (consistent naming with calibration)
             p_integration_time_effective = self.calibration_data.p_integration_time
             if not p_integration_time_effective or p_integration_time_effective <= 0:
-                print(f"[Worker] Warning: P-mode integration time invalid ({p_integration_time_effective}ms), falling back to S-mode")
-                p_integration_time_effective = self.calibration_data.s_mode_integration_time
+                print(
+                    f"[Worker] Warning: P-mode integration time invalid ({p_integration_time_effective}ms), falling back to S-mode",
+                )
+                p_integration_time_effective = (
+                    self.calibration_data.s_mode_integration_time
+                )
 
             # Check if we have per-channel integration times (alternative mode)
-            has_per_channel_integration_times = bool(self.calibration_data.channel_integration_times)
+            has_per_channel_integration_times = bool(
+                self.calibration_data.channel_integration_times,
+            )
             if has_per_channel_integration_times:
-                print(f"[Worker] ⚡ SMART MODE: Per-channel integration times detected")
-                print(f"  Channel times: {self.calibration_data.channel_integration_times}")
+                print("[Worker] ⚡ SMART MODE: Per-channel integration times detected")
+                print(
+                    f"  Channel times: {self.calibration_data.channel_integration_times}",
+                )
             else:
                 # Standard mode: Pre-arm integration time ONCE (optimization)
-                print(f"[Worker] ⚡ SMART MODE: Common integration time detected ({p_integration_time_effective}ms)")
-                print(f"  Optimization: Pre-arming detector for all channels")
+                print(
+                    f"[Worker] ⚡ SMART MODE: Common integration time detected ({p_integration_time_effective}ms)",
+                )
+                print("  Optimization: Pre-arming detector for all channels")
                 try:
                     usb = self.hardware_mgr.usb
                     if usb:
                         usb.set_integration(p_integration_time_effective)
-                        print(f"  ✅ Pre-armed: Saves ~7ms per channel (21ms per cycle)")
+                        print("  ✅ Pre-armed: Saves ~7ms per channel (21ms per cycle)")
                 except Exception as e:
                     print(f"  ⚠️ Could not pre-arm: {e}")
 
             # Common parameters (same for all channels)
-            num_scans = self.calibration_data.num_scans if self.calibration_data.num_scans and self.calibration_data.num_scans > 0 else 1
-            pre_led_delay = self.calibration_data.pre_led_delay_ms if self.calibration_data.pre_led_delay_ms is not None else self._pre_led_delay_ms
-            post_led_delay = self.calibration_data.post_led_delay_ms if self.calibration_data.post_led_delay_ms is not None else self._post_led_delay_ms
+            num_scans = (
+                self.calibration_data.num_scans
+                if self.calibration_data.num_scans
+                and self.calibration_data.num_scans > 0
+                else 1
+            )
+            pre_led_delay = (
+                self.calibration_data.pre_led_delay_ms
+                if self.calibration_data.pre_led_delay_ms is not None
+                else self._pre_led_delay_ms
+            )
+            post_led_delay = (
+                self.calibration_data.post_led_delay_ms
+                if self.calibration_data.post_led_delay_ms is not None
+                else self._post_led_delay_ms
+            )
 
-            print(f"[Worker] Common parameters:")
+            print("[Worker] Common parameters:")
             print(f"  Number of scans: {num_scans}")
             print(f"  PRE LED delay: {pre_led_delay}ms")
             print(f"  POST LED delay: {post_led_delay}ms")
-            print(f"[Worker] ⚡ Smart acquisition ready - mode-agnostic with auto-optimization")
+            print(
+                "[Worker] ⚡ Smart acquisition ready - mode-agnostic with auto-optimization",
+            )
 
             # One-time applied parameter summary (concise)
             if not self._run_params_logged:
                 try:
                     print("\n===== APPLIED PARAMETERS SUMMARY (ONE-TIME) =====")
-                    print(f"Mode: P-only live (S-ref reused)")
-                    print(f"Integration Times: S={self.calibration_data.s_mode_integration_time}ms, P={self.calibration_data.p_integration_time}ms, Per-channel={has_per_channel_integration_times}")
+                    print("Mode: P-only live (S-ref reused)")
+                    print(
+                        f"Integration Times: S={self.calibration_data.s_mode_integration_time}ms, P={self.calibration_data.p_integration_time}ms, Per-channel={has_per_channel_integration_times}",
+                    )
                     print(f"Averaging: num_scans={num_scans}")
-                    print(f"LED Delays (ms): PRE={pre_led_delay}, POST={post_led_delay}")
-                    print(f"P-mode LED Intensities: {self.calibration_data.p_mode_intensities}")
+                    print(
+                        f"LED Delays (ms): PRE={pre_led_delay}, POST={post_led_delay}",
+                    )
+                    print(
+                        f"P-mode LED Intensities: {self.calibration_data.p_mode_intensities}",
+                    )
                     try:
                         wl = self.calibration_data.wavelengths
                         if wl is not None and len(wl) > 0:
-                            print(f"ROI Wavelengths: {float(wl[0]):.1f}-{float(wl[-1]):.1f}nm ({len(wl)} px)")
+                            print(
+                                f"ROI Wavelengths: {float(wl[0]):.1f}-{float(wl[-1]):.1f}nm ({len(wl)} px)",
+                            )
                     except Exception:
                         pass
                     print("Polarizer: P-mode enforced before acquisition")
@@ -822,12 +987,21 @@ class DataAcquisitionManager(QObject):
                     print(f"[Worker] Batch cycle {cycle_count}")
 
                     # Periodic LED verification (V1.1+ firmware)
-                    if self.hardware_mgr and self.hardware_mgr.ctrl and hasattr(self.hardware_mgr.ctrl, 'verify_led_state'):
+                    if (
+                        self.hardware_mgr
+                        and self.hardware_mgr.ctrl
+                        and hasattr(self.hardware_mgr.ctrl, "verify_led_state")
+                    ):
                         try:
                             # Verify all LEDs are off between batches
-                            expected_off = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-                            if not self.hardware_mgr.ctrl.verify_led_state(expected_off, tolerance=10):
-                                print(f"[LED-STATUS] Warning: LEDs not fully off between batches")
+                            expected_off = {"a": 0, "b": 0, "c": 0, "d": 0}
+                            if not self.hardware_mgr.ctrl.verify_led_state(
+                                expected_off,
+                                tolerance=10,
+                            ):
+                                print(
+                                    "[LED-STATUS] Warning: LEDs not fully off between batches",
+                                )
                         except Exception:
                             pass
 
@@ -854,26 +1028,41 @@ class DataAcquisitionManager(QObject):
                                 # Skip channel if disabled due to persistent errors
                                 if channel_disabled[ch]:
                                     if cycle_count % 50 == 1:
-                                        print(f"   [CH-{ch.upper()}] Disabled due to persistent errors")
+                                        print(
+                                            f"   [CH-{ch.upper()}] Disabled due to persistent errors",
+                                        )
                                     continue
 
                                 # Determine next channel for LED overlap optimization
-                                next_ch = channels[idx + 1] if idx + 1 < len(channels) else None
+                                next_ch = (
+                                    channels[idx + 1]
+                                    if idx + 1 < len(channels)
+                                    else None
+                                )
 
                                 # Get LED intensity for this channel
-                                led_intensity = self.calibration_data.p_mode_intensities.get(ch)
+                                led_intensity = (
+                                    self.calibration_data.p_mode_intensities.get(ch)
+                                )
                                 if led_intensity is None:
                                     continue
 
                                 # Get LED intensity for next channel (for overlap optimization)
                                 next_led_int = None
                                 if next_ch:
-                                    next_led_int = self.calibration_data.p_mode_intensities.get(next_ch)
+                                    next_led_int = (
+                                        self.calibration_data.p_mode_intensities.get(
+                                            next_ch,
+                                        )
+                                    )
 
                                 # SMART: Get integration time (per-channel if available, else common)
                                 ch_integration_time = p_integration_time_effective
                                 if has_per_channel_integration_times:
-                                    ch_integration_time = self.calibration_data.channel_integration_times.get(ch, p_integration_time_effective)
+                                    ch_integration_time = self.calibration_data.channel_integration_times.get(
+                                        ch,
+                                        p_integration_time_effective,
+                                    )
 
                                 # LAYER 3: Smart acquire - auto-detects if pre-arm optimization is possible
                                 raw_spectrum = self._acquire_raw_spectrum(
@@ -885,24 +1074,30 @@ class DataAcquisitionManager(QObject):
                                     post_led_delay_ms=post_led_delay,
                                     next_channel=next_ch,
                                     next_led_intensity=next_led_int,
-                                    pre_armed=not has_per_channel_integration_times  # Optimization flag
+                                    pre_armed=not has_per_channel_integration_times,  # Optimization flag
                                 )
 
                                 if raw_spectrum is not None:
                                     # DEBUG: Log first raw spectrum
-                                    if not hasattr(self, '_first_raw_logged'):
-                                        print(f"\n[RAW-SPECTRUM-DEBUG] First raw spectrum acquired:")
+                                    if not hasattr(self, "_first_raw_logged"):
+                                        print(
+                                            "\n[RAW-SPECTRUM-DEBUG] First raw spectrum acquired:",
+                                        )
                                         print(f"  Channel: {ch}")
                                         print(f"  Shape: {raw_spectrum.shape}")
-                                        print(f"  Min: {np.min(raw_spectrum):.1f}, Max: {np.max(raw_spectrum):.1f}, Mean: {np.mean(raw_spectrum):.1f}")
-                                        print(f"  Non-zero: {np.count_nonzero(raw_spectrum)}/{len(raw_spectrum)}")
+                                        print(
+                                            f"  Min: {np.min(raw_spectrum):.1f}, Max: {np.max(raw_spectrum):.1f}, Mean: {np.mean(raw_spectrum):.1f}",
+                                        )
+                                        print(
+                                            f"  Non-zero: {np.count_nonzero(raw_spectrum)}/{len(raw_spectrum)}",
+                                        )
                                         self._first_raw_logged = True
 
                                     # Package data for processing
                                     spectrum_data = {
-                                        'raw_spectrum': raw_spectrum,
-                                        'wavelength': self.calibration_data.wavelengths.copy(),
-                                        'timestamp': time.time()
+                                        "raw_spectrum": raw_spectrum,
+                                        "wavelength": self.calibration_data.wavelengths.copy(),
+                                        "timestamp": time.time(),
                                     }
 
                                     timestamp = time.time()
@@ -915,7 +1110,9 @@ class DataAcquisitionManager(QObject):
 
                                     # DEBUG: Log buffer growth
                                     if cycle_count <= 3:
-                                        print(f"   [BUFFER-ADD] Ch {ch}: Added spectrum (buffer now has {len(self._spectrum_batch[ch])} spectra)")
+                                        print(
+                                            f"   [BUFFER-ADD] Ch {ch}: Added spectrum (buffer now has {len(self._spectrum_batch[ch])} spectra)",
+                                        )
 
                                     # Clear channel error count on success
                                     channel_error_counts[ch] = 0
@@ -924,73 +1121,113 @@ class DataAcquisitionManager(QObject):
                                     channel_error_counts[ch] += 1
 
                                     if cycle_count % 10 == 1:
-                                        print(f"   [ERROR] Ch {ch} batch {batch_idx}: raw_spectrum is None! (errors: {channel_error_counts[ch]})")
+                                        print(
+                                            f"   [ERROR] Ch {ch} batch {batch_idx}: raw_spectrum is None! (errors: {channel_error_counts[ch]})",
+                                        )
 
                                     # Disable channel if too many consecutive errors
                                     if channel_error_counts[ch] >= 20:
                                         channel_disabled[ch] = True
-                                        print(f"   [CH-{ch.upper()}] ⚠️ DISABLED after {channel_error_counts[ch]} consecutive errors")
+                                        print(
+                                            f"   [CH-{ch.upper()}] ⚠️ DISABLED after {channel_error_counts[ch]} consecutive errors",
+                                        )
 
                             except Exception as e:
                                 channel_error_counts[ch] += 1
-                                print(f"   [ERROR] Ch {ch} batch {batch_idx}: {e} (errors: {channel_error_counts[ch]})")
+                                print(
+                                    f"   [ERROR] Ch {ch} batch {batch_idx}: {e} (errors: {channel_error_counts[ch]})",
+                                )
 
                                 # Check for connection errors
                                 import serial
-                                if isinstance(e, (serial.SerialException, ConnectionError, OSError)):
-                                    print(f"   [CONNECTION] Hardware connection error detected: {type(e).__name__}")
+
+                                if isinstance(
+                                    e,
+                                    (serial.SerialException, ConnectionError, OSError),
+                                ):
+                                    print(
+                                        f"   [CONNECTION] Hardware connection error detected: {type(e).__name__}",
+                                    )
                                     # Trigger connection recovery after this cycle
-                                    consecutive_errors = max_consecutive_errors - 1  # Will trigger recovery
+                                    consecutive_errors = (
+                                        max_consecutive_errors - 1
+                                    )  # Will trigger recovery
 
                     # Process all accumulated spectra for each channel
                     if spectra_acquired >= 8:  # At least 2 cycles successful
                         if cycle_count % 10 == 1:
-                            print(f"   [BATCH-PROCESS] Checking buffers: A={len(self._spectrum_batch['a'])}, B={len(self._spectrum_batch['b'])}, C={len(self._spectrum_batch['c'])}, D={len(self._spectrum_batch['d'])}")
+                            print(
+                                f"   [BATCH-PROCESS] Checking buffers: A={len(self._spectrum_batch['a'])}, B={len(self._spectrum_batch['b'])}, C={len(self._spectrum_batch['c'])}, D={len(self._spectrum_batch['d'])}",
+                            )
 
                         for ch in channels:
                             buffer_size = len(self._spectrum_batch[ch])
-                            if buffer_size >= 2:  # Process if we have at least 2 spectra (LOWERED from 3)
+                            if (
+                                buffer_size >= 2
+                            ):  # Process if we have at least 2 spectra (LOWERED from 3)
                                 try:
                                     if cycle_count % 10 == 1:
-                                        print(f"   [BATCH] Ch {ch}: Processing {buffer_size} spectra...")
+                                        print(
+                                            f"   [BATCH] Ch {ch}: Processing {buffer_size} spectra...",
+                                        )
                                     self._process_and_emit_batch(ch)
                                     if cycle_count % 10 == 1:
-                                        print(f"   [BATCH] Ch {ch}: ✓ Processed successfully")
+                                        print(
+                                            f"   [BATCH] Ch {ch}: ✓ Processed successfully",
+                                        )
                                 except Exception as e:
-                                    print(f"   [ERROR] Ch {ch} batch processing failed: {e}")
+                                    print(
+                                        f"   [ERROR] Ch {ch} batch processing failed: {e}",
+                                    )
                                     import traceback
+
                                     traceback.print_exc()
                                     self._spectrum_batch[ch].clear()
                                     self._batch_timestamps[ch].clear()
-                            else:
-                                if cycle_count % 10 == 1:
-                                    print(f"   [BATCH] Ch {ch}: Skipped (only {buffer_size} spectra, need 2)")
-                    else:
-                        if cycle_count % 10 == 1:
-                            print(f"   [BATCH-PROCESS] Skipped - only {spectra_acquired} spectra acquired (need 8)")
+                            elif cycle_count % 10 == 1:
+                                print(
+                                    f"   [BATCH] Ch {ch}: Skipped (only {buffer_size} spectra, need 2)",
+                                )
+                    elif cycle_count % 10 == 1:
+                        print(
+                            f"   [BATCH-PROCESS] Skipped - only {spectra_acquired} spectra acquired (need 8)",
+                        )
 
                     if cycle_count % 10 == 1:
-                        print(f"   [CYCLE] Acquired {spectra_acquired}/{BATCH_SIZE} spectra")
+                        print(
+                            f"   [CYCLE] Acquired {spectra_acquired}/{BATCH_SIZE} spectra",
+                        )
 
                     # Reset error counter if successful
                     if batch_success:
                         consecutive_errors = 0
                     else:
                         consecutive_errors += 1
-                        print(f"[Worker] Batch {cycle_count}: FAILED - consecutive_errors={consecutive_errors}/{max_consecutive_errors}")
+                        print(
+                            f"[Worker] Batch {cycle_count}: FAILED - consecutive_errors={consecutive_errors}/{max_consecutive_errors}",
+                        )
 
                         # Attempt connection recovery before giving up
-                        if consecutive_errors >= max_consecutive_errors and connection_recovery_attempts < max_recovery_attempts:
-                            print(f"[Worker] 🔄 Attempting connection recovery (attempt {connection_recovery_attempts + 1}/{max_recovery_attempts})...")
+                        if (
+                            consecutive_errors >= max_consecutive_errors
+                            and connection_recovery_attempts < max_recovery_attempts
+                        ):
+                            print(
+                                f"[Worker] 🔄 Attempting connection recovery (attempt {connection_recovery_attempts + 1}/{max_recovery_attempts})...",
+                            )
 
                             # Check connection health
                             health = self.hardware_mgr.check_connection_health()
                             print(f"[Worker] Connection health: {health}")
 
                             # Attempt recovery
-                            if not health['controller'] or not health['spectrometer']:
-                                if self.hardware_mgr.auto_recover_connection(validate=True):
-                                    print("[Worker] ✅ Connection recovered - resuming acquisition")
+                            if not health["controller"] or not health["spectrometer"]:
+                                if self.hardware_mgr.auto_recover_connection(
+                                    validate=True,
+                                ):
+                                    print(
+                                        "[Worker] ✅ Connection recovered - resuming acquisition",
+                                    )
                                     consecutive_errors = 0  # Reset error counter
                                     connection_recovery_attempts += 1
 
@@ -1004,20 +1241,31 @@ class DataAcquisitionManager(QObject):
                                         try:
                                             usb = self.hardware_mgr.usb
                                             if usb:
-                                                usb.set_integration(p_integration_time_effective)
-                                                print(f"[Worker] ✅ Re-armed integration time: {p_integration_time_effective}ms")
+                                                usb.set_integration(
+                                                    p_integration_time_effective,
+                                                )
+                                                print(
+                                                    f"[Worker] ✅ Re-armed integration time: {p_integration_time_effective}ms",
+                                                )
                                         except Exception as e:
-                                            print(f"[Worker] ⚠️ Could not re-arm integration: {e}")
+                                            print(
+                                                f"[Worker] ⚠️ Could not re-arm integration: {e}",
+                                            )
 
                                     continue  # Resume acquisition
-                                else:
-                                    print("[Worker] ❌ Connection recovery failed")
-                                    connection_recovery_attempts += 1
+                                print("[Worker] ❌ Connection recovery failed")
+                                connection_recovery_attempts += 1
 
                         if consecutive_errors >= max_consecutive_errors:
-                            print(f"[Worker] ❌ STOPPING: {max_consecutive_errors} consecutive failed batches (recovery attempts: {connection_recovery_attempts})")
+                            print(
+                                f"[Worker] ❌ STOPPING: {max_consecutive_errors} consecutive failed batches (recovery attempts: {connection_recovery_attempts})",
+                            )
                             try:
-                                self._spectrum_queue.put_nowait({'_error': "Hardware communication lost - stopping acquisition"})
+                                self._spectrum_queue.put_nowait(
+                                    {
+                                        "_error": "Hardware communication lost - stopping acquisition",
+                                    },
+                                )
                             except queue.Full:
                                 pass
                             self._stop_acquisition.set()
@@ -1032,7 +1280,9 @@ class DataAcquisitionManager(QObject):
                     consecutive_errors += 1
                     if consecutive_errors >= max_consecutive_errors:
                         try:
-                            self._spectrum_queue.put_nowait({'_error': f"Too many errors: {e}"})
+                            self._spectrum_queue.put_nowait(
+                                {"_error": f"Too many errors: {e}"},
+                            )
                         except queue.Full:
                             pass
                         self._stop_acquisition.set()
@@ -1042,19 +1292,19 @@ class DataAcquisitionManager(QObject):
         except Exception as e:
             # Top-level exception handler - catch ANY uncaught exception
             import traceback
-            error_msg = f"FATAL: Acquisition worker crashed: {e}\n{traceback.format_exc()}"
+
+            error_msg = (
+                f"FATAL: Acquisition worker crashed: {e}\n{traceback.format_exc()}"
+            )
             print(error_msg)  # Print to console
             try:
-                self._spectrum_queue.put_nowait({'_error': error_msg})
+                self._spectrum_queue.put_nowait({"_error": error_msg})
             except:
                 pass
 
     def _check_hardware(self) -> bool:
         """Check if required hardware is connected."""
-        return (
-            self.hardware_mgr.ctrl is not None and
-            self.hardware_mgr.usb is not None
-        )
+        return self.hardware_mgr.ctrl is not None and self.hardware_mgr.usb is not None
 
     # ========================================================================
     # LAYER 3: HARDWARE ACQUISITION (Pure Hardware Control)
@@ -1076,10 +1326,10 @@ class DataAcquisitionManager(QObject):
         num_scans: int,
         pre_led_delay_ms: float,
         post_led_delay_ms: float,
-        next_channel: Optional[str] = None,
-        next_led_intensity: Optional[int] = None,
-        pre_armed: bool = False
-    ) -> Optional[np.ndarray]:
+        next_channel: str | None = None,
+        next_led_intensity: int | None = None,
+        pre_armed: bool = False,
+    ) -> np.ndarray | None:
         """LAYER 3: Acquire raw spectrum from detector (hardware only, no processing).
 
         SMART ACQUISITION with AUTO-OPTIMIZATION:
@@ -1118,13 +1368,16 @@ class DataAcquisitionManager(QObject):
 
         Note: This is a pure hardware function - no dark subtraction,
               no processing. All processing happens in Layer 4.
+
         """
         try:
             ctrl = self.hardware_mgr.ctrl
             usb = self.hardware_mgr.usb
 
             if not ctrl or not usb:
-                logger.warning(f"Hardware not available: ctrl={ctrl is not None}, usb={usb is not None}")
+                logger.warning(
+                    f"Hardware not available: ctrl={ctrl is not None}, usb={usb is not None}",
+                )
                 return None
 
             # ===================================================================
@@ -1140,7 +1393,9 @@ class DataAcquisitionManager(QObject):
                 try:
                     usb.set_integration(integration_time_ms)
                 except (ConnectionError, OSError) as conn_e:
-                    logger.error(f"Connection lost while setting integration time: {conn_e}")
+                    logger.error(
+                        f"Connection lost while setting integration time: {conn_e}",
+                    )
                     return None
                 except Exception as e:
                     logger.error(f"Failed to set integration time: {e}")
@@ -1150,7 +1405,7 @@ class DataAcquisitionManager(QObject):
             # ===================================================================
             # STEP 1: Set LED Intensity (Batch Command - matches calibration)
             # ===================================================================
-            led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
             led_values[channel] = led_intensity
 
             # LED Overlap Optimization: Check if LED already ON from previous channel
@@ -1159,7 +1414,11 @@ class DataAcquisitionManager(QObject):
 
             from settings import LED_OVERLAP_MS
 
-            if self._led_overlap_active and self._led_overlap_channel == channel and LED_OVERLAP_MS > 0:
+            if (
+                self._led_overlap_active
+                and self._led_overlap_channel == channel
+                and LED_OVERLAP_MS > 0
+            ):
                 # LED was turned ON during previous channel's POST delay
                 led_already_on = True
                 led_on_time = self._led_overlap_start_time
@@ -1171,16 +1430,18 @@ class DataAcquisitionManager(QObject):
                 # Normal flow: Turn on LED now
                 try:
                     success = ctrl.set_batch_intensities(
-                        a=led_values['a'],
-                        b=led_values['b'],
-                        c=led_values['c'],
-                        d=led_values['d']
+                        a=led_values["a"],
+                        b=led_values["b"],
+                        c=led_values["c"],
+                        d=led_values["d"],
                     )
 
                     led_on_time = time.perf_counter()
 
                     if not success:
-                        logger.warning(f"Failed to set LED intensities for channel {channel}")
+                        logger.warning(
+                            f"Failed to set LED intensities for channel {channel}",
+                        )
                         return None
 
                 except (ConnectionError, OSError) as conn_e:
@@ -1218,7 +1479,9 @@ class DataAcquisitionManager(QObject):
                         if spectrum is not None:
                             spectra.append(spectrum)
                     if len(spectra) == 0:
-                        logger.warning(f"No valid spectra acquired for channel {channel}")
+                        logger.warning(
+                            f"No valid spectra acquired for channel {channel}",
+                        )
                         return None
                     raw_spectrum = np.mean(spectra, axis=0)
                 else:
@@ -1251,10 +1514,17 @@ class DataAcquisitionManager(QObject):
 
             # Trim spectrum to calibrated wavelength range
             if len(raw_spectrum) != len(self.calibration_data.wavelengths):
-                if self.calibration_data.wave_min_index and self.calibration_data.wave_max_index:
-                    raw_spectrum = raw_spectrum[self.calibration_data.wave_min_index:self.calibration_data.wave_max_index]
+                if (
+                    self.calibration_data.wave_min_index
+                    and self.calibration_data.wave_max_index
+                ):
+                    raw_spectrum = raw_spectrum[
+                        self.calibration_data.wave_min_index : self.calibration_data.wave_max_index
+                    ]
                 else:
-                    raw_spectrum = raw_spectrum[:len(self.calibration_data.wavelengths)]
+                    raw_spectrum = raw_spectrum[
+                        : len(self.calibration_data.wavelengths)
+                    ]
 
             # ===================================================================
             # STEP 4: Wait for Afterglow Decay (POST_LED_DELAY_MS)
@@ -1268,7 +1538,6 @@ class DataAcquisitionManager(QObject):
                 # Don't fail acquisition - spectrum was already captured
             except Exception as e:
                 logger.debug(f"Failed to turn off LED (non-critical): {e}")
-                pass
 
             # LED Overlap Strategy: Turn on next LED during POST delay
             if next_channel and next_led_intensity and LED_OVERLAP_MS > 0:
@@ -1278,7 +1547,7 @@ class DataAcquisitionManager(QObject):
                 # Turn on next LED (stabilizes during remaining POST time)
                 if next_led_intensity > 0:
                     try:
-                        next_led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+                        next_led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
                         next_led_values[next_channel] = next_led_intensity
                         ctrl.set_batch_intensities(**next_led_values)
 
@@ -1305,7 +1574,7 @@ class DataAcquisitionManager(QObject):
             # ===================================================================
             return raw_spectrum
 
-        except Exception as e:
+        except Exception:
             return None
 
     def _report_timing_jitter(self):
@@ -1315,16 +1584,17 @@ class DataAcquisitionManager(QObject):
         Target: <1ms std dev for optimal spectroscopy performance.
         """
         try:
-            print("\n" + "="*70)
+            print("\n" + "=" * 70)
             print("LED-TO-DETECTOR TIMING JITTER STATISTICS (SNR Analysis)")
-            print("="*70)
+            print("=" * 70)
 
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 jitter_data = self._timing_jitter_stats[ch]
                 if len(jitter_data) < 10:  # Need at least 10 samples
                     continue
 
                 import numpy as np
+
                 mean_ms = np.mean(jitter_data)
                 std_ms = np.std(jitter_data)
                 min_ms = np.min(jitter_data)
@@ -1340,17 +1610,23 @@ class DataAcquisitionManager(QObject):
                 else:
                     quality = "POOR - CHECK TIMING"
 
-                print(f"Ch {ch.upper()}: {mean_ms:.2f}ms ± {std_ms:.2f}ms (min={min_ms:.2f}, max={max_ms:.2f}) [{quality}]")
+                print(
+                    f"Ch {ch.upper()}: {mean_ms:.2f}ms ± {std_ms:.2f}ms (min={min_ms:.2f}, max={max_ms:.2f}) [{quality}]",
+                )
 
-            print("="*70)
+            print("=" * 70)
             print("Target: <1ms std dev for optimal SNR")
             print("Lower jitter = more consistent LED timing = better spectroscopy")
-            print("="*70 + "\n")
+            print("=" * 70 + "\n")
 
-        except Exception as e:
+        except Exception:
             pass  # Silent fail - don't break acquisition
 
-    def _apply_baseline_correction(self, transmission: np.ndarray, degree: int = 2) -> np.ndarray:
+    def _apply_baseline_correction(
+        self,
+        transmission: np.ndarray,
+        degree: int = 2,
+    ) -> np.ndarray:
         """Apply polynomial baseline correction for live transmission visualization.
 
         This flattens spectral tilt in transmission for better visualization.
@@ -1362,6 +1638,7 @@ class DataAcquisitionManager(QObject):
 
         Returns:
             Baseline-corrected transmission spectrum
+
         """
         try:
             # Create x-axis for polynomial fit (normalized 0-1)
@@ -1385,7 +1662,7 @@ class DataAcquisitionManager(QObject):
 
             return corrected
 
-        except Exception as e:
+        except Exception:
             # Silent fail - return uncorrected transmission
             return transmission
 
@@ -1395,10 +1672,13 @@ class DataAcquisitionManager(QObject):
         Args:
             pre_delay_ms: Settling time after LED on before measurement (0-200ms)
             post_delay_ms: Dark time after LED off for afterglow decay (0-100ms)
+
         """
         self._pre_led_delay_ms = max(0.0, min(200.0, pre_delay_ms))
         self._post_led_delay_ms = max(0.0, min(100.0, post_delay_ms))
-        logger.info(f"LED delays updated: PRE={self._pre_led_delay_ms:.1f}ms, POST={self._post_led_delay_ms:.1f}ms")
+        logger.info(
+            f"LED delays updated: PRE={self._pre_led_delay_ms:.1f}ms, POST={self._post_led_delay_ms:.1f}ms",
+        )
 
     def _process_and_emit_batch(self, channel: str) -> None:
         """Process batch of spectra with vectorized operations and emit sequentially.
@@ -1408,6 +1688,7 @@ class DataAcquisitionManager(QObject):
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
+
         """
         import numpy as np
         from scipy.signal import savgol_filter
@@ -1426,11 +1707,13 @@ class DataAcquisitionManager(QObject):
         for spectrum_data in batch:
             try:
                 processed = self._process_spectrum(channel, spectrum_data)
-                wavelengths.append(processed['wavelength'])
-                intensities.append(processed['intensity'])
+                wavelengths.append(processed["wavelength"])
+                intensities.append(processed["intensity"])
                 processed_results.append(processed)  # Store for reuse
             except Exception as e:
-                print(f"   [BATCH ERROR] Channel {channel}: Spectrum processing failed - {e}")
+                print(
+                    f"   [BATCH ERROR] Channel {channel}: Spectrum processing failed - {e}",
+                )
                 continue
 
         if len(wavelengths) == 0:
@@ -1447,7 +1730,11 @@ class DataAcquisitionManager(QObject):
             try:
                 # Savitzky-Golay: polynomial smoothing that preserves peak shapes
                 # window_length=5, polyorder=2 gives excellent smoothing without distortion
-                filtered_wavelengths = savgol_filter(wavelength_array, window_length=5, polyorder=2)
+                filtered_wavelengths = savgol_filter(
+                    wavelength_array,
+                    window_length=5,
+                    polyorder=2,
+                )
             except Exception as e:
                 print(f"   [SG FILTER FAILED] Channel {channel}: {e}, using raw data")
                 filtered_wavelengths = wavelength_array
@@ -1456,7 +1743,9 @@ class DataAcquisitionManager(QObject):
             filtered_wavelengths = wavelength_array
 
         # Emit each point sequentially for smooth display
-        for i, (wl, timestamp) in enumerate(zip(filtered_wavelengths, timestamps)):
+        for i, (wl, timestamp) in enumerate(
+            zip(filtered_wavelengths, timestamps, strict=False),
+        ):
             # Buffer the data
             self.channel_buffers[channel].append(wl)
             self.time_buffers[channel].append(timestamp)
@@ -1464,50 +1753,62 @@ class DataAcquisitionManager(QObject):
             # Get pre-calculated transmission and raw spectrum from processed results
             # This avoids redundant calculation (already done in _process_spectrum)
             if i < len(processed_results):
-                transmission_spectrum = processed_results[i].get('transmission_spectrum')
-                raw_spectrum = processed_results[i].get('raw_spectrum')
+                transmission_spectrum = processed_results[i].get(
+                    "transmission_spectrum",
+                )
+                raw_spectrum = processed_results[i].get("raw_spectrum")
             else:
                 transmission_spectrum = None
                 raw_spectrum = None
 
             # Queue for UI emission
             data = {
-                'channel': channel,
-                'wavelength': float(wl),
-                'intensity': float(intensities[i]) if i < len(intensities) else 0.0,
-                'full_spectrum': raw_spectrum,
-                'raw_spectrum': raw_spectrum,
-                'transmission_spectrum': transmission_spectrum,  # Reused from _process_spectrum
-                'wavelengths': self.calibration_data.wavelengths,
-                'timestamp': timestamp,
-                'is_preview': False,
-                'batch_filtered': True  # Mark as batch-filtered
+                "channel": channel,
+                "wavelength": float(wl),
+                "intensity": float(intensities[i]) if i < len(intensities) else 0.0,
+                "full_spectrum": raw_spectrum,
+                "raw_spectrum": raw_spectrum,
+                "transmission_spectrum": transmission_spectrum,  # Reused from _process_spectrum
+                "wavelengths": self.calibration_data.wavelengths,
+                "timestamp": timestamp,
+                "is_preview": False,
+                "batch_filtered": True,  # Mark as batch-filtered
             }
 
             # DEBUG: Log EVERY data point for first 5 emissions to trace data flow
-            if not hasattr(self, '_data_trace_count'):
+            if not hasattr(self, "_data_trace_count"):
                 self._data_trace_count = 0
 
             if self._data_trace_count < 5:
-                print(f"\n" + "="*80)
-                print(f"[DATA-TRACE #{self._data_trace_count+1}] Channel {channel.upper()} - EMITTING TO QUEUE:")
-                print(f"="*80)
+                print("\n" + "=" * 80)
+                print(
+                    f"[DATA-TRACE #{self._data_trace_count+1}] Channel {channel.upper()} - EMITTING TO QUEUE:",
+                )
+                print("=" * 80)
                 print(f"  wavelength: {wl:.2f}nm")
                 print(f"  intensity: {intensities[i]:.1f}")
                 if raw_spectrum is not None:
                     is_empty = np.count_nonzero(raw_spectrum) == 0
-                    print(f"  ✓ raw_spectrum EXISTS: len={len(raw_spectrum)}, min={np.min(raw_spectrum):.1f}, max={np.max(raw_spectrum):.1f}, mean={np.mean(raw_spectrum):.1f}")
-                    print(f"    non-zero: {np.count_nonzero(raw_spectrum)}/{len(raw_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}")
+                    print(
+                        f"  ✓ raw_spectrum EXISTS: len={len(raw_spectrum)}, min={np.min(raw_spectrum):.1f}, max={np.max(raw_spectrum):.1f}, mean={np.mean(raw_spectrum):.1f}",
+                    )
+                    print(
+                        f"    non-zero: {np.count_nonzero(raw_spectrum)}/{len(raw_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}",
+                    )
                 else:
-                    print(f"  ❌ raw_spectrum: NONE!")
+                    print("  ❌ raw_spectrum: NONE!")
                 if transmission_spectrum is not None:
                     is_empty = np.count_nonzero(transmission_spectrum) == 0
-                    print(f"  ✓ transmission EXISTS: len={len(transmission_spectrum)}, min={np.min(transmission_spectrum):.1f}%, max={np.max(transmission_spectrum):.1f}%, mean={np.mean(transmission_spectrum):.1f}%")
-                    print(f"    non-zero: {np.count_nonzero(transmission_spectrum)}/{len(transmission_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}")
+                    print(
+                        f"  ✓ transmission EXISTS: len={len(transmission_spectrum)}, min={np.min(transmission_spectrum):.1f}%, max={np.max(transmission_spectrum):.1f}%, mean={np.mean(transmission_spectrum):.1f}%",
+                    )
+                    print(
+                        f"    non-zero: {np.count_nonzero(transmission_spectrum)}/{len(transmission_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}",
+                    )
                 else:
-                    print(f"  ❌ transmission: NONE!")
+                    print("  ❌ transmission: NONE!")
                 print(f"  Queue size BEFORE emit: {self._spectrum_queue.qsize()}")
-                print(f"="*80)
+                print("=" * 80)
                 self._data_trace_count += 1
 
             try:
@@ -1528,7 +1829,7 @@ class DataAcquisitionManager(QObject):
     # Same functions, same parameters as calibration = same results
     # ========================================================================
 
-    def _process_spectrum(self, channel: str, spectrum_data: Dict) -> Dict:
+    def _process_spectrum(self, channel: str, spectrum_data: dict) -> dict:
         """LAYER 4: Process raw spectrum into transmission (matches calibration Step 6).
 
         This function uses the exact same processing as calibration Step 6:
@@ -1544,11 +1845,12 @@ class DataAcquisitionManager(QObject):
 
         Note: Processing parameters (baseline_method, baseline_percentile, etc.)
               MUST match calibration exactly to ensure consistency.
+
         """
         try:
             # Get truly raw data from Layer 3 (hardware acquisition)
-            wavelength = spectrum_data['wavelength']
-            raw_intensity = spectrum_data['raw_spectrum']  # Truly raw from detector
+            wavelength = spectrum_data["wavelength"]
+            raw_intensity = spectrum_data["raw_spectrum"]  # Truly raw from detector
 
             # LAYER 4: Apply dark subtraction using SpectrumPreprocessor (same as calibration)
             # This ensures consistent preprocessing between calibration and live data
@@ -1556,7 +1858,7 @@ class DataAcquisitionManager(QObject):
                 raw_spectrum=raw_intensity,
                 dark_noise=self.calibration_data.dark_noise,
                 channel_name=channel,
-                verbose=False  # Suppress logging for performance
+                verbose=False,  # Suppress logging for performance
             )
 
             # Store clean spectrum (dark-corrected)
@@ -1566,7 +1868,10 @@ class DataAcquisitionManager(QObject):
             # LAYER 4: Calculate transmission spectrum using TransmissionProcessor (same as calibration)
             # This ensures consistent processing between calibration and live data
             transmission_spectrum = None
-            if channel in self.calibration_data.s_pol_ref and self.calibration_data.s_pol_ref[channel] is not None:
+            if (
+                channel in self.calibration_data.s_pol_ref
+                and self.calibration_data.s_pol_ref[channel] is not None
+            ):
                 try:
                     ref_spectrum = self.calibration_data.s_pol_ref[channel]
 
@@ -1578,60 +1883,79 @@ class DataAcquisitionManager(QObject):
                     # clean_spectrum is now dark-corrected (processed by SpectrumPreprocessor above)
 
                     # DEBUG: Log first transmission calculation inputs
-                    if not hasattr(self, '_first_trans_calc'):
-                        print(f"\n[TRANSMISSION-CALC-DEBUG] First transmission calculation for channel {channel}:")
-                        print(f"  p_pol_clean: len={len(clean_spectrum)}, min={np.min(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}, mean={np.mean(clean_spectrum):.1f}")
-                        print(f"  s_pol_ref: len={len(ref_spectrum)}, min={np.min(ref_spectrum):.1f}, max={np.max(ref_spectrum):.1f}, mean={np.mean(ref_spectrum):.1f}")
+                    if not hasattr(self, "_first_trans_calc"):
+                        print(
+                            f"\n[TRANSMISSION-CALC-DEBUG] First transmission calculation for channel {channel}:",
+                        )
+                        print(
+                            f"  p_pol_clean: len={len(clean_spectrum)}, min={np.min(clean_spectrum):.1f}, max={np.max(clean_spectrum):.1f}, mean={np.mean(clean_spectrum):.1f}",
+                        )
+                        print(
+                            f"  s_pol_ref: len={len(ref_spectrum)}, min={np.min(ref_spectrum):.1f}, max={np.max(ref_spectrum):.1f}, mean={np.mean(ref_spectrum):.1f}",
+                        )
                         print(f"  LED intensities: S={s_led}, P={p_led}")
-                        print(f"  wavelengths: len={len(self.calibration_data.wavelengths)}, range={self.calibration_data.wavelengths[0]:.1f}-{self.calibration_data.wavelengths[-1]:.1f}nm")
+                        print(
+                            f"  wavelengths: len={len(self.calibration_data.wavelengths)}, range={self.calibration_data.wavelengths[0]:.1f}-{self.calibration_data.wavelengths[-1]:.1f}nm",
+                        )
                         self._first_trans_calc = True
 
                     transmission_spectrum = TransmissionProcessor.process_single_channel(
                         p_pol_clean=clean_spectrum,  # Clean spectrum from SpectrumPreprocessor
-                        s_pol_ref=ref_spectrum,      # Clean S-pol reference from calibration
+                        s_pol_ref=ref_spectrum,  # Clean S-pol reference from calibration
                         led_intensity_s=s_led,
                         led_intensity_p=p_led,
                         wavelengths=self.calibration_data.wavelengths,
                         apply_sg_filter=True,
-                        baseline_method='percentile',  # Same as calibration
-                        baseline_percentile=95.0,      # Same as calibration
-                        verbose=False  # No logging for live acquisition (performance)
+                        baseline_method="percentile",  # Same as calibration
+                        baseline_percentile=95.0,  # Same as calibration
+                        verbose=False,  # No logging for live acquisition (performance)
                     )
 
                     # DEBUG: Log first 3 transmission results with full detail
-                    if not hasattr(self, '_trans_result_count'):
+                    if not hasattr(self, "_trans_result_count"):
                         self._trans_result_count = 0
 
                     if self._trans_result_count < 3:
                         print(f"\n{'='*80}")
-                        print(f"[TRANSMISSION-CALC #{self._trans_result_count+1}] Channel {channel.upper()}:")
+                        print(
+                            f"[TRANSMISSION-CALC #{self._trans_result_count+1}] Channel {channel.upper()}:",
+                        )
                         print(f"{'='*80}")
                         if transmission_spectrum is not None:
                             is_empty = np.count_nonzero(transmission_spectrum) == 0
-                            print(f"  ✓ RESULT: len={len(transmission_spectrum)}, min={np.min(transmission_spectrum):.1f}%, max={np.max(transmission_spectrum):.1f}%, mean={np.mean(transmission_spectrum):.1f}%")
-                            print(f"    non-zero: {np.count_nonzero(transmission_spectrum)}/{len(transmission_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}")
+                            print(
+                                f"  ✓ RESULT: len={len(transmission_spectrum)}, min={np.min(transmission_spectrum):.1f}%, max={np.max(transmission_spectrum):.1f}%, mean={np.mean(transmission_spectrum):.1f}%",
+                            )
+                            print(
+                                f"    non-zero: {np.count_nonzero(transmission_spectrum)}/{len(transmission_spectrum)} {'⚠️ ALL ZEROS!' if is_empty else '✓ HAS DATA'}",
+                            )
                         else:
-                            print(f"  ❌ RESULT: NONE!")
+                            print("  ❌ RESULT: NONE!")
                         print(f"{'='*80}")
                         self._trans_result_count += 1
 
                     # Debug log LED correction (throttled)
-                    if hasattr(self, '_transmission_debug_counter'):
+                    if hasattr(self, "_transmission_debug_counter"):
                         self._transmission_debug_counter += 1
                     else:
                         self._transmission_debug_counter = 1
                     if self._transmission_debug_counter % 50 == 1:
-                        print(f"[PROCESS] Ch {channel}: Using TransmissionProcessor with S={s_led}, P={p_led}")
-                    if hasattr(self, '_transmission_debug_counter'):
+                        print(
+                            f"[PROCESS] Ch {channel}: Using TransmissionProcessor with S={s_led}, P={p_led}",
+                        )
+                    if hasattr(self, "_transmission_debug_counter"):
                         self._transmission_debug_counter += 1
                     else:
                         self._transmission_debug_counter = 1
                     if self._transmission_debug_counter % 50 == 1:
-                        print(f"[PROCESS] Ch {channel}: Using TransmissionProcessor with S={s_led}, P={p_led}")
+                        print(
+                            f"[PROCESS] Ch {channel}: Using TransmissionProcessor with S={s_led}, P={p_led}",
+                        )
 
                 except Exception as e:
                     print(f"[PROCESS] Transmission calc failed: {e}")
                     import traceback
+
                     try:
                         print(traceback.format_exc())
                     except:
@@ -1642,12 +1966,20 @@ class DataAcquisitionManager(QObject):
             # PEAK FINDING: Fourier Transform Method
             # ═══════════════════════════════════════════════════════════════════════════
 
-            peak_input = transmission_spectrum if transmission_spectrum is not None else intensity
+            peak_input = (
+                transmission_spectrum
+                if transmission_spectrum is not None
+                else intensity
+            )
 
             # Calculate minimum hint from smoothed transmission to guide Fourier method
             # CRITICAL: Only search in SPR-relevant region (600-690nm) to avoid edge artifacts
             minimum_hint_nm = None
-            if transmission_spectrum is not None and len(transmission_spectrum) > 0 and len(wavelength) == len(transmission_spectrum):
+            if (
+                transmission_spectrum is not None
+                and len(transmission_spectrum) > 0
+                and len(wavelength) == len(transmission_spectrum)
+            ):
                 # Find indices for SPR region
                 spr_mask = (wavelength >= 600.0) & (wavelength <= 690.0)
                 if np.any(spr_mask):
@@ -1659,8 +1991,12 @@ class DataAcquisitionManager(QObject):
 
             # Find peak using selected pipeline method (Fourier/Centroid/Polynomial/etc.)
             if len(peak_input) > 0 and len(wavelength) == len(peak_input):
-                peak_wavelength = self._find_resonance_peak(wavelength, peak_input, channel,
-                                                           minimum_hint_nm=minimum_hint_nm)
+                peak_wavelength = self._find_resonance_peak(
+                    wavelength,
+                    peak_input,
+                    channel,
+                    minimum_hint_nm=minimum_hint_nm,
+                )
             else:
                 peak_wavelength = 650.0  # Default fallback
 
@@ -1670,18 +2006,27 @@ class DataAcquisitionManager(QObject):
 
             # Calculate FWHM and quality metrics (does NOT affect peak position)
             if len(peak_input) > 0 and len(wavelength) == len(peak_input):
-                qc_result = self._find_validated_peak(wavelength, peak_input, channel,
-                                                      minimum_hint_nm=minimum_hint_nm)
-                fwhm_nm = qc_result['fwhm']
-                qc_quality = qc_result['quality']
-                qc_warning = qc_result.get('warning')
+                qc_result = self._find_validated_peak(
+                    wavelength,
+                    peak_input,
+                    channel,
+                    minimum_hint_nm=minimum_hint_nm,
+                )
+                fwhm_nm = qc_result["fwhm"]
+                qc_quality = qc_result["quality"]
+                qc_warning = qc_result.get("warning")
             else:
                 fwhm_nm = None
                 qc_quality = 0.0
                 qc_warning = None
 
             # ✨ SENSOR IQ: Classify data quality based on wavelength range and FWHM
-            from utils.sensor_iq import classify_spr_quality, log_sensor_iq, SensorIQLevel
+            from utils.sensor_iq import (
+                SensorIQLevel,
+                classify_spr_quality,
+                log_sensor_iq,
+            )
+
             sensor_iq = classify_spr_quality(peak_wavelength, fwhm_nm, channel)
 
             # Log warnings for poor quality data (CRITICAL, POOR levels only)
@@ -1693,35 +2038,43 @@ class DataAcquisitionManager(QObject):
                 print(f"[QC] Channel {channel}: {qc_warning}")
 
             return {
-                'wavelength': peak_wavelength,  # Fourier transform result
-                'intensity': intensity[np.argmin(intensity)] if len(intensity) > 0 else 0.0,
-                'full_spectrum': raw_spectrum,
-                'raw_spectrum': raw_spectrum,
-                'transmission_spectrum': transmission_spectrum,  # Already baseline-corrected and SG-filtered
-                'fwhm': fwhm_nm,  # QC pipeline result
-                'qc_quality': qc_quality,  # QC pipeline quality score
-                'qc_warning': qc_warning,  # QC pipeline warning message
-                'minimum_hint_nm': minimum_hint_nm,  # Hint from smoothed transmission (for diagnostics)
-                'sensor_iq': sensor_iq  # ✨ Quality classification
+                "wavelength": peak_wavelength,  # Fourier transform result
+                "intensity": intensity[np.argmin(intensity)]
+                if len(intensity) > 0
+                else 0.0,
+                "full_spectrum": raw_spectrum,
+                "raw_spectrum": raw_spectrum,
+                "transmission_spectrum": transmission_spectrum,  # Already baseline-corrected and SG-filtered
+                "fwhm": fwhm_nm,  # QC pipeline result
+                "qc_quality": qc_quality,  # QC pipeline quality score
+                "qc_warning": qc_warning,  # QC pipeline warning message
+                "minimum_hint_nm": minimum_hint_nm,  # Hint from smoothed transmission (for diagnostics)
+                "sensor_iq": sensor_iq,  # ✨ Quality classification
             }
 
         except Exception as e:
             print(f"[PROCESS] ERROR in _process_spectrum: {e}")
             import traceback
+
             try:
                 print(traceback.format_exc())
             except:
                 pass
             # Return raw data on error
             return {
-                'wavelength': 650.0,
-                'intensity': 0.0,
-                'full_spectrum': spectrum_data['intensity'],
-                'raw_spectrum': spectrum_data['intensity']
+                "wavelength": 650.0,
+                "intensity": 0.0,
+                "full_spectrum": spectrum_data["intensity"],
+                "raw_spectrum": spectrum_data["intensity"],
             }
 
-    def _find_validated_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str,
-                            minimum_hint_nm: float = None) -> dict:
+    def _find_validated_peak(
+        self,
+        wavelength: np.ndarray,
+        spectrum: np.ndarray,
+        channel: str,
+        minimum_hint_nm: float = None,
+    ) -> dict:
         """Find and validate SPR peak using FWHM quality control with optional minimum hint.
 
         Strategy:
@@ -1758,17 +2111,19 @@ class DataAcquisitionManager(QObject):
                 - 'quality': Quality score (0-1)
                 - 'candidates_found': Number of candidates evaluated
                 - 'warning': Optional warning message
+
         """
         from scipy.signal import find_peaks
+
         from settings import FWHM_EXCELLENT_THRESHOLD_NM, FWHM_GOOD_THRESHOLD_NM
 
         # Default fallback
         default_result = {
-            'wavelength': 650.0,
-            'fwhm': None,
-            'quality': 0.0,
-            'candidates_found': 0,
-            'warning': None
+            "wavelength": 650.0,
+            "fwhm": None,
+            "quality": 0.0,
+            "candidates_found": 0,
+            "warning": None,
         }
 
         try:
@@ -1789,7 +2144,9 @@ class DataAcquisitionManager(QObject):
                 if minimum_hint_nm is not None and 600.0 <= minimum_hint_nm <= 690.0:
                     # Use the hint calculated from smoothed transmission in SPR region
                     peak_wl = minimum_hint_nm
-                    logger.debug(f"QC: No minima found, using minimum_hint_nm={peak_wl:.1f}nm")
+                    logger.debug(
+                        f"QC: No minima found, using minimum_hint_nm={peak_wl:.1f}nm",
+                    )
                 else:
                     # Fallback: find minimum in CORE SPR region (600-690nm)
                     core_spr_mask = (wl_spr >= 600.0) & (wl_spr <= 690.0)
@@ -1798,7 +2155,9 @@ class DataAcquisitionManager(QObject):
                         core_wl = wl_spr[core_spr_mask]
                         min_idx = np.argmin(core_spec)
                         peak_wl = core_wl[min_idx]
-                        logger.debug(f"QC: No minima found, using minimum in core SPR region: {peak_wl:.1f}nm")
+                        logger.debug(
+                            f"QC: No minima found, using minimum in core SPR region: {peak_wl:.1f}nm",
+                        )
                     else:
                         min_idx = np.argmin(spec_spr)
                         peak_wl = wl_spr[min_idx]
@@ -1807,14 +2166,16 @@ class DataAcquisitionManager(QObject):
 
                 warning = None
                 if peak_wl > 670.0:
-                    warning = f"Peak at {peak_wl:.1f}nm (>670nm) with no clear dip structure"
+                    warning = (
+                        f"Peak at {peak_wl:.1f}nm (>670nm) with no clear dip structure"
+                    )
 
                 return {
-                    'wavelength': peak_wl,
-                    'fwhm': fwhm,
-                    'quality': 0.3,  # Low quality - no clear dip structure
-                    'candidates_found': 0,
-                    'warning': warning
+                    "wavelength": peak_wl,
+                    "fwhm": fwhm,
+                    "quality": 0.3,  # Low quality - no clear dip structure
+                    "candidates_found": 0,
+                    "warning": warning,
                 }
 
             # Check if first peak found is >670nm (potential issue flag)
@@ -1824,7 +2185,9 @@ class DataAcquisitionManager(QObject):
                 first_candidate_wl = wl_spr[minima_indices[0]]
                 if first_candidate_wl > 670.0:
                     first_peak_flag = True
-                    logger.warning(f"Channel {channel}: First peak detected at {first_candidate_wl:.1f}nm (>670nm) - potential calibration issue")
+                    logger.warning(
+                        f"Channel {channel}: First peak detected at {first_candidate_wl:.1f}nm (>670nm) - potential calibration issue",
+                    )
 
             # Evaluate each candidate minimum
             candidates = []
@@ -1895,7 +2258,12 @@ class DataAcquisitionManager(QObject):
 
                 # Combine: FWHM (50%), depth (30%), wavelength range (20%) + hint bonus
                 # FWHM is most important for validity, hint guides initial selection
-                quality = 0.5 * fwhm_score + 0.3 * min(depth / 50.0, 1.0) + 0.2 * wl_score + hint_bonus
+                quality = (
+                    0.5 * fwhm_score
+                    + 0.3 * min(depth / 50.0, 1.0)
+                    + 0.2 * wl_score
+                    + hint_bonus
+                )
 
                 # Continuity checking - prevent sudden jumps
                 if channel in self._last_peak_wavelength:
@@ -1911,14 +2279,16 @@ class DataAcquisitionManager(QObject):
                         quality *= 0.7  # Moderate penalty
                     # wl_diff < 15nm = no penalty (gradual shift OK)
 
-                candidates.append({
-                    'wavelength': candidate_wl,
-                    'fwhm': fwhm,
-                    'quality': quality,
-                    'depth': depth,
-                    'fwhm_score': fwhm_score,
-                    'wl_score': wl_score
-                })
+                candidates.append(
+                    {
+                        "wavelength": candidate_wl,
+                        "fwhm": fwhm,
+                        "quality": quality,
+                        "depth": depth,
+                        "fwhm_score": fwhm_score,
+                        "wl_score": wl_score,
+                    },
+                )
 
             # Select best candidate
             warning = None
@@ -1927,7 +2297,9 @@ class DataAcquisitionManager(QObject):
                 if minimum_hint_nm is not None and 600.0 <= minimum_hint_nm <= 690.0:
                     # Use the hint calculated from smoothed transmission in SPR region
                     peak_wl = minimum_hint_nm
-                    logger.debug(f"QC: All candidates rejected, using minimum_hint_nm={peak_wl:.1f}nm")
+                    logger.debug(
+                        f"QC: All candidates rejected, using minimum_hint_nm={peak_wl:.1f}nm",
+                    )
                 else:
                     # Fallback: find absolute minimum in CORE SPR region (600-690nm, not 590-750nm)
                     core_spr_mask = (wl_spr >= 600.0) & (wl_spr <= 690.0)
@@ -1936,7 +2308,9 @@ class DataAcquisitionManager(QObject):
                         core_wl = wl_spr[core_spr_mask]
                         min_idx = np.argmin(core_spec)
                         peak_wl = core_wl[min_idx]
-                        logger.debug(f"QC: Using minimum in core SPR region (600-690nm): {peak_wl:.1f}nm")
+                        logger.debug(
+                            f"QC: Using minimum in core SPR region (600-690nm): {peak_wl:.1f}nm",
+                        )
                     else:
                         min_idx = np.argmin(spec_spr)
                         peak_wl = wl_spr[min_idx]
@@ -1948,47 +2322,49 @@ class DataAcquisitionManager(QObject):
                 if fwhm is not None and fwhm > 80.0:
                     warning = f"PROBLEM: FWHM={fwhm:.1f}nm (>80nm) - poor coupling or air bubble"
                 elif peak_wl > 670.0:
-                    warning = f"Peak at {peak_wl:.1f}nm (>670nm) - all candidates rejected"
+                    warning = (
+                        f"Peak at {peak_wl:.1f}nm (>670nm) - all candidates rejected"
+                    )
 
                 result = {
-                    'wavelength': peak_wl,
-                    'fwhm': fwhm,
-                    'quality': 0.2,
-                    'candidates_found': len(minima_indices),
-                    'warning': warning
+                    "wavelength": peak_wl,
+                    "fwhm": fwhm,
+                    "quality": 0.2,
+                    "candidates_found": len(minima_indices),
+                    "warning": warning,
                 }
             else:
                 # Choose highest quality candidate
-                best = max(candidates, key=lambda c: c['quality'])
+                best = max(candidates, key=lambda c: c["quality"])
 
                 # Generate warnings for problematic conditions
-                if best['fwhm'] > 80.0:
+                if best["fwhm"] > 80.0:
                     warning = f"PROBLEM: FWHM={best['fwhm']:.1f}nm (>80nm) - poor coupling detected"
-                elif best['fwhm'] > 60.0:
+                elif best["fwhm"] > 60.0:
                     warning = f"Warning: FWHM={best['fwhm']:.1f}nm (60-80nm) - coupling quality poor"
-                elif first_peak_flag and best['wavelength'] > 670.0:
+                elif first_peak_flag and best["wavelength"] > 670.0:
                     warning = f"FLAG: First peak at {best['wavelength']:.1f}nm (>670nm) - verify sensor condition"
-                elif best['wavelength'] > 700.0:
+                elif best["wavelength"] > 700.0:
                     # Check if gradual shift
                     if channel in self._last_peak_wavelength:
                         prev_wl = self._last_peak_wavelength[channel]
-                        shift = best['wavelength'] - prev_wl
+                        shift = best["wavelength"] - prev_wl
                         if shift > 15.0:
                             warning = f"Large shift: {prev_wl:.1f}nm → {best['wavelength']:.1f}nm (+{shift:.1f}nm)"
                     else:
                         warning = f"Peak at {best['wavelength']:.1f}nm (>700nm) - extended range"
 
                 result = {
-                    'wavelength': best['wavelength'],
-                    'fwhm': best['fwhm'],
-                    'quality': best['quality'],
-                    'candidates_found': len(candidates),
-                    'warning': warning
+                    "wavelength": best["wavelength"],
+                    "fwhm": best["fwhm"],
+                    "quality": best["quality"],
+                    "candidates_found": len(candidates),
+                    "warning": warning,
                 }
 
             # Update tracking history
-            self._last_peak_wavelength[channel] = result['wavelength']
-            self._fwhm_values[channel] = result['fwhm']
+            self._last_peak_wavelength[channel] = result["wavelength"]
+            self._fwhm_values[channel] = result["fwhm"]
 
             # Log warnings if present
             if warning:
@@ -2000,8 +2376,13 @@ class DataAcquisitionManager(QObject):
             logger.warning(f"Peak validation failed for channel {channel}: {e}")
             return default_result
 
-    def _find_resonance_peak(self, wavelength: np.ndarray, spectrum: np.ndarray, channel: str,
-                            minimum_hint_nm: float = None) -> float:
+    def _find_resonance_peak(
+        self,
+        wavelength: np.ndarray,
+        spectrum: np.ndarray,
+        channel: str,
+        minimum_hint_nm: float = None,
+    ) -> float:
         """Find resonance peak wavelength using selected pipeline method.
 
         Dispatches to the active pipeline method selected in UI:
@@ -2019,6 +2400,7 @@ class DataAcquisitionManager(QObject):
 
         Returns:
             Resonance wavelength in nm
+
         """
         try:
             from utils.processing_pipeline import get_pipeline_registry
@@ -2028,71 +2410,94 @@ class DataAcquisitionManager(QObject):
             active_pipeline_id = registry.active_pipeline_id
 
             # Dispatch to selected pipeline
-            if active_pipeline_id == 'centroid':
+            if active_pipeline_id == "centroid":
                 # Centroid method: Center of mass with double filtering
                 from utils.pipelines.centroid_pipeline import CentroidPipeline
+
                 pipeline = CentroidPipeline()
                 peak_wavelength = pipeline.find_resonance_wavelength(
                     transmission=spectrum,
                     wavelengths=wavelength,
-                    minimum_hint_nm=minimum_hint_nm  # Pass hint for fast path
+                    minimum_hint_nm=minimum_hint_nm,  # Pass hint for fast path
                 )
 
-            elif active_pipeline_id == 'polynomial':
+            elif active_pipeline_id == "polynomial":
                 # Polynomial fitting method
                 from utils.pipelines.polynomial_pipeline import PolynomialPipeline
+
                 pipeline = PolynomialPipeline()
                 peak_wavelength = pipeline.find_resonance_wavelength(
                     transmission=spectrum,
                     wavelengths=wavelength,
-                    minimum_hint_nm=minimum_hint_nm
+                    minimum_hint_nm=minimum_hint_nm,
                 )
 
-            elif active_pipeline_id == 'adaptive':
+            elif active_pipeline_id == "adaptive":
                 # Adaptive multi-feature method with temporal filtering
-                from utils.pipelines.adaptive_multifeature_pipeline import AdaptiveMultiFeaturePipeline
+                from utils.pipelines.adaptive_multifeature_pipeline import (
+                    AdaptiveMultiFeaturePipeline,
+                )
+
                 pipeline = AdaptiveMultiFeaturePipeline()
                 import time
+
                 peak_wavelength, metadata = pipeline.find_resonance_wavelength(
                     transmission=spectrum,
                     wavelengths=wavelength,
                     timestamp=time.time(),  # Pass timestamp for Kalman filtering
-                    minimum_hint_nm=minimum_hint_nm  # Pass hint for fast path
+                    minimum_hint_nm=minimum_hint_nm,  # Pass hint for fast path
                 )
                 # Note: metadata contains FWHM, depth, confidence, jitter_flag, slopes, etc.
 
-            elif active_pipeline_id == 'consensus':
+            elif active_pipeline_id == "consensus":
                 # Consensus method (multi-algorithm voting)
                 from utils.pipelines.consensus_pipeline import ConsensusPipeline
+
                 pipeline = ConsensusPipeline()
                 peak_wavelength = pipeline.find_resonance_wavelength(
                     transmission=spectrum,
                     wavelengths=wavelength,
-                    minimum_hint_nm=minimum_hint_nm
+                    minimum_hint_nm=minimum_hint_nm,
                 )
 
             else:
                 # Default: Fourier Transform (active_pipeline_id == 'fourier' or unknown)
+                from settings.settings import (
+                    EMA_ALPHA,
+                    EMA_ENABLED,
+                    FOURIER_ALPHA,
+                    FOURIER_WINDOW_SIZE,
+                )
                 from utils.pipelines.fourier_pipeline import FourierPipeline
-                from settings.settings import FOURIER_ALPHA, FOURIER_WINDOW_SIZE, EMA_ENABLED, EMA_ALPHA
 
                 # Use FourierPipeline with EMA pre-smoothing and optimized parameters
-                pipeline = FourierPipeline(config={
-                    'alpha': FOURIER_ALPHA,  # 9000 = original 2nm baseline performance
-                    'window_size': FOURIER_WINDOW_SIZE,  # 165 points
-                    'ema_enabled': EMA_ENABLED,  # Cascaded filtering stage 1
-                    'ema_alpha': EMA_ALPHA,  # 0.1 = 13.3% noise reduction
-                })
+                pipeline = FourierPipeline(
+                    config={
+                        "alpha": FOURIER_ALPHA,  # 9000 = original 2nm baseline performance
+                        "window_size": FOURIER_WINDOW_SIZE,  # 165 points
+                        "ema_enabled": EMA_ENABLED,  # Cascaded filtering stage 1
+                        "ema_alpha": EMA_ALPHA,  # 0.1 = 13.3% noise reduction
+                    },
+                )
                 peak_wavelength = pipeline.find_resonance_wavelength(
                     transmission=spectrum,
                     wavelengths=wavelength,
-                    fourier_weights=self.fourier_weights.get(channel) if isinstance(self.fourier_weights, dict) else self.fourier_weights
+                    fourier_weights=self.fourier_weights.get(channel)
+                    if isinstance(self.fourier_weights, dict)
+                    else self.fourier_weights,
                 )
 
                 # Validate result - must be within SPR region (600-690nm) to avoid edge artifacts
-                if np.isnan(peak_wavelength) or peak_wavelength < 600.0 or peak_wavelength > 690.0:
+                if (
+                    np.isnan(peak_wavelength)
+                    or peak_wavelength < 600.0
+                    or peak_wavelength > 690.0
+                ):
                     # Fourier failed or found edge artifact, use hint or minimum in SPR region
-                    if minimum_hint_nm is not None and 600.0 <= minimum_hint_nm <= 690.0:
+                    if (
+                        minimum_hint_nm is not None
+                        and 600.0 <= minimum_hint_nm <= 690.0
+                    ):
                         peak_wavelength = minimum_hint_nm
                     else:
                         # Find minimum in SPR region only
@@ -2105,20 +2510,33 @@ class DataAcquisitionManager(QObject):
                             peak_wavelength = 650.0  # Fallback to center
 
             # Final validation
-            if np.isnan(peak_wavelength) or peak_wavelength < wavelength[0] or peak_wavelength > wavelength[-1]:
+            if (
+                np.isnan(peak_wavelength)
+                or peak_wavelength < wavelength[0]
+                or peak_wavelength > wavelength[-1]
+            ):
                 # All methods failed, use hint or minimum
-                peak_wavelength = minimum_hint_nm if minimum_hint_nm is not None else wavelength[np.argmin(spectrum)]
+                peak_wavelength = (
+                    minimum_hint_nm
+                    if minimum_hint_nm is not None
+                    else wavelength[np.argmin(spectrum)]
+                )
 
             return float(peak_wavelength)
 
-        except Exception as e:
+        except Exception:
             # Fallback on any error
             if minimum_hint_nm is not None:
                 return float(minimum_hint_nm)
             peak_idx = np.argmin(spectrum) if len(spectrum) > 0 else 0
             return float(wavelength[peak_idx]) if len(wavelength) > peak_idx else 650.0
 
-    def _calculate_fwhm(self, wavelengths: np.ndarray, transmission: np.ndarray, peak_wl: float) -> float:
+    def _calculate_fwhm(
+        self,
+        wavelengths: np.ndarray,
+        transmission: np.ndarray,
+        peak_wl: float,
+    ) -> float:
         """Calculate Full Width at Half Maximum (FWHM) of SPR dip.
 
         FWHM is the width of the SPR dip at half the depth between the minimum
@@ -2134,6 +2552,7 @@ class DataAcquisitionManager(QObject):
 
         Returns:
             FWHM in nm, or NaN if calculation fails
+
         """
         try:
             # Define SPR search region (600-750nm)
@@ -2171,7 +2590,9 @@ class DataAcquisitionManager(QObject):
             if len(right_crossing_idx) == 0:
                 right_wl = wl[-1]  # Use edge as fallback
             else:
-                right_wl = wl[min_idx + right_crossing_idx[-1]]  # Last crossing after minimum
+                right_wl = wl[
+                    min_idx + right_crossing_idx[-1]
+                ]  # Last crossing after minimum
 
             # FWHM is the distance between crossings
             fwhm = right_wl - left_wl
@@ -2179,10 +2600,9 @@ class DataAcquisitionManager(QObject):
             # Sanity check: FWHM should be reasonable (5-200nm)
             if 5 <= fwhm <= 200:
                 return float(fwhm)
-            else:
-                return np.nan
+            return np.nan
 
-        except Exception as e:
+        except Exception:
             return np.nan
 
     def _compute_spectral_correction(self):
@@ -2199,8 +2619,9 @@ class DataAcquisitionManager(QObject):
         - No spectrum flattening (preserves true signal)
         - See: _calculate_snr_aware_fourier_weights()
         """
-        logger.info("Spectral correction disabled - using SNR-aware peak finding instead")
-        return
+        logger.info(
+            "Spectral correction disabled - using SNR-aware peak finding instead",
+        )
 
     def _load_afterglow_correction(self) -> bool:
         """Load device-specific afterglow correction calibration.
@@ -2215,17 +2636,19 @@ class DataAcquisitionManager(QObject):
 
         Returns:
             True if afterglow correction loaded successfully, False otherwise
+
         """
         try:
             from afterglow_correction import AfterglowCorrection
-            from utils.device_integration import get_device_optical_calibration_path
+
             from settings import (
                 AFTERGLOW_AUTO_MODE,
                 AFTERGLOW_FAST_THRESHOLD_MS,
                 AFTERGLOW_SLOW_THRESHOLD_MS,
                 LED_DELAY,
-                LED_POST_DELAY
+                LED_POST_DELAY,
             )
+            from utils.device_integration import get_device_optical_calibration_path
 
             optical_cal_path = get_device_optical_calibration_path()
 
@@ -2233,11 +2656,12 @@ class DataAcquisitionManager(QObject):
                 self.afterglow_correction = AfterglowCorrection(optical_cal_path)
 
                 # Generate afterglow curves for QC report (at LED_DELAY timing)
-                if (self.calibration_data and
-                    self.calibration_data.wavelengths is not None and
-                    len(self.calibration_data.wavelengths) > 0 and
-                    self.calibration_data.s_pol_ref):
-
+                if (
+                    self.calibration_data
+                    and self.calibration_data.wavelengths is not None
+                    and len(self.calibration_data.wavelengths) > 0
+                    and self.calibration_data.s_pol_ref
+                ):
                     ch_list = list(self.calibration_data.s_pol_ref.keys())
                     self.afterglow_curves = {}
                     for i, ch in enumerate(ch_list):
@@ -2247,19 +2671,33 @@ class DataAcquisitionManager(QObject):
                                 # Calculate scalar afterglow correction value
                                 correction_value = self.afterglow_correction.calculate_correction(
                                     previous_channel=prev_ch,
-                                    integration_time_ms=float(self.calibration_data.s_mode_integration_time),
+                                    integration_time_ms=float(
+                                        self.calibration_data.s_mode_integration_time,
+                                    ),
                                     delay_ms=LED_DELAY * 1000,  # Convert to ms
                                 )
                                 # Create flat array (afterglow is uniform across wavelengths)
-                                self.afterglow_curves[ch] = np.full_like(self.calibration_data.wavelengths, correction_value, dtype=float)
-                                logger.debug(f"Afterglow for ch {ch.upper()} from {prev_ch.upper()}: {correction_value:.1f} counts")
+                                self.afterglow_curves[ch] = np.full_like(
+                                    self.calibration_data.wavelengths,
+                                    correction_value,
+                                    dtype=float,
+                                )
+                                logger.debug(
+                                    f"Afterglow for ch {ch.upper()} from {prev_ch.upper()}: {correction_value:.1f} counts",
+                                )
                             except Exception as e:
-                                logger.debug(f"Could not calculate afterglow for ch {ch}: {e}")
-                                self.afterglow_curves[ch] = np.zeros_like(self.calibration_data.wavelengths)
+                                logger.debug(
+                                    f"Could not calculate afterglow for ch {ch}: {e}",
+                                )
+                                self.afterglow_curves[ch] = np.zeros_like(
+                                    self.calibration_data.wavelengths,
+                                )
                         else:
                             # First channel has no previous channel - no afterglow
-                            self.afterglow_curves[ch] = np.zeros_like(self.calibration_data.wavelengths)
-                    logger.info(f"✅ Afterglow curves generated for QC report")
+                            self.afterglow_curves[ch] = np.zeros_like(
+                                self.calibration_data.wavelengths,
+                            )
+                    logger.info("✅ Afterglow curves generated for QC report")
 
                 # Determine afterglow mode based on total acquisition delay
                 if AFTERGLOW_AUTO_MODE:
@@ -2267,51 +2705,80 @@ class DataAcquisitionManager(QObject):
                     total_delay_ms = (LED_DELAY * 1000) + (LED_POST_DELAY * 1000)
 
                     if total_delay_ms < AFTERGLOW_FAST_THRESHOLD_MS:
-                        self.afterglow_mode = 'fast'
+                        self.afterglow_mode = "fast"
                         self.afterglow_enabled = True
-                        logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
-                        logger.info(f"   Mode: FAST (total delay {total_delay_ms:.1f}ms < {AFTERGLOW_FAST_THRESHOLD_MS}ms)")
-                        logger.info(f"   High-speed acquisition: Afterglow correction enabled for 2x faster operation")
+                        logger.info(
+                            f"✅ Optical correction loaded: {optical_cal_path.name}",
+                        )
+                        logger.info(
+                            f"   Mode: FAST (total delay {total_delay_ms:.1f}ms < {AFTERGLOW_FAST_THRESHOLD_MS}ms)",
+                        )
+                        logger.info(
+                            "   High-speed acquisition: Afterglow correction enabled for 2x faster operation",
+                        )
                     elif total_delay_ms <= AFTERGLOW_SLOW_THRESHOLD_MS:
-                        self.afterglow_mode = 'normal'
+                        self.afterglow_mode = "normal"
                         self.afterglow_enabled = True
-                        logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
-                        logger.info(f"   Mode: NORMAL (total delay {total_delay_ms:.1f}ms, optimal range)")
-                        logger.info(f"   Standard operation: Afterglow correction enabled for better stability")
+                        logger.info(
+                            f"✅ Optical correction loaded: {optical_cal_path.name}",
+                        )
+                        logger.info(
+                            f"   Mode: NORMAL (total delay {total_delay_ms:.1f}ms, optimal range)",
+                        )
+                        logger.info(
+                            "   Standard operation: Afterglow correction enabled for better stability",
+                        )
                     else:
-                        self.afterglow_mode = 'slow'
+                        self.afterglow_mode = "slow"
                         self.afterglow_enabled = False
-                        logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
-                        logger.info(f"   Mode: SLOW (total delay {total_delay_ms:.1f}ms > {AFTERGLOW_SLOW_THRESHOLD_MS}ms)")
-                        logger.info(f"   Afterglow negligible (<0.2% of signal), correction disabled")
+                        logger.info(
+                            f"✅ Optical correction loaded: {optical_cal_path.name}",
+                        )
+                        logger.info(
+                            f"   Mode: SLOW (total delay {total_delay_ms:.1f}ms > {AFTERGLOW_SLOW_THRESHOLD_MS}ms)",
+                        )
+                        logger.info(
+                            "   Afterglow negligible (<0.2% of signal), correction disabled",
+                        )
                 else:
                     # Manual mode - always enable if calibration exists
-                    self.afterglow_mode = 'manual'
+                    self.afterglow_mode = "manual"
                     self.afterglow_enabled = True
-                    logger.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
-                    logger.info(f"   Mode: MANUAL (auto mode disabled, correction always enabled)")
+                    logger.info(
+                        f"✅ Optical correction loaded: {optical_cal_path.name}",
+                    )
+                    logger.info(
+                        "   Mode: MANUAL (auto mode disabled, correction always enabled)",
+                    )
 
                 # Calculate optimal LED delay if enabled
                 try:
-                    from settings import USE_DYNAMIC_LED_DELAY, LED_DELAY_TARGET_RESIDUAL
+                    from settings import (
+                        LED_DELAY_TARGET_RESIDUAL,
+                        USE_DYNAMIC_LED_DELAY,
+                    )
+
                     if USE_DYNAMIC_LED_DELAY and self.integration_time:
                         optimal_delay = self.afterglow_correction.get_optimal_led_delay(
                             integration_time_ms=float(self.integration_time),
-                            target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL)
+                            target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
                         )
                         # Convert to ms and validate range (5ms - 200ms)
                         optimal_delay_ms = optimal_delay * 1000
                         if 5.0 <= optimal_delay_ms <= 200.0:
                             self._led_delay_ms = optimal_delay_ms
-                            logger.info(f"   Optimal LED delay: {self._led_delay_ms:.1f} ms")
+                            logger.info(
+                                f"   Optimal LED delay: {self._led_delay_ms:.1f} ms",
+                            )
                 except Exception as e:
                     logger.debug(f"Dynamic LED delay calculation skipped: {e}")
                 return True
-            else:
-                # Normal for legacy devices - not an error condition
-                logger.debug("No optical calibration file found (normal for legacy devices)")
-                self.afterglow_enabled = False
-                return False
+            # Normal for legacy devices - not an error condition
+            logger.debug(
+                "No optical calibration file found (normal for legacy devices)",
+            )
+            self.afterglow_enabled = False
+            return False
         except FileNotFoundError:
             # Expected for devices without optical calibration - completely silent
             logger.debug("Optical calibration not present (legacy device)")
@@ -2323,11 +2790,12 @@ class DataAcquisitionManager(QObject):
             self.afterglow_enabled = False
             return False
 
-    def _update_calibration_intelligence(self, calibration_data: Dict):
+    def _update_calibration_intelligence(self, calibration_data: dict):
         """Update system intelligence with calibration metrics.
 
         Args:
             calibration_data: Dict containing calibration results including channel_performance
+
         """
         si = get_system_intelligence()
 
@@ -2335,19 +2803,19 @@ class DataAcquisitionManager(QObject):
         quality_scores = {}
         failed_channels = []
 
-        if 's_ref_qc_results' in calibration_data:
-            for ch, qc_data in calibration_data['s_ref_qc_results'].items():
+        if "s_ref_qc_results" in calibration_data:
+            for ch, qc_data in calibration_data["s_ref_qc_results"].items():
                 # QC score combines multiple factors (intensity, noise, etc.)
                 # Higher is better, range 0-1
-                quality_score = qc_data.get('quality_score', 0.0)
+                quality_score = qc_data.get("quality_score", 0.0)
                 quality_scores[ch] = quality_score
 
-                if qc_data.get('failed', False):
+                if qc_data.get("failed", False):
                     failed_channels.append(ch)
 
         # If no QC results, estimate quality from error list
         if not quality_scores:
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 if ch in self.ch_error_list:
                     quality_scores[ch] = 0.0
                     failed_channels.append(ch)
@@ -2359,7 +2827,7 @@ class DataAcquisitionManager(QObject):
         si.update_calibration_metrics(
             success=success,
             quality_scores=quality_scores,
-            failed_channels=failed_channels if not success else None
+            failed_channels=failed_channels if not success else None,
         )
 
         # Update LED health from calibrated intensities
@@ -2369,25 +2837,30 @@ class DataAcquisitionManager(QObject):
             si.update_led_health(
                 channel=ch,
                 intensity=intensity,
-                target=target
+                target=target,
             )
 
         # NEW: Update channel performance characteristics for ML guidance
         # These metrics inform peak tracking sensitivity and noise models
-        if 'channel_performance' in calibration_data:
-            for ch, perf in calibration_data['channel_performance'].items():
+        if "channel_performance" in calibration_data:
+            for ch, perf in calibration_data["channel_performance"].items():
                 # Store per-channel characteristics
                 si.update_channel_characteristics(
                     channel=ch,
-                    max_signal=perf.get('max_counts', 0),
-                    utilization_pct=perf.get('utilization_pct', 0),
-                    boost_ratio=perf.get('boost_ratio', 1.0),
-                    optical_limit_reached=perf.get('optical_limit_reached', False),
-                    hit_saturation=perf.get('hit_saturation', False)
+                    max_signal=perf.get("max_counts", 0),
+                    utilization_pct=perf.get("utilization_pct", 0),
+                    boost_ratio=perf.get("boost_ratio", 1.0),
+                    optical_limit_reached=perf.get("optical_limit_reached", False),
+                    hit_saturation=perf.get("hit_saturation", False),
                 )
 
-    def _update_signal_intelligence(self, channel: str, wavelength: float,
-                                   snr: float, transmission_quality: float):
+    def _update_signal_intelligence(
+        self,
+        channel: str,
+        wavelength: float,
+        snr: float,
+        transmission_quality: float,
+    ):
         """Update system intelligence with signal quality metrics.
 
         Args:
@@ -2395,6 +2868,7 @@ class DataAcquisitionManager(QObject):
             wavelength: Detected resonance wavelength (nm)
             snr: Signal-to-noise ratio (dB)
             transmission_quality: Quality metric for transmission spectrum (0-1)
+
         """
         if not SYSTEM_INTELLIGENCE_AVAILABLE:
             return
@@ -2404,12 +2878,12 @@ class DataAcquisitionManager(QObject):
             channel=channel,
             snr=snr,
             peak_wavelength=wavelength,
-            transmission_quality=transmission_quality
+            transmission_quality=transmission_quality,
         )
 
     def clear_buffers(self):
         """Clear all data buffers."""
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             self.channel_buffers[ch].clear()
             self.time_buffers[ch].clear()
         logger.info("Data buffers cleared")

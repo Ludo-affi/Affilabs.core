@@ -7,6 +7,7 @@ maintained implementations in `_legacy_led_calibration`.
 New calibration flows should use `utils.calibration_6step` and
 `utils.LEDCONVERGENCE` where applicable.
 """
+
 from __future__ import annotations
 
 import warnings

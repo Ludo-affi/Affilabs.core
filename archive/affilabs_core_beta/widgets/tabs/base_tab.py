@@ -1,18 +1,18 @@
 """Base class for sidebar tabs - provides consistent structure and lifecycle management."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal, QObject
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
 
 
 class BaseSidebarTab(QWidget):
-    """
-    Base class for sidebar tabs.
+    """Base class for sidebar tabs.
 
     Provides:
     - Consistent styling and layout
@@ -29,7 +29,7 @@ class BaseSidebarTab(QWidget):
 
     # Signals
     content_loaded = Signal()  # Emitted when content is fully loaded
-    content_shown = Signal()   # Emitted when tab is shown
+    content_shown = Signal()  # Emitted when tab is shown
     content_hidden = Signal()  # Emitted when tab is hidden
 
     def __init__(
@@ -38,10 +38,9 @@ class BaseSidebarTab(QWidget):
         subtitle: str = None,
         lazy_load: bool = False,
         event_bus: EventBus = None,
-        parent: QWidget = None
+        parent: QWidget = None,
     ):
-        """
-        Initialize sidebar tab.
+        """Initialize sidebar tab.
 
         Args:
             title: Tab title displayed at top
@@ -49,6 +48,7 @@ class BaseSidebarTab(QWidget):
             lazy_load: If True, content is built only when first shown
             event_bus: Optional EventBus for signal routing
             parent: Parent widget
+
         """
         super().__init__(parent)
         self.title = title
@@ -81,7 +81,7 @@ class BaseSidebarTab(QWidget):
             "background: transparent;"
             "line-height: 1.2;"
             "letter-spacing: -0.3px;"
-            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;",
         )
         self.title_label.setWordWrap(False)
         self.title_label.setMaximumHeight(24)
@@ -94,7 +94,7 @@ class BaseSidebarTab(QWidget):
                 "font-size: 13px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             self.subtitle_label.setWordWrap(False)
             self.subtitle_label.setMaximumHeight(16)
@@ -134,11 +134,11 @@ class BaseSidebarTab(QWidget):
         self.on_load()
 
     def _build_content(self) -> QWidget | list[QWidget] | None:
-        """
-        Build tab content. Override in subclasses.
+        """Build tab content. Override in subclasses.
 
         Returns:
             Single widget, list of widgets, or None
+
         """
         # Default: placeholder
         placeholder = QLabel(f"{self.title} content")
@@ -147,7 +147,7 @@ class BaseSidebarTab(QWidget):
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         return placeholder
 
@@ -177,15 +177,12 @@ class BaseSidebarTab(QWidget):
 
     def on_load(self):
         """Called after content is built (once per tab lifetime)."""
-        pass
 
     def on_show(self):
         """Called when tab becomes visible."""
-        pass
 
     def on_hide(self):
         """Called when tab becomes hidden."""
-        pass
 
     # Content management helpers
 

@@ -1,7 +1,7 @@
 """Data export and management panel for sidebar."""
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QGroupBox, QPushButton, QLabel
+from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
 class DataPanel(QWidget):
@@ -33,20 +33,22 @@ class DataPanel(QWidget):
             "background-color: #1A73E8; color: white; "
             "border-radius: 4px; padding: 10px; font-weight: 500; font-size: 13px; "
             "} "
-            "QPushButton:hover { background-color: #1765CC; }"
+            "QPushButton:hover { background-color: #1765CC; }",
         )
         self.export_csv_btn.clicked.connect(self.export_triggered.emit)
         export_layout.addWidget(self.export_csv_btn)
 
         # Export to Excel button
         self.export_excel_btn = QPushButton("📊 Export to Excel")
-        self.export_excel_btn.setToolTip("Export data to Excel format (.xlsx) with multiple sheets")
+        self.export_excel_btn.setToolTip(
+            "Export data to Excel format (.xlsx) with multiple sheets",
+        )
         self.export_excel_btn.setStyleSheet(
             "QPushButton { "
             "background-color: #1E8E3E; color: white; "
             "border-radius: 4px; padding: 10px; font-weight: 500; font-size: 13px; "
             "} "
-            "QPushButton:hover { background-color: #188038; }"
+            "QPushButton:hover { background-color: #188038; }",
         )
         self.export_excel_btn.clicked.connect(self.export_excel_triggered.emit)
         export_layout.addWidget(self.export_excel_btn)
@@ -54,7 +56,7 @@ class DataPanel(QWidget):
         # Info label
         info_label = QLabel(
             "Export current sensorgram data to various formats. "
-            "Excel export includes raw data, filtered data, and statistics."
+            "Excel export includes raw data, filtered data, and statistics.",
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #5F6368; font-size: 11px; padding: 4px;")

@@ -1,10 +1,11 @@
 """Test direct serial connection to Pico controllers on specific COM ports."""
 
-import serial
 import time
 
+import serial
+
 # Try connecting to each COM port directly
-com_ports = ['COM3', 'COM4', 'COM6']
+com_ports = ["COM3", "COM4", "COM6"]
 
 for port in com_ports:
     print(f"\n{'='*60}")
@@ -16,13 +17,13 @@ for port in com_ports:
             port=port,
             baudrate=115200,
             timeout=3,
-            write_timeout=2
+            write_timeout=2,
         )
         print(f"[OK] Opened {port} successfully!")
 
         # Try to get device info
-        print(f"Sending 'v' command (version)...")
-        ser.write(b'v')
+        print("Sending 'v' command (version)...")
+        ser.write(b"v")
         time.sleep(0.1)
 
         response = ser.read(100)

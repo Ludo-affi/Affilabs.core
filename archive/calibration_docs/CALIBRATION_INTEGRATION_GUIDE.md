@@ -31,13 +31,13 @@ models = calibration['models']  # Dict with 'S' and 'P' polarizations
 def predict_counts(led, pol, intensity, time_ms):
     """
     Predict detector counts using bilinear model.
-    
+
     Args:
         led: 'A', 'B', 'C', or 'D'
         pol: 'S' or 'P'
         intensity: LED intensity (0-255)
         time_ms: Integration time in milliseconds
-    
+
     Returns:
         Predicted counts (float)
     """
@@ -46,7 +46,7 @@ def predict_counts(led, pol, intensity, time_ms):
     b = params['b']
     c = params['c']
     d = params['d']
-    
+
     counts = (a * time_ms + b) * intensity + (c * time_ms + d)
     return counts
 ```
@@ -118,7 +118,7 @@ spr_calibration/
 
 ### Parameter Interpretation
 - **a**: Sensitivity slope (counts/ms/intensity_unit)
-- **b**: Sensitivity offset (counts/intensity_unit)  
+- **b**: Sensitivity offset (counts/intensity_unit)
 - **c**: Dark signal slope (counts/ms)
 - **d**: Dark signal offset (counts)
 
@@ -132,27 +132,27 @@ spr_calibration/
 def calculate_parameters(led, pol, target_counts=40000, max_counts=60000):
     """
     Calculate LED intensity and integration time for target counts.
-    
+
     Keeps system in safe operating range (10-60ms, <60k counts).
     """
     params = models[pol][led]
     a, b, c, d = params['a'], params['b'], params['c'], params['d']
-    
+
     # Strategy: Fix intensity, solve for time
     intensity = 100  # moderate level
-    
+
     # Solve: target = (a*t + b)*I + (c*t + d)
     time_ms = (target_counts - b*intensity - d) / (a*intensity + c)
-    
+
     # Check if within safe range
     if time_ms < 10 or time_ms > 60:
         # Switch strategy: fix time, solve for intensity
         time_ms = 30.0
         intensity = (target_counts - c*time_ms - d) / (a*time_ms + b)
-    
+
     # Predict actual counts
     predicted = (a*time_ms + b)*intensity + (c*time_ms + d)
-    
+
     return {
         'intensity': int(np.clip(intensity, 0, 255)),
         'integration_time_ms': round(time_ms, 2),
@@ -171,19 +171,19 @@ print(f"Expected counts: {params['predicted_counts']}")
 def balance_all_leds(target_counts=35000, pol='S'):
     """
     Calculate parameters to achieve similar counts across all 4 LEDs.
-    
+
     Returns dict with parameters for each LED.
     """
     results = {}
-    
+
     for led in ['A', 'B', 'C', 'D']:
         params = calculate_parameters(led, pol, target_counts)
         results[led] = params
-        
+
         print(f"LED_{led}: I={params['intensity']:3d}, "
               f"t={params['integration_time_ms']:5.2f}ms, "
               f"counts={params['predicted_counts']:5d}")
-    
+
     return results
 
 # Usage
@@ -196,23 +196,23 @@ led_params = balance_all_leds(target_counts=40000, pol='S')
 def check_saturation(led, pol, intensity, time_ms, threshold=60000):
     """
     Check if given parameters will cause detector saturation.
-    
+
     Returns: (predicted_counts, will_saturate)
     """
     predicted = predict_counts(led, pol, intensity, time_ms)
     will_saturate = predicted > threshold
-    
+
     if will_saturate:
         # Calculate max safe time at this intensity
         params = models[pol][led]
         a, b, c, d = params['a'], params['b'], params['c'], params['d']
         max_time = (threshold - b*intensity - d) / (a*intensity + c)
-        
+
         print(f"⚠️  LED_{led} will saturate!")
         print(f"   Predicted: {predicted:.0f} counts (limit: {threshold})")
         print(f"   Max safe time at I={intensity}: {max_time:.1f}ms")
         return predicted, True
-    
+
     return predicted, False
 
 # Usage
@@ -231,7 +231,7 @@ def get_intensity_for_target(led, pol, target_counts, time_ms=30.0):
     """Calculate LED intensity needed for target counts at fixed time."""
     params = models[pol][led]
     a, b, c, d = params['a'], params['b'], params['c'], params['d']
-    
+
     intensity = (target_counts - c*time_ms - d) / (a*time_ms + b)
     return int(np.clip(intensity, 0, 255))
 
@@ -249,7 +249,7 @@ def get_time_for_target(led, pol, target_counts, intensity=100):
     """Calculate integration time needed for target counts at fixed intensity."""
     params = models[pol][led]
     a, b, c, d = params['a'], params['b'], params['c'], params['d']
-    
+
     time_ms = (target_counts - b*intensity - d) / (a*intensity + c)
     return round(time_ms, 2)
 
@@ -266,19 +266,19 @@ for led in ['A', 'B', 'C', 'D']:
 def setup_spr_measurement(target_counts=40000):
     """
     Calculate optimal parameters for SPR measurement.
-    
+
     Returns parameters for both S and P polarizations.
     """
     measurement_config = {
         'S': {},
         'P': {}
     }
-    
+
     for pol in ['S', 'P']:
         for led in ['A', 'B', 'C', 'D']:
             params = calculate_parameters(led, pol, target_counts)
             measurement_config[pol][led] = params
-    
+
     return measurement_config
 
 # Get configuration
@@ -318,8 +318,8 @@ cd ezControl-AI
 python spr_calibration/measure.py
 ```
 
-**Duration:** ~15 minutes  
-**Output:** 
+**Duration:** ~15 minutes
+**Output:**
 - `spr_calibration/data/spr_2d_grid_S_FLMT09999.json`
 - `spr_calibration/data/spr_2d_grid_P_FLMT09999.json`
 - `spr_calibration/data/dark_current_FLMT09999.json`
@@ -410,10 +410,10 @@ def predict_counts_batch(led, pol, intensities, times):
     """Predict counts for multiple I/t pairs at once."""
     params = models[pol][led]
     a, b, c, d = params['a'], params['b'], params['c'], params['d']
-    
+
     I = np.array(intensities)
     t = np.array(times)
-    
+
     counts = (a*t + b)*I + (c*t + d)
     return counts
 ```
@@ -445,11 +445,11 @@ counts = LOOKUP_TABLE[('C', 'S', 100, 30)]
 
 ## Support
 
-**Documentation:** `spr_calibration/models/BILINEAR_MODEL_DOCUMENTATION.md`  
-**Repository:** https://github.com/Ludo-affi/ezControl-AI  
+**Documentation:** `spr_calibration/models/BILINEAR_MODEL_DOCUMENTATION.md`
+**Repository:** https://github.com/Ludo-affi/ezControl-AI
 **Branch:** affilabs.core-beta
 
 ---
 
-**Last Updated:** December 7, 2025  
+**Last Updated:** December 7, 2025
 **Status:** Production-Ready ✅

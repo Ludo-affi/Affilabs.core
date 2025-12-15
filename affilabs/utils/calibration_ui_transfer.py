@@ -119,7 +119,9 @@ class PostCalibrationDialog(QDialog):
         # Integration time
         summary_layout.addWidget(QLabel("Integration Time:"), row, 0)
         summary_layout.addWidget(
-            QLabel(f"{self.calibration_result.integration_time} ms"), row, 1,
+            QLabel(f"{self.calibration_result.integration_time} ms"),
+            row,
+            1,
         )
         row += 1
 
@@ -413,7 +415,9 @@ def save_calibration_to_device_config(
         "num_scans": calibration_result.num_scans,
         # Calibration method
         "calibration_method": getattr(
-            calibration_result, "calibration_method", "standard",
+            calibration_result,
+            "calibration_method",
+            "standard",
         ),
         # Fast-track tracking (Priority 1)
         "fast_track_count": fast_track_count,

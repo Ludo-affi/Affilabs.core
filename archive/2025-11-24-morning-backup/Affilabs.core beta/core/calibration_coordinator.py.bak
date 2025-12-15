@@ -562,23 +562,23 @@ class CalibrationCoordinator(QObject):
 
     def _save_calibration_to_device_config(self, calibration_data: dict) -> None:
         """Save calibration data to device config (single source of truth).
-        
+
         ========================================================================
         CRITICAL: DEVICE_CONFIG.JSON IS THE SINGLE SOURCE OF TRUTH
         ========================================================================
         This method saves ALL calibration results to device_config.json:
-        
+
         1. Integration time (ms) - ALWAYS calibrated, never cached
         2. S-mode LED intensities per channel (0-255)
         3. P-mode LED intensities per channel (0-255)
         4. S-mode reference spectra (numpy arrays)
         5. Wavelengths array
-        
+
         These values are used for:
         - Fast-track calibration mode (validates saved LED values on hardware)
         - QC validation (compares new calibration against saved baseline)
         - Live acquisition (uses calibrated integration time and LED values)
-        
+
         device_config.json is the ONLY source for fast-track decision.
         NO other files (optical calibration, etc.) are used for this logic.
         ========================================================================
@@ -591,7 +591,7 @@ class CalibrationCoordinator(QObject):
                 p_mode_intensities = calibration_data.get('p_mode_intensities', s_mode_intensities)  # Fallback to S-mode if P-mode not available
                 calibration_method = self.app.data_mgr.calibration_method if hasattr(self.app.data_mgr, 'calibration_method') else 'standard'
                 per_channel_integration = self.app.data_mgr.per_channel_integration if hasattr(self.app.data_mgr, 'per_channel_integration') else {}
-                
+
                 # Get reference spectra from data manager if available
                 s_ref_spectra = {}
                 if hasattr(self.app.data_mgr, 's_ref_data') and self.app.data_mgr.s_ref_data:
@@ -600,12 +600,12 @@ class CalibrationCoordinator(QObject):
                             s_ref_spectra[ch] = data
                         elif isinstance(data, dict) and 'spectrum' in data:
                             s_ref_spectra[ch] = data['spectrum']
-                
+
                 # Get wavelengths if available
                 s_ref_wavelengths = None
                 if hasattr(self.app.data_mgr, 'wave_data') and self.app.data_mgr.wave_data is not None:
                     s_ref_wavelengths = self.app.data_mgr.wave_data
-                
+
                 # Save using unified API (device_config.json is single source of truth)
                 if integration_time and s_mode_intensities and s_ref_spectra:
                     self.app.main_window.device_config.save_led_calibration(
@@ -634,7 +634,7 @@ class CalibrationCoordinator(QObject):
                         self.app.main_window.device_config.set_calibration_settings(integration_time, num_scans)
                     self.app.main_window.device_config.save()
                     logger.info("💾 Calibration settings saved to device config file (legacy format)")
-                    
+
             except Exception as e:
                 logger.error(f"Failed to save calibration to device config: {e}")
                 logger.exception(e)
@@ -758,7 +758,7 @@ class CalibrationCoordinator(QObject):
         try:
             # Calibration data is stored directly in data_mgr
             data_mgr = self.app.data_mgr
-            
+
             logger.debug(f"Collecting QC data from data_mgr...")
             logger.debug(f"Has ref_sig: {hasattr(data_mgr, 'ref_sig')}")
             logger.debug(f"Has dark_noise: {hasattr(data_mgr, 'dark_noise')}")
@@ -766,7 +766,7 @@ class CalibrationCoordinator(QObject):
 
             # Get wavelength array from data_mgr (already trimmed during calibration)
             wavelengths = data_mgr.wave_data if hasattr(data_mgr, 'wave_data') else None
-            
+
             if wavelengths is None:
                 wavelengths = np.linspace(560, 720, 3648)  # Default detector range
                 logger.debug(f"Using default wavelength array: length={len(wavelengths)}")

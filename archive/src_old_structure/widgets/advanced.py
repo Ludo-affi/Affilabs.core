@@ -3,7 +3,15 @@
 from typing import Self
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QWidget, QPushButton, QLabel, QCheckBox, QGroupBox, QVBoxLayout
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QGroupBox,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.ui_p4spr_adv_settings import Ui_P4SPR_Advanced
 
@@ -35,7 +43,7 @@ class P4SPRAdvMenu(QDialog):
         self.measure_afterglow_btn = QPushButton("Run Optical Calibration…", self)
         self.measure_afterglow_btn.setToolTip(
             "[OEM/Factory Only] Characterize optical system response across integration times.\n"
-            "This measures LED phosphor decay characteristics for correction algorithms."
+            "This measures LED phosphor decay characteristics for correction algorithms.",
         )
         # Add next to Update Settings button at the bottom
         try:
@@ -56,7 +64,13 @@ class P4SPRAdvMenu(QDialog):
             self.ui.verticalLayout.insertWidget(max(0, idx), self.delay_status)
         except Exception:
             self.ui.verticalLayout.addWidget(self.delay_status)
-        self.set_delay_status(led_delay_s=None, post_delay_s=None, dyn_led=False, dyn_post=False, cal_path=None)
+        self.set_delay_status(
+            led_delay_s=None,
+            post_delay_s=None,
+            dyn_led=False,
+            dyn_post=False,
+            cal_path=None,
+        )
         # Hide delay status by default (shown only in DEV mode)
         self.delay_status.setVisible(False)
 
@@ -76,11 +90,17 @@ class P4SPRAdvMenu(QDialog):
         """Add session quality monitoring controls to advanced settings."""
         try:
             # Create quality monitoring group box
-            self.quality_group = QGroupBox("Session Quality Monitoring (FWHM-based QC)", self)
+            self.quality_group = QGroupBox(
+                "Session Quality Monitoring (FWHM-based QC)",
+                self,
+            )
             quality_layout = QVBoxLayout()
 
             # Add checkbox for enable/disable
-            self.quality_monitoring_checkbox = QCheckBox("Enable session-based FWHM quality tracking", self)
+            self.quality_monitoring_checkbox = QCheckBox(
+                "Enable session-based FWHM quality tracking",
+                self,
+            )
             self.quality_monitoring_checkbox.setToolTip(
                 "Track Full Width at Half Maximum (FWHM) of SPR peaks during recording.\n"
                 "Provides real-time quality assessment with RGB LED feedback:\n"
@@ -88,16 +108,18 @@ class P4SPRAdvMenu(QDialog):
                 "  • Yellow: Good (FWHM 30-60nm)\n"
                 "  • Red: Poor (FWHM ≥ 60nm)\n\n"
                 "Only tracks peaks within 580-630nm wavelength range.\n"
-                "Generates end-of-session QC report with historical comparison."
+                "Generates end-of-session QC report with historical comparison.",
             )
-            self.quality_monitoring_checkbox.stateChanged.connect(self._on_quality_monitoring_changed)
+            self.quality_monitoring_checkbox.stateChanged.connect(
+                self._on_quality_monitoring_changed,
+            )
             quality_layout.addWidget(self.quality_monitoring_checkbox)
 
             # Add info label
             info_label = QLabel(
                 "<small>Thresholds: <b>&lt;30nm</b> excellent, <b>30-60nm</b> good, <b>≥60nm</b> poor<br/>"
                 "Valid range: 580-630nm wavelength</small>",
-                self
+                self,
             )
             info_label.setWordWrap(True)
             quality_layout.addWidget(info_label)
@@ -110,11 +132,14 @@ class P4SPRAdvMenu(QDialog):
 
         except Exception as e:
             import logging
-            logging.getLogger(__name__).debug(f"Could not add quality monitoring UI: {e}")
+
+            logging.getLogger(__name__).debug(
+                f"Could not add quality monitoring UI: {e}",
+            )
 
     def _on_quality_monitoring_changed(self: Self, state: int) -> None:
         """Handle quality monitoring checkbox state change."""
-        enabled = (state == Qt.CheckState.Checked.value)
+        enabled = state == Qt.CheckState.Checked.value
         self.quality_monitoring_toggled.emit(enabled)
 
     def set_quality_monitoring_state(self: Self, enabled: bool) -> None:
@@ -149,18 +174,31 @@ class P4SPRAdvMenu(QDialog):
         If values are None, show defaults as unknown.
         """
         try:
-            pre_ms = f"{led_delay_s*1000:.1f} ms" if isinstance(led_delay_s, (int, float)) else "—"
-            post_ms = f"{post_delay_s*1000:.1f} ms" if isinstance(post_delay_s, (int, float)) else "—"
-            dyn_txt = f"pre {'On' if dyn_led else 'Off'}, post {'On' if dyn_post else 'Off'}"
+            pre_ms = (
+                f"{led_delay_s*1000:.1f} ms"
+                if isinstance(led_delay_s, (int, float))
+                else "—"
+            )
+            post_ms = (
+                f"{post_delay_s*1000:.1f} ms"
+                if isinstance(post_delay_s, (int, float))
+                else "—"
+            )
+            dyn_txt = (
+                f"pre {'On' if dyn_led else 'Off'}, post {'On' if dyn_post else 'Off'}"
+            )
             cal_txt = cal_path if cal_path else "None"
             # Shorten very long paths by showing basename when possible
             try:
                 import os
+
                 if cal_path:
                     cal_txt = os.path.basename(cal_path)
             except Exception:
                 pass
-            self.delay_status.setText(f"Pre: {pre_ms}  •  Post: {post_ms}  •  Dynamic: {dyn_txt}  •  Cal: {cal_txt}")
+            self.delay_status.setText(
+                f"Pre: {pre_ms}  •  Post: {post_ms}  •  Dynamic: {dyn_txt}  •  Cal: {cal_txt}",
+            )
             self.delay_status.setToolTip(cal_path or "No calibration file configured")
         except Exception:
             # Fallback minimal text

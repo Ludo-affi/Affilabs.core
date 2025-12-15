@@ -1,13 +1,11 @@
-"""
-Remove old optical calibration file that is missing channel 'd'.
-"""
+"""Remove old optical calibration file that is missing channel 'd'."""
 
 import json
 from pathlib import Path
-from datetime import datetime
 
 # Known device from logs
 DEVICE_SERIAL = "FLMT09116"
+
 
 def main():
     print("=" * 70)
@@ -34,7 +32,7 @@ def main():
 
         # Check what channels are present
         channels_present = list(cal_data.keys())
-        channels_needed = ['a', 'b', 'c', 'd']
+        channels_needed = ["a", "b", "c", "d"]
 
         print(f"📊 Current channels: {channels_present}")
         print(f"📊 Required channels: {channels_needed}")
@@ -48,36 +46,39 @@ def main():
             print("This old file will cause errors. It should be removed.")
             print()
 
-            response = input("Remove incomplete optical calibration? (y/n): ").strip().lower()
+            response = (
+                input("Remove incomplete optical calibration? (y/n): ").strip().lower()
+            )
 
-            if response == 'y':
+            if response == "y":
                 # Create backup
-                backup_path = optical_cal_path.with_suffix('.json.backup')
+                backup_path = optical_cal_path.with_suffix(".json.backup")
                 optical_cal_path.rename(backup_path)
 
                 print(f"[OK] Old file backed up to: {backup_path}")
-                print(f"[OK] Incomplete calibration removed")
+                print("[OK] Incomplete calibration removed")
                 print()
                 print("NEXT STEPS:")
                 print("1. Start the main application")
                 print("2. Connect hardware")
                 print("3. Click 'Run Optical Calibration...' in Advanced Settings")
                 print("4. New calibration will include all 4 channels with S-mode")
-                print("5. LED calibration will automatically validate using saved intensities")
+                print(
+                    "5. LED calibration will automatically validate using saved intensities",
+                )
                 print()
                 print("Expected time: ~10-11 minutes total")
                 return 0
-            else:
-                print("[ERROR] Cancelled - old file still present")
-                return 1
-        else:
-            print("[OK] Optical calibration is complete - all 4 channels present")
-            print("   No action needed")
-            return 0
+            print("[ERROR] Cancelled - old file still present")
+            return 1
+        print("[OK] Optical calibration is complete - all 4 channels present")
+        print("   No action needed")
+        return 0
 
     except Exception as e:
         print(f"[ERROR] Error reading file: {e}")
         return 1
+
 
 if __name__ == "__main__":
     exit(main())

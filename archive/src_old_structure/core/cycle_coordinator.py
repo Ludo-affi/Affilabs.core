@@ -10,11 +10,13 @@ This coordinator handles:
 Extracted from main_simplified.py to improve modularity and testability.
 """
 
-from PySide6.QtCore import QObject
-from utils.logger import logger
-from pathlib import Path
-from typing import Optional, Tuple, Dict, List, Any
 import datetime as dt
+from pathlib import Path
+from typing import Any
+
+from PySide6.QtCore import QObject
+
+from utils.logger import logger
 
 
 class CycleCoordinator(QObject):
@@ -25,17 +27,20 @@ class CycleCoordinator(QObject):
 
         Args:
             app: Reference to main Application instance
+
         """
         super().__init__()
         self.app = app
 
         # Cycle tracking
-        self._last_cycle_bounds: Optional[Tuple[float, float]] = None
-        self._session_cycles_dir: Optional[Path] = None
+        self._last_cycle_bounds: tuple[float, float] | None = None
+        self._session_cycles_dir: Path | None = None
 
         # Flagging system
-        self._selected_channel: Optional[int] = None  # 0-3 for A-D
-        self._flag_data: List[Dict[str, Any]] = []  # List of {channel, time, annotation} dicts
+        self._selected_channel: int | None = None  # 0-3 for A-D
+        self._flag_data: list[
+            dict[str, Any]
+        ] = []  # List of {channel, time, annotation} dicts
 
     def check_cycle_changed(self, start_time: float, stop_time: float) -> bool:
         """Check if cycle region has changed significantly.
@@ -46,6 +51,7 @@ class CycleCoordinator(QObject):
 
         Returns:
             True if cycle changed significantly, False otherwise
+
         """
         if self._last_cycle_bounds is None:
             self._last_cycle_bounds = (start_time, stop_time)
@@ -55,8 +61,10 @@ class CycleCoordinator(QObject):
         duration = stop_time - start_time
 
         # Consider it a new cycle if boundaries moved >5% of duration
-        if (abs(start_time - last_start) > duration * 0.05 or
-            abs(stop_time - last_stop) > duration * 0.05):
+        if (
+            abs(start_time - last_start) > duration * 0.05
+            or abs(stop_time - last_stop) > duration * 0.05
+        ):
             self._last_cycle_bounds = (start_time, stop_time)
             return True
 
@@ -68,8 +76,9 @@ class CycleCoordinator(QObject):
         Args:
             start_time: Start cursor position
             stop_time: Stop cursor position
+
         """
-        if len(self.app.buffer_mgr.cycle_data['a'].time) < 10:
+        if len(self.app.buffer_mgr.cycle_data["a"].time) < 10:
             return  # Not enough data points
 
         # Create session directory if needed
@@ -87,12 +96,12 @@ class CycleCoordinator(QObject):
             import pandas as pd
 
             # Build dataframe with all channel data
-            cycle_dict = {'time': self.app.buffer_mgr.cycle_data['a'].time}
+            cycle_dict = {"time": self.app.buffer_mgr.cycle_data["a"].time}
 
             for ch in self.app._idx_to_channel:
                 spr_data = self.app.buffer_mgr.cycle_data[ch].spr
-                if len(spr_data) == len(cycle_dict['time']):
-                    cycle_dict[f'channel_{ch}_spr'] = spr_data
+                if len(spr_data) == len(cycle_dict["time"]):
+                    cycle_dict[f"channel_{ch}_spr"] = spr_data
 
             df = pd.DataFrame(cycle_dict)
             df.to_csv(filename, index=False)
@@ -105,12 +114,15 @@ class CycleCoordinator(QObject):
     def _create_session_cycles_dir(self) -> None:
         """Create cycles directory for current session."""
         try:
-            from config import DATA_DIR
             import datetime as dt
+
+            from config import DATA_DIR
 
             # Create session-specific directory
             session_timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-            self._session_cycles_dir = Path(DATA_DIR) / "cycles" / f"session_{session_timestamp}"
+            self._session_cycles_dir = (
+                Path(DATA_DIR) / "cycles" / f"session_{session_timestamp}"
+            )
             self._session_cycles_dir.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"📁 Created cycles directory: {self._session_cycles_dir}")
@@ -124,6 +136,7 @@ class CycleCoordinator(QObject):
 
         Args:
             event: Mouse click event
+
         """
         if event.button() != 1:  # Only left click
             return
@@ -142,12 +155,14 @@ class CycleCoordinator(QObject):
 
             if nearest_channel is not None:
                 self._selected_channel = nearest_channel
-                logger.info(f"Selected channel {self.app._idx_to_channel[nearest_channel].upper()} at t={click_time:.2f}s")
+                logger.info(
+                    f"Selected channel {self.app._idx_to_channel[nearest_channel].upper()} at t={click_time:.2f}s",
+                )
 
                 # TODO: Visual feedback for selected channel
                 # Could highlight the curve or show marker
 
-    def _find_nearest_channel(self, click_time: float, click_spr: float) -> Optional[int]:
+    def _find_nearest_channel(self, click_time: float, click_spr: float) -> int | None:
         """Find channel curve nearest to click position.
 
         Args:
@@ -156,10 +171,11 @@ class CycleCoordinator(QObject):
 
         Returns:
             Channel index (0-3) or None
+
         """
         import numpy as np
 
-        min_distance = float('inf')
+        min_distance = float("inf")
         nearest_channel = None
 
         for ch_idx, ch_letter in enumerate(self.app._idx_to_channel):
@@ -200,11 +216,12 @@ class CycleCoordinator(QObject):
             channel: Channel index (0-3)
             time: Time position for flag
             annotation: Optional annotation text
+
         """
         flag = {
-            'channel': channel,
-            'time': time,
-            'annotation': annotation
+            "channel": channel,
+            "time": time,
+            "annotation": annotation,
         }
         self._flag_data.append(flag)
 
@@ -213,7 +230,7 @@ class CycleCoordinator(QObject):
 
         # TODO: Visual representation of flag on graph
 
-    def get_flags_for_channel(self, channel: int) -> List[Dict[str, Any]]:
+    def get_flags_for_channel(self, channel: int) -> list[dict[str, Any]]:
         """Get all flags for a specific channel.
 
         Args:
@@ -221,8 +238,9 @@ class CycleCoordinator(QObject):
 
         Returns:
             List of flag dictionaries
+
         """
-        return [f for f in self._flag_data if f['channel'] == channel]
+        return [f for f in self._flag_data if f["channel"] == channel]
 
     def clear_flags(self) -> None:
         """Clear all flags."""
@@ -234,6 +252,7 @@ class CycleCoordinator(QObject):
 
         Args:
             filename: Output file path
+
         """
         if len(self._flag_data) == 0:
             logger.warning("No flags to export")
@@ -244,10 +263,12 @@ class CycleCoordinator(QObject):
 
             # Convert to dataframe
             df = pd.DataFrame(self._flag_data)
-            df['channel_letter'] = df['channel'].apply(lambda x: self.app._idx_to_channel[x].upper())
+            df["channel_letter"] = df["channel"].apply(
+                lambda x: self.app._idx_to_channel[x].upper(),
+            )
 
             # Reorder columns
-            df = df[['channel_letter', 'time', 'annotation']]
+            df = df[["channel_letter", "time", "annotation"]]
 
             # Save to CSV
             df.to_csv(filename, index=False)
@@ -256,11 +277,12 @@ class CycleCoordinator(QObject):
         except Exception as e:
             logger.error(f"Failed to export flags: {e}")
 
-    def get_cycle_bounds(self) -> Optional[Tuple[float, float]]:
+    def get_cycle_bounds(self) -> tuple[float, float] | None:
         """Get current cycle bounds.
 
         Returns:
             Tuple of (start_time, stop_time) or None
+
         """
         return self._last_cycle_bounds
 

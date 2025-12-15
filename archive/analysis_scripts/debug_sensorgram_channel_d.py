@@ -1,13 +1,11 @@
 """Debug script to check channel 'd' visibility and data in sensorgram."""
 
-import sys
 import json
-import numpy as np
 from pathlib import Path
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("CHANNEL 'D' SENSORGRAM DEBUG")
-print("="*60 + "\n")
+print("=" * 60 + "\n")
 
 # 1. Check configuration
 config_file = Path("generated-files/config.json")
@@ -19,15 +17,15 @@ if config_file.exists():
     print(f"   Calibrated: {config.get('calibrated', False)}")
 
     # Check if channel 'd' is calibrated
-    led_intensities = config.get('led_intensities', {})
-    if 'd' in led_intensities:
+    led_intensities = config.get("led_intensities", {})
+    if "d" in led_intensities:
         print(f"   Channel 'd' LED intensity: {led_intensities['d']}")
     else:
         print("   ⚠️  Channel 'd' NOT in led_intensities!")
 
     # Check for any channel-specific flags
     for key in config:
-        if 'd' in str(key).lower():
+        if "d" in str(key).lower():
             print(f"   Config['{key}']: {config[key]}")
 
     print()
@@ -84,7 +82,7 @@ if ui_file.exists():
         ui_content = f.read()
 
     print("6. UI CHECKBOX STATES:")
-    for ch in ['A', 'B', 'C', 'D']:
+    for ch in ["A", "B", "C", "D"]:
         if f"segment_{ch}" in ui_content:
             if f"segment_{ch}.setChecked(True)" in ui_content:
                 print(f"   ✅ segment_{ch} checkbox is checked by default")
@@ -96,9 +94,9 @@ if ui_file.exists():
             print(f"   ❌ segment_{ch} checkbox NOT FOUND in UI!")
     print()
 
-print("="*60)
+print("=" * 60)
 print("NEXT STEPS:")
 print("1. Run the app and check terminal output for 'Skipping hidden channel d'")
 print("2. Add temporary debug logging to verify data content")
 print("3. Apply one of the recommended fixes above")
-print("="*60 + "\n")
+print("=" * 60 + "\n")

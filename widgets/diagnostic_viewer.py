@@ -7,8 +7,15 @@ the acquisition pipeline. No file I/O needed - uses direct signal emission.
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox
+from PySide6.QtCore import Slot
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 try:
     import pyqtgraph as pg
@@ -68,17 +75,21 @@ class DiagnosticViewer(QWidget):
         # Left column
         left_layout = QVBoxLayout()
         self.plot1 = self._create_plot("1. Raw Spectrum", "Counts", "blue")
-        left_layout.addWidget(self.plot1['widget'])
+        left_layout.addWidget(self.plot1["widget"])
         self.plot2 = self._create_plot("2. After Dark Correction", "Counts", "green")
-        left_layout.addWidget(self.plot2['widget'])
+        left_layout.addWidget(self.plot2["widget"])
         grid_layout.addLayout(left_layout)
 
         # Right column
         right_layout = QVBoxLayout()
         self.plot3 = self._create_plot("3. S-Reference (Corrected)", "Counts", "orange")
-        right_layout.addWidget(self.plot3['widget'])
-        self.plot4 = self._create_plot("4. Transmittance (Final)", "% Transmission", "red")
-        right_layout.addWidget(self.plot4['widget'])
+        right_layout.addWidget(self.plot3["widget"])
+        self.plot4 = self._create_plot(
+            "4. Transmittance (Final)",
+            "% Transmission",
+            "red",
+        )
+        right_layout.addWidget(self.plot4["widget"])
         grid_layout.addLayout(right_layout)
 
         layout.addLayout(grid_layout)
@@ -86,10 +97,10 @@ class DiagnosticViewer(QWidget):
     def _create_plot(self, title: str, ylabel: str, color: str):
         """Create a single plot widget."""
         widget = pg.PlotWidget()
-        widget.setBackground('w')
-        widget.setTitle(title, color='k', size='12pt')
-        widget.setLabel('left', ylabel, color='k')
-        widget.setLabel('bottom', 'Wavelength (nm)', color='k')
+        widget.setBackground("w")
+        widget.setTitle(title, color="k", size="12pt")
+        widget.setLabel("left", ylabel, color="k")
+        widget.setLabel("bottom", "Wavelength (nm)", color="k")
         widget.showGrid(x=True, y=True, alpha=0.3)
 
         # Create plot curve
@@ -100,20 +111,20 @@ class DiagnosticViewer(QWidget):
         spr_region = pg.LinearRegionItem(
             [580, 720],
             brush=pg.mkBrush(0, 255, 0, 30),
-            movable=False
+            movable=False,
         )
         widget.addItem(spr_region)
         spr_region.setVisible(self.highlight_spr_check.isChecked())
 
         # Stats text
-        stats_text = pg.TextItem(anchor=(1, 0), color='k')
+        stats_text = pg.TextItem(anchor=(1, 0), color="k")
         widget.addItem(stats_text)
 
         return {
-            'widget': widget,
-            'curve': curve,
-            'spr_region': spr_region,
-            'stats_text': stats_text
+            "widget": widget,
+            "curve": curve,
+            "spr_region": spr_region,
+            "stats_text": stats_text,
         }
 
     @Slot(dict)
@@ -128,13 +139,14 @@ class DiagnosticViewer(QWidget):
                 - dark_corrected: np.ndarray (after dark subtraction)
                 - s_reference: np.ndarray (S-mode reference)
                 - transmittance: np.ndarray (final P/S ratio)
+
         """
         if self.paused:
             return
 
         try:
-            channel = data.get('channel', 'unknown')
-            wavelengths = data.get('wavelengths')
+            channel = data.get("channel", "unknown")
+            wavelengths = data.get("wavelengths")
 
             if wavelengths is None or len(wavelengths) == 0:
                 return
@@ -143,19 +155,26 @@ class DiagnosticViewer(QWidget):
             self.current_data = data
 
             # Update status
-            self.status_label.setText(f"Channel {channel.upper()} - {len(wavelengths)} pixels")
+            self.status_label.setText(
+                f"Channel {channel.upper()} - {len(wavelengths)} pixels",
+            )
             self.status_label.setStyleSheet("font-weight: bold; color: green;")
 
             # Update each plot
-            self._update_plot(self.plot1, wavelengths, data.get('raw'))
-            self._update_plot(self.plot2, wavelengths, data.get('dark_corrected'))
-            self._update_plot(self.plot3, wavelengths, data.get('s_reference'))
-            self._update_plot(self.plot4, wavelengths, data.get('transmittance'))
+            self._update_plot(self.plot1, wavelengths, data.get("raw"))
+            self._update_plot(self.plot2, wavelengths, data.get("dark_corrected"))
+            self._update_plot(self.plot3, wavelengths, data.get("s_reference"))
+            self._update_plot(self.plot4, wavelengths, data.get("transmittance"))
 
         except Exception as e:
             logger.error(f"Failed to update diagnostic viewer: {e}")
 
-    def _update_plot(self, plot_dict: dict, wavelengths: np.ndarray, spectrum: np.ndarray):
+    def _update_plot(
+        self,
+        plot_dict: dict,
+        wavelengths: np.ndarray,
+        spectrum: np.ndarray,
+    ):
         """Update a single plot with data."""
         if spectrum is None or wavelengths is None:
             return
@@ -168,7 +187,7 @@ class DiagnosticViewer(QWidget):
                 spectrum = spectrum[:min_len]
 
             # Update curve
-            plot_dict['curve'].setData(wavelengths, spectrum)
+            plot_dict["curve"].setData(wavelengths, spectrum)
 
             # Update statistics
             mean_val = np.mean(spectrum)
@@ -177,8 +196,8 @@ class DiagnosticViewer(QWidget):
             std_val = np.std(spectrum)
 
             stats_text = f"Mean: {mean_val:.1f}\nMax: {max_val:.1f}\nMin: {min_val:.1f}\nStd: {std_val:.2f}"
-            plot_dict['stats_text'].setText(stats_text)
-            plot_dict['stats_text'].setPos(wavelengths[-1], max_val)
+            plot_dict["stats_text"].setText(stats_text)
+            plot_dict["stats_text"].setPos(wavelengths[-1], max_val)
 
         except Exception as e:
             logger.warning(f"Failed to update plot: {e}")
@@ -198,7 +217,7 @@ class DiagnosticViewer(QWidget):
         """Update SPR region visibility on all plots."""
         show_spr = self.highlight_spr_check.isChecked()
         for plot in [self.plot1, self.plot2, self.plot3, self.plot4]:
-            plot['spr_region'].setVisible(show_spr)
+            plot["spr_region"].setVisible(show_spr)
 
     def closeEvent(self, event):
         """Handle window close."""

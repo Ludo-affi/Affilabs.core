@@ -41,7 +41,7 @@ if ctrl_name in ["pico_p4spr", "PicoP4SPR"]:
 elif ctrl_name in ["pico_ezspr", "PicoEZSPR"]:
     self.ctrl.enable_channel(ch)  # Different method name
 
-# HAL approach  
+# HAL approach
 controller.activate_channel(ChannelID.A)  # Same for all devices
 ```
 
@@ -136,7 +136,7 @@ from utils.hal import HALFactory
 class HardwareManager:
     def __init__(self):
         self.controller = None
-    
+
     def connect_controller(self):
         try:
             self.controller = HALFactory.create_controller()
@@ -336,7 +336,7 @@ class SimulatedP4SPRHAL(SPRControllerHAL):
     """Simulated controller for testing without hardware."""
     def connect(self):
         return True  # Always succeeds
-    
+
     def activate_channel(self, channel):
         return True  # Simulate success
 ```

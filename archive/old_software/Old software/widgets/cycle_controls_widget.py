@@ -1,12 +1,28 @@
-from PySide6.QtWidgets import QVBoxLayout, QPushButton, QComboBox, QGroupBox, QLabel, QWidget, QFrame
-from PySide6.QtGui import QFont
 from PySide6.QtCore import QSize
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 from widgets.cycle_manager import CycleManager
 from widgets.ui_constants import CycleConfig
 
+
 class CycleControlsWidget(QWidget):
     """Widget for cycle data button and cycle settings controls."""
-    def __init__(self, parent=None, show_cycle_data_button=True, show_cycle_settings=True, sensorgram_graph=None):
+
+    def __init__(
+        self,
+        parent=None,
+        show_cycle_data_button=True,
+        show_cycle_settings=True,
+        sensorgram_graph=None,
+    ):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -26,7 +42,7 @@ class CycleControlsWidget(QWidget):
                 "    background-color: white;"
                 "    border: 1px solid rgb(180, 180, 180);"
                 "    border-radius: 8px;"
-                "}"
+                "}",
             )
             container.setFrameShape(QFrame.StyledPanel)
             container.setFrameShadow(QFrame.Raised)
@@ -51,7 +67,7 @@ class CycleControlsWidget(QWidget):
                 "}"
                 "QPushButton:pressed {"
                 "    background-color: rgb(26, 28, 207);"
-                "}"
+                "}",
             )
             container_layout.addWidget(self.cycle_data_btn)
             layout.addWidget(container)
@@ -65,7 +81,7 @@ class CycleControlsWidget(QWidget):
                 "    background-color: white;"
                 "    border: 1px solid rgb(180, 180, 180);"
                 "    border-radius: 8px;"
-                "}"
+                "}",
             )
             group.setFrameShape(QFrame.StyledPanel)
             group.setFrameShadow(QFrame.Raised)
@@ -90,7 +106,9 @@ class CycleControlsWidget(QWidget):
 
             # Cycle time dropdown
             self.cycle_time_dropdown = QComboBox(group)
-            self.cycle_time_dropdown.addItems([f"{t} min" for t in CycleConfig.TIME_OPTIONS])
+            self.cycle_time_dropdown.addItems(
+                [f"{t} min" for t in CycleConfig.TIME_OPTIONS],
+            )
             group_layout.addWidget(QLabel("Cycle Time:"))
             group_layout.addWidget(self.cycle_time_dropdown)
 
@@ -101,7 +119,7 @@ class CycleControlsWidget(QWidget):
                 self.cycle_manager = CycleManager(
                     cycle_type_dropdown=self.cycle_type_dropdown,
                     cycle_time_dropdown=self.cycle_time_dropdown,
-                    sensorgram_graph=sensorgram_graph
+                    sensorgram_graph=sensorgram_graph,
                 )
 
     def set_cycle_data_callback(self, callback):

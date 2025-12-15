@@ -1,8 +1,10 @@
 """Test 2 cycles to debug"""
-import serial
+
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=10)
+import serial
+
+ser = serial.Serial("COM5", 115200, timeout=10)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -15,7 +17,7 @@ start = time.time()
 lines = []
 while time.time() - start < 30:
     if ser.in_waiting > 0:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
         if line:
             lines.append(line)
             print(line)

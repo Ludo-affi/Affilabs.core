@@ -15,16 +15,15 @@ Buggy Behavior (BUG EXISTS):
 OBSERVE THE PHYSICAL LEDs - Do they light up during query?
 """
 
-import time
 import sys
+import time
 from pathlib import Path
 
 # Add src to path
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
-from utils.controller import PicoP4SPR, ArduinoController
-from utils.logger import logger
+from utils.controller import ArduinoController, PicoP4SPR
 
 # Test configuration
 TEST_CONTROLLER_TYPE = "pico"  # "pico" or "arduino"
@@ -33,15 +32,14 @@ PAUSE_FOR_OBSERVATION = 2.0  # Seconds to pause and observe LEDs
 
 def test_query_side_effect(ctrl):
     """Test if query commands activate LEDs as side effect."""
-
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🔬 CRITICAL TEST: LED QUERY SIDE EFFECT VALIDATION")
-    print("="*80)
+    print("=" * 80)
     print("\nThis test determines if query commands (ia, ib, ic, id) activate LEDs.")
     print("WATCH THE PHYSICAL LEDs - Do they turn on during the query phase?\n")
 
     # Check if query method exists
-    has_query = hasattr(ctrl, 'get_led_intensity')
+    has_query = hasattr(ctrl, "get_led_intensity")
     print(f"Controller has get_led_intensity(): {has_query}")
 
     if not has_query:
@@ -49,9 +47,9 @@ def test_query_side_effect(ctrl):
         return False
 
     # Get firmware version
-    fw_version = getattr(ctrl, 'version', 'Unknown')
+    fw_version = getattr(ctrl, "version", "Unknown")
     print(f"Firmware version: {fw_version}")
-    print("")
+    print()
 
     # =========================================================================
     # PHASE 1: Turn off all LEDs and verify they're physically off
@@ -96,7 +94,9 @@ def test_query_side_effect(ctrl):
     time.sleep(PAUSE_FOR_OBSERVATION)
 
     print("\n   📝 Record your observation:")
-    led_a_on = input("   Did LED A physically turn ON after query? (y/n): ").lower().strip()
+    led_a_on = (
+        input("   Did LED A physically turn ON after query? (y/n): ").lower().strip()
+    )
 
     # =========================================================================
     # PHASE 3: Query all LEDs - CHECK IF MULTIPLE LEDs ACTIVATE
@@ -123,7 +123,9 @@ def test_query_side_effect(ctrl):
     time.sleep(PAUSE_FOR_OBSERVATION)
 
     print("\n   📝 Record your observation:")
-    any_leds_on = input("   Did ANY LEDs physically turn ON after query? (y/n): ").lower().strip()
+    any_leds_on = (
+        input("   Did ANY LEDs physically turn ON after query? (y/n): ").lower().strip()
+    )
 
     # =========================================================================
     # PHASE 4: Control test - Verify batch command works correctly
@@ -135,11 +137,11 @@ def test_query_side_effect(ctrl):
     print("\n8. Sending batch command to turn on LED B at 50...")
     print("   This SHOULD turn on LED B (positive control)")
 
-    if hasattr(ctrl, 'set_batch_intensities'):
+    if hasattr(ctrl, "set_batch_intensities"):
         ctrl.set_batch_intensities(a=0, b=50, c=0, d=0)
         print("   Command sent: batch:0,50,0,0")
     else:
-        ctrl.set_intensity('b', 50)
+        ctrl.set_intensity("b", 50)
         print("   Command sent: turn_on_channel(b) + set_intensity(b, 50)")
 
     print(f"\n9. Pausing {PAUSE_FOR_OBSERVATION}s for observation...")
@@ -156,15 +158,15 @@ def test_query_side_effect(ctrl):
     # =========================================================================
     # RESULTS ANALYSIS
     # =========================================================================
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📊 TEST RESULTS")
-    print("="*80)
+    print("=" * 80)
 
-    bug_exists = (led_a_on == 'y' or any_leds_on == 'y')
+    bug_exists = led_a_on == "y" or any_leds_on == "y"
 
     print(f"\nPhase 2 - Single query (ia): LED A turned on? {led_a_on.upper()}")
     print(f"Phase 3 - All queries (ia,ib,ic,id): Any LEDs on? {any_leds_on.upper()}")
-    print(f"Phase 4 - Control test (batch): LED B turned on? YES (confirmed)")
+    print("Phase 4 - Control test (batch): LED B turned on? YES (confirmed)")
 
     print("\n" + "-" * 80)
     if bug_exists:
@@ -193,17 +195,16 @@ def test_query_side_effect(ctrl):
         print("   • Check other firmware commands in Steps 1-3")
         print("   • Review calibration log for unexpected commands")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
 
     return not bug_exists
 
 
 def test_alternative_hypothesis(ctrl):
     """Test if turn_on_channel() is being called unexpectedly."""
-
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🔬 ALTERNATIVE HYPOTHESIS: turn_on_channel() side effect")
-    print("="*80)
+    print("=" * 80)
     print("\nTesting if turn_on_channel() is called when it shouldn't be.\n")
 
     # Phase 1: Turn off and verify
@@ -216,7 +217,7 @@ def test_alternative_hypothesis(ctrl):
     # Phase 2: Call turn_on_channel() but don't set intensity
     print("\n2. Calling turn_on_channel('c') WITHOUT setting intensity...")
     print("   This enables the channel but doesn't set PWM duty cycle")
-    ctrl.turn_on_channel('c')
+    ctrl.turn_on_channel("c")
 
     print(f"\n3. Pausing {PAUSE_FOR_OBSERVATION}s for observation...")
     print("   👀 OBSERVE: Does LED C turn on (even without set_intensity)?")
@@ -229,7 +230,7 @@ def test_alternative_hypothesis(ctrl):
     time.sleep(0.5)
 
     print("\n" + "-" * 80)
-    if led_c_on == 'y':
+    if led_c_on == "y":
         print("⚠️ PARTIAL BUG: turn_on_channel() activates LED without intensity")
         print("   • Enabling channel causes LED to turn on at last intensity")
         print("   • Or firmware defaults to non-zero intensity")
@@ -241,11 +242,10 @@ def test_alternative_hypothesis(ctrl):
 
 def main():
     """Run LED query side effect validation tests."""
-
-    print("="*80)
+    print("=" * 80)
     print("LED QUERY SIDE EFFECT VALIDATION")
     print("Testing if ia/ib/ic/id commands activate LEDs")
-    print("="*80)
+    print("=" * 80)
 
     # Initialize controller
     if TEST_CONTROLLER_TYPE == "pico":
@@ -266,14 +266,14 @@ def main():
     print(f"✅ Controller connected: {ctrl.name}")
     print(f"   Firmware version: {getattr(ctrl, 'version', 'Unknown')}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("⚠️  IMPORTANT INSTRUCTIONS:")
-    print("="*80)
+    print("=" * 80)
     print("1. WATCH THE PHYSICAL LEDs on the device")
     print("2. Note when each LED turns ON or OFF")
     print("3. Answer honestly about what you observe")
     print("4. This test determines if firmware needs updating")
-    print("="*80)
+    print("=" * 80)
 
     input("\nPress ENTER when ready to begin...")
 
@@ -286,9 +286,9 @@ def main():
         input("Press ENTER to run alternative hypothesis test...")
         test_alternative_hypothesis(ctrl)
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ ALL TESTS COMPLETE")
-        print("="*80)
+        print("=" * 80)
 
         if not no_bug:
             print("\n🔴 ACTION REQUIRED:")
@@ -297,12 +297,11 @@ def main():
             print("   3. Update firmware to fix query command side effect")
             print("   4. Re-run this test after firmware update to verify fix")
             return 1
-        else:
-            print("\n🟢 RESULT:")
-            print("   • No firmware bug detected in query commands")
-            print("   • Safe to re-enable LED queries if desired")
-            print("   • Investigate other potential causes if LEDs activate unexpectedly")
-            return 0
+        print("\n🟢 RESULT:")
+        print("   • No firmware bug detected in query commands")
+        print("   • Safe to re-enable LED queries if desired")
+        print("   • Investigate other potential causes if LEDs activate unexpectedly")
+        return 0
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Test interrupted by user")
@@ -310,6 +309,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
     finally:

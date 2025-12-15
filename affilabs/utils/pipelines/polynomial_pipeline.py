@@ -5,10 +5,9 @@ Fits a polynomial around the transmission dip and finds its minimum analytically
 """
 
 import numpy as np
-from scipy.optimize import curve_fit
 
-from affilabs.utils.processing_pipeline import ProcessingPipeline, PipelineMetadata
 from affilabs.utils.logger import logger
+from affilabs.utils.processing_pipeline import PipelineMetadata, ProcessingPipeline
 
 
 class PolynomialPipeline(ProcessingPipeline):
@@ -22,9 +21,12 @@ class PolynomialPipeline(ProcessingPipeline):
         super().__init__(config)
 
         # Default parameters
-        self.poly_degree = self.config.get('poly_degree', 4)  # 4th degree polynomial
-        self.fit_window = self.config.get('fit_window', 80)  # pixels around minimum
-        self.use_weighted = self.config.get('use_weighted', True)  # Weight points near minimum
+        self.poly_degree = self.config.get("poly_degree", 4)  # 4th degree polynomial
+        self.fit_window = self.config.get("fit_window", 80)  # pixels around minimum
+        self.use_weighted = self.config.get(
+            "use_weighted",
+            True,
+        )  # Weight points near minimum
 
     def get_metadata(self) -> PipelineMetadata:
         return PipelineMetadata(
@@ -33,27 +35,29 @@ class PolynomialPipeline(ProcessingPipeline):
             version="1.0",
             author="ezControl Team",
             parameters={
-                'poly_degree': self.poly_degree,
-                'fit_window': self.fit_window,
-                'use_weighted': self.use_weighted,
-                'method': f'Polynomial (degree {self.poly_degree})'
-            }
+                "poly_degree": self.poly_degree,
+                "fit_window": self.fit_window,
+                "use_weighted": self.use_weighted,
+                "method": f"Polynomial (degree {self.poly_degree})",
+            },
         )
 
     def calculate_transmission(
         self,
         intensity: np.ndarray,
-        reference: np.ndarray
+        reference: np.ndarray,
     ) -> np.ndarray:
         """Standard transmission calculation
 
         Transmission = (Intensity / Reference) * 100
         """
         if intensity.shape != reference.shape:
-            raise ValueError(f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}")
+            raise ValueError(
+                f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}",
+            )
 
         # Avoid division by zero
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             transmission = (intensity / reference) * 100
             transmission = np.where(reference == 0, 0, transmission)
 
@@ -63,7 +67,7 @@ class PolynomialPipeline(ProcessingPipeline):
         self,
         transmission: np.ndarray,
         wavelengths: np.ndarray,
-        **kwargs
+        **kwargs,
     ) -> float:
         """Find resonance using polynomial fitting with analytical minimum
 
@@ -81,13 +85,14 @@ class PolynomialPipeline(ProcessingPipeline):
                 - poly_degree: Polynomial degree (default: 4)
                 - fit_window: Window size around minimum (default: 80 pixels)
                 - use_weighted: Weight points near minimum more heavily (default: True)
+
         """
         try:
             # Allow parameter overrides
-            minimum_hint_nm = kwargs.get('minimum_hint_nm', None)
-            poly_degree = kwargs.get('poly_degree', self.poly_degree)
-            fit_window = kwargs.get('fit_window', self.fit_window)
-            use_weighted = kwargs.get('use_weighted', self.use_weighted)
+            minimum_hint_nm = kwargs.get("minimum_hint_nm")
+            poly_degree = kwargs.get("poly_degree", self.poly_degree)
+            fit_window = kwargs.get("fit_window", self.fit_window)
+            use_weighted = kwargs.get("use_weighted", self.use_weighted)
 
             # Use minimum hint if provided (FAST PATH)
             if minimum_hint_nm is not None:
@@ -115,7 +120,7 @@ class PolynomialPipeline(ProcessingPipeline):
                 # Weight points closer to minimum more heavily (Gaussian weighting)
                 center_wl = wavelengths[min_idx]
                 distances = np.abs(window_wavelengths - center_wl)
-                weights = np.exp(-distances**2 / (2 * (fit_window / 4)**2))
+                weights = np.exp(-(distances**2) / (2 * (fit_window / 4) ** 2))
             else:
                 weights = np.ones_like(window_wavelengths)
 
@@ -124,7 +129,7 @@ class PolynomialPipeline(ProcessingPipeline):
                 window_wavelengths,
                 window_transmission,
                 poly_degree,
-                w=weights
+                w=weights,
             )
 
             # Find minimum analytically: solve polynomial derivative = 0
@@ -137,8 +142,8 @@ class PolynomialPipeline(ProcessingPipeline):
             # Filter for real roots within window
             real_critical = critical_points[np.isreal(critical_points)].real
             valid_critical = real_critical[
-                (real_critical >= window_wavelengths[0]) &
-                (real_critical <= window_wavelengths[-1])
+                (real_critical >= window_wavelengths[0])
+                & (real_critical <= window_wavelengths[-1])
             ]
 
             if len(valid_critical) == 0:

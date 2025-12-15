@@ -1,7 +1,11 @@
-from copy import deepcopy
-
 import numpy as np
-from pyqtgraph import GraphicsLayoutWidget, InfiniteLine, LinearRegionItem, mkPen, setConfigOptions
+from pyqtgraph import (
+    GraphicsLayoutWidget,
+    InfiniteLine,
+    LinearRegionItem,
+    mkPen,
+    setConfigOptions,
+)
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QBrush, QColor
 
@@ -29,16 +33,17 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         # ✨ G1: Conditional antialiasing for performance
         from settings.settings import ENABLE_ANTIALIASING_LIVE_MODE
+
         setConfigOptions(antialias=ENABLE_ANTIALIASING_LIVE_MODE)
-        self.setBackground('w')
+        self.setBackground("w")
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, size="13pt", color='k')
+        self.plot.titleLabel.setText(title_string, size="13pt", color="k")
         self.plot.showGrid(x=True, y=True, alpha=0.3)
         self.plot.setAxisItems()
-        self.plot.setLabel("left", text=f"Lambda ({self.unit})", color='k')
-        self.plot.setLabel("bottom", text="Time (s)", color='k')
+        self.plot.setLabel("left", text=f"Lambda ({self.unit})", color="k")
+        self.plot.setLabel("bottom", text="Time (s)", color="k")
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.view_box = self.plot.getViewBox()
@@ -48,10 +53,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self._apply_detector_range()
 
         # Set axis colors to black
-        self.plot.getAxis('left').setPen('k')
-        self.plot.getAxis('left').setTextPen('k')
-        self.plot.getAxis('bottom').setPen('k')
-        self.plot.getAxis('bottom').setTextPen('k')
+        self.plot.getAxis("left").setPen("k")
+        self.plot.getAxis("left").setTextPen("k")
+        self.plot.getAxis("bottom").setPen("k")
+        self.plot.getAxis("bottom").setTextPen("k")
 
         # set up channel data and plots
         self.plots = {}
@@ -60,10 +65,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.lambda_data = {}
         for ch in CH_LIST:
             self.plots[ch] = self.plot.plot(
-                pen=mkPen(GRAPH_COLORS[ch], width=2), connect="finite"
+                pen=mkPen(GRAPH_COLORS[ch], width=2),
+                connect="finite",
             )
             self.static[ch] = self.plot.plot(
-                pen=mkPen(GRAPH_COLORS[ch], width=2), connect="finite"
+                pen=mkPen(GRAPH_COLORS[ch], width=2),
+                connect="finite",
             )
         self.latest_time = 0
 
@@ -71,11 +78,17 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         # set vertical cursors: left and right
         self.left_cursor = InfiniteLine(
-            pos=0, angle=90, pen=mkPen("y", width=3), movable=True
+            pos=0,
+            angle=90,
+            pen=mkPen("y", width=3),
+            movable=True,
         )
 
         self.right_cursor = InfiniteLine(
-            pos=0, angle=90, pen=mkPen("r", width=3), movable=True
+            pos=0,
+            angle=90,
+            pen=mkPen("r", width=3),
+            movable=True,
         )
 
         # set cursor color
@@ -115,7 +128,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
             self.subsampling = True
             self.subsample_threshold += self.subsample_target
             logger.debug(
-                f"sensorgram subsample factor: {int(n / self.subsample_target)}"
+                f"sensorgram subsample factor: {int(n / self.subsample_target)}",
             )
 
         if self.subsampling:
@@ -138,7 +151,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
             # Enhanced logging to debug plot updates
             total_points = sum(len(lambda_values.get(ch, [])) for ch in CH_LIST)
             if total_points > 0:
-                logger.debug(f"📊 Plotting data: {total_points} total points across channels")
+                logger.debug(
+                    f"📊 Plotting data: {total_points} total points across channels",
+                )
 
             # Cache visibility checks for performance
             visible_channels = {ch: self.plots[ch].isVisible() for ch in CH_LIST}
@@ -159,7 +174,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 all_nan = has_data and np.all(np.isnan(y_data))
                 logger.debug(
                     f"Channel {ch}: visible=True, points={len(y_data)}, "
-                    f"has_data={has_data}, all_nan={all_nan}"
+                    f"has_data={has_data}, all_nan={all_nan}",
                 )
                 if ch == "a":
                     self.check_subsample(len(y_data))
@@ -195,7 +210,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
                             self.latest_time = lambda_times[ch][-1] + 0.01
                 else:
                     logger.debug(
-                        f"sensorgram data not plottable, y = {y_data}, x = {x_data}"
+                        f"sensorgram data not plottable, y = {y_data}, x = {x_data}",
                     )
             if self.live and not self.wait_for_reset:
                 # Auto-scroll right cursor to latest time while live
@@ -210,7 +225,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
             self.updating = False
         except Exception as e:
             logger.warning(f"⚠️ Error during sensorgram update: {e}")
-            logger.debug(f"Full traceback:", exc_info=True)
+            logger.debug("Full traceback:", exc_info=True)
 
     def reset_time(self):
         self.static_index = 0
@@ -225,13 +240,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
     def left_cursor_sig_dragged(self):
         if len(self.time_data.get("d", [])) < 300 or abs(
-            self.left_cursor.value() - self.left_cursor_pos
+            self.left_cursor.value() - self.left_cursor_pos,
         ) > (len(self.time_data.get("d", [])) * 0.005):
             self.set_left(self.left_cursor.value())
 
     def right_cursor_sig_dragged(self):
         if len(self.time_data.get("d", [])) < 300 or abs(
-            self.right_cursor.value() - self.right_cursor_pos
+            self.right_cursor.value() - self.right_cursor_pos,
         ) > (len(self.time_data.get("d", [])) * 0.005):
             self.set_right(self.right_cursor.value())
 
@@ -265,7 +280,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.left_cursor.setPos(l_pos)
         if emit:
             self.segment_signal.emit(
-                self.left_cursor_pos, self.right_cursor_pos, update
+                self.left_cursor_pos,
+                self.right_cursor_pos,
+                update,
             )
 
     def set_right(self, r_pos, update=False, emit=True):
@@ -278,12 +295,16 @@ class SensorgramGraph(GraphicsLayoutWidget):
             self.right_cursor.setPos(r_pos)
             if emit:
                 self.segment_signal.emit(
-                    self.left_cursor_pos, self.right_cursor_pos, update
+                    self.left_cursor_pos,
+                    self.right_cursor_pos,
+                    update,
                 )
 
     def show_cycle_time_region(self, cycle_time_minutes):
         """Show a shaded region indicating the expected cycle duration."""
-        logger.debug(f"show_cycle_time_region called: cycle_time={cycle_time_minutes} min")
+        logger.debug(
+            f"show_cycle_time_region called: cycle_time={cycle_time_minutes} min",
+        )
         if cycle_time_minutes is None or cycle_time_minutes <= 0:
             self.hide_cycle_time_region()
             return
@@ -301,19 +322,21 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         self.cycle_time_region = LinearRegionItem(
             values=[start_time, end_time],
-            orientation='vertical',
+            orientation="vertical",
             brush=gray_brush,
-            movable=False
+            movable=False,
         )
 
         # Set z-order: positive value to put it above the grid but below data
         # Grid is at 0, data plots are at higher values
         self.cycle_time_region.setZValue(5)
-        logger.debug(f"Gray zone created with QBrush color (150,150,255,100), z-value 5")
+        logger.debug("Gray zone created with QBrush color (150,150,255,100), z-value 5")
 
         # Add to plot
         self.plot.addItem(self.cycle_time_region)
-        logger.debug(f"Gray zone added to plot: region object = {self.cycle_time_region}")
+        logger.debug(
+            f"Gray zone added to plot: region object = {self.cycle_time_region}",
+        )
 
         # Make sure it's visible
         self.cycle_time_region.setVisible(True)
@@ -364,7 +387,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.static[ch].setVisible(bool(flag))
         yrange = self.plot.viewRange()[1]
         self.plot.setRange(
-            yRange=(yrange[0], yrange[1]), update=True, disableAutoRange=False
+            yRange=(yrange[0], yrange[1]),
+            update=True,
+            disableAutoRange=False,
         )
 
 
@@ -382,27 +407,27 @@ class SegmentGraph(GraphicsLayoutWidget):
         super().__init__(parent=parent)
         # Set white background and black text for better visibility
         setConfigOptions(antialias=True)
-        self.setBackground('w')
+        self.setBackground("w")
         self.unit = unit_string
         self.fixed_window_active = False  # For cycle fixed window mode
 
         # Set plot settings: title, grid, x, y axis labels
         self.plot = self.addPlot(title=title_string)
-        self.plot.titleLabel.setText(title_string, size="10pt", color='k')
+        self.plot.titleLabel.setText(title_string, size="10pt", color="k")
         self.plot.setDownsampling(ds=False, mode="subsample")
         self.plot.showGrid(x=True, y=True, alpha=0.3)
-        self.plot.setLabel("left", f"Shift ({unit_string})", color='k')
-        self.plot.setLabel("bottom", "Time (s)", color='k')
+        self.plot.setLabel("left", f"Shift ({unit_string})", color="k")
+        self.plot.setLabel("bottom", "Time (s)", color="k")
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.enableAutoRange()
         self.plot.setAutoVisible(x=True, y=True)
 
         # Set axis colors to black
-        self.plot.getAxis('left').setPen('k')
-        self.plot.getAxis('left').setTextPen('k')
-        self.plot.getAxis('bottom').setPen('k')
-        self.plot.getAxis('bottom').setTextPen('k')
+        self.plot.getAxis("left").setPen("k")
+        self.plot.getAxis("left").setTextPen("k")
+        self.plot.getAxis("bottom").setPen("k")
+        self.plot.getAxis("bottom").setTextPen("k")
 
         self.plots = {}
 
@@ -413,7 +438,8 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.assoc_cursor_en = False
         for ch in CH_LIST:
             self.plots[ch] = self.plot.plot(
-                pen=mkPen(GRAPH_COLORS[ch], width=2), connect="finite"
+                pen=mkPen(GRAPH_COLORS[ch], width=2),
+                connect="finite",
             )
             if has_cursors:
                 for cursor in ["Start", "End"]:
@@ -431,10 +457,10 @@ class SegmentGraph(GraphicsLayoutWidget):
                         self.plot.addItem(cursor_dict[ch][cursor])
                         cursor_dict[ch][cursor].setVisible(False)
                     self.dissoc_cursors[ch][cursor].sigPositionChangeFinished.connect(
-                        self.dissoc_update
+                        self.dissoc_update,
                     )
                     self.assoc_cursors[ch][cursor].sigPositionChangeFinished.connect(
-                        self.assoc_update
+                        self.assoc_update,
                     )
 
     def en_dissoc_cursors(self, en):
@@ -514,7 +540,9 @@ class SegmentGraph(GraphicsLayoutWidget):
     def auto_range(self):
         yrange = self.plot.viewRange()[1]
         self.plot.setRange(
-            yRange=(yrange[0], yrange[1]), update=True, disableAutoRange=False
+            yRange=(yrange[0], yrange[1]),
+            update=True,
+            disableAutoRange=False,
         )
 
     def display_channel_changed(self, ch, flag):

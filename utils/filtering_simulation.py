@@ -86,7 +86,10 @@ class SPRSimulator:
         return signal + np.random.normal(0, std, len(signal))
 
     def add_outliers(
-        self, signal: np.ndarray, prob: float, magnitude: float
+        self,
+        signal: np.ndarray,
+        prob: float,
+        magnitude: float,
     ) -> np.ndarray:
         """Add random outlier spikes.
 
@@ -157,7 +160,7 @@ class CurrentApproach:
         filtered = series.rolling(
             window=window,
             center=False,  # Causal (backward-looking)
-            min_periods=1
+            min_periods=1,
         ).mean()
 
         return filtered.to_numpy()
@@ -210,14 +213,16 @@ class ImprovedApproach:
         filtered = series.rolling(
             window=window,
             center=True,
-            min_periods=1
+            min_periods=1,
         ).median()
 
         return filtered.to_numpy()
 
     @staticmethod
     def complete_filter(
-        data: np.ndarray, window: int, lookback: int = 20
+        data: np.ndarray,
+        window: int,
+        lookback: int = 20,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Complete filtering pipeline:
         1. Outlier detection (IQR)
@@ -248,7 +253,9 @@ class ImprovedApproach:
 
 
 def calculate_metrics(
-    filtered: np.ndarray, true_signal: np.ndarray, noisy_signal: np.ndarray
+    filtered: np.ndarray,
+    true_signal: np.ndarray,
+    noisy_signal: np.ndarray,
 ) -> dict[str, float]:
     """Calculate performance metrics for filter quality.
 
@@ -311,10 +318,22 @@ def create_comparison_plots(
     # ========================================================================
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(
-        time, noisy, "o", markersize=2, alpha=0.3, color="gray", label="Noisy data"
+        time,
+        noisy,
+        "o",
+        markersize=2,
+        alpha=0.3,
+        color="gray",
+        label="Noisy data",
     )
     ax1.plot(
-        time, clean, "-", linewidth=2, color="black", label="True signal", alpha=0.7
+        time,
+        clean,
+        "-",
+        linewidth=2,
+        color="black",
+        label="True signal",
+        alpha=0.7,
     )
     ax1.plot(
         time,
@@ -439,7 +458,11 @@ def create_comparison_plots(
         label="Improved error",
     )
     ax3.axhline(
-        y=0.1, linestyle="--", color="orange", alpha=0.5, label="±0.1 nm threshold"
+        y=0.1,
+        linestyle="--",
+        color="orange",
+        alpha=0.5,
+        label="±0.1 nm threshold",
     )
 
     ax3.set_xlabel("Time (s)", fontsize=11)
@@ -487,10 +510,20 @@ def create_comparison_plots(
     ax5 = fig.add_subplot(gs[2, 1])
 
     ax5.scatter(
-        time, current_error, s=5, alpha=0.3, color="red", label="Current residuals"
+        time,
+        current_error,
+        s=5,
+        alpha=0.3,
+        color="red",
+        label="Current residuals",
     )
     ax5.scatter(
-        time, improved_error, s=5, alpha=0.3, color="green", label="Improved residuals"
+        time,
+        improved_error,
+        s=5,
+        alpha=0.3,
+        color="green",
+        label="Improved residuals",
     )
     ax5.axhline(y=0, linestyle="-", color="black", linewidth=1)
     ax5.axhline(y=0.1, linestyle="--", color="orange", alpha=0.5)

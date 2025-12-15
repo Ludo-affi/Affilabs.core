@@ -11,9 +11,9 @@ class OptimizedLEDController:
     """Wrapper for atomic LED control during calibration."""
 
     def __init__(self, controller):
-        """
-        Args:
-            controller: PicoP4SPR controller instance
+        """Args:
+        controller: PicoP4SPR controller instance
+
         """
         self.ctrl = controller
         self._calibration_mode = False
@@ -21,9 +21,9 @@ class OptimizedLEDController:
     def get_info(self):
         """Get controller information."""
         return {
-            'name': self.ctrl.name if hasattr(self.ctrl, 'name') else 'Unknown',
-            'firmware_version': getattr(self.ctrl, 'firmware_version', 'Unknown'),
-            'supports_batch': True  # V1.9+ firmware
+            "name": self.ctrl.name if hasattr(self.ctrl, "name") else "Unknown",
+            "firmware_version": getattr(self.ctrl, "firmware_version", "Unknown"),
+            "supports_batch": True,  # V1.9+ firmware
         }
 
     def enter_calibration_mode(self):
@@ -51,12 +51,12 @@ class OptimizedLEDController:
             return False
 
     def configure_led_atomic(self, channel, intensity):
-        """
-        Set LED intensity atomically (single operation).
+        """Set LED intensity atomically (single operation).
 
         Args:
             channel: LED channel ('A', 'B', 'C', 'D')
             intensity: LED intensity (0-255)
+
         """
         self.ctrl.set_intensity(channel.lower(), intensity)
         time.sleep(0.05)  # Small delay for LED stability
@@ -71,13 +71,13 @@ class OptimizedLEDController:
 
 
 def create_optimized_controller(controller):
-    """
-    Create an optimized LED controller wrapper.
+    """Create an optimized LED controller wrapper.
 
     Args:
         controller: PicoP4SPR controller instance
 
     Returns:
         OptimizedLEDController instance
+
     """
     return OptimizedLEDController(controller)

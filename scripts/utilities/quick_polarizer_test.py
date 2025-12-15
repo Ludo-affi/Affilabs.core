@@ -1,25 +1,25 @@
-"""
-Quick polarizer calibration test with channel B only.
+"""Quick polarizer calibration test with channel B only.
 Skips water validation to find positions regardless of signal quality.
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s :: %(levelname)s :: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s :: %(levelname)s :: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-if sys.stdout.encoding != 'utf-8':
+if sys.stdout.encoding != "utf-8":
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,10 @@ logger.info("QUICK POLARIZER POSITION FINDER (Channel B)")
 logger.info("=" * 80)
 
 # Import required modules
-from utils.detector_factory import create_detector
-from utils.controller import PicoP4SPR
 import time
-import numpy as np
+
+from utils.controller import PicoP4SPR
+from utils.detector_factory import create_detector
 
 # Connect hardware
 logger.info("\nConnecting to hardware...")
@@ -52,7 +52,7 @@ logger.info(f"[OK] Serial port: {ctrl._ser.port if ctrl._ser else 'None'}")
 logger.info("\nSetup: Using channel B with intensity 64")
 
 # Use controller methods
-ctrl.set_intensity('b', 64)
+ctrl.set_intensity("b", 64)
 time.sleep(0.2)
 
 usb.set_integration(50)  # 50ms integration
@@ -73,7 +73,7 @@ for angle in positions:
     time.sleep(0.1)
 
     # Step 3: Move to position using mode command (use 's' mode)
-    ctrl.set_mode('s')
+    ctrl.set_mode("s")
     time.sleep(0.5)  # Wait for servo to physically move
 
     spectrum = usb.read_intensity()
@@ -106,12 +106,12 @@ logger.info(f"S/P Ratio: {s_signal/p_signal:.2f}x")
 
 if abs(separation - 90) < 20:
     logger.info("\n[OK] Positions are approximately 90° apart")
-    logger.info(f"\nRecommended positions:")
+    logger.info("\nRecommended positions:")
     logger.info(f"  S = {s_pos}°")
     logger.info(f"  P = {p_pos}°")
 else:
     logger.warning(f"\n[WARNING] Separation is {separation}°, expected ~90°")
-    logger.info(f"\nUsing theoretical 90° relationship:")
+    logger.info("\nUsing theoretical 90° relationship:")
     logger.info(f"  P = {p_pos}°")
     logger.info(f"  S = {theoretical_s}° (P + 90°)")
 

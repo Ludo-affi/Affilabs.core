@@ -23,7 +23,6 @@ The script will save a diagnostic PNG showing:
 """
 
 import sys
-import time
 from pathlib import Path
 
 # Add project root to path
@@ -31,9 +30,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.logger import logger
 
+
 def main():
     """Generate P-pol diagnostic plot from current live data."""
-
     logger.info("=" * 80)
     logger.info("P-POL DIAGNOSTIC PLOT GENERATOR")
     logger.info("=" * 80)
@@ -46,7 +45,9 @@ def main():
         # Try to find the running instance (this is tricky without proper IPC)
         # For now, we'll just explain what needs to be done
         logger.warning("⚠️  MANUAL INTEGRATION REQUIRED:")
-        logger.warning("   This diagnostic function must be called from the running application.")
+        logger.warning(
+            "   This diagnostic function must be called from the running application.",
+        )
         logger.warning("")
         logger.warning("   To generate the P-pol diagnostic:")
         logger.warning("")
@@ -56,7 +57,9 @@ def main():
         logger.warning("      app.data_acquisition.create_ppol_diagnostic_plot()")
         logger.warning("")
         logger.warning("   The plot will be saved to:")
-        logger.warning("   generated-files/diagnostics/ppol_live_diagnostic_[timestamp].png")
+        logger.warning(
+            "   generated-files/diagnostics/ppol_live_diagnostic_[timestamp].png",
+        )
         logger.warning("")
         logger.info("=" * 80)
         logger.info("DATA FLOW EXPLANATION:")
@@ -64,9 +67,13 @@ def main():
         logger.info("")
         logger.info("1. CALIBRATION STEP 4 (LED Balancing):")
         logger.info("   - Measures raw S-pol spectra with increasing LED intensities")
-        logger.info("   - Finds LED values that achieve 49,151 counts (75% detector max)")
+        logger.info(
+            "   - Finds LED values that achieve 49,151 counts (75% detector max)",
+        )
         logger.info("   - Stores LED values in: state.ref_intensity")
-        logger.info("   - Syncs to live mode: state.leds_calibrated = state.ref_intensity.copy()")
+        logger.info(
+            "   - Syncs to live mode: state.leds_calibrated = state.ref_intensity.copy()",
+        )
         logger.info("   - Location: spr_calibrator.py line 3816")
         logger.info("")
         logger.info("2. CALIBRATION STEP 6 (S-reference):")
@@ -120,6 +127,7 @@ def main():
         return 1
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

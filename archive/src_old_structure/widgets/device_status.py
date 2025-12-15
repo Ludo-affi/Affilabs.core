@@ -1,9 +1,15 @@
 """Device Status Widget - Modern grayscale theme matching prototype."""
 
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Signal, Slot, Qt
+
 from utils.logger import logger
 
 
@@ -15,15 +21,15 @@ class DeviceStatusWidget(QWidget):
     system_status_changed = Signal(str, str, str)  # Sensor, Optics, Fluidics status
 
     # Controller type constants
-    STATIC_CONTROLLERS = ['P4SPR', 'PicoP4SPR']
-    FLOW_CONTROLLERS = ['PicoKNX2', 'PicoEZSPR', 'EZSPR']
+    STATIC_CONTROLLERS = ["P4SPR", "PicoP4SPR"]
+    FLOW_CONTROLLERS = ["PicoKNX2", "PicoEZSPR", "EZSPR"]
 
     def __init__(self, parent=None):
         super(DeviceStatusWidget, self).__init__(parent)
         self._setup_ui()
 
         # Initialize with disconnected state
-        self.update_status('', '', False)
+        self.update_status("", "", False)
         self.show()
 
     def _setup_ui(self):
@@ -41,7 +47,7 @@ class DeviceStatusWidget(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         main_layout.addWidget(hw_section)
 
@@ -50,10 +56,7 @@ class DeviceStatusWidget(QWidget):
         # Card container for hardware section
         hw_card = QFrame()
         hw_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         hw_card_layout = QVBoxLayout(hw_card)
         hw_card_layout.setContentsMargins(12, 12, 12, 12)
@@ -68,7 +71,7 @@ class DeviceStatusWidget(QWidget):
                 "color: #34C759;"
                 "background: transparent;"
                 "padding: 4px 0px;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             device_label.setVisible(False)  # Hidden by default
             hw_card_layout.addWidget(device_label)
@@ -82,7 +85,7 @@ class DeviceStatusWidget(QWidget):
             "background: transparent;"
             "padding: 8px 0px;"
             "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         hw_card_layout.addWidget(self.hw_no_devices)
 
@@ -110,7 +113,7 @@ class DeviceStatusWidget(QWidget):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         hw_card_layout.addWidget(self.scan_btn)
 
@@ -127,7 +130,7 @@ class DeviceStatusWidget(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         main_layout.addWidget(subunit_section)
 
@@ -136,10 +139,7 @@ class DeviceStatusWidget(QWidget):
         # Card container for subunits
         subunit_card = QFrame()
         subunit_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         subunit_card_layout = QVBoxLayout(subunit_card)
         subunit_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -162,7 +162,7 @@ class DeviceStatusWidget(QWidget):
                 "font-size: 14px;"
                 "color: #86868B;"  # Gray for not ready
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             subunit_row.addWidget(status_indicator)
 
@@ -173,7 +173,7 @@ class DeviceStatusWidget(QWidget):
                 "color: #1D1D1F;"
                 "background: transparent;"
                 "font-weight: 500;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             subunit_row.addWidget(name_label)
 
@@ -185,14 +185,14 @@ class DeviceStatusWidget(QWidget):
                 "font-size: 12px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             subunit_row.addWidget(status_label)
 
             # Store references
             self.subunit_status[subunit_name] = {
-                'indicator': status_indicator,
-                'status_label': status_label
+                "indicator": status_indicator,
+                "status_label": status_label,
             }
 
             # Add to card layout
@@ -207,7 +207,7 @@ class DeviceStatusWidget(QWidget):
                 separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "max-height: 1px;"
-                    "margin: 4px 0px;"
+                    "margin: 4px 0px;",
                 )
                 subunit_card_layout.addWidget(separator)
 
@@ -224,7 +224,7 @@ class DeviceStatusWidget(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         main_layout.addWidget(mode_section)
 
@@ -233,10 +233,7 @@ class DeviceStatusWidget(QWidget):
         # Card container for operation modes
         mode_card = QFrame()
         mode_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         mode_card_layout = QVBoxLayout(mode_card)
         mode_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -259,7 +256,7 @@ class DeviceStatusWidget(QWidget):
                 "font-size: 14px;"
                 "color: #86868B;"  # Gray for disabled
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             mode_row.addWidget(mode_indicator)
 
@@ -270,7 +267,7 @@ class DeviceStatusWidget(QWidget):
                 "color: #1D1D1F;"
                 "background: transparent;"
                 "font-weight: 500;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             mode_row.addWidget(mode_label)
 
@@ -282,14 +279,14 @@ class DeviceStatusWidget(QWidget):
                 "font-size: 12px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             mode_row.addWidget(mode_status_label)
 
             # Store references
             self.operation_modes[mode_name] = {
-                'indicator': mode_indicator,
-                'status_label': mode_status_label
+                "indicator": mode_indicator,
+                "status_label": mode_status_label,
             }
 
             # Add to card layout
@@ -304,7 +301,7 @@ class DeviceStatusWidget(QWidget):
                 separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "max-height: 1px;"
-                    "margin: 4px 0px;"
+                    "margin: 4px 0px;",
                 )
                 mode_card_layout.addWidget(separator)
 
@@ -321,7 +318,7 @@ class DeviceStatusWidget(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         main_layout.addWidget(led_section)
 
@@ -330,10 +327,7 @@ class DeviceStatusWidget(QWidget):
         # Card container for LED status
         self.led_status_card = QFrame()
         self.led_status_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         led_card_layout = QVBoxLayout(self.led_status_card)
         led_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -356,7 +350,7 @@ class DeviceStatusWidget(QWidget):
                 "font-size: 14px;"
                 "color: #86868B;"  # Gray for off
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             led_row.addWidget(status_indicator)
 
@@ -367,7 +361,7 @@ class DeviceStatusWidget(QWidget):
                 "color: #1D1D1F;"
                 "background: transparent;"
                 "font-weight: 500;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             led_row.addWidget(name_label)
 
@@ -379,14 +373,14 @@ class DeviceStatusWidget(QWidget):
                 "font-size: 12px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             led_row.addWidget(intensity_label)
 
             # Store references
             self.led_status[channel] = {
-                'indicator': status_indicator,
-                'intensity_label': intensity_label
+                "indicator": status_indicator,
+                "intensity_label": intensity_label,
             }
 
             # Add to card layout
@@ -401,7 +395,7 @@ class DeviceStatusWidget(QWidget):
                 separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "max-height: 1px;"
-                    "margin: 4px 0px;"
+                    "margin: 4px 0px;",
                 )
                 led_card_layout.addWidget(separator)
 
@@ -418,27 +412,31 @@ class DeviceStatusWidget(QWidget):
         self.connect_requested.emit()
 
     def update_status(self, ctrl_type: str, knx_type: str, pump_connected: bool):
-        """
-        Update the device status display.
+        """Update the device status display.
 
         Args:
             ctrl_type: Controller type string ('P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR', etc.)
             knx_type: Kinetic controller type string ('KNX', 'KNX2', 'PicoKNX2', etc.)
             pump_connected: Whether a pump is connected (True/False/None)
+
         """
         # Determine if devices are connected
-        spr_connected = bool(ctrl_type and ctrl_type != '')
-        knx_connected = bool(knx_type and knx_type != '')
+        spr_connected = bool(ctrl_type and ctrl_type != "")
+        knx_connected = bool(knx_type and knx_type != "")
 
         # Update Hardware Connected section
         device_count = 0
         if spr_connected:
-            self.hw_device_labels[device_count].setText(f"• SPR Controller: {ctrl_type}")
+            self.hw_device_labels[device_count].setText(
+                f"• SPR Controller: {ctrl_type}",
+            )
             self.hw_device_labels[device_count].setVisible(True)
             device_count += 1
 
         if knx_connected:
-            self.hw_device_labels[device_count].setText(f"• Kinetic Controller: {knx_type}")
+            self.hw_device_labels[device_count].setText(
+                f"• Kinetic Controller: {knx_type}",
+            )
             self.hw_device_labels[device_count].setVisible(True)
             device_count += 1
 
@@ -467,44 +465,45 @@ class DeviceStatusWidget(QWidget):
         for mode_name, mode_widgets in self.operation_modes.items():
             if capacity == mode_name:
                 # Active mode - green indicator
-                mode_widgets['indicator'].setStyleSheet(
+                mode_widgets["indicator"].setStyleSheet(
                     "font-size: 14px;"
                     "color: #34C759;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
-                mode_widgets['status_label'].setText("Enabled")
-                mode_widgets['status_label'].setStyleSheet(
+                mode_widgets["status_label"].setText("Enabled")
+                mode_widgets["status_label"].setStyleSheet(
                     "font-size: 12px;"
                     "color: #34C759;"
                     "background: transparent;"
                     "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
             else:
                 # Inactive mode - gray indicator
-                mode_widgets['indicator'].setStyleSheet(
+                mode_widgets["indicator"].setStyleSheet(
                     "font-size: 14px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
-                mode_widgets['status_label'].setText("Disabled")
-                mode_widgets['status_label'].setStyleSheet(
+                mode_widgets["status_label"].setText("Disabled")
+                mode_widgets["status_label"].setStyleSheet(
                     "font-size: 12px;"
                     "color: #86868B;"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
         # Emit device status change signal
         self.device_status_changed.emit(spr_connected, knx_connected, pump_connected)
 
-        logger.debug(f"Device status updated: SPR={ctrl_type}, KNX={knx_type}, Pump={pump_connected}, Capacity={capacity}")
+        logger.debug(
+            f"Device status updated: SPR={ctrl_type}, KNX={knx_type}, Pump={pump_connected}, Capacity={capacity}",
+        )
 
     def _determine_capacity(self, ctrl_type: str, knx_type: str) -> str:
-        """
-        Determine system capacity based on connected controllers.
+        """Determine system capacity based on connected controllers.
 
         Logic:
         - Arduino or PicoP4SPR → Static only
@@ -517,6 +516,7 @@ class DeviceStatusWidget(QWidget):
 
         Returns:
             Capacity string: "Static", "Flow", or "Unknown"
+
         """
         if not ctrl_type:
             return "Unknown"
@@ -526,7 +526,7 @@ class DeviceStatusWidget(QWidget):
             return "Flow"
 
         # Check if kinetic device is connected to enable Flow
-        if knx_type and knx_type in ['KNX', 'KNX2', 'PicoKNX2']:
+        if knx_type and knx_type in ["KNX", "KNX2", "PicoKNX2"]:
             return "Flow"
 
         # Check if Static-only controllers
@@ -535,21 +535,26 @@ class DeviceStatusWidget(QWidget):
 
         return "Unknown"
 
-    def update_system_status(self, sensor_status: str = "Unknown", optics_status: str = "Unknown", fluidics_status: str = "Unknown"):
-        """
-        Update the system status indicators (Subunit Readiness).
+    def update_system_status(
+        self,
+        sensor_status: str = "Unknown",
+        optics_status: str = "Unknown",
+        fluidics_status: str = "Unknown",
+    ):
+        """Update the system status indicators (Subunit Readiness).
 
         Args:
             sensor_status: Status for Sensor ("Ready", "Caution", "Error", "Not Ready")
             optics_status: Status for Optics ("Ready", "Caution", "Error", "Not Ready")
             fluidics_status: Status for Fluidics ("Ready", "Caution", "Error", "Not Ready")
+
         """
         # Status color mapping
         status_colors = {
-            "Ready": "#34C759",           # Green
-            "Caution": "#FFCC00",         # Yellow
-            "Error": "#FF3B30",           # Red
-            "Not Ready": "#86868B"        # Gray
+            "Ready": "#34C759",  # Green
+            "Caution": "#FFCC00",  # Yellow
+            "Error": "#FF3B30",  # Red
+            "Not Ready": "#86868B",  # Gray
         }
 
         # Status label weight mapping
@@ -557,75 +562,79 @@ class DeviceStatusWidget(QWidget):
             "Ready": "600",
             "Caution": "600",
             "Error": "600",
-            "Not Ready": "400"
+            "Not Ready": "400",
         }
 
         # Update Sensor
         if "Sensor" in self.subunit_status:
             color = status_colors.get(sensor_status, status_colors["Not Ready"])
             weight = status_weights.get(sensor_status, "400")
-            self.subunit_status["Sensor"]['indicator'].setStyleSheet(
+            self.subunit_status["Sensor"]["indicator"].setStyleSheet(
                 f"font-size: 14px; color: {color}; background: transparent; "
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
-            self.subunit_status["Sensor"]['status_label'].setText(sensor_status)
-            self.subunit_status["Sensor"]['status_label'].setStyleSheet(
+            self.subunit_status["Sensor"]["status_label"].setText(sensor_status)
+            self.subunit_status["Sensor"]["status_label"].setStyleSheet(
                 f"font-size: 12px; color: {color}; background: transparent; font-weight: {weight}; "
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
         # Update Optics
         if "Optics" in self.subunit_status:
             color = status_colors.get(optics_status, status_colors["Not Ready"])
             weight = status_weights.get(optics_status, "400")
-            self.subunit_status["Optics"]['indicator'].setStyleSheet(
+            self.subunit_status["Optics"]["indicator"].setStyleSheet(
                 f"font-size: 14px; color: {color}; background: transparent; "
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
-            self.subunit_status["Optics"]['status_label'].setText(optics_status)
-            self.subunit_status["Optics"]['status_label'].setStyleSheet(
+            self.subunit_status["Optics"]["status_label"].setText(optics_status)
+            self.subunit_status["Optics"]["status_label"].setStyleSheet(
                 f"font-size: 12px; color: {color}; background: transparent; font-weight: {weight}; "
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
         # Update Fluidics
         if "Fluidics" in self.subunit_status:
             color = status_colors.get(fluidics_status, status_colors["Not Ready"])
             weight = status_weights.get(fluidics_status, "400")
-            self.subunit_status["Fluidics"]['indicator'].setStyleSheet(
+            self.subunit_status["Fluidics"]["indicator"].setStyleSheet(
                 f"font-size: 14px; color: {color}; background: transparent; "
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
-            self.subunit_status["Fluidics"]['status_label'].setText(fluidics_status)
-            self.subunit_status["Fluidics"]['status_label'].setStyleSheet(
+            self.subunit_status["Fluidics"]["status_label"].setText(fluidics_status)
+            self.subunit_status["Fluidics"]["status_label"].setStyleSheet(
                 f"font-size: 12px; color: {color}; background: transparent; font-weight: {weight}; "
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
         # Emit system status change signal
         self.system_status_changed.emit(sensor_status, optics_status, fluidics_status)
 
-        logger.debug(f"System status updated: Sensor={sensor_status}, Optics={optics_status}, Fluidics={fluidics_status}")
+        logger.debug(
+            f"System status updated: Sensor={sensor_status}, Optics={optics_status}, Fluidics={fluidics_status}",
+        )
         self.ui.fluidics_status_indicator.setStyleSheet(
-            f"QLabel {{ background-color: {status_colors.get(fluidics_status, status_colors['Unknown'])}; border-radius: 6px; }}"
+            f"QLabel {{ background-color: {status_colors.get(fluidics_status, status_colors['Unknown'])}; border-radius: 6px; }}",
         )
 
         # Emit system status change signal
         self.system_status_changed.emit(sensor_status, optics_status, fluidics_status)
 
-        logger.debug(f"System status updated: Sensor={sensor_status}, Optics={optics_status}, Fluidics={fluidics_status}")
+        logger.debug(
+            f"System status updated: Sensor={sensor_status}, Optics={optics_status}, Fluidics={fluidics_status}",
+        )
 
     def get_main_layout(self):
         """Return the main layout of the hardware status container for adding widgets."""
         return self.ui.main_layout
 
     def add_widget_to_layout(self, widget, position=-1):
-        """
-        Add a widget to the main hardware status layout.
+        """Add a widget to the main hardware status layout.
 
         Args:
             widget: QWidget to add
             position: Position to insert (-1 for append at end, before spacer)
+
         """
         if position == -1:
             # Insert before the spacer at the bottom
@@ -651,6 +660,7 @@ class DeviceStatusWidget(QWidget):
         Args:
             led_intensities: Dict with keys 'a', 'b', 'c', 'd' and intensity values 0-255
                             or None to hide LED status
+
         """
         if led_intensities is None:
             # Hide LED status section (firmware doesn't support it)
@@ -665,7 +675,9 @@ class DeviceStatusWidget(QWidget):
             channel_upper = channel_lower.upper()
             if channel_upper in self.led_status:
                 # Update intensity label
-                self.led_status[channel_upper]['intensity_label'].setText(str(intensity))
+                self.led_status[channel_upper]["intensity_label"].setText(
+                    str(intensity),
+                )
 
                 # Update indicator color based on intensity
                 if intensity > 0:
@@ -676,25 +688,25 @@ class DeviceStatusWidget(QWidget):
                     # LED is OFF - gray
                     color = "#86868B"
 
-                self.led_status[channel_upper]['indicator'].setStyleSheet(
+                self.led_status[channel_upper]["indicator"].setStyleSheet(
                     f"font-size: 14px; color: {color}; background: transparent; "
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
                 # Update intensity label color
                 intensity_color = "#34C759" if intensity > 0 else "#86868B"
-                self.led_status[channel_upper]['intensity_label'].setStyleSheet(
+                self.led_status[channel_upper]["intensity_label"].setStyleSheet(
                     f"font-size: 12px; color: {intensity_color}; background: transparent; "
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
     def move_connect_button_to_layout(self, layout, position=-1):
-        """
-        Move the connect button from its current location to a different layout.
+        """Move the connect button from its current location to a different layout.
 
         Args:
             layout: QLayout to move the button to
             position: Position to insert (-1 for append)
+
         """
         # Remove button from current layout
         current_layout = self.ui.connect_btn_layout
@@ -707,4 +719,6 @@ class DeviceStatusWidget(QWidget):
         else:
             layout.insertWidget(position, self.ui.spr_connect_btn)
 
-        self.ui.spr_connect_btn.setParent(layout.parentWidget() if hasattr(layout, 'parentWidget') else None)
+        self.ui.spr_connect_btn.setParent(
+            layout.parentWidget() if hasattr(layout, "parentWidget") else None,
+        )

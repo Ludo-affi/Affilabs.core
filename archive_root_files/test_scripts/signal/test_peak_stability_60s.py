@@ -1,5 +1,4 @@
-"""
-Test peak position stability over 60 seconds.
+"""Test peak position stability over 60 seconds.
 
 Measures peak-to-peak position variation for each channel to validate
 timing optimization doesn't introduce spectral drift or jitter.
@@ -9,20 +8,20 @@ Target: Peak position stability <0.1nm (< 1 pixel drift)
 
 import sys
 import time
-import json
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from settings import (
+    LED_OVERLAP_MS,
+    POST_LED_DELAY_MS,
+    PRE_LED_DELAY_MS,
+)
 from utils.controller import PicoP4SPR
 from utils.usb4000_wrapper import USB4000
-from settings import (
-    PRE_LED_DELAY_MS,
-    POST_LED_DELAY_MS,
-    LED_OVERLAP_MS,
-)
 
 
 def find_peak_wavelength(spectrum, wavelengths):
@@ -34,6 +33,7 @@ def find_peak_wavelength(spectrum, wavelengths):
 
     Returns:
         Peak wavelength in nm
+
     """
     if spectrum is None or len(spectrum) == 0:
         return None
@@ -48,7 +48,7 @@ def find_peak_wavelength(spectrum, wavelengths):
         y2 = spectrum[peak_idx + 1]
 
         # Parabolic interpolation
-        denom = 2 * (2*y1 - y0 - y2)
+        denom = 2 * (2 * y1 - y0 - y2)
         if abs(denom) > 1e-10:
             offset = (y2 - y0) / denom
             peak_idx_interp = peak_idx + offset
@@ -65,16 +65,15 @@ def find_peak_wavelength(spectrum, wavelengths):
 
 def test_peak_stability():
     """Test peak position stability over 60 seconds."""
-
     print("=" * 80)
     print("PEAK POSITION STABILITY TEST - 60 Second Monitoring")
     print("=" * 80)
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  PRE delay: {PRE_LED_DELAY_MS}ms")
     print(f"  POST delay: {POST_LED_DELAY_MS}ms")
     print(f"  LED overlap: {LED_OVERLAP_MS}ms")
-    print(f"  Duration: 60 seconds")
-    print(f"  Target: Peak position drift <0.1nm")
+    print("  Duration: 60 seconds")
+    print("  Target: Peak position drift <0.1nm")
     print("=" * 80)
     print()
 
@@ -84,7 +83,7 @@ def test_peak_stability():
 
     try:
         ctrl.open()
-        print(f"✅ Connected to controller")
+        print("✅ Connected to controller")
     except Exception as e:
         print(f"❌ Failed to connect: {e}")
         return False
@@ -93,7 +92,7 @@ def test_peak_stability():
     detector = USB4000(parent=None)
     try:
         detector.open()
-        print(f"✅ Connected to detector")
+        print("✅ Connected to detector")
     except Exception as e:
         print(f"❌ Failed to connect to detector: {e}")
         ctrl.close()
@@ -113,7 +112,7 @@ def test_peak_stability():
     print()
 
     # Storage for peak positions
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     peak_data = {ch: [] for ch in channels}
     timestamps = []
 
@@ -136,7 +135,7 @@ def test_peak_stability():
         for idx, ch in enumerate(channels):
             try:
                 # Turn ON LED
-                led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+                led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
                 led_values[ch] = 255
                 ctrl.set_batch_intensities(**led_values)
 
@@ -166,7 +165,7 @@ def test_peak_stability():
                     time.sleep(LED_OVERLAP_MS / 1000.0)
                     # Turn ON next LED
                     next_ch = channels[idx + 1]
-                    next_led = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+                    next_led = {"a": 0, "b": 0, "c": 0, "d": 0}
                     next_led[next_ch] = 255
                     ctrl.set_batch_intensities(**next_led)
                     # Remaining POST
@@ -255,5 +254,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\n❌ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

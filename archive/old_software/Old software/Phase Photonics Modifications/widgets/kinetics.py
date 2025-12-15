@@ -2,14 +2,12 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 
 from settings import DEV
-
 from ui.ui_kinetic import Ui_Kinetic
 from utils.logger import logger
 from widgets.message import show_message
 
 
 class Kinetic(QWidget):
-
     export_error_signal = Signal()
     sensor_read_en = Signal()
 
@@ -62,17 +60,19 @@ class Kinetic(QWidget):
         if not DEV:
             self.ui.sensor_frame_ch1.setVisible(False)
             self.ui.sensor_frame_ch2.setVisible(False)
-        if knx_type == '' and ctrl_type not in ['EZSPR', 'PicoEZSPR']:
+        if knx_type == "" and ctrl_type not in ["EZSPR", "PicoEZSPR"]:
             logger.debug("no kinetic")
             self.no_kinetic = True
-            if ctrl_type == 'QSPR':
+            if ctrl_type == "QSPR":
                 pass  # add qspr connection handling later
         else:
-            if knx_type == 'KNX':
+            if knx_type == "KNX":
                 self.knx = True
                 self.ui.CH1.setEnabled(True)
                 self.ui.sync_1.setEnabled(False)
-            elif (knx_type in ['KNX2', 'PicoKNX2']) or (ctrl_type in ['EZSPR', 'PicoEZSPR']):
+            elif (knx_type in ["KNX2", "PicoKNX2"]) or (
+                ctrl_type in ["EZSPR", "PicoEZSPR"]
+            ):
                 self.knx2 = True
                 self.ui.CH1.setEnabled(True)
                 self.ui.CH2.setEnabled(True)
@@ -82,46 +82,46 @@ class Kinetic(QWidget):
             self.sensor_read_en.emit()
 
     def update_readings(self, sensor_disp_vals):
-        self.ui.flow1.setText(sensor_disp_vals['flow1'])
-        self.ui.temp1.setText(sensor_disp_vals['temp1'])
-        self.ui.flow2.setText(sensor_disp_vals['flow2'])
-        self.ui.temp2.setText(sensor_disp_vals['temp2'])
+        self.ui.flow1.setText(sensor_disp_vals["flow1"])
+        self.ui.temp1.setText(sensor_disp_vals["temp1"])
+        self.ui.flow2.setText(sensor_disp_vals["flow2"])
+        self.ui.temp2.setText(sensor_disp_vals["temp2"])
 
     def update_pump_ui(self, pump_states, sync):
-        if pump_states['CH1'] == 'Off':
-            self.ui.run1.setText('Run')
+        if pump_states["CH1"] == "Off":
+            self.ui.run1.setText("Run")
             self.ui.run1.setEnabled(True)
-            self.ui.flush1.setText('Flush')
+            self.ui.flush1.setText("Flush")
             self.ui.flush1.setEnabled(True)
             self.ui.run_rate_ch1.setEnabled(True)
-        elif pump_states['CH1'] == 'Flushing':
+        elif pump_states["CH1"] == "Flushing":
             self.ui.run1.setEnabled(False)
-            self.ui.flush1.setText('Stop')
+            self.ui.flush1.setText("Stop")
             self.ui.flush1.setEnabled(True)
             self.ui.run_rate_ch1.setEnabled(False)
-        elif pump_states['CH1'] == 'Running':
-            self.ui.run1.setText('Stop')
+        elif pump_states["CH1"] == "Running":
+            self.ui.run1.setText("Stop")
             self.ui.run1.setEnabled(True)
             self.ui.flush1.setEnabled(False)
             self.ui.run_rate_ch1.setEnabled(True)
-        self.ui.status1.setText(pump_states['CH1'])
-        if pump_states['CH2'] == 'Off':
-            self.ui.run2.setText('Run')
+        self.ui.status1.setText(pump_states["CH1"])
+        if pump_states["CH2"] == "Off":
+            self.ui.run2.setText("Run")
             self.ui.run2.setEnabled(True)
-            self.ui.flush2.setText('Flush')
+            self.ui.flush2.setText("Flush")
             self.ui.flush2.setEnabled(True)
             self.ui.run_rate_ch2.setEnabled(True)
-        elif pump_states['CH2'] == 'Flushing':
+        elif pump_states["CH2"] == "Flushing":
             self.ui.run2.setEnabled(False)
-            self.ui.flush2.setText('Stop')
+            self.ui.flush2.setText("Stop")
             self.ui.flush2.setEnabled(True)
             self.ui.run_rate_ch2.setEnabled(False)
-        elif pump_states['CH2'] == 'Running':
-            self.ui.run2.setText('Stop')
+        elif pump_states["CH2"] == "Running":
+            self.ui.run2.setText("Stop")
             self.ui.run2.setEnabled(True)
             self.ui.flush2.setEnabled(False)
             self.ui.run_rate_ch2.setEnabled(True)
-        self.ui.status2.setText(pump_states['CH2'])
+        self.ui.status2.setText(pump_states["CH2"])
         if self.knx or sync:
             self.ui.CH2.setEnabled(False)
 
@@ -134,21 +134,37 @@ class Kinetic(QWidget):
         self.ui.pump_flow_ch1.setEnabled(True)
         self.ui.pump_flow_ch2.setEnabled(True)
 
-        if (valve_states['CH1'] in ['Inject', 'Load']) and not self.ui.spr_ch1.isChecked():
+        if (
+            valve_states["CH1"] in ["Inject", "Load"]
+        ) and not self.ui.spr_ch1.isChecked():
             self.ui.spr_ch1.toggle()
-        elif(valve_states['CH1'] in ['Waste', 'Dispose']) and not self.ui.waste_ch1.isChecked():
+        elif (
+            valve_states["CH1"] in ["Waste", "Dispose"]
+        ) and not self.ui.waste_ch1.isChecked():
             self.ui.waste_ch1.toggle()
-        if (valve_states['CH1'] in ['Inject', 'Dispose']) and not self.ui.inject_ch1.isChecked():
+        if (
+            valve_states["CH1"] in ["Inject", "Dispose"]
+        ) and not self.ui.inject_ch1.isChecked():
             self.ui.inject_ch1.toggle()
-        elif (valve_states['CH1'] in ['Load', 'Waste']) and not self.ui.load_ch1.isChecked():
+        elif (
+            valve_states["CH1"] in ["Load", "Waste"]
+        ) and not self.ui.load_ch1.isChecked():
             self.ui.load_ch1.toggle()
-        if (valve_states['CH2'] in ['Inject', 'Load']) and not self.ui.spr_ch2.isChecked():
+        if (
+            valve_states["CH2"] in ["Inject", "Load"]
+        ) and not self.ui.spr_ch2.isChecked():
             self.ui.spr_ch2.toggle()
-        elif (valve_states['CH2'] in ['Waste', 'Dispose']) and not self.ui.waste_ch2.isChecked():
+        elif (
+            valve_states["CH2"] in ["Waste", "Dispose"]
+        ) and not self.ui.waste_ch2.isChecked():
             self.ui.waste_ch2.toggle()
-        if (valve_states['CH2'] in ['Inject', 'Dispose']) and not self.ui.inject_ch2.isChecked():
+        if (
+            valve_states["CH2"] in ["Inject", "Dispose"]
+        ) and not self.ui.inject_ch2.isChecked():
             self.ui.inject_ch2.toggle()
-        elif (valve_states['CH2'] in ['Load', 'Waste']) and not self.ui.load_ch2.isChecked():
+        elif (
+            valve_states["CH2"] in ["Load", "Waste"]
+        ) and not self.ui.load_ch2.isChecked():
             self.ui.load_ch2.toggle()
 
         if self.knx or sync:
@@ -157,51 +173,51 @@ class Kinetic(QWidget):
         self.updating = False
 
     def run_ch1(self):
-        self.ui.status1.setText('Updating...')
+        self.ui.status1.setText("Updating...")
         self.ui.status1.repaint()
         run_rate = int(self.ui.run_rate_ch1.currentText())
-        self.run_sig.emit('CH1', run_rate)
+        self.run_sig.emit("CH1", run_rate)
 
     def run_ch2(self):
-        self.ui.status2.setText('Updating...')
+        self.ui.status2.setText("Updating...")
         self.ui.status1.repaint()
         run_rate = int(self.ui.run_rate_ch2.currentText())
-        self.run_sig.emit('CH2', run_rate)
+        self.run_sig.emit("CH2", run_rate)
 
     def flush_ch1(self):
-        self.ui.status1.setText('Updating...')
+        self.ui.status1.setText("Updating...")
         self.ui.status1.repaint()
-        self.flush_sig.emit('CH1')
+        self.flush_sig.emit("CH1")
 
     def flush_ch2(self):
-        self.ui.status2.setText('Updating...')
+        self.ui.status2.setText("Updating...")
         self.ui.status2.repaint()
-        self.flush_sig.emit('CH2')
+        self.flush_sig.emit("CH2")
 
     def change_speed_ch1(self):
-        self.change_speed_sig.emit('CH1', int(self.ui.run_rate_ch1.currentText()))
+        self.change_speed_sig.emit("CH1", int(self.ui.run_rate_ch1.currentText()))
 
     def change_speed_ch2(self):
-        self.change_speed_sig.emit('CH2', int(self.ui.run_rate_ch2.currentText()))
+        self.change_speed_sig.emit("CH2", int(self.ui.run_rate_ch2.currentText()))
 
     def sync_speeds(self):
         self.ui.run_rate_ch2.setCurrentIndex(self.ui.run_rate_ch1.currentIndex())
 
     def three_way_ch1(self):
         if not self.updating:
-            self.three_way_sig.emit('CH1')
+            self.three_way_sig.emit("CH1")
 
     def three_way_ch2(self):
         if not self.updating:
-            self.three_way_sig.emit('CH2')
+            self.three_way_sig.emit("CH2")
 
     def six_port_ch1(self):
         if not self.updating:
-            self.six_port_sig.emit('CH1')
+            self.six_port_sig.emit("CH1")
 
     def six_port_ch2(self):
         if not self.updating:
-            self.six_port_sig.emit('CH2')
+            self.six_port_sig.emit("CH2")
 
     def set_sync(self, *, prompt: bool = True):
         self.updating = True
@@ -212,19 +228,21 @@ class Kinetic(QWidget):
             self.ui.sync_2.setChecked(False)
             if self.knx2:
                 self.ui.CH2.setEnabled(True)
-        else:
-            if self.knx2:
-                if not prompt or show_message(msg="Syncing Channel B with Channel A will override\n"
-                                    "all Channel B settings: would you like to proceed?", yes_no=True):
-                    self.sync = True
-                    self.ui.status2.setText('Updating...')
-                    self.ui.status2.repaint()
-                    self.ui.CH2.setEnabled(False)
-                    self.ui.sync_1.setChecked(True)
-                    self.ui.sync_2.setChecked(True)
-                else:
-                    self.ui.sync_1.setChecked(False)
-                    self.ui.sync_2.setChecked(False)
+        elif self.knx2:
+            if not prompt or show_message(
+                msg="Syncing Channel B with Channel A will override\n"
+                "all Channel B settings: would you like to proceed?",
+                yes_no=True,
+            ):
+                self.sync = True
+                self.ui.status2.setText("Updating...")
+                self.ui.status2.repaint()
+                self.ui.CH2.setEnabled(False)
+                self.ui.sync_1.setChecked(True)
+                self.ui.sync_2.setChecked(True)
+            else:
+                self.ui.sync_1.setChecked(False)
+                self.ui.sync_2.setChecked(False)
         self.sync_sig.emit(self.sync)
         self.updating = False
 
@@ -247,7 +265,7 @@ class Kinetic(QWidget):
         self.ui.run_rate_ch2.setCurrentIndex(0)
         self.ui.status1.setText("Off")
         self.ui.status2.setText("Off")
-        for k in {'run1', 'run2', 'flush1', 'flush2'}:
+        for k in ("run1", "run2", "flush1", "flush2"):
             getattr(self.ui, k).setEnabled(True)
         self.ui.run1.setText("Run")
         self.ui.run2.setText("Run")

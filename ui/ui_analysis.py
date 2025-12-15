@@ -60,7 +60,10 @@ class Ui_FormAnalysis:
         self.horizontalLayout_6 = QHBoxLayout(self.stack_graph)
         self.horizontalLayout_6.setObjectName("horizontalLayout_6")
         self.horizontalSpacer_3 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_6.addItem(self.horizontalSpacer_3)
@@ -73,7 +76,7 @@ class Ui_FormAnalysis:
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(
-            self.label_cur_info.sizePolicy().hasHeightForWidth()
+            self.label_cur_info.sizePolicy().hasHeightForWidth(),
         )
         self.label_cur_info.setSizePolicy(sizePolicy)
         font1 = QFont()
@@ -86,7 +89,10 @@ class Ui_FormAnalysis:
         self.verticalLayout_6.addWidget(self.label_cur_info)
 
         self.verticalSpacer_2 = QSpacerItem(
-            20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            40,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_6.addItem(self.verticalSpacer_2)
@@ -137,7 +143,10 @@ class Ui_FormAnalysis:
         self.verticalLayout_3.addWidget(self.groupBox)
 
         self.verticalSpacer_6 = QSpacerItem(
-            20, 10, QSizePolicy.Minimum, QSizePolicy.Preferred
+            20,
+            10,
+            QSizePolicy.Minimum,
+            QSizePolicy.Preferred,
         )
 
         self.verticalLayout_3.addItem(self.verticalSpacer_6)
@@ -160,7 +169,7 @@ class Ui_FormAnalysis:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout_3.addWidget(self.fit_wizard_btn)
@@ -184,13 +193,16 @@ class Ui_FormAnalysis:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout_3.addWidget(self.kin_wizard_btn)
 
         self.verticalSpacer_5 = QSpacerItem(
-            20, 30, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            30,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_3.addItem(self.verticalSpacer_5)
@@ -206,7 +218,7 @@ class Ui_FormAnalysis:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.reset_analysis_btn.sizePolicy().hasHeightForWidth()
+            self.reset_analysis_btn.sizePolicy().hasHeightForWidth(),
         )
         self.reset_analysis_btn.setSizePolicy(sizePolicy1)
         self.reset_analysis_btn.setMinimumSize(QSize(30, 30))
@@ -228,7 +240,7 @@ class Ui_FormAnalysis:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/reload.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -261,7 +273,7 @@ class Ui_FormAnalysis:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon1 = QIcon()
         icon1.addFile(":/img/img/folder.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -294,7 +306,7 @@ class Ui_FormAnalysis:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon2 = QIcon()
         icon2.addFile(":/img/img/save.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -310,7 +322,10 @@ class Ui_FormAnalysis:
         self.verticalLayout_3.addWidget(self.file_ctrls)
 
         self.verticalSpacer = QSpacerItem(
-            20, 30, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            30,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_3.addItem(self.verticalSpacer)
@@ -345,13 +360,19 @@ class Ui_FormAnalysis:
         self.verticalLayout_8 = QVBoxLayout(self.SOI)
         self.verticalLayout_8.setObjectName("verticalLayout_8")
         self.horizontalSpacer_4 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.verticalLayout_8.addItem(self.horizontalSpacer_4)
 
         self.verticalSpacer_4 = QSpacerItem(
-            10, 40, QSizePolicy.Minimum, QSizePolicy.Expanding
+            10,
+            40,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_8.addItem(self.verticalSpacer_4)
@@ -361,7 +382,7 @@ class Ui_FormAnalysis:
         self.analysis_table = QFrame(self.SOI_Frame)
         self.analysis_table.setObjectName("analysis_table")
         sizePolicy2.setHeightForWidth(
-            self.analysis_table.sizePolicy().hasHeightForWidth()
+            self.analysis_table.sizePolicy().hasHeightForWidth(),
         )
         self.analysis_table.setSizePolicy(sizePolicy2)
         self.analysis_table.setMinimumSize(QSize(300, 200))
@@ -413,7 +434,7 @@ class Ui_FormAnalysis:
             "	background:white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_A.setChecked(True)
 
@@ -430,7 +451,7 @@ class Ui_FormAnalysis:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_B.setChecked(True)
 
@@ -447,7 +468,7 @@ class Ui_FormAnalysis:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_C.setChecked(True)
 
@@ -464,7 +485,7 @@ class Ui_FormAnalysis:
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	background:white;\n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_D.setChecked(True)
 
@@ -493,7 +514,10 @@ class Ui_FormAnalysis:
         self.horizontalLayout_2.addWidget(self.cursor_ctrls)
 
         self.horizontalSpacer_2 = QSpacerItem(
-            20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            20,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
@@ -548,7 +572,7 @@ class Ui_FormAnalysis:
             "	background-color: rgb(240, 255, 245);\n"
             "	border: 1px solid rgb(171, 171, 171);\n"
             "	border-radius: 2px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_8.addWidget(self.current_note)
@@ -681,130 +705,130 @@ class Ui_FormAnalysis:
 
     def retranslateUi(self, FormAnalysis):
         FormAnalysis.setWindowTitle(
-            QCoreApplication.translate("FormAnalysis", "Form", None)
+            QCoreApplication.translate("FormAnalysis", "Form", None),
         )
         self.label_cur_info.setText("")
         self.groupBox.setTitle(
-            QCoreApplication.translate("FormAnalysis", "Stacked Graph", None)
+            QCoreApplication.translate("FormAnalysis", "Stacked Graph", None),
         )
         self.radio_a.setText(
-            QCoreApplication.translate("FormAnalysis", "Channel A", None)
+            QCoreApplication.translate("FormAnalysis", "Channel A", None),
         )
         self.radio_b.setText(
-            QCoreApplication.translate("FormAnalysis", "Channel B", None)
+            QCoreApplication.translate("FormAnalysis", "Channel B", None),
         )
         self.radio_c.setText(
-            QCoreApplication.translate("FormAnalysis", "Channel C", None)
+            QCoreApplication.translate("FormAnalysis", "Channel C", None),
         )
         self.radio_d.setText(
-            QCoreApplication.translate("FormAnalysis", "Channel D", None)
+            QCoreApplication.translate("FormAnalysis", "Channel D", None),
         )
         # if QT_CONFIG(tooltip)
         self.fit_wizard_btn.setToolTip(
-            QCoreApplication.translate("FormAnalysis", "Launch KD Wizard", None)
+            QCoreApplication.translate("FormAnalysis", "Launch KD Wizard", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.fit_wizard_btn.setText(
-            QCoreApplication.translate("FormAnalysis", "Fitting Wizard", None)
+            QCoreApplication.translate("FormAnalysis", "Fitting Wizard", None),
         )
         # if QT_CONFIG(tooltip)
         self.kin_wizard_btn.setToolTip(
-            QCoreApplication.translate("FormAnalysis", "Launch Kinetic Wizard", None)
+            QCoreApplication.translate("FormAnalysis", "Launch Kinetic Wizard", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.kin_wizard_btn.setText(
-            QCoreApplication.translate("FormAnalysis", "Kinetic Wizard", None)
+            QCoreApplication.translate("FormAnalysis", "Kinetic Wizard", None),
         )
         # if QT_CONFIG(tooltip)
         self.reset_analysis_btn.setToolTip(
-            QCoreApplication.translate("FormAnalysis", "Clear All Data", None)
+            QCoreApplication.translate("FormAnalysis", "Clear All Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.reset_analysis_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.import_btn.setToolTip(
-            QCoreApplication.translate("FormAnalysis", "Import Raw Data", None)
+            QCoreApplication.translate("FormAnalysis", "Import Raw Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.import_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.export_btn.setToolTip(
-            QCoreApplication.translate("FormAnalysis", "Export Analysis Data", None)
+            QCoreApplication.translate("FormAnalysis", "Export Analysis Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.export_btn.setText("")
         self.label.setText(
-            QCoreApplication.translate("FormAnalysis", "Analysis Cycle Editor", None)
+            QCoreApplication.translate("FormAnalysis", "Analysis Cycle Editor", None),
         )
         self.groupBox_3.setTitle(
-            QCoreApplication.translate("FormAnalysis", "Display", None)
+            QCoreApplication.translate("FormAnalysis", "Display", None),
         )
         self.segment_A.setText(QCoreApplication.translate("FormAnalysis", "A  ", None))
         self.segment_B.setText(QCoreApplication.translate("FormAnalysis", "B  ", None))
         self.segment_C.setText(QCoreApplication.translate("FormAnalysis", "C  ", None))
         self.segment_D.setText(QCoreApplication.translate("FormAnalysis", "D  ", None))
         self.cursor_ctrls.setTitle(
-            QCoreApplication.translate("FormAnalysis", "Cursors", None)
+            QCoreApplication.translate("FormAnalysis", "Cursors", None),
         )
         self.assoc_cursors.setText(
-            QCoreApplication.translate("FormAnalysis", "Association", None)
+            QCoreApplication.translate("FormAnalysis", "Association", None),
         )
         self.dissoc_cursors.setText(
-            QCoreApplication.translate("FormAnalysis", "Dissociation", None)
+            QCoreApplication.translate("FormAnalysis", "Dissociation", None),
         )
         self.label_2.setText(QCoreApplication.translate("FormAnalysis", "Note:", None))
         self.current_note.setText("")
         ___qtablewidgetitem = self.data_table.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(
-            QCoreApplication.translate("FormAnalysis", "Conc'n\n(nM)", None)
+            QCoreApplication.translate("FormAnalysis", "Conc'n\n(nM)", None),
         )
         ___qtablewidgetitem1 = self.data_table.horizontalHeaderItem(1)
         ___qtablewidgetitem1.setText(
-            QCoreApplication.translate("FormAnalysis", "Assoc.\nShift (RU)", None)
+            QCoreApplication.translate("FormAnalysis", "Assoc.\nShift (RU)", None),
         )
         ___qtablewidgetitem2 = self.data_table.horizontalHeaderItem(2)
         ___qtablewidgetitem2.setText(
-            QCoreApplication.translate("FormAnalysis", "Assoc.\nStart (s)", None)
+            QCoreApplication.translate("FormAnalysis", "Assoc.\nStart (s)", None),
         )
         ___qtablewidgetitem3 = self.data_table.horizontalHeaderItem(3)
         ___qtablewidgetitem3.setText(
-            QCoreApplication.translate("FormAnalysis", "Assoc.\nEnd (s)", None)
+            QCoreApplication.translate("FormAnalysis", "Assoc.\nEnd (s)", None),
         )
         ___qtablewidgetitem4 = self.data_table.horizontalHeaderItem(4)
         ___qtablewidgetitem4.setText(
-            QCoreApplication.translate("FormAnalysis", "Dissoc.\nShift (RU)", None)
+            QCoreApplication.translate("FormAnalysis", "Dissoc.\nShift (RU)", None),
         )
         ___qtablewidgetitem5 = self.data_table.horizontalHeaderItem(5)
         ___qtablewidgetitem5.setText(
-            QCoreApplication.translate("FormAnalysis", "Dissoc.\nStart (s)", None)
+            QCoreApplication.translate("FormAnalysis", "Dissoc.\nStart (s)", None),
         )
         ___qtablewidgetitem6 = self.data_table.horizontalHeaderItem(6)
         ___qtablewidgetitem6.setText(
-            QCoreApplication.translate("FormAnalysis", "Dissoc.\nEnd (s)", None)
+            QCoreApplication.translate("FormAnalysis", "Dissoc.\nEnd (s)", None),
         )
         ___qtablewidgetitem7 = self.data_table.horizontalHeaderItem(7)
         ___qtablewidgetitem7.setText(
-            QCoreApplication.translate("FormAnalysis", "Global\nStart (s)", None)
+            QCoreApplication.translate("FormAnalysis", "Global\nStart (s)", None),
         )
         ___qtablewidgetitem8 = self.data_table.horizontalHeaderItem(8)
         ___qtablewidgetitem8.setText(
-            QCoreApplication.translate("FormAnalysis", "Reference\nChannel", None)
+            QCoreApplication.translate("FormAnalysis", "Reference\nChannel", None),
         )
         ___qtablewidgetitem9 = self.data_table.verticalHeaderItem(0)
         ___qtablewidgetitem9.setText(
-            QCoreApplication.translate("FormAnalysis", "Ch A", None)
+            QCoreApplication.translate("FormAnalysis", "Ch A", None),
         )
         ___qtablewidgetitem10 = self.data_table.verticalHeaderItem(1)
         ___qtablewidgetitem10.setText(
-            QCoreApplication.translate("FormAnalysis", "Ch B", None)
+            QCoreApplication.translate("FormAnalysis", "Ch B", None),
         )
         ___qtablewidgetitem11 = self.data_table.verticalHeaderItem(2)
         ___qtablewidgetitem11.setText(
-            QCoreApplication.translate("FormAnalysis", "Ch C", None)
+            QCoreApplication.translate("FormAnalysis", "Ch C", None),
         )
         ___qtablewidgetitem12 = self.data_table.verticalHeaderItem(3)
         ___qtablewidgetitem12.setText(
-            QCoreApplication.translate("FormAnalysis", "Ch D", None)
+            QCoreApplication.translate("FormAnalysis", "Ch D", None),
         )
 
         __sortingEnabled = self.data_table.isSortingEnabled()

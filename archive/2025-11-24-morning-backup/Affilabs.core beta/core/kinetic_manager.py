@@ -10,10 +10,11 @@ This class manages:
 All pump operations are coordinated to avoid conflicts.
 """
 
-from PySide6.QtCore import QObject, Signal
-from utils.logger import logger
-from typing import Optional, Dict
 import time
+
+from PySide6.QtCore import QObject, Signal
+
+from utils.logger import logger
 
 
 class KineticManager(QObject):
@@ -32,9 +33,9 @@ class KineticManager(QObject):
         self.hardware_mgr = hardware_mgr
 
         # Pump state tracking
-        self.pump_running = {ch: False for ch in ['a', 'b', 'c', 'd']}
-        self.flow_rates = {ch: 0 for ch in ['a', 'b', 'c', 'd']}
-        self.valve_positions = {ch: 'unknown' for ch in ['a', 'b', 'c', 'd']}
+        self.pump_running = {ch: False for ch in ["a", "b", "c", "d"]}
+        self.flow_rates = {ch: 0 for ch in ["a", "b", "c", "d"]}
+        self.valve_positions = {ch: "unknown" for ch in ["a", "b", "c", "d"]}
 
         # Pump settings
         self.default_flow_rate = 100  # μL/min
@@ -73,9 +74,10 @@ class KineticManager(QObject):
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             flow_rate: Flow rate in μL/min
+
         """
         try:
-            if channel not in ['a', 'b', 'c', 'd']:
+            if channel not in ["a", "b", "c", "d"]:
                 raise ValueError(f"Invalid channel: {channel}")
 
             self.flow_rates[channel] = flow_rate
@@ -89,12 +91,13 @@ class KineticManager(QObject):
             logger.error(f"Failed to set flow rate: {e}")
             self.pump_error.emit(f"Failed to set flow rate: {e}")
 
-    def run_pump(self, channel: str, flow_rate: Optional[int] = None):
+    def run_pump(self, channel: str, flow_rate: int | None = None):
         """Start pump for a channel.
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             flow_rate: Optional flow rate (uses stored rate if None)
+
         """
         try:
             pump = self.hardware_mgr.pump
@@ -102,7 +105,7 @@ class KineticManager(QObject):
                 self.pump_error.emit("Pump not connected")
                 return
 
-            if channel not in ['a', 'b', 'c', 'd']:
+            if channel not in ["a", "b", "c", "d"]:
                 raise ValueError(f"Invalid channel: {channel}")
 
             # Use stored flow rate if not provided
@@ -126,11 +129,13 @@ class KineticManager(QObject):
             self.pump_running[channel] = True
 
             # Emit state change
-            self.pump_state_changed.emit({
-                'channel': channel,
-                'running': True,
-                'flow_rate': flow_rate
-            })
+            self.pump_state_changed.emit(
+                {
+                    "channel": channel,
+                    "running": True,
+                    "flow_rate": flow_rate,
+                },
+            )
 
         except Exception as e:
             logger.exception(f"Failed to start pump: {e}")
@@ -141,13 +146,14 @@ class KineticManager(QObject):
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
+
         """
         try:
             pump = self.hardware_mgr.pump
             if not pump:
                 return
 
-            if channel not in ['a', 'b', 'c', 'd']:
+            if channel not in ["a", "b", "c", "d"]:
                 raise ValueError(f"Invalid channel: {channel}")
 
             logger.info(f"Stopping pump on channel {channel}")
@@ -160,11 +166,13 @@ class KineticManager(QObject):
             self.pump_running[channel] = False
 
             # Emit state change
-            self.pump_state_changed.emit({
-                'channel': channel,
-                'running': False,
-                'flow_rate': 0
-            })
+            self.pump_state_changed.emit(
+                {
+                    "channel": channel,
+                    "running": False,
+                    "flow_rate": 0,
+                },
+            )
 
         except Exception as e:
             logger.exception(f"Failed to stop pump: {e}")
@@ -173,7 +181,7 @@ class KineticManager(QObject):
     def stop_all_pumps(self):
         """Stop all pumps."""
         logger.info("Stopping all pumps...")
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             if self.pump_running[ch]:
                 self.stop_pump(ch)
 
@@ -183,6 +191,7 @@ class KineticManager(QObject):
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             position: Valve position ('input', 'output', 'bypass', etc.)
+
         """
         try:
             pump = self.hardware_mgr.pump
@@ -190,7 +199,7 @@ class KineticManager(QObject):
                 self.pump_error.emit("Pump not connected")
                 return
 
-            if channel not in ['a', 'b', 'c', 'd']:
+            if channel not in ["a", "b", "c", "d"]:
                 raise ValueError(f"Invalid channel: {channel}")
 
             logger.info(f"Switching valve on channel {channel} to {position}")
@@ -204,10 +213,12 @@ class KineticManager(QObject):
             self.valve_positions[channel] = position
 
             # Emit valve change
-            self.valve_switched.emit({
-                'channel': channel,
-                'position': position
-            })
+            self.valve_switched.emit(
+                {
+                    "channel": channel,
+                    "position": position,
+                },
+            )
 
         except Exception as e:
             logger.exception(f"Failed to switch valve: {e}")
@@ -219,15 +230,19 @@ class KineticManager(QObject):
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             duration: Flush duration in seconds
+
         """
         try:
-            logger.info(f"Flushing channel {channel} for {duration}s at {self.flush_rate} μL/min")
+            logger.info(
+                f"Flushing channel {channel} for {duration}s at {self.flush_rate} μL/min",
+            )
 
             # Start pump at flush rate
             self.run_pump(channel, self.flush_rate)
 
             # Schedule stop after duration
             from PySide6.QtCore import QTimer
+
             QTimer.singleShot(int(duration * 1000), lambda: self.stop_pump(channel))
 
         except Exception as e:
@@ -242,17 +257,18 @@ class KineticManager(QObject):
 
         Returns:
             Pump address (implementation specific)
+
         """
         # Placeholder mapping
-        mapping = {'a': 0x41, 'b': 0x42, 'c': 0x43, 'd': 0x44}
+        mapping = {"a": 0x41, "b": 0x42, "c": 0x43, "d": 0x44}
         return mapping.get(channel, 0x41)
 
-    def get_pump_state(self) -> Dict:
+    def get_pump_state(self) -> dict:
         """Get current pump state for all channels."""
         return {
-            'running': self.pump_running.copy(),
-            'flow_rates': self.flow_rates.copy(),
-            'valve_positions': self.valve_positions.copy()
+            "running": self.pump_running.copy(),
+            "flow_rates": self.flow_rates.copy(),
+            "valve_positions": self.valve_positions.copy(),
         }
 
     def prime_pump(self, channel: str):
@@ -260,6 +276,7 @@ class KineticManager(QObject):
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
+
         """
         try:
             logger.info(f"Priming pump for channel {channel}")
@@ -269,6 +286,7 @@ class KineticManager(QObject):
 
             # Stop after 5 seconds
             from PySide6.QtCore import QTimer
+
             QTimer.singleShot(5000, lambda: self.stop_pump(channel))
 
         except Exception as e:

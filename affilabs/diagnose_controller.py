@@ -31,17 +31,23 @@ if ports:
                 if p.pid == ARDUINO_PID:
                     print("  [OK] MATCH: Arduino P4SPR Controller")
                 else:
-                    print(f"  [WARN] Arduino VID but different PID (expected {hex(ARDUINO_PID)})")
+                    print(
+                        f"  [WARN] Arduino VID but different PID (expected {hex(ARDUINO_PID)})",
+                    )
             elif p.vid == PICO_VID:
                 if p.pid == PICO_PID:
                     print("  [OK] MATCH: Raspberry Pi Pico Controller")
                 else:
-                    print(f"  [WARN] Pico VID but different PID (expected {hex(PICO_PID)})")
+                    print(
+                        f"  [WARN] Pico VID but different PID (expected {hex(PICO_PID)})",
+                    )
             elif p.vid == CP210X_VID:
                 if p.pid == CP210X_PID:
                     print("  [OK] MATCH: CP2102 USB-Serial (used by some controllers)")
                 else:
-                    print(f"  [WARN] CP210X VID but different PID (expected {hex(CP210X_PID)})")
+                    print(
+                        f"  [WARN] CP210X VID but different PID (expected {hex(CP210X_PID)})",
+                    )
         else:
             print("  [WARN] No VID/PID available")
 else:

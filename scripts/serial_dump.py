@@ -1,5 +1,6 @@
 import sys
 import time
+
 import serial
 
 
@@ -22,7 +23,7 @@ def main():
     # Identify device
     ser.write(b"id\n")
     time.sleep(0.3)
-    id_resp = ser.read(ser.in_waiting or 1).decode('ascii', 'ignore')
+    id_resp = ser.read(ser.in_waiting or 1).decode("ascii", "ignore")
     print("ID:", id_resp.strip())
 
     # Send keepalive to avoid watchdog
@@ -30,9 +31,9 @@ def main():
     time.sleep(0.1)
 
     # Start a small batch
-    cmd = f"rankbatch start settle=0 dark=0 cycles={cycles}\n".encode('ascii')
+    cmd = f"rankbatch start settle=0 dark=0 cycles={cycles}\n".encode("ascii")
     ser.write(cmd)
-    print("Sent:", cmd.decode('ascii').strip())
+    print("Sent:", cmd.decode("ascii").strip())
 
     print("\n--- Serial dump start ---")
     end = time.time() + duration_s
@@ -40,7 +41,7 @@ def main():
         data = ser.read(ser.in_waiting or 1)
         if data:
             try:
-                sys.stdout.write(data.decode('ascii', 'ignore'))
+                sys.stdout.write(data.decode("ascii", "ignore"))
                 sys.stdout.flush()
             except Exception:
                 pass
@@ -51,5 +52,5 @@ def main():
     ser.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

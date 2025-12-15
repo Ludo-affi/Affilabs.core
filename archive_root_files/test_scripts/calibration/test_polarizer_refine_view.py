@@ -1,25 +1,35 @@
-"""
-Live view for Polarizer Calibration Steps 3 and 4
+"""Live view for Polarizer Calibration Steps 3 and 4
 
 - Step 3: Refine S position (coarse/fine/ultra-fine) and plot intensity vs angle
 - Step 4: Evaluate P candidates at S±90 and plot intensity vs angle
 
 This uses existing hardware managers and plots results live similar to test_calibration_live_view.
 """
+
 import sys
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QGroupBox
-from PySide6.QtCore import Qt, QTimer
-import pyqtgraph as pg
+
 import numpy as np
+import pyqtgraph as pg
+from PySide6.QtWidgets import (
+    QApplication,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Add project src to path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
-from utils.logger import logger
 from core.hardware_manager import HardwareManager
-from utils.servo_calibration import servo_to_degrees
+
+from utils.logger import logger
+
 
 class PolarizerRefineLive(QMainWindow):
     def __init__(self):
@@ -60,19 +70,21 @@ class PolarizerRefineLive(QMainWindow):
 
         # Plots
         self.plot_step3 = pg.PlotWidget(title="Step 3: S-mode Intensity vs Angle")
-        self.plot_step3.setLabel('left', 'Intensity', units='counts')
-        self.plot_step3.setLabel('bottom', 'Angle', units='deg')
+        self.plot_step3.setLabel("left", "Intensity", units="counts")
+        self.plot_step3.setLabel("bottom", "Angle", units="deg")
         self.plot_step3.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_step3.setBackground('w')
-        self.curve_step3 = self.plot_step3.plot(pen=pg.mkPen(color='g', width=2))
+        self.plot_step3.setBackground("w")
+        self.curve_step3 = self.plot_step3.plot(pen=pg.mkPen(color="g", width=2))
         layout.addWidget(self.plot_step3)
 
-        self.plot_step4 = pg.PlotWidget(title="Step 4: P-mode Intensity vs Angle (S±90 candidates)")
-        self.plot_step4.setLabel('left', 'Intensity', units='counts')
-        self.plot_step4.setLabel('bottom', 'Angle', units='deg')
+        self.plot_step4 = pg.PlotWidget(
+            title="Step 4: P-mode Intensity vs Angle (S±90 candidates)",
+        )
+        self.plot_step4.setLabel("left", "Intensity", units="counts")
+        self.plot_step4.setLabel("bottom", "Angle", units="deg")
         self.plot_step4.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_step4.setBackground('w')
-        self.curve_step4 = self.plot_step4.plot(pen=pg.mkPen(color='m', width=2))
+        self.plot_step4.setBackground("w")
+        self.curve_step4 = self.plot_step4.plot(pen=pg.mkPen(color="m", width=2))
         layout.addWidget(self.plot_step4)
 
         self._angles3 = []
@@ -89,7 +101,9 @@ class PolarizerRefineLive(QMainWindow):
                 self.ctrl = self.hardware_mgr.ctrl
                 self.usb = self.hardware_mgr.usb
                 if not self.ctrl or not self.usb:
-                    self.status_label.setText("Error: Missing controller or spectrometer")
+                    self.status_label.setText(
+                        "Error: Missing controller or spectrometer",
+                    )
                     return
                 self._ready = True
                 self.status_label.setText("Connected")
@@ -115,6 +129,7 @@ class PolarizerRefineLive(QMainWindow):
             self.ctrl.set_mode(mode)
             self.ctrl.servo_set(int(angle_deg), int(angle_deg))
             import time as _t
+
             _t.sleep(0.3)
             # Read spectrum and compute mean across ROI buckets
             spectrum = self.usb.read_intensity()
@@ -132,9 +147,9 @@ class PolarizerRefineLive(QMainWindow):
         self._intens3.clear()
         # Coarse candidates around mid-range
         candidates = [20, 50, 80, 110, 140, 170]
-        self.ctrl.set_mode('s')
+        self.ctrl.set_mode("s")
         for ang in candidates:
-            inten = self._measure_at_angle(ang, 's')
+            inten = self._measure_at_angle(ang, "s")
             self._angles3.append(ang)
             self._intens3.append(inten)
             self.curve_step3.setData(self._angles3, self._intens3)
@@ -143,9 +158,17 @@ class PolarizerRefineLive(QMainWindow):
         if self._intens3:
             best_idx = int(np.argmax(self._intens3))
             best_s = self._angles3[best_idx]
-            refine = [max(0, best_s-14), best_s, min(180, best_s+14), max(0, best_s-7), min(180, best_s+7), max(0, best_s-3), min(180, best_s+3)]
+            refine = [
+                max(0, best_s - 14),
+                best_s,
+                min(180, best_s + 14),
+                max(0, best_s - 7),
+                min(180, best_s + 7),
+                max(0, best_s - 3),
+                min(180, best_s + 3),
+            ]
             for ang in refine:
-                inten = self._measure_at_angle(ang, 's')
+                inten = self._measure_at_angle(ang, "s")
                 self._angles3.append(ang)
                 self._intens3.append(inten)
                 self.curve_step3.setData(self._angles3, self._intens3)
@@ -163,12 +186,12 @@ class PolarizerRefineLive(QMainWindow):
         else:
             s_est = 90
         # Evaluate P candidates at S±90 and small vicinity
-        candidates = [max(0, s_est-90), min(180, s_est+90)]
-        self.ctrl.set_mode('p')
+        candidates = [max(0, s_est - 90), min(180, s_est + 90)]
+        self.ctrl.set_mode("p")
         for base in candidates:
             for delta in [-3, 0, 3]:
-                ang = max(0, min(180, base+delta))
-                inten = self._measure_at_angle(ang, 'p')
+                ang = max(0, min(180, base + delta))
+                inten = self._measure_at_angle(ang, "p")
                 self._angles4.append(ang)
                 self._intens4.append(inten)
                 self.curve_step4.setData(self._angles4, self._intens4)
@@ -180,6 +203,7 @@ def main():
     w = PolarizerRefineLive()
     w.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

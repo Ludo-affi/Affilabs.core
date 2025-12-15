@@ -1,5 +1,4 @@
-"""
-Peak Tracking Performance Test
+"""Peak Tracking Performance Test
 
 Measures peak-to-peak variation per channel over 2 minutes to evaluate
 the performance of the resonance peak tracking algorithm.
@@ -18,11 +17,12 @@ Author: AI Assistant
 Date: October 21, 2025
 """
 
-import time
-import numpy as np
-from pathlib import Path
 import sys
+import time
 from datetime import datetime
+from pathlib import Path
+
+import numpy as np
 
 # Add project root to path
 ROOT_DIR = Path(__file__).parent
@@ -30,12 +30,13 @@ sys.path.insert(0, str(ROOT_DIR))
 
 # Python 3.9 compatibility: Mock Self type if not available
 import typing
-if not hasattr(typing, 'Self'):
-    typing.Self = typing.TypeVar('Self')
 
+if not hasattr(typing, "Self"):
+    typing.Self = typing.TypeVar("Self")
+
+from settings import CH_LIST
 from utils.logger import logger
 from utils.spr_state_machine import SPRStateMachine
-from settings import CH_LIST
 
 
 class PeakTrackingTest:
@@ -46,6 +47,7 @@ class PeakTrackingTest:
 
         Args:
             duration_seconds: Test duration in seconds (default: 120 = 2 minutes)
+
         """
         self.duration = duration_seconds
         self.state_machine = None
@@ -58,17 +60,22 @@ class PeakTrackingTest:
 
         Args:
             data_dict: Dictionary containing lambda_values and lambda_times
+
         """
         try:
             # Extract lambda values and times for each channel
-            lambda_values = data_dict.get('lambda_values', {})
-            lambda_times = data_dict.get('lambda_times', {})
+            lambda_values = data_dict.get("lambda_values", {})
+            lambda_times = data_dict.get("lambda_times", {})
 
             for ch in CH_LIST:
                 if ch in lambda_values and len(lambda_values[ch]) > 0:
                     # Get the most recent value (last in array)
                     latest_lambda = lambda_values[ch][-1]
-                    latest_time = lambda_times[ch][-1] if ch in lambda_times and len(lambda_times[ch]) > 0 else 0
+                    latest_time = (
+                        lambda_times[ch][-1]
+                        if ch in lambda_times and len(lambda_times[ch]) > 0
+                        else 0
+                    )
 
                     # Only collect valid (non-NaN) values
                     if not np.isnan(latest_lambda):
@@ -80,7 +87,6 @@ class PeakTrackingTest:
 
     def run_test(self):
         """Run the 2-minute peak tracking test."""
-
         print("=" * 80)
         print("PEAK TRACKING PERFORMANCE TEST")
         print("=" * 80)
@@ -94,7 +100,9 @@ class PeakTrackingTest:
         self.state_machine = SPRStateMachine()
 
         # Register data callback
-        self.state_machine.data_acquisition.data_ready.connect(self.data_update_callback)
+        self.state_machine.data_acquisition.data_ready.connect(
+            self.data_update_callback,
+        )
 
         # Start hardware discovery and calibration
         logger.info("Discovering hardware...")
@@ -133,8 +141,10 @@ class PeakTrackingTest:
                 # Print progress every 10 seconds
                 if int(elapsed) % 10 == 0 and int(elapsed) > 0:
                     remaining = self.duration - elapsed
-                    print(f"⏱️  Progress: {elapsed:.0f}s / {self.duration}s ({elapsed/self.duration*100:.0f}%) - "
-                          f"Remaining: {remaining:.0f}s")
+                    print(
+                        f"⏱️  Progress: {elapsed:.0f}s / {self.duration}s ({elapsed/self.duration*100:.0f}%) - "
+                        f"Remaining: {remaining:.0f}s",
+                    )
 
                     # Print current data counts
                     counts = {ch: len(self.data_collected[ch]) for ch in CH_LIST}
@@ -159,7 +169,6 @@ class PeakTrackingTest:
 
     def analyze_results(self):
         """Analyze collected data and print statistics."""
-
         print("\n" + "=" * 80)
         print("PEAK TRACKING PERFORMANCE RESULTS")
         print("=" * 80)
@@ -184,13 +193,13 @@ class PeakTrackingTest:
 
             # Store results
             results[ch] = {
-                'count': len(data),
-                'mean': mean_val,
-                'std': std_val,
-                'min': min_val,
-                'max': max_val,
-                'peak_to_peak': peak_to_peak,
-                'rms': rms,
+                "count": len(data),
+                "mean": mean_val,
+                "std": std_val,
+                "min": min_val,
+                "max": max_val,
+                "peak_to_peak": peak_to_peak,
+                "rms": rms,
             }
 
             # Print results for this channel
@@ -208,24 +217,30 @@ class PeakTrackingTest:
         print("=" * 80)
         print("SUMMARY TABLE")
         print("=" * 80)
-        print(f"{'Channel':<10} {'Points':<10} {'Mean (nm)':<12} {'Std (nm)':<12} {'P-P (nm)':<12}")
+        print(
+            f"{'Channel':<10} {'Points':<10} {'Mean (nm)':<12} {'Std (nm)':<12} {'P-P (nm)':<12}",
+        )
         print("-" * 80)
 
         for ch in CH_LIST:
             if ch in results:
                 r = results[ch]
-                print(f"{ch.upper():<10} {r['count']:<10} {r['mean']:<12.4f} "
-                      f"{r['std']:<12.6f} {r['peak_to_peak']:<12.6f}")
+                print(
+                    f"{ch.upper():<10} {r['count']:<10} {r['mean']:<12.4f} "
+                    f"{r['std']:<12.6f} {r['peak_to_peak']:<12.6f}",
+                )
 
         print("=" * 80)
         print()
 
         # Save results to file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = ROOT_DIR / "generated-files" / f"peak_tracking_test_{timestamp}.txt"
+        output_file = (
+            ROOT_DIR / "generated-files" / f"peak_tracking_test_{timestamp}.txt"
+        )
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             f.write("PEAK TRACKING PERFORMANCE TEST RESULTS\n")
             f.write("=" * 80 + "\n")
             f.write(f"Test duration: {self.duration} seconds\n")

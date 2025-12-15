@@ -1,5 +1,4 @@
-"""
-Temporal Smoothing - EXACT OLD SOFTWARE METHOD
+"""Temporal Smoothing - EXACT OLD SOFTWARE METHOD
 
 Old software used a simple backward-looking mean filter (NOT median!):
 - Window size: 5 points (MED_FILT_WIN = 5)
@@ -14,6 +13,7 @@ Date: 2025-10-21
 """
 
 import numpy as np
+
 from utils.logger import logger
 
 
@@ -31,9 +31,10 @@ class TemporalMeanFilter:
 
         Args:
             window_size: Number of past values to average (default 5 from old software)
+
         """
         self.window_size = window_size
-        self.history = {'a': [], 'b': [], 'c': [], 'd': []}
+        self.history = {"a": [], "b": [], "c": [], "d": []}
         logger.info(f"📊 Temporal mean filter initialized: window={window_size}")
 
     def update(self, channel: str, value: float) -> float:
@@ -45,6 +46,7 @@ class TemporalMeanFilter:
 
         Returns:
             Filtered value (mean of last window_size values)
+
         """
         # Add to history
         self.history[channel].append(value)
@@ -52,9 +54,9 @@ class TemporalMeanFilter:
         # Apply filter (EXACT old software logic)
         if np.isnan(value):
             return np.nan
-        elif len(self.history[channel]) > self.window_size:
+        if len(self.history[channel]) > self.window_size:
             # Use last window_size values
-            unfiltered = self.history[channel][-self.window_size:]
+            unfiltered = self.history[channel][-self.window_size :]
             filtered_value = np.nanmean(unfiltered)
         else:
             # Use all available values
@@ -71,4 +73,4 @@ class TemporalMeanFilter:
         if channel:
             self.history[channel] = []
         else:
-            self.history = {'a': [], 'b': [], 'c': [], 'd': []}
+            self.history = {"a": [], "b": [], "c": [], "d": []}

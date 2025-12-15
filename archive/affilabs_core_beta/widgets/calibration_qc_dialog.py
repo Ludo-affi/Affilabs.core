@@ -9,13 +9,24 @@ Shows:
 """
 
 import numpy as np
+import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QGridLayout, QFrame, QTabWidget,
-    QTableWidget, QTableWidgetItem, QWidget, QScrollArea
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-import pyqtgraph as pg
+
 from utils.logger import logger
 
 
@@ -36,15 +47,20 @@ class CalibrationQCDialog(QDialog):
                 - wavelengths: array of wavelength values
                 - integration_time: float (ms)
                 - led_intensities: dict of {channel: intensity}
+
         """
         super().__init__(parent)
         self.calibration_data = calibration_data or {}
 
         # DEBUG: Log what data is received
         logger.info("🔍 QC Dialog Received Data:")
-        logger.info(f"   orientation_validation: {list(self.calibration_data.get('orientation_validation', {}).keys())}")
+        logger.info(
+            f"   orientation_validation: {list(self.calibration_data.get('orientation_validation', {}).keys())}",
+        )
         logger.info(f"   spr_fwhm: {self.calibration_data.get('spr_fwhm', {})}")
-        logger.info(f"   transmission_validation: {list(self.calibration_data.get('transmission_validation', {}).keys())}")
+        logger.info(
+            f"   transmission_validation: {list(self.calibration_data.get('transmission_validation', {}).keys())}",
+        )
 
         self.setWindowTitle("Calibration QC Report")
         self.setMinimumSize(1400, 900)
@@ -165,12 +181,18 @@ class CalibrationQCDialog(QDialog):
 
         # Row 2: Dark and Afterglow
         dark_graph = self._create_graph("3. Final Dark Scan", "dark")
-        afterglow_graph = self._create_graph("4. Afterglow Simulation Curves", "afterglow")
+        afterglow_graph = self._create_graph(
+            "4. Afterglow Simulation Curves",
+            "afterglow",
+        )
         graphs_layout.addWidget(dark_graph, 1, 0)
         graphs_layout.addWidget(afterglow_graph, 1, 1)
 
         # Row 3: Transmission (spans both columns)
-        transmission_graph = self._create_graph("5. Transmission Spectra", "transmission")
+        transmission_graph = self._create_graph(
+            "5. Transmission Spectra",
+            "transmission",
+        )
         graphs_layout.addWidget(transmission_graph, 2, 0, 1, 2)  # Span 2 columns
 
         layout.addWidget(graphs_container)
@@ -218,7 +240,9 @@ class CalibrationQCDialog(QDialog):
         """Create polarizer orientation validation table."""
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; padding: 10px; }")
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; padding: 10px; }",
+        )
 
         layout = QVBoxLayout(frame)
 
@@ -228,7 +252,9 @@ class CalibrationQCDialog(QDialog):
 
         table = QTableWidget()
         table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Channel", "Orientation", "Confidence", "Status"])
+        table.setHorizontalHeaderLabels(
+            ["Channel", "Orientation", "Confidence", "Status"],
+        )
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setStyleSheet("""
@@ -246,18 +272,20 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        orientation_data = self.calibration_data.get('orientation_validation', {})
+        orientation_data = self.calibration_data.get("orientation_validation", {})
 
         # DEBUG: Log orientation data
         if not orientation_data:
             logger.warning("⚠️ No orientation_validation data in QC report")
         else:
-            logger.info(f"✅ Orientation validation data for channels: {list(orientation_data.keys())}")
+            logger.info(
+                f"✅ Orientation validation data for channels: {list(orientation_data.keys())}",
+            )
 
         table.setRowCount(4)
         global_pass = False  # If any channel is correct, polarizer is OK
 
-        for idx, ch in enumerate(['a', 'b', 'c', 'd']):
+        for idx, ch in enumerate(["a", "b", "c", "d"]):
             # Channel name
             ch_item = QTableWidgetItem(f"Channel {ch.upper()}")
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -315,11 +343,15 @@ class CalibrationQCDialog(QDialog):
             result_text = "✅ GLOBAL POLARIZER ORIENTATION: CORRECT (at least one channel validates polarizer position)"
             result_color = "#34C759"
         else:
-            result_text = "⚠️ GLOBAL POLARIZER ORIENTATION: CANNOT VALIDATE (check all channels)"
+            result_text = (
+                "⚠️ GLOBAL POLARIZER ORIENTATION: CANNOT VALIDATE (check all channels)"
+            )
             result_color = "#FF9500"
 
         result_label = QLabel(result_text)
-        result_label.setStyleSheet(f"color: {result_color}; font-weight: 600; padding: 10px; background: #F5F5F7; border-radius: 6px;")
+        result_label.setStyleSheet(
+            f"color: {result_color}; font-weight: 600; padding: 10px; background: #F5F5F7; border-radius: 6px;",
+        )
         layout.addWidget(result_label)
 
         return frame
@@ -328,7 +360,9 @@ class CalibrationQCDialog(QDialog):
         """Create transmission dip validation table showing P/S ratio, dip shape, FWHM."""
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; padding: 10px; }")
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; padding: 10px; }",
+        )
 
         layout = QVBoxLayout(frame)
 
@@ -338,15 +372,17 @@ class CalibrationQCDialog(QDialog):
 
         table = QTableWidget()
         table.setColumnCount(7)
-        table.setHorizontalHeaderLabels([
-            "Channel",
-            "P/S Ratio",
-            "Dip Min (nm)",
-            "FWHM (nm)",
-            "Left Slope",
-            "Right Slope",
-            "Status"
-        ])
+        table.setHorizontalHeaderLabels(
+            [
+                "Channel",
+                "P/S Ratio",
+                "Dip Min (nm)",
+                "FWHM (nm)",
+                "Left Slope",
+                "Right Slope",
+                "Status",
+            ],
+        )
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setStyleSheet("""
@@ -364,23 +400,30 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        transmission_validation = self.calibration_data.get('transmission_validation', {})
+        transmission_validation = self.calibration_data.get(
+            "transmission_validation",
+            {},
+        )
 
         # DEBUG: Log transmission validation data
         if not transmission_validation:
             logger.warning("⚠️ No transmission_validation data in QC report")
         else:
-            logger.info(f"✅ Transmission validation keys: {list(transmission_validation.keys())}")
-            if 'global' in transmission_validation:
-                logger.info(f"   Global validation data: {transmission_validation['global']}")
+            logger.info(
+                f"✅ Transmission validation keys: {list(transmission_validation.keys())}",
+            )
+            if "global" in transmission_validation:
+                logger.info(
+                    f"   Global validation data: {transmission_validation['global']}",
+                )
 
         # For now, we show global validation (applies to all channels)
         # In future, this could be per-channel if validation is run per channel
-        channels = ['A', 'B', 'C', 'D']
+        channels = ["A", "B", "C", "D"]
         table.setRowCount(len(channels))
 
-        global_data = transmission_validation.get('global', {})
-        overall_pass = global_data.get('passed', None)
+        global_data = transmission_validation.get("global", {})
+        overall_pass = global_data.get("passed", None)
 
         for idx, ch in enumerate(channels):
             # Channel name
@@ -390,7 +433,7 @@ class CalibrationQCDialog(QDialog):
 
             if global_data:
                 # P/S Ratio
-                ratio = global_data.get('ratio')
+                ratio = global_data.get("ratio")
                 if ratio is not None:
                     ratio_item = QTableWidgetItem(f"{ratio:.3f}")
                     ratio_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -406,7 +449,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
                 # Dip minimum wavelength
-                min_wl = global_data.get('min_wavelength')
+                min_wl = global_data.get("min_wavelength")
                 if min_wl is not None:
                     min_wl_item = QTableWidgetItem(f"{min_wl:.1f}")
                     min_wl_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -415,7 +458,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
                 # FWHM
-                fwhm = global_data.get('fwhm_nm')
+                fwhm = global_data.get("fwhm_nm")
                 if fwhm is not None:
                     fwhm_item = QTableWidgetItem(f"{fwhm:.2f}")
                     fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -424,7 +467,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 3, QTableWidgetItem("N/A"))
 
                 # Left slope
-                left_slope = global_data.get('left_slope')
+                left_slope = global_data.get("left_slope")
                 if left_slope is not None:
                     slope_item = QTableWidgetItem(f"{left_slope:.4f}")
                     slope_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -438,7 +481,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, 4, QTableWidgetItem("N/A"))
 
                 # Right slope
-                right_slope = global_data.get('right_slope')
+                right_slope = global_data.get("right_slope")
                 if right_slope is not None:
                     slope_item = QTableWidgetItem(f"{right_slope:.4f}")
                     slope_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -482,7 +525,7 @@ class CalibrationQCDialog(QDialog):
             result_text = "✅ TRANSMISSION VALIDATION: PASSED (P/S ratio valid, dip shape correct)"
             result_color = "#34C759"
         elif overall_pass is False:
-            failure_reason = global_data.get('failure_reason', 'Unknown')
+            failure_reason = global_data.get("failure_reason", "Unknown")
             result_text = f"❌ TRANSMISSION VALIDATION: FAILED ({failure_reason})"
             result_color = "#FF3B30"
         else:
@@ -490,7 +533,9 @@ class CalibrationQCDialog(QDialog):
             result_color = "#FF9500"
 
         result_label = QLabel(result_text)
-        result_label.setStyleSheet(f"color: {result_color}; font-weight: 600; padding: 10px; background: #F5F5F7; border-radius: 6px;")
+        result_label.setStyleSheet(
+            f"color: {result_color}; font-weight: 600; padding: 10px; background: #F5F5F7; border-radius: 6px;",
+        )
         layout.addWidget(result_label)
 
         return frame
@@ -499,7 +544,9 @@ class CalibrationQCDialog(QDialog):
         """Create SPR quality (FWHM) table."""
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; padding: 10px; }")
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; padding: 10px; }",
+        )
 
         layout = QVBoxLayout(frame)
 
@@ -527,18 +574,20 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        spr_fwhm = self.calibration_data.get('spr_fwhm', {})
+        spr_fwhm = self.calibration_data.get("spr_fwhm", {})
 
         # DEBUG: Log SPR FWHM data
         if not spr_fwhm:
             logger.warning("⚠️ No spr_fwhm data in QC report")
         else:
-            logger.info(f"✅ SPR FWHM data for channels: {list(spr_fwhm.keys())} - Values: {spr_fwhm}")
+            logger.info(
+                f"✅ SPR FWHM data for channels: {list(spr_fwhm.keys())} - Values: {spr_fwhm}",
+            )
 
         table.setRowCount(4)
         fwhm_values = []
 
-        for idx, ch in enumerate(['a', 'b', 'c', 'd']):
+        for idx, ch in enumerate(["a", "b", "c", "d"]):
             # Channel name
             ch_item = QTableWidgetItem(f"Channel {ch.upper()}")
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -586,20 +635,28 @@ class CalibrationQCDialog(QDialog):
         if fwhm_values:
             avg_fwhm = sum(fwhm_values) / len(fwhm_values)
             if avg_fwhm < 30:
-                result_text = f"✅ Average FWHM: {avg_fwhm:.1f}nm - Sensor ready for measurements"
+                result_text = (
+                    f"✅ Average FWHM: {avg_fwhm:.1f}nm - Sensor ready for measurements"
+                )
                 result_color = "#34C759"
             elif avg_fwhm < 50:
-                result_text = f"⚠️ Average FWHM: {avg_fwhm:.1f}nm - Acceptable but monitor quality"
+                result_text = (
+                    f"⚠️ Average FWHM: {avg_fwhm:.1f}nm - Acceptable but monitor quality"
+                )
                 result_color = "#FF9500"
             else:
-                result_text = f"❌ Average FWHM: {avg_fwhm:.1f}nm - Check water/prism contact"
+                result_text = (
+                    f"❌ Average FWHM: {avg_fwhm:.1f}nm - Check water/prism contact"
+                )
                 result_color = "#FF3B30"
         else:
             result_text = "⚠️ No SPR FWHM data available"
             result_color = "#FF9500"
 
         result_label = QLabel(result_text)
-        result_label.setStyleSheet(f"color: {result_color}; font-weight: 600; padding: 10px; background: #F5F5F7; border-radius: 6px;")
+        result_label.setStyleSheet(
+            f"color: {result_color}; font-weight: 600; padding: 10px; background: #F5F5F7; border-radius: 6px;",
+        )
         layout.addWidget(result_label)
 
         return frame
@@ -608,10 +665,15 @@ class CalibrationQCDialog(QDialog):
         """Create summary information section."""
         data = self.calibration_data
 
-        integration_time = data.get('integration_time', 0)
-        led_intensities = data.get('led_intensities', {})
+        integration_time = data.get("integration_time", 0)
+        led_intensities = data.get("led_intensities", {})
 
-        led_str = ", ".join([f"Ch {ch.upper()}: {led_intensities.get(ch, 0)}" for ch in ['a', 'b', 'c', 'd']])
+        led_str = ", ".join(
+            [
+                f"Ch {ch.upper()}: {led_intensities.get(ch, 0)}"
+                for ch in ["a", "b", "c", "d"]
+            ],
+        )
 
         summary_text = (
             f"<b>Integration Time:</b> {integration_time:.2f} ms  |  "
@@ -639,6 +701,7 @@ class CalibrationQCDialog(QDialog):
 
         Returns:
             QFrame containing the graph
+
         """
         container = QFrame()
         container.setFrameShape(QFrame.Shape.StyledPanel)
@@ -666,18 +729,18 @@ class CalibrationQCDialog(QDialog):
 
         # Create plot widget
         plot_widget = pg.PlotWidget()
-        plot_widget.setBackground('w')
+        plot_widget.setBackground("w")
         plot_widget.showGrid(x=True, y=True, alpha=0.3)
 
         # Configure axes
-        plot_widget.setLabel('bottom', 'Wavelength', units='nm')
+        plot_widget.setLabel("bottom", "Wavelength", units="nm")
 
-        if data_type == 'transmission':
-            plot_widget.setLabel('left', 'Transmission', units='%')
-        elif data_type == 'afterglow':
-            plot_widget.setLabel('left', 'Afterglow Correction', units='counts')
+        if data_type == "transmission":
+            plot_widget.setLabel("left", "Transmission", units="%")
+        elif data_type == "afterglow":
+            plot_widget.setLabel("left", "Afterglow Correction", units="counts")
         else:
-            plot_widget.setLabel('left', 'Intensity', units='counts')
+            plot_widget.setLabel("left", "Intensity", units="counts")
 
         # Plot data
         self._plot_data(plot_widget, data_type)
@@ -692,52 +755,60 @@ class CalibrationQCDialog(QDialog):
         Args:
             plot_widget: PyQtGraph PlotWidget
             data_type: Type of data to plot
+
         """
         data = self.calibration_data
-        wavelengths = data.get('wavelengths', None)
+        wavelengths = data.get("wavelengths", None)
 
         if wavelengths is None:
             wavelengths = np.linspace(560, 720, 3648)  # Default wavelength array
-            logger.warning(f"No wavelengths in QC data, using default range")
+            logger.warning("No wavelengths in QC data, using default range")
 
         # Channel colors (matching existing UI)
         colors = {
-            'a': (0, 0, 0, 200),        # Black
-            'b': (255, 0, 81, 200),     # Red
-            'c': (0, 174, 255, 200),    # Blue
-            'd': (0, 230, 65, 200)      # Green
+            "a": (0, 0, 0, 200),  # Black
+            "b": (255, 0, 81, 200),  # Red
+            "c": (0, 174, 255, 200),  # Blue
+            "d": (0, 230, 65, 200),  # Green
         }
 
         # Get data based on type
         data_dict = {}
-        if data_type == 's_pol':
-            data_dict = data.get('s_pol_spectra', {})
-        elif data_type == 'p_pol':
-            data_dict = data.get('p_pol_spectra', {})
-        elif data_type == 'dark':
-            data_dict = data.get('dark_scan', {})
-        elif data_type == 'afterglow':
-            data_dict = data.get('afterglow_curves', {})
-        elif data_type == 'transmission':
-            data_dict = data.get('transmission_spectra', {})
+        if data_type == "s_pol":
+            data_dict = data.get("s_pol_spectra", {})
+        elif data_type == "p_pol":
+            data_dict = data.get("p_pol_spectra", {})
+        elif data_type == "dark":
+            data_dict = data.get("dark_scan", {})
+        elif data_type == "afterglow":
+            data_dict = data.get("afterglow_curves", {})
+        elif data_type == "transmission":
+            data_dict = data.get("transmission_spectra", {})
 
         # Plot each channel
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             if channel in data_dict:
                 spectrum = data_dict[channel]
                 if spectrum is not None and len(spectrum) > 0:
                     # Handle wavelength array length mismatch
                     if len(wavelengths) != len(spectrum):
-                        wavelengths_plot = np.linspace(wavelengths[0], wavelengths[-1], len(spectrum))
+                        wavelengths_plot = np.linspace(
+                            wavelengths[0],
+                            wavelengths[-1],
+                            len(spectrum),
+                        )
                     else:
                         wavelengths_plot = wavelengths
 
-                    pen = pg.mkPen(color=colors.get(channel, (128, 128, 128, 200)), width=2)
+                    pen = pg.mkPen(
+                        color=colors.get(channel, (128, 128, 128, 200)),
+                        width=2,
+                    )
                     plot_widget.plot(
                         wavelengths_plot,
                         spectrum,
                         pen=pen,
-                        name=f"Channel {channel.upper()}"
+                        name=f"Channel {channel.upper()}",
                     )
 
         # Add legend
@@ -753,6 +824,7 @@ class CalibrationQCDialog(QDialog):
 
         Returns:
             Dialog result (QDialog.Accepted or QDialog.Rejected)
+
         """
         dialog = CalibrationQCDialog(parent=parent, calibration_data=calibration_data)
 

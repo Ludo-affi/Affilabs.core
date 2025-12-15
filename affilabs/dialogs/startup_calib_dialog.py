@@ -6,13 +6,20 @@ Non-modal progress dialog for calibration with Start button integration.
 Thread-safe UI updates via signals.
 """
 
-from typing import Optional, Any
+from typing import Any
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QGraphicsDropShadowEffect
-)
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QDialog,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class StartupCalibProgressDialog(QDialog):
@@ -29,8 +36,13 @@ class StartupCalibProgressDialog(QDialog):
     _hide_progress_signal = Signal()
     _enable_start_signal = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None, title: str = "Processing",
-                 message: str = "Please wait...", show_start_button: bool = False) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        title: str = "Processing",
+        message: str = "Please wait...",
+        show_start_button: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
@@ -64,7 +76,7 @@ class StartupCalibProgressDialog(QDialog):
         # Style with border and rounded corners
         self.setStyleSheet(
             "QDialog { background: #FFFFFF; border: 2px solid #007AFF; border-radius: 12px; }"
-            "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }"
+            "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }",
         )
 
         # Main layout
@@ -75,9 +87,7 @@ class StartupCalibProgressDialog(QDialog):
         # Title
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            "font-size: 18px;"
-            "font-weight: 700;"
-            "color: #1D1D1F;"
+            "font-size: 18px;font-weight: 700;color: #1D1D1F;",
         )
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
@@ -103,16 +113,14 @@ class StartupCalibProgressDialog(QDialog):
             "QProgressBar::chunk {"
             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007AFF, stop:1 #00C7BE);"
             "  border-radius: 4px;"
-            "}"
+            "}",
         )
         main_layout.addWidget(self.progress_bar)
 
         # Status message
         self.status_label = QLabel(message)
         self.status_label.setStyleSheet(
-            "font-size: 14px;"
-            "color: #86868B;"
-            "padding: 0px;"
+            "font-size: 14px;color: #86868B;padding: 0px;",
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
@@ -157,7 +165,7 @@ class StartupCalibProgressDialog(QDialog):
                 "QPushButton:disabled {"
                 "  background: #E5E5EA;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
             self.start_button.clicked.connect(self._on_start_clicked)
             self.button_layout.addWidget(self.start_button)
@@ -192,17 +200,24 @@ class StartupCalibProgressDialog(QDialog):
                 if self._is_complete:
                     # Post-calibration: Emit signal to start acquisition, dialog will close after
                     from affilabs.utils.logger import logger
-                    logger.info("[DIALOG] Start button clicked (post-calibration) - emitting signal")
+
+                    logger.info(
+                        "[DIALOG] Start button clicked (post-calibration) - emitting signal",
+                    )
                     self.start_clicked.emit()
-                    logger.info("[DIALOG] Signal emitted, dialog will close after acquisition starts")
+                    logger.info(
+                        "[DIALOG] Signal emitted, dialog will close after acquisition starts",
+                    )
                 else:
                     # Pre-calibration: Emit signal but keep dialog open for progress updates
                     self.start_clicked.emit()
                     # Dialog stays open to show calibration progress
         except Exception as e:
             from affilabs.utils.logger import logger
+
             logger.error(f"[ERROR] Error in _on_start_clicked: {e}", exc_info=True)
             import traceback
+
             try:
                 print(traceback.format_exc())
             except:
@@ -325,12 +340,17 @@ class StartupCalibProgressDialog(QDialog):
     def enable_start_button_pre_calib(self) -> None:
         """Enable the Start button for pre-calibration checklist (thread-safe)."""
         from affilabs.utils.logger import logger
-        logger.debug(f"[DIALOG] enable_start_button_pre_calib() called: _is_complete={self._is_complete}")
+
+        logger.debug(
+            f"[DIALOG] enable_start_button_pre_calib() called: _is_complete={self._is_complete}",
+        )
         if not self._is_closing and self.isVisible() and self.start_button:
             try:
                 self._is_error_state = False
                 self.start_button.setEnabled(True)
-                logger.debug(f"[DIALOG] Button enabled, _is_complete={self._is_complete} (should be False)")
+                logger.debug(
+                    f"[DIALOG] Button enabled, _is_complete={self._is_complete} (should be False)",
+                )
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -348,7 +368,12 @@ class StartupCalibProgressDialog(QDialog):
             except RuntimeError:
                 pass  # Widget deleted
 
-    def show_error_state(self, error_message: str, retry_count: int, max_retries: int) -> None:
+    def show_error_state(
+        self,
+        error_message: str,
+        retry_count: int,
+        max_retries: int,
+    ) -> None:
         """Switch dialog to error state with Retry/Continue buttons."""
         if self._is_closing or not self.isVisible():
             return
@@ -362,7 +387,7 @@ class StartupCalibProgressDialog(QDialog):
             self.title_label.setStyleSheet(
                 "font-size: 18px;"
                 "font-weight: 700;"
-                "color: #FF3B30;"  # Red color for error
+                "color: #FF3B30;",  # Red color for error
             )
 
             retries_left = max_retries - retry_count
@@ -388,7 +413,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #0051D5;"
-                    "}"
+                    "}",
                 )
                 self.retry_button.clicked.connect(self._on_retry_clicked)
                 self.button_layout.insertWidget(1, self.retry_button)
@@ -407,7 +432,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #FF8000;"
-                    "}"
+                    "}",
                 )
                 self.continue_button.clicked.connect(self._on_continue_clicked)
                 self.button_layout.insertWidget(2, self.continue_button)
@@ -428,7 +453,9 @@ class StartupCalibProgressDialog(QDialog):
 
             # Update title and status
             self.title_label.setText("[ERROR] Calibration Failed")
-            self.status_label.setText(f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.")
+            self.status_label.setText(
+                f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.",
+            )
 
             # Hide Start and Retry buttons
             if self.start_button:
@@ -451,7 +478,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #FF8000;"
-                    "}"
+                    "}",
                 )
                 self.continue_button.clicked.connect(self._on_continue_clicked)
                 self.button_layout.insertWidget(1, self.continue_button)
@@ -472,9 +499,7 @@ class StartupCalibProgressDialog(QDialog):
 
             # Reset title color
             self.title_label.setStyleSheet(
-                "font-size: 18px;"
-                "font-weight: 700;"
-                "color: #1D1D1F;"
+                "font-size: 18px;font-weight: 700;color: #1D1D1F;",
             )
 
             # Hide error buttons

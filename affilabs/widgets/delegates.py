@@ -1,10 +1,11 @@
 """Custom delegates for table cell editing."""
 
 import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QLineEdit, QStyledItemDelegate
 
-from widgets.ui_constants import CYCLE_TYPES
+from affilabs.widgets.ui_constants import CYCLE_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,10 @@ class TextInputDelegate(QStyledItemDelegate):
         try:
             text = editor.text().strip()
             # Additional validation: remove any problematic characters
-            text = text.replace('\x00', '')  # Remove null bytes
-            text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')  # Keep printable chars
+            text = text.replace("\x00", "")  # Remove null bytes
+            text = "".join(
+                char for char in text if ord(char) >= 32 or char in "\n\r\t"
+            )  # Keep printable chars
             model.setData(index, text, Qt.ItemDataRole.EditRole)
         except Exception as e:
             logger.error(f"Error saving table cell data: {e}")

@@ -513,4 +513,3 @@ Adding clear comments like `# Direct HAL access (preferred)` helps developers un
 ---
 
 **Cleanup Pattern Complete**: Polarizer → LED Control → Detector Data ✅
-

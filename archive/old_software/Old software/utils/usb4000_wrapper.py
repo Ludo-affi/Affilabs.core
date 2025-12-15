@@ -37,9 +37,13 @@ class USB4000:
             # Import seabreeze only when actually opening (deferred to avoid blocking on import)
             try:
                 import seabreeze
-                seabreeze.use('pyseabreeze')
+
+                seabreeze.use("pyseabreeze")
                 from seabreeze.spectrometers import Spectrometer, list_devices
-                logger.info("USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)")
+
+                logger.info(
+                    "USB4000: Using pyseabreeze backend (pure Python, works with WinUSB)",
+                )
             except ImportError as e:
                 logger.error(f"SeaBreeze not available: {e}")
                 logger.error("Install with: pip install seabreeze pyusb")
@@ -50,6 +54,7 @@ class USB4000:
 
             # Use threading with timeout to prevent indefinite blocking
             import threading
+
             devices = []
             exception = [None]
 
@@ -65,7 +70,9 @@ class USB4000:
             scan_thread.join(timeout=5.0)
 
             if scan_thread.is_alive():
-                logger.warning("USB device scan timed out after 5 seconds - no spectrometer connected")
+                logger.warning(
+                    "USB device scan timed out after 5 seconds - no spectrometer connected",
+                )
                 return False
 
             if exception[0]:
@@ -85,7 +92,9 @@ class USB4000:
 
             # Connect using SeaBreeze (NEW software method)
             logger.debug(f"SeaBreeze: Creating spectrometer for serial {target_serial}")
-            self._device = Spectrometer.from_serial_number(target_serial)            # Set connection state
+            self._device = Spectrometer.from_serial_number(
+                target_serial,
+            )  # Set connection state
             self.opened = True
             self.serial_number = target_serial
             self.spec = self._device
@@ -93,7 +102,9 @@ class USB4000:
             # Initialize wavelengths
             try:
                 self._wavelengths = self._device.wavelengths()
-                logger.debug(f"Wavelength range: {self._wavelengths[0]:.1f} - {self._wavelengths[-1]:.1f} nm")
+                logger.debug(
+                    f"Wavelength range: {self._wavelengths[0]:.1f} - {self._wavelengths[-1]:.1f} nm",
+                )
             except Exception as e:
                 logger.warning(f"Could not read wavelengths: {e}")
 
@@ -104,7 +115,7 @@ class USB4000:
                 max_intensity = getattr(self._device, "max_intensity", None)
                 logger.info(
                     f"Detector integration time limits: {min_max_limits[0]}µs - {min_max_limits[1]}µs "
-                    f"({min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms)"
+                    f"({min_max_limits[0]/1000:.2f}ms - {min_max_limits[1]/1000:.2f}ms)",
                 )
                 if max_intensity is not None:
                     logger.info(f"Detector max_intensity (a.u.): {max_intensity}")
@@ -117,6 +128,7 @@ class USB4000:
         except Exception as e:
             logger.error(f"USB4000 connection failed: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return False
 
@@ -135,7 +147,7 @@ class USB4000:
     def __del__(self):
         """Destructor to ensure spectrometer is closed."""
         try:
-            if hasattr(self, '_device') and self._device is not None:
+            if hasattr(self, "_device") and self._device is not None:
                 self.close()
         except:
             pass
@@ -145,6 +157,7 @@ class USB4000:
 
         Args:
             time_ms: Integration time in milliseconds (matches settings.py)
+
         """
         if not self._device or not self.opened:
             return False
@@ -170,6 +183,7 @@ class USB4000:
             return None
         try:
             import numpy as np
+
             return np.array(self._device.intensities())
         except Exception as e:
             logger.error(f"read_intensity error: {e}")

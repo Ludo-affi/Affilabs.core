@@ -10,7 +10,7 @@ This module provides integration helpers to connect the FMEA tracker to:
 Each area has specific event types and metrics to track.
 """
 
-from core.fmea_tracker import FailureMode, FMEATracker, Severity
+from affilabs.core.fmea_tracker import FailureMode, FMEATracker, Severity
 
 
 class FMEAIntegrationHelper:
@@ -81,7 +81,9 @@ class FMEAIntegrationHelper:
             if not failure_mode:
                 failure_mode = FailureMode.LED_DRIFT
             severity = max(severity, Severity.MEDIUM)
-            mitigation = f"{mitigation or 'Review'} - Poor LED response linearity (R²={r_squared:.3f})"
+            mitigation = (
+                f"{mitigation or 'Review'} - Poor LED response linearity (R²={r_squared:.3f})"
+            )
 
         self.fmea.log_calibration_event(
             event_type="led_calibration",
@@ -231,7 +233,9 @@ class FMEAIntegrationHelper:
         if not passed:
             failure_mode = FailureMode.AFTERGLOW_AMPLITUDE_HIGH
             severity = Severity.MEDIUM
-            mitigation = "High amplitude suggests LED timing issue - increase settle delay from 45ms to 75ms"
+            mitigation = (
+                "High amplitude suggests LED timing issue - increase settle delay from 45ms to 75ms"
+            )
 
         self.fmea.log_afterglow_event(
             event_type="afterglow_amplitude_check",
@@ -335,9 +339,7 @@ class FMEAIntegrationHelper:
         elif peak_degraded:
             failure_mode = FailureMode.PEAK_QUALITY_DEGRADED
             severity = Severity.MEDIUM
-            mitigation = (
-                "FWHM degraded - check sensor temperature, verify optical alignment"
-            )
+            mitigation = "FWHM degraded - check sensor temperature, verify optical alignment"
         elif noisy:
             failure_mode = FailureMode.PEAK_QUALITY_DEGRADED
             severity = Severity.LOW
@@ -467,7 +469,8 @@ class FMEAIntegrationHelper:
         # Query recent events from both phases
         cal_events = self.fmea.query_events(phase="calibration", time_window_minutes=30)
         afterglow_events = self.fmea.query_events(
-            phase="afterglow", time_window_minutes=30,
+            phase="afterglow",
+            time_window_minutes=30,
         )
 
         if not cal_events or not afterglow_events:
@@ -506,7 +509,8 @@ class FMEAIntegrationHelper:
         """
         # Query recent afterglow and live events
         afterglow_events = self.fmea.query_events(
-            phase="afterglow", time_window_minutes=60,
+            phase="afterglow",
+            time_window_minutes=60,
         )
         live_events = self.fmea.query_events(phase="live_data", time_window_minutes=10)
 
@@ -514,9 +518,7 @@ class FMEAIntegrationHelper:
             return
 
         # Check if afterglow validation passed
-        afterglow_passed = (
-            sum(e.passed for e in afterglow_events) / len(afterglow_events) > 0.75
-        )
+        afterglow_passed = sum(e.passed for e in afterglow_events) / len(afterglow_events) > 0.75
 
         # Check live data quality
         live_passed = sum(e.passed for e in live_events) / len(live_events)
@@ -528,9 +530,7 @@ class FMEAIntegrationHelper:
                 channel=None,
                 passed=False,
                 metrics={
-                    "afterglow_validation_pass_rate": sum(
-                        e.passed for e in afterglow_events
-                    )
+                    "afterglow_validation_pass_rate": sum(e.passed for e in afterglow_events)
                     / len(afterglow_events),
                     "live_data_pass_rate": live_passed,
                 },

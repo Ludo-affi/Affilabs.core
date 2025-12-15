@@ -1,15 +1,15 @@
 """Hover Inspector - Shows widget info when you hover over it."""
 
 import logging
+
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt, QObject, QEvent
 
 logger = logging.getLogger(__name__)
 
 
 class HoverInspector(QObject):
-    """
-    Shows widget information in status bar when hovering with Ctrl pressed.
+    """Shows widget information in status bar when hovering with Ctrl pressed.
     Click while Ctrl+hovering to copy inspect command to UI Inspector Console.
     """
 
@@ -49,7 +49,7 @@ class HoverInspector(QObject):
 
             # Show info on hover when Ctrl is pressed
             if event.type() == QEvent.Type.Enter and self.ctrl_pressed:
-                if hasattr(watched, 'objectName'):
+                if hasattr(watched, "objectName"):
                     widget_info = self._get_widget_info(watched)
                     if widget_info:
                         self.last_hover_widget = watched
@@ -61,12 +61,15 @@ class HoverInspector(QObject):
             if event.type() == QEvent.Type.MouseButtonRelease and self.ctrl_pressed:
                 if self.last_hover_command:
                     # Open inspector if not open
-                    if not hasattr(self.mainwindow, '_inspector_console') or self.mainwindow._inspector_console is None:
+                    if (
+                        not hasattr(self.mainwindow, "_inspector_console")
+                        or self.mainwindow._inspector_console is None
+                    ):
                         self.mainwindow.open_ui_inspector()
 
                     # Set command in console
                     console = self.mainwindow._inspector_console
-                    if console and hasattr(console, 'input'):
+                    if console and hasattr(console, "input"):
                         console.input.setText(self.last_hover_command)
                         console.input.setFocus()
                         console.show()
@@ -78,7 +81,7 @@ class HoverInspector(QObject):
                     # Don't consume the event - let normal click handling continue
                     return False
 
-        except Exception as e:
+        except Exception:
             # Silently handle any errors to prevent crashes
             pass
 
@@ -116,11 +119,11 @@ class HoverInspector(QObject):
 
         # Second priority: check common direct paths
         paths_to_check = [
-            ('mw.sidebar', getattr(mw, 'sidebar', None)),
-            ('mw.sensorgram', getattr(mw, 'sensorgram', None)),
-            ('mw.spectroscopy', getattr(mw, 'spectroscopy', None)),
-            ('mw.data_processing', getattr(mw, 'data_processing', None)),
-            ('mw.data_analysis', getattr(mw, 'data_analysis', None)),
+            ("mw.sidebar", getattr(mw, "sidebar", None)),
+            ("mw.sensorgram", getattr(mw, "sensorgram", None)),
+            ("mw.spectroscopy", getattr(mw, "spectroscopy", None)),
+            ("mw.data_processing", getattr(mw, "data_processing", None)),
+            ("mw.data_analysis", getattr(mw, "data_analysis", None)),
         ]
 
         for path, obj in paths_to_check:
@@ -128,17 +131,23 @@ class HoverInspector(QObject):
                 return path
 
         # Third priority: check sidebar children
-        if hasattr(mw, 'sidebar'):
+        if hasattr(mw, "sidebar"):
             sidebar_paths = [
-                ('mw.sidebar.device_widget', getattr(mw.sidebar, 'device_widget', None)),
-                ('mw.sidebar.kinetic_widget', getattr(mw.sidebar, 'kinetic_widget', None)),
+                (
+                    "mw.sidebar.device_widget",
+                    getattr(mw.sidebar, "device_widget", None),
+                ),
+                (
+                    "mw.sidebar.kinetic_widget",
+                    getattr(mw.sidebar, "kinetic_widget", None),
+                ),
             ]
             for path, obj in sidebar_paths:
                 if obj is target:
                     return path
 
         # Last resort: try recursive search
-        found = self._search_widget(target, mw, 'mw', max_depth=3)
+        found = self._search_widget(target, mw, "mw", max_depth=3)
         if found:
             return found
 
@@ -153,14 +162,28 @@ class HoverInspector(QObject):
             return path
 
         # Common attributes to search
-        attrs = ['sidebar', 'device_widget', 'sensorgram', 'spectroscopy',
-                'data_processing', 'data_analysis', 'kinetic_widget', 'ui']
+        attrs = [
+            "sidebar",
+            "device_widget",
+            "sensorgram",
+            "spectroscopy",
+            "data_processing",
+            "data_analysis",
+            "kinetic_widget",
+            "ui",
+        ]
 
         for attr in attrs:
             if hasattr(current, attr):
                 try:
                     child = getattr(current, attr)
-                    result = self._search_widget(target, child, f"{path}.{attr}", max_depth, depth + 1)
+                    result = self._search_widget(
+                        target,
+                        child,
+                        f"{path}.{attr}",
+                        max_depth,
+                        depth + 1,
+                    )
                     if result:
                         return result
                 except:
@@ -170,11 +193,9 @@ class HoverInspector(QObject):
 
 
 def install_hover_inspector(mainwindow):
-    """
-    Install hover inspector (shows widget info when you Ctrl+hover).
+    """Install hover inspector (shows widget info when you Ctrl+hover).
     Click while Ctrl+hovering to copy inspect command to UI Inspector Console.
     Returns the inspector object. Call .enable() to activate.
     """
     inspector = HoverInspector(mainwindow)
     return inspector
-

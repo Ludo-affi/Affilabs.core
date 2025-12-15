@@ -1,8 +1,8 @@
 # Firmware V2.2 Complete Bug Fix & Hardening
 
-**Date**: December 14, 2025  
-**Issue**: Wavelength spikes every ~50 cycles in rankbatch mode  
-**Root Cause**: Multiple ISR state machine logic bugs and race conditions  
+**Date**: December 14, 2025
+**Issue**: Wavelength spikes every ~50 cycles in rankbatch mode
+**Root Cause**: Multiple ISR state machine logic bugs and race conditions
 
 ---
 
@@ -58,7 +58,7 @@ if (elapsed >= 1) {  // ROBUST: Works even if ISR delayed
 }
 ```
 
-**Effect**: 
+**Effect**:
 - Handles ISR delays gracefully (flash writes, USB interrupts)
 - If elapsed jumps 0→2, LED still turns on (would have been stuck before)
 - **This was the primary cause of periodic timing glitches**
@@ -191,12 +191,12 @@ void rankbatch_start(...) {
 ```c
 void rankbatch_start(...) {
     uint32_t ints = save_and_disable_interrupts();
-    
+
     led_sequencer.intensities[0] = ia;
     led_sequencer.intensities[1] = ib;
     // ... more config ...
     led_sequencer.active = true;
-    
+
     restore_interrupts(ints);
 }
 ```
@@ -313,12 +313,12 @@ python main-simplified.py
 ## Technical Notes
 
 ### ISR Best Practices Applied
-✅ Volatile for shared state  
-✅ Critical sections for multi-step operations  
-✅ Atomic read-modify-write for events  
-✅ No blocking calls in ISR  
-✅ Hardware-only operations (PWM)  
-✅ Event queue pattern for ISR-to-main communication  
+✅ Volatile for shared state
+✅ Critical sections for multi-step operations
+✅ Atomic read-modify-write for events
+✅ No blocking calls in ISR
+✅ Hardware-only operations (PWM)
+✅ Event queue pattern for ISR-to-main communication
 
 ### Timing Safety Calculation
 ```

@@ -1,15 +1,15 @@
-"""
-Performance Analysis: Current vs. Target Baseline Noise
+"""Performance Analysis: Current vs. Target Baseline Noise
 Comparing EMA approach to original method requirements
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 # Load baseline data
 data_file = Path("src/baseline_data/baseline_wavelengths_20251126_223040.csv")
-df = pd.read_csv(data_file, header=None, on_bad_lines='skip')
+df = pd.read_csv(data_file, header=None, on_bad_lines="skip")
 
 # Filter numeric rows
 numeric_rows = []
@@ -21,15 +21,15 @@ for idx, row in df.iterrows():
         pass
 
 df = pd.DataFrame(numeric_rows)
-df = df.apply(pd.to_numeric, errors='coerce')
+df = df.apply(pd.to_numeric, errors="coerce")
 
 # Extract Channel A (best channel)
 ch_a_wave = df[0].dropna().values
 ch_a_time = df[1].dropna().values
 
-print("="*80)
+print("=" * 80)
 print("PERFORMANCE ANALYSIS: Current vs. Target")
-print("="*80)
+print("=" * 80)
 print()
 
 # Calculate sampling rate
@@ -50,13 +50,14 @@ print()
 
 # Target specification
 target_pp = 0.008  # nm = 8 pm
-print(f"TARGET SPECIFICATION:")
+print("TARGET SPECIFICATION:")
 print(f"  Peak-to-peak: {target_pp:.4f} nm = {target_pp*1000:.1f} pm")
 print(f"  Required improvement: {orig_pp/target_pp:.1f}x reduction needed!")
 print()
 
 # Detrend the data (remove linear drift)
 from scipy.stats import linregress
+
 slope, intercept, _, _, _ = linregress(ch_a_time, ch_a_wave)
 trend = slope * ch_a_time + intercept
 detrended = ch_a_wave - trend
@@ -70,13 +71,15 @@ print(f"  Peak-to-peak: {detrended_pp:.4f} nm = {detrended_pp*1000:.1f} pm")
 print(f"  Improvement: {orig_pp/detrended_pp:.1f}x better")
 print()
 
+
 # Calculate what EMA would achieve
 def apply_ema(data, alpha):
     smoothed = np.zeros_like(data)
     smoothed[0] = data[0]
     for i in range(1, len(data)):
-        smoothed[i] = alpha * data[i] + (1 - alpha) * smoothed[i-1]
+        smoothed[i] = alpha * data[i] + (1 - alpha) * smoothed[i - 1]
     return smoothed
+
 
 print("EMA PERFORMANCE (alpha=0.1, tau=10 samples):")
 ema_data = apply_ema(ch_a_wave, 0.1)
@@ -90,8 +93,10 @@ print()
 
 # What alpha would we need?
 print("TESTING DIFFERENT EMA ALPHA VALUES:")
-print(f"{'Alpha':<10} {'Tau (samples)':<15} {'Lag (sec)':<12} {'P-P (nm)':<12} {'P-P (pm)':<12} {'vs Target':<15}")
-print("-"*90)
+print(
+    f"{'Alpha':<10} {'Tau (samples)':<15} {'Lag (sec)':<12} {'P-P (nm)':<12} {'P-P (pm)':<12} {'vs Target':<15}",
+)
+print("-" * 90)
 
 for alpha in [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5]:
     tau = 1.0 / alpha
@@ -100,12 +105,14 @@ for alpha in [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5]:
     pp_nm = np.max(ema_test) - np.min(ema_test)
     pp_pm = pp_nm * 1000
     vs_target = pp_nm / target_pp
-    print(f"{alpha:<10.2f} {tau:<15.1f} {lag_sec:<12.1f} {pp_nm:<12.4f} {pp_pm:<12.1f} {vs_target:<15.1f}x")
+    print(
+        f"{alpha:<10.2f} {tau:<15.1f} {lag_sec:<12.1f} {pp_nm:<12.4f} {pp_pm:<12.1f} {vs_target:<15.1f}x",
+    )
 
 print()
-print("="*80)
+print("=" * 80)
 print("CRITICAL FINDINGS")
-print("="*80)
+print("=" * 80)
 print()
 
 print("1. MAGNITUDE GAP:")
@@ -145,9 +152,9 @@ print("   - Software: Wavelength calibration/drift correction")
 print("   - Software: Reference subtraction (not just division)")
 print()
 
-print("="*80)
+print("=" * 80)
 print("RECOMMENDATION")
-print("="*80)
+print("=" * 80)
 print()
 
 print("ABANDON EMA PRE-SMOOTHING APPROACH:")
@@ -173,9 +180,9 @@ print("  5. Verify Fourier alpha=9000 is still optimal")
 print()
 
 # Check what moving average window would be needed
-print("="*80)
+print("=" * 80)
 print("THEORETICAL ANALYSIS: Averaging Required")
-print("="*80)
+print("=" * 80)
 print()
 
 # If we have 2.6 nm noise and need 0.008 nm, with Gaussian averaging:
@@ -183,7 +190,7 @@ print()
 # N = (std_in / std_out)^2
 
 required_reduction = orig_pp / target_pp
-required_samples = required_reduction ** 2
+required_samples = required_reduction**2
 
 print(f"To reduce {orig_pp:.4f} nm to {target_pp:.4f} nm:")
 print(f"  Reduction factor: {required_reduction:.1f}x")

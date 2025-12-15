@@ -1,13 +1,12 @@
 """Widget Context Menu - Right-click any widget to inspect it."""
 
-from PySide6.QtWidgets import QMenu, QApplication
-from PySide6.QtCore import Qt, QObject, QEvent
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QApplication, QMenu
 
 
 class WidgetInspectorContextMenu(QObject):
-    """
-    Global event filter that adds right-click inspect to all widgets.
+    """Global event filter that adds right-click inspect to all widgets.
     Right-click any widget → "🔧 Inspect This Widget" appears.
     """
 
@@ -33,7 +32,12 @@ class WidgetInspectorContextMenu(QObject):
 
         if event.type() == QEvent.Type.ContextMenuEvent:
             # Only for widgets, not the console itself
-            if hasattr(watched, 'objectName') and watched is not self.mainwindow._inspector_console if hasattr(self.mainwindow, '_inspector_console') else True:
+            if (
+                hasattr(watched, "objectName")
+                and watched is not self.mainwindow._inspector_console
+                if hasattr(self.mainwindow, "_inspector_console")
+                else True
+            ):
                 try:
                     self._show_inspect_menu(watched, event.globalPos())
                     return True  # Consume the event
@@ -82,17 +86,21 @@ class WidgetInspectorContextMenu(QObject):
         clipboard.setText(command)
 
         # Show feedback
-        from widgets.message import show_message
+        from affilabs.widgets.message import show_message
+
         show_message(
             msg_type="Information",
             msg=f"Command copied to clipboard:\n\n{command}\n\nPaste into UI Inspector Console (Ctrl+Shift+I)",
-            title="Inspect Command Copied"
+            title="Inspect Command Copied",
         )
 
     def _run_inspect(self, widget):
         """Run inspect command directly in console."""
         # Open console if not open
-        if not hasattr(self.mainwindow, '_inspector_console') or self.mainwindow._inspector_console is None:
+        if (
+            not hasattr(self.mainwindow, "_inspector_console")
+            or self.mainwindow._inspector_console is None
+        ):
             self.mainwindow.open_ui_inspector()
 
         # Generate and run command
@@ -116,13 +124,30 @@ class WidgetInspectorContextMenu(QObject):
 
         # Check common paths
         paths_to_check = [
-            ('mw.sidebar', mw.sidebar if hasattr(mw, 'sidebar') else None),
-            ('mw.sidebar.device_widget', mw.sidebar.device_widget if hasattr(mw, 'sidebar') and hasattr(mw.sidebar, 'device_widget') else None),
-            ('mw.sidebar.device_widget.device_status_widget',
-             mw.sidebar.device_widget.device_status_widget if hasattr(mw, 'sidebar') and hasattr(mw.sidebar, 'device_widget') and hasattr(mw.sidebar.device_widget, 'device_status_widget') else None),
-            ('mw.sensorgram', mw.sensorgram if hasattr(mw, 'sensorgram') else None),
-            ('mw.spectroscopy', mw.spectroscopy if hasattr(mw, 'spectroscopy') else None),
-            ('mw.settings_panel', mw.settings_panel if hasattr(mw, 'settings_panel') else None),
+            ("mw.sidebar", mw.sidebar if hasattr(mw, "sidebar") else None),
+            (
+                "mw.sidebar.device_widget",
+                mw.sidebar.device_widget
+                if hasattr(mw, "sidebar") and hasattr(mw.sidebar, "device_widget")
+                else None,
+            ),
+            (
+                "mw.sidebar.device_widget.device_status_widget",
+                mw.sidebar.device_widget.device_status_widget
+                if hasattr(mw, "sidebar")
+                and hasattr(mw.sidebar, "device_widget")
+                and hasattr(mw.sidebar.device_widget, "device_status_widget")
+                else None,
+            ),
+            ("mw.sensorgram", mw.sensorgram if hasattr(mw, "sensorgram") else None),
+            (
+                "mw.spectroscopy",
+                mw.spectroscopy if hasattr(mw, "spectroscopy") else None,
+            ),
+            (
+                "mw.settings_panel",
+                mw.settings_panel if hasattr(mw, "settings_panel") else None,
+            ),
         ]
 
         # Check if widget matches any known path
@@ -131,7 +156,7 @@ class WidgetInspectorContextMenu(QObject):
                 return path
 
         # Try to find by searching from mainwindow
-        found_path = self._search_for_widget(widget, mw, 'mw')
+        found_path = self._search_for_widget(widget, mw, "mw")
         if found_path:
             return found_path
 
@@ -151,11 +176,24 @@ class WidgetInspectorContextMenu(QObject):
             return path
 
         # Check common attributes
-        for attr_name in ['sidebar', 'device_widget', 'device_status_widget', 'sensorgram',
-                          'spectroscopy', 'settings_panel', 'kinetic_widget']:
+        for attr_name in [
+            "sidebar",
+            "device_widget",
+            "device_status_widget",
+            "sensorgram",
+            "spectroscopy",
+            "settings_panel",
+            "kinetic_widget",
+        ]:
             if hasattr(current, attr_name):
                 attr = getattr(current, attr_name)
-                result = self._search_for_widget(target, attr, f"{path}.{attr_name}", max_depth, current_depth + 1)
+                result = self._search_for_widget(
+                    target,
+                    attr,
+                    f"{path}.{attr_name}",
+                    max_depth,
+                    current_depth + 1,
+                )
                 if result:
                     return result
 
@@ -163,8 +201,7 @@ class WidgetInspectorContextMenu(QObject):
 
 
 def install_right_click_inspect(mainwindow):
-    """
-    Install right-click inspect functionality (disabled by default).
+    """Install right-click inspect functionality (disabled by default).
     Call this in mainwindow.__init__()
 
     Returns the context menu object. Call .enable() to activate.

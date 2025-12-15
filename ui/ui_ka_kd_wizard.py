@@ -49,7 +49,10 @@ class Ui_KAKDWizardDialog:
         self.horizontalLayout = QHBoxLayout(self.graph)
         self.horizontalLayout.setObjectName("horizontalLayout")
         self.horizontalSpacer = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
@@ -62,7 +65,7 @@ class Ui_KAKDWizardDialog:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.label_cur_info.sizePolicy().hasHeightForWidth()
+            self.label_cur_info.sizePolicy().hasHeightForWidth(),
         )
         self.label_cur_info.setSizePolicy(sizePolicy1)
         font1 = QFont()
@@ -74,7 +77,10 @@ class Ui_KAKDWizardDialog:
         self.verticalLayout_2.addWidget(self.label_cur_info)
 
         self.verticalSpacer = QSpacerItem(
-            20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            40,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer)
@@ -160,7 +166,7 @@ class Ui_KAKDWizardDialog:
         self.affinity_result = QGroupBox(self.frame_2)
         self.affinity_result.setObjectName("affinity_result")
         sizePolicy.setHeightForWidth(
-            self.affinity_result.sizePolicy().hasHeightForWidth()
+            self.affinity_result.sizePolicy().hasHeightForWidth(),
         )
         self.affinity_result.setSizePolicy(sizePolicy)
         self.affinity_result.setMinimumSize(QSize(360, 70))
@@ -265,7 +271,10 @@ class Ui_KAKDWizardDialog:
         self.horizontalLayout_2 = QHBoxLayout(self.frame)
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.horizontalSpacer_2 = QSpacerItem(
-            20, 20, QSizePolicy.Fixed, QSizePolicy.Minimum
+            20,
+            20,
+            QSizePolicy.Fixed,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
@@ -293,13 +302,16 @@ class Ui_KAKDWizardDialog:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_2.addWidget(self.btn_kd)
 
         self.horizontalSpacer_3 = QSpacerItem(
-            20, 20, QSizePolicy.Fixed, QSizePolicy.Minimum
+            20,
+            20,
+            QSizePolicy.Fixed,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_3)
@@ -329,7 +341,7 @@ class Ui_KAKDWizardDialog:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/save.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -356,38 +368,42 @@ class Ui_KAKDWizardDialog:
 
     def retranslateUi(self, KAKDWizardDialog):
         KAKDWizardDialog.setWindowTitle(
-            QCoreApplication.translate("KAKDWizardDialog", "Kinetic Wizard", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Kinetic Wizard", None),
         )
         self.label_cur_info.setText("")
         ___qtablewidgetitem = self.table.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(
-            QCoreApplication.translate("KAKDWizardDialog", "Cycle", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Cycle", None),
         )
         ___qtablewidgetitem1 = self.table.horizontalHeaderItem(1)
         ___qtablewidgetitem1.setText(
-            QCoreApplication.translate("KAKDWizardDialog", "Conc'n (nM)", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Conc'n (nM)", None),
         )
         ___qtablewidgetitem2 = self.table.horizontalHeaderItem(2)
         ___qtablewidgetitem2.setText(
             QCoreApplication.translate(
-                "KAKDWizardDialog", "Association\nShift (RU)", None
-            )
+                "KAKDWizardDialog",
+                "Association\nShift (RU)",
+                None,
+            ),
         )
         ___qtablewidgetitem3 = self.table.horizontalHeaderItem(3)
         ___qtablewidgetitem3.setText(
             QCoreApplication.translate(
-                "KAKDWizardDialog", "Dissociation\nShift (RU)", None
-            )
+                "KAKDWizardDialog",
+                "Dissociation\nShift (RU)",
+                None,
+            ),
         )
         self.groupBox_2.setTitle(
-            QCoreApplication.translate("KAKDWizardDialog", "Channel", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Channel", None),
         )
         self.ch_a.setText(QCoreApplication.translate("KAKDWizardDialog", "A", None))
         self.ch_b.setText(QCoreApplication.translate("KAKDWizardDialog", "B", None))
         self.ch_c.setText(QCoreApplication.translate("KAKDWizardDialog", "C", None))
         self.ch_d.setText(QCoreApplication.translate("KAKDWizardDialog", "D", None))
         self.affinity_result.setTitle(
-            QCoreApplication.translate("KAKDWizardDialog", "Results", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Results", None),
         )
         self.label.setText(QCoreApplication.translate("KAKDWizardDialog", "KD:", None))
         self.lb_KD.setText("")
@@ -396,17 +412,19 @@ class Ui_KAKDWizardDialog:
                 "KAKDWizardDialog",
                 '<html><head/><body><p>R<span style=" vertical-align:sub;">MAX</span>:</p></body></html>',
                 None,
-            )
+            ),
         )
         self.lb_Rmax.setText("")
         self.label_4.setText(
             QCoreApplication.translate(
-                "KAKDWizardDialog", "<html><head/><body><p>ka:</p></body></html>", None
-            )
+                "KAKDWizardDialog",
+                "<html><head/><body><p>ka:</p></body></html>",
+                None,
+            ),
         )
         self.lb_ka.setText("")
         self.label_3.setText(
-            QCoreApplication.translate("KAKDWizardDialog", "kd:", None)
+            QCoreApplication.translate("KAKDWizardDialog", "kd:", None),
         )
         self.lb_kd.setText("")
         self.label_5.setText(
@@ -414,15 +432,15 @@ class Ui_KAKDWizardDialog:
                 "KAKDWizardDialog",
                 '<html><head/><body><p>R<span style=" vertical-align:super;">2</span>:</p></body></html>',
                 None,
-            )
+            ),
         )
         self.lb_r_sq.setText("")
         self.btn_kd.setText(
-            QCoreApplication.translate("KAKDWizardDialog", "Calculate\nResults", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Calculate\nResults", None),
         )
         # if QT_CONFIG(tooltip)
         self.btn_save.setToolTip(
-            QCoreApplication.translate("KAKDWizardDialog", "Export Segment Data", None)
+            QCoreApplication.translate("KAKDWizardDialog", "Export Segment Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.btn_save.setText("")

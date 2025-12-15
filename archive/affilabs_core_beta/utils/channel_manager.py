@@ -17,13 +17,12 @@ Design Goals:
 from __future__ import annotations
 
 import time
-from typing import Optional
 from dataclasses import dataclass
 
 import numpy as np
 
-from utils.logger import logger
 from settings import CH_LIST, EZ_CH_LIST
+from utils.logger import logger
 
 
 @dataclass
@@ -34,7 +33,9 @@ class ChannelConfig:
         device_type: Controller type ('PicoP4SPR', 'EZSPR', 'PicoEZSPR', etc.)
         single_mode: Whether single-channel mode is enabled
         single_channel: Which channel to use in single-channel mode
+
     """
+
     device_type: str = ""
     single_mode: bool = False
     single_channel: str = "x"
@@ -54,6 +55,7 @@ class ChannelManager:
         >>> mgr.configure(device_type='PicoP4SPR', single_mode=False)
         >>> mgr.add_data_point('a', wavelength=680.5, timestamp=1.23)
         >>> data = mgr.get_sensorgram_data()
+
     """
 
     def __init__(self):
@@ -68,19 +70,29 @@ class ChannelManager:
         self._current_length = {ch: 0 for ch in CH_LIST}
 
         # Raw wavelength values (unfiltered) - preallocated
-        self.lambda_values = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
+        self.lambda_values = {
+            ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST
+        }
 
         # Timestamps for raw values - preallocated
-        self.lambda_times = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
+        self.lambda_times = {
+            ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST
+        }
 
         # Filtered wavelength values (after temporal filtering) - preallocated
-        self.filtered_lambda = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
+        self.filtered_lambda = {
+            ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST
+        }
 
         # Buffered (delayed) raw values for synchronization - preallocated
-        self.buffered_lambda = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
+        self.buffered_lambda = {
+            ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST
+        }
 
         # Timestamps for buffered values - preallocated
-        self.buffered_times = {ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST}
+        self.buffered_times = {
+            ch: np.full(self._buffer_capacity, np.nan) for ch in CH_LIST
+        }
 
         # Current buffer index (for median filter delay)
         self.buffer_index = 0
@@ -101,6 +113,7 @@ class ChannelManager:
             device_type: Controller type
             single_mode: Enable single-channel mode
             single_channel: Channel to use in single-channel mode
+
         """
         self.config = ChannelConfig(
             device_type=device_type,
@@ -109,7 +122,7 @@ class ChannelManager:
         )
         logger.debug(
             f"ChannelManager configured: device={device_type}, "
-            f"single_mode={single_mode}, single_ch={single_channel}"
+            f"single_mode={single_mode}, single_ch={single_channel}",
         )
 
     def get_active_channels(self) -> list[str]:
@@ -117,20 +130,20 @@ class ChannelManager:
 
         Returns:
             List of channel identifiers ('a', 'b', 'c', 'd')
+
         """
         if self.config.single_mode:
             return [self.config.single_channel]
-        elif self.config.device_type in ["EZSPR", "PicoEZSPR"]:
+        if self.config.device_type in ["EZSPR", "PicoEZSPR"]:
             return EZ_CH_LIST
-        else:
-            return CH_LIST
+        return CH_LIST
 
     def add_data_point(
         self,
         channel: str,
         wavelength: float,
         timestamp: float,
-        filtered_value: Optional[float] = None,
+        filtered_value: float | None = None,
     ) -> None:
         """Add a new data point for a channel.
 
@@ -145,6 +158,7 @@ class ChannelManager:
             wavelength: Raw resonance wavelength (nm)
             timestamp: Time since experiment start (seconds)
             filtered_value: Filtered wavelength (nm), if available
+
         """
         if channel not in self.lambda_values:
             logger.warning(f"Unknown channel: {channel}")
@@ -228,7 +242,6 @@ class ChannelManager:
         synchronized lengths through shared _current_length counter.
         """
         # This method is now a no-op but kept for backwards compatibility
-        pass
 
     def check_synchronization(self) -> bool:
         """Check if all channels are synchronized (same length).
@@ -238,6 +251,7 @@ class ChannelManager:
 
         Returns:
             Always True with preallocated buffers
+
         """
         return True
 
@@ -253,15 +267,16 @@ class ChannelManager:
                 'b': {...},
                 ...
             }
+
         """
         data = {}
         # Only return the valid data points per channel
         for ch in CH_LIST:
             n = self._current_length[ch]
             data[ch] = {
-                'times': self.buffered_times[ch][:n].copy(),
-                'values': self.buffered_lambda[ch][:n].copy(),
-                'filtered': self.filtered_lambda[ch][:n].copy(),
+                "times": self.buffered_times[ch][:n].copy(),
+                "values": self.buffered_lambda[ch][:n].copy(),
+                "filtered": self.filtered_lambda[ch][:n].copy(),
             }
         return data
 
@@ -273,6 +288,7 @@ class ChannelManager:
 
         Returns:
             Dictionary with channel data
+
         """
         # For now, use same format as sensorgram
         return self.get_sensorgram_data()
@@ -282,20 +298,19 @@ class ChannelManager:
 
         Returns:
             Dictionary with statistics per channel
+
         """
         stats = {}
         for ch in CH_LIST:
             n = self._current_length[ch]
             stats[ch] = {
-                'total_points': n,
-                'buffered_points': n,
-                'buffer_capacity': self._buffer_capacity,
-                'utilization': f"{100 * n / self._buffer_capacity:.1f}%",
-                'has_nan': np.isnan(self.buffered_lambda[ch][:n]).any(),
-                'latest_wavelength': (
-                    self.lambda_values[ch][n - 1]
-                    if n > 0
-                    else np.nan
+                "total_points": n,
+                "buffered_points": n,
+                "buffer_capacity": self._buffer_capacity,
+                "utilization": f"{100 * n / self._buffer_capacity:.1f}%",
+                "has_nan": np.isnan(self.buffered_lambda[ch][:n]).any(),
+                "latest_wavelength": (
+                    self.lambda_values[ch][n - 1] if n > 0 else np.nan
                 ),
             }
         return stats
@@ -330,6 +345,7 @@ class ChannelManager:
 
         Returns:
             Elapsed time in seconds since experiment start
+
         """
         return round(time.perf_counter() - self.exp_start_perf, 3)
 

@@ -1,20 +1,18 @@
-"""
-Trace the parsing logic to see what values would be extracted
-"""
+"""Trace the parsing logic to see what values would be extracted"""
 
 command = "rankbatch:100,150,200,250,1000,100,10\n"
-print(f"Command: {repr(command)}")
+print(f"Command: {command!r}")
 print(f"Length: {len(command)}")
 print()
 
 # Initialize arrays (C initializes with null bytes, not '0' chars)
-str_int_a = ['\0'] * 4
-str_int_b = ['\0'] * 4
-str_int_c = ['\0'] * 4
-str_int_d = ['\0'] * 4
-str_settling = ['\0'] * 5
-str_dark = ['\0'] * 5
-str_cycles = ['\0'] * 5
+str_int_a = ["\0"] * 4
+str_int_b = ["\0"] * 4
+str_int_c = ["\0"] * 4
+str_int_d = ["\0"] * 4
+str_settling = ["\0"] * 5
+str_dark = ["\0"] * 5
+str_cycles = ["\0"] * 5
 
 field = 0
 field_pos = 0
@@ -23,15 +21,15 @@ pos = 10  # Start after "rankbatch:"
 print(f"Starting parse at position {pos}")
 print()
 
-while pos < 48 and command[pos] != '\0' and command[pos] != '\n':
+while pos < 48 and command[pos] != "\0" and command[pos] != "\n":
     ch = command[pos]
-    print(f"pos={pos:2d} ch={repr(ch)} field={field} field_pos={field_pos}", end="")
+    print(f"pos={pos:2d} ch={ch!r} field={field} field_pos={field_pos}", end="")
 
-    if command[pos] == ',':
-        print(f" → COMMA: field++")
+    if command[pos] == ",":
+        print(" → COMMA: field++")
         field += 1
         field_pos = 0
-    elif command[pos] >= '0' and command[pos] <= '9':
+    elif command[pos] >= "0" and command[pos] <= "9":
         if field == 0 and field_pos < 3:
             str_int_a[field_pos] = command[pos]
             print(f" → str_int_a[{field_pos}] = '{command[pos]}'")
@@ -63,20 +61,20 @@ while pos < 48 and command[pos] != '\0' and command[pos] != '\n':
         else:
             print(f" → DROPPED (field={field}, field_pos={field_pos})")
     else:
-        print(f" → IGNORED")
+        print(" → IGNORED")
 
     pos += 1
 
 print()
-print("="*70)
+print("=" * 70)
 print("Final strings (null-terminated):")
-str_int_a_s = ''.join(str_int_a).split('\0')[0]
-str_int_b_s = ''.join(str_int_b).split('\0')[0]
-str_int_c_s = ''.join(str_int_c).split('\0')[0]
-str_int_d_s = ''.join(str_int_d).split('\0')[0]
-str_settling_s = ''.join(str_settling).split('\0')[0]
-str_dark_s = ''.join(str_dark).split('\0')[0]
-str_cycles_s = ''.join(str_cycles).split('\0')[0]
+str_int_a_s = "".join(str_int_a).split("\0")[0]
+str_int_b_s = "".join(str_int_b).split("\0")[0]
+str_int_c_s = "".join(str_int_c).split("\0")[0]
+str_int_d_s = "".join(str_int_d).split("\0")[0]
+str_settling_s = "".join(str_settling).split("\0")[0]
+str_dark_s = "".join(str_dark).split("\0")[0]
+str_cycles_s = "".join(str_cycles).split("\0")[0]
 
 print(f"str_int_a    = '{str_int_a_s}'")
 print(f"str_int_b    = '{str_int_b_s}'")

@@ -15,25 +15,27 @@ Usage:
     profiler.print_stats()
 """
 
-import time
 import threading
+import time
 from collections import defaultdict
 from contextlib import contextmanager
-from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+
 import numpy as np
+
 from utils.logger import logger
 
 
 @dataclass
 class TimingStats:
     """Statistics for a timed operation."""
+
     name: str
     count: int = 0
     total_time: float = 0.0
-    min_time: float = float('inf')
+    min_time: float = float("inf")
     max_time: float = 0.0
-    times: List[float] = field(default_factory=list)
+    times: list[float] = field(default_factory=list)
 
     def add_measurement(self, duration: float):
         """Add a timing measurement."""
@@ -89,11 +91,12 @@ class PerformanceProfiler:
 
         Args:
             enabled: If False, measurements are no-ops (zero overhead)
+
         """
         self.enabled = enabled
-        self.stats: Dict[str, TimingStats] = defaultdict(lambda: TimingStats(name=""))
+        self.stats: dict[str, TimingStats] = defaultdict(lambda: TimingStats(name=""))
         self._lock = threading.Lock()
-        self._active_timers: Dict[int, tuple] = {}  # thread_id -> (name, start_time)
+        self._active_timers: dict[int, tuple] = {}  # thread_id -> (name, start_time)
 
     @contextmanager
     def measure(self, name: str):
@@ -105,6 +108,7 @@ class PerformanceProfiler:
         Example:
             with profiler.measure('spectrum_processing'):
                 process_spectrum(data)
+
         """
         if not self.enabled:
             yield
@@ -140,15 +144,19 @@ class PerformanceProfiler:
             @profiler.measure_func('spectrum_processing')
             def process_spectrum(data):
                 ...
+
         """
+
         def decorator(func):
             def wrapper(*args, **kwargs):
                 with self.measure(name):
                     return func(*args, **kwargs)
+
             return wrapper
+
         return decorator
 
-    def get_stats(self, name: str) -> Optional[TimingStats]:
+    def get_stats(self, name: str) -> TimingStats | None:
         """Get statistics for a specific operation.
 
         Args:
@@ -156,15 +164,17 @@ class PerformanceProfiler:
 
         Returns:
             TimingStats object or None if not found
+
         """
         with self._lock:
             return self.stats.get(name)
 
-    def get_all_stats(self) -> Dict[str, TimingStats]:
+    def get_all_stats(self) -> dict[str, TimingStats]:
         """Get all timing statistics.
 
         Returns:
             Dictionary of operation name -> TimingStats
+
         """
         with self._lock:
             return dict(self.stats)
@@ -175,12 +185,13 @@ class PerformanceProfiler:
             self.stats.clear()
             self._active_timers.clear()
 
-    def print_stats(self, sort_by: str = 'total', min_calls: int = 10):
+    def print_stats(self, sort_by: str = "total", min_calls: int = 10):
         """Print formatted statistics table.
 
         Args:
             sort_by: Sort key ('total', 'mean', 'count', 'max')
             min_calls: Minimum number of calls to include in output
+
         """
         with self._lock:
             stats_list = list(self.stats.values())
@@ -193,20 +204,22 @@ class PerformanceProfiler:
             return
 
         # Sort
-        if sort_by == 'total':
+        if sort_by == "total":
             stats_list.sort(key=lambda s: s.total_time, reverse=True)
-        elif sort_by == 'mean':
+        elif sort_by == "mean":
             stats_list.sort(key=lambda s: s.mean_time, reverse=True)
-        elif sort_by == 'count':
+        elif sort_by == "count":
             stats_list.sort(key=lambda s: s.count, reverse=True)
-        elif sort_by == 'max':
+        elif sort_by == "max":
             stats_list.sort(key=lambda s: s.max_time, reverse=True)
 
         # Print header
         logger.info("=" * 120)
         logger.info("PERFORMANCE PROFILING RESULTS")
         logger.info("=" * 120)
-        logger.info(f"{'Operation':<40} {'Count':>8} {'Total(s)':>10} {'Mean(ms)':>10} {'Median(ms)':>10} {'P95(ms)':>10} {'P99(ms)':>10} {'Max(ms)':>10}")
+        logger.info(
+            f"{'Operation':<40} {'Count':>8} {'Total(s)':>10} {'Mean(ms)':>10} {'Median(ms)':>10} {'P95(ms)':>10} {'P99(ms)':>10} {'Max(ms)':>10}",
+        )
         logger.info("-" * 120)
 
         # Print rows
@@ -218,7 +231,7 @@ class PerformanceProfiler:
                 f"{stat.median_time*1000:>10.2f} "
                 f"{stat.p95_time*1000:>10.2f} "
                 f"{stat.p99_time*1000:>10.2f} "
-                f"{stat.max_time*1000:>10.2f}"
+                f"{stat.max_time*1000:>10.2f}",
             )
 
         logger.info("=" * 120)
@@ -226,7 +239,9 @@ class PerformanceProfiler:
         # Calculate totals
         total_time = sum(s.total_time for s in stats_list)
         total_calls = sum(s.count for s in stats_list)
-        logger.info(f"Total tracked time: {total_time:.3f}s across {total_calls} operations")
+        logger.info(
+            f"Total tracked time: {total_time:.3f}s across {total_calls} operations",
+        )
         logger.info("")
 
     def print_hotspots(self, top_n: int = 10):
@@ -234,6 +249,7 @@ class PerformanceProfiler:
 
         Args:
             top_n: Number of top operations to show
+
         """
         with self._lock:
             stats_list = list(self.stats.values())
@@ -257,7 +273,7 @@ class PerformanceProfiler:
             logger.info(
                 f"{i:2d}. {stat.name:<40} "
                 f"{stat.total_time:>8.3f}s ({pct:>5.1f}%) "
-                f"[{stat.count} calls, {stat.mean_time*1000:.2f}ms avg]"
+                f"[{stat.count} calls, {stat.mean_time*1000:.2f}ms avg]",
             )
 
         logger.info("=" * 80)
@@ -268,38 +284,55 @@ class PerformanceProfiler:
 
         Args:
             filepath: Output CSV file path
+
         """
         import csv
 
         with self._lock:
-            stats_list = sorted(self.stats.values(), key=lambda s: s.total_time, reverse=True)
+            stats_list = sorted(
+                self.stats.values(),
+                key=lambda s: s.total_time,
+                reverse=True,
+            )
 
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                'Operation', 'Count', 'Total(s)', 'Mean(ms)', 'Std(ms)',
-                'Median(ms)', 'P95(ms)', 'P99(ms)', 'Min(ms)', 'Max(ms)'
-            ])
+            writer.writerow(
+                [
+                    "Operation",
+                    "Count",
+                    "Total(s)",
+                    "Mean(ms)",
+                    "Std(ms)",
+                    "Median(ms)",
+                    "P95(ms)",
+                    "P99(ms)",
+                    "Min(ms)",
+                    "Max(ms)",
+                ],
+            )
 
             for stat in stats_list:
-                writer.writerow([
-                    stat.name,
-                    stat.count,
-                    f"{stat.total_time:.3f}",
-                    f"{stat.mean_time*1000:.2f}",
-                    f"{stat.std_time*1000:.2f}",
-                    f"{stat.median_time*1000:.2f}",
-                    f"{stat.p95_time*1000:.2f}",
-                    f"{stat.p99_time*1000:.2f}",
-                    f"{stat.min_time*1000:.2f}",
-                    f"{stat.max_time*1000:.2f}"
-                ])
+                writer.writerow(
+                    [
+                        stat.name,
+                        stat.count,
+                        f"{stat.total_time:.3f}",
+                        f"{stat.mean_time*1000:.2f}",
+                        f"{stat.std_time*1000:.2f}",
+                        f"{stat.median_time*1000:.2f}",
+                        f"{stat.p95_time*1000:.2f}",
+                        f"{stat.p99_time*1000:.2f}",
+                        f"{stat.min_time*1000:.2f}",
+                        f"{stat.max_time*1000:.2f}",
+                    ],
+                )
 
         logger.info(f"Profiling data exported to: {filepath}")
 
 
 # Global profiler instance
-_global_profiler: Optional[PerformanceProfiler] = None
+_global_profiler: PerformanceProfiler | None = None
 
 
 def get_profiler() -> PerformanceProfiler:
@@ -307,15 +340,18 @@ def get_profiler() -> PerformanceProfiler:
 
     Returns:
         Global PerformanceProfiler instance
+
     """
     global _global_profiler
     if _global_profiler is None:
         # Check if profiling is enabled via environment variable or settings
         import os
-        enabled = os.environ.get('SPR_PROFILING_ENABLED', '0') == '1'
+
+        enabled = os.environ.get("SPR_PROFILING_ENABLED", "0") == "1"
 
         try:
             from settings import PROFILING_ENABLED
+
             enabled = PROFILING_ENABLED
         except (ImportError, AttributeError):
             pass
@@ -325,7 +361,9 @@ def get_profiler() -> PerformanceProfiler:
         if enabled:
             logger.info("⏱️ Performance profiling ENABLED - timing measurements active")
         else:
-            logger.debug("Performance profiling DISABLED - set PROFILING_ENABLED=True in settings.py to enable")
+            logger.debug(
+                "Performance profiling DISABLED - set PROFILING_ENABLED=True in settings.py to enable",
+            )
 
     return _global_profiler
 

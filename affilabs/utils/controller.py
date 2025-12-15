@@ -223,7 +223,8 @@ class ArduinoController(StaticController):
                             baudrate=115200,
                             timeout=0.5,
                             write_timeout=0.5,
-                            dsrdtr=True, rtscts=False,
+                            dsrdtr=True,
+                            rtscts=False,
                         )
 
                         # Validate it's actually a P4SPR controller by testing basic commands
@@ -318,7 +319,7 @@ class ArduinoController(StaticController):
         BLOCKED during live acquisition - only available during OEM calibration.
         """
         # P4SPR safeguard: Block servo during live acquisition
-        if hasattr(self, '_acquisition_blocked') and self._acquisition_blocked:
+        if hasattr(self, "_acquisition_blocked") and self._acquisition_blocked:
             logger.warning("⚠️ Servo control BLOCKED during live acquisition")
             logger.warning("   Servo can only be moved during OEM calibration")
             return False
@@ -339,7 +340,7 @@ class ArduinoController(StaticController):
                 # Wait for ACK response (0x01)
                 for attempt in range(3):
                     resp = self._ser.read(1)
-                    if resp == b'\x01':  # ACK
+                    if resp == b"\x01":  # ACK
                         if attempt > 0:
                             logger.debug(
                                 f"set_mode('{mode}') succeeded after retry {attempt}",
@@ -640,8 +641,12 @@ class KineticController(FlowController):
                 logger.info(f"Found a KNX2 board - {dev}, trying to connect...")
                 try:
                     self._ser = serial.Serial(
-                        port=dev.device, baudrate=BAUD_RATE, timeout=3, write_timeout=1,
-                        dsrdtr=True, rtscts=False,
+                        port=dev.device,
+                        baudrate=BAUD_RATE,
+                        timeout=3,
+                        write_timeout=1,
+                        dsrdtr=True,
+                        rtscts=False,
                     )
                     info = self.get_info()
                     if info is not None:
@@ -798,37 +803,37 @@ class PicoP4SPR(StaticController):
             )
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    print(f"[CONTROLLER.PY] Opening serial port {dev.device}...")
                     logger.info(f"MATCH! Trying PicoP4SPR on {dev.device}")
                     # Increase timeouts to improve reliability on Windows
                     self._ser = serial.Serial(
-                        port=dev.device, baudrate=115200, timeout=1.0, write_timeout=1,
-                        dsrdtr=True, rtscts=False,
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=1.0,
+                        write_timeout=1,
+                        dsrdtr=True,
+                        rtscts=False,
                     )
-                    print(f"[CONTROLLER.PY] Serial port opened successfully")
                     # CRITICAL: Explicitly set DTR/RTS after opening (Pico USB CDC requirement)
                     self._ser.dtr = True
                     self._ser.rts = True
-                    print(f"[CONTROLLER.PY] DTR/RTS set to True")
                     import time
+
                     time.sleep(0.1)  # 100ms settle time after DTR/RTS
-                    print(f"[CONTROLLER.PY] Waited 100ms for DTR/RTS settle")
 
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
-                    print(f"[CONTROLLER.PY] Buffers flushed")
 
                     cmd = "id\n"
-                    print(f"[CONTROLLER.PY] Sending 'id' command...")
                     self._ser.write(cmd.encode())
 
                     time.sleep(0.5)  # 500ms delay matching PowerShell test
-                    print(f"[CONTROLLER.PY] Reading response...")
                     raw_reply = self._ser.readline()
-                    print(f"[CONTROLLER.PY] Raw reply bytes: {raw_reply}")
-                    reply = raw_reply[0:5].decode() if len(raw_reply) >= 5 else raw_reply.decode()
-                    print(f"[CONTROLLER.PY] Decoded reply: '{reply}'")
+                    reply = (
+                        raw_reply[0:5].decode()
+                        if len(raw_reply) >= 5
+                        else raw_reply.decode()
+                    )
                     logger.info(f"Pico P4SPR ID reply: '{reply}'")
                     if reply == "P4SPR":
                         cmd = "iv\n"
@@ -883,8 +888,12 @@ class PicoP4SPR(StaticController):
                 logger.info(f"Trying PicoP4SPR fallback on {dev.device}")
                 # Slightly higher timeout to handle slower Pico responses
                 self._ser = serial.Serial(
-                    port=dev.device, baudrate=115200, timeout=0.5, write_timeout=0.5,
-                    dsrdtr=True, rtscts=False,
+                    port=dev.device,
+                    baudrate=115200,
+                    timeout=0.5,
+                    write_timeout=0.5,
+                    dsrdtr=True,
+                    rtscts=False,
                 )
                 self._ser.reset_input_buffer()
                 self._ser.reset_output_buffer()
@@ -990,7 +999,7 @@ class PicoP4SPR(StaticController):
                     if self._ser.in_waiting > 0:
                         self._ser.reset_input_buffer()
                         time.sleep(0.01)
-                    
+
                     # Send query command
                     cmd = f"i{ch}\n"
                     self._ser.write(cmd.encode())
@@ -1014,7 +1023,8 @@ class PicoP4SPR(StaticController):
                         if self._ser.in_waiting > 0:
                             response2_bytes = self._ser.readline()
                             response2 = response2_bytes.decode(
-                                "utf-8", errors="ignore",
+                                "utf-8",
+                                errors="ignore",
                             ).strip()
                             logger.debug(f"LED {ch} second response: '{response2}'")
                             try:
@@ -1024,7 +1034,9 @@ class PicoP4SPR(StaticController):
 
                         # Suppress logging for CYCLE_START events (normal in CYCLE_SYNC mode)
                         if not response.startswith("CYCLE_START"):
-                            logger.debug(f"Invalid intensity response for {ch}: {response}")
+                            logger.debug(
+                                f"Invalid intensity response for {ch}: {response}",
+                            )
                         return -1
         except Exception as e:
             logger.debug(f"Error reading LED intensity: {e}")
@@ -1281,30 +1293,32 @@ class PicoP4SPR(StaticController):
                     # Now send batch intensity command with clean buffer
                     self._ser.reset_input_buffer()
                     self._ser.write(cmd.encode())
-                    
+
                     # Firmware v2.2 sends debug output followed by ACK '6'
                     # Wait for firmware to process, then read all response data
                     # V2.2.2: Increased from 0.1s to 0.15s to fix intermittent empty responses
-                    time.sleep(0.15)  # Let firmware fully process and send all debug output
-                    
+                    time.sleep(
+                        0.15,
+                    )  # Let firmware fully process and send all debug output
+
                     # Read all accumulated data
                     max_attempts = 3
                     success = False
-                    response = b''  # Initialize to avoid UnboundLocalError
+                    response = b""  # Initialize to avoid UnboundLocalError
                     for attempt in range(max_attempts):
                         if self._ser.in_waiting > 0:
                             response = self._ser.read(self._ser.in_waiting)
-                            if b'6' in response:
+                            if b"6" in response:
                                 success = True
                                 break
                             time.sleep(0.02)  # Small delay before retry
-                    
+
                     if not success:
                         # Last attempt - wait a bit more and read everything
                         time.sleep(0.05)
                         if self._ser.in_waiting > 0:
                             response = self._ser.read(self._ser.in_waiting)
-                            success = b'6' in response
+                            success = b"6" in response
 
                 if success:
                     # Update enabled channels tracking
@@ -1326,7 +1340,11 @@ class PicoP4SPR(StaticController):
             return False
 
     def led_rank_sequence(
-        self, test_intensity=128, settling_ms=45, dark_ms=5, timeout_s=10.0,
+        self,
+        test_intensity=128,
+        settling_ms=45,
+        dark_ms=5,
+        timeout_s=10.0,
     ):
         r"""Execute firmware-side LED ranking sequence for fast calibration (V1.2+).
 
@@ -1428,7 +1446,9 @@ class PicoP4SPR(StaticController):
                             "READ",
                             "DONE",
                         ]:
-                            logger.info(f"[RANK PROTOCOL] Yielding: ch='{ch}', signal='{signal}'")
+                            logger.info(
+                                f"[RANK PROTOCOL] Yielding: ch='{ch}', signal='{signal}'",
+                            )
                             yield (ch, signal)
                         else:
                             logger.warning(f"Unexpected signal format: {line}")
@@ -1500,14 +1520,18 @@ class PicoP4SPR(StaticController):
 
                     # Check if response indicates success
                     # v2.2 firmware may contaminate with debug output (e.g., b'6CYCLE:689')
-                    success = response == b"" or response == b"6" or response.startswith(b"6")
+                    success = (
+                        response == b"" or response == b"6" or response.startswith(b"6")
+                    )
 
                     if success:
                         # Only log success loudly if we received explicit ack; keep empty ack as quiet success
                         if response and response != b"6":
                             # Got ACK with trailing debug data
                             logger.info(
-                                f"[OK] Controller confirmed: {mode_name} servo moved (response: {response[:20]}...)" if len(response) > 20 else f"[OK] Controller confirmed: {mode_name} servo moved (response: {response})",
+                                f"[OK] Controller confirmed: {mode_name} servo moved (response: {response[:20]}...)"
+                                if len(response) > 20
+                                else f"[OK] Controller confirmed: {mode_name} servo moved (response: {response})",
                             )
                         elif response == b"6":
                             logger.info(
@@ -1770,7 +1794,10 @@ class PicoKNX2(FlowController):
                 for attempt in range(3):
                     try:
                         self._ser = serial.Serial(
-                            port=dev.device, baudrate=115200, timeout=1, write_timeout=3,
+                            port=dev.device,
+                            baudrate=115200,
+                            timeout=1,
+                            write_timeout=3,
                         )
                         cmd = "id\n"
                         self._ser.write(cmd.encode())
@@ -1949,7 +1976,10 @@ class PicoEZSPR(FlowController):
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
                     self._ser = serial.Serial(
-                        port=dev.device, baudrate=115200, timeout=5, write_timeout=5,
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=5,
+                        write_timeout=5,
                     )
                     cmd = "id\n"
                     self._ser.write(cmd.encode())
@@ -1986,7 +2016,10 @@ class PicoEZSPR(FlowController):
             try:
                 logger.debug(f"   Trying {dev.device}...")
                 self._ser = serial.Serial(
-                    port=dev.device, baudrate=115200, timeout=1, write_timeout=2,
+                    port=dev.device,
+                    baudrate=115200,
+                    timeout=1,
+                    write_timeout=2,
                 )
                 self._ser.reset_input_buffer()
                 self._ser.reset_output_buffer()
@@ -2496,6 +2529,3 @@ class PicoEZSPR(FlowController):
 
     def __str__(self) -> str:
         return "Pico Carrier Board"
-
-
-

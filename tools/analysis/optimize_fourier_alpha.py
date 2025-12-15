@@ -1,5 +1,4 @@
-"""
-Optimize Fourier Regularization Parameter (α) for Peak Detection
+"""Optimize Fourier Regularization Parameter (α) for Peak Detection
 
 Tests different α values to find optimal balance between:
 - Noise reduction (lower RU variation)
@@ -20,15 +19,17 @@ Usage:
     python optimize_fourier_alpha.py --synthetic
 """
 
-import time
-import numpy as np
 import argparse
-from pathlib import Path
-from scipy.fftpack import dst, idct
-from scipy.stats import linregress
 
 # Add parent directory to path
 import sys
+import time
+from pathlib import Path
+
+import numpy as np
+from scipy.fftpack import dst, idct
+from scipy.stats import linregress
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.logger import logger
@@ -43,6 +44,7 @@ def calculate_fourier_weights(spectrum_length: int, alpha: float) -> np.ndarray:
 
     Returns:
         Weight array for DST coefficients
+
     """
     n = spectrum_length - 1
     phi = np.pi / n * np.arange(1, n)
@@ -55,7 +57,7 @@ def find_peak_with_alpha(
     wavelengths: np.ndarray,
     spectrum: np.ndarray,
     alpha: float,
-    window: int = 165
+    window: int = 165,
 ) -> float:
     """Find SPR peak using Fourier derivative with specified α.
 
@@ -67,6 +69,7 @@ def find_peak_with_alpha(
 
     Returns:
         Peak wavelength in nm
+
     """
     try:
         # Linear baseline subtraction
@@ -119,7 +122,7 @@ def test_alpha_value(
     wavelengths: np.ndarray,
     spectra: list[np.ndarray],
     alpha: float,
-    window: int = 165
+    window: int = 165,
 ) -> dict:
     """Test a specific α value on multiple spectra.
 
@@ -131,6 +134,7 @@ def test_alpha_value(
 
     Returns:
         Dictionary with statistics for this α value
+
     """
     peaks = []
     computation_times = []
@@ -158,15 +162,15 @@ def test_alpha_value(
     mean_time = np.mean(computation_times)
 
     return {
-        'alpha': alpha,
-        'num_peaks': len(peaks),
-        'mean_peak_nm': mean_peak,
-        'std_nm': std_peak_nm,
-        'std_ru': std_peak_ru,
-        'peak_to_peak_nm': peak_to_peak_nm,
-        'peak_to_peak_ru': peak_to_peak_ru,
-        'mean_time_ms': mean_time,
-        'peaks': peaks_array
+        "alpha": alpha,
+        "num_peaks": len(peaks),
+        "mean_peak_nm": mean_peak,
+        "std_nm": std_peak_nm,
+        "std_ru": std_peak_ru,
+        "peak_to_peak_nm": peak_to_peak_nm,
+        "peak_to_peak_ru": peak_to_peak_ru,
+        "mean_time_ms": mean_time,
+        "peaks": peaks_array,
     }
 
 
@@ -174,7 +178,7 @@ def optimize_fourier_alpha(
     wavelengths: np.ndarray,
     spectra: list[np.ndarray],
     alpha_range: tuple[float, float] = (500, 10000),
-    num_tests: int = 20
+    num_tests: int = 20,
 ) -> dict:
     """Optimize α parameter by testing multiple values.
 
@@ -186,15 +190,18 @@ def optimize_fourier_alpha(
 
     Returns:
         Dictionary with optimization results
+
     """
     # Generate α values to test (logarithmic spacing)
     alpha_values = np.logspace(
         np.log10(alpha_range[0]),
         np.log10(alpha_range[1]),
-        num_tests
+        num_tests,
     )
 
-    logger.info(f"🔬 Testing {num_tests} α values from {alpha_range[0]} to {alpha_range[1]}")
+    logger.info(
+        f"🔬 Testing {num_tests} α values from {alpha_range[0]} to {alpha_range[1]}",
+    )
     logger.info(f"   Using {len(spectra)} spectra for evaluation")
     logger.info("")
 
@@ -209,7 +216,7 @@ def optimize_fourier_alpha(
                 f"   [{i:2d}/{num_tests}] α={alpha:7.0f} → "
                 f"σ={result['std_ru']:5.2f} RU, "
                 f"P2P={result['peak_to_peak_ru']:5.2f} RU, "
-                f"time={result['mean_time_ms']:.2f}ms"
+                f"time={result['mean_time_ms']:.2f}ms",
             )
         else:
             logger.warning(f"   [{i:2d}/{num_tests}] α={alpha:7.0f} → FAILED")
@@ -219,13 +226,13 @@ def optimize_fourier_alpha(
         return None
 
     # Find optimal α (minimum RU noise)
-    best_result = min(results, key=lambda r: r['std_ru'])
+    best_result = min(results, key=lambda r: r["std_ru"])
 
     logger.info("")
     logger.info("=" * 80)
     logger.info("📊 OPTIMIZATION RESULTS:")
     logger.info("")
-    logger.info(f"   Old software α: 2000")
+    logger.info("   Old software α: 2000")
     logger.info(f"   Optimal α: {best_result['alpha']:.0f}")
     logger.info("")
     logger.info(f"   Best noise (std dev): {best_result['std_ru']:.3f} RU")
@@ -234,45 +241,75 @@ def optimize_fourier_alpha(
     logger.info("")
 
     # Compare to α=2000 if available
-    old_software_result = next((r for r in results if abs(r['alpha'] - 2000) < 100), None)
+    old_software_result = next(
+        (r for r in results if abs(r["alpha"] - 2000) < 100),
+        None,
+    )
     if old_software_result:
-        logger.info(f"   Old software (α=2000):")
+        logger.info("   Old software (α=2000):")
         logger.info(f"      Noise: {old_software_result['std_ru']:.3f} RU")
         logger.info(f"      P2P: {old_software_result['peak_to_peak_ru']:.3f} RU")
         logger.info("")
 
-        improvement = (old_software_result['std_ru'] - best_result['std_ru']) / old_software_result['std_ru'] * 100
+        improvement = (
+            (old_software_result["std_ru"] - best_result["std_ru"])
+            / old_software_result["std_ru"]
+            * 100
+        )
         if improvement > 1:
             logger.info(f"   🎉 IMPROVEMENT: {improvement:.1f}% noise reduction!")
         elif improvement < -1:
             logger.info(f"   ⚠️ Old software α=2000 is better by {-improvement:.1f}%")
         else:
-            logger.info(f"   ✓ Performance similar (within 1%)")
+            logger.info("   ✓ Performance similar (within 1%)")
 
     logger.info("=" * 80)
 
     return {
-        'all_results': results,
-        'best_result': best_result,
-        'old_software_result': old_software_result,
-        'alpha_values': alpha_values.tolist()
+        "all_results": results,
+        "best_result": best_result,
+        "old_software_result": old_software_result,
+        "alpha_values": alpha_values.tolist(),
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Optimize Fourier α parameter')
-    parser.add_argument('input_file', nargs='?', default=None,
-                       help='NPY file with transmission spectrum (from debug folder)')
-    parser.add_argument('--synthetic', action='store_true',
-                       help='Generate synthetic test data')
-    parser.add_argument('--alpha-min', type=float, default=500,
-                       help='Minimum α to test')
-    parser.add_argument('--alpha-max', type=float, default=10000,
-                       help='Maximum α to test')
-    parser.add_argument('--num-tests', type=int, default=20,
-                       help='Number of α values to test')
-    parser.add_argument('--num-spectra', type=int, default=60,
-                       help='Number of spectra to use for testing (default: 60)')
+    parser = argparse.ArgumentParser(description="Optimize Fourier α parameter")
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        default=None,
+        help="NPY file with transmission spectrum (from debug folder)",
+    )
+    parser.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="Generate synthetic test data",
+    )
+    parser.add_argument(
+        "--alpha-min",
+        type=float,
+        default=500,
+        help="Minimum α to test",
+    )
+    parser.add_argument(
+        "--alpha-max",
+        type=float,
+        default=10000,
+        help="Maximum α to test",
+    )
+    parser.add_argument(
+        "--num-tests",
+        type=int,
+        default=20,
+        help="Number of α values to test",
+    )
+    parser.add_argument(
+        "--num-spectra",
+        type=int,
+        default=60,
+        help="Number of spectra to use for testing (default: 60)",
+    )
 
     args = parser.parse_args()
 
@@ -291,8 +328,8 @@ def main():
 
         # Create realistic SPR dip
         center = 650  # nm
-        width = 20    # nm
-        depth = 30    # % transmission dip
+        width = 20  # nm
+        depth = 30  # % transmission dip
 
         for i in range(args.num_spectra):
             # Base spectrum with SPR dip (Lorentzian)
@@ -310,7 +347,7 @@ def main():
         print(f"   ✓ Generated {len(spectra)} spectra")
         print(f"   ✓ Wavelength range: {wavelengths[0]:.1f}-{wavelengths[-1]:.1f} nm")
         print(f"   ✓ SPR dip at {center} nm")
-        print(f"   ✓ Added ~1 RU noise")
+        print("   ✓ Added ~1 RU noise")
 
     elif args.input_file:
         # Load from NPY file
@@ -348,14 +385,22 @@ def main():
                 # Multiple spectra (rows or columns?)
                 if data.shape[0] > data.shape[1]:
                     # More rows than columns: rows are spectra
-                    print(f"   ✓ Found {data.shape[0]} spectra × {data.shape[1]} pixels")
+                    print(
+                        f"   ✓ Found {data.shape[0]} spectra × {data.shape[1]} pixels",
+                    )
                     wavelengths = np.linspace(500, 900, data.shape[1])
-                    spectra = [data[i, :] for i in range(min(args.num_spectra, data.shape[0]))]
+                    spectra = [
+                        data[i, :] for i in range(min(args.num_spectra, data.shape[0]))
+                    ]
                 else:
                     # More columns: columns are spectra
-                    print(f"   ✓ Found {data.shape[1]} spectra × {data.shape[0]} pixels")
+                    print(
+                        f"   ✓ Found {data.shape[1]} spectra × {data.shape[0]} pixels",
+                    )
                     wavelengths = np.linspace(500, 900, data.shape[0])
-                    spectra = [data[:, i] for i in range(min(args.num_spectra, data.shape[1]))]
+                    spectra = [
+                        data[:, i] for i in range(min(args.num_spectra, data.shape[1]))
+                    ]
 
             else:
                 print(f"   ❌ Unexpected data shape: {data.shape}")
@@ -370,9 +415,13 @@ def main():
                 try:
                     wavelengths = np.load(calib_file)
                     if len(wavelengths) == len(spectra[0]):
-                        print(f"   ✓ Loaded wavelength calibration from {calib_file.name}")
+                        print(
+                            f"   ✓ Loaded wavelength calibration from {calib_file.name}",
+                        )
                     else:
-                        print(f"   ⚠️  Wavelength cal size mismatch, using linear spacing")
+                        print(
+                            "   ⚠️  Wavelength cal size mismatch, using linear spacing",
+                        )
                         wavelengths = np.linspace(500, 900, len(spectra[0]))
                 except Exception as e:
                     print(f"   ⚠️  Could not load wavelength cal: {e}")
@@ -386,7 +435,9 @@ def main():
         print("\n⚠️  No input file specified!")
         print("\n📖 USAGE OPTIONS:")
         print("\n   1. Use debug data from application:")
-        print("      python optimize_fourier_alpha.py data/debug/4_final_transmittance_ChA.npy")
+        print(
+            "      python optimize_fourier_alpha.py data/debug/4_final_transmittance_ChA.npy",
+        )
         print("\n   2. Generate synthetic test data:")
         print("      python optimize_fourier_alpha.py --synthetic")
         print("\n   3. Collect real data:")
@@ -406,8 +457,8 @@ def main():
                 for f in sorted(transmittance_files)[-5:]:
                     print(f"   {f.name}")
                 latest = sorted(transmittance_files)[-1]
-                print(f"\n💡 Quick start:")
-                print(f"   python optimize_fourier_alpha.py \"{latest}\"")
+                print("\n💡 Quick start:")
+                print(f'   python optimize_fourier_alpha.py "{latest}"')
 
         return 0
 
@@ -416,27 +467,31 @@ def main():
         print("\n❌ No data available for optimization")
         return 1
 
-    print(f"\n🔬 Testing {args.num_tests} α values ({args.alpha_min:.0f}-{args.alpha_max:.0f})")
+    print(
+        f"\n🔬 Testing {args.num_tests} α values ({args.alpha_min:.0f}-{args.alpha_max:.0f})",
+    )
     print(f"   Using {len(spectra)} spectra")
-    print("")
+    print()
 
     results = optimize_fourier_alpha(
         wavelengths,
         spectra,
         alpha_range=(args.alpha_min, args.alpha_max),
-        num_tests=args.num_tests
+        num_tests=args.num_tests,
     )
 
     if results:
         print("\n✅ Optimization complete!")
         print(f"\n💾 To apply optimal α={results['best_result']['alpha']:.0f}:")
         print("   1. Edit settings/settings.py")
-        print(f"   2. Change line ~216: FOURIER_ALPHA = {results['best_result']['alpha']:.0f}")
+        print(
+            f"   2. Change line ~216: FOURIER_ALPHA = {results['best_result']['alpha']:.0f}",
+        )
         print("   3. Restart application")
         print("   4. Verify improved noise performance")
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -230,86 +230,102 @@ class Ui_P4SPR_Advanced:
 
     def retranslateUi(self, P4SPR_Advanced):
         P4SPR_Advanced.setWindowTitle(
-            QCoreApplication.translate("P4SPR_Advanced", "Advanced Settings", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Advanced Settings", None),
         )
         self.label.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "Advanced Parameter Settings", None
-            )
+                "P4SPR_Advanced",
+                "Advanced Parameter Settings",
+                None,
+            ),
         )
         self.groupBox_4.setTitle(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "LED && Detector Settings", None
-            )
+                "P4SPR_Advanced",
+                "LED && Detector Settings",
+                None,
+            ),
         )
         self.label_8.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "Integration Time (ms)", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Integration Time (ms)", None),
         )
         self.label_2.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "Number of Scans", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Number of Scans", None),
         )
         self.label_7.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "LED A Intensity (1-255)", None
-            )
+                "P4SPR_Advanced",
+                "LED A Intensity (1-255)",
+                None,
+            ),
         )
         self.label_9.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "LED B Intensity (1-255)", None
-            )
+                "P4SPR_Advanced",
+                "LED B Intensity (1-255)",
+                None,
+            ),
         )
         self.label_10.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "LED C Intensity (1-255)", None
-            )
+                "P4SPR_Advanced",
+                "LED C Intensity (1-255)",
+                None,
+            ),
         )
         self.label_11.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "LED D Intensity (1-255)", None
-            )
+                "P4SPR_Advanced",
+                "LED D Intensity (1-255)",
+                None,
+            ),
         )
         self.groupBox_3.setTitle(
-            QCoreApplication.translate("P4SPR_Advanced", "Polarizer", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Polarizer", None),
         )
         self.label_12.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "S Position (deg)", None)
+            QCoreApplication.translate("P4SPR_Advanced", "S Position (deg)", None),
         )
         self.label_13.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "P Position (deg)", None)
+            QCoreApplication.translate("P4SPR_Advanced", "P Position (deg)", None),
         )
         self.groupBox.setTitle(
-            QCoreApplication.translate("P4SPR_Advanced", "Peristaltic Pumps", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Peristaltic Pumps", None),
         )
         self.label_14.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "Pump 1 Correction", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Pump 1 Correction", None),
         )
         self.label_15.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "Pump 2 Correction", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Pump 2 Correction", None),
         )
         self.groupBox_2.setTitle(
-            QCoreApplication.translate("P4SPR_Advanced", "Development Use Only", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Development Use Only", None),
         )
         self.label_4.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "LED Delay (sec)", None)
+            QCoreApplication.translate("P4SPR_Advanced", "LED Delay (sec)", None),
         )
         self.label_3.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "%T Height Req. (factor)", None
-            )
+                "P4SPR_Advanced",
+                "%T Height Req. (factor)",
+                None,
+            ),
         )
         self.label_6.setText(
             QCoreApplication.translate(
-                "P4SPR_Advanced", "Kinetic Sensor Interval (sec)", None
-            )
+                "P4SPR_Advanced",
+                "Kinetic Sensor Interval (sec)",
+                None,
+            ),
         )
         self.label_5.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "Regenerate time (sec)", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Regenerate time (sec)", None),
         )
         self.contact_time.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "13", None)
+            QCoreApplication.translate("P4SPR_Advanced", "13", None),
         )
         self.set_btn.setText(
-            QCoreApplication.translate("P4SPR_Advanced", "Update Settings", None)
+            QCoreApplication.translate("P4SPR_Advanced", "Update Settings", None),
         )
 
     # retranslateUi

@@ -1,11 +1,20 @@
 """UI Layout Designer Mode - Interactive drag-and-drop UI editing."""
 
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QDialog, QTextEdit, QDialogButtonBox, QGroupBox, QSpinBox
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal, QPoint, QRect
-from PySide6.QtGui import QPainter, QPen, QColor, QFont
 
 
 class DraggableWidget(QFrame):
@@ -23,7 +32,9 @@ class DraggableWidget(QFrame):
         # Setup frame
         self.setFrameShape(QFrame.Shape.Box)
         self.setLineWidth(2)
-        self.setStyleSheet("QFrame { border: 2px dashed rgb(46, 48, 227); background: transparent; }")
+        self.setStyleSheet(
+            "QFrame { border: 2px dashed rgb(46, 48, 227); background: transparent; }",
+        )
 
         # Layout
         layout = QVBoxLayout(self)
@@ -33,7 +44,7 @@ class DraggableWidget(QFrame):
         self.info_label = QLabel(f"{name}")
         self.info_label.setStyleSheet(
             "background: rgb(46, 48, 227); color: white; "
-            "padding: 2px 5px; font-size: 8pt; font-weight: bold;"
+            "padding: 2px 5px; font-size: 8pt; font-weight: bold;",
         )
         layout.addWidget(self.info_label)
 
@@ -48,20 +59,26 @@ class DraggableWidget(QFrame):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = True
             self.drag_start_pos = event.position().toPoint()
-            self.setStyleSheet("QFrame { border: 2px solid rgb(255, 0, 0); background: rgba(46, 48, 227, 0.1); }")
+            self.setStyleSheet(
+                "QFrame { border: 2px solid rgb(255, 0, 0); background: rgba(46, 48, 227, 0.1); }",
+            )
 
     def mouseMoveEvent(self, event):
         if self.dragging:
             delta = event.position().toPoint() - self.drag_start_pos
             new_pos = self.pos() + delta
             self.move(new_pos)
-            self.info_label.setText(f"{self.widget_name} - X:{new_pos.x()} Y:{new_pos.y()}")
+            self.info_label.setText(
+                f"{self.widget_name} - X:{new_pos.x()} Y:{new_pos.y()}",
+            )
             self.position_changed.emit(new_pos)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
-            self.setStyleSheet("QFrame { border: 2px dashed rgb(46, 48, 227); background: transparent; }")
+            self.setStyleSheet(
+                "QFrame { border: 2px dashed rgb(46, 48, 227); background: transparent; }",
+            )
 
 
 class ResizableWidget(QFrame):
@@ -80,7 +97,9 @@ class ResizableWidget(QFrame):
         # Setup frame
         self.setFrameShape(QFrame.Shape.Box)
         self.setLineWidth(2)
-        self.setStyleSheet("QFrame { border: 2px dashed rgb(46, 227, 111); background: transparent; }")
+        self.setStyleSheet(
+            "QFrame { border: 2px dashed rgb(46, 227, 111); background: transparent; }",
+        )
 
         # Layout
         layout = QVBoxLayout(self)
@@ -90,7 +109,7 @@ class ResizableWidget(QFrame):
         self.info_label = QLabel(f"{name} - {widget.width()}x{widget.height()}")
         self.info_label.setStyleSheet(
             "background: rgb(46, 227, 111); color: black; "
-            "padding: 2px 5px; font-size: 8pt; font-weight: bold;"
+            "padding: 2px 5px; font-size: 8pt; font-weight: bold;",
         )
         layout.addWidget(self.info_label)
 
@@ -102,10 +121,14 @@ class ResizableWidget(QFrame):
         self.resize_handle.setFixedSize(16, 16)
         self.resize_handle.setStyleSheet(
             "QLabel { background: rgb(46, 227, 111); color: white; "
-            "font-size: 12pt; padding: 0; margin: 0; }"
+            "font-size: 12pt; padding: 0; margin: 0; }",
         )
         self.resize_handle.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        layout.addWidget(self.resize_handle, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        layout.addWidget(
+            self.resize_handle,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
+        )
 
         self.setMouseTracking(True)
 
@@ -137,10 +160,12 @@ class LayoutDesignPanel(QWidget):
         instructions = QLabel(
             "Click 'Enable Design Mode' to make UI elements draggable.\n"
             "Drag elements to reposition them.\n"
-            "Click 'Generate Code' to save changes."
+            "Click 'Generate Code' to save changes.",
         )
         instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: rgb(100, 100, 100); font-size: 9pt; padding: 5px;")
+        instructions.setStyleSheet(
+            "color: rgb(100, 100, 100); font-size: 9pt; padding: 5px;",
+        )
         layout.addWidget(instructions)
 
         # Toggle button
@@ -254,7 +279,7 @@ class CodeGeneratorDialog(QDialog):
         # Instructions
         instructions = QLabel(
             "Copy the code below and paste it into your __init__ or setup methods.\n"
-            "The code sets exact positions and sizes based on your adjustments."
+            "The code sets exact positions and sizes based on your adjustments.",
         )
         instructions.setWordWrap(True)
         instructions.setStyleSheet("color: rgb(100, 100, 100); padding: 5px;")
@@ -299,14 +324,22 @@ class CodeGeneratorDialog(QDialog):
 
         for widget_name, props in snippets.items():
             code_lines.append(f"# {widget_name}")
-            if 'x' in props and 'y' in props:
-                code_lines.append(f"self.{widget_name}.move({props['x']}, {props['y']})")
-            if 'width' in props and 'height' in props:
-                code_lines.append(f"self.{widget_name}.setFixedSize({props['width']}, {props['height']})")
-            if 'min_width' in props:
-                code_lines.append(f"self.{widget_name}.setMinimumWidth({props['min_width']})")
-            if 'min_height' in props:
-                code_lines.append(f"self.{widget_name}.setMinimumHeight({props['min_height']})")
+            if "x" in props and "y" in props:
+                code_lines.append(
+                    f"self.{widget_name}.move({props['x']}, {props['y']})",
+                )
+            if "width" in props and "height" in props:
+                code_lines.append(
+                    f"self.{widget_name}.setFixedSize({props['width']}, {props['height']})",
+                )
+            if "min_width" in props:
+                code_lines.append(
+                    f"self.{widget_name}.setMinimumWidth({props['min_width']})",
+                )
+            if "min_height" in props:
+                code_lines.append(
+                    f"self.{widget_name}.setMinimumHeight({props['min_height']})",
+                )
             code_lines.append("")
 
         return "\n".join(code_lines)
@@ -314,6 +347,7 @@ class CodeGeneratorDialog(QDialog):
     def _copy_to_clipboard(self):
         """Copy code to clipboard."""
         from PySide6.QtWidgets import QApplication
+
         clipboard = QApplication.clipboard()
         clipboard.setText(self.code_text.toPlainText())
 
@@ -321,10 +355,12 @@ class CodeGeneratorDialog(QDialog):
         original_text = self.sender().text()
         self.sender().setText("[OK] Copied!")
         from PySide6.QtCore import QTimer
+
         QTimer.singleShot(2000, lambda: self.sender().setText(original_text))
 
 
 # Quick helper functions for common UI adjustments
+
 
 def make_widget_draggable(widget, name="Widget"):
     """Wrap a widget to make it draggable in design mode."""
@@ -337,14 +373,14 @@ def make_widget_resizable(widget, name="Widget"):
 
 
 def get_layout_code(widget_positions: dict) -> str:
-    """
-    Generate Python code for widget positions.
+    """Generate Python code for widget positions.
 
     Args:
         widget_positions: Dict like {'widget_name': {'x': 10, 'y': 20, 'width': 300, 'height': 200}}
 
     Returns:
         Python code string
+
     """
     dialog = CodeGeneratorDialog(widget_positions)
     return dialog.code_text.toPlainText()

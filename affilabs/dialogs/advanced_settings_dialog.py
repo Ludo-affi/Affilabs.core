@@ -10,23 +10,37 @@ This dialog provides access to:
 
 import sys
 from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFormLayout, QSpinBox, QComboBox, QFrame, QButtonGroup,
-    QDialogButtonBox, QScrollArea, QTextEdit, QGroupBox, QGridLayout, QTabWidget, QWidget
+    QButtonGroup,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from affilabs.utils.logger import logger
-from ui_styles import (
+from affilabs.diagnostics_dialog import DiagnosticsDialog
+from affilabs.ui_styles import (
     Colors,
-    label_style, title_style,
-    segmented_button_style, spinbox_style, divider_style, group_box_style
+    divider_style,
+    label_style,
+    segmented_button_style,
+    spinbox_style,
+    title_style,
 )
-from diagnostics_dialog import DiagnosticsDialog
+from affilabs.utils.logger import logger
 
 
 class AdvancedSettingsDialog(QDialog):
@@ -47,7 +61,7 @@ class AdvancedSettingsDialog(QDialog):
             "QLabel {"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
 
         # Main layout
@@ -112,8 +126,8 @@ class AdvancedSettingsDialog(QDialog):
 
         form.addRow(unit_label, unit_container)
 
-        # LED ON Time (ms) - How long LED stays ON per channel (rankbatch parameter)
-        led_on_label = QLabel("LED ON Time:")
+        # LED ON Period (ms) - RANKBATCH firmware cycle timing (250ms per channel)
+        led_on_label = QLabel("LED ON Period:")
         led_on_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
         self.led_on_input = QSpinBox()
         self.led_on_input.setRange(10, 500)
@@ -121,32 +135,57 @@ class AdvancedSettingsDialog(QDialog):
         self.led_on_input.setSuffix(" ms")
         self.led_on_input.setFixedWidth(120)
         self.led_on_input.setStyleSheet(spinbox_style())
-        self.led_on_input.setToolTip("Duration LED stays ON per channel (firmware RANKBATCH timing base)")
+        self.led_on_input.setToolTip(
+            "RANKBATCH: How long each LED stays ON (250ms cycle)",
+        )
         form.addRow(led_on_label, self.led_on_input)
 
-        # LED OFF Time (ms) - How long LED stays OFF between channels (rankbatch parameter)
-        led_off_label = QLabel("LED OFF Time:")
+        # LED OFF Period (ms) - Gap between channel cycles (normally 0ms, next LED auto-turns off previous)
+        led_off_label = QLabel("LED OFF Period:")
         led_off_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
         self.led_off_input = QSpinBox()
         self.led_off_input.setRange(0, 100)
-        self.led_off_input.setValue(0)  # RANKBATCH firmware: 0ms between channels
+        self.led_off_input.setValue(
+            0,
+        )  # RANKBATCH firmware: 0ms between channels (automatic turnoff)
         self.led_off_input.setSuffix(" ms")
         self.led_off_input.setFixedWidth(120)
         self.led_off_input.setStyleSheet(spinbox_style())
-        self.led_off_input.setToolTip("Duration LED stays OFF between channels (firmware RANKBATCH parameter)")
+        self.led_off_input.setToolTip(
+            "RANKBATCH: Gap between channels (0ms = next LED immediately turns off previous)",
+        )
         form.addRow(led_off_label, self.led_off_input)
 
         # Integration Time (ms) - Detector exposure time (rankbatch detector on time budget)
         integration_label = QLabel("Integration Time:")
         integration_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
+
+        # Container for integration time with source indicator
+        integration_container = QWidget()
+        integration_layout = QHBoxLayout(integration_container)
+        integration_layout.setContentsMargins(0, 0, 0, 0)
+        integration_layout.setSpacing(8)
+
         self.detector_on_input = QSpinBox()
         self.detector_on_input.setRange(5, 200)
         self.detector_on_input.setValue(50)  # Default integration time
         self.detector_on_input.setSuffix(" ms")
         self.detector_on_input.setFixedWidth(120)
         self.detector_on_input.setStyleSheet(spinbox_style())
-        self.detector_on_input.setToolTip("Detector exposure/integration time (rankbatch detector on time budget)")
-        form.addRow(integration_label, self.detector_on_input)
+        self.detector_on_input.setToolTip(
+            "Detector exposure/integration time\n\nThis value will be used for live acquisition.\nIt's initially loaded from calibration but can be overridden.",
+        )
+        integration_layout.addWidget(self.detector_on_input)
+
+        # Source indicator label
+        self.integration_source_label = QLabel("")
+        self.integration_source_label.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT, 400) + "font-style: italic;",
+        )
+        integration_layout.addWidget(self.integration_source_label)
+        integration_layout.addStretch()
+
+        form.addRow(integration_label, integration_container)
 
         # Detector Wait Time (ms) - Software delay after CYCLE_START before reading detector
         detector_wait_label = QLabel("Detector Wait:")
@@ -160,7 +199,7 @@ class AdvancedSettingsDialog(QDialog):
         self.detector_wait_input.setToolTip(
             "Software delay after receiving CYCLE_START before reading detector.\n"
             "Allows LED to stabilize before measurement.\n"
-            "V2.4: Software offsets are 50ms(A), 300ms(B), 550ms(C), 800ms(D) + this wait."
+            "V2.4: Software offsets are 50ms(A), 300ms(B), 550ms(C), 800ms(D) + this wait.",
         )
         form.addRow(detector_wait_label, self.detector_wait_input)
 
@@ -168,11 +207,13 @@ class AdvancedSettingsDialog(QDialog):
         pipeline_label = QLabel("Data Pipeline:")
         pipeline_label.setStyleSheet("font-weight: 600; font-size: 13px;")
         self.pipeline_combo = QComboBox()
-        self.pipeline_combo.addItems([
-            "Fourier (Standard - 17.98 RU)",
-            "Hybrid Original (First attempt - 8.82 RU)",
-            "Hybrid Optimized (90% reduction - 1.81 RU)",
-        ])
+        self.pipeline_combo.addItems(
+            [
+                "Fourier (Standard - 17.98 RU)",
+                "Hybrid Original (First attempt - 8.82 RU)",
+                "Hybrid Optimized (90% reduction - 1.81 RU)",
+            ],
+        )
         self.pipeline_combo.setFixedWidth(300)
         self.pipeline_combo.setStyleSheet(
             "QComboBox {"
@@ -192,7 +233,7 @@ class AdvancedSettingsDialog(QDialog):
             "  border-right: 4px solid transparent;"
             "  border-top: 5px solid #86868B;"
             "  margin-right: 8px;"
-            "}"
+            "}",
         )
         form.addRow(pipeline_label, self.pipeline_combo)
 
@@ -240,7 +281,9 @@ class AdvancedSettingsDialog(QDialog):
         main_layout.addStretch()
 
         # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+        )
         dialog_button_style = (
             "QPushButton { padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 80px; }"
             f"QPushButton[text='OK'] {{ background: {Colors.PRIMARY_TEXT}; color: white; border: none; }}"
@@ -264,6 +307,7 @@ class AdvancedSettingsDialog(QDialog):
         try:
             # Check if DEV mode is enabled
             from settings import DEV
+
             dev_mode = DEV
         except ImportError:
             dev_mode = False
@@ -295,7 +339,7 @@ class AdvancedSettingsDialog(QDialog):
                 "}"
                 "QPushButton:hover {"
                 "  background: #E8E8EA;"
-                "}"
+                "}",
             )
             diag_btn.clicked.connect(self._show_diagnostics)
             button_box.addButton(diag_btn, QDialogButtonBox.ButtonRole.ActionRole)
@@ -309,44 +353,60 @@ class AdvancedSettingsDialog(QDialog):
     def accept(self):
         """Apply settings when OK is clicked."""
         try:
-            from affilabs.utils.processing_pipeline import get_pipeline_registry
             import settings
+            from affilabs.utils.processing_pipeline import get_pipeline_registry
 
             logger.info("🔧 Applying Advanced Settings...")
 
             # Apply Unit Selection
             if self.ru_btn.isChecked():
-                settings.DEFAULT_UNIT = 'RU'
+                settings.DEFAULT_UNIT = "RU"
                 logger.info("  Unit: RU")
             else:
-                settings.DEFAULT_UNIT = 'nm'
+                settings.DEFAULT_UNIT = "nm"
                 logger.info("  Unit: nm")
 
             # Apply Timing Parameters (firmware and software parameters)
-            settings.LED_ON_TIME_MS = self.led_on_input.value()  # Firmware: LED ON duration
-            settings.LED_OFF_TIME_MS = self.led_off_input.value()  # Firmware: LED OFF duration
-            settings.DETECTOR_ON_TIME_MS = self.detector_on_input.value()  # Integration time
-            settings.DETECTOR_WAIT_MS = self.detector_wait_input.value()  # Software: wait after CYCLE_START
-            logger.info(f"  LED ON Time: {settings.LED_ON_TIME_MS} ms (firmware timing base)")
-            logger.info(f"  LED OFF Time: {settings.LED_OFF_TIME_MS} ms (firmware parameter)")
+            settings.LED_ON_TIME_MS = (
+                self.led_on_input.value()
+            )  # Firmware: LED ON duration
+            settings.LED_OFF_TIME_MS = (
+                self.led_off_input.value()
+            )  # Firmware: LED OFF duration
+            settings.DETECTOR_ON_TIME_MS = (
+                self.detector_on_input.value()
+            )  # Integration time
+            settings.DETECTOR_WAIT_MS = (
+                self.detector_wait_input.value()
+            )  # Software: wait after CYCLE_START
+            logger.info(
+                f"  LED ON Time: {settings.LED_ON_TIME_MS} ms (firmware timing base)",
+            )
+            logger.info(
+                f"  LED OFF Time: {settings.LED_OFF_TIME_MS} ms (firmware parameter)",
+            )
             logger.info(f"  Integration Time: {settings.DETECTOR_ON_TIME_MS} ms")
-            logger.info(f"  Detector Wait: {settings.DETECTOR_WAIT_MS} ms (software offset)")
-            
+            logger.info(
+                f"  Detector Wait: {settings.DETECTOR_WAIT_MS} ms (software offset)",
+            )
+
             # Apply detector wait to running data acquisition manager (if available)
-            if hasattr(self.parent(), 'app') and hasattr(self.parent().app, 'data_mgr'):
+            if hasattr(self.parent(), "app") and hasattr(self.parent().app, "data_mgr"):
                 data_mgr = self.parent().app.data_mgr
                 if data_mgr:
                     data_mgr.detector_wait_ms = settings.DETECTOR_WAIT_MS
-                    logger.info(f"  ✓ Updated data manager detector_wait_ms = {settings.DETECTOR_WAIT_MS} ms")
+                    logger.info(
+                        f"  ✓ Updated data manager detector_wait_ms = {settings.DETECTOR_WAIT_MS} ms",
+                    )
 
             # Apply Pipeline Selection
             pipeline_idx = self.pipeline_combo.currentIndex()
             registry = get_pipeline_registry()
 
             pipeline_map = {
-                0: 'fourier',         # Fourier (Standard - 17.98 RU)
-                1: 'hybrid_original', # Hybrid Original (First attempt - 8.82 RU)
-                2: 'hybrid',          # Hybrid Optimized (90% reduction - 1.81 RU)
+                0: "fourier",  # Fourier (Standard - 17.98 RU)
+                1: "hybrid_original",  # Hybrid Original (First attempt - 8.82 RU)
+                2: "hybrid",  # Hybrid Optimized (90% reduction - 1.81 RU)
             }
 
             if pipeline_idx in pipeline_map:
@@ -357,7 +417,7 @@ class AdvancedSettingsDialog(QDialog):
             logger.info("✅ Settings applied successfully!")
 
             # Notify parent window if it has an update method
-            if hasattr(self.parent(), 'on_settings_changed'):
+            if hasattr(self.parent(), "on_settings_changed"):
                 self.parent().on_settings_changed()
 
         except Exception as e:
@@ -366,22 +426,66 @@ class AdvancedSettingsDialog(QDialog):
         # Close dialog
         super().accept()
 
-    def load_device_info(self, serial="Not detected", afterglow_cal=False, cal_date=None):
+    def load_calibration_params(self, calibration_data):
+        """Load parameters from calibration data into Advanced Settings.
+
+        Args:
+            calibration_data: CalibrationData object with integration_time, num_scans, etc.
+
+        """
+        if not calibration_data:
+            return
+
+        try:
+            # Load integration time from calibration
+            integration_time = getattr(calibration_data, "integration_time", None)
+            if integration_time:
+                self.detector_on_input.setValue(int(integration_time))
+                self.integration_source_label.setText("(from calibration)")
+                logger.info(
+                    f"  Loaded integration time from calibration: {integration_time}ms",
+                )
+
+            # Load LED timing if available
+            pre_led_delay = getattr(calibration_data, "pre_led_delay_ms", None)
+            post_led_delay = getattr(calibration_data, "post_led_delay_ms", None)
+
+            if pre_led_delay is not None:
+                logger.info(f"  Calibration PRE LED delay: {pre_led_delay}ms")
+            if post_led_delay is not None:
+                logger.info(f"  Calibration POST LED delay: {post_led_delay}ms")
+
+        except Exception as e:
+            logger.warning(
+                f"Could not load calibration params into Advanced Settings: {e}",
+            )
+
+    def load_device_info(
+        self,
+        serial="Not detected",
+        afterglow_cal=False,
+        cal_date=None,
+    ):
         """Load device information into the dialog.
 
         Args:
             serial: Device serial number
             afterglow_cal: Whether afterglow calibration is present
             cal_date: Calibration date (string or datetime)
+
         """
         self.serial_value.setText(serial if serial else "Not detected")
 
         if afterglow_cal:
             self.afterglow_value.setText("✓ Calibrated")
-            self.afterglow_value.setStyleSheet("font-size: 13px; color: #34C759; font-weight: 600;")
+            self.afterglow_value.setStyleSheet(
+                "font-size: 13px; color: #34C759; font-weight: 600;",
+            )
         else:
             self.afterglow_value.setText("Not calibrated")
-            self.afterglow_value.setStyleSheet("font-size: 13px; color: #FF9500; font-weight: 600;")
+            self.afterglow_value.setStyleSheet(
+                "font-size: 13px; color: #FF9500; font-weight: 600;",
+            )
 
         if cal_date:
             if isinstance(cal_date, str):

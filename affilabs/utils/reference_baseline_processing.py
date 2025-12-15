@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_fourier_weights_reference(
-    num_points: int, alpha: float = 2e3,
+    num_points: int,
+    alpha: float = 2e3,
 ) -> np.ndarray:
     """Calculate Fourier weights for signal denoising (REFERENCE).
 
@@ -306,21 +307,14 @@ def hardware_acquisition_reference(
 
     """
     try:
-        if num_scans > 1:
-            # Average multiple scans (same as calibration)
-            spectra = []
-            for _ in range(num_scans):
-                spectrum = usb_device.read_intensity()
-                if spectrum is not None:
-                    spectra.append(spectrum)
-
-            if len(spectra) == 0:
-                return None
-
-            raw_spectrum = np.mean(spectra, axis=0)
-        else:
-            # Single scan mode
-            raw_spectrum = usb_device.read_intensity()
+        # Use HAL interface with built-in averaging
+        # Note: This function works with full spectrum, so read full range
+        wavelengths = usb_device.read_wavelength()
+        raw_spectrum = usb_device.read_roi(
+            0,
+            len(wavelengths),
+            num_scans=num_scans,
+        )
 
         if raw_spectrum is None:
             return None

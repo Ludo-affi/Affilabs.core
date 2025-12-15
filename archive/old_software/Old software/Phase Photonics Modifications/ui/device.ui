@@ -105,9 +105,9 @@
         </property>
         <property name="styleSheet">
          <string notr="true">QPushButton {
-		
+
 		background-color: rgb(230, 230, 230);
-	    border: 1px solid rgb(171, 171, 171); 
+	    border: 1px solid rgb(171, 171, 171);
 		border-radius: 3px;
 
 }
@@ -201,9 +201,9 @@ QPushButton::hover{
         </property>
         <property name="styleSheet">
          <string notr="true">QPushButton {
-		
+
 		background-color: rgb(230, 230, 230);
-	    border: 1px solid rgb(171, 171, 171); 
+	    border: 1px solid rgb(171, 171, 171);
 		border-radius: 3px;
 
 }
@@ -285,9 +285,9 @@ QPushButton::hover{
         </property>
         <property name="styleSheet">
          <string notr="true">QPushButton {
-		
+
 		background-color: rgb(230, 230, 230);
-	    border: 1px solid rgb(171, 171, 171); 
+	    border: 1px solid rgb(171, 171, 171);
 		border-radius: 3px;
 
 }

@@ -1,5 +1,4 @@
-"""
-Servo Calibration Test Script
+"""Servo Calibration Test Script
 ==============================
 Test and nail down the servo position calibration sequence before porting to main.py
 
@@ -23,9 +22,9 @@ Usage:
     --save:  Save positions to EEPROM after successful calibration
 """
 
+import argparse
 import sys
 import time
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -34,45 +33,48 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import hardware wrappers
-from utils.usb4000_wrapper import USB4000
-from utils.controller import PicoP4SPR
-
 # Settings
-from settings.settings import MIN_INTEGRATION, LED_DELAY, POL_WAVELENGTH
+from settings.settings import LED_DELAY, MIN_INTEGRATION, POL_WAVELENGTH
+from utils.controller import PicoP4SPR
+from utils.usb4000_wrapper import USB4000
 
 # Detector specifications (Ocean Optics Flame-T)
 DETECTOR_MAX_COUNTS = 62000  # Actual max for Flame-T (not 65535!)
 TARGET_COUNTS = int(0.75 * DETECTOR_MAX_COUNTS)  # 46,500 counts (75% of detector max)
 
 # Calibration parameters
-MIN_ANGLE = 10          # Start of servo sweep
-MAX_ANGLE = 170         # End of servo sweep
-ANGLE_STEP = 5          # Step size for sweep
-LED_CHANNEL = "a"       # LED channel to use
-LED_INTENSITY = 255     # Full intensity for sweep
-SETTLING_TIME = 0.2     # Servo settling time (seconds)
+MIN_ANGLE = 10  # Start of servo sweep
+MAX_ANGLE = 170  # End of servo sweep
+ANGLE_STEP = 5  # Step size for sweep
+LED_CHANNEL = "a"  # LED channel to use
+LED_INTENSITY = 255  # Full intensity for sweep
+SETTLING_TIME = 0.2  # Servo settling time (seconds)
 MODE_SWITCH_TIME = 0.1  # Mode switch delay (seconds)
 
 # ROI parameters for SPR resonance detection
 ROI_CENTER = POL_WAVELENGTH  # 620nm - SPR resonance wavelength
-ROI_WIDTH = 30               # ±15nm around center (605-635nm range)
+ROI_WIDTH = 30  # ±15nm around center (605-635nm range)
 
 # Resonance wavelength validation (where P position minimum should occur)
-MIN_RESONANCE_WL = 590       # Minimum valid resonance wavelength (nm)
-MAX_RESONANCE_WL = 670       # Maximum valid resonance wavelength (nm)
+MIN_RESONANCE_WL = 590  # Minimum valid resonance wavelength (nm)
+MAX_RESONANCE_WL = 670  # Maximum valid resonance wavelength (nm)
 # Typical: ~620nm, sometimes 590-670nm range for safety
 
 # Validation thresholds
-MIN_SEPARATION = 80                # Minimum S-P separation (degrees) - tighter window for circular polarizer
-MAX_SEPARATION = 100               # Maximum S-P separation (degrees) - tighter window for circular polarizer
-MIN_SP_RATIO = 1.3                 # Minimum S/P intensity ratio
-IDEAL_SP_RATIO = 1.5               # Ideal S/P intensity ratio
-MIN_DIP_DEPTH_PERCENT = 10.0       # Minimum resonance dip depth (% of max)
-MIN_DIP_DEPTH_PERCENT = 10.0       # Minimum resonance dip depth (% of max)
-MAX_RETRIES = 3                    # Maximum calibration attempts
+MIN_SEPARATION = (
+    80  # Minimum S-P separation (degrees) - tighter window for circular polarizer
+)
+MAX_SEPARATION = (
+    100  # Maximum S-P separation (degrees) - tighter window for circular polarizer
+)
+MIN_SP_RATIO = 1.3  # Minimum S/P intensity ratio
+IDEAL_SP_RATIO = 1.5  # Ideal S/P intensity ratio
+MIN_DIP_DEPTH_PERCENT = 10.0  # Minimum resonance dip depth (% of max)
+MIN_DIP_DEPTH_PERCENT = 10.0  # Minimum resonance dip depth (% of max)
+MAX_RETRIES = 3  # Maximum calibration attempts
 
 # EEPROM validation thresholds
-FAST_VALIDATION_RATIO = 1.3        # Minimum ratio for fast validation
+FAST_VALIDATION_RATIO = 1.3  # Minimum ratio for fast validation
 
 
 def setup_hardware():
@@ -81,6 +83,7 @@ def setup_hardware():
     Returns:
         tuple: (usb, ctrl) - spectrometer and controller objects
         None if initialization fails
+
     """
     print("=" * 80)
     print("HARDWARE INITIALIZATION")
@@ -97,7 +100,7 @@ def setup_hardware():
         if wavelengths is None:
             raise Exception("Could not read wavelengths")
 
-        print(f"   ✓ Connected: USB4000/FLAME-T")
+        print("   ✓ Connected: USB4000/FLAME-T")
         print(f"   ✓ Serial: {usb.serial_number}")
         print(f"   ✓ Wavelength range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
         print(f"   ✓ Pixels: {len(wavelengths)}")
@@ -116,8 +119,8 @@ def setup_hardware():
 
         # Test servo read
         pos_dict = ctrl.servo_get()
-        s_pos = int(pos_dict.get('s', b'0'))
-        p_pos = int(pos_dict.get('p', b'0'))
+        s_pos = int(pos_dict.get("s", b"0"))
+        p_pos = int(pos_dict.get("p", b"0"))
         print(f"   ✓ Current servo positions: S={s_pos}°, P={p_pos}°")
     except Exception as e:
         print(f"   ✗ Failed to connect to controller: {e}")
@@ -140,6 +143,7 @@ def fast_validation(usb, ctrl):
         - ratio: Measured S/P intensity ratio
         - s_pos: S-mode servo position
         - p_pos: P-mode servo position
+
     """
     print("\n" + "=" * 80)
     print("FAST VALIDATION (EEPROM POSITIONS)")
@@ -148,13 +152,13 @@ def fast_validation(usb, ctrl):
     try:
         # Get current positions from EEPROM
         pos_dict = ctrl.servo_get()
-        s_pos = int(pos_dict.get('s', b'0'))
-        p_pos = int(pos_dict.get('p', b'0'))
+        s_pos = int(pos_dict.get("s", b"0"))
+        p_pos = int(pos_dict.get("p", b"0"))
         print(f"   Current EEPROM positions: S={s_pos}°, P={p_pos}°")
 
         # Check if positions look reasonable
         if s_pos == 0 or p_pos == 0:
-            print(f"   ⚠️  Invalid positions (zero detected)")
+            print("   ⚠️  Invalid positions (zero detected)")
             return False, 0.0, s_pos, p_pos
 
         separation = abs(p_pos - s_pos)
@@ -165,7 +169,7 @@ def fast_validation(usb, ctrl):
             return False, 0.0, s_pos, p_pos
 
         # Measure actual intensities
-        print(f"\n   Measuring intensities at stored positions...")
+        print("\n   Measuring intensities at stored positions...")
 
         # Set LED on
         ctrl.set_intensity(LED_CHANNEL, LED_INTENSITY)
@@ -198,13 +202,13 @@ def fast_validation(usb, ctrl):
             status = "✅ VALID" if sp_ratio >= IDEAL_SP_RATIO else "✅ ACCEPTABLE"
             print(f"   {status} - Stored positions are good")
             return True, sp_ratio, s_pos, p_pos
-        else:
-            print(f"   ❌ INVALID - Ratio too low (minimum: {FAST_VALIDATION_RATIO:.2f}×)")
-            return False, sp_ratio, s_pos, p_pos
+        print(f"   ❌ INVALID - Ratio too low (minimum: {FAST_VALIDATION_RATIO:.2f}×)")
+        return False, sp_ratio, s_pos, p_pos
 
     except Exception as e:
         print(f"   ⚠️  Validation failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False, 0.0, 0, 0
 
@@ -218,6 +222,7 @@ def get_roi_intensity(spectrum, wavelengths):
 
     Returns:
         float: Maximum intensity in ROI
+
     """
     # Find indices for ROI
     roi_min = ROI_CENTER - ROI_WIDTH / 2
@@ -245,6 +250,7 @@ def perform_quadrant_search(usb, ctrl):
 
     Returns:
         tuple: (positions, intensities) - all measured positions and intensities
+
     """
     print("\n" + "=" * 80)
     print("QUADRANT SEARCH FOR SERVO POSITIONS")
@@ -268,7 +274,9 @@ def perform_quadrant_search(usb, ctrl):
     integration_time_ms = integration_time_seconds * 1000.0
     usb.set_integration(integration_time_ms)  # Function expects milliseconds
     print(f"   Integration time: {integration_time_ms:.1f}ms")
-    print(f"   ROI: {ROI_CENTER - ROI_WIDTH/2:.0f}-{ROI_CENTER + ROI_WIDTH/2:.0f}nm (SPR resonance region)")
+    print(
+        f"   ROI: {ROI_CENTER - ROI_WIDTH/2:.0f}-{ROI_CENTER + ROI_WIDTH/2:.0f}nm (SPR resonance region)",
+    )
 
     # Store all measurements
     all_positions = []
@@ -281,7 +289,9 @@ def perform_quadrant_search(usb, ctrl):
         ctrl.set_mode("s")
         time.sleep(MODE_SWITCH_TIME)
         spectrum = usb.read_intensity()
-        intensity = get_roi_intensity(spectrum, wavelengths) if use_roi else spectrum.max()
+        intensity = (
+            get_roi_intensity(spectrum, wavelengths) if use_roi else spectrum.max()
+        )
         all_positions.append(angle)
         all_intensities.append(intensity)
         return intensity
@@ -300,8 +310,10 @@ def perform_quadrant_search(usb, ctrl):
     coarse_min_idx = np.argmin(coarse_intensities)
     approx_p = coarse_positions[coarse_min_idx]
 
-    print(f"\n   Approximate P position found:")
-    print(f"      P (min) ≈ {approx_p}° ({coarse_intensities[coarse_min_idx]:.0f} counts)")
+    print("\n   Approximate P position found:")
+    print(
+        f"      P (min) ≈ {approx_p}° ({coarse_intensities[coarse_min_idx]:.0f} counts)",
+    )
 
     # PHASE 2: Refine P position (minimum)
     print(f"\n   Phase 2: Refining P position around {approx_p}°...")
@@ -310,7 +322,7 @@ def perform_quadrant_search(usb, ctrl):
         max(MIN_ANGLE, approx_p - 10),
         approx_p,
         min(MAX_ANGLE, approx_p + 10),
-        min(MAX_ANGLE, approx_p + 20)
+        min(MAX_ANGLE, approx_p + 20),
     ]
     # Remove duplicates and already measured
     p_search_positions = [p for p in p_search_positions if p not in all_positions]
@@ -348,7 +360,7 @@ def perform_quadrant_search(usb, ctrl):
         max(MIN_ANGLE, approx_s - 10),
         approx_s,
         min(MAX_ANGLE, approx_s + 10),
-        min(MAX_ANGLE, approx_s + 20)
+        min(MAX_ANGLE, approx_s + 20),
     ]
     # Remove duplicates and already measured
     s_search_positions = [s for s in s_search_positions if s not in all_positions]
@@ -376,7 +388,7 @@ def perform_quadrant_search(usb, ctrl):
     # LED off
     ctrl.turn_off_channels()
 
-    print(f"\n   ✅ Quadrant search complete")
+    print("\n   ✅ Quadrant search complete")
     print(f"   Total measurements: {len(all_positions)} (vs 33 for full sweep)")
 
     # Return all measured data plus the found positions
@@ -390,7 +402,9 @@ def perform_sweep(usb, ctrl):
     """
     positions, intensities, p_pos, s_pos = perform_quadrant_search(usb, ctrl)
     return positions, intensities, p_pos, s_pos
-    print(f"   Intensity range: {roi_intensities.min():.0f} - {roi_intensities.max():.0f} counts")
+    print(
+        f"   Intensity range: {roi_intensities.min():.0f} - {roi_intensities.max():.0f} counts",
+    )
 
     return positions, roi_intensities
 
@@ -405,6 +419,7 @@ def find_resonance_wavelength(ctrl, usb, servo_position):
 
     Returns:
         float: Wavelength (nm) where minimum intensity occurs, or None if unavailable
+
     """
     wavelengths = usb._wavelengths
     if wavelengths is None:
@@ -465,6 +480,7 @@ def analyze_peaks(positions, intensities, usb, ctrl):
             - sp_ratio: S/P intensity ratio
             - resonance_wavelength: Wavelength where dip occurs (nm)
             - validation: List of validation results
+
     """
     print("\n" + "=" * 80)
     print("RESONANCE DIP ANALYSIS (SPR)")
@@ -479,7 +495,7 @@ def analyze_peaks(positions, intensities, usb, ctrl):
         "separation": 0.0,
         "sp_ratio": 0.0,
         "resonance_wavelength": None,
-        "validation": []
+        "validation": [],
     }
 
     # Find MINIMUM (resonance dip for P position)
@@ -502,40 +518,57 @@ def analyze_peaks(positions, intensities, usb, ctrl):
         MIN_RESONANCE_WL = 590  # nm
         MAX_RESONANCE_WL = 660  # nm
 
-        if resonance_wavelength < MIN_RESONANCE_WL or resonance_wavelength > MAX_RESONANCE_WL:
-            results["validation"].append((
-                "Resonance wavelength",
-                False,
-                f"{resonance_wavelength:.1f}nm not in [{MIN_RESONANCE_WL}, {MAX_RESONANCE_WL}]nm"
-            ))
-            print(f"   ❌ FAIL: Resonance outside valid range ({MIN_RESONANCE_WL}-{MAX_RESONANCE_WL}nm)")
-            print(f"   This suggests incorrect servo position or optical misalignment")
+        if (
+            resonance_wavelength < MIN_RESONANCE_WL
+            or resonance_wavelength > MAX_RESONANCE_WL
+        ):
+            results["validation"].append(
+                (
+                    "Resonance wavelength",
+                    False,
+                    f"{resonance_wavelength:.1f}nm not in [{MIN_RESONANCE_WL}, {MAX_RESONANCE_WL}]nm",
+                ),
+            )
+            print(
+                f"   ❌ FAIL: Resonance outside valid range ({MIN_RESONANCE_WL}-{MAX_RESONANCE_WL}nm)",
+            )
+            print("   This suggests incorrect servo position or optical misalignment")
             return results
-        else:
-            results["validation"].append((
+        results["validation"].append(
+            (
                 "Resonance wavelength",
                 True,
-                f"{resonance_wavelength:.1f}nm in [{MIN_RESONANCE_WL}, {MAX_RESONANCE_WL}]nm"
-            ))
-            print(f"   ✓ PASS: Resonance in valid SPR range")
+                f"{resonance_wavelength:.1f}nm in [{MIN_RESONANCE_WL}, {MAX_RESONANCE_WL}]nm",
+            ),
+        )
+        print("   ✓ PASS: Resonance in valid SPR range")
     else:
-        print(f"   ⚠️  Warning: Could not determine resonance wavelength")
+        print("   ⚠️  Warning: Could not determine resonance wavelength")
 
     # Validation 1: Check that minimum is significant
     intensity_range = intensities.max() - intensities.min()
     dip_depth = intensities.max() - p_intensity
-    dip_depth_percent = (dip_depth / intensities.max()) * 100 if intensities.max() > 0 else 0
+    dip_depth_percent = (
+        (dip_depth / intensities.max()) * 100 if intensities.max() > 0 else 0
+    )
 
     print(f"   Dip depth: {dip_depth:.0f} counts ({dip_depth_percent:.1f}% of maximum)")
 
     MIN_DIP_DEPTH_PERCENT = 10.0  # Minimum 10% dip required
     if dip_depth_percent < MIN_DIP_DEPTH_PERCENT:
-        results["validation"].append(("Dip depth", False, f"{dip_depth_percent:.1f}% < {MIN_DIP_DEPTH_PERCENT}%"))
+        results["validation"].append(
+            (
+                "Dip depth",
+                False,
+                f"{dip_depth_percent:.1f}% < {MIN_DIP_DEPTH_PERCENT}%",
+            ),
+        )
         print(f"   ❌ FAIL: Resonance dip too shallow (need >{MIN_DIP_DEPTH_PERCENT}%)")
         return results
-    else:
-        results["validation"].append(("Dip depth", True, f"{dip_depth_percent:.1f}% >= {MIN_DIP_DEPTH_PERCENT}%"))
-        print(f"   ✓ PASS: Significant resonance dip detected")
+    results["validation"].append(
+        ("Dip depth", True, f"{dip_depth_percent:.1f}% >= {MIN_DIP_DEPTH_PERCENT}%"),
+    )
+    print("   ✓ PASS: Significant resonance dip detected")
 
     # Find MAXIMUM (reference for S position)
     print("\n2. Finding Reference Maximum (S position):")
@@ -551,17 +584,28 @@ def analyze_peaks(positions, intensities, usb, ctrl):
     results["separation"] = separation
 
     # Validation 2: Check separation
-    print(f"\n3. Position Separation:")
+    print("\n3. Position Separation:")
     print(f"   Measured: {separation:.0f}°")
     print(f"   Expected: {MIN_SEPARATION}-{MAX_SEPARATION}°")
 
     if separation < MIN_SEPARATION or separation > MAX_SEPARATION:
-        results["validation"].append(("Position separation", False, f"{separation:.0f}° not in [{MIN_SEPARATION}, {MAX_SEPARATION}]"))
-        print(f"   ❌ FAIL: Separation out of range")
+        results["validation"].append(
+            (
+                "Position separation",
+                False,
+                f"{separation:.0f}° not in [{MIN_SEPARATION}, {MAX_SEPARATION}]",
+            ),
+        )
+        print("   ❌ FAIL: Separation out of range")
         return results
-    else:
-        results["validation"].append(("Position separation", True, f"{separation:.0f}° in [{MIN_SEPARATION}, {MAX_SEPARATION}]"))
-        print(f"   ✓ PASS: Separation is valid")
+    results["validation"].append(
+        (
+            "Position separation",
+            True,
+            f"{separation:.0f}° in [{MIN_SEPARATION}, {MAX_SEPARATION}]",
+        ),
+    )
+    print("   ✓ PASS: Separation is valid")
 
     # Store results
     results["s_pos"] = int(s_position)
@@ -570,43 +614,68 @@ def analyze_peaks(positions, intensities, usb, ctrl):
     results["p_intensity"] = float(p_intensity)
 
     # Validation 3: Verify S > P (intensity check)
-    print(f"\n4. Intensity Verification:")
+    print("\n4. Intensity Verification:")
     print(f"   S-mode intensity: {results['s_intensity']:.0f} (HIGH - reference)")
     print(f"   P-mode intensity: {results['p_intensity']:.0f} (LOW - resonance)")
 
     if results["s_intensity"] <= results["p_intensity"]:
-        results["validation"].append(("S > P", False, f"S={results['s_intensity']:.0f} <= P={results['p_intensity']:.0f}"))
-        print(f"   ❌ FAIL: S should be higher than P")
+        results["validation"].append(
+            (
+                "S > P",
+                False,
+                f"S={results['s_intensity']:.0f} <= P={results['p_intensity']:.0f}",
+            ),
+        )
+        print("   ❌ FAIL: S should be higher than P")
         return results
-    else:
-        results["validation"].append(("S > P", True, f"S={results['s_intensity']:.0f} > P={results['p_intensity']:.0f}"))
-        print(f"   ✓ PASS: S is higher than P")
+    results["validation"].append(
+        (
+            "S > P",
+            True,
+            f"S={results['s_intensity']:.0f} > P={results['p_intensity']:.0f}",
+        ),
+    )
+    print("   ✓ PASS: S is higher than P")
 
     # Validation 4: Check S/P ratio
     results["sp_ratio"] = results["s_intensity"] / results["p_intensity"]
 
-    print(f"\n5. S/P Ratio:")
+    print("\n5. S/P Ratio:")
     print(f"   Measured: {results['sp_ratio']:.2f}×")
     print(f"   Minimum: {MIN_SP_RATIO:.2f}×")
     print(f"   Ideal: {IDEAL_SP_RATIO:.2f}×")
 
     if results["sp_ratio"] < MIN_SP_RATIO:
-        results["validation"].append(("S/P ratio", False, f"{results['sp_ratio']:.2f}× < {MIN_SP_RATIO:.2f}×"))
-        print(f"   ❌ FAIL: Ratio too low")
+        results["validation"].append(
+            ("S/P ratio", False, f"{results['sp_ratio']:.2f}× < {MIN_SP_RATIO:.2f}×"),
+        )
+        print("   ❌ FAIL: Ratio too low")
         return results
-    elif results["sp_ratio"] < IDEAL_SP_RATIO:
-        results["validation"].append(("S/P ratio", True, f"{results['sp_ratio']:.2f}× >= {MIN_SP_RATIO:.2f}× (acceptable)"))
-        print(f"   ✓ PASS: Ratio acceptable (but below ideal)")
+    if results["sp_ratio"] < IDEAL_SP_RATIO:
+        results["validation"].append(
+            (
+                "S/P ratio",
+                True,
+                f"{results['sp_ratio']:.2f}× >= {MIN_SP_RATIO:.2f}× (acceptable)",
+            ),
+        )
+        print("   ✓ PASS: Ratio acceptable (but below ideal)")
     else:
-        results["validation"].append(("S/P ratio", True, f"{results['sp_ratio']:.2f}× >= {IDEAL_SP_RATIO:.2f}× (ideal)"))
-        print(f"   ✓ PASS: Ratio is ideal")
+        results["validation"].append(
+            (
+                "S/P ratio",
+                True,
+                f"{results['sp_ratio']:.2f}× >= {IDEAL_SP_RATIO:.2f}× (ideal)",
+            ),
+        )
+        print("   ✓ PASS: Ratio is ideal")
 
     # All validations passed
     results["success"] = True
 
-    print(f"\n" + "=" * 80)
-    print(f"✅ ALL VALIDATIONS PASSED")
-    print(f"=" * 80)
+    print("\n" + "=" * 80)
+    print("✅ ALL VALIDATIONS PASSED")
+    print("=" * 80)
     print(f"   S position: {results['s_pos']}° (HIGH transmission)")
     print(f"   P position: {results['p_pos']}° (LOW transmission - resonance dip)")
     print(f"   S/P ratio: {results['sp_ratio']:.2f}×")
@@ -629,6 +698,7 @@ def verify_and_correct_positions(ctrl, usb, s_pos, p_pos):
 
     Returns:
         tuple: (corrected_s_pos, corrected_p_pos, was_inverted)
+
     """
     print("\n" + "=" * 80)
     print("POSITION VERIFICATION & INVERSION DETECTION")
@@ -668,23 +738,25 @@ def verify_and_correct_positions(ctrl, usb, s_pos, p_pos):
     # LED off
     ctrl.turn_off_channels()
 
-    print(f"\n   Measured intensities:")
+    print("\n   Measured intensities:")
     print(f"   S-mode: {s_measured:.0f} counts")
     print(f"   P-mode: {p_measured:.0f} counts")
     print(f"   Ratio:  {s_measured / p_measured:.2f}× (S/P)")
 
     # Check for inversion: P > S indicates positions are swapped
     if p_measured > s_measured:
-        print(f"\n   ⚠️  INVERSION DETECTED!")
-        print(f"   P-mode intensity ({p_measured:.0f}) > S-mode intensity ({s_measured:.0f})")
-        print(f"   This would cause >100% transmission in P-mode")
-        print(f"\n   🔄 AUTO-CORRECTING: Swapping S and P positions")
+        print("\n   ⚠️  INVERSION DETECTED!")
+        print(
+            f"   P-mode intensity ({p_measured:.0f}) > S-mode intensity ({s_measured:.0f})",
+        )
+        print("   This would cause >100% transmission in P-mode")
+        print("\n   🔄 AUTO-CORRECTING: Swapping S and P positions")
 
         # Swap positions
         corrected_s_pos = p_pos
         corrected_p_pos = s_pos
 
-        print(f"\n   Corrected positions:")
+        print("\n   Corrected positions:")
         print(f"   S position: {s_pos}° → {corrected_s_pos}°")
         print(f"   P position: {p_pos}° → {corrected_p_pos}°")
 
@@ -713,21 +785,20 @@ def verify_and_correct_positions(ctrl, usb, s_pos, p_pos):
 
         ctrl.turn_off_channels()
 
-        print(f"\n   Verification after swap:")
+        print("\n   Verification after swap:")
         print(f"   S-mode: {s_verify_val:.0f} counts")
         print(f"   P-mode: {p_verify_val:.0f} counts")
         print(f"   Ratio:  {s_verify_val / p_verify_val:.2f}× (S/P)")
 
         if s_verify_val > p_verify_val:
-            print(f"   ✅ Swap successful - positions now correct!")
+            print("   ✅ Swap successful - positions now correct!")
         else:
-            print(f"   ⚠️  Warning: Positions still look inverted after swap")
+            print("   ⚠️  Warning: Positions still look inverted after swap")
 
         return corrected_s_pos, corrected_p_pos, True
-    else:
-        print(f"\n   ✅ Positions are correct (S > P)")
-        print(f"   No inversion detected")
-        return s_pos, p_pos, False
+    print("\n   ✅ Positions are correct (S > P)")
+    print("   No inversion detected")
+    return s_pos, p_pos, False
 
 
 def apply_positions(ctrl, s_pos, p_pos, save_to_eeprom=False):
@@ -738,6 +809,7 @@ def apply_positions(ctrl, s_pos, p_pos, save_to_eeprom=False):
         s_pos: S-mode servo position
         p_pos: P-mode servo position
         save_to_eeprom: If True, save to EEPROM for persistence
+
     """
     print("\n" + "=" * 80)
     print("APPLYING POSITIONS")
@@ -750,24 +822,24 @@ def apply_positions(ctrl, s_pos, p_pos, save_to_eeprom=False):
     # Verify positions were set
     pos_dict = ctrl.servo_get()
     try:
-        read_s = int(pos_dict.get('s', b'0'))
-        read_p = int(pos_dict.get('p', b'0'))
+        read_s = int(pos_dict.get("s", b"0"))
+        read_p = int(pos_dict.get("p", b"0"))
         print(f"   Readback positions: S={read_s}°, P={read_p}°")
 
         if read_s == s_pos and read_p == p_pos:
-            print(f"   ✓ Positions verified")
+            print("   ✓ Positions verified")
         else:
             print(f"   ⚠️  Readback mismatch (expected S={s_pos}, P={p_pos})")
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError):
         print(f"   ⚠️  Could not parse readback positions: {pos_dict}")
 
     if save_to_eeprom:
-        print(f"\n   💾 Saving to EEPROM...")
+        print("\n   💾 Saving to EEPROM...")
         ctrl.flash()
         time.sleep(0.5)
-        print(f"   ✓ Positions saved to EEPROM (will persist across power cycles)")
+        print("   ✓ Positions saved to EEPROM (will persist across power cycles)")
     else:
-        print(f"\n   ⚠️  Positions NOT saved to EEPROM (temporary)")
+        print("\n   ⚠️  Positions NOT saved to EEPROM (temporary)")
 
 
 def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False):
@@ -781,6 +853,7 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
 
     Returns:
         dict: Calibration results or None if failed
+
     """
     print("\n" + "=" * 80)
     print("SERVO POSITION CALIBRATION")
@@ -791,7 +864,7 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
         is_valid, ratio, s_pos, p_pos = fast_validation(usb, ctrl)
 
         if is_valid:
-            print(f"\n✅ Fast validation successful!")
+            print("\n✅ Fast validation successful!")
             print(f"   Using stored positions: S={s_pos}, P={p_pos}")
             print(f"   S/P ratio: {ratio:.2f}×")
 
@@ -804,16 +877,15 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
                 "s_pos": s_pos,
                 "p_pos": p_pos,
                 "sp_ratio": ratio,
-                "attempts": 0
+                "attempts": 0,
             }
-        else:
-            print(f"\n⚠️  Fast validation failed - proceeding with full sweep")
+        print("\n⚠️  Fast validation failed - proceeding with full sweep")
     else:
-        print(f"\n🔧 Force full calibration requested")
+        print("\n🔧 Force full calibration requested")
 
     # Full calibration with retry logic
     for attempt in range(1, MAX_RETRIES + 1):
-        print(f"\n" + "=" * 80)
+        print("\n" + "=" * 80)
         print(f"CALIBRATION ATTEMPT {attempt}/{MAX_RETRIES}")
         print("=" * 80)
 
@@ -828,8 +900,13 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
                 print(f"\n✅ Calibration successful on attempt {attempt}!")
 
                 # Verify and auto-correct for inversion
-                corrected_s_pos, corrected_p_pos, was_inverted = verify_and_correct_positions(
-                    ctrl, usb, results["s_pos"], results["p_pos"]
+                corrected_s_pos, corrected_p_pos, was_inverted = (
+                    verify_and_correct_positions(
+                        ctrl,
+                        usb,
+                        results["s_pos"],
+                        results["p_pos"],
+                    )
                 )
 
                 # Update results with corrected positions
@@ -843,24 +920,29 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
                     results["inversion_corrected"] = False
 
                 # Apply corrected positions
-                apply_positions(ctrl, results["s_pos"], results["p_pos"], save_to_eeprom)
+                apply_positions(
+                    ctrl,
+                    results["s_pos"],
+                    results["p_pos"],
+                    save_to_eeprom,
+                )
 
                 results["method"] = "full_sweep"
                 results["attempts"] = attempt
                 return results
-            else:
-                print(f"\n❌ Attempt {attempt} failed validation:")
-                for name, passed, detail in results["validation"]:
-                    status = "✓" if passed else "✗"
-                    print(f"   {status} {name}: {detail}")
+            print(f"\n❌ Attempt {attempt} failed validation:")
+            for name, passed, detail in results["validation"]:
+                status = "✓" if passed else "✗"
+                print(f"   {status} {name}: {detail}")
 
-                if attempt < MAX_RETRIES:
-                    print(f"\n   Retrying... ({MAX_RETRIES - attempt} attempts remaining)")
-                    time.sleep(1.0)
+            if attempt < MAX_RETRIES:
+                print(f"\n   Retrying... ({MAX_RETRIES - attempt} attempts remaining)")
+                time.sleep(1.0)
 
         except Exception as e:
             print(f"\n❌ Attempt {attempt} failed with error: {e}")
             import traceback
+
             traceback.print_exc()
 
             if attempt < MAX_RETRIES:
@@ -868,7 +950,7 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
                 time.sleep(1.0)
 
     # All retries exhausted
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print(f"❌ CALIBRATION FAILED - All {MAX_RETRIES} attempts exhausted")
     print("=" * 80)
     return None
@@ -877,10 +959,16 @@ def calibrate_servo_positions(usb, ctrl, force_full=False, save_to_eeprom=False)
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Test servo calibration sequence")
-    parser.add_argument("--force", action="store_true",
-                       help="Force full calibration (skip fast validation)")
-    parser.add_argument("--save", action="store_true",
-                       help="Save positions to EEPROM after successful calibration")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force full calibration (skip fast validation)",
+    )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Save positions to EEPROM after successful calibration",
+    )
     args = parser.parse_args()
 
     print("\n" + "=" * 80)
@@ -920,14 +1008,14 @@ def main():
         print(f"   S/P ratio: {results['sp_ratio']:.2f}×")
 
         # Show resonance wavelength if available
-        if results.get('resonance_wavelength') is not None:
+        if results.get("resonance_wavelength") is not None:
             print(f"   Resonance wavelength: {results['resonance_wavelength']:.1f}nm")
 
         # Show inversion info if applicable
-        if results.get('was_inverted', False):
-            print(f"   ⚠️  Inversion detected and corrected")
+        if results.get("was_inverted", False):
+            print("   ⚠️  Inversion detected and corrected")
         else:
-            print(f"   ✅ No inversion detected")
+            print("   ✅ No inversion detected")
 
         print(f"   Saved to EEPROM: {args.save}")
         print("=" * 80)
@@ -942,6 +1030,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

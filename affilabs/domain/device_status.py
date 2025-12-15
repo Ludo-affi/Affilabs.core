@@ -1,18 +1,18 @@
-"""
-Device Status Models
+"""Device Status Models
 
 Pure Python data structures for hardware status.
 NO Qt dependencies - fully testable.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any
 
 
 class DeviceType(Enum):
     """Type of hardware device."""
+
     CONTROLLER = "controller"  # PicoP4SPR controller
     SPECTROMETER = "spectrometer"  # FLMT09116 spectrometer
     SERVO = "servo"  # Polarizer servo motor
@@ -20,6 +20,7 @@ class DeviceType(Enum):
 
 class ConnectionState(Enum):
     """Connection state of a device."""
+
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -33,26 +34,27 @@ class DeviceStatus:
 
     Tracks connection state, errors, and health metrics.
     """
+
     device_type: DeviceType
     state: ConnectionState
 
     # Connection info
-    port: Optional[str] = None  # COM port or USB address
-    serial_number: Optional[str] = None
-    firmware_version: Optional[str] = None
+    port: str | None = None  # COM port or USB address
+    serial_number: str | None = None
+    firmware_version: str | None = None
 
     # Health metrics
     last_seen: float = field(default_factory=lambda: datetime.now().timestamp())
     error_count: int = 0
     consecutive_errors: int = 0
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
     # Performance
     response_time_ms: float = 0.0  # Last command response time
     uptime_seconds: float = 0.0  # Time since connection
 
     # Metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_connected(self) -> bool:
@@ -62,10 +64,7 @@ class DeviceStatus:
     @property
     def is_healthy(self) -> bool:
         """Check if device is healthy (connected with low error rate)."""
-        return (
-            self.state == ConnectionState.CONNECTED and
-            self.consecutive_errors < 5
-        )
+        return self.state == ConnectionState.CONNECTED and self.consecutive_errors < 5
 
     @property
     def last_seen_datetime(self) -> datetime:
@@ -103,7 +102,7 @@ class DeviceStatus:
         if self.state == ConnectionState.ERROR:
             self.state = ConnectionState.CONNECTED
 
-    def copy(self) -> 'DeviceStatus':
+    def copy(self) -> "DeviceStatus":
         """Create a copy of device status."""
         return DeviceStatus(
             device_type=self.device_type,
@@ -117,7 +116,7 @@ class DeviceStatus:
             last_error=self.last_error,
             response_time_ms=self.response_time_ms,
             uptime_seconds=self.uptime_seconds,
-            metadata=self.metadata.copy()
+            metadata=self.metadata.copy(),
         )
 
 
@@ -127,16 +126,19 @@ class SystemStatus:
 
     Provides a unified view of hardware health.
     """
-    controller: Optional[DeviceStatus] = None
-    spectrometer: Optional[DeviceStatus] = None
-    servo: Optional[DeviceStatus] = None
+
+    controller: DeviceStatus | None = None
+    spectrometer: DeviceStatus | None = None
+    servo: DeviceStatus | None = None
 
     @property
     def all_connected(self) -> bool:
         """Check if all devices are connected."""
         return (
-            self.controller is not None and self.controller.is_connected and
-            self.spectrometer is not None and self.spectrometer.is_connected
+            self.controller is not None
+            and self.controller.is_connected
+            and self.spectrometer is not None
+            and self.spectrometer.is_connected
         )
 
     @property
@@ -165,10 +167,10 @@ class SystemStatus:
 
         return "; ".join(errors) if errors else "No errors"
 
-    def copy(self) -> 'SystemStatus':
+    def copy(self) -> "SystemStatus":
         """Create a copy of system status."""
         return SystemStatus(
             controller=self.controller.copy() if self.controller else None,
             spectrometer=self.spectrometer.copy() if self.spectrometer else None,
-            servo=self.servo.copy() if self.servo else None
+            servo=self.servo.copy() if self.servo else None,
         )

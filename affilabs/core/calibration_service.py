@@ -72,9 +72,7 @@ class CalibrationService(QObject):
 
         # Headless mode: allowed only when NOT running inside the UI
         # In UI context, we always show the dialog regardless of env var
-        in_ui_context = (
-            hasattr(self.app, "main_window") and self.app.main_window is not None
-        )
+        in_ui_context = hasattr(self.app, "main_window") and self.app.main_window is not None
         headless_env = os.getenv("CALIBRATION_HEADLESS", "0") == "1"
         headless = (not in_ui_context) and headless_env
 
@@ -194,7 +192,8 @@ class CalibrationService(QObject):
                 self._calibration_dialog.show_progress_bar()
             self._calibration_dialog.update_status(message)
             self._calibration_dialog.set_progress(
-                progress, 100,
+                progress,
+                100,
             )  # Now thread-safe via signal
 
     def _on_calibration_failed_dialog(self, error_message: str) -> None:
@@ -243,7 +242,8 @@ class CalibrationService(QObject):
                     logger.info("[OK] Live acquisition started successfully")
                 except Exception as e:
                     logger.error(
-                        f"[ERROR] Failed to start acquisition: {e}", exc_info=True,
+                        f"[ERROR] Failed to start acquisition: {e}",
+                        exc_info=True,
                     )
                     # Show error but don't close dialog yet
                     ui_error(
@@ -276,9 +276,7 @@ class CalibrationService(QObject):
                             overlay_to_cleanup = None
                             if hasattr(self._calibration_dialog, "overlay"):
                                 overlay_to_cleanup = self._calibration_dialog.overlay
-                                self._calibration_dialog.overlay = (
-                                    None  # Clear reference first
-                                )
+                                self._calibration_dialog.overlay = None  # Clear reference first
 
                             # Close dialog first (this will trigger closeEvent)
                             logger.info("   Closing dialog window...")
@@ -303,7 +301,8 @@ class CalibrationService(QObject):
                             )
                         except Exception as e:
                             logger.error(
-                                f"[WARN] Error closing dialog: {e}", exc_info=True,
+                                f"[WARN] Error closing dialog: {e}",
+                                exc_info=True,
                             )
 
                 QTimer.singleShot(150, close_dialog)  # Slightly longer delay for safety
@@ -380,7 +379,8 @@ class CalibrationService(QObject):
 
             os.makedirs("logs", exist_ok=True)
             logfile = os.path.join(
-                "logs", for_filename(prefix="calibration_", ext="log"),
+                "logs",
+                for_filename(prefix="calibration_", ext="log"),
             )
             log_handler = logging.FileHandler(logfile, encoding="utf-8")
             log_handler.setLevel(logging.INFO)
@@ -390,7 +390,8 @@ class CalibrationService(QObject):
             logger.info(f"[CAL] File logging enabled → {logfile}")
             os.makedirs("logs", exist_ok=True)
             logfile = os.path.join(
-                "logs", for_filename(prefix="calibration_", ext="log"),
+                "logs",
+                for_filename(prefix="calibration_", ext="log"),
             )
             logger.info(f"[CAL-THREAD] Creating log file: {logfile}")
             log_handler = logging.FileHandler(logfile, encoding="utf-8")
@@ -492,10 +493,7 @@ class CalibrationService(QObject):
                 if cal_result:
                     if hasattr(cal_result, "error") and cal_result.error:
                         error_msg = cal_result.error
-                    elif (
-                        hasattr(cal_result, "error_message")
-                        and cal_result.error_message
-                    ):
+                    elif hasattr(cal_result, "error_message") and cal_result.error_message:
                         error_msg = cal_result.error_message
                 raise RuntimeError(error_msg)
 
@@ -532,7 +530,9 @@ class CalibrationService(QObject):
             # Explicitly log timing sync metrics for QC visibility (prefer domain)
             try:
                 ts = getattr(calibration_data, "timing_sync", None) or getattr(
-                    cal_result, "timing_sync", None,
+                    cal_result,
+                    "timing_sync",
+                    None,
                 )
                 if ts:
                     logger.info(
@@ -720,7 +720,9 @@ class CalibrationService(QObject):
 
             device_type = type(ctrl).__name__
             ch_list = determine_channel_list(
-                device_type, single_mode=False, single_ch="a",
+                device_type,
+                single_mode=False,
+                single_ch="a",
             )
 
             # Convert device_config to dict for preflight

@@ -1,5 +1,4 @@
-"""
-Hardware Detection Utilities
+"""Hardware Detection Utilities
 
 Automatically detects and identifies connected hardware:
 - Spectrometer (Ocean Optics Flame-T)
@@ -16,16 +15,12 @@ Version: 1.0
 from __future__ import annotations
 
 import serial.tools.list_ports
-from typing import Optional, Dict, List, Tuple
-from pathlib import Path
-import time
 
 from utils.logger import logger
 
 
 class HardwareDetector:
-    """
-    Detect and identify connected SPR hardware.
+    """Detect and identify connected SPR hardware.
 
     Detects:
     - Spectrometer (via serial port VID:PID)
@@ -35,62 +30,63 @@ class HardwareDetector:
 
     # Known hardware identifiers
     SPECTROMETER_VID_PID = [
-        ('2457', '101E'),  # Ocean Optics USB4000 (direct USB)
-        ('2457', '1022'),  # Ocean Optics Flame-S (direct USB)
-        ('10C4', 'EA60'),  # CP210x USB-to-Serial (used by USB4000/Flame-T)
+        ("2457", "101E"),  # Ocean Optics USB4000 (direct USB)
+        ("2457", "1022"),  # Ocean Optics Flame-S (direct USB)
+        ("10C4", "EA60"),  # CP210x USB-to-Serial (used by USB4000/Flame-T)
     ]
 
     CONTROLLER_VID_PID = [
-        ('2E8A', '000A'),  # Raspberry Pi Pico
+        ("2E8A", "000A"),  # Raspberry Pi Pico
     ]
 
     def __init__(self):
         """Initialize hardware detector."""
         self.detected_hardware = {
-            'spectrometer': None,
-            'controller': None,
-            'led_pcb': None,  # Must be set by user
+            "spectrometer": None,
+            "controller": None,
+            "led_pcb": None,  # Must be set by user
         }
 
-    def scan_ports(self) -> List[Dict[str, str]]:
-        """
-        Scan all available serial ports.
+    def scan_ports(self) -> list[dict[str, str]]:
+        """Scan all available serial ports.
 
         Returns:
             List of port information dictionaries
+
         """
         ports = []
         for port in serial.tools.list_ports.comports():
             port_info = {
-                'device': port.device,
-                'name': port.name,
-                'description': port.description,
-                'hwid': port.hwid,
-                'vid': f"{port.vid:04X}" if port.vid else None,
-                'pid': f"{port.pid:04X}" if port.pid else None,
-                'serial_number': port.serial_number,
-                'manufacturer': port.manufacturer,
-                'product': port.product,
+                "device": port.device,
+                "name": port.name,
+                "description": port.description,
+                "hwid": port.hwid,
+                "vid": f"{port.vid:04X}" if port.vid else None,
+                "pid": f"{port.pid:04X}" if port.pid else None,
+                "serial_number": port.serial_number,
+                "manufacturer": port.manufacturer,
+                "product": port.product,
             }
             ports.append(port_info)
 
         return ports
 
-    def detect_spectrometer(self) -> Optional[Dict[str, str]]:
-        """
-        Detect Ocean Optics spectrometer using SeaBreeze.
+    def detect_spectrometer(self) -> dict[str, str] | None:
+        """Detect Ocean Optics spectrometer using SeaBreeze.
 
         Returns:
             Spectrometer information if found, None otherwise
+
         """
         logger.info("Scanning for spectrometer...")
 
         # Try SeaBreeze detection first (Ocean Optics native USB)
         try:
             import seabreeze
+
             # Use cseabreeze (C backend) - more reliable than pyseabreeze
-            seabreeze.use('cseabreeze')
-            from seabreeze.spectrometers import list_devices, Spectrometer
+            seabreeze.use("cseabreeze")
+            from seabreeze.spectrometers import Spectrometer, list_devices
 
             devices = list_devices()
 
@@ -103,25 +99,25 @@ class HardwareDetector:
                     spec = Spectrometer(device)
 
                     spec_info = {
-                        'device': 'SeaBreeze',
-                        'name': spec.model,
-                        'description': f"Ocean Optics {spec.model}",
-                        'hwid': 'SeaBreeze',
-                        'vid': None,  # Not exposed by SeaBreeze
-                        'pid': None,
-                        'serial_number': spec.serial_number,
-                        'manufacturer': 'Ocean Optics',
-                        'product': spec.model,
-                        'connection_type': 'USB (SeaBreeze)',
+                        "device": "SeaBreeze",
+                        "name": spec.model,
+                        "description": f"Ocean Optics {spec.model}",
+                        "hwid": "SeaBreeze",
+                        "vid": None,  # Not exposed by SeaBreeze
+                        "pid": None,
+                        "serial_number": spec.serial_number,
+                        "manufacturer": "Ocean Optics",
+                        "product": spec.model,
+                        "connection_type": "USB (SeaBreeze)",
                     }
 
                     spec.close()
 
-                    logger.info(f"  ✅ Found spectrometer via SeaBreeze")
+                    logger.info("  ✅ Found spectrometer via SeaBreeze")
                     logger.info(f"     Model: {spec_info['product']}")
                     logger.info(f"     Serial: {spec_info['serial_number']}")
 
-                    self.detected_hardware['spectrometer'] = spec_info
+                    self.detected_hardware["spectrometer"] = spec_info
                     return spec_info
 
                 except Exception as e:
@@ -136,8 +132,8 @@ class HardwareDetector:
         ports = self.scan_ports()
 
         for port in ports:
-            vid = port['vid']
-            pid = port['pid']
+            vid = port["vid"]
+            pid = port["pid"]
 
             # Check if this is a known spectrometer via serial
             for spec_vid, spec_pid in self.SPECTROMETER_VID_PID:
@@ -147,26 +143,26 @@ class HardwareDetector:
                     logger.info(f"     Serial: {port['serial_number']}")
                     logger.info(f"     Product: {port['product']}")
 
-                    self.detected_hardware['spectrometer'] = port
+                    self.detected_hardware["spectrometer"] = port
                     return port
 
         logger.warning("  ❌ No spectrometer detected")
         return None
 
-    def detect_controller(self) -> Optional[Dict[str, str]]:
-        """
-        Detect Raspberry Pi Pico controller.
+    def detect_controller(self) -> dict[str, str] | None:
+        """Detect Raspberry Pi Pico controller.
 
         Returns:
             Port information if found, None otherwise
+
         """
         logger.info("Scanning for controller...")
 
         ports = self.scan_ports()
 
         for port in ports:
-            vid = port['vid']
-            pid = port['pid']
+            vid = port["vid"]
+            pid = port["pid"]
 
             # Check if this is a Pico
             for ctrl_vid, ctrl_pid in self.CONTROLLER_VID_PID:
@@ -175,18 +171,18 @@ class HardwareDetector:
                     logger.info(f"     VID:PID = {vid}:{pid}")
                     logger.info(f"     Product: {port['product']}")
 
-                    self.detected_hardware['controller'] = port
+                    self.detected_hardware["controller"] = port
                     return port
 
         logger.warning("  ❌ No controller detected")
         return None
 
-    def detect_all_hardware(self) -> Dict[str, Optional[Dict]]:
-        """
-        Detect all connected hardware.
+    def detect_all_hardware(self) -> dict[str, dict | None]:
+        """Detect all connected hardware.
 
         Returns:
             Dictionary with detected hardware info
+
         """
         logger.info("\n" + "=" * 60)
         logger.info("HARDWARE DETECTION")
@@ -198,38 +194,45 @@ class HardwareDetector:
 
         # Summary
         logger.info("\n📊 Detection Summary:")
-        logger.info(f"  Spectrometer: {'✅ Detected' if self.detected_hardware['spectrometer'] else '❌ Not found'}")
-        logger.info(f"  Controller:   {'✅ Detected' if self.detected_hardware['controller'] else '❌ Not found'}")
-        logger.info(f"  LED PCB:      ⚠️  User input required")
+        logger.info(
+            f"  Spectrometer: {'✅ Detected' if self.detected_hardware['spectrometer'] else '❌ Not found'}",
+        )
+        logger.info(
+            f"  Controller:   {'✅ Detected' if self.detected_hardware['controller'] else '❌ Not found'}",
+        )
+        logger.info("  LED PCB:      ⚠️  User input required")
 
         logger.info("=" * 60)
 
         return self.detected_hardware
 
-    def query_spectrometer_info(self, port: str) -> Optional[Dict[str, str]]:
-        """
-        Query spectrometer for detailed information.
+    def query_spectrometer_info(self, port: str) -> dict[str, str] | None:
+        """Query spectrometer for detailed information.
 
         Args:
             port: Serial port device path
 
         Returns:
             Spectrometer info dictionary
+
         """
         try:
             import seabreeze
-            seabreeze.use('cseabreeze')  # FIX: Use C backend for performance (was pyseabreeze)
+
+            seabreeze.use(
+                "cseabreeze",
+            )  # FIX: Use C backend for performance (was pyseabreeze)
             from seabreeze.spectrometers import Spectrometer
 
             # Try to open spectrometer
             spec = Spectrometer.from_serial_number()
 
             info = {
-                'model': spec.model,
-                'serial_number': spec.serial_number,
-                'wavelengths': len(spec.wavelengths()),
-                'integration_time_min': spec.integration_time_micros_limits[0],
-                'integration_time_max': spec.integration_time_micros_limits[1],
+                "model": spec.model,
+                "serial_number": spec.serial_number,
+                "wavelengths": len(spec.wavelengths()),
+                "integration_time_min": spec.integration_time_micros_limits[0],
+                "integration_time_max": spec.integration_time_micros_limits[1],
             }
 
             spec.close()
@@ -241,11 +244,10 @@ class HardwareDetector:
 
     def generate_device_config(
         self,
-        led_pcb_model: str = 'luminus_cool_white',
-        fiber_diameter_um: int = 200
-    ) -> Dict:
-        """
-        Generate device configuration from detected hardware.
+        led_pcb_model: str = "luminus_cool_white",
+        fiber_diameter_um: int = 200,
+    ) -> dict:
+        """Generate device configuration from detected hardware.
 
         Args:
             led_pcb_model: LED PCB model ('luminus_cool_white' or 'osram_warm_white')
@@ -253,63 +255,64 @@ class HardwareDetector:
 
         Returns:
             Configuration dictionary
+
         """
         from datetime import datetime
 
         config = {
-            'device_info': {
-                'config_version': '1.0',
-                'created_date': datetime.now().isoformat(),
-                'last_modified': datetime.now().isoformat(),
-                'device_id': None,
-                'auto_detected': True,
+            "device_info": {
+                "config_version": "1.0",
+                "created_date": datetime.now().isoformat(),
+                "last_modified": datetime.now().isoformat(),
+                "device_id": None,
+                "auto_detected": True,
             },
-            'hardware': {
-                'led_pcb_model': led_pcb_model,
-                'led_pcb_serial': None,
-                'spectrometer_model': 'Flame-T',
-                'spectrometer_serial': None,
-                'controller_model': 'Raspberry Pi Pico P4SPR',
-                'controller_serial': None,
-                'optical_fiber_diameter_um': fiber_diameter_um,
+            "hardware": {
+                "led_pcb_model": led_pcb_model,
+                "led_pcb_serial": None,
+                "spectrometer_model": "Flame-T",
+                "spectrometer_serial": None,
+                "controller_model": "Raspberry Pi Pico P4SPR",
+                "controller_serial": None,
+                "optical_fiber_diameter_um": fiber_diameter_um,
             },
-            'timing_parameters': {
-                'led_a_delay_ms': 0,
-                'led_b_delay_ms': 0,
-                'led_c_delay_ms': 0,
-                'led_d_delay_ms': 0,
-                'min_integration_time_ms': 50,
-                'led_rise_fall_time_ms': 5,
+            "timing_parameters": {
+                "led_a_delay_ms": 0,
+                "led_b_delay_ms": 0,
+                "led_c_delay_ms": 0,
+                "led_d_delay_ms": 0,
+                "min_integration_time_ms": 50,
+                "led_rise_fall_time_ms": 5,
             },
-            'frequency_limits': {
-                '4_led_max_hz': 5.0,
-                '4_led_recommended_hz': 2.0,
-                '2_led_max_hz': 10.0,
-                '2_led_recommended_hz': 5.0,
+            "frequency_limits": {
+                "4_led_max_hz": 5.0,
+                "4_led_recommended_hz": 2.0,
+                "2_led_max_hz": 10.0,
+                "2_led_recommended_hz": 5.0,
             },
-            'calibration': {
-                'dark_calibration_date': None,
-                's_mode_calibration_date': None,
-                'p_mode_calibration_date': None,
-                'factory_calibrated': False,
-                'user_calibrated': False,
+            "calibration": {
+                "dark_calibration_date": None,
+                "s_mode_calibration_date": None,
+                "p_mode_calibration_date": None,
+                "factory_calibrated": False,
+                "user_calibrated": False,
             },
-            'maintenance': {
-                'last_maintenance_date': None,
-                'total_measurement_cycles': 0,
-                'led_on_hours': 0.0,
-                'next_maintenance_due': None,
+            "maintenance": {
+                "last_maintenance_date": None,
+                "total_measurement_cycles": 0,
+                "led_on_hours": 0.0,
+                "next_maintenance_due": None,
             },
         }
 
         # Fill in detected hardware info
-        if self.detected_hardware['spectrometer']:
-            spec = self.detected_hardware['spectrometer']
-            config['hardware']['spectrometer_serial'] = spec['serial_number']
+        if self.detected_hardware["spectrometer"]:
+            spec = self.detected_hardware["spectrometer"]
+            config["hardware"]["spectrometer_serial"] = spec["serial_number"]
 
-        if self.detected_hardware['controller']:
-            ctrl = self.detected_hardware['controller']
-            config['hardware']['controller_serial'] = ctrl['serial_number']
+        if self.detected_hardware["controller"]:
+            ctrl = self.detected_hardware["controller"]
+            config["hardware"]["controller_serial"] = ctrl["serial_number"]
 
         return config
 
@@ -320,8 +323,8 @@ class HardwareDetector:
         logger.info("=" * 60)
 
         # Spectrometer
-        if self.detected_hardware['spectrometer']:
-            spec = self.detected_hardware['spectrometer']
+        if self.detected_hardware["spectrometer"]:
+            spec = self.detected_hardware["spectrometer"]
             logger.info("\n🔬 Spectrometer:")
             logger.info(f"  Port:         {spec['device']}")
             logger.info(f"  VID:PID:      {spec['vid']}:{spec['pid']}")
@@ -332,8 +335,8 @@ class HardwareDetector:
             logger.info("\n🔬 Spectrometer: Not detected")
 
         # Controller
-        if self.detected_hardware['controller']:
-            ctrl = self.detected_hardware['controller']
+        if self.detected_hardware["controller"]:
+            ctrl = self.detected_hardware["controller"]
             logger.info("\n🎛️  Controller:")
             logger.info(f"  Port:         {ctrl['device']}")
             logger.info(f"  VID:PID:      {ctrl['vid']}:{ctrl['pid']}")
@@ -350,12 +353,11 @@ class HardwareDetector:
 
 
 def auto_detect_and_configure(
-    led_pcb_model: str = 'luminus_cool_white',
+    led_pcb_model: str = "luminus_cool_white",
     fiber_diameter_um: int = 200,
-    save_config: bool = True
-) -> Dict:
-    """
-    Auto-detect hardware and create configuration.
+    save_config: bool = True,
+) -> dict:
+    """Auto-detect hardware and create configuration.
 
     Args:
         led_pcb_model: LED PCB model
@@ -364,6 +366,7 @@ def auto_detect_and_configure(
 
     Returns:
         Generated configuration
+
     """
     # Detect hardware
     detector = HardwareDetector()
@@ -376,11 +379,14 @@ def auto_detect_and_configure(
     # Save if requested
     if save_config:
         from utils.device_configuration import DeviceConfiguration
+
         device_config = DeviceConfiguration()
 
         # Update with detected values
-        if config['hardware']['spectrometer_serial']:
-            device_config.set_spectrometer_serial(config['hardware']['spectrometer_serial'])
+        if config["hardware"]["spectrometer_serial"]:
+            device_config.set_spectrometer_serial(
+                config["hardware"]["spectrometer_serial"],
+            )
 
         device_config.set_led_pcb_model(led_pcb_model)
         device_config.set_optical_fiber_diameter(fiber_diameter_um)
@@ -399,9 +405,9 @@ if __name__ == "__main__":
 
     # Run detection
     config = auto_detect_and_configure(
-        led_pcb_model='luminus_cool_white',
+        led_pcb_model="luminus_cool_white",
         fiber_diameter_um=200,
-        save_config=True
+        save_config=True,
     )
 
     print("\n" + "=" * 70)
@@ -419,9 +425,9 @@ if __name__ == "__main__":
             print(f"\n{i}. {port['device']}")
             print(f"   Description: {port['description']}")
             print(f"   VID:PID:     {port['vid']}:{port['pid']}")
-            if port['serial_number']:
+            if port["serial_number"]:
                 print(f"   Serial:      {port['serial_number']}")
-            if port['product']:
+            if port["product"]:
                 print(f"   Product:     {port['product']}")
     else:
         print("No serial ports detected")

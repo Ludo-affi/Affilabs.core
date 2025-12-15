@@ -1,11 +1,16 @@
 """Modern graph components extracted from UI Prototype Rev 1."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton
-)
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QGraphicsDropShadowEffect
+from PySide6.QtWidgets import (
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class GraphHeader(QWidget):
@@ -33,7 +38,7 @@ class GraphHeader(QWidget):
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  font-weight: 500;"
-            "}"
+            "}",
         )
         layout.addWidget(channels_label)
 
@@ -42,7 +47,7 @@ class GraphHeader(QWidget):
             ("A", "#1D1D1F"),
             ("B", "#FF3B30"),
             ("C", "#1D1D1F"),
-            ("D", "#34C759")
+            ("D", "#34C759"),
         ]
 
         for ch, color in channel_colors:
@@ -66,7 +71,7 @@ class GraphHeader(QWidget):
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             self.channel_buttons[ch] = ch_btn
             layout.addWidget(ch_btn)
@@ -96,7 +101,7 @@ class GraphContainer(QFrame):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
 
         # Add shadow effect
@@ -132,7 +137,7 @@ class GraphContainer(QFrame):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         title_row.addWidget(title_label)
 
@@ -140,7 +145,9 @@ class GraphContainer(QFrame):
 
         # Delta SPR signal display (only for Cycle of Interest graph)
         if self.show_delta:
-            self.delta_display = QLabel("Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm")
+            self.delta_display = QLabel(
+                "Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm",
+            )
             self.delta_display.setStyleSheet(
                 "QLabel {"
                 "  background: rgba(0, 0, 0, 0.04);"
@@ -151,14 +158,14 @@ class GraphContainer(QFrame):
                 "  color: #1D1D1F;"
                 "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
                 "  font-weight: 500;"
-                "}"
+                "}",
             )
             title_row.addWidget(self.delta_display)
 
         # Zoom/Reset controls
         control_buttons = [
             ("↻", "Reset View (Double-click)"),
-            ("+", "Zoom In (Scroll or drag box)")
+            ("+", "Zoom In (Scroll or drag box)"),
         ]
 
         for icon, tooltip in control_buttons:
@@ -179,7 +186,7 @@ class GraphContainer(QFrame):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.14);"
-                "}"
+                "}",
             )
             control_btn.setToolTip(tooltip)
             title_row.addWidget(control_btn)
@@ -194,7 +201,7 @@ class GraphContainer(QFrame):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
 
         graph_layout = QVBoxLayout(graph_area)
@@ -216,7 +223,7 @@ class GraphContainer(QFrame):
             "  background: transparent;"
             "  font-weight: 500;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         y_axis_label.setMaximumWidth(20)
         y_axis_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -235,7 +242,9 @@ class GraphContainer(QFrame):
         x_axis_layout.setContentsMargins(24, 4, 0, 0)
         x_axis_layout.setSpacing(0)
 
-        x_axis_text = "Time (seconds) - Cycle View" if self.show_delta else "Time (seconds)"
+        x_axis_text = (
+            "Time (seconds) - Cycle View" if self.show_delta else "Time (seconds)"
+        )
         x_axis_label = QLabel(x_axis_text)
         x_axis_label.setStyleSheet(
             "QLabel {"
@@ -244,7 +253,7 @@ class GraphContainer(QFrame):
             "  background: transparent;"
             "  font-weight: 500;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         x_axis_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         x_axis_layout.addWidget(x_axis_label)
@@ -269,5 +278,5 @@ class GraphContainer(QFrame):
         if self.delta_display:
             self.delta_display.setText(
                 f"Δ SPR: Ch A: {ch_a:.1f} nm  |  Ch B: {ch_b:.1f} nm  |  "
-                f"Ch C: {ch_c:.1f} nm  |  Ch D: {ch_d:.1f} nm"
+                f"Ch C: {ch_c:.1f} nm  |  Ch D: {ch_d:.1f} nm",
             )

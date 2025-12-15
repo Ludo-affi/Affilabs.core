@@ -1,10 +1,10 @@
-"""
-Test if the firmware now correctly parses and executes the cycle count
-"""
-import serial
+"""Test if the firmware now correctly parses and executes the cycle count"""
+
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+import serial
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(0.1)
 
 # Clear buffer
@@ -27,13 +27,13 @@ ser.write(command.encode())
 output_lines = []
 while True:
     if ser.in_waiting:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
         if line:
             output_lines.append(line)
             print(f"  {line}")
 
     # Check if done (BATCH_END received)
-    if any('BATCH_END' in line for line in output_lines):
+    if any("BATCH_END" in line for line in output_lines):
         break
 
     # Safety timeout
@@ -47,10 +47,10 @@ end_time = time.time()
 elapsed = end_time - start_time
 
 # Count cycles
-cycle_count = sum(1 for line in output_lines if 'CYCLE:' in line)
+cycle_count = sum(1 for line in output_lines if "CYCLE:" in line)
 
 print()
-print("="*60)
+print("=" * 60)
 print(f"✅ Total time: {elapsed:.1f} seconds")
 print(f"✅ Cycles executed: {cycle_count}")
 print(f"✅ Average per cycle: {elapsed/cycle_count:.2f}s" if cycle_count > 0 else "")

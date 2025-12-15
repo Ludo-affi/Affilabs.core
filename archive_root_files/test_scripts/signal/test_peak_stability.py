@@ -1,5 +1,4 @@
-"""
-5-Minute Peak Stability Study
+"""5-Minute Peak Stability Study
 
 Tracks peak position over time to assess:
 1. Long-term stability (drift)
@@ -10,24 +9,24 @@ Tracks peak position over time to assess:
 Continuously measures all 4 channels for 5 minutes and analyzes peak position drift.
 """
 
-import time
-import sys
-from pathlib import Path
 import io
-import numpy as np
-import matplotlib.pyplot as plt
+import sys
+import time
 from datetime import datetime
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Fix Windows console encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Add src to path
-src_path = Path(__file__).parent / 'src'
+src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from utils.controller import PicoP4SPR
 from utils.usb4000_wrapper import USB4000
-from utils.logger import logger
 
 
 def find_peak_position(spectrum, wavelengths):
@@ -48,10 +47,9 @@ def find_peak_position(spectrum, wavelengths):
 
 def peak_stability_study():
     """5-minute peak stability tracking."""
-
-    print("="*80)
+    print("=" * 80)
     print("5-MINUTE PEAK STABILITY STUDY")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Initialize hardware
@@ -76,16 +74,18 @@ def peak_stability_study():
         print("ERROR: Failed to read wavelengths")
         return
 
-    print(f"Detector: {len(wavelengths)} pixels, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm")
+    print(
+        f"Detector: {len(wavelengths)} pixels, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm",
+    )
     print()
 
     # Test parameters
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     led_intensity = 255
     integration_time = 70  # ms
     duration_seconds = 300  # 5 minutes
 
-    print(f"Test Configuration:")
+    print("Test Configuration:")
     print(f"  Channels: {[ch.upper() for ch in channels]}")
     print(f"  LED Intensity: {led_intensity}")
     print(f"  Integration time: {integration_time}ms")
@@ -98,12 +98,19 @@ def peak_stability_study():
     time.sleep(0.05)
 
     # Data storage
-    data = {ch: {'timestamps': [], 'peak_positions': [], 'peak_intensities': [], 'mean_signals': []}
-            for ch in channels}
+    data = {
+        ch: {
+            "timestamps": [],
+            "peak_positions": [],
+            "peak_intensities": [],
+            "mean_signals": [],
+        }
+        for ch in channels
+    }
 
-    print("="*80)
+    print("=" * 80)
     print("MEASUREMENT IN PROGRESS")
-    print("="*80)
+    print("=" * 80)
     print()
     print("Press Ctrl+C to stop early")
     print()
@@ -135,10 +142,10 @@ def peak_stability_study():
                     mean_signal = np.mean(spectrum)
 
                     # Store data
-                    data[ch]['timestamps'].append(timestamp)
-                    data[ch]['peak_positions'].append(peak_wl)
-                    data[ch]['peak_intensities'].append(peak_intensity)
-                    data[ch]['mean_signals'].append(mean_signal)
+                    data[ch]["timestamps"].append(timestamp)
+                    data[ch]["peak_positions"].append(peak_wl)
+                    data[ch]["peak_intensities"].append(peak_intensity)
+                    data[ch]["mean_signals"].append(mean_signal)
 
                     measurement_count += 1
 
@@ -155,9 +162,11 @@ def peak_stability_study():
                 remaining = duration_seconds - elapsed
                 progress = (elapsed / duration_seconds) * 100
 
-                print(f"[{elapsed:.0f}s / {duration_seconds}s] Progress: {progress:.1f}% | "
-                      f"Cycles: {cycle_count} | Measurements: {measurement_count} | "
-                      f"Remaining: {remaining:.0f}s")
+                print(
+                    f"[{elapsed:.0f}s / {duration_seconds}s] Progress: {progress:.1f}% | "
+                    f"Cycles: {cycle_count} | Measurements: {measurement_count} | "
+                    f"Remaining: {remaining:.0f}s",
+                )
 
                 last_report_time = current_time
 
@@ -173,36 +182,44 @@ def peak_stability_study():
     elapsed_total = time.perf_counter() - start_time
 
     print()
-    print("="*80)
+    print("=" * 80)
     print("MEASUREMENT COMPLETE")
-    print("="*80)
+    print("=" * 80)
     print()
     print(f"Total time: {elapsed_total:.1f}s ({elapsed_total/60:.2f} minutes)")
     print(f"Cycles completed: {cycle_count}")
     print(f"Total measurements: {measurement_count}")
-    print(f"Measurements per channel: {[len(data[ch]['timestamps']) for ch in channels]}")
+    print(
+        f"Measurements per channel: {[len(data[ch]['timestamps']) for ch in channels]}",
+    )
     print()
 
     # Analysis
-    print("="*80)
+    print("=" * 80)
     print("PEAK STABILITY ANALYSIS")
-    print("="*80)
+    print("=" * 80)
     print()
 
-    print(f"{'Channel':>8} | {'N':>5} | {'Mean Peak':>10} | {'Peak Std':>9} | {'Peak P-P':>9} | {'Drift':>10} | {'Mean Signal':>12}")
-    print(f"{'':>8} | {'':>5} | {'(nm)':>10} | {'(nm)':>9} | {'(nm)':>9} | {'(nm/min)':>10} | {'(counts)':>12}")
-    print(f"---------+-------+------------+-----------+-----------+------------+--------------")
+    print(
+        f"{'Channel':>8} | {'N':>5} | {'Mean Peak':>10} | {'Peak Std':>9} | {'Peak P-P':>9} | {'Drift':>10} | {'Mean Signal':>12}",
+    )
+    print(
+        f"{'':>8} | {'':>5} | {'(nm)':>10} | {'(nm)':>9} | {'(nm)':>9} | {'(nm/min)':>10} | {'(counts)':>12}",
+    )
+    print(
+        "---------+-------+------------+-----------+-----------+------------+--------------",
+    )
 
     stability_results = {}
 
     for ch in channels:
-        if len(data[ch]['timestamps']) == 0:
+        if len(data[ch]["timestamps"]) == 0:
             continue
 
-        timestamps = np.array(data[ch]['timestamps'])
-        peak_positions = np.array(data[ch]['peak_positions'])
-        peak_intensities = np.array(data[ch]['peak_intensities'])
-        mean_signals = np.array(data[ch]['mean_signals'])
+        timestamps = np.array(data[ch]["timestamps"])
+        peak_positions = np.array(data[ch]["peak_positions"])
+        peak_intensities = np.array(data[ch]["peak_intensities"])
+        mean_signals = np.array(data[ch]["mean_signals"])
 
         # Statistics
         peak_mean = np.mean(peak_positions)
@@ -215,32 +232,38 @@ def peak_stability_study():
         # Linear drift (nm per minute)
         if len(timestamps) > 1:
             # Fit linear trend
-            coeffs = np.polyfit(timestamps / 60, peak_positions, 1)  # timestamps in minutes
+            coeffs = np.polyfit(
+                timestamps / 60,
+                peak_positions,
+                1,
+            )  # timestamps in minutes
             drift_rate = coeffs[0]  # nm/min
         else:
             drift_rate = 0
 
         stability_results[ch] = {
-            'n': len(peak_positions),
-            'peak_mean': peak_mean,
-            'peak_std': peak_std,
-            'peak_min': peak_min,
-            'peak_max': peak_max,
-            'peak_p2p': peak_p2p,
-            'drift_rate': drift_rate,
-            'signal_mean': signal_mean,
-            'timestamps': timestamps,
-            'peak_positions': peak_positions
+            "n": len(peak_positions),
+            "peak_mean": peak_mean,
+            "peak_std": peak_std,
+            "peak_min": peak_min,
+            "peak_max": peak_max,
+            "peak_p2p": peak_p2p,
+            "drift_rate": drift_rate,
+            "signal_mean": signal_mean,
+            "timestamps": timestamps,
+            "peak_positions": peak_positions,
         }
 
-        print(f"{ch.upper():>8} | {len(peak_positions):>5} | {peak_mean:>10.3f} | {peak_std:>9.3f} | {peak_p2p:>9.3f} | {drift_rate:>10.3f} | {signal_mean:>12.0f}")
+        print(
+            f"{ch.upper():>8} | {len(peak_positions):>5} | {peak_mean:>10.3f} | {peak_std:>9.3f} | {peak_p2p:>9.3f} | {drift_rate:>10.3f} | {signal_mean:>12.0f}",
+        )
 
     print()
 
     # Overall assessment
-    print("="*80)
+    print("=" * 80)
     print("STABILITY ASSESSMENT")
-    print("="*80)
+    print("=" * 80)
     print()
 
     for ch in channels:
@@ -253,52 +276,60 @@ def peak_stability_study():
         print(f"  Peak position: {r['peak_mean']:.3f} nm")
         print(f"  Short-term precision (std): {r['peak_std']:.3f} nm")
         print(f"  Peak-to-peak variation: {r['peak_p2p']:.3f} nm")
-        print(f"  Long-term drift: {r['drift_rate']:.3f} nm/min ({r['drift_rate']*60:.2f} nm/hour)")
+        print(
+            f"  Long-term drift: {r['drift_rate']:.3f} nm/min ({r['drift_rate']*60:.2f} nm/hour)",
+        )
 
         # Assessment
-        if r['peak_std'] < 0.05:
-            print(f"  ✓ Excellent short-term stability (<0.05nm)")
-        elif r['peak_std'] < 0.1:
-            print(f"  ✓ Good short-term stability (<0.1nm)")
-        elif r['peak_std'] < 0.5:
-            print(f"  ~ Acceptable short-term stability (<0.5nm)")
+        if r["peak_std"] < 0.05:
+            print("  ✓ Excellent short-term stability (<0.05nm)")
+        elif r["peak_std"] < 0.1:
+            print("  ✓ Good short-term stability (<0.1nm)")
+        elif r["peak_std"] < 0.5:
+            print("  ~ Acceptable short-term stability (<0.5nm)")
         else:
             print(f"  ✗ Poor short-term stability (>{r['peak_std']:.2f}nm)")
 
-        if abs(r['drift_rate']) < 0.01:
-            print(f"  ✓ Negligible drift (<0.01nm/min)")
-        elif abs(r['drift_rate']) < 0.1:
-            print(f"  ~ Small drift (<0.1nm/min)")
+        if abs(r["drift_rate"]) < 0.01:
+            print("  ✓ Negligible drift (<0.01nm/min)")
+        elif abs(r["drift_rate"]) < 0.1:
+            print("  ~ Small drift (<0.1nm/min)")
         else:
             print(f"  ⚠ Significant drift (>{abs(r['drift_rate']):.2f}nm/min)")
 
         print()
 
     # Visualization
-    print("="*80)
+    print("=" * 80)
     print("GENERATING PLOTS")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Create figure with subplots
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('5-Minute Peak Stability Study', fontsize=16, fontweight='bold')
+    fig.suptitle("5-Minute Peak Stability Study", fontsize=16, fontweight="bold")
 
-    colors = {'a': 'blue', 'b': 'green', 'c': 'red', 'd': 'orange'}
+    colors = {"a": "blue", "b": "green", "c": "red", "d": "orange"}
 
     # Plot 1: Peak position over time (all channels)
     ax = axes[0, 0]
     for ch in channels:
         if ch in stability_results:
             r = stability_results[ch]
-            ax.plot(r['timestamps'] / 60, r['peak_positions'], 'o-',
-                   color=colors[ch], alpha=0.7, markersize=3,
-                   label=f"Ch {ch.upper()} ({r['peak_mean']:.2f}nm)")
+            ax.plot(
+                r["timestamps"] / 60,
+                r["peak_positions"],
+                "o-",
+                color=colors[ch],
+                alpha=0.7,
+                markersize=3,
+                label=f"Ch {ch.upper()} ({r['peak_mean']:.2f}nm)",
+            )
 
-    ax.set_xlabel('Time (minutes)', fontsize=11)
-    ax.set_ylabel('Peak Position (nm)', fontsize=11)
-    ax.set_title('Peak Position vs Time', fontsize=12, fontweight='bold')
-    ax.legend(loc='best', fontsize=9)
+    ax.set_xlabel("Time (minutes)", fontsize=11)
+    ax.set_ylabel("Peak Position (nm)", fontsize=11)
+    ax.set_title("Peak Position vs Time", fontsize=12, fontweight="bold")
+    ax.legend(loc="best", fontsize=9)
     ax.grid(True, alpha=0.3)
 
     # Plot 2: Peak position distribution (histogram)
@@ -306,61 +337,88 @@ def peak_stability_study():
     for ch in channels:
         if ch in stability_results:
             r = stability_results[ch]
-            ax.hist(r['peak_positions'], bins=30, alpha=0.5,
-                   color=colors[ch], label=f"Ch {ch.upper()} (σ={r['peak_std']:.3f}nm)")
+            ax.hist(
+                r["peak_positions"],
+                bins=30,
+                alpha=0.5,
+                color=colors[ch],
+                label=f"Ch {ch.upper()} (σ={r['peak_std']:.3f}nm)",
+            )
 
-    ax.set_xlabel('Peak Position (nm)', fontsize=11)
-    ax.set_ylabel('Count', fontsize=11)
-    ax.set_title('Peak Position Distribution', fontsize=12, fontweight='bold')
-    ax.legend(loc='best', fontsize=9)
+    ax.set_xlabel("Peak Position (nm)", fontsize=11)
+    ax.set_ylabel("Count", fontsize=11)
+    ax.set_title("Peak Position Distribution", fontsize=12, fontweight="bold")
+    ax.legend(loc="best", fontsize=9)
     ax.grid(True, alpha=0.3)
 
     # Plot 3: Peak-to-peak variation per channel
     ax = axes[1, 0]
     ch_labels = [ch.upper() for ch in channels if ch in stability_results]
-    p2p_values = [stability_results[ch]['peak_p2p'] for ch in channels if ch in stability_results]
-    std_values = [stability_results[ch]['peak_std'] for ch in channels if ch in stability_results]
+    p2p_values = [
+        stability_results[ch]["peak_p2p"] for ch in channels if ch in stability_results
+    ]
+    std_values = [
+        stability_results[ch]["peak_std"] for ch in channels if ch in stability_results
+    ]
 
     x = np.arange(len(ch_labels))
     width = 0.35
 
-    ax.bar(x - width/2, p2p_values, width, label='Peak-to-Peak', color='steelblue', alpha=0.7)
-    ax.bar(x + width/2, std_values, width, label='Std Dev', color='coral', alpha=0.7)
+    ax.bar(
+        x - width / 2,
+        p2p_values,
+        width,
+        label="Peak-to-Peak",
+        color="steelblue",
+        alpha=0.7,
+    )
+    ax.bar(x + width / 2, std_values, width, label="Std Dev", color="coral", alpha=0.7)
 
-    ax.set_xlabel('Channel', fontsize=11)
-    ax.set_ylabel('Variation (nm)', fontsize=11)
-    ax.set_title('Peak Variation Summary', fontsize=12, fontweight='bold')
+    ax.set_xlabel("Channel", fontsize=11)
+    ax.set_ylabel("Variation (nm)", fontsize=11)
+    ax.set_title("Peak Variation Summary", fontsize=12, fontweight="bold")
     ax.set_xticks(x)
     ax.set_xticklabels(ch_labels)
-    ax.legend(loc='best', fontsize=9)
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.legend(loc="best", fontsize=9)
+    ax.grid(True, alpha=0.3, axis="y")
 
     # Plot 4: Drift rate per channel
     ax = axes[1, 1]
-    drift_values = [stability_results[ch]['drift_rate'] for ch in channels if ch in stability_results]
+    drift_values = [
+        stability_results[ch]["drift_rate"]
+        for ch in channels
+        if ch in stability_results
+    ]
 
-    bars = ax.bar(ch_labels, drift_values, color=[colors[ch.lower()] for ch in ch_labels], alpha=0.7)
+    bars = ax.bar(
+        ch_labels,
+        drift_values,
+        color=[colors[ch.lower()] for ch in ch_labels],
+        alpha=0.7,
+    )
 
     # Color bars by drift magnitude
-    for bar, drift in zip(bars, drift_values):
+    for bar, drift in zip(bars, drift_values, strict=False):
         if abs(drift) < 0.01:
-            bar.set_color('green')
+            bar.set_color("green")
         elif abs(drift) < 0.1:
-            bar.set_color('orange')
+            bar.set_color("orange")
         else:
-            bar.set_color('red')
+            bar.set_color("red")
 
-    ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
-    ax.set_xlabel('Channel', fontsize=11)
-    ax.set_ylabel('Drift Rate (nm/min)', fontsize=11)
-    ax.set_title('Long-Term Drift', fontsize=12, fontweight='bold')
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.axhline(y=0, color="black", linestyle="-", linewidth=0.8)
+    ax.set_xlabel("Channel", fontsize=11)
+    ax.set_ylabel("Drift Rate (nm/min)", fontsize=11)
+    ax.set_title("Long-Term Drift", fontsize=12, fontweight="bold")
+    ax.grid(True, alpha=0.3, axis="y")
 
     plt.tight_layout()
 
     # Save plot
-    plot_filename = f"peak_stability_study_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
+    plot_filename = (
+        f"peak_stability_study_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    )
+    plt.savefig(plot_filename, dpi=150, bbox_inches="tight")
     print(f"Plot saved: {plot_filename}")
 
     # Show plot
@@ -369,21 +427,27 @@ def peak_stability_study():
     print()
 
     # Summary
-    print("="*80)
+    print("=" * 80)
     print("SUMMARY")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Overall stability
-    all_stds = [stability_results[ch]['peak_std'] for ch in channels if ch in stability_results]
-    all_drifts = [stability_results[ch]['drift_rate'] for ch in channels if ch in stability_results]
+    all_stds = [
+        stability_results[ch]["peak_std"] for ch in channels if ch in stability_results
+    ]
+    all_drifts = [
+        stability_results[ch]["drift_rate"]
+        for ch in channels
+        if ch in stability_results
+    ]
 
     mean_std = np.mean(all_stds)
     max_std = np.max(all_stds)
     mean_drift = np.mean(np.abs(all_drifts))
     max_drift = np.max(np.abs(all_drifts))
 
-    print(f"Overall Performance:")
+    print("Overall Performance:")
     print(f"  Mean precision (std): {mean_std:.3f} nm")
     print(f"  Worst precision: {max_std:.3f} nm")
     print(f"  Mean drift rate: {mean_drift:.3f} nm/min ({mean_drift*60:.2f} nm/hour)")
@@ -410,12 +474,12 @@ def peak_stability_study():
     # Cleanup
     usb.close()
 
-    print("="*80)
+    print("=" * 80)
     print("TEST COMPLETE")
-    print("="*80)
+    print("=" * 80)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         peak_stability_study()
     except KeyboardInterrupt:
@@ -423,4 +487,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n\nTest failed: {e}")
         import traceback
+
         traceback.print_exc()

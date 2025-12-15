@@ -1,5 +1,4 @@
-"""
-Device Setup Wizard
+"""Device Setup Wizard
 
 Quick start wizard for initial device configuration.
 Automatically detects hardware and guides user through setup.
@@ -13,11 +12,10 @@ Usage:
 """
 
 import sys
-from pathlib import Path
 
-from utils.logger import logger
 from utils.device_configuration import DeviceConfiguration
 from utils.hardware_detection import HardwareDetector
+from utils.logger import logger
 
 
 def print_banner():
@@ -37,11 +35,11 @@ def print_step(step: int, total: int, title: str):
 
 
 def hardware_detection_step() -> dict:
-    """
-    Step 1: Hardware Detection
+    """Step 1: Hardware Detection
 
     Returns:
         Detected hardware information
+
     """
     print_step(1, 4, "HARDWARE DETECTION")
 
@@ -61,11 +59,11 @@ def hardware_detection_step() -> dict:
 
 
 def led_pcb_selection_step() -> str:
-    """
-    Step 2: LED PCB Model Selection
+    """Step 2: LED PCB Model Selection
 
     Returns:
         Selected LED PCB model
+
     """
     print_step(2, 4, "LED PCB MODEL SELECTION")
 
@@ -77,20 +75,19 @@ def led_pcb_selection_step() -> str:
     while True:
         choice = input("Select LED PCB model (1/2): ").strip()
 
-        if choice == '1':
-            return 'luminus_cool_white'
-        elif choice == '2':
-            return 'osram_warm_white'
-        else:
-            print("❌ Invalid choice. Please select 1 or 2.")
+        if choice == "1":
+            return "luminus_cool_white"
+        if choice == "2":
+            return "osram_warm_white"
+        print("❌ Invalid choice. Please select 1 or 2.")
 
 
 def fiber_diameter_selection_step() -> int:
-    """
-    Step 3: Optical Fiber Diameter Selection
+    """Step 3: Optical Fiber Diameter Selection
 
     Returns:
         Selected fiber diameter in micrometers
+
     """
     print_step(3, 4, "OPTICAL FIBER DIAMETER")
 
@@ -104,20 +101,19 @@ def fiber_diameter_selection_step() -> int:
     while True:
         choice = input("Select fiber diameter (1/2): ").strip()
 
-        if choice == '1':
+        if choice == "1":
             return 100
-        elif choice == '2':
+        if choice == "2":
             return 200
-        else:
-            print("❌ Invalid choice. Please select 1 or 2.")
+        print("❌ Invalid choice. Please select 1 or 2.")
 
 
 def configuration_summary_step(config: DeviceConfiguration):
-    """
-    Step 4: Configuration Summary & Save
+    """Step 4: Configuration Summary & Save
 
     Args:
         config: Device configuration to display
+
     """
     print_step(4, 4, "CONFIGURATION SUMMARY")
 
@@ -126,14 +122,18 @@ def configuration_summary_step(config: DeviceConfiguration):
     print("🔧 Hardware:")
     print(f"   LED PCB Model:      {config.get_led_pcb_model()}")
     print(f"   Optical Fiber:      {config.get_optical_fiber_diameter()} µm")
-    print(f"   Spectrometer S/N:   {config.get_spectrometer_serial() or 'Not detected'}")
+    print(
+        f"   Spectrometer S/N:   {config.get_spectrometer_serial() or 'Not detected'}",
+    )
     print()
 
     print("⏱️  Timing Parameters:")
     print(f"   Min Integration:    {config.get_min_integration_time()} ms")
     delays = config.get_led_delays()
-    print(f"   LED Delays:         A={delays['a']}ms, B={delays['b']}ms, "
-          f"C={delays['c']}ms, D={delays['d']}ms")
+    print(
+        f"   LED Delays:         A={delays['a']}ms, B={delays['b']}ms, "
+        f"C={delays['c']}ms, D={delays['d']}ms",
+    )
     print()
 
     print("📊 Frequency Limits:")
@@ -156,7 +156,7 @@ def main():
     if config.config_file.exists():
         print("⚠️  Existing configuration detected.")
         choice = input("Do you want to reconfigure? (y/n): ").strip().lower()
-        if choice != 'y':
+        if choice != "y":
             print("\n✅ Keeping existing configuration.")
             print("   Use 'python -m utils.config_cli' to modify settings.")
             return
@@ -178,8 +178,8 @@ def main():
         config.set_optical_fiber_diameter(fiber_diameter)
 
         # Set spectrometer serial if detected
-        if detected['spectrometer'] and detected['spectrometer']['serial_number']:
-            config.set_spectrometer_serial(detected['spectrometer']['serial_number'])
+        if detected["spectrometer"] and detected["spectrometer"]["serial_number"]:
+            config.set_spectrometer_serial(detected["spectrometer"]["serial_number"])
 
         # Step 4: Summary & Save
         configuration_summary_step(config)
@@ -187,7 +187,7 @@ def main():
         print("\n💾 Save configuration?")
         choice = input("Save and continue? (y/n): ").strip().lower()
 
-        if choice == 'y':
+        if choice == "y":
             config.save()
             print("\n✅ Configuration saved successfully!")
             print()

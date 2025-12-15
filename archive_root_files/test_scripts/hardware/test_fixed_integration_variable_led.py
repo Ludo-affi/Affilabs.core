@@ -1,5 +1,4 @@
-"""
-Test: Fixed integration time with variable LED intensity
+"""Test: Fixed integration time with variable LED intensity
 Compare against variable integration with fixed LED=255
 
 Goal: Determine best approach for 50k counts target
@@ -7,8 +6,9 @@ Goal: Determine best approach for 50k counts target
 
 import sys
 import time
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -16,11 +16,19 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from utils.controller import PicoP4SPR
 from utils.usb4000_wrapper import USB4000
 
+
 def find_peak_counts(spectrum):
     """Find maximum counts in spectrum"""
     return np.max(spectrum)
 
-def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50000, integration_time=30.0):
+
+def optimize_led_for_fixed_integration(
+    detector,
+    ctrl,
+    channel,
+    target_counts=50000,
+    integration_time=30.0,
+):
     """Find LED intensity that gives target counts at fixed integration time.
 
     Args:
@@ -32,6 +40,7 @@ def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50
 
     Returns:
         Optimal LED intensity (0-255), or None if failed
+
     """
     print(f"  Optimizing Ch {channel} at fixed {integration_time}ms integration...")
 
@@ -41,7 +50,7 @@ def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50
 
     # Start at maximum intensity
     intensity = 255
-    led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+    led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
     led_values[channel] = intensity
     ctrl.set_batch_intensities(**led_values)
     time.sleep(0.02)
@@ -49,7 +58,7 @@ def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50
     # Read initial signal
     spectrum = detector.read_intensity()
     if spectrum is None:
-        print(f"    ❌ Failed to acquire spectrum")
+        print("    ❌ Failed to acquire spectrum")
         return None
 
     peak_counts = find_peak_counts(spectrum)
@@ -57,12 +66,12 @@ def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50
 
     # Check if saturated
     if peak_counts >= 65535:
-        print(f"    ⚠️ Saturated - need shorter integration time")
+        print("    ⚠️ Saturated - need shorter integration time")
         return None
 
     # Check if too dim even at max
     if peak_counts < target_counts * 0.5:
-        print(f"    ⚠️ Too dim at LED=255 - need longer integration time")
+        print("    ⚠️ Too dim at LED=255 - need longer integration time")
         return None
 
     # Coarse adjustment (step size 20)
@@ -113,7 +122,9 @@ def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50
         iterations += 1
 
     error_pct = ((peak_counts - target_counts) / target_counts) * 100
-    print(f"    ✅ Final: LED={intensity} → {peak_counts:.0f} counts ({error_pct:+.1f}%)")
+    print(
+        f"    ✅ Final: LED={intensity} → {peak_counts:.0f} counts ({error_pct:+.1f}%)",
+    )
 
     # Turn OFF LED
     ctrl.set_batch_intensities(a=0, b=0, c=0, d=0)
@@ -121,31 +132,32 @@ def optimize_led_for_fixed_integration(detector, ctrl, channel, target_counts=50
 
     return intensity
 
+
 def measure_speed_and_noise(detector, ctrl, channels_config, num_cycles=20):
     """Measure cycle time and noise with optimized settings"""
     print(f"\n  Running {num_cycles} complete cycles (A→B→C→D)...\n")
 
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     data = {ch: [] for ch in channels}
     cycle_times = []
     acquisition_times = {ch: [] for ch in channels}
 
     for cycle in range(num_cycles):
         cycle_start = time.perf_counter()
-        print(f"  Cycle {cycle+1}/{num_cycles}: ", end='', flush=True)
+        print(f"  Cycle {cycle+1}/{num_cycles}: ", end="", flush=True)
 
         for ch in channels:
             if channels_config[ch] is None:
                 continue
 
             # Set integration time for this channel
-            integration_time = channels_config[ch]['integration_time']
+            integration_time = channels_config[ch]["integration_time"]
             detector.set_integration(integration_time)
             time.sleep(0.005)
 
             # Turn on LED with optimized intensity
-            led_intensity = channels_config[ch]['led_intensity']
-            led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            led_intensity = channels_config[ch]["led_intensity"]
+            led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
             led_values[ch] = led_intensity
             ctrl.set_batch_intensities(**led_values)
             time.sleep(0.012)  # PRE delay
@@ -159,7 +171,7 @@ def measure_speed_and_noise(detector, ctrl, channels_config, num_cycles=20):
             if spectrum is not None:
                 peak = find_peak_counts(spectrum)
                 data[ch].append(peak)
-                print(f"{ch.upper()}:{peak:.0f} ", end='', flush=True)
+                print(f"{ch.upper()}:{peak:.0f} ", end="", flush=True)
 
             # Turn off LED
             ctrl.set_batch_intensities(a=0, b=0, c=0, d=0)
@@ -171,12 +183,13 @@ def measure_speed_and_noise(detector, ctrl, channels_config, num_cycles=20):
 
     return data, cycle_times, acquisition_times
 
+
 def main():
     print("=" * 80)
     print("TEST: FIXED INTEGRATION vs VARIABLE LED")
     print("=" * 80)
-    print(f"Goal: Compare fixed integration (30ms) + variable LED")
-    print(f"      vs variable integration + fixed LED (255)")
+    print("Goal: Compare fixed integration (30ms) + variable LED")
+    print("      vs variable integration + fixed LED (255)")
     print("=" * 80)
     print()
 
@@ -206,7 +219,7 @@ def main():
         print("=" * 80)
         print()
 
-        channels = ['a', 'b', 'c', 'd']
+        channels = ["a", "b", "c", "d"]
         results = {}
 
         # Step 1: Optimize LED for each channel
@@ -214,9 +227,11 @@ def main():
         for ch in channels:
             print(f"Channel {ch.upper()}:")
             optimal_led = optimize_led_for_fixed_integration(
-                detector, ctrl, ch,
+                detector,
+                ctrl,
+                ch,
                 target_counts=50000,
-                integration_time=fixed_int
+                integration_time=fixed_int,
             )
 
             if optimal_led is None:
@@ -225,13 +240,13 @@ def main():
                 all_success = False
             else:
                 results[ch] = {
-                    'led_intensity': optimal_led,
-                    'integration_time': fixed_int
+                    "led_intensity": optimal_led,
+                    "integration_time": fixed_int,
                 }
             print()
 
         if not all_success:
-            print(f"⚠️ Skipping speed test - optimization failed\n")
+            print("⚠️ Skipping speed test - optimization failed\n")
             continue
 
         # Step 2: Measure speed and noise
@@ -239,7 +254,12 @@ def main():
         print("STEP 2: MEASURE SPEED AND NOISE (20 CYCLES)")
         print("=" * 80)
 
-        data, cycle_times, acq_times = measure_speed_and_noise(detector, ctrl, results, num_cycles=20)
+        data, cycle_times, acq_times = measure_speed_and_noise(
+            detector,
+            ctrl,
+            results,
+            num_cycles=20,
+        )
 
         # Step 3: Analyze results
         print("\n" + "=" * 80)
@@ -287,5 +307,6 @@ def main():
     detector.close()
     ctrl.close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -11,8 +11,8 @@ import numpy as np
 from scipy.fftpack import dst, idct
 from scipy.stats import linregress
 
-from utils.processing_pipeline import ProcessingPipeline, PipelineMetadata
 from utils.logger import logger
+from utils.processing_pipeline import PipelineMetadata, ProcessingPipeline
 
 
 class FourierPipeline(ProcessingPipeline):
@@ -26,17 +26,35 @@ class FourierPipeline(ProcessingPipeline):
         super().__init__(config)
 
         # Default parameters
-        self.window_size = self.config.get('window_size', 1500)  # Optimized: 1500 gives 30% better accuracy than 165
+        self.window_size = self.config.get(
+            "window_size",
+            1500,
+        )  # Optimized: 1500 gives 30% better accuracy than 165
         # CRITICAL: alpha=9000 achieves 2nm baseline (4.5x more smoothing than previous 2000)
         # Original implementation used 9000, providing excellent noise suppression
-        self.alpha = self.config.get('alpha', 9e3)  # Fourier weight parameter (9000 = original)
-        self.baseline_correction = self.config.get('baseline_correction', False)  # Flatten spectral tilt
-        self.baseline_degree = self.config.get('baseline_degree', 2)  # Polynomial degree for baseline
+        self.alpha = self.config.get(
+            "alpha",
+            9e3,
+        )  # Fourier weight parameter (9000 = original)
+        self.baseline_correction = self.config.get(
+            "baseline_correction",
+            False,
+        )  # Flatten spectral tilt
+        self.baseline_degree = self.config.get(
+            "baseline_degree",
+            2,
+        )  # Polynomial degree for baseline
 
         # EMA pre-smoothing for transmission (cascaded filtering for clearer zero-crossing)
         # Based on baseline noise analysis: EMA with alpha=0.1 reduces std by 13.3%
-        self.ema_enabled = self.config.get('ema_enabled', True)  # Enable EMA pre-smoothing
-        self.ema_alpha = self.config.get('ema_alpha', 0.1)  # Smoothing factor (0.1 = aggressive)
+        self.ema_enabled = self.config.get(
+            "ema_enabled",
+            True,
+        )  # Enable EMA pre-smoothing
+        self.ema_alpha = self.config.get(
+            "ema_alpha",
+            0.1,
+        )  # Smoothing factor (0.1 = aggressive)
 
     def get_metadata(self) -> PipelineMetadata:
         return PipelineMetadata(
@@ -45,20 +63,20 @@ class FourierPipeline(ProcessingPipeline):
             version="1.0",
             author="ezControl Team",
             parameters={
-                'window_size': self.window_size,
-                'alpha': self.alpha,
-                'baseline_correction': self.baseline_correction,
-                'baseline_degree': self.baseline_degree,
-                'ema_enabled': self.ema_enabled,
-                'ema_alpha': self.ema_alpha,
-                'method': 'EMA Pre-smoothing + DST + Zero-crossing'
-            }
+                "window_size": self.window_size,
+                "alpha": self.alpha,
+                "baseline_correction": self.baseline_correction,
+                "baseline_degree": self.baseline_degree,
+                "ema_enabled": self.ema_enabled,
+                "ema_alpha": self.ema_alpha,
+                "method": "EMA Pre-smoothing + DST + Zero-crossing",
+            },
         )
 
     def calculate_transmission(
         self,
         intensity: np.ndarray,
-        reference: np.ndarray
+        reference: np.ndarray,
     ) -> np.ndarray:
         """Standard transmission calculation with EMA pre-smoothing and optional baseline correction
 
@@ -77,10 +95,12 @@ class FourierPipeline(ProcessingPipeline):
         - Optical path wavelength-dependent losses
         """
         if intensity.shape != reference.shape:
-            raise ValueError(f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}")
+            raise ValueError(
+                f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}",
+            )
 
         # Avoid division by zero
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             transmission = (intensity / reference) * 100
             transmission = np.where(reference == 0, 0, transmission)
 
@@ -110,12 +130,15 @@ class FourierPipeline(ProcessingPipeline):
 
         Returns:
             Smoothed spectrum with reduced low-frequency noise
+
         """
         smoothed = np.zeros_like(data)
         smoothed[0] = data[0]
 
         for i in range(1, len(data)):
-            smoothed[i] = self.ema_alpha * data[i] + (1 - self.ema_alpha) * smoothed[i-1]
+            smoothed[i] = (
+                self.ema_alpha * data[i] + (1 - self.ema_alpha) * smoothed[i - 1]
+            )
 
         logger.debug(f"EMA smoothing applied: α={self.ema_alpha}, noise reduction ~13%")
         return smoothed
@@ -136,6 +159,7 @@ class FourierPipeline(ProcessingPipeline):
 
         Returns:
             Corrected transmission with flattened baseline
+
         """
         try:
             # Create x-axis for polynomial fit (normalized 0-1)
@@ -159,7 +183,9 @@ class FourierPipeline(ProcessingPipeline):
             if corrected_mean > 0:
                 corrected = corrected * (original_mean / corrected_mean)
 
-            logger.debug(f"Baseline correction: mean {original_mean:.1f}% → {np.nanmean(corrected):.1f}%")
+            logger.debug(
+                f"Baseline correction: mean {original_mean:.1f}% → {np.nanmean(corrected):.1f}%",
+            )
 
             return corrected
 
@@ -172,7 +198,7 @@ class FourierPipeline(ProcessingPipeline):
         transmission: np.ndarray,
         wavelengths: np.ndarray,
         fourier_weights: np.ndarray = None,
-        **kwargs
+        **kwargs,
     ) -> float:
         """Find resonance using Fourier transform method
 
@@ -187,10 +213,11 @@ class FourierPipeline(ProcessingPipeline):
             wavelengths: Wavelength array
             fourier_weights: Pre-calculated Fourier weights
             **kwargs: Additional parameters (window_size override)
+
         """
         try:
             # Allow window_size override
-            window_size = kwargs.get('window_size', self.window_size)
+            window_size = kwargs.get("window_size", self.window_size)
 
             # Calculate Fourier weights if not provided
             if fourier_weights is None:
@@ -207,7 +234,8 @@ class FourierPipeline(ProcessingPipeline):
 
             # Apply DST with linear detrending and Fourier weights
             fourier_coeff[1:-1] = fourier_weights * dst(
-                spectrum[1:-1] - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
+                spectrum[1:-1]
+                - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
                 1,
             )
 
@@ -230,14 +258,18 @@ class FourierPipeline(ProcessingPipeline):
             # CRITICAL VALIDATION: Reject edge artifacts
             # SPR dips should be in 600-690nm region, not at spectrum edges
             if fit_lambda < 600.0 or fit_lambda > 690.0:
-                logger.debug(f"Fourier found edge artifact at {fit_lambda:.1f}nm - rejecting")
+                logger.debug(
+                    f"Fourier found edge artifact at {fit_lambda:.1f}nm - rejecting",
+                )
                 # Fallback: find minimum in SPR region
                 spr_mask = (wavelengths >= 600.0) & (wavelengths <= 690.0)
                 if np.any(spr_mask):
                     spr_spectrum = transmission[spr_mask]
                     spr_wavelengths = wavelengths[spr_mask]
                     fit_lambda = spr_wavelengths[np.argmin(spr_spectrum)]
-                    logger.debug(f"Using SPR region minimum instead: {fit_lambda:.1f}nm")
+                    logger.debug(
+                        f"Using SPR region minimum instead: {fit_lambda:.1f}nm",
+                    )
                 else:
                     return np.nan
 
@@ -255,6 +287,7 @@ class FourierPipeline(ProcessingPipeline):
 
         Returns:
             Weight array for Fourier coefficients
+
         """
         n_inner = n - 1
         phi = np.pi / n_inner * np.arange(1, n_inner)

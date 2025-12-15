@@ -2,8 +2,13 @@
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QPushButton,
-    QLabel, QSpacerItem, QSizePolicy
+    QGroupBox,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 
@@ -71,7 +76,7 @@ class SettingsPanel(QWidget):
             "}"
             "QPushButton:pressed {"
             "  background: rgba(0, 0, 0, 0.14);"
-            "}"
+            "}",
         )
         self.adjust_margins_btn.clicked.connect(self.adjust_margins_requested.emit)
         graph_layout.addWidget(self.adjust_margins_btn)
@@ -99,7 +104,9 @@ class SettingsPanel(QWidget):
         dev_layout.setSpacing(10)
 
         # Description
-        dev_desc = QLabel("Open interactive console to inspect and adjust UI elements in real-time (Ctrl+Shift+I):")
+        dev_desc = QLabel(
+            "Open interactive console to inspect and adjust UI elements in real-time (Ctrl+Shift+I):",
+        )
         dev_desc.setWordWrap(True)
         dev_desc.setStyleSheet("font-weight: normal; color: rgb(80, 80, 80);")
         dev_layout.addWidget(dev_desc)
@@ -123,20 +130,29 @@ class SettingsPanel(QWidget):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         dev_layout.addWidget(self.ui_inspector_btn)
 
         # Tip label
-        tip_label = QLabel("💡 Tip: Use 'Device' quick button in console for easy inspect!")
+        tip_label = QLabel(
+            "💡 Tip: Use 'Device' quick button in console for easy inspect!",
+        )
         tip_label.setWordWrap(True)
-        tip_label.setStyleSheet("font-weight: normal; color: rgb(46, 227, 111); font-size: 9pt; padding: 5px;")
+        tip_label.setStyleSheet(
+            "font-weight: normal; color: rgb(46, 227, 111); font-size: 9pt; padding: 5px;",
+        )
         dev_layout.addWidget(tip_label)
 
         layout.addWidget(dev_group)
 
         # Add spacer to push everything to the top
-        spacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        spacer = QSpacerItem(
+            20,
+            40,
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Expanding,
+        )
         layout.addItem(spacer)
 
         # Store references for external access

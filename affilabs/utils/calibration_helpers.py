@@ -37,7 +37,9 @@ def get_detector_params(usb) -> DetectorParams:
 
 
 def determine_channel_list(
-    device_type: str, single_mode: bool, single_ch: str,
+    device_type: str,
+    single_mode: bool,
+    single_ch: str,
 ) -> list[str]:
     if single_mode:
         return [single_ch.lower()]

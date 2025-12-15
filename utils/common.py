@@ -72,12 +72,14 @@ def export_segments(segments, path, value_list, ts_list):
                 "ShiftD": seg.get("shift_d", ""),
                 "ShiftM": seg.get("shift_m", ""),
                 "UserNote": seg.get("note", ""),
-            }
+            },
         )
     keys = list(data[0].keys())
     try:
         with open(
-            os.path.join(path, "segments_table.csv"), "w", newline=""
+            os.path.join(path, "segments_table.csv"),
+            "w",
+            newline="",
         ) as output_file:
             dict_writer = csv.DictWriter(output_file, keys, delimiter="\t")
             dict_writer.writeheader()
@@ -97,7 +99,7 @@ def export_segments(segments, path, value_list, ts_list):
                         {
                             "ts": (ts - start_time),
                             "val": round(value_list[ch][i] - start_val, 3),
-                        }
+                        },
                     )
 
         # Fill blank cells
@@ -113,10 +115,15 @@ def export_segments(segments, path, value_list, ts_list):
             for ch in ["A", "B", "C", "D", "M"]
         ]
         with open(
-            os.path.join(path, f"{seg['name']}.csv"), "w", newline=""
+            os.path.join(path, f"{seg['name']}.csv"),
+            "w",
+            newline="",
         ) as csv_file:
             writer = csv.writer(
-                csv_file, delimiter="\t", quotechar="|", quoting=csv.QUOTE_MINIMAL
+                csv_file,
+                delimiter="\t",
+                quotechar="|",
+                quoting=csv.QUOTE_MINIMAL,
             )
             writer.writerow([h for sublist in headers for h in sublist])
             for i in range(max_len):
@@ -130,7 +137,7 @@ def export_segments(segments, path, value_list, ts_list):
                         data["c"][i]["val"],
                         data["d"][i]["ts"],
                         data["d"][i]["val"],
-                    ]
+                    ],
                 )
     return True
 

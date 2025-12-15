@@ -1,27 +1,27 @@
-"""
-Peak Tracking Performance Monitor
+"""Peak Tracking Performance Monitor
 
 Monitors the live app and extracts peak tracking stability data.
 Run this while the main app is running.
 """
 
-import time
-import numpy as np
-import sys
-from pathlib import Path
-from datetime import datetime
 import csv
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
 
 # Add project root
 ROOT_DIR = Path(__file__).parent
 sys.path.insert(0, str(ROOT_DIR))
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("PEAK TRACKING PERFORMANCE MONITOR")
-print("="*70)
+print("=" * 70)
 print("This script monitors peak tracking stability by analyzing log files.")
 print("Please run the main app (python run_app.py) and let it run for 2 minutes.")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
 # Wait for user to start the app
 input("Press ENTER when the app is running and acquiring data...")
@@ -45,17 +45,18 @@ print(f"📁 Monitoring log file: {latest_log.name}\n")
 
 # Data storage
 data = {
-    'a': [],
-    'b': [],
-    'c': [],
-    'd': []
+    "a": [],
+    "b": [],
+    "c": [],
+    "d": [],
 }
 timestamps = []
 
 # Pattern matching for lambda values in logs
 import re
+
 # Looking for timing cycle messages or lambda values
-pattern = re.compile(r'Channel ([A-D]):.*?λ\s*=\s*(\d+\.\d+)\s*nm', re.IGNORECASE)
+pattern = re.compile(r"Channel ([A-D]):.*?λ\s*=\s*(\d+\.\d+)\s*nm", re.IGNORECASE)
 
 DURATION = 120  # 2 minutes
 SAMPLE_INTERVAL = 1.0  # 1 Hz
@@ -76,7 +77,7 @@ try:
 
         # Read new content from log file
         try:
-            with open(latest_log, 'r') as f:
+            with open(latest_log) as f:
                 f.seek(last_file_pos)
                 new_content = f.read()
                 last_file_pos = f.tell()
@@ -90,7 +91,7 @@ try:
                     if time.time() - start_time >= sample_count * SAMPLE_INTERVAL:
                         data[channel].append(lambda_val)
 
-        except Exception as e:
+        except Exception:
             pass  # Log file might be locked, try again
 
         # Update sample count
@@ -104,7 +105,11 @@ try:
             percent = int((elapsed / DURATION) * 100)
             bar = "█" * progress + " " * (50 - progress)
             eta = int(DURATION - elapsed)
-            print(f"\rProgress: [{bar}] {percent}% | ETA: {eta}s   ", end="", flush=True)
+            print(
+                f"\rProgress: [{bar}] {percent}% | ETA: {eta}s   ",
+                end="",
+                flush=True,
+            )
 
         time.sleep(0.1)  # Small sleep
 
@@ -112,35 +117,35 @@ except KeyboardInterrupt:
     print("\n\n⚠️  Test interrupted by user")
     elapsed = time.time() - start_time
 
-print("\n\n" + "="*70)
+print("\n\n" + "=" * 70)
 print("DATA COLLECTION COMPLETE")
-print("="*70)
+print("=" * 70)
 print(f"Duration: {elapsed:.1f} seconds")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
 # Analyze data
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("RESULTS - PEAK TRACKING STABILITY")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
 stats = {}
-for ch in ['a', 'b', 'c', 'd']:
+for ch in ["a", "b", "c", "d"]:
     if len(data[ch]) > 10:  # Need at least 10 samples
         arr = np.array(data[ch])
         stats[ch] = {
-            'count': len(arr),
-            'min': np.min(arr),
-            'max': np.max(arr),
-            'mean': np.mean(arr),
-            'std': np.std(arr),
-            'p2p': np.max(arr) - np.min(arr)
+            "count": len(arr),
+            "min": np.min(arr),
+            "max": np.max(arr),
+            "mean": np.mean(arr),
+            "std": np.std(arr),
+            "p2p": np.max(arr) - np.min(arr),
         }
 
         # SNR calculation
-        if stats[ch]['std'] > 0:
-            stats[ch]['snr'] = stats[ch]['mean'] / stats[ch]['std']
+        if stats[ch]["std"] > 0:
+            stats[ch]["snr"] = stats[ch]["mean"] / stats[ch]["std"]
         else:
-            stats[ch]['snr'] = float('inf')
+            stats[ch]["snr"] = float("inf")
 
         # Print channel results
         print(f"Channel {ch.upper()}:")
@@ -151,11 +156,11 @@ for ch in ['a', 'b', 'c', 'd']:
         print(f"  Peak-to-Peak: {stats[ch]['p2p']:.4f} nm  ", end="")
 
         # Assessment
-        if stats[ch]['p2p'] < 0.1:
+        if stats[ch]["p2p"] < 0.1:
             print("✅ EXCELLENT")
-        elif stats[ch]['p2p'] < 0.2:
+        elif stats[ch]["p2p"] < 0.2:
             print("✅ GOOD")
-        elif stats[ch]['p2p'] < 0.5:
+        elif stats[ch]["p2p"] < 0.5:
             print("⚠️  ACCEPTABLE")
         else:
             print("❌ POOR")
@@ -179,33 +184,33 @@ if not stats:
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 csv_path = ROOT_DIR / f"peak_tracking_test_{timestamp}.csv"
 
-print("="*70)
+print("=" * 70)
 print(f"Saving data to: {csv_path.name}")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
-with open(csv_path, 'w', newline='') as f:
+with open(csv_path, "w", newline="") as f:
     writer = csv.writer(f)
 
     # Header
-    writer.writerow(['timestamp', 'channel_a', 'channel_b', 'channel_c', 'channel_d'])
+    writer.writerow(["timestamp", "channel_a", "channel_b", "channel_c", "channel_d"])
 
     # Data rows
-    max_len = max(len(data[ch]) for ch in ['a', 'b', 'c', 'd'])
+    max_len = max(len(data[ch]) for ch in ["a", "b", "c", "d"])
     for i in range(max_len):
-        row = [timestamps[i] if i < len(timestamps) else '']
-        for ch in ['a', 'b', 'c', 'd']:
-            row.append(data[ch][i] if i < len(data[ch]) else '')
+        row = [timestamps[i] if i < len(timestamps) else ""]
+        for ch in ["a", "b", "c", "d"]:
+            row.append(data[ch][i] if i < len(data[ch]) else "")
         writer.writerow(row)
 
 print("✅ Data saved successfully")
 
 # Overall assessment
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("OVERALL ASSESSMENT")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
-avg_p2p = np.mean([stats[ch]['p2p'] for ch in stats.keys()])
-avg_snr = np.mean([stats[ch]['snr'] for ch in stats.keys()])
+avg_p2p = np.mean([stats[ch]["p2p"] for ch in stats])
+avg_snr = np.mean([stats[ch]["snr"] for ch in stats])
 
 print(f"Average Peak-to-Peak: {avg_p2p:.4f} nm")
 print(f"Average SNR:          {avg_snr:.1f}")
@@ -230,6 +235,6 @@ else:
     print("   • Check for mechanical vibrations")
     print("   • Verify fluid stability")
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("TEST COMPLETE")
-print("="*70 + "\n")
+print("=" * 70 + "\n")

@@ -1,19 +1,20 @@
 """Device Status tab - displays hardware connection status and device information."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QWidget
-from widgets.tabs.base_tab import BaseSidebarTab
+
 from widgets.device_status import DeviceStatusWidget
+from widgets.tabs.base_tab import BaseSidebarTab
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
 
 
 class DeviceStatusTab(BaseSidebarTab):
-    """
-    Device Status tab.
+    """Device Status tab.
 
     Displays:
     - Hardware connection status
@@ -28,7 +29,7 @@ class DeviceStatusTab(BaseSidebarTab):
             subtitle=None,
             lazy_load=False,  # Always load immediately - critical info
             event_bus=event_bus,
-            parent=parent
+            parent=parent,
         )
 
         # Keep reference for backwards compatibility
@@ -42,12 +43,10 @@ class DeviceStatusTab(BaseSidebarTab):
     def on_show(self):
         """Called when tab becomes visible."""
         # Could trigger status refresh here if needed
-        pass
 
     def on_hide(self):
         """Called when tab is hidden."""
         # Could pause status updates here to save resources
-        pass
 
     # Backwards compatibility property
     @property

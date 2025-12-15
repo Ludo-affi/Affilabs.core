@@ -25,11 +25,10 @@ Author: GitHub Copilot
 Date: November 17, 2025
 """
 
-from pathlib import Path
 import json
-import shutil
-from typing import Optional, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from utils.logger import logger
 
@@ -42,14 +41,15 @@ class DeviceManager:
 
         Args:
             base_config_dir: Base configuration directory (default: "config")
+
         """
         self.base_config_dir = Path(base_config_dir)
         self.devices_dir = self.base_config_dir / "devices"
         self.devices_dir.mkdir(parents=True, exist_ok=True)
 
-        self.current_device_serial: Optional[str] = None
-        self.current_device_dir: Optional[Path] = None
-        self.device_config: Optional[Dict[str, Any]] = None
+        self.current_device_serial: str | None = None
+        self.current_device_dir: Path | None = None
+        self.device_config: dict[str, Any] | None = None
 
         logger.debug(f"DeviceManager initialized: {self.devices_dir}")
 
@@ -64,6 +64,7 @@ class DeviceManager:
 
         Raises:
             ValueError: If serial number is empty or invalid
+
         """
         if not serial_number or not serial_number.strip():
             raise ValueError("Device serial number cannot be empty")
@@ -83,11 +84,12 @@ class DeviceManager:
 
         return self.current_device_dir
 
-    def _load_or_create_device_config(self) -> Dict[str, Any]:
+    def _load_or_create_device_config(self) -> dict[str, Any]:
         """Load device config or create from template if doesn't exist.
 
         Returns:
             Device configuration dictionary
+
         """
         if not self.current_device_dir:
             raise RuntimeError("No device set. Call set_device() first.")
@@ -97,7 +99,7 @@ class DeviceManager:
         if config_file.exists():
             # Load existing config
             try:
-                with open(config_file, 'r') as f:
+                with open(config_file) as f:
                     self.device_config = json.load(f)
                 logger.info(f"✅ Loaded device config: {config_file.name}")
                 return self.device_config
@@ -112,26 +114,36 @@ class DeviceManager:
         if template_file.exists():
             # Copy template
             try:
-                with open(template_file, 'r') as f:
+                with open(template_file) as f:
                     self.device_config = json.load(f)
 
                 # Update device-specific fields
-                if 'device_info' not in self.device_config:
-                    self.device_config['device_info'] = {}
+                if "device_info" not in self.device_config:
+                    self.device_config["device_info"] = {}
 
-                self.device_config['device_info']['device_id'] = self.current_device_serial
-                self.device_config['device_info']['created_date'] = datetime.now().isoformat()
-                self.device_config['device_info']['last_modified'] = datetime.now().isoformat()
+                self.device_config["device_info"]["device_id"] = (
+                    self.current_device_serial
+                )
+                self.device_config["device_info"]["created_date"] = (
+                    datetime.now().isoformat()
+                )
+                self.device_config["device_info"]["last_modified"] = (
+                    datetime.now().isoformat()
+                )
 
-                if 'hardware' not in self.device_config:
-                    self.device_config['hardware'] = {}
+                if "hardware" not in self.device_config:
+                    self.device_config["hardware"] = {}
 
-                self.device_config['hardware']['spectrometer_serial'] = self.current_device_serial
+                self.device_config["hardware"]["spectrometer_serial"] = (
+                    self.current_device_serial
+                )
 
                 # Save device-specific config
                 self._save_device_config()
 
-                logger.info(f"✅ Created device config from template: {config_file.name}")
+                logger.info(
+                    f"✅ Created device config from template: {config_file.name}",
+                )
                 return self.device_config
 
             except Exception as e:
@@ -142,21 +154,24 @@ class DeviceManager:
             # No template, create minimal config
             self.device_config = self._create_minimal_config()
             self._save_device_config()
-            logger.warning(f"⚠️ No template found, created minimal config: {config_file.name}")
+            logger.warning(
+                f"⚠️ No template found, created minimal config: {config_file.name}",
+            )
             return self.device_config
 
-    def _create_minimal_config(self) -> Dict[str, Any]:
+    def _create_minimal_config(self) -> dict[str, Any]:
         """Create minimal device configuration.
 
         Returns:
             Minimal configuration dictionary
+
         """
         return {
             "device_info": {
                 "config_version": "1.0",
                 "created_date": datetime.now().isoformat(),
                 "last_modified": datetime.now().isoformat(),
-                "device_id": self.current_device_serial
+                "device_id": self.current_device_serial,
             },
             "hardware": {
                 "spectrometer_model": "Flame-T",
@@ -164,7 +179,7 @@ class DeviceManager:
                 "controller_model": "Raspberry Pi Pico P4SPR",
                 "led_pcb_model": "luminus_cool_white",
                 "optical_fiber_diameter_um": 200,
-                "polarizer_type": "circular"
+                "polarizer_type": "circular",
             },
             "calibration": {
                 "dark_calibration_date": None,
@@ -172,13 +187,13 @@ class DeviceManager:
                 "p_mode_calibration_date": None,
                 "factory_calibrated": False,
                 "user_calibrated": False,
-                "preferred_calibration_mode": "global"
+                "preferred_calibration_mode": "global",
             },
             "optical_calibration": {
                 "optical_calibration_file": None,
                 "afterglow_correction_enabled": True,
-                "calibration_date": None
-            }
+                "calibration_date": None,
+            },
         }
 
     def _save_device_config(self) -> None:
@@ -189,23 +204,24 @@ class DeviceManager:
         config_file = self.current_device_dir / "device_config.json"
 
         # Update last modified timestamp
-        if 'device_info' not in self.device_config:
-            self.device_config['device_info'] = {}
-        self.device_config['device_info']['last_modified'] = datetime.now().isoformat()
+        if "device_info" not in self.device_config:
+            self.device_config["device_info"] = {}
+        self.device_config["device_info"]["last_modified"] = datetime.now().isoformat()
 
         try:
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 json.dump(self.device_config, f, indent=2)
             logger.debug(f"Device config saved: {config_file}")
         except Exception as e:
             logger.error(f"Failed to save device config: {e}")
             raise
 
-    def get_optical_calibration_path(self) -> Optional[Path]:
+    def get_optical_calibration_path(self) -> Path | None:
         """Get path to optical calibration file for current device.
 
         Returns:
             Path to optical_calibration.json if exists, None otherwise
+
         """
         if not self.current_device_dir:
             raise RuntimeError("No device set. Call set_device() first.")
@@ -221,6 +237,7 @@ class DeviceManager:
 
         Returns:
             True if optical calibration exists, False otherwise
+
         """
         return self.get_optical_calibration_path() is not None
 
@@ -229,6 +246,7 @@ class DeviceManager:
 
         Returns:
             True if calibration is missing, False if exists
+
         """
         return not self.has_optical_calibration()
 
@@ -240,26 +258,31 @@ class DeviceManager:
 
         Args:
             calibration_path: Path to optical calibration file
+
         """
         if not self.device_config:
             raise RuntimeError("No device config loaded")
 
-        if 'optical_calibration' not in self.device_config:
-            self.device_config['optical_calibration'] = {}
+        if "optical_calibration" not in self.device_config:
+            self.device_config["optical_calibration"] = {}
 
         # Store relative path from device directory
         relative_path = calibration_path.relative_to(self.current_device_dir)
 
-        self.device_config['optical_calibration']['optical_calibration_file'] = str(relative_path)
-        self.device_config['optical_calibration']['calibration_date'] = datetime.now().isoformat()
-        self.device_config['optical_calibration']['afterglow_correction_enabled'] = True
+        self.device_config["optical_calibration"]["optical_calibration_file"] = str(
+            relative_path,
+        )
+        self.device_config["optical_calibration"]["calibration_date"] = (
+            datetime.now().isoformat()
+        )
+        self.device_config["optical_calibration"]["afterglow_correction_enabled"] = True
 
         self._save_device_config()
 
-        logger.info(f"✅ Optical calibration path updated in device config")
+        logger.info("✅ Optical calibration path updated in device config")
         logger.info(f"   File: {relative_path}")
 
-    def get_device_config(self) -> Dict[str, Any]:
+    def get_device_config(self) -> dict[str, Any]:
         """Get current device configuration.
 
         Returns:
@@ -267,34 +290,40 @@ class DeviceManager:
 
         Raises:
             RuntimeError: If no device is set
+
         """
         if not self.device_config:
             raise RuntimeError("No device config loaded. Call set_device() first.")
 
         return self.device_config
 
-    def update_calibration_status(self, calibration_type: str, status: bool = True) -> None:
+    def update_calibration_status(
+        self,
+        calibration_type: str,
+        status: bool = True,
+    ) -> None:
         """Update calibration status in device config.
 
         Args:
             calibration_type: Type of calibration ('dark', 's_mode', 'p_mode', 'optical')
             status: Calibration status (default: True)
+
         """
         if not self.device_config:
             raise RuntimeError("No device config loaded")
 
-        if 'calibration' not in self.device_config:
-            self.device_config['calibration'] = {}
+        if "calibration" not in self.device_config:
+            self.device_config["calibration"] = {}
 
         timestamp = datetime.now().isoformat() if status else None
 
-        if calibration_type == 'optical':
-            if 'optical_calibration' not in self.device_config:
-                self.device_config['optical_calibration'] = {}
-            self.device_config['optical_calibration']['calibration_date'] = timestamp
+        if calibration_type == "optical":
+            if "optical_calibration" not in self.device_config:
+                self.device_config["optical_calibration"] = {}
+            self.device_config["optical_calibration"]["calibration_date"] = timestamp
         else:
             cal_key = f"{calibration_type}_calibration_date"
-            self.device_config['calibration'][cal_key] = timestamp
+            self.device_config["calibration"][cal_key] = timestamp
 
         self._save_device_config()
         logger.debug(f"Updated calibration status: {calibration_type} = {status}")
@@ -304,6 +333,7 @@ class DeviceManager:
 
         Returns:
             List of device serial numbers
+
         """
         devices = []
         if self.devices_dir.exists():
@@ -315,7 +345,7 @@ class DeviceManager:
 
         return sorted(devices)
 
-    def get_device_info(self, serial_number: str) -> Optional[Dict[str, Any]]:
+    def get_device_info(self, serial_number: str) -> dict[str, Any] | None:
         """Get device information summary.
 
         Args:
@@ -323,6 +353,7 @@ class DeviceManager:
 
         Returns:
             Dictionary with device info, or None if device not found
+
         """
         device_dir = self.devices_dir / serial_number
         config_file = device_dir / "device_config.json"
@@ -331,7 +362,7 @@ class DeviceManager:
             return None
 
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file) as f:
                 config = json.load(f)
 
             optical_cal_file = device_dir / "optical_calibration.json"
@@ -340,10 +371,10 @@ class DeviceManager:
             return {
                 "serial": serial_number,
                 "has_optical_calibration": has_optical_cal,
-                "created_date": config.get('device_info', {}).get('created_date'),
-                "last_modified": config.get('device_info', {}).get('last_modified'),
-                "calibration_status": config.get('calibration', {}),
-                "hardware": config.get('hardware', {})
+                "created_date": config.get("device_info", {}).get("created_date"),
+                "last_modified": config.get("device_info", {}).get("last_modified"),
+                "calibration_status": config.get("calibration", {}),
+                "hardware": config.get("hardware", {}),
             }
         except Exception as e:
             logger.error(f"Failed to read device info for {serial_number}: {e}")
@@ -351,7 +382,7 @@ class DeviceManager:
 
 
 # Global device manager instance
-_device_manager: Optional[DeviceManager] = None
+_device_manager: DeviceManager | None = None
 
 
 def get_device_manager() -> DeviceManager:
@@ -359,6 +390,7 @@ def get_device_manager() -> DeviceManager:
 
     Returns:
         DeviceManager instance
+
     """
     global _device_manager
     if _device_manager is None:

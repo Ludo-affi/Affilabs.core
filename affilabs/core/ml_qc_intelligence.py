@@ -409,7 +409,8 @@ class MLQCIntelligence:
     # =========================================================================
 
     def check_optical_alignment(
-        self, calibration_data: CalibrationData,
+        self,
+        calibration_data: CalibrationData,
     ) -> OpticalAlignmentStatus:
         """Check optical alignment using CALIBRATION BASELINE comparison.
 
@@ -487,7 +488,9 @@ class MLQCIntelligence:
                 f"({baseline_ps:.2f}±{baseline_std:.2f}) - polarizer alignment may have shifted"
             )
         elif maintenance_recommended:
-            warning_message = f"[WARN] Calibration P/S ratio deviation {deviation:.2f} - monitor alignment"
+            warning_message = (
+                f"[WARN] Calibration P/S ratio deviation {deviation:.2f} - monitor alignment"
+            )
 
         # Update baseline with current value
         self._update_alignment_baseline(current_ps_avg)

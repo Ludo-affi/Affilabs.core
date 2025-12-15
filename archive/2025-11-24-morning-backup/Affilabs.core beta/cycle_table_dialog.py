@@ -3,8 +3,17 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QPushButton, QLabel, QFrame, QLineEdit, QComboBox
+    QComboBox,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
 from ui_styles import Colors, Fonts
 
@@ -22,10 +31,10 @@ class CycleTableDialog(QDialog):
         self.setWindowTitle("Cycle Data Table")
         self.setModal(False)  # Allow interaction with main window
         self.resize(1000, 700)
-        self.setStyleSheet(f"""
-            QDialog {{
+        self.setStyleSheet("""
+            QDialog {
                 background: #F8F9FA;
-            }}
+            }
         """)
 
         self._setup_ui()
@@ -49,7 +58,7 @@ class CycleTableDialog(QDialog):
             "  color: #1D1D1F;"
             "  background: transparent;"
             f"  font-family: {Fonts.SYSTEM};"
-            "}"
+            "}",
         )
         header_layout.addWidget(title_label)
 
@@ -61,7 +70,7 @@ class CycleTableDialog(QDialog):
             "  color: #86868B;"
             "  background: transparent;"
             f"  font-family: {Fonts.SYSTEM};"
-            "}"
+            "}",
         )
         header_layout.addWidget(self.count_label)
 
@@ -83,13 +92,15 @@ class CycleTableDialog(QDialog):
             "}"
             "QLineEdit:focus {"
             f"  border: 1px solid {Colors.PRIMARY_TEXT};"
-            "}"
+            "}",
         )
         header_layout.addWidget(self.search_input)
 
         # Type filter
         self.type_filter = QComboBox()
-        self.type_filter.addItems(["All Types", "Auto-read", "Baseline", "Immobilization", "Concentration"])
+        self.type_filter.addItems(
+            ["All Types", "Auto-read", "Baseline", "Immobilization", "Concentration"],
+        )
         self.type_filter.setFixedWidth(150)
         self.type_filter.setStyleSheet(
             "QComboBox {"
@@ -118,7 +129,7 @@ class CycleTableDialog(QDialog):
             "  selection-background-color: rgba(0, 0, 0, 0.06);"
             f"  selection-color: {Colors.PRIMARY_TEXT};"
             "  outline: none;"
-            "}"
+            "}",
         )
         header_layout.addWidget(self.type_filter)
 
@@ -131,7 +142,7 @@ class CycleTableDialog(QDialog):
             "  background: white;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
@@ -139,29 +150,43 @@ class CycleTableDialog(QDialog):
 
         # Create table with SegmentDataFrame columns + Flags column (15 visible columns)
         self.cycle_table = QTableWidget(0, 15)
-        self.cycle_table.setHorizontalHeaderLabels([
-            "ID", "Name", "Start", "End", "Ref Ch", "Unit",
-            "Shift A", "Shift B", "Shift C", "Shift D",
-            "Cycle Type", "Cycle Time", "Note", "Flags", "Error"
-        ])
+        self.cycle_table.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Name",
+                "Start",
+                "End",
+                "Ref Ch",
+                "Unit",
+                "Shift A",
+                "Shift B",
+                "Shift C",
+                "Shift D",
+                "Cycle Type",
+                "Cycle Time",
+                "Note",
+                "Flags",
+                "Error",
+            ],
+        )
 
         # Configure table
         header = self.cycle_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
         # Set column widths matching SegmentDataFrame schema + Flags
-        self.cycle_table.setColumnWidth(0, 50)    # ID
-        self.cycle_table.setColumnWidth(1, 80)    # Name
-        self.cycle_table.setColumnWidth(2, 100)   # Start
-        self.cycle_table.setColumnWidth(3, 100)   # End
-        self.cycle_table.setColumnWidth(4, 60)    # Ref Ch
-        self.cycle_table.setColumnWidth(5, 60)    # Unit
-        self.cycle_table.setColumnWidth(6, 80)    # Shift A
-        self.cycle_table.setColumnWidth(7, 80)    # Shift B
-        self.cycle_table.setColumnWidth(8, 80)    # Shift C
-        self.cycle_table.setColumnWidth(9, 80)    # Shift D
+        self.cycle_table.setColumnWidth(0, 50)  # ID
+        self.cycle_table.setColumnWidth(1, 80)  # Name
+        self.cycle_table.setColumnWidth(2, 100)  # Start
+        self.cycle_table.setColumnWidth(3, 100)  # End
+        self.cycle_table.setColumnWidth(4, 60)  # Ref Ch
+        self.cycle_table.setColumnWidth(5, 60)  # Unit
+        self.cycle_table.setColumnWidth(6, 80)  # Shift A
+        self.cycle_table.setColumnWidth(7, 80)  # Shift B
+        self.cycle_table.setColumnWidth(8, 80)  # Shift C
+        self.cycle_table.setColumnWidth(9, 80)  # Shift D
         self.cycle_table.setColumnWidth(10, 140)  # Cycle Type
-        self.cycle_table.setColumnWidth(11, 90)   # Cycle Time
+        self.cycle_table.setColumnWidth(11, 90)  # Cycle Time
         self.cycle_table.setColumnWidth(12, 250)  # Note
         self.cycle_table.setColumnWidth(13, 120)  # Flags
         self.cycle_table.setColumnWidth(14, 100)  # Error
@@ -210,7 +235,7 @@ class CycleTableDialog(QDialog):
             "}"
             "QHeaderView::section:last {"
             "  border-top-right-radius: 12px;"
-            "}"
+            "}",
         )
 
         table_layout.addWidget(self.cycle_table)
@@ -228,7 +253,7 @@ class CycleTableDialog(QDialog):
             f"  color: {Colors.SECONDARY_TEXT};"
             "  background: transparent;"
             f"  font-family: {Fonts.SYSTEM};"
-            "}"
+            "}",
         )
         footer_layout.addWidget(self.selection_label)
 
@@ -258,7 +283,7 @@ class CycleTableDialog(QDialog):
             "QPushButton:disabled {"
             "  background: rgba(0, 0, 0, 0.1);"
             f"  color: {Colors.SECONDARY_TEXT};"
-            "}"
+            "}",
         )
         footer_layout.addWidget(self.delete_btn)
 
@@ -280,7 +305,7 @@ class CycleTableDialog(QDialog):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         footer_layout.addWidget(self.export_btn)
 
@@ -302,7 +327,7 @@ class CycleTableDialog(QDialog):
             "}"
             "QPushButton:pressed {"
             "  background: #8E8E93;"
-            "}"
+            "}",
         )
         footer_layout.addWidget(self.close_btn)
 
@@ -375,11 +400,11 @@ class CycleTableDialog(QDialog):
         print("Export CSV clicked")
 
     def load_cycles(self, cycles_data: list):
-        """
-        Load cycle data into the table.
+        """Load cycle data into the table.
 
         Args:
             cycles_data: List of dicts or Segment objects matching SegmentDataFrame schema
+
         """
         self.cycle_table.setRowCount(0)
 
@@ -495,6 +520,7 @@ class CycleTableDialog(QDialog):
 # Test/Demo code
 if __name__ == "__main__":
     import sys
+
     from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
@@ -595,4 +621,3 @@ if __name__ == "__main__":
     dialog.show()
 
     sys.exit(app.exec())
-

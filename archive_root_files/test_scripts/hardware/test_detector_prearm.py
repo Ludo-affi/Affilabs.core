@@ -10,12 +10,13 @@ Test Method:
 """
 
 import time
+
 import numpy as np
 from src.utils.usb4000_wrapper import USB4000
 
+
 def test_detector_prearm():
     """Test if detector caches integration time."""
-
     print("=" * 80)
     print("DETECTOR PRE-ARM TEST")
     print("=" * 80)
@@ -33,7 +34,7 @@ def test_detector_prearm():
         print("❌ ERROR: Spectrometer not opened")
         return False
 
-    print(f"✅ Spectrometer connected")
+    print("✅ Spectrometer connected")
     print(f"   Serial: {usb.serial_number}")
     print(f"   Pixels: {usb._num_pixels}")
     print()
@@ -42,7 +43,7 @@ def test_detector_prearm():
     integration_time = 50.0  # ms
     num_reads = 5
 
-    print(f"Test Parameters:")
+    print("Test Parameters:")
     print(f"  Integration Time: {integration_time}ms")
     print(f"  Number of Reads: {num_reads}")
     print()
@@ -74,7 +75,9 @@ def test_detector_prearm():
             if spectrum is not None:
                 spectra_prearm.append(spectrum)
                 times_prearm.append(elapsed)
-                print(f"✅ {elapsed:.1f}ms (min={np.min(spectrum):.0f}, max={np.max(spectrum):.0f}, mean={np.mean(spectrum):.0f})")
+                print(
+                    f"✅ {elapsed:.1f}ms (min={np.min(spectrum):.0f}, max={np.max(spectrum):.0f}, mean={np.mean(spectrum):.0f})",
+                )
             else:
                 print("❌ FAILED - spectrum is None")
 
@@ -82,11 +85,14 @@ def test_detector_prearm():
         print(f"Pre-Arm Results: {len(spectra_prearm)}/{num_reads} successful")
         if times_prearm:
             print(f"  Average time: {np.mean(times_prearm):.1f}ms")
-            print(f"  Time range: {np.min(times_prearm):.1f}ms - {np.max(times_prearm):.1f}ms")
+            print(
+                f"  Time range: {np.min(times_prearm):.1f}ms - {np.max(times_prearm):.1f}ms",
+            )
 
     except Exception as e:
         print(f"❌ TEST 1 FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -116,7 +122,9 @@ def test_detector_prearm():
             if spectrum is not None:
                 spectra_no_prearm.append(spectrum)
                 times_no_prearm.append(elapsed)
-                print(f"✅ {elapsed:.1f}ms (min={np.min(spectrum):.0f}, max={np.max(spectrum):.0f}, mean={np.mean(spectrum):.0f})")
+                print(
+                    f"✅ {elapsed:.1f}ms (min={np.min(spectrum):.0f}, max={np.max(spectrum):.0f}, mean={np.mean(spectrum):.0f})",
+                )
             else:
                 print("❌ FAILED - spectrum is None")
 
@@ -124,11 +132,14 @@ def test_detector_prearm():
         print(f"No Pre-Arm Results: {len(spectra_no_prearm)}/{num_reads} successful")
         if times_no_prearm:
             print(f"  Average time: {np.mean(times_no_prearm):.1f}ms")
-            print(f"  Time range: {np.min(times_no_prearm):.1f}ms - {np.max(times_no_prearm):.1f}ms")
+            print(
+                f"  Time range: {np.min(times_no_prearm):.1f}ms - {np.max(times_no_prearm):.1f}ms",
+            )
 
     except Exception as e:
         print(f"❌ TEST 2 FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -142,12 +153,18 @@ def test_detector_prearm():
     print("=" * 80)
 
     if len(spectra_prearm) != num_reads:
-        print(f"❌ FAILED: Pre-arm mode only got {len(spectra_prearm)}/{num_reads} valid spectra")
-        print("   → Detector DOES NOT support pre-arm (requires integration time before every read)")
+        print(
+            f"❌ FAILED: Pre-arm mode only got {len(spectra_prearm)}/{num_reads} valid spectra",
+        )
+        print(
+            "   → Detector DOES NOT support pre-arm (requires integration time before every read)",
+        )
         return False
 
     if len(spectra_no_prearm) != num_reads:
-        print(f"⚠️  WARNING: No-prearm mode only got {len(spectra_no_prearm)}/{num_reads} valid spectra")
+        print(
+            f"⚠️  WARNING: No-prearm mode only got {len(spectra_no_prearm)}/{num_reads} valid spectra",
+        )
 
     # Check if spectra are valid (not all zeros)
     prearm_valid = all(np.sum(s) > 0 for s in spectra_prearm)
@@ -169,9 +186,15 @@ def test_detector_prearm():
         diff = np.abs(spectra_prearm[i] - spectra_no_prearm[i])
         max_diff = np.max(diff)
         mean_diff = np.mean(diff)
-        rel_diff = mean_diff / np.mean(spectra_prearm[i]) * 100 if np.mean(spectra_prearm[i]) > 0 else 0
+        rel_diff = (
+            mean_diff / np.mean(spectra_prearm[i]) * 100
+            if np.mean(spectra_prearm[i]) > 0
+            else 0
+        )
 
-        print(f"  Spectrum {i+1}: max_diff={max_diff:.1f}, mean_diff={mean_diff:.1f}, relative={rel_diff:.2f}%")
+        print(
+            f"  Spectrum {i+1}: max_diff={max_diff:.1f}, mean_diff={mean_diff:.1f}, relative={rel_diff:.2f}%",
+        )
 
     print()
 
@@ -191,7 +214,9 @@ def test_detector_prearm():
 
         if time_saved > 1.0:
             print(f"💡 Pre-arm saves ~{time_saved:.1f}ms per acquisition")
-            print(f"   For 4 channels: ~{time_saved * 3:.1f}ms per cycle (3 redundant calls avoided)")
+            print(
+                f"   For 4 channels: ~{time_saved * 3:.1f}ms per cycle (3 redundant calls avoided)",
+            )
 
     print()
     print("=" * 80)
@@ -205,6 +230,7 @@ def test_detector_prearm():
 
     return True
 
+
 if __name__ == "__main__":
     try:
         success = test_detector_prearm()
@@ -215,4 +241,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Test crashed: {e}")
         import traceback
+
         traceback.print_exc()

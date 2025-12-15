@@ -13,10 +13,9 @@ from __future__ import annotations
 try:
     from typing import Self  # Python 3.11+
 except ImportError:
-    from typing_extensions import Self  # Python < 3.11
+    from typing import Self  # Python < 3.11
 
 from pathlib import Path
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -24,9 +23,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
-    QInputDialog,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -36,8 +35,8 @@ from PySide6.QtWidgets import (
 
 from utils.device_configuration import DeviceConfiguration
 from utils.hardware_detection import HardwareDetector
-from utils.security import get_security_manager
 from utils.logger import logger
+from utils.security import get_security_manager
 
 
 class DeviceSettingsWidget(QWidget):
@@ -53,7 +52,7 @@ class DeviceSettingsWidget(QWidget):
     # Signal emitted when configuration changes
     configuration_changed = Signal()
 
-    def __init__(self: Self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self: Self, parent: QWidget | None = None) -> None:
         """Initialize device settings widget."""
         super().__init__(parent)
 
@@ -82,7 +81,7 @@ class DeviceSettingsWidget(QWidget):
         # Info label
         fiber_info = QLabel(
             "Select the diameter of your optical fiber probe.\n"
-            "This affects signal strength calculations and frequency limits."
+            "This affects signal strength calculations and frequency limits.",
         )
         fiber_info.setWordWrap(True)
         fiber_info.setStyleSheet("color: gray; font-size: 9pt;")
@@ -109,7 +108,7 @@ class DeviceSettingsWidget(QWidget):
         # Info label
         led_info = QLabel(
             "Select your LED PCB hardware variant.\n"
-            "This affects timing parameters and intensity calibration."
+            "This affects timing parameters and intensity calibration.",
         )
         led_info.setWordWrap(True)
         led_info.setStyleSheet("color: gray; font-size: 9pt;")
@@ -139,7 +138,7 @@ class DeviceSettingsWidget(QWidget):
             "• Global Mode (Default): Calibrates LED intensities per channel, "
             "uses single integration time. Best for balanced signal levels.\n\n"
             "• Per-Channel Mode (Advanced): All LEDs fixed at 255, "
-            "uses per-channel integration times. Optimal for widely varying responses."
+            "uses per-channel integration times. Optimal for widely varying responses.",
         )
         calib_mode_info.setWordWrap(True)
         calib_mode_info.setStyleSheet("color: gray; font-size: 9pt;")
@@ -148,18 +147,22 @@ class DeviceSettingsWidget(QWidget):
         # Warning label
         calib_mode_warning = QLabel(
             "⚠️ Important: Changing calibration mode requires running a full "
-            "calibration before measurements."
+            "calibration before measurements.",
         )
         calib_mode_warning.setWordWrap(True)
         calib_mode_warning.setStyleSheet(
             "color: #FF6B00; font-size: 9pt; font-weight: bold; "
-            "background-color: #FFF3E0; padding: 8px; border-radius: 3px;"
+            "background-color: #FFF3E0; padding: 8px; border-radius: 3px;",
         )
         calib_mode_layout.addWidget(calib_mode_warning)
 
         # Radio buttons for calibration mode
-        self.calib_mode_global = QRadioButton("Global Mode - Balanced LED intensities (Recommended)")
-        self.calib_mode_per_channel = QRadioButton("Per-Channel Mode - Individual integration times (Advanced)")
+        self.calib_mode_global = QRadioButton(
+            "Global Mode - Balanced LED intensities (Recommended)",
+        )
+        self.calib_mode_per_channel = QRadioButton(
+            "Per-Channel Mode - Individual integration times (Advanced)",
+        )
 
         self.calib_mode_button_group = QButtonGroup(self)
         self.calib_mode_button_group.addButton(self.calib_mode_global, 0)
@@ -177,7 +180,7 @@ class DeviceSettingsWidget(QWidget):
 
         hardware_info = QLabel(
             "Automatically detect connected spectrometer and controller.\n"
-            "Serial numbers will be saved to configuration."
+            "Serial numbers will be saved to configuration.",
         )
         hardware_info.setWordWrap(True)
         hardware_info.setStyleSheet("color: gray; font-size: 9pt;")
@@ -203,7 +206,7 @@ class DeviceSettingsWidget(QWidget):
         # OEM status label
         self.oem_status_label = QLabel("🔒 Locked - User Mode")
         self.oem_status_label.setStyleSheet(
-            "QLabel { color: #f44336; font-weight: bold; padding: 5px; }"
+            "QLabel { color: #f44336; font-weight: bold; padding: 5px; }",
         )
         oem_layout.addWidget(self.oem_status_label)
 
@@ -213,7 +216,7 @@ class DeviceSettingsWidget(QWidget):
         self.oem_unlock_btn = QPushButton("🔓 Unlock OEM Mode")
         self.oem_unlock_btn.setStyleSheet(
             "QPushButton { background-color: #FF9800; color: white; font-weight: bold; padding: 8px; }"
-            "QPushButton:hover { background-color: #F57C00; }"
+            "QPushButton:hover { background-color: #F57C00; }",
         )
         self.oem_unlock_btn.clicked.connect(self._authenticate_oem)
         oem_layout.addWidget(self.oem_unlock_btn)
@@ -221,7 +224,7 @@ class DeviceSettingsWidget(QWidget):
         # OEM lock button (hidden initially)
         self.oem_lock_btn = QPushButton("🔒 Lock OEM Mode")
         self.oem_lock_btn.setStyleSheet(
-            "QPushButton { background-color: #9E9E9E; color: white; padding: 8px; }"
+            "QPushButton { background-color: #9E9E9E; color: white; padding: 8px; }",
         )
         self.oem_lock_btn.clicked.connect(self._lock_oem_mode)
         self.oem_lock_btn.setVisible(False)
@@ -238,7 +241,7 @@ class DeviceSettingsWidget(QWidget):
         save_btn.setStyleSheet(
             "QPushButton { background-color: #4CAF50; color: white; "
             "font-weight: bold; padding: 8px; }"
-            "QPushButton:hover { background-color: #45a049; }"
+            "QPushButton:hover { background-color: #45a049; }",
         )
         save_btn.clicked.connect(self._save_configuration)
         button_layout.addWidget(save_btn)
@@ -268,7 +271,7 @@ class DeviceSettingsWidget(QWidget):
         self.config_display = QLabel()
         self.config_display.setStyleSheet(
             "QLabel { background-color: #f5f5f5; padding: 10px; "
-            "border: 1px solid #ddd; border-radius: 3px; }"
+            "border: 1px solid #ddd; border-radius: 3px; }",
         )
         self.config_display.setTextFormat(Qt.RichText)
         info_layout.addWidget(self.config_display)
@@ -295,14 +298,14 @@ class DeviceSettingsWidget(QWidget):
 
         # LED PCB model
         led_model = self.config.get_led_pcb_model()
-        if led_model == 'luminus_cool_white':
+        if led_model == "luminus_cool_white":
             self.led_luminus.setChecked(True)
         else:
             self.led_osram.setChecked(True)
 
         # Calibration mode
         calib_mode = self.config.get_calibration_mode()
-        if calib_mode == 'global':
+        if calib_mode == "global":
             self.calib_mode_global.setChecked(True)
         else:
             self.calib_mode_per_channel.setChecked(True)
@@ -318,9 +321,19 @@ class DeviceSettingsWidget(QWidget):
         """Update configuration display."""
         # Get current selections
         fiber_diameter = self.fiber_button_group.checkedId()
-        led_model = 'luminus_cool_white' if self.led_button_group.checkedId() == 0 else 'osram_warm_white'
-        calib_mode = 'global' if self.calib_mode_button_group.checkedId() == 0 else 'per_channel'
-        calib_mode_display = 'Global (Balanced LEDs)' if calib_mode == 'global' else 'Per-Channel (Individual Times)'
+        led_model = (
+            "luminus_cool_white"
+            if self.led_button_group.checkedId() == 0
+            else "osram_warm_white"
+        )
+        calib_mode = (
+            "global" if self.calib_mode_button_group.checkedId() == 0 else "per_channel"
+        )
+        calib_mode_display = (
+            "Global (Balanced LEDs)"
+            if calib_mode == "global"
+            else "Per-Channel (Individual Times)"
+        )
 
         # Get frequency limits
         limits_4led = self.config.get_frequency_limits(4)
@@ -358,22 +371,22 @@ class DeviceSettingsWidget(QWidget):
             # Build status message
             status_parts = []
 
-            if detected['spectrometer']:
-                spec = detected['spectrometer']
+            if detected["spectrometer"]:
+                spec = detected["spectrometer"]
                 status_parts.append(
                     f"✅ Spectrometer: {spec['description']}\n"
-                    f"   S/N: {spec['serial_number'] or 'Unknown'}"
+                    f"   S/N: {spec['serial_number'] or 'Unknown'}",
                 )
                 # Update config with serial number
-                if spec['serial_number']:
-                    self.config.set_spectrometer_serial(spec['serial_number'])
+                if spec["serial_number"]:
+                    self.config.set_spectrometer_serial(spec["serial_number"])
             else:
                 status_parts.append("❌ Spectrometer: Not detected")
 
-            if detected['controller']:
-                ctrl = detected['controller']
+            if detected["controller"]:
+                ctrl = detected["controller"]
                 status_parts.append(
-                    f"✅ Controller: {ctrl['description']}"
+                    f"✅ Controller: {ctrl['description']}",
                 )
             else:
                 status_parts.append("❌ Controller: Not detected")
@@ -389,7 +402,7 @@ class DeviceSettingsWidget(QWidget):
             QMessageBox.information(
                 self,
                 "Hardware Detection",
-                "Hardware detection complete.\n\n" + status_text
+                "Hardware detection complete.\n\n" + status_text,
             )
 
         except Exception as e:
@@ -399,7 +412,7 @@ class DeviceSettingsWidget(QWidget):
             QMessageBox.critical(
                 self,
                 "Error",
-                f"Hardware detection failed:\n{e}"
+                f"Hardware detection failed:\n{e}",
             )
 
     def _save_configuration(self: Self) -> None:
@@ -407,14 +420,23 @@ class DeviceSettingsWidget(QWidget):
         try:
             # Get selections
             fiber_diameter = self.fiber_button_group.checkedId()
-            led_model = 'luminus_cool_white' if self.led_button_group.checkedId() == 0 else 'osram_warm_white'
-            calib_mode = 'global' if self.calib_mode_button_group.checkedId() == 0 else 'per_channel'
+            led_model = (
+                "luminus_cool_white"
+                if self.led_button_group.checkedId() == 0
+                else "osram_warm_white"
+            )
+            calib_mode = (
+                "global"
+                if self.calib_mode_button_group.checkedId() == 0
+                else "per_channel"
+            )
 
             # Check if calibration mode is changing
             current_mode = self.config.get_calibration_mode()
             if calib_mode != current_mode:
                 # Warn user that calibration is required
                 from PySide6.QtWidgets import QMessageBox as MB
+
                 reply = MB.warning(
                     self,
                     "Calibration Mode Change",
@@ -424,7 +446,7 @@ class DeviceSettingsWidget(QWidget):
                     "so existing calibration data will not be valid.\n\n"
                     "Do you want to proceed with this change?",
                     MB.StandardButton.Yes | MB.StandardButton.No,
-                    MB.StandardButton.No
+                    MB.StandardButton.No,
                 )
 
                 if reply != MB.StandardButton.Yes:
@@ -450,24 +472,30 @@ class DeviceSettingsWidget(QWidget):
             self.configuration_changed.emit()
 
             # Show success
-            calib_mode_display = 'Global (Balanced LEDs)' if calib_mode == 'global' else 'Per-Channel (Individual Times)'
+            calib_mode_display = (
+                "Global (Balanced LEDs)"
+                if calib_mode == "global"
+                else "Per-Channel (Individual Times)"
+            )
             QMessageBox.information(
                 self,
                 "Success",
                 "Configuration saved successfully!\n\n"
                 f"Optical Fiber: {fiber_diameter} µm\n"
                 f"LED PCB: {led_model}\n"
-                f"Calibration Mode: {calib_mode_display}"
+                f"Calibration Mode: {calib_mode_display}",
             )
 
-            logger.info(f"Device configuration saved: fiber={fiber_diameter}µm, led={led_model}, mode={calib_mode}")
+            logger.info(
+                f"Device configuration saved: fiber={fiber_diameter}µm, led={led_model}, mode={calib_mode}",
+            )
 
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
             QMessageBox.critical(
                 self,
                 "Error",
-                f"Failed to save configuration:\n{e}"
+                f"Failed to save configuration:\n{e}",
             )
 
     def _export_configuration(self: Self) -> None:
@@ -477,7 +505,7 @@ class DeviceSettingsWidget(QWidget):
                 self,
                 "Export Configuration",
                 str(Path.home() / "device_config_backup.json"),
-                "JSON Files (*.json)"
+                "JSON Files (*.json)",
             )
 
             if file_path:
@@ -485,7 +513,7 @@ class DeviceSettingsWidget(QWidget):
                 QMessageBox.information(
                     self,
                     "Success",
-                    f"Configuration exported to:\n{file_path}"
+                    f"Configuration exported to:\n{file_path}",
                 )
                 logger.info(f"Configuration exported to: {file_path}")
 
@@ -500,7 +528,7 @@ class DeviceSettingsWidget(QWidget):
                 self,
                 "Import Configuration",
                 str(Path.home()),
-                "JSON Files (*.json)"
+                "JSON Files (*.json)",
             )
 
             if file_path:
@@ -510,7 +538,7 @@ class DeviceSettingsWidget(QWidget):
                     "Confirm Import",
                     "This will replace your current configuration.\n"
                     "Are you sure you want to continue?",
-                    QMessageBox.Yes | QMessageBox.No
+                    QMessageBox.Yes | QMessageBox.No,
                 )
 
                 if reply == QMessageBox.Yes:
@@ -521,7 +549,7 @@ class DeviceSettingsWidget(QWidget):
                     QMessageBox.information(
                         self,
                         "Success",
-                        f"Configuration imported from:\n{file_path}"
+                        f"Configuration imported from:\n{file_path}",
                     )
                     logger.info(f"Configuration imported from: {file_path}")
 
@@ -538,7 +566,7 @@ class DeviceSettingsWidget(QWidget):
                 "This will reset ALL configuration to default values.\n"
                 "This action cannot be undone.\n\n"
                 "Are you sure you want to continue?",
-                QMessageBox.Yes | QMessageBox.No
+                QMessageBox.Yes | QMessageBox.No,
             )
 
             if reply == QMessageBox.Yes:
@@ -550,7 +578,7 @@ class DeviceSettingsWidget(QWidget):
                 QMessageBox.information(
                     self,
                     "Success",
-                    "Configuration reset to defaults"
+                    "Configuration reset to defaults",
                 )
                 logger.info("Device configuration reset to defaults")
 
@@ -567,7 +595,7 @@ class DeviceSettingsWidget(QWidget):
                 "🔐 OEM Authentication",
                 "Enter OEM password to unlock service mode:\n\n"
                 "(Contact Affinite Instruments for OEM access)",
-                QLineEdit.Password
+                QLineEdit.Password,
             )
 
             if ok and password:
@@ -585,7 +613,7 @@ class DeviceSettingsWidget(QWidget):
                         f"Session timeout: {session_info['timeout_minutes']} minutes\n"
                         f"You can now modify all device configuration settings.\n\n"
                         f"⚠️ Changes to fiber diameter and LED model affect\n"
-                        f"   calibration and measurement performance."
+                        f"   calibration and measurement performance.",
                     )
                     logger.info("✅ OEM service mode activated via GUI")
                 else:
@@ -594,7 +622,7 @@ class DeviceSettingsWidget(QWidget):
                         self,
                         "❌ Authentication Failed",
                         "Incorrect OEM password.\n\n"
-                        "Please contact Affinite Instruments for support."
+                        "Please contact Affinite Instruments for support.",
                     )
                     logger.warning("❌ OEM authentication failed in GUI")
 
@@ -610,7 +638,7 @@ class DeviceSettingsWidget(QWidget):
                 "🔒 Lock OEM Mode",
                 "Exit OEM Service Mode and return to User Mode?\n\n"
                 "Critical settings will be locked again.",
-                QMessageBox.Yes | QMessageBox.No
+                QMessageBox.Yes | QMessageBox.No,
             )
 
             if reply == QMessageBox.Yes:
@@ -622,7 +650,7 @@ class DeviceSettingsWidget(QWidget):
                     self,
                     "🔒 Locked",
                     "OEM Service Mode deactivated.\n"
-                    "Critical settings are now locked."
+                    "Critical settings are now locked.",
                 )
                 logger.info("🔒 OEM service mode deactivated via GUI")
 
@@ -638,15 +666,14 @@ class DeviceSettingsWidget(QWidget):
             QMessageBox.warning(
                 self,
                 "⏱️ Session Expired",
-                "OEM session has expired.\n"
-                "Critical settings are now locked."
+                "OEM session has expired.\nCritical settings are now locked.",
             )
 
         if self.oem_mode_active:
             # OEM MODE - Everything unlocked
             self.oem_status_label.setText("✅ Unlocked - OEM Service Mode")
             self.oem_status_label.setStyleSheet(
-                "QLabel { color: #4CAF50; font-weight: bold; padding: 5px; }"
+                "QLabel { color: #4CAF50; font-weight: bold; padding: 5px; }",
             )
             self.oem_unlock_btn.setVisible(False)
             self.oem_lock_btn.setVisible(True)
@@ -662,7 +689,7 @@ class DeviceSettingsWidget(QWidget):
             # USER MODE - Critical settings locked
             self.oem_status_label.setText("🔒 Locked - User Mode")
             self.oem_status_label.setStyleSheet(
-                "QLabel { color: #f44336; font-weight: bold; padding: 5px; }"
+                "QLabel { color: #f44336; font-weight: bold; padding: 5px; }",
             )
             self.oem_unlock_btn.setVisible(True)
             self.oem_lock_btn.setVisible(False)

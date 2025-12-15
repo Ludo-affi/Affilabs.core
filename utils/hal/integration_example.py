@@ -140,7 +140,9 @@ class HALControllerAdapter:
             return {
                 "model": getattr(self.legacy_controller, "name", "Unknown"),
                 "firmware_version": getattr(
-                    self.legacy_controller, "version", "Unknown"
+                    self.legacy_controller,
+                    "version",
+                    "Unknown",
                 ),
                 "connection_type": "Legacy",
             }
@@ -174,7 +176,9 @@ class HALControllerAdapter:
         return False
 
     def _connect_legacy(
-        self, device_type: str | None, **connection_params: Any
+        self,
+        device_type: str | None,
+        **connection_params: Any,
     ) -> bool:
         """Connect using legacy controller system."""
         try:
@@ -238,7 +242,7 @@ def demonstrate_hal_integration():
         # Try to connect
         if adapter.connect():
             print(
-                f"  Connection: SUCCESS (using {'HAL' if adapter.using_hal else 'Legacy'})"
+                f"  Connection: SUCCESS (using {'HAL' if adapter.using_hal else 'Legacy'})",
             )
 
             # Get device info
@@ -264,7 +268,7 @@ def demonstrate_hal_integration():
             print(
                 f"  Temperature: {temp:.1f}°C"
                 if temp > -1
-                else "  Temperature: Not available"
+                else "  Temperature: Not available",
             )
 
             # Health check

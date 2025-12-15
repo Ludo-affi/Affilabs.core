@@ -7,11 +7,13 @@ Feature can be enabled/disabled via ENABLE_SESSION_QUALITY_MONITORING flag.
 """
 
 from __future__ import annotations
-import numpy as np
+
+import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
-import logging
+from typing import TYPE_CHECKING
+
+import numpy as np
 
 if TYPE_CHECKING:
     from utils.peak_characterization import PeakCharacteristics
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SessionQualityMetrics:
     """Quality metrics for current session."""
+
     # FWHM statistics
     fwhm_mean: float
     fwhm_std: float
@@ -63,10 +66,10 @@ class SessionQualityMonitor:
     def __init__(
         self,
         device_serial: str,
-        session_id: Optional[str] = None,
-        sensor_id: Optional[str] = None,
+        session_id: str | None = None,
+        sensor_id: str | None = None,
         fwhm_excellent: float = 30.0,  # nm - Green threshold
-        fwhm_good: float = 60.0,       # nm - Yellow threshold
+        fwhm_good: float = 60.0,  # nm - Yellow threshold
         wavelength_range: tuple[float, float] = (580.0, 630.0),  # nm - QC window
     ):
         """Initialize session quality monitor.
@@ -78,6 +81,7 @@ class SessionQualityMonitor:
             fwhm_excellent: Threshold for excellent quality (Green)
             fwhm_good: Threshold for good quality (Yellow)
             wavelength_range: Wavelength range for FWHM validation (min, max) in nm
+
         """
         self.device_serial = device_serial
         self.session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -92,28 +96,42 @@ class SessionQualityMonitor:
         self.DEGRADATION_ALERT = 0.5
 
         # Session data - per channel tracking
-        self.fwhm_history: dict[str, list[float]] = {ch: [] for ch in ['a', 'b', 'c', 'd']}
-        self.peak_wavelength_history: dict[str, list[float]] = {ch: [] for ch in ['a', 'b', 'c', 'd']}
-        self.asymmetry_history: dict[str, list[float]] = {ch: [] for ch in ['a', 'b', 'c', 'd']}
-        self.snr_history: dict[str, list[float]] = {ch: [] for ch in ['a', 'b', 'c', 'd']}
-        self.timestamps: dict[str, list[float]] = {ch: [] for ch in ['a', 'b', 'c', 'd']}
+        self.fwhm_history: dict[str, list[float]] = {
+            ch: [] for ch in ["a", "b", "c", "d"]
+        }
+        self.peak_wavelength_history: dict[str, list[float]] = {
+            ch: [] for ch in ["a", "b", "c", "d"]
+        }
+        self.asymmetry_history: dict[str, list[float]] = {
+            ch: [] for ch in ["a", "b", "c", "d"]
+        }
+        self.snr_history: dict[str, list[float]] = {
+            ch: [] for ch in ["a", "b", "c", "d"]
+        }
+        self.timestamps: dict[str, list[float]] = {
+            ch: [] for ch in ["a", "b", "c", "d"]
+        }
 
         # Session start time
         self.session_start = datetime.now().timestamp()
 
-        logger.info(f"📊 Session Quality Monitor initialized")
+        logger.info("📊 Session Quality Monitor initialized")
         logger.info(f"   Device: {device_serial}")
         logger.info(f"   Session: {self.session_id}")
         logger.info(f"   Sensor ID: {self.sensor_id}")
-        logger.info(f"   FWHM Thresholds: <{self.FWHM_EXCELLENT}nm (Green), "
-                   f"{self.FWHM_EXCELLENT}-{self.FWHM_GOOD}nm (Yellow), ≥{self.FWHM_GOOD}nm (Red)")
-        logger.info(f"   Wavelength QC Range: {self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX} nm")
+        logger.info(
+            f"   FWHM Thresholds: <{self.FWHM_EXCELLENT}nm (Green), "
+            f"{self.FWHM_EXCELLENT}-{self.FWHM_GOOD}nm (Yellow), ≥{self.FWHM_GOOD}nm (Red)",
+        )
+        logger.info(
+            f"   Wavelength QC Range: {self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX} nm",
+        )
 
     def add_measurement(
         self,
         channel: str,
         peak_chars: PeakCharacteristics,
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
     ) -> None:
         """Add peak quality measurement for current session.
 
@@ -123,15 +141,18 @@ class SessionQualityMonitor:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             peak_chars: PeakCharacteristics from spectrum processing
             timestamp: Optional timestamp (defaults to now)
+
         """
         if timestamp is None:
             timestamp = datetime.now().timestamp()
 
         # Validate wavelength is within QC range
-        if not (self.WAVELENGTH_MIN <= peak_chars.peak_wavelength <= self.WAVELENGTH_MAX):
+        if not (
+            self.WAVELENGTH_MIN <= peak_chars.peak_wavelength <= self.WAVELENGTH_MAX
+        ):
             logger.debug(
                 f"Ch {channel}: Peak at {peak_chars.peak_wavelength:.1f}nm outside QC range "
-                f"({self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX}nm) - skipping"
+                f"({self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX}nm) - skipping",
             )
             return
 
@@ -141,7 +162,7 @@ class SessionQualityMonitor:
         self.snr_history[channel].append(peak_chars.snr)
         self.timestamps[channel].append(timestamp)
 
-    def get_session_metrics(self, channel: str) -> Optional[SessionQualityMetrics]:
+    def get_session_metrics(self, channel: str) -> SessionQualityMetrics | None:
         """Calculate session quality metrics for a channel.
 
         Args:
@@ -149,6 +170,7 @@ class SessionQualityMonitor:
 
         Returns:
             SessionQualityMetrics or None if insufficient data
+
         """
         if len(self.fwhm_history[channel]) < 10:
             return None
@@ -203,7 +225,12 @@ class SessionQualityMonitor:
             rgb_status=rgb_status,
         )
 
-    def _calculate_grade(self, fwhm_mean: float, fwhm_trend: float, snr_mean: float) -> str:
+    def _calculate_grade(
+        self,
+        fwhm_mean: float,
+        fwhm_trend: float,
+        snr_mean: float,
+    ) -> str:
         """Calculate overall quality grade based on FWHM thresholds."""
         # Degrading rapidly = poor
         if fwhm_trend > self.DEGRADATION_ALERT:
@@ -212,12 +239,15 @@ class SessionQualityMonitor:
         # FWHM-based grading with user-defined thresholds
         if fwhm_mean < self.FWHM_EXCELLENT and snr_mean > 15:
             return "excellent"
-        elif fwhm_mean < self.FWHM_GOOD and snr_mean > 10:
+        if fwhm_mean < self.FWHM_GOOD and snr_mean > 10:
             return "good"
-        else:
-            return "poor"
+        return "poor"
 
-    def _calculate_rgb_status(self, fwhm_mean: float, fwhm_trend: float) -> tuple[int, int, int]:
+    def _calculate_rgb_status(
+        self,
+        fwhm_mean: float,
+        fwhm_trend: float,
+    ) -> tuple[int, int, int]:
         """Calculate RGB LED color based on FWHM.
 
         Color coding:
@@ -232,19 +262,19 @@ class SessionQualityMonitor:
         # FWHM-based color with user-defined thresholds
         if fwhm_mean < self.FWHM_EXCELLENT:
             return (0, 255, 0)  # GREEN - excellent (<30nm)
-        elif fwhm_mean < self.FWHM_GOOD:
+        if fwhm_mean < self.FWHM_GOOD:
             return (255, 255, 0)  # YELLOW - good (30-60nm)
-        else:
-            return (255, 0, 0)  # RED - poor (≥60nm)
+        return (255, 0, 0)  # RED - poor (≥60nm)
 
     def get_active_channels_status(self) -> dict[str, tuple[int, int, int]]:
         """Get RGB status for all active channels.
 
         Returns:
             Dictionary mapping channel -> RGB tuple
+
         """
         status = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             metrics = self.get_session_metrics(ch)
             if metrics is not None:
                 status[ch] = metrics.rgb_status
@@ -255,6 +285,7 @@ class SessionQualityMonitor:
 
         Returns:
             Formatted report string
+
         """
         report = ["=" * 70]
         report.append("SESSION QUALITY REPORT")
@@ -262,10 +293,12 @@ class SessionQualityMonitor:
         report.append(f"Session: {self.session_id}")
         report.append(f"Sensor ID: {self.sensor_id}")
         report.append(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        report.append(f"QC Wavelength Range: {self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX} nm")
+        report.append(
+            f"QC Wavelength Range: {self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX} nm",
+        )
         report.append("=" * 70)
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             metrics = self.get_session_metrics(ch)
             if metrics is None:
                 continue
@@ -277,51 +310,77 @@ class SessionQualityMonitor:
             grade_emoji = {
                 "excellent": "✅",
                 "good": "⚠️",
-                "poor": "❌"
+                "poor": "❌",
             }.get(metrics.overall_grade, "❓")
 
-            report.append(f"  Overall Grade:  {grade_emoji} {metrics.overall_grade.upper()}")
-            report.append(f"\n  FWHM Statistics (within {self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX}nm):")
+            report.append(
+                f"  Overall Grade:  {grade_emoji} {metrics.overall_grade.upper()}",
+            )
+            report.append(
+                f"\n  FWHM Statistics (within {self.WAVELENGTH_MIN}-{self.WAVELENGTH_MAX}nm):",
+            )
             report.append(f"    Mean:         {metrics.fwhm_mean:.1f} nm")
             report.append(f"    Std Dev:      {metrics.fwhm_std:.1f} nm")
-            report.append(f"    Range:        {metrics.fwhm_min:.1f} - {metrics.fwhm_max:.1f} nm")
+            report.append(
+                f"    Range:        {metrics.fwhm_min:.1f} - {metrics.fwhm_max:.1f} nm",
+            )
 
             # Trend with status
             if abs(metrics.fwhm_trend) > 0.01:
                 trend_dir = "↑" if metrics.fwhm_trend > 0 else "↓"
-                trend_status = "⚠️" if metrics.fwhm_trend > self.DEGRADATION_ALERT else ""
+                trend_status = (
+                    "⚠️" if metrics.fwhm_trend > self.DEGRADATION_ALERT else ""
+                )
                 report.append(
-                    f"    Trend:        {trend_dir} {abs(metrics.fwhm_trend):.3f} nm/min {trend_status}"
+                    f"    Trend:        {trend_dir} {abs(metrics.fwhm_trend):.3f} nm/min {trend_status}",
                 )
 
             # Quality interpretation
-            report.append(f"\n  Quality Assessment:")
+            report.append("\n  Quality Assessment:")
             if metrics.fwhm_mean < self.FWHM_EXCELLENT:
-                report.append(f"    ✅ Excellent film quality (FWHM < {self.FWHM_EXCELLENT}nm)")
+                report.append(
+                    f"    ✅ Excellent film quality (FWHM < {self.FWHM_EXCELLENT}nm)",
+                )
             elif metrics.fwhm_mean < self.FWHM_GOOD:
-                report.append(f"    ⚠️  Acceptable film quality ({self.FWHM_EXCELLENT}-{self.FWHM_GOOD}nm)")
+                report.append(
+                    f"    ⚠️  Acceptable film quality ({self.FWHM_EXCELLENT}-{self.FWHM_GOOD}nm)",
+                )
             else:
                 report.append(f"    ❌ Poor film quality (FWHM ≥ {self.FWHM_GOOD}nm)")
-                report.append(f"       → Check sensor coating, optical alignment, or replace chip")
+                report.append(
+                    "       → Check sensor coating, optical alignment, or replace chip",
+                )
 
             # Asymmetry
             asym_status = "✅" if 0.7 < metrics.asymmetry_mean < 1.3 else "⚠️"
-            report.append(f"\n  Asymmetry:      {asym_status} {metrics.asymmetry_mean:.2f}")
+            report.append(
+                f"\n  Asymmetry:      {asym_status} {metrics.asymmetry_mean:.2f}",
+            )
 
             # SNR
-            snr_status = "✅" if metrics.snr_mean > 20 else "⚠️" if metrics.snr_mean > 10 else "❌"
-            report.append(f"  SNR:            {snr_status} {metrics.snr_mean:.1f} (min: {metrics.snr_min:.1f})")
+            snr_status = (
+                "✅"
+                if metrics.snr_mean > 20
+                else "⚠️"
+                if metrics.snr_mean > 10
+                else "❌"
+            )
+            report.append(
+                f"  SNR:            {snr_status} {metrics.snr_mean:.1f} (min: {metrics.snr_min:.1f})",
+            )
 
             # Session info
             report.append(f"\n  Data Points:    {metrics.data_points}")
-            report.append(f"  Duration:       {metrics.session_duration_minutes:.1f} minutes")
+            report.append(
+                f"  Duration:       {metrics.session_duration_minutes:.1f} minutes",
+            )
 
             # RGB status
             r, g, b = metrics.rgb_status
             color_name = {
                 (0, 255, 0): "GREEN (Excellent)",
                 (255, 255, 0): "YELLOW (Good)",
-                (255, 0, 0): "RED (Poor)"
+                (255, 0, 0): "RED (Poor)",
             }.get((r, g, b), f"RGB({r},{g},{b})")
             report.append(f"  RGB Status:     {color_name}")
 
@@ -342,6 +401,7 @@ class SessionQualityMonitor:
     def _compare_to_historical(self) -> list[str]:
         """Compare session to historical baseline."""
         from utils.device_integration import get_device_dir
+
         device_dir = get_device_dir(self.device_serial)
         history_file = device_dir / "session_history.json"
 
@@ -349,23 +409,24 @@ class SessionQualityMonitor:
             return ["  No historical data available (first session)"]
 
         import json
+
         try:
-            with open(history_file, 'r', encoding='utf-8') as f:
+            with open(history_file, encoding="utf-8") as f:
                 history = json.load(f)
 
-            recent_sessions = history.get('sessions', [])[-10:]
+            recent_sessions = history.get("sessions", [])[-10:]
             if not recent_sessions:
                 return ["  No historical data available"]
 
             comparison = []
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 current = self.get_session_metrics(ch)
                 if current is None:
                     continue
 
                 # Calculate historical mean FWHM
                 hist_fwhm = [
-                    s.get('channels', {}).get(ch, {}).get('fwhm_mean')
+                    s.get("channels", {}).get(ch, {}).get("fwhm_mean")
                     for s in recent_sessions
                 ]
                 hist_fwhm = [x for x in hist_fwhm if x is not None]
@@ -387,7 +448,7 @@ class SessionQualityMonitor:
 
                 comparison.append(
                     f"  Ch {ch.upper()}: Current={current.fwhm_mean:.1f}nm, "
-                    f"Baseline={hist_mean:.1f}±{hist_std:.1f}nm ({diff:+.1f}nm) {status}"
+                    f"Baseline={hist_mean:.1f}±{hist_std:.1f}nm ({diff:+.1f}nm) {status}",
                 )
 
             return comparison
@@ -399,6 +460,7 @@ class SessionQualityMonitor:
     def save_session_summary(self) -> None:
         """Save session summary to device history."""
         from utils.device_integration import get_device_dir
+
         device_dir = get_device_dir(self.device_serial)
         history_file = device_dir / "session_history.json"
 
@@ -406,44 +468,44 @@ class SessionQualityMonitor:
 
         # Load existing history
         if history_file.exists():
-            with open(history_file, 'r', encoding='utf-8') as f:
+            with open(history_file, encoding="utf-8") as f:
                 history = json.load(f)
         else:
-            history = {'sessions': []}
+            history = {"sessions": []}
 
         # Add current session
         session_data = {
-            'session_id': self.session_id,
-            'sensor_id': self.sensor_id,
-            'timestamp': datetime.now().isoformat(),
-            'wavelength_range': [self.WAVELENGTH_MIN, self.WAVELENGTH_MAX],
-            'thresholds': {
-                'excellent': self.FWHM_EXCELLENT,
-                'good': self.FWHM_GOOD,
+            "session_id": self.session_id,
+            "sensor_id": self.sensor_id,
+            "timestamp": datetime.now().isoformat(),
+            "wavelength_range": [self.WAVELENGTH_MIN, self.WAVELENGTH_MAX],
+            "thresholds": {
+                "excellent": self.FWHM_EXCELLENT,
+                "good": self.FWHM_GOOD,
             },
-            'channels': {}
+            "channels": {},
         }
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             metrics = self.get_session_metrics(ch)
             if metrics is not None:
-                session_data['channels'][ch] = {
-                    'fwhm_mean': metrics.fwhm_mean,
-                    'fwhm_std': metrics.fwhm_std,
-                    'fwhm_trend': metrics.fwhm_trend,
-                    'asymmetry_mean': metrics.asymmetry_mean,
-                    'snr_mean': metrics.snr_mean,
-                    'overall_grade': metrics.overall_grade,
-                    'data_points': metrics.data_points,
+                session_data["channels"][ch] = {
+                    "fwhm_mean": metrics.fwhm_mean,
+                    "fwhm_std": metrics.fwhm_std,
+                    "fwhm_trend": metrics.fwhm_trend,
+                    "asymmetry_mean": metrics.asymmetry_mean,
+                    "snr_mean": metrics.snr_mean,
+                    "overall_grade": metrics.overall_grade,
+                    "data_points": metrics.data_points,
                 }
 
-        history['sessions'].append(session_data)
+        history["sessions"].append(session_data)
 
         # Keep last 50 sessions
-        history['sessions'] = history['sessions'][-50:]
+        history["sessions"] = history["sessions"][-50:]
 
         # Save
-        with open(history_file, 'w', encoding='utf-8') as f:
+        with open(history_file, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2)
 
         logger.info(f"Session summary saved to {history_file}")

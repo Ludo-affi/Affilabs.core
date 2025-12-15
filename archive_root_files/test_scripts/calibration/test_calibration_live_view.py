@@ -1,5 +1,4 @@
-"""
-Test UI for Live Detector Output Monitoring
+"""Test UI for Live Detector Output Monitoring
 
 Shows real-time detector output with:
 - Live spectrum display for all 4 channels
@@ -10,24 +9,37 @@ Shows real-time detector output with:
 """
 
 import sys
-import numpy as np
 from pathlib import Path
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QSpinBox, QGroupBox, QTextEdit, QSplitter,
-    QTabWidget, QSlider, QComboBox, QCheckBox
-)
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QThread
-from PySide6.QtGui import QFont
+
+import numpy as np
 import pyqtgraph as pg
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Add project paths
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
-from utils.device_configuration import DeviceConfiguration
-from utils.logger import logger
 from core.hardware_manager import HardwareManager
+
+from utils.device_configuration import DeviceConfiguration
 
 
 class LiveDetectorMonitor(QMainWindow):
@@ -42,8 +54,8 @@ class LiveDetectorMonitor(QMainWindow):
 
         # Acquisition settings
         self.integration_time = 50.0  # ms
-        self.led_intensities = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-        self.current_mode = 's'  # s or p
+        self.led_intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
+        self.current_mode = "s"  # s or p
         self.auto_start = True  # default auto-start behavior
 
         # Live acquisition
@@ -97,7 +109,7 @@ class LiveDetectorMonitor(QMainWindow):
         mode_layout = QHBoxLayout()
         mode_layout.addWidget(QLabel("Polarizer Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['S-Mode', 'P-Mode'])
+        self.mode_combo.addItems(["S-Mode", "P-Mode"])
         self.mode_combo.currentIndexChanged.connect(self._update_polarizer_mode)
         mode_layout.addWidget(self.mode_combo)
         acq_layout.addLayout(mode_layout)
@@ -116,7 +128,9 @@ class LiveDetectorMonitor(QMainWindow):
         # Auto-start checkbox
         self.auto_start_checkbox = QCheckBox("Auto-start when hardware ready")
         self.auto_start_checkbox.setChecked(True)
-        self.auto_start_checkbox.stateChanged.connect(lambda s: setattr(self, 'auto_start', bool(s)))
+        self.auto_start_checkbox.stateChanged.connect(
+            lambda s: setattr(self, "auto_start", bool(s)),
+        )
         acq_layout.addWidget(self.auto_start_checkbox)
 
         controls_layout.addWidget(acq_group)
@@ -149,7 +163,9 @@ class LiveDetectorMonitor(QMainWindow):
         self.current_servo_label = QLabel("Current: S=--° P=--°")
         self.current_servo_label.setFont(QFont("Consolas", 10))
         servo_layout.addWidget(self.current_servo_label)
-        servo_note = QLabel("Calibration-only movement. Use S/P Mode combo for normal operation.")
+        servo_note = QLabel(
+            "Calibration-only movement. Use S/P Mode combo for normal operation.",
+        )
         servo_note.setWordWrap(True)
         servo_note.setStyleSheet("color:#555;")
         servo_layout.addWidget(servo_note)
@@ -174,14 +190,16 @@ class LiveDetectorMonitor(QMainWindow):
 
         self.led_sliders = {}
         self.led_labels = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             ch_layout = QHBoxLayout()
             ch_layout.addWidget(QLabel(f"LED {ch.upper()}:"))
 
             slider = QSlider(Qt.Horizontal)
             slider.setRange(0, 255)
             slider.setValue(0)
-            slider.valueChanged.connect(lambda v, c=ch: self._update_led_intensity(c, v))
+            slider.valueChanged.connect(
+                lambda v, c=ch: self._update_led_intensity(c, v),
+            )
             self.led_sliders[ch] = slider
             ch_layout.addWidget(slider)
 
@@ -201,46 +219,54 @@ class LiveDetectorMonitor(QMainWindow):
         # Create plot widgets for each channel (live spectrum)
         self.channel_plots = {}
         self.channel_curves = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             plot_widget = pg.PlotWidget(title=f"Channel {ch.upper()} - Live Spectrum")
-            plot_widget.setLabel('left', 'Intensity', units='counts')
-            plot_widget.setLabel('bottom', 'Wavelength', units='nm')
+            plot_widget.setLabel("left", "Intensity", units="counts")
+            plot_widget.setLabel("bottom", "Wavelength", units="nm")
             plot_widget.showGrid(x=True, y=True, alpha=0.3)
-            plot_widget.setBackground('w')
+            plot_widget.setBackground("w")
             plot_widget.setYRange(0, 70000)
 
-            curve = plot_widget.plot(pen=pg.mkPen(color='b', width=2))
+            curve = plot_widget.plot(pen=pg.mkPen(color="b", width=2))
             self.channel_curves[ch] = curve
 
             saturation_line = pg.InfiniteLine(
                 pos=62258,
                 angle=0,
-                pen=pg.mkPen(color='r', width=2, style=Qt.DashLine),
-                label='Saturation (95%)',
-                labelOpts={'position': 0.95}
+                pen=pg.mkPen(color="r", width=2, style=Qt.DashLine),
+                label="Saturation (95%)",
+                labelOpts={"position": 0.95},
             )
             plot_widget.addItem(saturation_line)
 
             text_item = pg.TextItem(
                 text="Max: 0",
                 anchor=(1, 0),
-                color=(0, 0, 0)
+                color=(0, 0, 0),
             )
             text_item.setPos(800, 60000)
             plot_widget.addItem(text_item)
 
-            self.channel_plots[ch] = {'widget': plot_widget, 'text': text_item}
+            self.channel_plots[ch] = {"widget": plot_widget, "text": text_item}
             self.plot_tabs.addTab(plot_widget, f"Channel {ch.upper()}")
 
         # Calibration (polarization) plot
-        self.polar_scan_plot = pg.PlotWidget(title="Polarization Calibration Plot (Intensity vs Angle)")
-        self.polar_scan_plot.setLabel('left', 'Intensity', units='counts')
-        self.polar_scan_plot.setLabel('bottom', 'Angle', units='deg')
+        self.polar_scan_plot = pg.PlotWidget(
+            title="Polarization Calibration Plot (Intensity vs Angle)",
+        )
+        self.polar_scan_plot.setLabel("left", "Intensity", units="counts")
+        self.polar_scan_plot.setLabel("bottom", "Angle", units="deg")
         self.polar_scan_plot.showGrid(x=True, y=True, alpha=0.3)
-        self.polar_scan_plot.setBackground('w')
+        self.polar_scan_plot.setBackground("w")
         self.polar_scan_plot.setYRange(0, 70000)
-        self.scan_curve_s = self.polar_scan_plot.plot(pen=pg.mkPen(color='g', width=2), name='S-mode')
-        self.scan_curve_p = self.polar_scan_plot.plot(pen=pg.mkPen(color='m', width=2), name='P-mode')
+        self.scan_curve_s = self.polar_scan_plot.plot(
+            pen=pg.mkPen(color="g", width=2),
+            name="S-mode",
+        )
+        self.scan_curve_p = self.polar_scan_plot.plot(
+            pen=pg.mkPen(color="m", width=2),
+            name="P-mode",
+        )
 
         # Splitter for 30/70 layout (top small calibration plot, bottom large live spectra)
         splitter = QSplitter(Qt.Vertical)
@@ -295,23 +321,25 @@ class LiveDetectorMonitor(QMainWindow):
 
                 # Get servo positions
                 servo_positions = self.device_config.get_servo_positions()
-                s_pos = servo_positions['s']
-                p_pos = servo_positions['p']
+                s_pos = servo_positions["s"]
+                p_pos = servo_positions["p"]
                 self._log(f"Servo positions: S={s_pos}°, P={p_pos}°")
 
                 # Update status
-                ctrl_name = info.get('ctrl_type', 'Unknown')
-                spec_name = info.get('spectrometer', 'Unknown')
+                ctrl_name = info.get("ctrl_type", "Unknown")
+                spec_name = info.get("spectrometer", "Unknown")
                 self.status_label.setText(
                     f"✓ Controller: {ctrl_name}\n"
                     f"✓ Detector: {spec_name}\n"
-                    f"✓ Servo: S={s_pos}° P={p_pos}°"
+                    f"✓ Servo: S={s_pos}° P={p_pos}°",
                 )
                 self.status_label.setStyleSheet("color: green;")
 
                 self.hardware_ready = True
                 self.start_button.setEnabled(True)
-                self._log("Hardware ready! Set LED intensities and click Start Live View")
+                self._log(
+                    "Hardware ready! Set LED intensities and click Start Live View",
+                )
 
                 # Populate servo calibration widgets
                 try:
@@ -324,7 +352,10 @@ class LiveDetectorMonitor(QMainWindow):
                     self._log(f"Servo UI init failed: {e}")
 
                 # Auto-start acquisition if enabled
-                if getattr(self, 'auto_start', False) and self.auto_start_checkbox.isChecked():
+                if (
+                    getattr(self, "auto_start", False)
+                    and self.auto_start_checkbox.isChecked()
+                ):
                     self._log("Auto-start enabled -> starting acquisition")
                     # Defer start slightly to allow UI to finish paint cycle
                     QTimer.singleShot(150, self._start_acquisition)
@@ -350,7 +381,7 @@ class LiveDetectorMonitor(QMainWindow):
     def _update_integration_time(self, value):
         """Update integration time"""
         self.integration_time = float(value)
-        if self.hardware_ready and hasattr(self, 'usb'):
+        if self.hardware_ready and hasattr(self, "usb"):
             try:
                 self.usb.set_integration(self.integration_time)
                 self._log(f"Integration time set to {self.integration_time} ms")
@@ -359,9 +390,9 @@ class LiveDetectorMonitor(QMainWindow):
 
     def _update_polarizer_mode(self, index):
         """Update polarizer mode"""
-        mode = 's' if index == 0 else 'p'
+        mode = "s" if index == 0 else "p"
         self.current_mode = mode
-        if self.hardware_ready and hasattr(self, 'controller'):
+        if self.hardware_ready and hasattr(self, "controller"):
             try:
                 self.controller.set_mode(mode)
                 self._log(f"Polarizer mode set to {mode.upper()}")
@@ -373,7 +404,7 @@ class LiveDetectorMonitor(QMainWindow):
         self.led_intensities[channel] = value
         self.led_labels[channel].setText(str(value))
 
-        if self.hardware_ready and hasattr(self, 'controller'):
+        if self.hardware_ready and hasattr(self, "controller"):
             try:
                 self.controller.set_intensity(channel, value)
             except Exception as e:
@@ -396,9 +427,9 @@ class LiveDetectorMonitor(QMainWindow):
 
         # Cache wavelengths once (fallback to indices if unavailable later)
         try:
-            if hasattr(self.usb, 'wavelengths'):
+            if hasattr(self.usb, "wavelengths"):
                 self._wavelengths = self.usb.wavelengths
-            elif hasattr(self.usb, 'read_wavelength'):
+            elif hasattr(self.usb, "read_wavelength"):
                 self._wavelengths = self.usb.read_wavelength()
         except Exception:
             self._wavelengths = None
@@ -447,7 +478,7 @@ class LiveDetectorMonitor(QMainWindow):
             # Dark spectrum path (no LEDs active)
             if not any_led_on:
                 dark = None
-                if hasattr(self.usb, 'read_intensity'):
+                if hasattr(self.usb, "read_intensity"):
                     dark = self.usb.read_intensity()
                 if dark is not None and len(dark) > 0:
                     if wavelengths is None:
@@ -459,13 +490,12 @@ class LiveDetectorMonitor(QMainWindow):
                     text = f"Dark Max: {max_counts:.0f} {status}"
                     for ch in self.channel_curves.keys():
                         self.channel_curves[ch].setData(wavelengths, dark)
-                        self.channel_plots[ch]['text'].setText(text)
-                        self.channel_plots[ch]['text'].setColor(color)
+                        self.channel_plots[ch]["text"].setText(text)
+                        self.channel_plots[ch]["text"].setColor(color)
                     if self._frame_count % 30 == 0:
                         self._log(f"Dark spectrum updated (len={len(dark)})")
-                else:
-                    if self._frame_count % 30 == 0:
-                        self._log("Dark acquisition returned no data")
+                elif self._frame_count % 30 == 0:
+                    self._log("Dark acquisition returned no data")
                 return
 
             # Active LED acquisition: read each channel that has intensity >0
@@ -474,14 +504,14 @@ class LiveDetectorMonitor(QMainWindow):
                     continue
 
                 # Ensure channel is turned on (only if controller supports it)
-                if hasattr(self.controller, 'turn_on_channel'):
+                if hasattr(self.controller, "turn_on_channel"):
                     try:
                         self.controller.turn_on_channel(ch)
                     except Exception:
                         pass
 
                 spectrum = None
-                if hasattr(self.usb, 'read_intensity'):
+                if hasattr(self.usb, "read_intensity"):
                     spectrum = self.usb.read_intensity()
 
                 if spectrum is not None and len(spectrum) > 0:
@@ -493,26 +523,31 @@ class LiveDetectorMonitor(QMainWindow):
                     color = "red" if saturated else "black"
                     status = "⚠ SATURATED" if saturated else ""
                     text = f"Max: {max_counts:.0f} {status}"
-                    self.channel_plots[ch]['text'].setText(text)
-                    self.channel_plots[ch]['text'].setColor(color)
+                    self.channel_plots[ch]["text"].setText(text)
+                    self.channel_plots[ch]["text"].setColor(color)
                     if self._frame_count % 50 == 0:
-                        self._log(f"Ch {ch.upper()} spectrum len={len(spectrum)} max={max_counts:.0f}")
-                else:
-                    if self._frame_count % 50 == 0:
-                        self._log(f"Ch {ch.upper()} spectrum read returned no data")
+                        self._log(
+                            f"Ch {ch.upper()} spectrum len={len(spectrum)} max={max_counts:.0f}",
+                        )
+                elif self._frame_count % 50 == 0:
+                    self._log(f"Ch {ch.upper()} spectrum read returned no data")
 
         except Exception as e:
             self._log(f"Acquisition error: {e}")
 
     def _apply_servo_positions(self):
         """Move servo to specified S/P positions (calibration only)."""
-        if not self.hardware_ready or not hasattr(self, 'controller') or self.controller is None:
+        if (
+            not self.hardware_ready
+            or not hasattr(self, "controller")
+            or self.controller is None
+        ):
             self._log("Servo move skipped: hardware not ready")
             return
         s_pos = self.servo_s_spin.value()
         p_pos = self.servo_p_spin.value()
         moved = False
-        if hasattr(self.controller, 'servo_move_calibration_only'):
+        if hasattr(self.controller, "servo_move_calibration_only"):
             try:
                 moved = self.controller.servo_move_calibration_only(s=s_pos, p=p_pos)
             except Exception as e:
@@ -523,7 +558,11 @@ class LiveDetectorMonitor(QMainWindow):
         if moved:
             self.current_servo_label.setText(f"Current: S={s_pos}° P={p_pos}°")
             self._log(f"Servo moved (calibration-only): S={s_pos}° P={p_pos}°")
-            if self.save_servo_checkbox.isChecked() and hasattr(self, 'device_config') and self.device_config:
+            if (
+                self.save_servo_checkbox.isChecked()
+                and hasattr(self, "device_config")
+                and self.device_config
+            ):
                 try:
                     self.device_config.set_servo_positions(s_pos, p_pos)
                     self.device_config.save(auto_sync_eeprom=False)
@@ -538,7 +577,14 @@ class LiveDetectorMonitor(QMainWindow):
         progress = Signal(dict)  # {stage, angle, s_intensity, p_intensity}
         finished = Signal(dict)  # {s_pos, p_pos, ratio, success, details}
 
-        def __init__(self, controller, usb, integration_time=20.0, led_channel='a', led_intensity=120):
+        def __init__(
+            self,
+            controller,
+            usb,
+            integration_time=20.0,
+            led_channel="a",
+            led_intensity=120,
+        ):
             super().__init__()
             self.controller = controller
             self.usb = usb
@@ -551,12 +597,15 @@ class LiveDetectorMonitor(QMainWindow):
             self._abort = True
 
         def _read_mode_intensity(self, mode: str) -> float:
-            import time, numpy as np
+            import time
+
+            import numpy as np
+
             try:
-                if hasattr(self.controller, 'set_mode'):
+                if hasattr(self.controller, "set_mode"):
                     self.controller.set_mode(mode)
                 time.sleep(0.05)
-                if hasattr(self.usb, 'read_intensity'):
+                if hasattr(self.usb, "read_intensity"):
                     spec = self.usb.read_intensity()
                     if spec is not None and len(spec) > 0:
                         return float(np.max(spec))
@@ -565,11 +614,14 @@ class LiveDetectorMonitor(QMainWindow):
             return 0.0
 
         def run(self):
-            import time, numpy as np
+            import time
+
+            import numpy as np
+
             try:
                 # Set temporary integration time
                 try:
-                    if hasattr(self.usb, 'set_integration'):
+                    if hasattr(self.usb, "set_integration"):
                         self.usb.set_integration(self.integration_time)
                         time.sleep(0.05)
                 except Exception:
@@ -577,8 +629,11 @@ class LiveDetectorMonitor(QMainWindow):
 
                 # Ensure LED has sufficient intensity
                 try:
-                    if hasattr(self.controller, 'set_intensity'):
-                        self.controller.set_intensity(self.led_channel, self.led_intensity)
+                    if hasattr(self.controller, "set_intensity"):
+                        self.controller.set_intensity(
+                            self.led_channel,
+                            self.led_intensity,
+                        )
                         time.sleep(0.05)
                 except Exception:
                     pass
@@ -590,17 +645,35 @@ class LiveDetectorMonitor(QMainWindow):
                 for ang in coarse_angles:
                     if self._abort:
                         break
-                    if hasattr(self.controller, 'servo_move_calibration_only'):
-                        self.controller.servo_move_calibration_only(s=ang, p=(ang + 90) % 180)
+                    if hasattr(self.controller, "servo_move_calibration_only"):
+                        self.controller.servo_move_calibration_only(
+                            s=ang,
+                            p=(ang + 90) % 180,
+                        )
                         time.sleep(0.05)
-                    s_int = self._read_mode_intensity('s')
-                    p_int = self._read_mode_intensity('p')
+                    s_int = self._read_mode_intensity("s")
+                    p_int = self._read_mode_intensity("p")
                     coarse_s.append(s_int)
                     coarse_p.append(p_int)
-                    self.progress.emit({'stage': 'coarse', 'angle': ang, 's_intensity': s_int, 'p_intensity': p_int})
+                    self.progress.emit(
+                        {
+                            "stage": "coarse",
+                            "angle": ang,
+                            "s_intensity": s_int,
+                            "p_intensity": p_int,
+                        },
+                    )
 
                 if len(coarse_s) == 0:
-                    self.finished.emit({'s_pos': None, 'p_pos': None, 'ratio': None, 'success': False, 'details': 'No coarse data'})
+                    self.finished.emit(
+                        {
+                            "s_pos": None,
+                            "p_pos": None,
+                            "ratio": None,
+                            "success": False,
+                            "details": "No coarse data",
+                        },
+                    )
                     return
                 max_idx = int(np.argmax(coarse_s))
                 s_center = coarse_angles[max_idx]
@@ -616,14 +689,24 @@ class LiveDetectorMonitor(QMainWindow):
                 for ang in refine_angles:
                     if self._abort:
                         break
-                    if hasattr(self.controller, 'servo_move_calibration_only'):
-                        self.controller.servo_move_calibration_only(s=ang, p=(ang + 90) % 180)
+                    if hasattr(self.controller, "servo_move_calibration_only"):
+                        self.controller.servo_move_calibration_only(
+                            s=ang,
+                            p=(ang + 90) % 180,
+                        )
                         time.sleep(0.05)
-                    s_int = self._read_mode_intensity('s')
-                    p_int = self._read_mode_intensity('p')
+                    s_int = self._read_mode_intensity("s")
+                    p_int = self._read_mode_intensity("p")
                     refine_s.append(s_int)
                     refine_p.append(p_int)
-                    self.progress.emit({'stage': 'refine', 'angle': ang, 's_intensity': s_int, 'p_intensity': p_int})
+                    self.progress.emit(
+                        {
+                            "stage": "refine",
+                            "angle": ang,
+                            "s_intensity": s_int,
+                            "p_intensity": p_int,
+                        },
+                    )
                 if len(refine_s):
                     s_center = refine_angles[int(np.argmax(refine_s))]
 
@@ -637,14 +720,24 @@ class LiveDetectorMonitor(QMainWindow):
                 for ang in fine_angles:
                     if self._abort:
                         break
-                    if hasattr(self.controller, 'servo_move_calibration_only'):
-                        self.controller.servo_move_calibration_only(s=ang, p=(ang + 90) % 180)
+                    if hasattr(self.controller, "servo_move_calibration_only"):
+                        self.controller.servo_move_calibration_only(
+                            s=ang,
+                            p=(ang + 90) % 180,
+                        )
                         time.sleep(0.04)
-                    s_int = self._read_mode_intensity('s')
-                    p_int = self._read_mode_intensity('p')
+                    s_int = self._read_mode_intensity("s")
+                    p_int = self._read_mode_intensity("p")
                     fine_s.append(s_int)
                     fine_p.append(p_int)
-                    self.progress.emit({'stage': 'fine', 'angle': ang, 's_intensity': s_int, 'p_intensity': p_int})
+                    self.progress.emit(
+                        {
+                            "stage": "fine",
+                            "angle": ang,
+                            "s_intensity": s_int,
+                            "p_intensity": p_int,
+                        },
+                    )
                 if len(fine_s):
                     s_final = fine_angles[int(np.argmax(fine_s))]
                 else:
@@ -656,41 +749,71 @@ class LiveDetectorMonitor(QMainWindow):
                 candidates = [p_candidate_1, p_candidate_2]
                 p_measurements = {}
                 for pc in candidates:
-                    if hasattr(self.controller, 'servo_move_calibration_only'):
+                    if hasattr(self.controller, "servo_move_calibration_only"):
                         self.controller.servo_move_calibration_only(s=s_final, p=pc)
                         time.sleep(0.05)
-                    p_int = self._read_mode_intensity('p')
+                    p_int = self._read_mode_intensity("p")
                     p_measurements[pc] = p_int
                 if len(p_measurements) == 0:
-                    self.finished.emit({'s_pos': None, 'p_pos': None, 'ratio': None, 'success': False, 'details': 'No P measurements'})
+                    self.finished.emit(
+                        {
+                            "s_pos": None,
+                            "p_pos": None,
+                            "ratio": None,
+                            "success": False,
+                            "details": "No P measurements",
+                        },
+                    )
                     return
                 p_final = min(p_measurements.keys(), key=lambda k: p_measurements[k])
                 # Final ratio measurement
-                if hasattr(self.controller, 'servo_move_calibration_only'):
+                if hasattr(self.controller, "servo_move_calibration_only"):
                     self.controller.servo_move_calibration_only(s=s_final, p=p_final)
                     time.sleep(0.05)
-                s_int_final = self._read_mode_intensity('s')
-                p_int_final = self._read_mode_intensity('p')
+                s_int_final = self._read_mode_intensity("s")
+                p_int_final = self._read_mode_intensity("p")
                 ratio = s_int_final / (p_int_final + 1e-6)
                 success = True
-                self.finished.emit({
-                    's_pos': s_final,
-                    'p_pos': p_final,
-                    'ratio': ratio,
-                    'success': success,
-                    'details': {
-                        'coarse': {'angles': coarse_angles, 's': coarse_s, 'p': coarse_p},
-                        'refine': {'angles': refine_angles, 's': refine_s, 'p': refine_p},
-                        'fine': {'angles': fine_angles, 's': fine_s, 'p': fine_p},
-                        'p_candidates': p_measurements
-                    }
-                })
+                self.finished.emit(
+                    {
+                        "s_pos": s_final,
+                        "p_pos": p_final,
+                        "ratio": ratio,
+                        "success": success,
+                        "details": {
+                            "coarse": {
+                                "angles": coarse_angles,
+                                "s": coarse_s,
+                                "p": coarse_p,
+                            },
+                            "refine": {
+                                "angles": refine_angles,
+                                "s": refine_s,
+                                "p": refine_p,
+                            },
+                            "fine": {"angles": fine_angles, "s": fine_s, "p": fine_p},
+                            "p_candidates": p_measurements,
+                        },
+                    },
+                )
             except Exception as e:
-                self.finished.emit({'s_pos': None, 'p_pos': None, 'ratio': None, 'success': False, 'details': f'Exception: {e}'})
+                self.finished.emit(
+                    {
+                        "s_pos": None,
+                        "p_pos": None,
+                        "ratio": None,
+                        "success": False,
+                        "details": f"Exception: {e}",
+                    },
+                )
 
     def _run_polarization_scan(self):
         """Start threaded polarization scan calibration."""
-        if not self.hardware_ready or not hasattr(self, 'controller') or not hasattr(self, 'usb'):
+        if (
+            not self.hardware_ready
+            or not hasattr(self, "controller")
+            or not hasattr(self, "usb")
+        ):
             self._log("Cannot run scan - hardware not ready")
             return
 
@@ -702,31 +825,51 @@ class LiveDetectorMonitor(QMainWindow):
         try:
             existing_s = int(self.servo_s_spin.value())
             existing_p = int(self.servo_p_spin.value())
-            if hasattr(self.controller, 'servo_move_calibration_only'):
+            if hasattr(self.controller, "servo_move_calibration_only"):
                 self.controller.servo_move_calibration_only(s=existing_s, p=existing_p)
             import time
+
             time.sleep(0.05)
             # Measure S
-            if hasattr(self.controller, 'set_mode'):
-                self.controller.set_mode('s')
+            if hasattr(self.controller, "set_mode"):
+                self.controller.set_mode("s")
             time.sleep(0.05)
-            spec_s = self.usb.read_intensity() if hasattr(self.usb, 'read_intensity') else None
-            s_val = float(np.max(spec_s)) if (spec_s is not None and len(spec_s)>0) else 0.0
+            spec_s = (
+                self.usb.read_intensity()
+                if hasattr(self.usb, "read_intensity")
+                else None
+            )
+            s_val = (
+                float(np.max(spec_s))
+                if (spec_s is not None and len(spec_s) > 0)
+                else 0.0
+            )
             # Measure P
-            if hasattr(self.controller, 'set_mode'):
-                self.controller.set_mode('p')
+            if hasattr(self.controller, "set_mode"):
+                self.controller.set_mode("p")
             time.sleep(0.05)
-            spec_p = self.usb.read_intensity() if hasattr(self.usb, 'read_intensity') else None
-            p_val = float(np.max(spec_p)) if (spec_p is not None and len(spec_p)>0) else 0.0
-            existing_ratio = s_val / (p_val + 1e-6) if p_val>0 else 0.0
+            spec_p = (
+                self.usb.read_intensity()
+                if hasattr(self.usb, "read_intensity")
+                else None
+            )
+            p_val = (
+                float(np.max(spec_p))
+                if (spec_p is not None and len(spec_p) > 0)
+                else 0.0
+            )
+            existing_ratio = s_val / (p_val + 1e-6) if p_val > 0 else 0.0
             if existing_ratio >= 1.25 and s_val > 0 and p_val > 0:
-                self._log(f"Existing S/P ratio {existing_ratio:.2f} acceptable (>=1.25) → skipping calibration")
+                self._log(
+                    f"Existing S/P ratio {existing_ratio:.2f} acceptable (>=1.25) → skipping calibration",
+                )
                 self.calib_status_label.setText(f"Skipped (ratio={existing_ratio:.2f})")
                 if not self.is_acquiring and self.auto_start_checkbox.isChecked():
                     self._start_acquisition()
                 return
-            else:
-                self._log(f"Ratio pre-check {existing_ratio:.2f} insufficient → running calibration")
+            self._log(
+                f"Ratio pre-check {existing_ratio:.2f} insufficient → running calibration",
+            )
         except Exception as e:
             self._log(f"Ratio pre-check failed: {e}. Proceeding with calibration.")
 
@@ -745,8 +888,8 @@ class LiveDetectorMonitor(QMainWindow):
             controller=self.controller,
             usb=self.usb,
             integration_time=20.0,
-            led_channel='a',
-            led_intensity= max(80, self.led_intensities.get('a', 0) or 120)
+            led_channel="a",
+            led_intensity=max(80, self.led_intensities.get("a", 0) or 120),
         )
         self._calibration_worker.progress.connect(self._on_scan_progress)
         self._calibration_worker.finished.connect(self._on_scan_finished)
@@ -754,37 +897,45 @@ class LiveDetectorMonitor(QMainWindow):
         self._log("Polarization calibration started (coarse→refine→fine)")
 
     def _on_scan_progress(self, data: dict):
-        angle = data.get('angle')
-        s_int = data.get('s_intensity', 0.0)
-        p_int = data.get('p_intensity', 0.0)
-        stage = data.get('stage', 'coarse')
+        angle = data.get("angle")
+        s_int = data.get("s_intensity", 0.0)
+        p_int = data.get("p_intensity", 0.0)
+        stage = data.get("stage", "coarse")
         # Store only S-mode intensities for plotting against angle; keep both for ratio insight
         self._scan_angles.append(angle)
         self._scan_s_intensity.append(s_int)
         self._scan_p_intensity.append(p_int)
         self.scan_curve_s.setData(self._scan_angles, self._scan_s_intensity)
         self.scan_curve_p.setData(self._scan_angles, self._scan_p_intensity)
-        if stage == 'coarse' and angle % 30 == 0:
+        if stage == "coarse" and angle % 30 == 0:
             self._log(f"Coarse {angle}°: S={s_int:.0f} P={p_int:.0f}")
-        elif stage == 'refine' and angle % 5 == 0:
+        elif stage == "refine" and angle % 5 == 0:
             self._log(f"Refine {angle}°: S={s_int:.0f} P={p_int:.0f}")
-        elif stage == 'fine':
+        elif stage == "fine":
             self._log(f"Fine {angle}°: S={s_int:.0f} P={p_int:.0f}")
 
     def _on_scan_finished(self, result: dict):
-        if result.get('success'):
-            s_pos = result.get('s_pos')
-            p_pos = result.get('p_pos')
-            ratio = result.get('ratio')
-            self._log(f"Calibration complete → S={s_pos}° P={p_pos}° (S/P ratio={ratio:.2f})")
-            self.calib_status_label.setText(f"Done: S={s_pos}° P={p_pos}° (ratio={ratio:.2f})")
+        if result.get("success"):
+            s_pos = result.get("s_pos")
+            p_pos = result.get("p_pos")
+            ratio = result.get("ratio")
+            self._log(
+                f"Calibration complete → S={s_pos}° P={p_pos}° (S/P ratio={ratio:.2f})",
+            )
+            self.calib_status_label.setText(
+                f"Done: S={s_pos}° P={p_pos}° (ratio={ratio:.2f})",
+            )
             try:
                 self.servo_s_spin.setValue(int(s_pos))
                 self.servo_p_spin.setValue(int(p_pos))
                 self.current_servo_label.setText(f"Current: S={s_pos}° P={p_pos}°")
             except Exception:
                 pass
-            if self.save_servo_checkbox.isChecked() and hasattr(self, 'device_config') and self.device_config:
+            if (
+                self.save_servo_checkbox.isChecked()
+                and hasattr(self, "device_config")
+                and self.device_config
+            ):
                 try:
                     self.device_config.set_servo_positions(int(s_pos), int(p_pos))
                     self.device_config.save(auto_sync_eeprom=False)
@@ -805,7 +956,7 @@ class LiveDetectorMonitor(QMainWindow):
         """Add message to log"""
         self.log_text.append(message)
         self.log_text.verticalScrollBar().setValue(
-            self.log_text.verticalScrollBar().maximum()
+            self.log_text.verticalScrollBar().maximum(),
         )
 
     def closeEvent(self, event):
@@ -813,7 +964,7 @@ class LiveDetectorMonitor(QMainWindow):
         if self.is_acquiring:
             self._stop_acquisition()
 
-        if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+        if hasattr(self, "hardware_mgr") and self.hardware_mgr:
             try:
                 self.hardware_mgr.disconnect_all()
             except:
@@ -833,4 +984,3 @@ def main():
 if __name__ == "__main__":
     # Allow running directly: launches the live detector monitor UI
     main()
-

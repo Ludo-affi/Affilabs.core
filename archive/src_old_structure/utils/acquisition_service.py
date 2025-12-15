@@ -7,13 +7,11 @@ normalization, while providing a clean, testable entry point.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
-
 import numpy as np
 
+from utils.hal.interfaces import LEDController, SpectrometerInfo
 from utils.logger import logger
 from utils.spr_signal_processing import calculate_transmission
-from utils.hal.interfaces import LEDController, SpectrometerInfo
 
 
 class AcquisitionService:
@@ -26,6 +24,7 @@ class AcquisitionService:
             ctrl: Controller providing LED/channel methods (turn_on_channel/turn_off_channels)
             usb: Spectrometer wrapper with read_intensity(), serial_number, etc.
             spectrum_acq: SpectrumAcquisition helper for vectorized averaging
+
         """
         self.led = led
         self.spec_info = spec_info
@@ -40,9 +39,9 @@ class AcquisitionService:
         led_delay: float,
         post_delay: float,
         dark_noise: np.ndarray,
-        ref_sig: Dict[str, Optional[np.ndarray]],
-        wave_data: Optional[np.ndarray] = None,
-    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        ref_sig: dict[str, np.ndarray | None],
+        wave_data: np.ndarray | None = None,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Acquire averaged spectrum for a channel and compute transmission.
 
         Returns a tuple (int_data, trans_data). On failure, returns (None, None).
@@ -57,6 +56,7 @@ class AcquisitionService:
 
             if led_delay and led_delay > 0:
                 import time as _t
+
                 _t.sleep(led_delay)
 
             if self.spectrum_acq is None:
@@ -103,7 +103,9 @@ class AcquisitionService:
                     try:
                         trans_data = calculate_transmission(int_data, ref)
                     except Exception as e:
-                        logger.exception(f"Failed to compute transmission for ch {ch}: {e}")
+                        logger.exception(
+                            f"Failed to compute transmission for ch {ch}: {e}",
+                        )
 
             return int_data, trans_data
 
@@ -122,6 +124,7 @@ class AcquisitionService:
             try:
                 if post_delay and post_delay > 0:
                     import time as _t
+
                     _t.sleep(post_delay)
             except Exception:
                 pass

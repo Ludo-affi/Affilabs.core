@@ -1,14 +1,13 @@
-"""
-Calibration Data Models
+"""Calibration Data Models
 
 Pure Python data structures for calibration.
 NO Qt dependencies - fully testable.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
-import numpy as np
 from datetime import datetime
+
+import numpy as np
 
 
 @dataclass
@@ -17,6 +16,7 @@ class CalibrationMetrics:
 
     Used to assess whether calibration is acceptable.
     """
+
     snr: float  # Signal-to-noise ratio
     peak_intensity: float  # Maximum intensity in spectrum
     mean_intensity: float  # Average intensity
@@ -35,10 +35,10 @@ class CalibrationMetrics:
     def is_acceptable(self) -> bool:
         """Check if metrics indicate good calibration."""
         return (
-            not self.is_saturated() and
-            not self.is_low_signal() and
-            self.snr > 10.0 and
-            self.dynamic_range > 1.5
+            not self.is_saturated()
+            and not self.is_low_signal()
+            and self.snr > 10.0
+            and self.dynamic_range > 1.5
         )
 
 
@@ -52,13 +52,14 @@ class CalibrationData:
     This replaces the legacy CalibrationData namedtuple with
     a proper domain model.
     """
+
     # Core calibration data
-    s_pol_ref: Dict[str, np.ndarray]  # channel -> reference spectrum
+    s_pol_ref: dict[str, np.ndarray]  # channel -> reference spectrum
     wavelengths: np.ndarray  # wavelength array (nm)
 
     # LED intensities
-    p_mode_intensities: Dict[str, int]  # P-mode LED brightness
-    s_mode_intensities: Dict[str, int]  # S-mode LED brightness
+    p_mode_intensities: dict[str, int]  # P-mode LED brightness
+    s_mode_intensities: dict[str, int]  # S-mode LED brightness
 
     # Acquisition parameters
     integration_time_s: float = 0.0  # S-mode integration time (ms)
@@ -70,7 +71,7 @@ class CalibrationData:
     post_led_delay: float = 40.0  # Afterglow delay (ms)
 
     # Quality metrics per channel
-    metrics: Dict[str, CalibrationMetrics] = field(default_factory=dict)
+    metrics: dict[str, CalibrationMetrics] = field(default_factory=dict)
 
     # Metadata
     timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
@@ -80,17 +81,23 @@ class CalibrationData:
     def __post_init__(self):
         """Validate calibration data."""
         # Validate channels
-        expected_channels = {'a', 'b', 'c', 'd'}
+        expected_channels = {"a", "b", "c", "d"}
         ref_channels = set(self.s_pol_ref.keys())
         p_channels = set(self.p_mode_intensities.keys())
         s_channels = set(self.s_mode_intensities.keys())
 
         if ref_channels != expected_channels:
-            raise ValueError(f"Missing reference channels: {expected_channels - ref_channels}")
+            raise ValueError(
+                f"Missing reference channels: {expected_channels - ref_channels}",
+            )
         if p_channels != expected_channels:
-            raise ValueError(f"Missing P-mode intensities: {expected_channels - p_channels}")
+            raise ValueError(
+                f"Missing P-mode intensities: {expected_channels - p_channels}",
+            )
         if s_channels != expected_channels:
-            raise ValueError(f"Missing S-mode intensities: {expected_channels - s_channels}")
+            raise ValueError(
+                f"Missing S-mode intensities: {expected_channels - s_channels}",
+            )
 
         # Validate wavelength array
         if len(self.wavelengths) == 0:
@@ -101,7 +108,7 @@ class CalibrationData:
             if len(spectrum) != len(self.wavelengths):
                 raise ValueError(
                     f"Channel {channel} spectrum length mismatch: "
-                    f"{len(spectrum)} vs {len(self.wavelengths)} wavelengths"
+                    f"{len(spectrum)} vs {len(self.wavelengths)} wavelengths",
                 )
             if np.count_nonzero(spectrum) == 0:
                 raise ValueError(f"Channel {channel} reference spectrum is all zeros")
@@ -144,7 +151,7 @@ class CalibrationData:
             raise KeyError(f"No S-mode intensity for channel {channel}")
         return self.s_mode_intensities[channel]
 
-    def get_metrics(self, channel: str) -> Optional[CalibrationMetrics]:
+    def get_metrics(self, channel: str) -> CalibrationMetrics | None:
         """Get quality metrics for channel."""
         return self.metrics.get(channel)
 
@@ -159,7 +166,7 @@ class CalibrationData:
         """Check if all channels have acceptable calibration."""
         return all(self.is_channel_acceptable(ch) for ch in self.channels)
 
-    def copy(self) -> 'CalibrationData':
+    def copy(self) -> "CalibrationData":
         """Create a deep copy of calibration data."""
         return CalibrationData(
             s_pol_ref={k: v.copy() for k, v in self.s_pol_ref.items()},
@@ -174,7 +181,7 @@ class CalibrationData:
             metrics=self.metrics.copy(),
             timestamp=self.timestamp,
             roi_start=self.roi_start,
-            roi_end=self.roi_end
+            roi_end=self.roi_end,
         )
 
     # ============================================================================
@@ -210,7 +217,11 @@ class CalibrationData:
     @property
     def integration_time(self) -> float:
         """Default integration time (P-mode preferred, fallback to S-mode)."""
-        return self.integration_time_p if self.integration_time_p > 0 else self.integration_time_s
+        return (
+            self.integration_time_p
+            if self.integration_time_p > 0
+            else self.integration_time_s
+        )
 
     @property
     def wavelength_min(self) -> float:
@@ -248,7 +259,7 @@ class CalibrationData:
             return False
 
     @property
-    def dark_noise(self) -> Optional[np.ndarray]:
+    def dark_noise(self) -> np.ndarray | None:
         """Dark noise spectrum (legacy property - not stored in domain model)."""
         # Domain model doesn't store dark noise (it's used during calibration only)
         # Return None for compatibility

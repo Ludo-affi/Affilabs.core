@@ -1,9 +1,11 @@
 """Settings tab - hardware configuration and calibration controls."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QWidget, QLabel
+from PySide6.QtWidgets import QLabel, QWidget
+
 from widgets.tabs.base_tab import BaseSidebarTab
 
 if TYPE_CHECKING:
@@ -11,8 +13,7 @@ if TYPE_CHECKING:
 
 
 class SettingsTab(BaseSidebarTab):
-    """
-    Settings tab.
+    """Settings tab.
 
     Provides:
     - Hardware configuration (polarizer, LED intensities)
@@ -20,18 +21,22 @@ class SettingsTab(BaseSidebarTab):
     - Advanced settings
     """
 
-    def __init__(self, event_bus: "EventBus | None" = None, parent: "QWidget | None" = None):
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        parent: QWidget | None = None,
+    ):
         super().__init__(
             title="Settings",
             subtitle="Hardware configuration and calibration",
             lazy_load=True,
             event_bus=event_bus,
-            parent=parent
+            parent=parent,
         )
 
-        self._controls_widget: "QWidget | None" = None
+        self._controls_widget: QWidget | None = None
 
-    def _build_content(self) -> "QWidget | None":
+    def _build_content(self) -> QWidget | None:
         """Build settings content."""
         if self._controls_widget is not None:
             return self._controls_widget
@@ -43,7 +48,7 @@ class SettingsTab(BaseSidebarTab):
             "color: #86868B; "
             "background: transparent; "
             "font-style: italic; "
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         return placeholder
 

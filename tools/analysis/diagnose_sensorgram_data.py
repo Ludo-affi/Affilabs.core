@@ -1,7 +1,6 @@
 """Diagnostic script to check sensorgram data structure."""
 
 import json
-import numpy as np
 
 # Check what's in the generated config
 print("=" * 80)
@@ -9,7 +8,7 @@ print("CHECKING GENERATED CONFIG")
 print("=" * 80)
 
 try:
-    with open("generated-files/config.json", "r") as f:
+    with open("generated-files/config.json") as f:
         config = json.load(f)
 
     print("\n📋 Calibration data found:")
@@ -39,7 +38,7 @@ print("CHECKING DEVICE CONFIG")
 print("=" * 80)
 
 try:
-    with open("config/device_config.json", "r") as f:
+    with open("config/device_config.json") as f:
         device_config = json.load(f)
 
     print("\n📋 Device configuration:")

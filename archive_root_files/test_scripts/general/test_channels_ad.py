@@ -1,9 +1,12 @@
 """Debug why channels A and D don't work with batch commands."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def debug_channels():
     """Test each channel individually with detailed output."""
@@ -18,10 +21,10 @@ def debug_channels():
 
     # Test each channel with batch command
     for ch_name, a, b, c, d in [
-        ('A', 255, 0, 0, 0),
-        ('B', 0, 255, 0, 0),
-        ('C', 0, 0, 255, 0),
-        ('D', 0, 0, 0, 255),
+        ("A", 255, 0, 0, 0),
+        ("B", 0, 255, 0, 0),
+        ("C", 0, 0, 255, 0),
+        ("D", 0, 0, 0, 255),
     ]:
         print("=" * 60)
         print(f"Testing LED {ch_name}")
@@ -49,23 +52,24 @@ def debug_channels():
     print("=" * 60)
 
     print("\nTesting LED A with individual command:")
-    pico.set_intensity('a', 255)
+    pico.set_intensity("a", 255)
     print(">>> LED A should be ON <<<")
     time.sleep(3)
-    pico.set_intensity('a', 0)
+    pico.set_intensity("a", 0)
     print("LED A OFF\n")
 
     time.sleep(1)
 
     print("Testing LED D with individual command:")
-    pico.set_intensity('d', 255)
+    pico.set_intensity("d", 255)
     print(">>> LED D should be ON <<<")
     time.sleep(3)
-    pico.set_intensity('d', 0)
+    pico.set_intensity("d", 0)
     print("LED D OFF\n")
 
     pico.close()
     print("Test complete!")
+
 
 if __name__ == "__main__":
     debug_channels()

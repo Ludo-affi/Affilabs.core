@@ -15,15 +15,15 @@ from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import QFileDialog
 
+from affilabs.widgets.message import show_message
 from settings.settings import RECORDING_INTERVAL, TIME_ZONE
 from utils.data_io_manager import DataIOManager
 from utils.logger import logger
-from widgets.message import show_message
 
 if TYPE_CHECKING:
     from PySide6.QtCore import QTimer
 
-    from widgets.mainwindow import MainWindow
+    from affilabs.affilabs_core_ui import AffilabsMainWindow as MainWindow
 
 
 class RecordingManager:
@@ -180,7 +180,7 @@ class RecordingManager:
 
             # Save kinetic logs for KNX devices
             if device_config["knx"] != "" or device_config["ctrl"] in [
-                "PicoEZSPR"
+                "PicoEZSPR",
             ]:
                 logger.debug("saving kinetic log")
                 self._save_kinetic_logs(log_ch1, log_ch2, device_config, knx)
@@ -252,12 +252,14 @@ class RecordingManager:
                 self.data_io.save_kinetic_log(self.rec_dir, log_ch1, "A", knx_version)
 
                 # Save Channel B log for dual-channel devices
-                if (
-                    device_config["ctrl"] in ["PicoEZSPR"]
-                    or device_config["knx"] in ["KNX2"]
-                ):  # PicoKNX2 disabled (obsolete)
+                if device_config["ctrl"] in ["PicoEZSPR"] or device_config["knx"] in [
+                    "KNX2",
+                ]:  # PicoKNX2 disabled (obsolete)
                     self.data_io.save_kinetic_log(
-                        self.rec_dir, log_ch2, "B", knx_version
+                        self.rec_dir,
+                        log_ch2,
+                        "B",
+                        knx_version,
                     )
 
             except Exception as e:

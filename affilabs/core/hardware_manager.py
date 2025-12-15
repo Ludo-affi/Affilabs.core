@@ -28,9 +28,7 @@ from affilabs.utils.logger import logger
 # DEBUG FLAGS - Set to True for detailed troubleshooting output
 # ============================================================================
 HARDWARE_DEBUG = True  # Enable detailed connection timing and device scan logs
-CONNECTION_TIMEOUT = (
-    8.0  # Seconds to wait for USB device discovery (8s for Ocean Optics WinUSB)
-)
+CONNECTION_TIMEOUT = 8.0  # Seconds to wait for USB device discovery (8s for Ocean Optics WinUSB)
 CONNECTION_RETRY_COUNT = 1  # Single attempt only (no retries to avoid error cascade)
 
 # ============================================================================
@@ -222,10 +220,7 @@ class HardwareManager(QObject):
 
                 if usb.open():
                     # Verify it's the same device
-                    if (
-                        hasattr(usb, "serial_number")
-                        and usb.serial_number == self._spec_serial
-                    ):
+                    if hasattr(usb, "serial_number") and usb.serial_number == self._spec_serial:
                         self.usb = usb
                         logger.info(
                             f"[OK] Reconnected to spectrometer {self._spec_serial}",
@@ -424,6 +419,7 @@ class HardwareManager(QObject):
         See: README_HARDWARE_BEHAVIOR.md for complete documentation
         """
         logger.info("HardwareManager.scan_and_connect() called")
+        _ = auto_connect  # reserved for future use per API
 
         # Check if main unit (controller+detector) is already locked
         if self._hardware_locked:
@@ -524,7 +520,8 @@ class HardwareManager(QObject):
             from affilabs.utils.detector_factory import create_detector
 
             self._preinit_detector = create_detector(
-                app=None, config=config.get("hardware", {}),
+                app=None,
+                config=config.get("hardware", {}),
             )
 
             if self._preinit_detector:
@@ -560,7 +557,8 @@ class HardwareManager(QObject):
             try:
                 if retry_attempt > 0:
                     wait_time = min(
-                        2**retry_attempt, 10,
+                        2**retry_attempt,
+                        10,
                     )  # Exponential backoff, max 10s
                     logger.info(
                         f"⏳ Retry {retry_attempt}/{max_retries} in {wait_time}s...",
@@ -665,7 +663,7 @@ class HardwareManager(QObject):
                         f"[WARN] {ctrl_type} incomplete: controller found but detector missing",
                     )
                     logger.warning(
-                        f"[WARN] Power button will remain YELLOW until detector is connected",
+                        "[WARN] Power button will remain YELLOW until detector is connected",
                     )
                     # Do NOT add to valid_hardware - power button stays yellow
 
@@ -683,20 +681,8 @@ class HardwareManager(QObject):
                 # Emit final status
                 # DEBUG: Log spectrometer serial detection
                 spec_serial = None
-                if self.usb:
-                    if hasattr(self.usb, "serial_number"):
-                        spec_serial = self.usb.serial_number
-                        logger.info(
-                            f"[SERIAL-DEBUG] Spectrometer serial detected: {spec_serial}",
-                        )
-                    else:
-                        logger.warning(
-                            "[SERIAL-DEBUG] Spectrometer connected but missing serial_number attribute",
-                        )
-                else:
-                    logger.warning(
-                        "[SERIAL-DEBUG] No spectrometer detected (self.usb is None)",
-                    )
+                if self.usb and hasattr(self.usb, "serial_number"):
+                    spec_serial = self.usb.serial_number
 
                 status = {
                     "ctrl_type": ctrl_type,  # Only set if controller + detector both present
@@ -706,8 +692,7 @@ class HardwareManager(QObject):
                     "spectrometer_serial": spec_serial,
                     "sensor_ready": False,  # Will be set to True after calibration
                     "optics_ready": False,  # Will be set to True after calibration
-                    "fluidics_ready": self.pump
-                    is not None,  # Fluidics ready if pump connected
+                    "fluidics_ready": self.pump is not None,  # Fluidics ready if pump connected
                     # Consider scan successful if any single device is connected
                     "scan_successful": (self.usb is not None)
                     or (self.ctrl is not None)
@@ -800,9 +785,7 @@ class HardwareManager(QObject):
                 logger.exception(f"Error during hardware scan: {e}")
                 # Don't show error dialog for simple connection failures
                 # Only emit for actual exceptions (once per scan)
-                if ("name 'os' is not defined" not in str(e)) and (
-                    not _scan_error_emitted
-                ):
+                if ("name 'os' is not defined" not in str(e)) and (not _scan_error_emitted):
                     _scan_error_emitted = True
                     self.error_occurred.emit(f"Hardware scan error: {e}")
                 # On exception, retry if attempts remain
@@ -922,16 +905,15 @@ class HardwareManager(QObject):
         if self.ctrl is not None:
             try:
                 controller_name = (
-                    self.ctrl.name
-                    if hasattr(self.ctrl, "name")
-                    else type(self.ctrl).__name__
+                    self.ctrl.name if hasattr(self.ctrl, "name") else type(self.ctrl).__name__
                 )
                 logger.warning(
                     f"Controller already connected ({controller_name}) - skipping scan",
                 )
                 return
-            except:
-                pass  # If we can't check name, proceed with connection attempt
+            except Exception:
+                # If we can't check name, proceed with connection attempt
+                logger.debug("Controller object present but name lookup failed; continuing scan.")
 
         # Try reconnecting to cached port first (fast path after file reload)
         if self._ctrl_port and self._ctrl_type:
@@ -1370,7 +1352,10 @@ class HardwareManager(QObject):
         # triggering redundant hardware scan callbacks after successful calibration.
 
     def update_led_intensity(
-        self, channel: str, intensity: float, timestamp: float,
+        self,
+        channel: str,
+        intensity: float,
+        timestamp: float,
     ) -> None:
         """Monitor LED intensity in real-time to detect sudden drops indicating leaks.
 
@@ -1382,7 +1367,8 @@ class HardwareManager(QObject):
         """
         # Update peak intensity
         self._channel_max_intensity[channel] = max(
-            self._channel_max_intensity[channel], intensity,
+            self._channel_max_intensity[channel],
+            intensity,
         )
 
         # Add to history with timestamp
@@ -1391,9 +1377,7 @@ class HardwareManager(QObject):
         # Keep only last 5 seconds of data
         cutoff_time = timestamp - 5.0
         self._channel_intensity_history[channel] = [
-            (t, i)
-            for t, i in self._channel_intensity_history[channel]
-            if t >= cutoff_time
+            (t, i) for t, i in self._channel_intensity_history[channel] if t >= cutoff_time
         ]
 
         # Check for sudden intensity drop (leak detection)
@@ -1406,9 +1390,7 @@ class HardwareManager(QObject):
             # Get intensity from 3 seconds ago
             three_seconds_ago = timestamp - 3.0
             old_intensities = [
-                i
-                for t, i in self._channel_intensity_history[channel]
-                if t <= three_seconds_ago
+                i for t, i in self._channel_intensity_history[channel] if t <= three_seconds_ago
             ]
 
             if len(old_intensities) > 0:
@@ -1466,11 +1448,7 @@ class HardwareManager(QObject):
         logger.info("🔄 Leak detection reset - monitoring restarted")
 
         # Re-evaluate optics status (sensor status is independent, set by FWHM)
-        if (
-            self._afterglow_calibration_done
-            and self._calibration_passed
-            and self.usb is not None
-        ):
+        if self._afterglow_calibration_done and self._calibration_passed and self.usb is not None:
             self._optics_verified = True
             logger.info("[OK] Optics status restored to READY")
             self._emit_hardware_status()
@@ -1494,14 +1472,10 @@ class HardwareManager(QObject):
         previous_sensor_verified = self._sensor_verified
 
         # Get all channels with valid FWHM measurements
-        measured_channels = {
-            ch: val for ch, val in self._channel_fwhm.items() if val is not None
-        }
+        measured_channels = {ch: val for ch, val in self._channel_fwhm.items() if val is not None}
 
         # Check if any measured channel is good quality
-        good_channels = [
-            ch for ch, val in measured_channels.items() if val < self._fwhm_threshold
-        ]
+        good_channels = [ch for ch, val in measured_channels.items() if val < self._fwhm_threshold]
 
         if len(good_channels) > 0:
             # At least one channel has good FWHM
@@ -1542,7 +1516,10 @@ class HardwareManager(QObject):
             self._emit_hardware_status()
 
     def check_intensity_leak(
-        self, channel: str, intensity: float, dark_noise: float,
+        self,
+        channel: str,
+        intensity: float,
+        dark_noise: float,
     ) -> None:
         """Check for intensity drops that indicate optical leaks.
 
@@ -1608,9 +1585,7 @@ class HardwareManager(QObject):
                 )
 
                 # Log which parameters will be overridden
-                override_params = [
-                    k for k in special_case if k not in ["description", "notes"]
-                ]
+                override_params = [k for k in special_case if k not in ["description", "notes"]]
                 if override_params:
                     logger.info(f"   Overrides: {', '.join(override_params)}")
             else:
@@ -1655,9 +1630,7 @@ class HardwareManager(QObject):
             else None,
             "kinetic": self.knx.name if self.knx else None,
             "pump": "Connected" if self.pump else None,
-            "special_case": self._special_case.get("description")
-            if self._special_case
-            else None,
+            "special_case": self._special_case.get("description") if self._special_case else None,
         }
 
     def check_connection_health(self) -> dict:
@@ -1685,11 +1658,7 @@ class HardwareManager(QObject):
             if self.ctrl:
                 try:
                     # Try simple command to verify connection is alive
-                    if (
-                        hasattr(self.ctrl, "_ser")
-                        and self.ctrl._ser
-                        and self.ctrl._ser.is_open
-                    ):
+                    if hasattr(self.ctrl, "_ser") and self.ctrl._ser and self.ctrl._ser.is_open:
                         health["controller"] = True
                     else:
                         health["controller"] = False
@@ -1703,11 +1672,7 @@ class HardwareManager(QObject):
                 try:
                     # Verify device is still accessible
                     # USB4000Wrapper uses _device attribute
-                    if (
-                        hasattr(self.usb, "_device")
-                        and self.usb._device
-                        and self.usb.opened
-                    ):
+                    if hasattr(self.usb, "_device") and self.usb._device and self.usb.opened:
                         health["spectrometer"] = True
                     else:
                         health["spectrometer"] = False

@@ -1,13 +1,15 @@
 """Single isolated test after power cycle"""
-import serial
+
 import time
 
-print("="*70)
+import serial
+
+print("=" * 70)
 print("SINGLE ISOLATED TEST")
-print("="*70)
+print("=" * 70)
 print("\n⚠️  This test assumes device was JUST power cycled")
 print("    and this is the FIRST command sent.\n")
-print("="*70)
+print("=" * 70)
 
 input("\nPress ENTER after power cycling the device...")
 
@@ -15,7 +17,7 @@ print("\n🔌 Connecting to COM5...")
 connected = False
 for attempt in range(5):
     try:
-        ser = serial.Serial('COM5', 115200, timeout=30)
+        ser = serial.Serial("COM5", 115200, timeout=30)
         time.sleep(3)
         ser.reset_input_buffer()
         connected = True
@@ -32,7 +34,7 @@ if not connected:
 # Single test with the exact requested configuration
 command = "rankbatch:100,150,200,250,1000,100,10\n"
 print(f"📤 Sending: {command.strip()}")
-print(f"   Expected: 10 cycles @ ~4.4s each = ~44s total\n")
+print("   Expected: 10 cycles @ ~4.4s each = ~44s total\n")
 
 ser.write(command.encode())
 start_time = time.time()
@@ -42,11 +44,11 @@ got_batch_start = False
 got_batch_end = False
 
 print("📊 Progress:")
-print("-"*70)
+print("-" * 70)
 
 while time.time() - start_time < 60:
     if ser.in_waiting > 0:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
 
         if line:
             if line.startswith("BATCH_START"):
@@ -77,7 +79,7 @@ while time.time() - start_time < 60:
             elif line == "BATCH_END":
                 got_batch_end = True
                 elapsed = time.time() - start_time
-                print(f"\n✅ BATCH_END\n")
+                print("\n✅ BATCH_END\n")
                 print(f"⏱️  Total time: {elapsed:.1f}s")
                 print(f"📊 Cycles executed: {len(cycles_seen)}")
                 if len(cycles_seen) > 0:
@@ -86,32 +88,32 @@ while time.time() - start_time < 60:
                 break
 
 if time.time() - start_time >= 60:
-    print(f"\n⚠️  Timeout after 60s")
+    print("\n⚠️  Timeout after 60s")
 
-print("-"*70)
+print("-" * 70)
 
 # Analysis
 print("\nANALYSIS:")
 print(f"  BATCH_START received: {'✅ YES' if got_batch_start else '❌ NO'}")
 print(f"  BATCH_END received:   {'✅ YES' if got_batch_end else '❌ NO'}")
 print(f"  Cycles executed:      {len(cycles_seen)}")
-print(f"  Expected cycles:      10")
+print("  Expected cycles:      10")
 
 if len(cycles_seen) == 10 and got_batch_start and got_batch_end:
-    print(f"\n✅ SUCCESS - Test passed!")
+    print("\n✅ SUCCESS - Test passed!")
 elif len(cycles_seen) == 1:
-    print(f"\n❌ PARSING BUG - Cycle count not parsed, defaulted to 1")
+    print("\n❌ PARSING BUG - Cycle count not parsed, defaulted to 1")
 elif len(cycles_seen) > 10:
-    print(f"\n❌ EXECUTION BUG - Too many cycles, not stopping at requested count")
+    print("\n❌ EXECUTION BUG - Too many cycles, not stopping at requested count")
 elif len(cycles_seen) < 10 and len(cycles_seen) > 1:
-    print(f"\n❌ EARLY TERMINATION - Stopped before completing requested cycles")
+    print("\n❌ EARLY TERMINATION - Stopped before completing requested cycles")
 else:
-    print(f"\n❌ UNEXPECTED BEHAVIOR")
+    print("\n❌ UNEXPECTED BEHAVIOR")
 
 if not got_batch_start:
-    print(f"⚠️  WARNING: No BATCH_START - may be continuing from queued command")
+    print("⚠️  WARNING: No BATCH_START - may be continuing from queued command")
 if not got_batch_end:
-    print(f"⚠️  WARNING: No BATCH_END - function may not have exited properly")
+    print("⚠️  WARNING: No BATCH_END - function may not have exited properly")
 
 ser.close()
 print("\n📡 Disconnected")

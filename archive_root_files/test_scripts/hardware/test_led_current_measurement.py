@@ -1,5 +1,4 @@
-"""
-LED Current Measurement Script
+"""LED Current Measurement Script
 Measures actual LED current draw at 100% PWM to verify PCB current limiting
 
 This helps determine if firmware PWM caps are needed to protect LEDs.
@@ -15,13 +14,14 @@ SAFETY:
 """
 
 import time
-import sys
+
 import serial
 import serial.tools.list_ports
 
+
 # Simple controller wrapper to avoid import issues
 class SimpleController:
-    def __init__(self, port='COM4', baud=115200):
+    def __init__(self, port="COM4", baud=115200):
         self.port = port
         self.baud = baud
         self._ser = None
@@ -41,7 +41,7 @@ class SimpleController:
 
     def turn_off_channels(self):
         if self._ser:
-            self._ser.write(b'lx\n')
+            self._ser.write(b"lx\n")
             self._ser.read(1)  # Read ACK
 
     def set_intensity(self, ch, value):
@@ -56,14 +56,16 @@ class SimpleController:
             self._ser.write(cmd)
             self._ser.read(1)  # Read ACK
 
+
 def print_header():
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("LED CURRENT MEASUREMENT TEST")
-    print("="*70)
+    print("=" * 70)
     print("\nThis test turns on each LED at 100% brightness.")
     print("You MUST measure the current with a multimeter in series with the LED.")
     print("\n⚠️  SAFETY: Stop immediately if any LED exceeds 180mA!")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
+
 
 def measure_channel(controller, channel):
     """Turn on a channel and prompt user to measure current"""
@@ -83,12 +85,12 @@ def measure_channel(controller, channel):
     time.sleep(1.0)
 
     print(f"\n2. 🔌 Connect multimeter in SERIES with Channel {ch_upper} LED power")
-    print(f"   Set multimeter to DC current mode (200mA range)")
-    print(f"   LED should be ON at full brightness")
+    print("   Set multimeter to DC current mode (200mA range)")
+    print("   LED should be ON at full brightness")
 
-    input(f"\n3. Press Enter when multimeter is connected and reading is stable...")
+    input("\n3. Press Enter when multimeter is connected and reading is stable...")
 
-    print(f"\n4. 📊 READ THE CURRENT NOW from your multimeter")
+    print("\n4. 📊 READ THE CURRENT NOW from your multimeter")
     current = input(f"   Enter measured current for Channel {ch_upper} in mA: ").strip()
 
     try:
@@ -96,25 +98,28 @@ def measure_channel(controller, channel):
 
         # Safety warnings
         if current_ma > 180:
-            print(f"\n🔴 DANGER! Channel {ch_upper} current = {current_ma}mA (>180mA absolute max)")
-            print(f"   STOP TESTING! Hardware current limiting insufficient!")
-            print(f"   Risk of LED damage!")
+            print(
+                f"\n🔴 DANGER! Channel {ch_upper} current = {current_ma}mA (>180mA absolute max)",
+            )
+            print("   STOP TESTING! Hardware current limiting insufficient!")
+            print("   Risk of LED damage!")
             return None
-        elif current_ma > 60:
+        if current_ma > 60:
             print(f"\n⚠️  WARNING: Channel {ch_upper} current = {current_ma}mA (>60mA)")
-            print(f"   If this is a LCW LED, firmware PWM cap needed!")
+            print("   If this is a LCW LED, firmware PWM cap needed!")
         else:
             print(f"\n✅ Channel {ch_upper} current = {current_ma}mA (safe)")
 
         return current_ma
 
     except ValueError:
-        print(f"\n❌ Invalid input. Please enter a number (e.g., 45.2)")
+        print("\n❌ Invalid input. Please enter a number (e.g., 45.2)")
         return None
     finally:
         # Turn off LED
         controller.turn_off_channels()
         time.sleep(0.5)
+
 
 def identify_led_type(channel):
     """Ask user which LED type is on this channel"""
@@ -124,46 +129,48 @@ def identify_led_type(channel):
     print("   1. LCW (Luminus MP-2016, smaller, ~11 lumens)")
     print("   2. OWW (OSRAM GW JTLMS3, larger, ~60 lumens)")
 
-    choice = input(f"   Enter 1 or 2: ").strip()
+    choice = input("   Enter 1 or 2: ").strip()
 
-    if choice == '1':
-        return 'LCW'
-    elif choice == '2':
-        return 'OWW'
-    else:
-        return 'Unknown'
+    if choice == "1":
+        return "LCW"
+    if choice == "2":
+        return "OWW"
+    return "Unknown"
+
 
 def analyze_results(results):
     """Analyze measurements and provide firmware recommendations"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("MEASUREMENT SUMMARY & FIRMWARE RECOMMENDATIONS")
-    print("="*70)
+    print("=" * 70)
 
     print("\n📊 Measured Currents:")
     print("-" * 70)
-    print(f"{'Channel':<10} {'LED Type':<10} {'Current (mA)':<15} {'Status':<20} {'Action'}")
+    print(
+        f"{'Channel':<10} {'LED Type':<10} {'Current (mA)':<15} {'Status':<20} {'Action'}",
+    )
     print("-" * 70)
 
     needs_firmware_cap = False
     hardware_issue = False
 
     for ch, data in results.items():
-        if data['current'] is None:
+        if data["current"] is None:
             continue
 
-        current = data['current']
-        led_type = data['led_type']
+        current = data["current"]
+        led_type = data["led_type"]
 
         # Determine status
         if current > 180:
             status = "🔴 DANGER"
             action = "STOP - Hardware fix needed"
             hardware_issue = True
-        elif led_type == 'LCW' and current > 60:
+        elif led_type == "LCW" and current > 60:
             status = "⚠️  Over LCW max"
             action = "Firmware PWM cap needed"
             needs_firmware_cap = True
-        elif led_type == 'OWW' and current > 180:
+        elif led_type == "OWW" and current > 180:
             status = "⚠️  Over OWW max"
             action = "Firmware PWM cap needed"
             needs_firmware_cap = True
@@ -180,7 +187,7 @@ def analyze_results(results):
 
     # Overall recommendation
     print("\n🎯 OVERALL RECOMMENDATION:")
-    print("="*70)
+    print("=" * 70)
 
     if hardware_issue:
         print("\n🔴 CRITICAL: HARDWARE CURRENT LIMITING INSUFFICIENT!")
@@ -196,24 +203,28 @@ def analyze_results(results):
         print("      ```c")
 
         for ch, data in results.items():
-            if data['current'] is None:
+            if data["current"] is None:
                 continue
 
-            current = data['current']
-            led_type = data['led_type']
+            current = data["current"]
+            led_type = data["led_type"]
 
             # Calculate safe PWM cap
-            if led_type == 'LCW':
+            if led_type == "LCW":
                 target_current = 50  # 50mA safe for LCW (60mA max)
             else:
                 target_current = 150  # 150mA safe for OWW (180mA max)
 
             pwm_cap = min(1.0, target_current / current)
 
-            print(f"      const float LED_{ch.upper()}_MAX_DUTY = {pwm_cap:.2f};  // {led_type} LED, limit {current:.0f}mA → {target_current}mA")
+            print(
+                f"      const float LED_{ch.upper()}_MAX_DUTY = {pwm_cap:.2f};  // {led_type} LED, limit {current:.0f}mA → {target_current}mA",
+            )
 
         print("      ```")
-        print("\n   2. Apply limits in led_brightness() function (see LED_HARDWARE_SPECIFICATIONS.md)")
+        print(
+            "\n   2. Apply limits in led_brightness() function (see LED_HARDWARE_SPECIFICATIONS.md)",
+        )
         print("\n   3. Recompile and flash firmware")
 
     else:
@@ -226,7 +237,8 @@ def analyze_results(results):
         print("   2. Firmware compilation (if testing V1.2 confirms bug)")
         print("   3. Flashing and validation (test again with V1.3)")
 
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
+
 
 def main():
     """Main measurement workflow"""
@@ -237,7 +249,7 @@ def main():
     # Connect to controller
     print("\nConnecting to PicoP4SPR controller...")
     try:
-        controller = SimpleController(port='COM4', baud=115200)
+        controller = SimpleController(port="COM4", baud=115200)
         if not controller.connect():
             print("❌ Failed to connect to controller on COM4")
             print("   Check USB connection and COM port")
@@ -252,16 +264,16 @@ def main():
     # Measure each channel
     results = {}
 
-    for channel in ['a', 'b', 'c', 'd']:
+    for channel in ["a", "b", "c", "d"]:
         current = measure_channel(controller, channel)
 
         if current is None:
             print(f"\n⚠️  Skipping Channel {channel.upper()} (invalid measurement)")
-            results[channel.upper()] = {'current': None, 'led_type': 'Unknown'}
+            results[channel.upper()] = {"current": None, "led_type": "Unknown"}
             continue
 
         led_type = identify_led_type(channel)
-        results[channel.upper()] = {'current': current, 'led_type': led_type}
+        results[channel.upper()] = {"current": current, "led_type": led_type}
 
         # Safety check after each measurement
         if current > 180:
@@ -281,6 +293,7 @@ def main():
 
     return True
 
+
 if __name__ == "__main__":
     try:
         main()
@@ -289,4 +302,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()

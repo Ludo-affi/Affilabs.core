@@ -5,10 +5,17 @@ creates smooth slow-motion movement by commanding intermediate positions.
 """
 
 import time
+
 from utils.logger import logger
 
 
-def smooth_servo_move(ctrl, start_angle: int, end_angle: int, step_size: int = 5, step_delay: float = 0.1):
+def smooth_servo_move(
+    ctrl,
+    start_angle: int,
+    end_angle: int,
+    step_size: int = 5,
+    step_delay: float = 0.1,
+):
     """Move servo smoothly through intermediate positions for slow sweep.
 
     Hobby servos always move at maximum speed to commanded position.
@@ -29,6 +36,7 @@ def smooth_servo_move(ctrl, start_angle: int, end_angle: int, step_size: int = 5
         # Fast sweep (default)
         smooth_servo_move(ctrl, start_angle=10, end_angle=170, step_size=10, step_delay=0.05)
         # Takes ~0.8 seconds for 160° sweep (16 steps × 0.05s)
+
     """
     # Determine direction
     if end_angle > start_angle:
@@ -36,26 +44,34 @@ def smooth_servo_move(ctrl, start_angle: int, end_angle: int, step_size: int = 5
     else:
         angles = range(start_angle, end_angle - 1, -step_size)
 
-    logger.info(f"🔄 Smooth servo move: {start_angle}° → {end_angle}° (step={step_size}°, delay={step_delay*1000:.0f}ms)")
+    logger.info(
+        f"🔄 Smooth servo move: {start_angle}° → {end_angle}° (step={step_size}°, delay={step_delay*1000:.0f}ms)",
+    )
 
     for angle in angles:
         # Move to intermediate position
         ctrl.servo_move_calibration_only(s=angle, p=angle)
-        ctrl.set_mode('s')
+        ctrl.set_mode("s")
         time.sleep(step_delay)
 
     # Ensure we end exactly at target
     if list(angles)[-1] != end_angle:
         ctrl.servo_move_calibration_only(s=end_angle, p=end_angle)
-        ctrl.set_mode('s')
+        ctrl.set_mode("s")
         time.sleep(step_delay)
 
     logger.info(f"✅ Reached {end_angle}°")
 
 
-def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
-                           step_size: int = 5, step_delay: float = 0.1,
-                           measurement_callback=None):
+def sweep_with_measurements(
+    ctrl,
+    usb,
+    start_angle: int,
+    end_angle: int,
+    step_size: int = 5,
+    step_delay: float = 0.1,
+    measurement_callback=None,
+):
     """Perform slow servo sweep while taking measurements at each step.
 
     Args:
@@ -80,6 +96,7 @@ def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
             step_size=5, step_delay=0.2,
             measurement_callback=analyze_position
         )
+
     """
     # Determine direction
     if end_angle > start_angle:
@@ -90,12 +107,14 @@ def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
     measurements = {}
 
     logger.info(f"🔬 Servo sweep with measurements: {start_angle}° → {end_angle}°")
-    logger.info(f"   Steps: {len(list(angles))}, Time per step: {step_delay*1000:.0f}ms")
+    logger.info(
+        f"   Steps: {len(list(angles))}, Time per step: {step_delay*1000:.0f}ms",
+    )
 
     for i, angle in enumerate(angles):
         # Move to position
         ctrl.servo_move_calibration_only(s=angle, p=angle)
-        ctrl.set_mode('s')
+        ctrl.set_mode("s")
         time.sleep(step_delay)  # Allow servo to settle and hold
 
         # Take measurement
@@ -113,8 +132,14 @@ def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
     return measurements
 
 
-def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
-                           step_size: int = 5, step_delay: float = 0.15):
+def slow_calibration_sweep(
+    ctrl,
+    usb,
+    min_angle: int = 10,
+    max_angle: int = 170,
+    step_size: int = 5,
+    step_delay: float = 0.15,
+):
     """Run full servo calibration with slow sweep for better measurements.
 
     This is a drop-in replacement for fast servo calibration that uses
@@ -139,6 +164,7 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
         # Standard slow sweep
         result = slow_calibration_sweep(ctrl, usb, step_size=5, step_delay=0.15)
         # Takes ~5 seconds for full sweep
+
     """
     import numpy as np
 
@@ -149,7 +175,7 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
     # Calculate sweep parameters
     num_steps = (max_angle - min_angle) // step_size + 1
     total_time = num_steps * step_delay
-    logger.info(f"Configuration:")
+    logger.info("Configuration:")
     logger.info(f"  Range: {min_angle}° to {max_angle}°")
     logger.info(f"  Step size: {step_size}°")
     logger.info(f"  Steps: {num_steps}")
@@ -167,12 +193,13 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
         logger.debug(f"  Angle {angle:3d}°: signal={signal:6.0f} counts")
 
     sweep_with_measurements(
-        ctrl, usb,
+        ctrl,
+        usb,
         start_angle=min_angle,
         end_angle=max_angle,
         step_size=step_size,
         step_delay=step_delay,
-        measurement_callback=collect_data
+        measurement_callback=collect_data,
     )
 
     # Analyze results
@@ -211,11 +238,11 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
     logger.info("")
 
     return {
-        'success': True,
-        's_position': int(s_angle),
-        'p_position': int(p_angle),
-        's_intensity': float(s_intensity),
-        'p_intensity': float(p_intensity),
-        'all_angles': angles.tolist(),
-        'all_intensities': intensities.tolist()
+        "success": True,
+        "s_position": int(s_angle),
+        "p_position": int(p_angle),
+        "s_intensity": float(s_intensity),
+        "p_intensity": float(p_intensity),
+        "all_angles": angles.tolist(),
+        "all_intensities": intensities.tolist(),
     }

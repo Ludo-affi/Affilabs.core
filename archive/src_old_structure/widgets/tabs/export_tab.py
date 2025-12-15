@@ -1,9 +1,11 @@
 """Export tab - data export and file management controls."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QWidget, QLabel
+from PySide6.QtWidgets import QLabel, QWidget
+
 from widgets.tabs.base_tab import BaseSidebarTab
 
 if TYPE_CHECKING:
@@ -11,8 +13,7 @@ if TYPE_CHECKING:
 
 
 class ExportTab(BaseSidebarTab):
-    """
-    Export tab.
+    """Export tab.
 
     Provides:
     - Data export controls
@@ -21,16 +22,20 @@ class ExportTab(BaseSidebarTab):
     - Batch export options
     """
 
-    def __init__(self, event_bus: "EventBus | None" = None, parent: "QWidget | None" = None):
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        parent: QWidget | None = None,
+    ):
         super().__init__(
             title="Export",
             subtitle="Data export and file management",
             lazy_load=True,
             event_bus=event_bus,
-            parent=parent
+            parent=parent,
         )
 
-    def _build_content(self) -> "QWidget | None":
+    def _build_content(self) -> QWidget | None:
         """Build export controls content."""
         # Placeholder for now
         placeholder = QLabel("Export controls will be added here")
@@ -39,6 +44,6 @@ class ExportTab(BaseSidebarTab):
             "color: #86868B; "
             "background: transparent; "
             "font-style: italic; "
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; "
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; ",
         )
         return placeholder

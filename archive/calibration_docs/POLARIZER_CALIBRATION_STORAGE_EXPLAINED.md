@@ -275,4 +275,3 @@ Application restarts with correct positions
 **Your Issue**: Positions likely swapped or hardware changed since original calibration
 
 **Solution**: Run Auto-Polarization from Settings menu to re-measure and update config
-

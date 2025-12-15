@@ -41,7 +41,7 @@ class Ui_SingleDialog:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.single_frame.sizePolicy().hasHeightForWidth()
+            self.single_frame.sizePolicy().hasHeightForWidth(),
         )
         self.single_frame.setSizePolicy(sizePolicy1)
         self.single_frame.setFrameShape(QFrame.StyledPanel)
@@ -57,7 +57,7 @@ class Ui_SingleDialog:
 
     def retranslateUi(self, SingleDialog):
         SingleDialog.setWindowTitle(
-            QCoreApplication.translate("SingleDialog", "Advanced Spectroscopy", None)
+            QCoreApplication.translate("SingleDialog", "Advanced Spectroscopy", None),
         )
 
     # retranslateUi

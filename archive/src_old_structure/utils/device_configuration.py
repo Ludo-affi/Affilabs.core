@@ -1,5 +1,4 @@
-"""
-Device Configuration Management System
+"""Device Configuration Management System
 
 Manages device-specific calibration data, hardware parameters, and operational settings.
 Configuration persists across sessions and includes:
@@ -19,18 +18,17 @@ Version: 1.0
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 
 from utils.logger import logger
 
 
 class DeviceConfiguration:
-    """
-    Manages device-specific configuration and calibration data.
+    """Manages device-specific configuration and calibration data.
 
     Configuration includes:
     - Hardware identification (LED PCB model, spectrometer serial)
@@ -43,87 +41,95 @@ class DeviceConfiguration:
     """
 
     # Valid configuration values
-    VALID_LED_PCB_MODELS = ['luminus_cool_white', 'osram_warm_white']
-    VALID_LED_TYPE_CODES = ['LCW', 'OWW']  # Short codes for LED types
+    VALID_LED_PCB_MODELS = ["luminus_cool_white", "osram_warm_white"]
+    VALID_LED_TYPE_CODES = ["LCW", "OWW"]  # Short codes for LED types
     VALID_FIBER_DIAMETERS = [100, 200]  # micrometers
     VALID_LED_MODES = [2, 4]  # number of LEDs
-    VALID_POLARIZER_TYPES = ['barrel', 'round']  # barrel (2 fixed windows) or round (continuous rotation)
-    VALID_SERVO_MODELS = ['HS-55MG', 'Alternate']  # Default is HS-55MG
+    VALID_POLARIZER_TYPES = [
+        "barrel",
+        "round",
+    ]  # barrel (2 fixed windows) or round (continuous rotation)
+    VALID_SERVO_MODELS = ["HS-55MG", "Alternate"]  # Default is HS-55MG
 
     # LED type mapping (short code to full name)
     LED_TYPE_MAP = {
-        'LCW': 'luminus_cool_white',
-        'OWW': 'osram_warm_white'
+        "LCW": "luminus_cool_white",
+        "OWW": "osram_warm_white",
     }
     LED_TYPE_REVERSE_MAP = {
-        'luminus_cool_white': 'LCW',
-        'osram_warm_white': 'OWW'
+        "luminus_cool_white": "LCW",
+        "osram_warm_white": "OWW",
     }
 
     # Default values
     DEFAULT_CONFIG = {
-        'device_info': {
-            'config_version': '1.0',
-            'created_date': None,
-            'last_modified': None,
-            'device_id': None,  # User-defined identifier
+        "device_info": {
+            "config_version": "1.0",
+            "created_date": None,
+            "last_modified": None,
+            "device_id": None,  # User-defined identifier
         },
-        'hardware': {
-            'led_pcb_model': 'luminus_cool_white',  # or 'osram_warm_white'
-            'led_type_code': 'LCW',  # Short code: LCW or OWW
-            'led_pcb_serial': None,
-            'spectrometer_model': 'Flame-T',
-            'spectrometer_serial': None,
-            'controller_model': 'Raspberry Pi Pico P4SPR',
-            'controller_serial': None,
-            'optical_fiber_diameter_um': 200,  # 200 µm or 100 µm
-            'polarizer_type': 'barrel',  # 'barrel' (2 fixed windows) or 'round' (continuous rotation)
-                                         # Hardware rule: Arduino and PicoP4SPR ALWAYS use 'round'
-            'servo_model': 'HS-55MG',  # Servo motor model: 'HS-55MG' (default) or 'Alternate'
-            'servo_s_position': 10,  # S-mode polarizer position (0-255, ~1°/step, covers ~250°)
-            'servo_p_position': 100,  # P-mode polarizer position (0-255, ~1°/step, covers ~250°)
+        "hardware": {
+            "led_pcb_model": "luminus_cool_white",  # or 'osram_warm_white'
+            "led_type_code": "LCW",  # Short code: LCW or OWW
+            "led_pcb_serial": None,
+            "spectrometer_model": "Flame-T",
+            "spectrometer_serial": None,
+            "controller_model": "Raspberry Pi Pico P4SPR",
+            "controller_serial": None,
+            "optical_fiber_diameter_um": 200,  # 200 µm or 100 µm
+            "polarizer_type": "barrel",  # 'barrel' (2 fixed windows) or 'round' (continuous rotation)
+            # Hardware rule: Arduino and PicoP4SPR ALWAYS use 'round'
+            "servo_model": "HS-55MG",  # Servo motor model: 'HS-55MG' (default) or 'Alternate'
+            "servo_s_position": 10,  # S-mode polarizer position (0-255, ~1°/step, covers ~250°)
+            "servo_p_position": 100,  # P-mode polarizer position (0-255, ~1°/step, covers ~250°)
         },
-        'timing_parameters': {
-            'pre_led_delay_ms': 45.0,  # LED stabilization time before acquisition
-            'post_led_delay_ms': 5.0,  # Afterglow decay time after acquisition
-            'led_a_delay_ms': 0,
-            'led_b_delay_ms': 0,
-            'led_c_delay_ms': 0,
-            'led_d_delay_ms': 0,
-            'min_integration_time_ms': 50,  # Minimum safe integration time per LED
-            'led_rise_fall_time_ms': 5,  # Time for LED to stabilize
+        "timing_parameters": {
+            "pre_led_delay_ms": 45.0,  # LED stabilization time before acquisition
+            "post_led_delay_ms": 5.0,  # Afterglow decay time after acquisition
+            "led_a_delay_ms": 0,
+            "led_b_delay_ms": 0,
+            "led_c_delay_ms": 0,
+            "led_d_delay_ms": 0,
+            "min_integration_time_ms": 50,  # Minimum safe integration time per LED
+            "led_rise_fall_time_ms": 5,  # Time for LED to stabilize
         },
-        'frequency_limits': {
-            '4_led_target_hz': 1.0,  # Target frequency for 4-LED mode
-            '2_led_target_hz': 2.0,  # Target frequency for 2-LED mode (not yet implemented)
+        "frequency_limits": {
+            "4_led_target_hz": 1.0,  # Target frequency for 4-LED mode
+            "2_led_target_hz": 2.0,  # Target frequency for 2-LED mode (not yet implemented)
         },
-        'calibration': {
-            'dark_calibration_date': None,
-            's_mode_calibration_date': None,
-            'p_mode_calibration_date': None,
-            'polarizer_calibration_date': None,  # Last polarizer servo calibration date
-            'polarizer_extinction_ratio_percent': None,  # (S-P)/S in best bucket, sensor-specific reference
-            'factory_calibrated': False,
-            'user_calibrated': False,
-            'preferred_calibration_mode': 'global',  # 'global' or 'per_channel'
-            'integration_time_ms': None,  # Calibrated integration time
-            'num_scans': None,  # Calibrated number of scans
-            'led_intensity_a': 0,  # Calibrated LED A intensity (0-255)
-            'led_intensity_b': 0,  # Calibrated LED B intensity (0-255)
-            'led_intensity_c': 0,  # Calibrated LED C intensity (0-255)
-            'led_intensity_d': 0,  # Calibrated LED D intensity (0-255)
+        "calibration": {
+            "dark_calibration_date": None,
+            "s_mode_calibration_date": None,
+            "p_mode_calibration_date": None,
+            "polarizer_calibration_date": None,  # Last polarizer servo calibration date
+            "polarizer_extinction_ratio_percent": None,  # (S-P)/S in best bucket, sensor-specific reference
+            "factory_calibrated": False,
+            "user_calibrated": False,
+            "preferred_calibration_mode": "global",  # 'global' or 'per_channel'
+            "integration_time_ms": None,  # Calibrated integration time
+            "num_scans": None,  # Calibrated number of scans
+            "led_intensity_a": 0,  # Calibrated LED A intensity (0-255)
+            "led_intensity_b": 0,  # Calibrated LED B intensity (0-255)
+            "led_intensity_c": 0,  # Calibrated LED C intensity (0-255)
+            "led_intensity_d": 0,  # Calibrated LED D intensity (0-255)
         },
-        'maintenance': {
-            'last_maintenance_date': None,
-            'total_measurement_cycles': 0,
-            'led_on_hours': 0.0,
-            'next_maintenance_due': None,
+        "maintenance": {
+            "last_maintenance_date": None,
+            "total_measurement_cycles": 0,
+            "led_on_hours": 0.0,
+            "next_maintenance_due": None,
         },
     }
 
-    def __init__(self, config_path: Optional[str] = None, device_serial: Optional[str] = None, controller=None, silent_load: bool = False):
-        """
-        Initialize device configuration.
+    def __init__(
+        self,
+        config_path: str | None = None,
+        device_serial: str | None = None,
+        controller=None,
+        silent_load: bool = False,
+    ):
+        """Initialize device configuration.
 
         Args:
             config_path: Path to configuration file. If None, uses default location.
@@ -131,24 +137,31 @@ class DeviceConfiguration:
                           creates config in devices/<serial>/device_config.json
             controller: Controller instance for EEPROM fallback (optional)
             silent_load: If True, suppress verbose logging during initialization (default: False)
+
         """
         self.silent_load = silent_load  # Store for use in logging methods
 
         if config_path is None:
             if device_serial:
                 # Device-specific location: config/devices/<serial>/device_config.json
-                config_dir = Path(__file__).parent.parent / 'config' / 'devices' / device_serial
+                config_dir = (
+                    Path(__file__).parent.parent / "config" / "devices" / device_serial
+                )
                 config_dir.mkdir(parents=True, exist_ok=True)
-                self.config_path = config_dir / 'device_config.json'
+                self.config_path = config_dir / "device_config.json"
                 if not silent_load:
-                    logger.info(f"Using device-specific configuration for S/N: {device_serial}")
+                    logger.info(
+                        f"Using device-specific configuration for S/N: {device_serial}",
+                    )
             else:
                 # Default location: config/device_config.json (fallback for unknown devices)
-                config_dir = Path(__file__).parent.parent / 'config'
+                config_dir = Path(__file__).parent.parent / "config"
                 config_dir.mkdir(exist_ok=True)
-                self.config_path = config_dir / 'device_config.json'
+                self.config_path = config_dir / "device_config.json"
                 if not silent_load:
-                    logger.warning("No device serial provided - using default configuration")
+                    logger.warning(
+                        "No device serial provided - using default configuration",
+                    )
         else:
             self.config_path = Path(config_path)
 
@@ -168,9 +181,8 @@ class DeviceConfiguration:
             logger.info(f"Device configuration loaded from: {self.config_path}")
             self._log_config_summary()
 
-    def _load_or_create_config(self) -> Dict[str, Any]:
-        """
-        Load configuration from file or create new with defaults.
+    def _load_or_create_config(self) -> dict[str, Any]:
+        """Load configuration from file or create new with defaults.
 
         Load priority:
         1. JSON file (if exists)
@@ -179,13 +191,16 @@ class DeviceConfiguration:
 
         Returns:
             Configuration dictionary
+
         """
         if self.config_path.exists():
             try:
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path) as f:
                     config = json.load(f)
                 if not self.silent_load:
-                    logger.info(f"✓ Loaded existing configuration from {self.config_path}")
+                    logger.info(
+                        f"✓ Loaded existing configuration from {self.config_path}",
+                    )
 
                 # Validate and merge with defaults (in case new fields added)
                 config = self._merge_with_defaults(config)
@@ -202,7 +217,7 @@ class DeviceConfiguration:
                 logger.info("No JSON configuration found. Checking EEPROM...")
             return self._try_load_from_eeprom_or_default()
 
-    def _try_load_from_eeprom_or_default(self) -> Dict[str, Any]:
+    def _try_load_from_eeprom_or_default(self) -> dict[str, Any]:
         """Try to load config from EEPROM, or create partial config with known info if that fails."""
         if self.controller is not None:
             try:
@@ -227,13 +242,17 @@ class DeviceConfiguration:
 
         # Fallback: create partial config with known information
         # UI will prompt user for missing fields (LED model, fiber diameter, polarizer type)
-        logger.info("Creating new configuration with known information (device serial, controller type)")
-        logger.info("UI will prompt for missing fields: LED model, fiber diameter, polarizer type")
+        logger.info(
+            "Creating new configuration with known information (device serial, controller type)",
+        )
+        logger.info(
+            "UI will prompt for missing fields: LED model, fiber diameter, polarizer type",
+        )
         self.loaded_from_eeprom = False
         self.created_from_scratch = True  # Flag to trigger UI popup
         return self._create_partial_config_with_known_info()
 
-    def _create_config_from_eeprom(self, eeprom_config: dict) -> Dict[str, Any]:
+    def _create_config_from_eeprom(self, eeprom_config: dict) -> dict[str, Any]:
         """Create full configuration structure from EEPROM data.
 
         Args:
@@ -241,44 +260,82 @@ class DeviceConfiguration:
 
         Returns:
             Full configuration with defaults for missing fields
+
         """
         import copy
+
         config = copy.deepcopy(self.DEFAULT_CONFIG)
 
         # Set timestamps
         now = datetime.now().isoformat()
-        config['device_info']['created_date'] = now
-        config['device_info']['last_modified'] = now
+        config["device_info"]["created_date"] = now
+        config["device_info"]["last_modified"] = now
 
         # Map EEPROM data to config structure
-        config['hardware']['led_pcb_model'] = eeprom_config.get('led_pcb_model', 'luminus_cool_white')
-        config['hardware']['optical_fiber_diameter_um'] = eeprom_config.get('fiber_diameter_um', 200)
-        config['hardware']['polarizer_type'] = eeprom_config.get('polarizer_type', 'round')
-        config['hardware']['servo_s_position'] = eeprom_config.get('servo_s_position', 10)
-        config['hardware']['servo_p_position'] = eeprom_config.get('servo_p_position', 100)
+        config["hardware"]["led_pcb_model"] = eeprom_config.get(
+            "led_pcb_model",
+            "luminus_cool_white",
+        )
+        config["hardware"]["optical_fiber_diameter_um"] = eeprom_config.get(
+            "fiber_diameter_um",
+            200,
+        )
+        config["hardware"]["polarizer_type"] = eeprom_config.get(
+            "polarizer_type",
+            "round",
+        )
+        config["hardware"]["servo_s_position"] = eeprom_config.get(
+            "servo_s_position",
+            10,
+        )
+        config["hardware"]["servo_p_position"] = eeprom_config.get(
+            "servo_p_position",
+            100,
+        )
 
-        config['calibration']['led_intensity_a'] = eeprom_config.get('led_intensity_a', 0)
-        config['calibration']['led_intensity_b'] = eeprom_config.get('led_intensity_b', 0)
-        config['calibration']['led_intensity_c'] = eeprom_config.get('led_intensity_c', 0)
-        config['calibration']['led_intensity_d'] = eeprom_config.get('led_intensity_d', 0)
-        config['calibration']['integration_time_ms'] = eeprom_config.get('integration_time_ms', 100)
-        config['calibration']['num_scans'] = eeprom_config.get('num_scans', 3)
+        config["calibration"]["led_intensity_a"] = eeprom_config.get(
+            "led_intensity_a",
+            0,
+        )
+        config["calibration"]["led_intensity_b"] = eeprom_config.get(
+            "led_intensity_b",
+            0,
+        )
+        config["calibration"]["led_intensity_c"] = eeprom_config.get(
+            "led_intensity_c",
+            0,
+        )
+        config["calibration"]["led_intensity_d"] = eeprom_config.get(
+            "led_intensity_d",
+            0,
+        )
+        config["calibration"]["integration_time_ms"] = eeprom_config.get(
+            "integration_time_ms",
+            100,
+        )
+        config["calibration"]["num_scans"] = eeprom_config.get("num_scans", 3)
 
         # Mark as factory calibrated if LED intensities are non-zero
-        if any([eeprom_config.get(f'led_intensity_{ch}', 0) > 0 for ch in ['a', 'b', 'c', 'd']]):
-            config['calibration']['factory_calibrated'] = True
+        if any(
+            [
+                eeprom_config.get(f"led_intensity_{ch}", 0) > 0
+                for ch in ["a", "b", "c", "d"]
+            ],
+        ):
+            config["calibration"]["factory_calibrated"] = True
 
         return config
 
-    def _create_default_config(self) -> Dict[str, Any]:
+    def _create_default_config(self) -> dict[str, Any]:
         """Create new configuration with default values."""
         import copy
+
         config = copy.deepcopy(self.DEFAULT_CONFIG)
 
         # Set timestamps
         now = datetime.now().isoformat()
-        config['device_info']['created_date'] = now
-        config['device_info']['last_modified'] = now
+        config["device_info"]["created_date"] = now
+        config["device_info"]["last_modified"] = now
 
         # Set next maintenance to November of next year (one year from now)
         current_date = datetime.now()
@@ -292,11 +349,11 @@ class DeviceConfiguration:
             # If we're before November, schedule for this year's November
             next_maintenance_year = current_year
 
-        config['maintenance']['next_maintenance_due'] = f"{next_maintenance_year}-11-01"
+        config["maintenance"]["next_maintenance_due"] = f"{next_maintenance_year}-11-01"
 
         return config
 
-    def _create_partial_config_with_known_info(self) -> Dict[str, Any]:
+    def _create_partial_config_with_known_info(self) -> dict[str, Any]:
         """Create partial configuration with known information.
 
         Populates fields we know from hardware detection:
@@ -312,14 +369,16 @@ class DeviceConfiguration:
 
         Returns:
             Partial configuration with known info
+
         """
         import copy
+
         config = copy.deepcopy(self.DEFAULT_CONFIG)
 
         # Set timestamps
         now = datetime.now().isoformat()
-        config['device_info']['created_date'] = now
-        config['device_info']['last_modified'] = now
+        config["device_info"]["created_date"] = now
+        config["device_info"]["last_modified"] = now
 
         # Set next maintenance to November of next year (one year from now)
         current_date = datetime.now()
@@ -333,50 +392,63 @@ class DeviceConfiguration:
             # If we're before November, schedule for this year's November
             next_maintenance_year = current_year
 
-        config['maintenance']['next_maintenance_due'] = f"{next_maintenance_year}-11-01"
+        config["maintenance"]["next_maintenance_due"] = f"{next_maintenance_year}-11-01"
 
         # Populate known information
         if self.device_serial:
-            config['hardware']['spectrometer_serial'] = self.device_serial
-            config['device_info']['device_id'] = self.device_serial
+            config["hardware"]["spectrometer_serial"] = self.device_serial
+            config["device_info"]["device_id"] = self.device_serial
             logger.info(f"  ✓ Device Serial: {self.device_serial}")
 
         # Try to detect controller type from hardware
         if self.controller is not None:
             try:
-                ctrl_name = getattr(self.controller, 'device_name', '').lower()
-                if 'arduino' in ctrl_name or ctrl_name == 'p4spr':
-                    config['hardware']['controller_type'] = 'Arduino'
-                    config['hardware']['controller_model'] = 'Arduino P4SPR'
-                    config['hardware']['polarizer_type'] = 'round'  # Hardware rule: Arduino always uses round
-                    logger.info(f"  ✓ Controller: Arduino (auto-set polarizer to 'round')")
-                elif 'pico_p4spr' in ctrl_name or 'picop4spr' in ctrl_name:
-                    config['hardware']['controller_type'] = 'PicoP4SPR'
-                    config['hardware']['controller_model'] = 'Raspberry Pi Pico P4SPR'
-                    config['hardware']['polarizer_type'] = 'round'  # Hardware rule: PicoP4SPR always uses round
-                    logger.info(f"  ✓ Controller: PicoP4SPR (auto-set polarizer to 'round')")
-                elif 'pico_ezspr' in ctrl_name or 'picoezspr' in ctrl_name:
-                    config['hardware']['controller_type'] = 'PicoEZSPR'
-                    config['hardware']['controller_model'] = 'Raspberry Pi Pico EZSPR'
-                    config['hardware']['polarizer_type'] = 'barrel'  # Hardware rule: PicoEZSPR typically uses barrel
-                    logger.info(f"  ✓ Controller: PicoEZSPR (auto-set polarizer to 'barrel')")
+                ctrl_name = getattr(self.controller, "device_name", "").lower()
+                if "arduino" in ctrl_name or ctrl_name == "p4spr":
+                    config["hardware"]["controller_type"] = "Arduino"
+                    config["hardware"]["controller_model"] = "Arduino P4SPR"
+                    config["hardware"]["polarizer_type"] = (
+                        "round"  # Hardware rule: Arduino always uses round
+                    )
+                    logger.info(
+                        "  ✓ Controller: Arduino (auto-set polarizer to 'round')",
+                    )
+                elif "pico_p4spr" in ctrl_name or "picop4spr" in ctrl_name:
+                    config["hardware"]["controller_type"] = "PicoP4SPR"
+                    config["hardware"]["controller_model"] = "Raspberry Pi Pico P4SPR"
+                    config["hardware"]["polarizer_type"] = (
+                        "round"  # Hardware rule: PicoP4SPR always uses round
+                    )
+                    logger.info(
+                        "  ✓ Controller: PicoP4SPR (auto-set polarizer to 'round')",
+                    )
+                elif "pico_ezspr" in ctrl_name or "picoezspr" in ctrl_name:
+                    config["hardware"]["controller_type"] = "PicoEZSPR"
+                    config["hardware"]["controller_model"] = "Raspberry Pi Pico EZSPR"
+                    config["hardware"]["polarizer_type"] = (
+                        "barrel"  # Hardware rule: PicoEZSPR typically uses barrel
+                    )
+                    logger.info(
+                        "  ✓ Controller: PicoEZSPR (auto-set polarizer to 'barrel')",
+                    )
             except Exception as e:
                 logger.debug(f"Could not auto-detect controller type: {e}")
 
         logger.info("  ⚠️ User input required: LED model, fiber diameter")
         return config
 
-    def _merge_with_defaults(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Merge loaded config with defaults to handle new fields.
+    def _merge_with_defaults(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Merge loaded config with defaults to handle new fields.
 
         Args:
             config: Loaded configuration
 
         Returns:
             Merged configuration
+
         """
         import copy
+
         merged = copy.deepcopy(self.DEFAULT_CONFIG)
 
         # Deep merge - preserve ALL sections from loaded config, not just defaults
@@ -397,16 +469,17 @@ class DeviceConfiguration:
 
         Args:
             auto_sync_eeprom: If True and controller is available, automatically sync to EEPROM
+
         """
         try:
             # Update last modified timestamp
-            self.config['device_info']['last_modified'] = datetime.now().isoformat()
+            self.config["device_info"]["last_modified"] = datetime.now().isoformat()
 
             # Ensure directory exists
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save with nice formatting
-            with open(self.config_path, 'w') as f:
+            with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=2)
 
             logger.info(f"Configuration saved to {self.config_path}")
@@ -424,59 +497,62 @@ class DeviceConfiguration:
             logger.error(f"Failed to save configuration: {e}")
             raise
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Return configuration as dictionary.
+    def to_dict(self) -> dict[str, Any]:
+        """Return configuration as dictionary.
 
         Returns:
             Configuration dictionary
+
         """
         return self.config.copy()
 
-    def validate(self) -> tuple[bool, List[str]]:
-        """
-        Validate configuration for consistency and valid values.
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate configuration for consistency and valid values.
 
         Returns:
             Tuple of (is_valid, list_of_errors)
+
         """
         errors = []
 
         # Validate LED PCB model
-        led_model = self.config['hardware']['led_pcb_model']
+        led_model = self.config["hardware"]["led_pcb_model"]
         if led_model not in self.VALID_LED_PCB_MODELS:
             errors.append(
                 f"Invalid LED PCB model '{led_model}'. "
-                f"Valid options: {self.VALID_LED_PCB_MODELS}"
+                f"Valid options: {self.VALID_LED_PCB_MODELS}",
             )
 
         # Validate optical fiber diameter
-        fiber_diameter = self.config['hardware']['optical_fiber_diameter_um']
+        fiber_diameter = self.config["hardware"]["optical_fiber_diameter_um"]
         if fiber_diameter not in self.VALID_FIBER_DIAMETERS:
             errors.append(
                 f"Invalid optical fiber diameter {fiber_diameter} µm. "
-                f"Valid options: {self.VALID_FIBER_DIAMETERS} µm"
+                f"Valid options: {self.VALID_FIBER_DIAMETERS} µm",
             )
 
         # Validate polarizer type
-        polarizer_type = self.config['hardware'].get('polarizer_type', 'barrel')  # Default for backward compatibility
+        polarizer_type = self.config["hardware"].get(
+            "polarizer_type",
+            "barrel",
+        )  # Default for backward compatibility
         if polarizer_type not in self.VALID_POLARIZER_TYPES:
             errors.append(
                 f"Invalid polarizer type '{polarizer_type}'. "
-                f"Valid options: {self.VALID_POLARIZER_TYPES}"
+                f"Valid options: {self.VALID_POLARIZER_TYPES}",
             )
 
         # Validate timing parameters
-        min_integration = self.config['timing_parameters']['min_integration_time_ms']
+        min_integration = self.config["timing_parameters"]["min_integration_time_ms"]
         if min_integration < 1 or min_integration > 1000:
             errors.append(
                 f"Invalid min_integration_time_ms: {min_integration}. "
-                f"Must be between 1-1000 ms"
+                f"Must be between 1-1000 ms",
             )
 
         # Validate frequency limits
-        freq_4led = self.config['frequency_limits']['4_led_max_hz']
-        freq_2led = self.config['frequency_limits']['2_led_max_hz']
+        freq_4led = self.config["frequency_limits"]["4_led_max_hz"]
+        freq_2led = self.config["frequency_limits"]["2_led_max_hz"]
 
         if freq_4led <= 0 or freq_4led > 10:
             errors.append(f"Invalid 4-LED max frequency: {freq_4led} Hz")
@@ -488,7 +564,7 @@ class DeviceConfiguration:
         if freq_2led <= freq_4led:
             errors.append(
                 f"2-LED max frequency ({freq_2led} Hz) should be higher than "
-                f"4-LED max frequency ({freq_4led} Hz)"
+                f"4-LED max frequency ({freq_4led} Hz)",
             )
 
         is_valid = len(errors) == 0
@@ -496,21 +572,27 @@ class DeviceConfiguration:
 
     def _log_config_summary(self):
         """Log summary of current configuration."""
-        hw = self.config['hardware']
+        hw = self.config["hardware"]
         logger.info("=" * 60)
         logger.info("DEVICE CONFIGURATION SUMMARY")
         logger.info("=" * 60)
         logger.info(f"  LED PCB Model: {hw['led_pcb_model']}")
         logger.info(f"  Optical Fiber: {hw['optical_fiber_diameter_um']} µm")
-        logger.info(f"  Polarizer Type: {hw.get('polarizer_type', 'barrel')} ({'2 fixed windows' if hw.get('polarizer_type', 'barrel') == 'barrel' else 'continuous rotation'})")
-        logger.info(f"  Spectrometer: {hw['spectrometer_model']} (S/N: {hw['spectrometer_serial'] or 'N/A'})")
+        logger.info(
+            f"  Polarizer Type: {hw.get('polarizer_type', 'barrel')} ({'2 fixed windows' if hw.get('polarizer_type', 'barrel') == 'barrel' else 'continuous rotation'})",
+        )
+        logger.info(
+            f"  Spectrometer: {hw['spectrometer_model']} (S/N: {hw['spectrometer_serial'] or 'N/A'})",
+        )
         logger.info(f"  Controller: {hw['controller_model']}")
 
-        cal = self.config['calibration']
-        logger.info(f"  Factory Calibrated: {'Yes' if cal['factory_calibrated'] else 'No'}")
+        cal = self.config["calibration"]
+        logger.info(
+            f"  Factory Calibrated: {'Yes' if cal['factory_calibrated'] else 'No'}",
+        )
         logger.info(f"  User Calibrated: {'Yes' if cal['user_calibrated'] else 'No'}")
 
-        if cal['dark_calibration_date']:
+        if cal["dark_calibration_date"]:
             logger.info(f"  Last Dark Calibration: {cal['dark_calibration_date']}")
 
         logger.info("=" * 60)
@@ -521,113 +603,124 @@ class DeviceConfiguration:
 
     def get_led_pcb_model(self) -> str:
         """Get LED PCB model."""
-        return self.config['hardware']['led_pcb_model']
+        return self.config["hardware"]["led_pcb_model"]
 
     def set_led_pcb_model(self, model: str):
-        """
-        Set LED PCB model.
+        """Set LED PCB model.
 
         Args:
             model: 'luminus_cool_white' or 'osram_warm_white'
+
         """
         if model not in self.VALID_LED_PCB_MODELS:
             raise ValueError(
                 f"Invalid LED PCB model '{model}'. "
-                f"Valid options: {self.VALID_LED_PCB_MODELS}"
+                f"Valid options: {self.VALID_LED_PCB_MODELS}",
             )
-        self.config['hardware']['led_pcb_model'] = model
+        self.config["hardware"]["led_pcb_model"] = model
         logger.info(f"LED PCB model set to: {model}")
 
     def get_optical_fiber_diameter(self) -> int:
         """Get optical fiber diameter in micrometers."""
-        return self.config['hardware']['optical_fiber_diameter_um']
+        return self.config["hardware"]["optical_fiber_diameter_um"]
 
     def set_optical_fiber_diameter(self, diameter_um: int):
-        """
-        Set optical fiber diameter.
+        """Set optical fiber diameter.
 
         Args:
             diameter_um: Fiber diameter in micrometers (100 or 200)
+
         """
         if diameter_um not in self.VALID_FIBER_DIAMETERS:
             raise ValueError(
                 f"Invalid fiber diameter {diameter_um} µm. "
-                f"Valid options: {self.VALID_FIBER_DIAMETERS} µm"
+                f"Valid options: {self.VALID_FIBER_DIAMETERS} µm",
             )
-        self.config['hardware']['optical_fiber_diameter_um'] = diameter_um
+        self.config["hardware"]["optical_fiber_diameter_um"] = diameter_um
         logger.info(f"Optical fiber diameter set to: {diameter_um} µm")
 
     def get_polarizer_type(self) -> str:
         """Get polarizer type ('barrel' or 'round')."""
-        return self.config['hardware'].get('polarizer_type', 'barrel')  # Default to barrel for backward compatibility
+        return self.config["hardware"].get(
+            "polarizer_type",
+            "barrel",
+        )  # Default to barrel for backward compatibility
 
     def set_polarizer_type(self, polarizer_type: str):
-        """
-        Set polarizer type.
+        """Set polarizer type.
 
         Args:
             polarizer_type: 'barrel' (2 fixed perpendicular windows) or 'round' (continuous rotation)
+
         """
         if polarizer_type not in self.VALID_POLARIZER_TYPES:
             raise ValueError(
                 f"Invalid polarizer type '{polarizer_type}'. "
-                f"Valid options: {self.VALID_POLARIZER_TYPES}"
+                f"Valid options: {self.VALID_POLARIZER_TYPES}",
             )
-        self.config['hardware']['polarizer_type'] = polarizer_type
+        self.config["hardware"]["polarizer_type"] = polarizer_type
         logger.info(f"Polarizer type set to: {polarizer_type}")
 
-    def get_spectrometer_serial(self) -> Optional[str]:
+    def get_spectrometer_serial(self) -> str | None:
         """Get spectrometer serial number."""
-        return self.config['hardware']['spectrometer_serial']
+        return self.config["hardware"]["spectrometer_serial"]
 
     def set_spectrometer_serial(self, serial: str):
         """Set spectrometer serial number."""
-        self.config['hardware']['spectrometer_serial'] = serial
+        self.config["hardware"]["spectrometer_serial"] = serial
         logger.info(f"Spectrometer serial set to: {serial}")
 
     def get_min_integration_time(self) -> float:
         """Get minimum integration time in milliseconds."""
-        return self.config['timing_parameters']['min_integration_time_ms']
+        return self.config["timing_parameters"]["min_integration_time_ms"]
 
     def set_min_integration_time(self, time_ms: float):
         """Set minimum integration time in milliseconds."""
         if time_ms < 1 or time_ms > 1000:
             raise ValueError("Integration time must be between 1-1000 ms")
-        self.config['timing_parameters']['min_integration_time_ms'] = time_ms
+        self.config["timing_parameters"]["min_integration_time_ms"] = time_ms
         logger.info(f"Min integration time set to: {time_ms} ms")
 
-    def get_led_delays(self) -> Dict[str, float]:
+    def get_led_delays(self) -> dict[str, float]:
         """Get LED delay times for all channels."""
-        tp = self.config['timing_parameters']
+        tp = self.config["timing_parameters"]
         return {
-            'a': tp['led_a_delay_ms'],
-            'b': tp['led_b_delay_ms'],
-            'c': tp['led_c_delay_ms'],
-            'd': tp['led_d_delay_ms'],
+            "a": tp["led_a_delay_ms"],
+            "b": tp["led_b_delay_ms"],
+            "c": tp["led_c_delay_ms"],
+            "d": tp["led_d_delay_ms"],
         }
 
-    def set_led_delays(self, delays: Dict[str, float]):
-        """
-        Set LED delay times.
+    def set_led_delays(self, delays: dict[str, float]):
+        """Set LED delay times.
 
         Args:
             delays: Dict with keys 'a', 'b', 'c', 'd' and delay values in ms
+
         """
-        tp = self.config['timing_parameters']
+        tp = self.config["timing_parameters"]
         for channel, delay in delays.items():
-            if channel in ['a', 'b', 'c', 'd']:
-                tp[f'led_{channel}_delay_ms'] = delay
+            if channel in ["a", "b", "c", "d"]:
+                tp[f"led_{channel}_delay_ms"] = delay
         logger.info(f"LED delays updated: {delays}")
 
     def get_pre_led_delay_ms(self) -> float:
         """Get PRE LED delay (stabilization time before acquisition)."""
         from settings import PRE_LED_DELAY_MS
-        return self.config['timing_parameters'].get('pre_led_delay_ms', PRE_LED_DELAY_MS)
+
+        return self.config["timing_parameters"].get(
+            "pre_led_delay_ms",
+            PRE_LED_DELAY_MS,
+        )
 
     def get_post_led_delay_ms(self) -> float:
         """Get POST LED delay (afterglow decay time after acquisition)."""
         from settings import POST_LED_DELAY_MS
-        return self.config['timing_parameters'].get('post_led_delay_ms', POST_LED_DELAY_MS)
+
+        return self.config["timing_parameters"].get(
+            "post_led_delay_ms",
+            POST_LED_DELAY_MS,
+        )
 
     def set_pre_post_led_delays(self, pre_ms: float, post_ms: float):
         """Set PRE/POST LED delays and save to config.
@@ -635,105 +728,107 @@ class DeviceConfiguration:
         Args:
             pre_ms: PRE LED delay in milliseconds (LED stabilization time)
             post_ms: POST LED delay in milliseconds (afterglow decay time)
+
         """
-        self.config['timing_parameters']['pre_led_delay_ms'] = pre_ms
-        self.config['timing_parameters']['post_led_delay_ms'] = post_ms
+        self.config["timing_parameters"]["pre_led_delay_ms"] = pre_ms
+        self.config["timing_parameters"]["post_led_delay_ms"] = post_ms
         self.save()
         logger.info(f"LED timing delays saved: PRE={pre_ms}ms, POST={post_ms}ms")
 
-    def get_frequency_limits(self, num_leds: int) -> Dict[str, float]:
-        """
-        Get frequency limits for specified LED mode.
+    def get_frequency_limits(self, num_leds: int) -> dict[str, float]:
+        """Get frequency limits for specified LED mode.
 
         Args:
             num_leds: Number of LEDs (2 or 4)
 
         Returns:
             Dict with 'max_hz' and 'recommended_hz'
+
         """
         if num_leds not in self.VALID_LED_MODES:
             raise ValueError(f"Invalid LED mode: {num_leds}. Must be 2 or 4.")
 
-        freq = self.config['frequency_limits']
+        freq = self.config["frequency_limits"]
         return {
-            'max_hz': freq[f'{num_leds}_led_max_hz'],
-            'recommended_hz': freq[f'{num_leds}_led_recommended_hz'],
+            "max_hz": freq[f"{num_leds}_led_max_hz"],
+            "recommended_hz": freq[f"{num_leds}_led_recommended_hz"],
         }
 
     def get_calibration_mode(self) -> str:
-        """
-        Get preferred calibration mode.
+        """Get preferred calibration mode.
 
         Returns:
             'global' (traditional LED calibration with global integration time)
             or 'per_channel' (fixed LED=255, per-channel integration times)
+
         """
-        return self.config['calibration'].get('preferred_calibration_mode', 'global')
+        return self.config["calibration"].get("preferred_calibration_mode", "global")
 
     def set_calibration_mode(self, mode: str):
-        """
-        Set preferred calibration mode.
+        """Set preferred calibration mode.
 
         Args:
             mode: 'global' or 'per_channel'
 
         Raises:
             ValueError: If mode is not valid
-        """
-        if mode not in ['global', 'per_channel']:
-            raise ValueError(f"Invalid calibration mode: {mode}. Must be 'global' or 'per_channel'")
 
-        self.config['calibration']['preferred_calibration_mode'] = mode
+        """
+        if mode not in ["global", "per_channel"]:
+            raise ValueError(
+                f"Invalid calibration mode: {mode}. Must be 'global' or 'per_channel'",
+            )
+
+        self.config["calibration"]["preferred_calibration_mode"] = mode
         self.save()
         logger.info(f"Calibration mode set to: {mode}")
 
     def is_factory_calibrated(self) -> bool:
         """Check if device has factory calibration."""
-        return self.config['calibration']['factory_calibrated']
+        return self.config["calibration"]["factory_calibrated"]
 
     def is_user_calibrated(self) -> bool:
         """Check if device has user calibration."""
-        return self.config['calibration']['user_calibrated']
+        return self.config["calibration"]["user_calibrated"]
 
     def mark_calibrated(self, calibration_type: str):
-        """
-        Mark device as calibrated.
+        """Mark device as calibrated.
 
         Args:
             calibration_type: 'factory', 'dark', 's_mode', or 'p_mode'
+
         """
         now = datetime.now().isoformat()
-        cal = self.config['calibration']
+        cal = self.config["calibration"]
 
-        if calibration_type == 'factory':
-            cal['factory_calibrated'] = True
-        elif calibration_type == 'dark':
-            cal['dark_calibration_date'] = now
-        elif calibration_type == 's_mode':
-            cal['s_mode_calibration_date'] = now
-            cal['user_calibrated'] = True
-        elif calibration_type == 'p_mode':
-            cal['p_mode_calibration_date'] = now
-            cal['user_calibrated'] = True
+        if calibration_type == "factory":
+            cal["factory_calibrated"] = True
+        elif calibration_type == "dark":
+            cal["dark_calibration_date"] = now
+        elif calibration_type == "s_mode":
+            cal["s_mode_calibration_date"] = now
+            cal["user_calibrated"] = True
+        elif calibration_type == "p_mode":
+            cal["p_mode_calibration_date"] = now
+            cal["user_calibrated"] = True
         else:
             raise ValueError(f"Invalid calibration type: {calibration_type}")
 
-    def get_servo_positions(self) -> Dict[str, int]:
-        """
-        Get polarizer servo positions for S and P modes.
+    def get_servo_positions(self) -> dict[str, int]:
+        """Get polarizer servo positions for S and P modes.
 
         Returns:
             Dict with keys 's' and 'p' containing servo positions (0-180)
+
         """
-        hw = self.config['hardware']
+        hw = self.config["hardware"]
         return {
-            's': hw['servo_s_position'],
-            'p': hw['servo_p_position'],
+            "s": hw["servo_s_position"],
+            "p": hw["servo_p_position"],
         }
 
     def set_servo_positions(self, s_pos: int, p_pos: int):
-        """
-        Set polarizer servo positions for S and P modes.
+        """Set polarizer servo positions for S and P modes.
 
         Args:
             s_pos: Servo position for S-mode (0-180)
@@ -741,21 +836,21 @@ class DeviceConfiguration:
 
         Raises:
             ValueError: If positions are out of valid range
+
         """
         if not (0 <= s_pos <= 180):
             raise ValueError(f"S position {s_pos} out of range (0-180)")
         if not (0 <= p_pos <= 180):
             raise ValueError(f"P position {p_pos} out of range (0-180)")
 
-        hw = self.config['hardware']
-        hw['servo_s_position'] = s_pos
-        hw['servo_p_position'] = p_pos
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+        hw = self.config["hardware"]
+        hw["servo_s_position"] = s_pos
+        hw["servo_p_position"] = p_pos
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
         logger.info(f"Servo positions updated: S={s_pos}, P={p_pos}")
 
     def set_extinction_ratio(self, extinction_ratio: float):
-        """
-        Set polarizer extinction ratio from calibration.
+        """Set polarizer extinction ratio from calibration.
 
         The extinction ratio is (S-P)/S expressed as percentage, measured in the best
         ROI bucket during servo calibration. This is a sensor-specific reference value
@@ -763,66 +858,72 @@ class DeviceConfiguration:
 
         Args:
             extinction_ratio: Extinction ratio as percentage (0-100)
+
         """
         if not (0.0 <= extinction_ratio <= 100.0):
-            logger.warning(f"Extinction ratio {extinction_ratio:.2f}% outside expected range (0-100%)")
+            logger.warning(
+                f"Extinction ratio {extinction_ratio:.2f}% outside expected range (0-100%)",
+            )
 
-        cal = self.config['calibration']
-        cal['polarizer_extinction_ratio_percent'] = round(extinction_ratio, 2)
-        cal['polarizer_calibration_date'] = datetime.now().isoformat()
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+        cal = self.config["calibration"]
+        cal["polarizer_extinction_ratio_percent"] = round(extinction_ratio, 2)
+        cal["polarizer_calibration_date"] = datetime.now().isoformat()
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
         logger.info(f"Polarizer extinction ratio updated: {extinction_ratio:.2f}%")
 
-    def get_extinction_ratio(self) -> Optional[float]:
-        """
-        Get polarizer extinction ratio from last calibration.
+    def get_extinction_ratio(self) -> float | None:
+        """Get polarizer extinction ratio from last calibration.
 
         Returns:
             Extinction ratio as percentage, or None if not calibrated
+
         """
-        return self.config.get('calibration', {}).get('polarizer_extinction_ratio_percent')
+        return self.config.get("calibration", {}).get(
+            "polarizer_extinction_ratio_percent",
+        )
 
     def swap_servo_positions(self) -> tuple[int, int, str]:
-        """
-        Swap S and P polarizer servo positions.
+        """Swap S and P polarizer servo positions.
 
         Used for auto-correction when polarizer orientation is detected as inverted
         (e.g., when 3+ channels show inverted SPR dips).
 
         Returns:
             Tuple of (new_s_pos, new_p_pos, polarizer_type) after swap
+
         """
-        hw = self.config['hardware']
-        s_pos = hw.get('servo_s_position', 10)
-        p_pos = hw.get('servo_p_position', 100)
-        polarizer_type = hw.get('polarizer_type', 'barrel')
+        hw = self.config["hardware"]
+        s_pos = hw.get("servo_s_position", 10)
+        p_pos = hw.get("servo_p_position", 100)
+        polarizer_type = hw.get("polarizer_type", "barrel")
 
         # Swap positions
-        hw['servo_s_position'] = p_pos
-        hw['servo_p_position'] = s_pos
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+        hw["servo_s_position"] = p_pos
+        hw["servo_p_position"] = s_pos
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
 
-        logger.info(f"Servo positions swapped: S={s_pos}→{p_pos}, P={p_pos}→{s_pos} (polarizer_type={polarizer_type})")
+        logger.info(
+            f"Servo positions swapped: S={s_pos}→{p_pos}, P={p_pos}→{s_pos} (polarizer_type={polarizer_type})",
+        )
         return p_pos, s_pos, polarizer_type
 
-    def get_led_intensities(self) -> Dict[str, int]:
-        """
-        Get calibrated LED intensities for all channels.
+    def get_led_intensities(self) -> dict[str, int]:
+        """Get calibrated LED intensities for all channels.
 
         Returns:
             Dict with keys 'a', 'b', 'c', 'd' containing LED intensities (0-255)
+
         """
-        cal = self.config['calibration']
+        cal = self.config["calibration"]
         return {
-            'a': cal['led_intensity_a'],
-            'b': cal['led_intensity_b'],
-            'c': cal['led_intensity_c'],
-            'd': cal['led_intensity_d'],
+            "a": cal["led_intensity_a"],
+            "b": cal["led_intensity_b"],
+            "c": cal["led_intensity_c"],
+            "d": cal["led_intensity_d"],
         }
 
     def set_led_intensities(self, led_a: int, led_b: int, led_c: int, led_d: int):
-        """
-        Set calibrated LED intensities for all channels.
+        """Set calibrated LED intensities for all channels.
 
         Args:
             led_a: LED A intensity (0-255)
@@ -832,48 +933,54 @@ class DeviceConfiguration:
 
         Raises:
             ValueError: If intensities are out of valid range
+
         """
-        for name, val in [('A', led_a), ('B', led_b), ('C', led_c), ('D', led_d)]:
+        for name, val in [("A", led_a), ("B", led_b), ("C", led_c), ("D", led_d)]:
             if not (0 <= val <= 255):
                 raise ValueError(f"LED {name} intensity {val} out of range (0-255)")
 
-        cal = self.config['calibration']
-        cal['led_intensity_a'] = led_a
-        cal['led_intensity_b'] = led_b
-        cal['led_intensity_c'] = led_c
-        cal['led_intensity_d'] = led_d
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
-        logger.info(f"LED intensities updated: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
+        cal = self.config["calibration"]
+        cal["led_intensity_a"] = led_a
+        cal["led_intensity_b"] = led_b
+        cal["led_intensity_c"] = led_c
+        cal["led_intensity_d"] = led_d
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
+        logger.info(
+            f"LED intensities updated: A={led_a}, B={led_b}, C={led_c}, D={led_d}",
+        )
 
-    def get_calibration_settings(self) -> Dict[str, Optional[int]]:
-        """
-        Get calibration settings (integration time and number of scans).
+    def get_calibration_settings(self) -> dict[str, int | None]:
+        """Get calibration settings (integration time and number of scans).
 
         Returns:
             Dict with keys 'integration_time_ms' and 'num_scans'
+
         """
-        cal = self.config['calibration']
+        cal = self.config["calibration"]
         return {
-            'integration_time_ms': cal['integration_time_ms'],
-            'num_scans': cal['num_scans'],
+            "integration_time_ms": cal["integration_time_ms"],
+            "num_scans": cal["num_scans"],
         }
 
-    def set_calibration_settings(self, integration_time_ms: Optional[int], num_scans: Optional[int]):
-        """
-        Set calibration settings (integration time and number of scans).
+    def set_calibration_settings(
+        self,
+        integration_time_ms: int | None,
+        num_scans: int | None,
+    ):
+        """Set calibration settings (integration time and number of scans).
 
         Args:
             integration_time_ms: Integration time in milliseconds
             num_scans: Number of scans to average
-        """
-        cal = self.config['calibration']
-        cal['integration_time_ms'] = integration_time_ms
-        cal['num_scans'] = num_scans
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
 
-    def save_sp_validation(self, sp_results: Dict[str, Dict]):
         """
-        Save S/P orientation validation results to device config.
+        cal = self.config["calibration"]
+        cal["integration_time_ms"] = integration_time_ms
+        cal["num_scans"] = num_scans
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
+
+    def save_sp_validation(self, sp_results: dict[str, dict]):
+        """Save S/P orientation validation results to device config.
 
         Args:
             sp_results: Dict with channel keys, each containing:
@@ -883,49 +990,52 @@ class DeviceConfiguration:
                 - peak_value: float
                 - timestamp: str (ISO format)
                 - is_flat: bool
+
         """
-        cal = self.config['calibration']
+        cal = self.config["calibration"]
 
         # Add sp_orientation section if not exists
-        if 'sp_orientation' not in cal:
-            cal['sp_orientation'] = {}
+        if "sp_orientation" not in cal:
+            cal["sp_orientation"] = {}
 
         # Store validation results
-        cal['sp_orientation']['validated'] = True
-        cal['sp_orientation']['validation_date'] = datetime.now().isoformat()
-        cal['sp_orientation']['channels'] = {}
+        cal["sp_orientation"]["validated"] = True
+        cal["sp_orientation"]["validation_date"] = datetime.now().isoformat()
+        cal["sp_orientation"]["channels"] = {}
 
         for ch, result in sp_results.items():
-            cal['sp_orientation']['channels'][ch] = {
-                'orientation_correct': result.get('orientation_correct'),
-                'confidence': result.get('confidence'),
-                'peak_wavelength_nm': result.get('peak_wl'),
-                'peak_transmission_percent': result.get('peak_value'),
-                'is_flat': result.get('is_flat', False)
+            cal["sp_orientation"]["channels"][ch] = {
+                "orientation_correct": result.get("orientation_correct"),
+                "confidence": result.get("confidence"),
+                "peak_wavelength_nm": result.get("peak_wl"),
+                "peak_transmission_percent": result.get("peak_value"),
+                "is_flat": result.get("is_flat", False),
             }
 
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
         logger.info(f"S/P orientation validation saved for {len(sp_results)} channels")
-        self.config['device_info']['last_modified'] = datetime.now().isoformat()
-        logger.info(f"Calibration settings updated: Integration={integration_time_ms}ms, Scans={num_scans}")
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
+        logger.info(
+            f"Calibration settings updated: Integration={integration_time_ms}ms, Scans={num_scans}",
+        )
 
     def increment_measurement_cycles(self, count: int = 1):
         """Increment total measurement cycle counter."""
-        self.config['maintenance']['total_measurement_cycles'] += count
+        self.config["maintenance"]["total_measurement_cycles"] += count
 
     def add_led_on_time(self, hours: float):
         """Add to LED on-time counter."""
-        self.config['maintenance']['led_on_hours'] += hours
+        self.config["maintenance"]["led_on_hours"] += hours
 
     def export_config(self, export_path: str):
-        """
-        Export configuration to specified path (for backup).
+        """Export configuration to specified path (for backup).
 
         Args:
             export_path: Path to save exported configuration
+
         """
         try:
-            with open(export_path, 'w') as f:
+            with open(export_path, "w") as f:
                 json.dump(self.config, f, indent=2)
             logger.info(f"Configuration exported to: {export_path}")
         except Exception as e:
@@ -933,14 +1043,14 @@ class DeviceConfiguration:
             raise
 
     def import_config(self, import_path: str):
-        """
-        Import configuration from specified path.
+        """Import configuration from specified path.
 
         Args:
             import_path: Path to configuration file to import
+
         """
         try:
-            with open(import_path, 'r') as f:
+            with open(import_path) as f:
                 imported_config = json.load(f)
 
             # Validate imported config
@@ -961,8 +1071,7 @@ class DeviceConfiguration:
             raise
 
     def sync_to_eeprom(self, controller) -> bool:
-        """
-        Synchronize current configuration to controller EEPROM.
+        """Synchronize current configuration to controller EEPROM.
 
         This creates a portable backup of device settings that travels with the hardware.
         Called automatically on major config changes or manually via UI.
@@ -972,6 +1081,7 @@ class DeviceConfiguration:
 
         Returns:
             True if successful, False otherwise
+
         """
         if controller is None:
             logger.warning("Cannot sync to EEPROM: No controller connected")
@@ -979,22 +1089,22 @@ class DeviceConfiguration:
 
         try:
             # Extract config data for EEPROM
-            hw = self.config['hardware']
-            cal = self.config['calibration']
+            hw = self.config["hardware"]
+            cal = self.config["calibration"]
 
             eeprom_config = {
-                'led_pcb_model': hw.get('led_pcb_model', 'luminus_cool_white'),
-                'controller_type': self._get_controller_type_name(controller),
-                'fiber_diameter_um': hw.get('optical_fiber_diameter_um', 200),
-                'polarizer_type': hw.get('polarizer_type', 'round'),
-                'servo_s_position': hw.get('servo_s_position', 10),
-                'servo_p_position': hw.get('servo_p_position', 100),
-                'led_intensity_a': cal.get('led_intensity_a', 0),
-                'led_intensity_b': cal.get('led_intensity_b', 0),
-                'led_intensity_c': cal.get('led_intensity_c', 0),
-                'led_intensity_d': cal.get('led_intensity_d', 0),
-                'integration_time_ms': cal.get('integration_time_ms', 100),
-                'num_scans': cal.get('num_scans', 3)
+                "led_pcb_model": hw.get("led_pcb_model", "luminus_cool_white"),
+                "controller_type": self._get_controller_type_name(controller),
+                "fiber_diameter_um": hw.get("optical_fiber_diameter_um", 200),
+                "polarizer_type": hw.get("polarizer_type", "round"),
+                "servo_s_position": hw.get("servo_s_position", 10),
+                "servo_p_position": hw.get("servo_p_position", 100),
+                "led_intensity_a": cal.get("led_intensity_a", 0),
+                "led_intensity_b": cal.get("led_intensity_b", 0),
+                "led_intensity_c": cal.get("led_intensity_c", 0),
+                "led_intensity_d": cal.get("led_intensity_d", 0),
+                "integration_time_ms": cal.get("integration_time_ms", 100),
+                "num_scans": cal.get("num_scans", 3),
             }
 
             success = controller.write_config_to_eeprom(eeprom_config)
@@ -1013,14 +1123,13 @@ class DeviceConfiguration:
     def _get_controller_type_name(self, controller) -> str:
         """Determine controller type from controller instance."""
         controller_str = str(controller).lower()
-        if 'arduino' in controller_str:
-            return 'arduino'
-        elif 'pico mini' in controller_str or 'picop4spr' in controller_str:
-            return 'pico_p4spr'
-        elif 'pico ez' in controller_str or 'picoezspr' in controller_str:
-            return 'pico_ezspr'
-        else:
-            return 'arduino'  # default fallback
+        if "arduino" in controller_str:
+            return "arduino"
+        if "pico mini" in controller_str or "picop4spr" in controller_str:
+            return "pico_p4spr"
+        if "pico ez" in controller_str or "picoezspr" in controller_str:
+            return "pico_ezspr"
+        return "arduino"  # default fallback
 
     def reset_to_defaults(self):
         """Reset configuration to factory defaults."""
@@ -1053,23 +1162,25 @@ class DeviceConfiguration:
                 return
 
             # Ensure container exists
-            if 'led_calibration' not in self.config:
-                self.config['led_calibration'] = {}
+            if "led_calibration" not in self.config:
+                self.config["led_calibration"] = {}
 
             dark_min = float(np.min(dark_spectrum))
             dark_max = float(np.max(dark_spectrum))
             now = datetime.now().isoformat()
 
             # Persist snapshot and stats
-            self.config['led_calibration']['pre_qc_dark_snapshot'] = dark_spectrum.tolist()
-            self.config['led_calibration']['pre_qc_dark_date'] = now
-            self.config['led_calibration']['pre_qc_dark_min'] = dark_min
-            self.config['led_calibration']['pre_qc_dark_max'] = dark_max
+            self.config["led_calibration"]["pre_qc_dark_snapshot"] = (
+                dark_spectrum.tolist()
+            )
+            self.config["led_calibration"]["pre_qc_dark_date"] = now
+            self.config["led_calibration"]["pre_qc_dark_min"] = dark_min
+            self.config["led_calibration"]["pre_qc_dark_max"] = dark_max
 
             # Update top-level calibration date for dark
-            if 'calibration' not in self.config:
-                self.config['calibration'] = {}
-            self.config['calibration']['dark_calibration_date'] = now
+            if "calibration" not in self.config:
+                self.config["calibration"] = {}
+            self.config["calibration"]["dark_calibration_date"] = now
 
             # Persist to disk
             self.save()
@@ -1078,11 +1189,11 @@ class DeviceConfiguration:
             if dark_min < 0:
                 logger.error(
                     f"⚠️ Dark snapshot contains negative values (min={dark_min:.2f}). "
-                    f"This indicates possible offset or subtraction error."
+                    f"This indicates possible offset or subtraction error.",
                 )
             logger.info(
                 f"💾 Pre-QC dark snapshot saved: len={len(dark_spectrum)}, "
-                f"min={dark_min:.1f}, max={dark_max:.1f}"
+                f"min={dark_min:.1f}, max={dark_max:.1f}",
             )
 
         except Exception as e:
@@ -1091,22 +1202,21 @@ class DeviceConfiguration:
 
     def save_led_calibration(
         self,
-        calibration_data: Optional[Dict[str, Any]] = None,
-        integration_time_ms: Optional[int] = None,
-        s_mode_intensities: Optional[Dict[str, int]] = None,
-        p_mode_intensities: Optional[Dict[str, int]] = None,
-        s_ref_spectra: Optional[Dict[str, np.ndarray]] = None,
-        p_ref_spectra: Optional[Dict[str, np.ndarray]] = None,
-        s_ref_wavelengths: Optional[np.ndarray] = None,
-        live_boost_integration_ms: Optional[int] = None,
-        live_boost_led_intensities: Optional[Dict[str, int]] = None,
-        live_boost_factor: Optional[float] = None,
-        calibration_method: str = 'standard',
-        per_channel_integration_times: Optional[Dict[str, int]] = None,
-        weakest_channel: Optional[str] = None
+        calibration_data: dict[str, Any] | None = None,
+        integration_time_ms: int | None = None,
+        s_mode_intensities: dict[str, int] | None = None,
+        p_mode_intensities: dict[str, int] | None = None,
+        s_ref_spectra: dict[str, np.ndarray] | None = None,
+        p_ref_spectra: dict[str, np.ndarray] | None = None,
+        s_ref_wavelengths: np.ndarray | None = None,
+        live_boost_integration_ms: int | None = None,
+        live_boost_led_intensities: dict[str, int] | None = None,
+        live_boost_factor: float | None = None,
+        calibration_method: str = "standard",
+        per_channel_integration_times: dict[str, int] | None = None,
+        weakest_channel: str | None = None,
     ) -> None:
-        """
-        Save LED calibration baseline to device_config.json (single source of truth).
+        """Save LED calibration baseline to device_config.json (single source of truth).
 
         Can be called with either:
         1. A dictionary containing all calibration data (preferred for new code)
@@ -1154,22 +1264,49 @@ class DeviceConfiguration:
             calibration_method: 'standard' or 'alternative' - indicates which calibration mode was used
             per_channel_integration_times: Optional dict of integration times per channel (ALTERNATIVE mode only)
                                            e.g., {'a': 85, 'b': 95, 'c': 120, 'd': 110}
+
         """
         try:
-            logger.info("💾 Saving LED calibration to device_config.json (single source of truth)")
+            logger.info(
+                "💾 Saving LED calibration to device_config.json (single source of truth)",
+            )
 
             # Handle dict input (new format) vs individual parameters (legacy format)
             if calibration_data is not None:
                 # Extract values from dict
-                integration_time_ms = calibration_data.get('integration_time_ms', integration_time_ms)
-                s_mode_intensities = calibration_data.get('s_mode_intensities', s_mode_intensities)
-                p_mode_intensities = calibration_data.get('p_mode_intensities', p_mode_intensities)
-                s_ref_spectra = calibration_data.get('s_ref_signals', s_ref_spectra)  # Note: dict uses 's_ref_signals'
-                p_ref_spectra = calibration_data.get('p_ref_signals', p_ref_spectra)
-                s_ref_wavelengths = calibration_data.get('wavelengths', s_ref_wavelengths)
-                calibration_method = calibration_data.get('calibration_method', calibration_method)
-                per_channel_integration_times = calibration_data.get('per_channel_integration_times', per_channel_integration_times)
-                weakest_channel = calibration_data.get('weakest_channel', weakest_channel)
+                integration_time_ms = calibration_data.get(
+                    "integration_time_ms",
+                    integration_time_ms,
+                )
+                s_mode_intensities = calibration_data.get(
+                    "s_mode_intensities",
+                    s_mode_intensities,
+                )
+                p_mode_intensities = calibration_data.get(
+                    "p_mode_intensities",
+                    p_mode_intensities,
+                )
+                s_ref_spectra = calibration_data.get(
+                    "s_ref_signals",
+                    s_ref_spectra,
+                )  # Note: dict uses 's_ref_signals'
+                p_ref_spectra = calibration_data.get("p_ref_signals", p_ref_spectra)
+                s_ref_wavelengths = calibration_data.get(
+                    "wavelengths",
+                    s_ref_wavelengths,
+                )
+                calibration_method = calibration_data.get(
+                    "calibration_method",
+                    calibration_method,
+                )
+                per_channel_integration_times = calibration_data.get(
+                    "per_channel_integration_times",
+                    per_channel_integration_times,
+                )
+                weakest_channel = calibration_data.get(
+                    "weakest_channel",
+                    weakest_channel,
+                )
                 # Note: live_boost parameters not in calibration_data dict
 
             # Determine weakest channel (use provided value or calculate from S-mode intensities)
@@ -1177,95 +1314,126 @@ class DeviceConfiguration:
                 weakest_channel = min(s_mode_intensities, key=s_mode_intensities.get)
 
             # Create/update led_calibration section
-            self.config['led_calibration'] = {
-                'calibration_date': datetime.now().isoformat(),
-                'calibration_method': calibration_method,  # 'standard' or 'alternative'
-                'integration_time_ms': int(integration_time_ms),
-                's_mode_intensities': {ch: int(val) for ch, val in s_mode_intensities.items()},
-                'p_mode_intensities': {ch: int(val) for ch, val in p_mode_intensities.items()},
-                'weakest_channel': weakest_channel,  # Hardware fingerprint (stored from calibration)
-                's_ref_baseline': {
+            self.config["led_calibration"] = {
+                "calibration_date": datetime.now().isoformat(),
+                "calibration_method": calibration_method,  # 'standard' or 'alternative'
+                "integration_time_ms": int(integration_time_ms),
+                "s_mode_intensities": {
+                    ch: int(val) for ch, val in s_mode_intensities.items()
+                },
+                "p_mode_intensities": {
+                    ch: int(val) for ch, val in p_mode_intensities.items()
+                },
+                "weakest_channel": weakest_channel,  # Hardware fingerprint (stored from calibration)
+                "s_ref_baseline": {
                     ch: spec.tolist() if isinstance(spec, np.ndarray) else spec
                     for ch, spec in s_ref_spectra.items()
                 },
-                's_ref_max_intensity': {
-                    ch: float(np.max(np.array(spec))) for ch, spec in s_ref_spectra.items()
-                }
+                "s_ref_max_intensity": {
+                    ch: float(np.max(np.array(spec)))
+                    for ch, spec in s_ref_spectra.items()
+                },
             }
 
             # Save P-mode reference spectra if provided
             if p_ref_spectra:
-                self.config['led_calibration']['p_ref_baseline'] = {
+                self.config["led_calibration"]["p_ref_baseline"] = {
                     ch: spec.tolist() if isinstance(spec, np.ndarray) else spec
                     for ch, spec in p_ref_spectra.items()
                 }
-                self.config['led_calibration']['p_ref_max_intensity'] = {
-                    ch: float(np.max(np.array(spec))) for ch, spec in p_ref_spectra.items()
+                self.config["led_calibration"]["p_ref_max_intensity"] = {
+                    ch: float(np.max(np.array(spec)))
+                    for ch, spec in p_ref_spectra.items()
                 }
-                logger.info(f"   P-ref baseline: {len(p_ref_spectra)} channels × {len(next(iter(p_ref_spectra.values())))} pixels")
+                logger.info(
+                    f"   P-ref baseline: {len(p_ref_spectra)} channels × {len(next(iter(p_ref_spectra.values())))} pixels",
+                )
 
             # Save per-channel integration times for ALTERNATIVE mode
-            if calibration_method == 'alternative' and per_channel_integration_times:
-                self.config['led_calibration']['per_channel_integration_times'] = {
+            if calibration_method == "alternative" and per_channel_integration_times:
+                self.config["led_calibration"]["per_channel_integration_times"] = {
                     ch: int(val) for ch, val in per_channel_integration_times.items()
                 }
-                logger.info(f"   Per-channel integration times: {per_channel_integration_times}")
+                logger.info(
+                    f"   Per-channel integration times: {per_channel_integration_times}",
+                )
 
             # Store live mode boost parameters (for QC validation)
             if live_boost_integration_ms is not None:
-                self.config['led_calibration']['live_boost_integration_ms'] = int(live_boost_integration_ms)
-                logger.info(f"   Live boost integration: {live_boost_integration_ms} ms")
+                self.config["led_calibration"]["live_boost_integration_ms"] = int(
+                    live_boost_integration_ms,
+                )
+                logger.info(
+                    f"   Live boost integration: {live_boost_integration_ms} ms",
+                )
 
             if live_boost_led_intensities is not None:
-                self.config['led_calibration']['live_boost_led_intensities'] = {
+                self.config["led_calibration"]["live_boost_led_intensities"] = {
                     ch: int(val) for ch, val in live_boost_led_intensities.items()
                 }
                 logger.info(f"   Live boost LEDs: {live_boost_led_intensities}")
 
             if live_boost_factor is not None:
-                self.config['led_calibration']['live_boost_factor'] = float(live_boost_factor)
+                self.config["led_calibration"]["live_boost_factor"] = float(
+                    live_boost_factor,
+                )
                 logger.info(f"   Live boost factor: {live_boost_factor:.2f}×")
 
             # Store wavelengths if provided (for reference)
             if s_ref_wavelengths is not None:
                 # Ensure it's a numpy array before calling tolist()
                 if isinstance(s_ref_wavelengths, np.ndarray):
-                    self.config['led_calibration']['s_ref_wavelengths'] = s_ref_wavelengths.tolist()
+                    self.config["led_calibration"]["s_ref_wavelengths"] = (
+                        s_ref_wavelengths.tolist()
+                    )
                 elif isinstance(s_ref_wavelengths, list):
-                    self.config['led_calibration']['s_ref_wavelengths'] = s_ref_wavelengths
+                    self.config["led_calibration"]["s_ref_wavelengths"] = (
+                        s_ref_wavelengths
+                    )
                 else:
                     # Try to convert to numpy array first
-                    self.config['led_calibration']['s_ref_wavelengths'] = np.array(s_ref_wavelengths).tolist()
+                    self.config["led_calibration"]["s_ref_wavelengths"] = np.array(
+                        s_ref_wavelengths,
+                    ).tolist()
 
             # Update calibration status
-            self.config['calibration']['s_mode_calibration_date'] = datetime.now().isoformat()
-            self.config['calibration']['user_calibrated'] = True
+            self.config["calibration"]["s_mode_calibration_date"] = (
+                datetime.now().isoformat()
+            )
+            self.config["calibration"]["user_calibrated"] = True
 
             # Save to disk
             self.save()
 
             logger.info("✅ LED calibration saved successfully")
             logger.info(f"   Calibration method: {calibration_method.upper()}")
-            logger.info(f"   Calibration baseline:")
-            if calibration_method == 'standard':
-                logger.info(f"      Integration time: {integration_time_ms} ms (global)")
+            logger.info("   Calibration baseline:")
+            if calibration_method == "standard":
+                logger.info(
+                    f"      Integration time: {integration_time_ms} ms (global)",
+                )
             else:
-                logger.info(f"      Integration time: {integration_time_ms} ms (max across channels)")
+                logger.info(
+                    f"      Integration time: {integration_time_ms} ms (max across channels)",
+                )
             logger.info(f"      S-mode LEDs: {s_mode_intensities}")
             logger.info(f"      P-mode LEDs: {p_mode_intensities}")
             if live_boost_integration_ms:
-                logger.info(f"   Live mode boost:")
-                logger.info(f"      Integration time: {live_boost_integration_ms} ms ({live_boost_factor:.2f}× boost)")
+                logger.info("   Live mode boost:")
+                logger.info(
+                    f"      Integration time: {live_boost_integration_ms} ms ({live_boost_factor:.2f}× boost)",
+                )
                 logger.info(f"      Adjusted LEDs: {live_boost_led_intensities}")
-            logger.info(f"   S-ref baseline: {len(s_ref_spectra)} channels × {len(next(iter(s_ref_spectra.values())))} pixels")
+            logger.info(
+                f"   S-ref baseline: {len(s_ref_spectra)} channels × {len(next(iter(s_ref_spectra.values())))} pixels",
+            )
 
         except Exception as e:
             logger.error(f"Failed to save LED calibration: {e}")
             raise
 
-    def load_led_calibration(self) -> Optional[Dict[str, Any]]:
-        """
-        Load LED calibration baseline from device_config.json.
+    def load_led_calibration(self) -> dict[str, Any] | None:
+        """Load LED calibration baseline from device_config.json.
 
         Returns:
             Dictionary containing calibration data:
@@ -1280,34 +1448,40 @@ class DeviceConfiguration:
             - s_ref_wavelengths: numpy array (if available)
 
             Returns None if no calibration stored.
+
         """
-        if 'led_calibration' not in self.config:
+        if "led_calibration" not in self.config:
             logger.debug("No LED calibration found in device_config.json")
             return None
 
         try:
-            cal = self.config['led_calibration'].copy()
+            cal = self.config["led_calibration"].copy()
 
             # Convert lists back to numpy arrays
-            if 's_ref_baseline' in cal:
-                cal['s_ref_baseline'] = {
-                    ch: np.array(spec) for ch, spec in cal['s_ref_baseline'].items()
+            if "s_ref_baseline" in cal:
+                cal["s_ref_baseline"] = {
+                    ch: np.array(spec) for ch, spec in cal["s_ref_baseline"].items()
                 }
 
             # Convert P-ref baseline if present
-            if 'p_ref_baseline' in cal:
-                cal['p_ref_baseline'] = {
-                    ch: np.array(spec) for ch, spec in cal['p_ref_baseline'].items()
+            if "p_ref_baseline" in cal:
+                cal["p_ref_baseline"] = {
+                    ch: np.array(spec) for ch, spec in cal["p_ref_baseline"].items()
                 }
-                logger.debug(f"   Loaded P-ref baseline: {len(cal['p_ref_baseline'])} channels")
+                logger.debug(
+                    f"   Loaded P-ref baseline: {len(cal['p_ref_baseline'])} channels",
+                )
 
-            if 's_ref_wavelengths' in cal:
-                cal['s_ref_wavelengths'] = np.array(cal['s_ref_wavelengths'])
+            if "s_ref_wavelengths" in cal:
+                cal["s_ref_wavelengths"] = np.array(cal["s_ref_wavelengths"])
 
             # Optional: pre-QC dark snapshot
-            if 'pre_qc_dark_snapshot' in cal and isinstance(cal['pre_qc_dark_snapshot'], list):
+            if "pre_qc_dark_snapshot" in cal and isinstance(
+                cal["pre_qc_dark_snapshot"],
+                list,
+            ):
                 try:
-                    cal['pre_qc_dark_snapshot'] = np.array(cal['pre_qc_dark_snapshot'])
+                    cal["pre_qc_dark_snapshot"] = np.array(cal["pre_qc_dark_snapshot"])
                 except Exception:
                     # Leave as-is if conversion fails
                     pass
@@ -1319,19 +1493,19 @@ class DeviceConfiguration:
             logger.error(f"Failed to load LED calibration: {e}")
             return None
 
-    def get_calibration_age_days(self) -> Optional[float]:
-        """
-        Get age of stored calibration in days.
+    def get_calibration_age_days(self) -> float | None:
+        """Get age of stored calibration in days.
 
         Returns:
             Age in days, or None if no calibration stored
+
         """
         cal = self.load_led_calibration()
         if cal is None:
             return None
 
         try:
-            cal_date = datetime.fromisoformat(cal['calibration_date'])
+            cal_date = datetime.fromisoformat(cal["calibration_date"])
             age = (datetime.now() - cal_date).total_seconds() / 86400.0
             return age
         except Exception:
@@ -1339,8 +1513,8 @@ class DeviceConfiguration:
 
     def clear_led_calibration(self) -> None:
         """Clear stored LED calibration data."""
-        if 'led_calibration' in self.config:
-            del self.config['led_calibration']
+        if "led_calibration" in self.config:
+            del self.config["led_calibration"]
             self.save()
             logger.info("Cleared LED calibration from device_config.json")
 
@@ -1353,10 +1527,10 @@ class DeviceConfiguration:
         weakest_channel: str,
         ranked_channels: list[tuple[str, tuple[float, float, bool]]],
         percent_of_weakest: dict[str, float],
-        mean_counts: Optional[dict[str, float]] = None,
-        saturated_on_first_pass: Optional[list[str]] = None,
-        test_led_intensity: Optional[int] = None,
-        test_region_nm: Optional[tuple[float, float]] = None,
+        mean_counts: dict[str, float] | None = None,
+        saturated_on_first_pass: list[str] | None = None,
+        test_led_intensity: int | None = None,
+        test_region_nm: tuple[float, float] | None = None,
     ) -> None:
         """Save LED ranking diagnostics to device_config.json.
 
@@ -1371,58 +1545,68 @@ class DeviceConfiguration:
             saturated_on_first_pass: Optional list of channels that saturated at initial test intensity
             test_led_intensity: Optional test LED value used during ranking (e.g., 128)
             test_region_nm: Optional (min_nm, max_nm) region used for ranking
+
         """
         try:
             now = datetime.now().isoformat()
 
             # Ensure diagnostics section exists
-            if 'diagnostics' not in self.config:
-                self.config['diagnostics'] = {}
+            if "diagnostics" not in self.config:
+                self.config["diagnostics"] = {}
 
             # Build a compact ranked order list
             ranked_order = [ch for ch, _ in ranked_channels]
 
-            self.config['diagnostics']['led_ranking'] = {
-                'date': now,
-                'weakest_channel': weakest_channel,
-                'ranked_order': ranked_order,
-                'percent_of_weakest': {k: float(v) for k, v in percent_of_weakest.items()},
+            self.config["diagnostics"]["led_ranking"] = {
+                "date": now,
+                "weakest_channel": weakest_channel,
+                "ranked_order": ranked_order,
+                "percent_of_weakest": {
+                    k: float(v) for k, v in percent_of_weakest.items()
+                },
             }
 
             if mean_counts is not None:
-                self.config['diagnostics']['led_ranking']['mean_counts'] = {
+                self.config["diagnostics"]["led_ranking"]["mean_counts"] = {
                     k: float(v) for k, v in mean_counts.items()
                 }
 
             if saturated_on_first_pass is not None:
-                self.config['diagnostics']['led_ranking']['saturated_on_first_pass'] = list(saturated_on_first_pass)
+                self.config["diagnostics"]["led_ranking"]["saturated_on_first_pass"] = (
+                    list(saturated_on_first_pass)
+                )
 
             if test_led_intensity is not None:
-                self.config['diagnostics']['led_ranking']['test_led_intensity'] = int(test_led_intensity)
+                self.config["diagnostics"]["led_ranking"]["test_led_intensity"] = int(
+                    test_led_intensity,
+                )
 
             if test_region_nm is not None:
-                self.config['diagnostics']['led_ranking']['test_region_nm'] = [
-                    float(test_region_nm[0]), float(test_region_nm[1])
+                self.config["diagnostics"]["led_ranking"]["test_region_nm"] = [
+                    float(test_region_nm[0]),
+                    float(test_region_nm[1]),
                 ]
 
             # Persist to disk
             self.save()
-            logger.info("✅ Saved LED ranking diagnostics to device_config.json → diagnostics.led_ranking")
+            logger.info(
+                "✅ Saved LED ranking diagnostics to device_config.json → diagnostics.led_ranking",
+            )
 
         except Exception as e:
             logger.error(f"Failed to save LED ranking diagnostics: {e}")
             # Don't raise to avoid breaking calibration; diagnostics are optional
 
 
-def get_device_config(config_path: Optional[str] = None) -> DeviceConfiguration:
-    """
-    Get device configuration instance (convenience function).
+def get_device_config(config_path: str | None = None) -> DeviceConfiguration:
+    """Get device configuration instance (convenience function).
 
     Args:
         config_path: Optional path to configuration file
 
     Returns:
         DeviceConfiguration instance
+
     """
     return DeviceConfiguration(config_path)
 
@@ -1439,8 +1623,8 @@ if __name__ == "__main__":
     # Set some values
     print("\n📝 Setting configuration values...")
     config.set_optical_fiber_diameter(200)
-    config.set_led_pcb_model('luminus_cool_white')
-    config.set_spectrometer_serial('FLMT09788')
+    config.set_led_pcb_model("luminus_cool_white")
+    config.set_spectrometer_serial("FLMT09788")
 
     # Get values
     print("\n📊 Current configuration:")
@@ -1474,7 +1658,9 @@ if __name__ == "__main__":
     print("\n📈 Frequency limits:")
     for num_leds in [2, 4]:
         limits = config.get_frequency_limits(num_leds)
-        print(f"  {num_leds}-LED mode: Max {limits['max_hz']} Hz, Recommended {limits['recommended_hz']} Hz")
+        print(
+            f"  {num_leds}-LED mode: Max {limits['max_hz']} Hz, Recommended {limits['recommended_hz']} Hz",
+        )
 
     print("\n" + "=" * 70)
     print("TEST COMPLETE ✅")

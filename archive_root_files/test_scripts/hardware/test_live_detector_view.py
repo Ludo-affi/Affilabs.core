@@ -1,5 +1,4 @@
-"""
-Test UI for Live Detector Output Monitoring
+"""Test UI for Live Detector Output Monitoring
 
 Shows real-time detector output with:
 - Live spectrum display for all 4 channels
@@ -10,24 +9,35 @@ Shows real-time detector output with:
 """
 
 import sys
-import numpy as np
 from pathlib import Path
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QSpinBox, QGroupBox, QTextEdit, QSplitter,
-    QTabWidget, QSlider, QComboBox
-)
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QFont
+
+import numpy as np
 import pyqtgraph as pg
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Add project paths
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
-from utils.device_configuration import DeviceConfiguration
-from utils.logger import logger
 from core.hardware_manager import HardwareManager
+
+from utils.device_configuration import DeviceConfiguration
 
 
 class LiveDetectorMonitor(QMainWindow):
@@ -42,8 +52,8 @@ class LiveDetectorMonitor(QMainWindow):
 
         # Acquisition settings
         self.integration_time = 50.0  # ms
-        self.led_intensities = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-        self.current_mode = 's'  # s or p
+        self.led_intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
+        self.current_mode = "s"  # s or p
 
         # Live acquisition
         self.acquisition_timer = QTimer()
@@ -93,7 +103,7 @@ class LiveDetectorMonitor(QMainWindow):
         mode_layout = QHBoxLayout()
         mode_layout.addWidget(QLabel("Polarizer Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['S-Mode', 'P-Mode'])
+        self.mode_combo.addItems(["S-Mode", "P-Mode"])
         self.mode_combo.currentIndexChanged.connect(self._update_polarizer_mode)
         mode_layout.addWidget(self.mode_combo)
         acq_layout.addLayout(mode_layout)
@@ -117,14 +127,16 @@ class LiveDetectorMonitor(QMainWindow):
 
         self.led_sliders = {}
         self.led_labels = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             ch_layout = QHBoxLayout()
             ch_layout.addWidget(QLabel(f"LED {ch.upper()}:"))
 
             slider = QSlider(Qt.Horizontal)
             slider.setRange(0, 255)
             slider.setValue(0)
-            slider.valueChanged.connect(lambda v, c=ch: self._update_led_intensity(c, v))
+            slider.valueChanged.connect(
+                lambda v, c=ch: self._update_led_intensity(c, v),
+            )
             self.led_sliders[ch] = slider
             ch_layout.addWidget(slider)
 
@@ -146,25 +158,25 @@ class LiveDetectorMonitor(QMainWindow):
         self.channel_plots = {}
         self.channel_curves = {}
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             plot_widget = pg.PlotWidget(title=f"Channel {ch.upper()} - Live Spectrum")
-            plot_widget.setLabel('left', 'Intensity', units='counts')
-            plot_widget.setLabel('bottom', 'Wavelength', units='nm')
+            plot_widget.setLabel("left", "Intensity", units="counts")
+            plot_widget.setLabel("bottom", "Wavelength", units="nm")
             plot_widget.showGrid(x=True, y=True, alpha=0.3)
-            plot_widget.setBackground('w')
+            plot_widget.setBackground("w")
             plot_widget.setYRange(0, 70000)
 
             # Add spectrum curve
-            curve = plot_widget.plot(pen=pg.mkPen(color='b', width=2))
+            curve = plot_widget.plot(pen=pg.mkPen(color="b", width=2))
             self.channel_curves[ch] = curve
 
             # Add saturation line
             saturation_line = pg.InfiniteLine(
                 pos=62258,
                 angle=0,
-                pen=pg.mkPen(color='r', width=2, style=Qt.DashLine),
-                label='Saturation (95%)',
-                labelOpts={'position': 0.95}
+                pen=pg.mkPen(color="r", width=2, style=Qt.DashLine),
+                label="Saturation (95%)",
+                labelOpts={"position": 0.95},
             )
             plot_widget.addItem(saturation_line)
 
@@ -172,14 +184,14 @@ class LiveDetectorMonitor(QMainWindow):
             text_item = pg.TextItem(
                 text="Max: 0",
                 anchor=(1, 0),
-                color=(0, 0, 0)
+                color=(0, 0, 0),
             )
             text_item.setPos(800, 60000)
             plot_widget.addItem(text_item)
 
             self.channel_plots[ch] = {
-                'widget': plot_widget,
-                'text': text_item
+                "widget": plot_widget,
+                "text": text_item,
             }
 
             self.plot_tabs.addTab(plot_widget, f"Channel {ch.upper()}")
@@ -224,23 +236,25 @@ class LiveDetectorMonitor(QMainWindow):
 
                 # Get servo positions
                 servo_positions = self.device_config.get_servo_positions()
-                s_pos = servo_positions['s']
-                p_pos = servo_positions['p']
+                s_pos = servo_positions["s"]
+                p_pos = servo_positions["p"]
                 self._log(f"Servo positions: S={s_pos}°, P={p_pos}°")
 
                 # Update status
-                ctrl_name = info.get('ctrl_type', 'Unknown')
-                spec_name = info.get('spectrometer', 'Unknown')
+                ctrl_name = info.get("ctrl_type", "Unknown")
+                spec_name = info.get("spectrometer", "Unknown")
                 self.status_label.setText(
                     f"✓ Controller: {ctrl_name}\n"
                     f"✓ Detector: {spec_name}\n"
-                    f"✓ Servo: S={s_pos}° P={p_pos}°"
+                    f"✓ Servo: S={s_pos}° P={p_pos}°",
                 )
                 self.status_label.setStyleSheet("color: green;")
 
                 self.hardware_ready = True
                 self.start_button.setEnabled(True)
-                self._log("Hardware ready! Set LED intensities and click Start Live View")
+                self._log(
+                    "Hardware ready! Set LED intensities and click Start Live View",
+                )
 
             def on_error(error_msg):
                 self._log(f"Hardware error: {error_msg}")
@@ -263,7 +277,7 @@ class LiveDetectorMonitor(QMainWindow):
     def _update_integration_time(self, value):
         """Update integration time"""
         self.integration_time = float(value)
-        if self.hardware_ready and hasattr(self, 'usb'):
+        if self.hardware_ready and hasattr(self, "usb"):
             try:
                 self.usb.set_integration(self.integration_time)
                 self._log(f"Integration time set to {self.integration_time} ms")
@@ -272,9 +286,9 @@ class LiveDetectorMonitor(QMainWindow):
 
     def _update_polarizer_mode(self, index):
         """Update polarizer mode"""
-        mode = 's' if index == 0 else 'p'
+        mode = "s" if index == 0 else "p"
         self.current_mode = mode
-        if self.hardware_ready and hasattr(self, 'controller'):
+        if self.hardware_ready and hasattr(self, "controller"):
             try:
                 self.controller.set_mode(mode)
                 self._log(f"Polarizer mode set to {mode.upper()}")
@@ -286,7 +300,7 @@ class LiveDetectorMonitor(QMainWindow):
         self.led_intensities[channel] = value
         self.led_labels[channel].setText(str(value))
 
-        if self.hardware_ready and hasattr(self, 'controller'):
+        if self.hardware_ready and hasattr(self, "controller"):
             try:
                 self.controller.set_intensity(channel, value)
             except Exception as e:
@@ -368,8 +382,8 @@ class LiveDetectorMonitor(QMainWindow):
                         color = "red" if saturated else "black"
                         status = "⚠ SATURATED" if saturated else ""
                         text = f"Max: {max_counts:.0f} {status}"
-                        self.channel_plots[ch]['text'].setText(text)
-                        self.channel_plots[ch]['text'].setColor(color)
+                        self.channel_plots[ch]["text"].setText(text)
+                        self.channel_plots[ch]["text"].setColor(color)
 
         except Exception as e:
             self._log(f"Acquisition error: {e}")
@@ -378,7 +392,7 @@ class LiveDetectorMonitor(QMainWindow):
         """Add message to log"""
         self.log_text.append(message)
         self.log_text.verticalScrollBar().setValue(
-            self.log_text.verticalScrollBar().maximum()
+            self.log_text.verticalScrollBar().maximum(),
         )
 
     def closeEvent(self, event):
@@ -386,7 +400,7 @@ class LiveDetectorMonitor(QMainWindow):
         if self.is_acquiring:
             self._stop_acquisition()
 
-        if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+        if hasattr(self, "hardware_mgr") and self.hardware_mgr:
             try:
                 self.hardware_mgr.disconnect_all()
             except:

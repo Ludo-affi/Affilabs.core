@@ -12,7 +12,6 @@ Date: November 24, 2025
 """
 
 import numpy as np
-from typing import Dict, Tuple, Optional
 
 
 def generate_demo_spr_data(
@@ -20,15 +19,15 @@ def generate_demo_spr_data(
     sampling_rate: float = 2.0,
     num_channels: int = 4,
     baseline_ru: float = 0.0,
-    max_response_ru: Dict[str, float] = None,
+    max_response_ru: dict[str, float] = None,
     association_start: float = 120,
     association_duration: float = 240,
     dissociation_start: float = 360,
     ka: float = 1e5,  # Association rate constant (M^-1 s^-1)
     kd: float = 1e-3,  # Dissociation rate constant (s^-1)
     noise_level: float = 0.5,  # RU noise level
-    seed: Optional[int] = 42,
-) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    seed: int | None = 42,
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
     """Generate realistic SPR binding curves for demo purposes.
 
     Args:
@@ -48,6 +47,7 @@ def generate_demo_spr_data(
     Returns:
         time_array: Time points (seconds)
         channel_data: Dict with keys 'a', 'b', 'c', 'd' containing RU values
+
     """
     if seed is not None:
         np.random.seed(seed)
@@ -59,13 +59,13 @@ def generate_demo_spr_data(
     # Default max responses if not provided
     if max_response_ru is None:
         max_response_ru = {
-            'a': 55.0,
-            'b': 48.0,
-            'c': 52.0,
-            'd': 45.0,
+            "a": 55.0,
+            "b": 48.0,
+            "c": 52.0,
+            "d": 45.0,
         }
 
-    channel_names = ['a', 'b', 'c', 'd'][:num_channels]
+    channel_names = ["a", "b", "c", "d"][:num_channels]
     channel_data = {}
 
     for ch in channel_names:
@@ -77,7 +77,9 @@ def generate_demo_spr_data(
         rmax = max_response_ru.get(ch, 50.0)
 
         # Association phase (binding)
-        association_mask = (time_array >= association_start) & (time_array < dissociation_start)
+        association_mask = (time_array >= association_start) & (
+            time_array < dissociation_start
+        )
         t_assoc = time_array[association_mask] - association_start
 
         # Langmuir binding model for association
@@ -94,7 +96,9 @@ def generate_demo_spr_data(
         t_dissoc = time_array[dissociation_mask] - dissociation_start
 
         # At dissociation start, we have the steady-state response
-        steady_state = rmax * (1 - np.exp(-kobs * (dissociation_start - association_start)))
+        steady_state = rmax * (
+            1 - np.exp(-kobs * (dissociation_start - association_start))
+        )
 
         # Exponential decay: R = R0 * exp(-kd*t)
         dissociation_response = steady_state * np.exp(-kd * t_dissoc)
@@ -118,9 +122,9 @@ def generate_demo_cycle_data(
     num_cycles: int = 5,
     cycle_duration: float = 600,
     sampling_rate: float = 2.0,
-    responses: Optional[list] = None,
-    seed: Optional[int] = 42,
-) -> Tuple[np.ndarray, Dict[str, np.ndarray], list]:
+    responses: list | None = None,
+    seed: int | None = 42,
+) -> tuple[np.ndarray, dict[str, np.ndarray], list]:
     """Generate multi-cycle demo data with varying responses.
 
     Args:
@@ -134,6 +138,7 @@ def generate_demo_cycle_data(
         time_array: Full time array
         channel_data: Channel data dict
         cycle_boundaries: List of (start_time, end_time) for each cycle
+
     """
     if responses is None:
         # Default: increasing concentration series
@@ -144,7 +149,7 @@ def generate_demo_cycle_data(
     time_array = np.linspace(0, total_duration, total_points)
 
     # Initialize channel data
-    channel_data = {ch: np.zeros(total_points) for ch in ['a', 'b', 'c', 'd']}
+    channel_data = {ch: np.zeros(total_points) for ch in ["a", "b", "c", "d"]}
     cycle_boundaries = []
 
     for cycle_idx in range(num_cycles):
@@ -154,10 +159,10 @@ def generate_demo_cycle_data(
 
         # Generate data for this cycle
         max_responses = {
-            'a': responses[cycle_idx] * 1.0,
-            'b': responses[cycle_idx] * 0.87,
-            'c': responses[cycle_idx] * 0.95,
-            'd': responses[cycle_idx] * 0.82,
+            "a": responses[cycle_idx] * 1.0,
+            "b": responses[cycle_idx] * 0.87,
+            "c": responses[cycle_idx] * 0.95,
+            "d": responses[cycle_idx] * 0.82,
         }
 
         cycle_time, cycle_data = generate_demo_spr_data(
@@ -174,7 +179,7 @@ def generate_demo_cycle_data(
         start_idx = int(cycle_idx * cycle_duration * sampling_rate)
         end_idx = int((cycle_idx + 1) * cycle_duration * sampling_rate)
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             channel_data[ch][start_idx:end_idx] = cycle_data[ch]
 
     return time_array, channel_data, cycle_boundaries
@@ -186,6 +191,7 @@ def load_demo_data_into_ui(ui_instance, num_cycles: int = 3):
     Args:
         ui_instance: The main UI instance (AffilabsCoreUI)
         num_cycles: Number of cycles to generate
+
     """
     # Generate demo data
     time_array, channel_data, cycle_boundaries = generate_demo_cycle_data(
@@ -198,21 +204,21 @@ def load_demo_data_into_ui(ui_instance, num_cycles: int = 3):
     # Inject data into UI buffers
     try:
         # Update time buffer
-        if hasattr(ui_instance, 'time_buffer'):
+        if hasattr(ui_instance, "time_buffer"):
             ui_instance.time_buffer = list(time_array)
 
         # Update channel buffers
-        for ch in ['a', 'b', 'c', 'd']:
-            buffer_name = f'wavelength_buffer_{ch}'
+        for ch in ["a", "b", "c", "d"]:
+            buffer_name = f"wavelength_buffer_{ch}"
             if hasattr(ui_instance, buffer_name):
                 setattr(ui_instance, buffer_name, list(channel_data[ch]))
 
         # Set cycle boundaries for region markers
-        if hasattr(ui_instance, '_cycle_regions'):
+        if hasattr(ui_instance, "_cycle_regions"):
             ui_instance._cycle_regions = cycle_boundaries
 
         # Update graphs
-        if hasattr(ui_instance, '_update_plots'):
+        if hasattr(ui_instance, "_update_plots"):
             ui_instance._update_plots()
 
         print(f"✅ Demo data loaded: {len(time_array)} points, {num_cycles} cycles")
@@ -229,26 +235,34 @@ if __name__ == "__main__":
 
     time_array, channel_data, cycle_boundaries = generate_demo_cycle_data(
         num_cycles=3,
-        responses=[20, 40, 60]
+        responses=[20, 40, 60],
     )
 
     plt.figure(figsize=(12, 6))
-    colors = {'a': 'red', 'b': 'green', 'c': 'blue', 'd': 'orange'}
+    colors = {"a": "red", "b": "green", "c": "blue", "d": "orange"}
 
     for ch, data in channel_data.items():
-        plt.plot(time_array, data, label=f'Channel {ch.upper()}', color=colors[ch], alpha=0.8)
+        plt.plot(
+            time_array,
+            data,
+            label=f"Channel {ch.upper()}",
+            color=colors[ch],
+            alpha=0.8,
+        )
 
     # Mark cycle boundaries
     for start, end in cycle_boundaries:
-        plt.axvline(start, color='gray', linestyle='--', alpha=0.3)
-        plt.axvline(end, color='gray', linestyle='--', alpha=0.3)
+        plt.axvline(start, color="gray", linestyle="--", alpha=0.3)
+        plt.axvline(end, color="gray", linestyle="--", alpha=0.3)
 
-    plt.xlabel('Time (s)')
-    plt.ylabel('Response (RU)')
-    plt.title('Demo SPR Kinetics Data')
+    plt.xlabel("Time (s)")
+    plt.ylabel("Response (RU)")
+    plt.title("Demo SPR Kinetics Data")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
 
-    print(f"Generated {len(time_array)} data points across {len(cycle_boundaries)} cycles")
+    print(
+        f"Generated {len(time_array)} data points across {len(cycle_boundaries)} cycles",
+    )

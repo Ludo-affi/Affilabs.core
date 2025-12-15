@@ -110,43 +110,49 @@ Last Updated: November 22, 2025
 
 import sys
 from pathlib import Path
-from typing import Optional
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QParallelAnimationGroup, Signal, QEvent
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTabWidget, QLabel, QFrame, QToolButton, QScrollArea, QGraphicsDropShadowEffect,
-    QSlider, QSpinBox, QSplitter, QMenu, QMessageBox, QCheckBox, QDialog, QLineEdit, QComboBox,
-    QRadioButton, QButtonGroup, QFormLayout, QDialogButtonBox, QTextEdit, QGroupBox, QGridLayout, QProgressBar
+
+from PySide6.QtCore import (
+    QEvent,
+    Qt,
+    QTimer,
+    Signal,
 )
-from PySide6.QtGui import QIcon, QColor, QFont, QAction, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Add Old software to path for imports
 old_software = Path(__file__).parent
 sys.path.insert(0, str(old_software))
 
-from affilabs.utils.logger import logger
-from datetime import datetime
-from typing import Optional, Dict, List, Tuple, Any, Union
-from core.system_intelligence import get_system_intelligence, SystemState, IssueSeverity
-from ui_styles import (
-    Colors, Fonts, Dimensions,
-    label_style, section_header_style, title_style, card_style,
-    primary_button_style, secondary_button_style, segmented_button_style,
-    checkbox_style, radio_button_style,
-    slider_style, scrollbar_style, separator_style, divider_style,
-    status_indicator_style, collapsible_header_style,
-    line_edit_style, combo_box_style, group_box_style, text_edit_log_style, spinbox_style
-)
-from diagnostics_dialog import DiagnosticsDialog
-from sections import CollapsibleSection
-from affilabs_sidebar import AffilabsSidebar
-from plot_helpers import create_time_plot, add_channel_curves, create_spectroscopy_plot
-from diagnostics_dialog import DiagnosticsDialog
-from inspector import ElementInspector
-from affilabs.dialogs import AdvancedSettingsDialog
-from affilabs.utils.baseline_data_recorder import BaselineDataRecorder
-from PySide6.QtCore import QMetaObject, Q_ARG
+from typing import Any
 
+from affilabs.affilabs_sidebar import AffilabsSidebar
+from affilabs.core.system_intelligence import SystemState, get_system_intelligence
+from affilabs.dialogs import AdvancedSettingsDialog
+from affilabs.inspector import ElementInspector
+from affilabs.plot_helpers import add_channel_curves, create_time_plot
+from affilabs.ui_styles import Colors, Fonts
+from affilabs.utils.logger import logger
 
 
 class StartupCalibProgressDialog(QDialog):
@@ -163,8 +169,13 @@ class StartupCalibProgressDialog(QDialog):
     _hide_progress_signal = Signal()
     _enable_start_signal = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None, title: str = "Processing",
-                 message: str = "Please wait...", show_start_button: bool = False) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        title: str = "Processing",
+        message: str = "Please wait...",
+        show_start_button: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
@@ -198,7 +209,7 @@ class StartupCalibProgressDialog(QDialog):
         # Style with border and rounded corners
         self.setStyleSheet(
             "QDialog { background: #FFFFFF; border: 2px solid #007AFF; border-radius: 12px; }"
-            "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }"
+            "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }",
         )
 
         # Main layout
@@ -209,9 +220,7 @@ class StartupCalibProgressDialog(QDialog):
         # Title
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            "font-size: 18px;"
-            "font-weight: 700;"
-            "color: #1D1D1F;"
+            "font-size: 18px;font-weight: 700;color: #1D1D1F;",
         )
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
@@ -237,16 +246,14 @@ class StartupCalibProgressDialog(QDialog):
             "QProgressBar::chunk {"
             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007AFF, stop:1 #00C7BE);"
             "  border-radius: 4px;"
-            "}"
+            "}",
         )
         main_layout.addWidget(self.progress_bar)
 
         # Status message
         self.status_label = QLabel(message)
         self.status_label.setStyleSheet(
-            "font-size: 14px;"
-            "color: #86868B;"
-            "padding: 0px;"
+            "font-size: 14px;color: #86868B;padding: 0px;",
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
@@ -291,7 +298,7 @@ class StartupCalibProgressDialog(QDialog):
                 "QPushButton:disabled {"
                 "  background: #E5E5EA;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
             self.start_button.clicked.connect(self._on_start_clicked)
             self.button_layout.addWidget(self.start_button)
@@ -326,9 +333,14 @@ class StartupCalibProgressDialog(QDialog):
                 if self._is_complete:
                     # Post-calibration: Emit signal to start acquisition, dialog will close after
                     from affilabs.utils.logger import logger
-                    logger.info("📋 Dialog Start button clicked (post-calibration) - emitting signal")
+
+                    logger.info(
+                        "📋 Dialog Start button clicked (post-calibration) - emitting signal",
+                    )
                     self.start_clicked.emit()
-                    logger.info("📋 Signal emitted, dialog will close after acquisition starts")
+                    logger.info(
+                        "📋 Signal emitted, dialog will close after acquisition starts",
+                    )
                     # Don't close immediately - let coordinator close it after acquisition starts
                     # self._is_closing = True
                     # self.close()
@@ -338,8 +350,10 @@ class StartupCalibProgressDialog(QDialog):
                     # Dialog stays open to show calibration progress
         except Exception as e:
             from affilabs.utils.logger import logger
+
             logger.error(f"❌ Error in _on_start_clicked: {e}", exc_info=True)
             import traceback
+
             try:
                 print(traceback.format_exc())
             except:
@@ -405,6 +419,7 @@ class StartupCalibProgressDialog(QDialog):
             except Exception as e:
                 print(f"🔴 ERROR: Exception in _do_update_status: {e}")
                 import traceback
+
                 try:
                     print(traceback.format_exc())
                 except:
@@ -425,6 +440,7 @@ class StartupCalibProgressDialog(QDialog):
             except Exception as e:
                 print(f"🔴 ERROR: Exception in _do_update_title: {e}")
                 import traceback
+
                 try:
                     print(traceback.format_exc())
                 except:
@@ -436,6 +452,7 @@ class StartupCalibProgressDialog(QDialog):
         Args:
             value: Current progress value
             maximum: Maximum progress value (default 100)
+
         """
         self._set_progress_signal.emit(value, maximum)
 
@@ -445,6 +462,7 @@ class StartupCalibProgressDialog(QDialog):
         Args:
             value: Current progress value
             maximum: Maximum progress value
+
         """
         if not self._is_closing and self.isVisible():
             try:
@@ -476,6 +494,7 @@ class StartupCalibProgressDialog(QDialog):
             except Exception as e:
                 print(f"🔴 ERROR: Exception in _do_hide_progress: {e}")
                 import traceback
+
                 try:
                     print(traceback.format_exc())
                 except:
@@ -497,12 +516,17 @@ class StartupCalibProgressDialog(QDialog):
         Does NOT set _is_complete flag - dialog will stay open during calibration.
         """
         from affilabs.utils.logger import logger
-        logger.debug(f"🔧 enable_start_button_pre_calib() called: _is_complete={self._is_complete}")
+
+        logger.debug(
+            f"🔧 enable_start_button_pre_calib() called: _is_complete={self._is_complete}",
+        )
         if not self._is_closing and self.isVisible() and self.start_button:
             try:
                 self._is_error_state = False
                 self.start_button.setEnabled(True)
-                logger.debug(f"   ✅ Button enabled, _is_complete={self._is_complete} (should be False)")
+                logger.debug(
+                    f"   ✅ Button enabled, _is_complete={self._is_complete} (should be False)",
+                )
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -528,18 +552,25 @@ class StartupCalibProgressDialog(QDialog):
             except Exception as e:
                 print(f"🔴 ERROR: Exception in _do_enable_start: {e}")
                 import traceback
+
                 try:
                     print(traceback.format_exc())
                 except:
                     pass
 
-    def show_error_state(self, error_message: str, retry_count: int, max_retries: int) -> None:
+    def show_error_state(
+        self,
+        error_message: str,
+        retry_count: int,
+        max_retries: int,
+    ) -> None:
         """Switch dialog to error state with Retry/Continue buttons.
 
         Args:
             error_message: Error description to show
             retry_count: Current retry attempt
             max_retries: Maximum retry attempts allowed
+
         """
         if self._is_closing or not self.isVisible():
             return
@@ -553,7 +584,7 @@ class StartupCalibProgressDialog(QDialog):
             self.title_label.setStyleSheet(
                 "font-size: 18px;"
                 "font-weight: 700;"
-                "color: #FF3B30;"  # Red color for error
+                "color: #FF3B30;",  # Red color for error
             )
 
             retries_left = max_retries - retry_count
@@ -579,7 +610,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #0051D5;"
-                    "}"
+                    "}",
                 )
                 self.retry_button.clicked.connect(self._on_retry_clicked)
                 self.button_layout.insertWidget(1, self.retry_button)
@@ -598,7 +629,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #FF8000;"
-                    "}"
+                    "}",
                 )
                 self.continue_button.clicked.connect(self._on_continue_clicked)
                 self.button_layout.insertWidget(2, self.continue_button)
@@ -614,6 +645,7 @@ class StartupCalibProgressDialog(QDialog):
 
         Args:
             error_message: Error description to show
+
         """
         if self._is_closing or not self.isVisible():
             return
@@ -623,7 +655,9 @@ class StartupCalibProgressDialog(QDialog):
 
             # Update title and status
             self.title_label.setText("🛑 Calibration Failed")
-            self.status_label.setText(f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.")
+            self.status_label.setText(
+                f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.",
+            )
 
             # Hide Start and Retry buttons
             if self.start_button:
@@ -646,7 +680,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #FF8000;"
-                    "}"
+                    "}",
                 )
                 self.continue_button.clicked.connect(self._on_continue_clicked)
                 self.button_layout.insertWidget(1, self.continue_button)
@@ -667,9 +701,7 @@ class StartupCalibProgressDialog(QDialog):
 
             # Reset title color
             self.title_label.setStyleSheet(
-                "font-size: 18px;"
-                "font-weight: 700;"
-                "color: #1D1D1F;"
+                "font-size: 18px;font-weight: 700;color: #1D1D1F;",
             )
 
             # Hide error buttons
@@ -698,7 +730,14 @@ class StartupCalibProgressDialog(QDialog):
 class DeviceConfigDialog(QDialog):
     """Dialog to collect missing device configuration information."""
 
-    def __init__(self, parent: Optional[QWidget] = None, device_serial: Optional[str] = None, controller_type: str = '', controller=None, device_config=None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        device_serial: str | None = None,
+        controller_type: str = "",
+        controller=None,
+        device_config=None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Device Configuration Required")
         self.setFixedWidth(500)
@@ -717,7 +756,7 @@ class DeviceConfigDialog(QDialog):
             "QLabel {"
             "  color: #1D1D1F;"
             "  font-size: 13px;"
-            "}"
+            "}",
         )
 
         layout = QVBoxLayout(self)
@@ -727,18 +766,17 @@ class DeviceConfigDialog(QDialog):
         # Title
         title = QLabel("⚙️ Device Configuration")
         title.setStyleSheet(
-            "font-size: 20px;"
-            "font-weight: 600;"
-            "color: #1D1D1F;"
+            "font-size: 20px;font-weight: 600;color: #1D1D1F;",
         )
         layout.addWidget(title)
 
         # Description
-        desc = QLabel(f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>")
+        desc = QLabel(
+            f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>",
+        )
         desc.setTextFormat(Qt.TextFormat.RichText)  # Enable HTML formatting
         desc.setStyleSheet(
-            "font-size: 13px;"
-            "color: #86868B;"
+            "font-size: 13px;color: #86868B;",
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -750,7 +788,7 @@ class DeviceConfigDialog(QDialog):
             "color: #86868B;"
             "padding: 8px 12px;"
             "background: #F5F5F7;"
-            "border-radius: 6px;"
+            "border-radius: 6px;",
         )
         self._update_config_source_indicator()
         layout.addWidget(self.config_source_label)
@@ -835,17 +873,17 @@ class DeviceConfigDialog(QDialog):
 
         # LED Model (LCW or OWW)
         self.led_model_combo = QComboBox()
-        self.led_model_combo.addItems(['LCW', 'OWW'])
+        self.led_model_combo.addItems(["LCW", "OWW"])
         self.led_model_combo.setStyleSheet(combo_style)
         form.addRow("LED Model:", self.led_model_combo)
 
         # Controller Options (hardware types excluding pumps)
         self.controller_combo = QComboBox()
-        self.controller_combo.addItems(['Arduino', 'PicoP4SPR', 'PicoEZSPR'])
+        self.controller_combo.addItems(["Arduino", "PicoP4SPR", "PicoEZSPR"])
         self.controller_combo.setStyleSheet(combo_style)
 
         # Pre-select based on detected controller type
-        if self.controller_type in ['Arduino', 'PicoP4SPR', 'PicoEZSPR']:
+        if self.controller_type in ["Arduino", "PicoP4SPR", "PicoEZSPR"]:
             index = self.controller_combo.findText(self.controller_type)
             if index >= 0:
                 self.controller_combo.setCurrentIndex(index)
@@ -856,13 +894,13 @@ class DeviceConfigDialog(QDialog):
 
         # Fiber Diameter (A=100, B=200)
         self.fiber_diameter_combo = QComboBox()
-        self.fiber_diameter_combo.addItems(['A (100 µm)', 'B (200 µm)'])
+        self.fiber_diameter_combo.addItems(["A (100 µm)", "B (200 µm)"])
         self.fiber_diameter_combo.setStyleSheet(combo_style)
         form.addRow("Fiber Diameter:", self.fiber_diameter_combo)
 
         # Polarizer Type (barrel or circle, default circle for Arduino/PicoP4SPR)
         self.polarizer_type_combo = QComboBox()
-        self.polarizer_type_combo.addItems(['circle', 'barrel'])
+        self.polarizer_type_combo.addItems(["circle", "barrel"])
         self.polarizer_type_combo.setStyleSheet(combo_style)
 
         # Set default based on controller
@@ -873,7 +911,9 @@ class DeviceConfigDialog(QDialog):
         # Device ID (detector serial number)
         self.device_id_input = QLineEdit()
         self.device_id_input.setPlaceholderText("Enter detector serial number")
-        self.device_id_input.setText(device_serial or "")  # Pre-fill with detected serial
+        self.device_id_input.setText(
+            device_serial or "",
+        )  # Pre-fill with detected serial
         self.device_id_input.setStyleSheet(input_style)
         form.addRow("Device ID:", self.device_id_input)
 
@@ -896,7 +936,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QPushButton:hover {"
             "  background: #E5E5E7;"
-            "}"
+            "}",
         )
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
@@ -920,9 +960,11 @@ class DeviceConfigDialog(QDialog):
                 "QPushButton:disabled {"
                 "  background: #E5E5E7;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
-            eeprom_btn.setToolTip("Save configuration to device EEPROM for portable backup")
+            eeprom_btn.setToolTip(
+                "Save configuration to device EEPROM for portable backup",
+            )
             eeprom_btn.clicked.connect(self._on_push_to_eeprom)
             button_layout.addWidget(eeprom_btn)
 
@@ -939,7 +981,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QPushButton:hover {"
             "  background: #0051D5;"
-            "}"
+            "}",
         )
         save_btn.clicked.connect(self.accept)
         button_layout.addWidget(save_btn)
@@ -961,10 +1003,10 @@ class DeviceConfigDialog(QDialog):
 
     def _update_polarizer_default(self):
         """Set polarizer default based on controller type."""
-        if self.controller_type in ['Arduino', 'PicoP4SPR']:
-            self.polarizer_type_combo.setCurrentText('circle')
-        elif self.controller_type == 'PicoEZSPR':
-            self.polarizer_type_combo.setCurrentText('barrel')
+        if self.controller_type in ["Arduino", "PicoP4SPR"]:
+            self.polarizer_type_combo.setCurrentText("circle")
+        elif self.controller_type == "PicoEZSPR":
+            self.polarizer_type_combo.setCurrentText("barrel")
 
     def _update_config_source_indicator(self):
         """Update the config source indicator label."""
@@ -972,14 +1014,17 @@ class DeviceConfigDialog(QDialog):
             self.config_source_label.setText("ℹ️ New configuration")
             return
 
-        if hasattr(self.device_config, 'loaded_from_eeprom') and self.device_config.loaded_from_eeprom:
+        if (
+            hasattr(self.device_config, "loaded_from_eeprom")
+            and self.device_config.loaded_from_eeprom
+        ):
             self.config_source_label.setText("📦 Configuration loaded from EEPROM")
             self.config_source_label.setStyleSheet(
                 "font-size: 12px;"
                 "color: #FF9500;"
                 "padding: 8px 12px;"
                 "background: #FFF3E0;"
-                "border-radius: 6px;"
+                "border-radius: 6px;",
             )
         else:
             self.config_source_label.setText("💾 Configuration loaded from JSON file")
@@ -988,17 +1033,18 @@ class DeviceConfigDialog(QDialog):
                 "color: #34C759;"
                 "padding: 8px 12px;"
                 "background: #E8F5E9;"
-                "border-radius: 6px;"
+                "border-radius: 6px;",
             )
 
     def _on_push_to_eeprom(self):
         """Push current form configuration to EEPROM."""
         if self.controller is None:
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.warning(
                 self,
                 "No Controller",
-                "Cannot push to EEPROM: No controller connected."
+                "Cannot push to EEPROM: No controller connected.",
             )
             return
 
@@ -1006,13 +1052,14 @@ class DeviceConfigDialog(QDialog):
         if self.device_config is not None:
             config_data = self.get_config_data()
             self.device_config.set_hardware_config(
-                led_pcb_model=config_data['led_pcb_model'],
-                optical_fiber_diameter_um=config_data['optical_fiber_diameter_um'],
-                polarizer_type=config_data['polarizer_type']
+                led_pcb_model=config_data["led_pcb_model"],
+                optical_fiber_diameter_um=config_data["optical_fiber_diameter_um"],
+                polarizer_type=config_data["polarizer_type"],
             )
 
         # Sync to EEPROM
         from affilabs.utils.logger import logger
+
         logger.info("Pushing configuration to EEPROM...")
 
         if self.device_config is not None:
@@ -1020,21 +1067,23 @@ class DeviceConfigDialog(QDialog):
         else:
             # No device_config yet - create temporary EEPROM config from form
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.information(
                 self,
                 "Save First",
-                "Please save the configuration to JSON first, then push to EEPROM."
+                "Please save the configuration to JSON first, then push to EEPROM.",
             )
             return
 
         # Show result
         from PySide6.QtWidgets import QMessageBox
+
         if success:
             QMessageBox.information(
                 self,
                 "EEPROM Sync Complete",
                 "✓ Configuration successfully pushed to device EEPROM.\n\n"
-                "The device can now be used on other computers without reconfiguration."
+                "The device can now be used on other computers without reconfiguration.",
             )
             logger.info("✓ EEPROM sync successful")
         else:
@@ -1042,7 +1091,7 @@ class DeviceConfigDialog(QDialog):
                 self,
                 "EEPROM Sync Failed",
                 "Failed to push configuration to EEPROM.\n\n"
-                "Check the logs for details."
+                "Check the logs for details.",
             )
             logger.error("✗ EEPROM sync failed")
 
@@ -1050,15 +1099,15 @@ class DeviceConfigDialog(QDialog):
         """Get the configuration data from the form."""
         # Map LED model abbreviations to full names
         led_model_map = {
-            'LCW': 'luminus_cool_white',
-            'OWW': 'osram_warm_white'
+            "LCW": "luminus_cool_white",
+            "OWW": "osram_warm_white",
         }
 
         # Extract fiber diameter from selection (e.g., "A (100 µm)" -> 100)
         fiber_text = self.fiber_diameter_combo.currentText()
-        if 'A' in fiber_text:
+        if "A" in fiber_text:
             fiber_diameter = 100
-        elif 'B' in fiber_text:
+        elif "B" in fiber_text:
             fiber_diameter = 200
         else:
             fiber_diameter = 200  # Default
@@ -1067,21 +1116,24 @@ class DeviceConfigDialog(QDialog):
         controller_type = self.controller_combo.currentText()
 
         # Determine controller model name from type
-        controller_model = 'Raspberry Pi Pico P4SPR'  # Default
-        if controller_type == 'Arduino':
-            controller_model = 'Arduino P4SPR'
-        elif controller_type == 'PicoP4SPR':
-            controller_model = 'Raspberry Pi Pico P4SPR'
-        elif controller_type == 'PicoEZSPR':
-            controller_model = 'Raspberry Pi Pico EZSPR'
+        controller_model = "Raspberry Pi Pico P4SPR"  # Default
+        if controller_type == "Arduino":
+            controller_model = "Arduino P4SPR"
+        elif controller_type == "PicoP4SPR":
+            controller_model = "Raspberry Pi Pico P4SPR"
+        elif controller_type == "PicoEZSPR":
+            controller_model = "Raspberry Pi Pico EZSPR"
 
         return {
-            'led_pcb_model': led_model_map.get(self.led_model_combo.currentText(), 'luminus_cool_white'),
-            'optical_fiber_diameter_um': fiber_diameter,
-            'polarizer_type': self.polarizer_type_combo.currentText(),
-            'device_id': self.device_id_input.text().strip() or None,
-            'controller_model': controller_model,
-            'controller_type': controller_type,
+            "led_pcb_model": led_model_map.get(
+                self.led_model_combo.currentText(),
+                "luminus_cool_white",
+            ),
+            "optical_fiber_diameter_um": fiber_diameter,
+            "polarizer_type": self.polarizer_type_combo.currentText(),
+            "device_id": self.device_id_input.text().strip() or None,
+            "controller_model": controller_model,
+            "controller_type": controller_type,
         }
 
 
@@ -1094,6 +1146,7 @@ class AffilabsMainWindow(QMainWindow):
         - power_on_requested / power_off_requested
         - recording_start_requested / recording_stop_requested
         - acquisition_pause_requested(bool)
+        - apply_led_settings_requested(dict)  # LED settings from Settings tab
 
     Key Control Elements:
         - power_btn, record_btn, pause_btn
@@ -1108,6 +1161,9 @@ class AffilabsMainWindow(QMainWindow):
 
     See module docstring for complete integration reference.
     """
+
+    # Signal emitted when user applies LED settings (signal-based communication)
+    apply_led_settings_requested = Signal(dict)
 
     # Signals for power button
     power_on_requested = Signal()
@@ -1128,6 +1184,7 @@ class AffilabsMainWindow(QMainWindow):
         self.setWindowTitle("AI - AffiLabs.core")
         # Set window icon using relative path from affilabs module
         from pathlib import Path
+
         icon_path = Path(__file__).parent / "ui" / "img" / "affinite2.ico"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
@@ -1180,13 +1237,18 @@ class AffilabsMainWindow(QMainWindow):
         self._graph_placeholders_created = False
 
         # Initialize managers for domain logic (Manager Pattern) - BEFORE _setup_ui()
-        from affilabs.managers import DeviceConfigManager, CalibrationManager
-        from affilabs.presenters import BaselineRecordingPresenter, NavigationPresenter
+        from affilabs.managers import CalibrationManager, DeviceConfigManager
+        from affilabs.presenters import (
+            BaselineRecordingPresenter,
+            NavigationPresenter,
+            SensogramPresenter,
+        )
 
         self.device_config_manager = DeviceConfigManager(self)
         self.calibration_manager = CalibrationManager(self)
         self.baseline_recording_presenter = BaselineRecordingPresenter(self)
         self.navigation_presenter = NavigationPresenter(self)
+        self.sensogram_presenter = SensogramPresenter(self)
 
         self._setup_ui()
         self._connect_signals()
@@ -1218,7 +1280,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: rgba(0, 0, 0, 0.15);"
-            "}"
+            "}",
         )
 
         self.sidebar = AffilabsSidebar()
@@ -1264,26 +1326,42 @@ class AffilabsMainWindow(QMainWindow):
         self.apply_settings_btn = self.sidebar.apply_settings_btn
 
         # Forward spectroscopy plots (if they exist)
-        print(f"\n[FORWARDING-DEBUG] Checking for transmission_plot in sidebar...")
-        print(f"  hasattr(self.sidebar, 'transmission_plot') = {hasattr(self.sidebar, 'transmission_plot')}")
-        if hasattr(self.sidebar, 'transmission_plot'):
-            print(f"  self.sidebar.transmission_plot = {self.sidebar.transmission_plot}")
-            print(f"  hasattr(self.sidebar, 'transmission_curves') = {hasattr(self.sidebar, 'transmission_curves')}")
-            if hasattr(self.sidebar, 'transmission_curves'):
-                print(f"  self.sidebar.transmission_curves = {self.sidebar.transmission_curves}")
-                print(f"  len(self.sidebar.transmission_curves) = {len(self.sidebar.transmission_curves)}")
+        print("\n[FORWARDING-DEBUG] Checking for transmission_plot in sidebar...")
+        print(
+            f"  hasattr(self.sidebar, 'transmission_plot') = {hasattr(self.sidebar, 'transmission_plot')}",
+        )
+        if hasattr(self.sidebar, "transmission_plot"):
+            print(
+                f"  self.sidebar.transmission_plot = {self.sidebar.transmission_plot}",
+            )
+            print(
+                f"  hasattr(self.sidebar, 'transmission_curves') = {hasattr(self.sidebar, 'transmission_curves')}",
+            )
+            if hasattr(self.sidebar, "transmission_curves"):
+                print(
+                    f"  self.sidebar.transmission_curves = {self.sidebar.transmission_curves}",
+                )
+                print(
+                    f"  len(self.sidebar.transmission_curves) = {len(self.sidebar.transmission_curves)}",
+                )
 
-        if hasattr(self.sidebar, 'transmission_plot'):
+        if hasattr(self.sidebar, "transmission_plot"):
             self.transmission_plot = self.sidebar.transmission_plot
             self.transmission_curves = self.sidebar.transmission_curves
-            logger.info(f"✅ Forwarded transmission plot with {len(self.transmission_curves)} curves from sidebar")
+            logger.info(
+                f"✅ Forwarded transmission plot with {len(self.transmission_curves)} curves from sidebar",
+            )
         else:
-            logger.warning("⚠️ transmission_plot NOT found in sidebar - plots will not work")
+            logger.warning(
+                "⚠️ transmission_plot NOT found in sidebar - plots will not work",
+            )
 
-        if hasattr(self.sidebar, 'raw_data_plot'):
+        if hasattr(self.sidebar, "raw_data_plot"):
             self.raw_data_plot = self.sidebar.raw_data_plot
             self.raw_data_curves = self.sidebar.raw_data_curves
-            logger.info(f"✅ Forwarded raw data plot with {len(self.raw_data_curves)} curves from sidebar")
+            logger.info(
+                f"✅ Forwarded raw data plot with {len(self.raw_data_curves)} curves from sidebar",
+            )
         else:
             logger.warning("⚠️ raw_data_plot NOT found in sidebar - plots will not work")
 
@@ -1294,14 +1372,16 @@ class AffilabsMainWindow(QMainWindow):
         self.oem_led_calibration_btn = self.sidebar.oem_led_calibration_btn
 
         # Forward baseline capture button (REBUILT)
-        if hasattr(self.sidebar, 'baseline_capture_btn'):
+        if hasattr(self.sidebar, "baseline_capture_btn"):
             self.baseline_capture_btn = self.sidebar.baseline_capture_btn
             logger.info("✅ Forwarded baseline capture button from sidebar")
         else:
             logger.warning("⚠️ baseline_capture_btn NOT found in sidebar")
 
         right_widget = QWidget()
-        right_widget.setMinimumWidth(300)  # Allow main content to compress so sidebar can expand more
+        right_widget.setMinimumWidth(
+            300,
+        )  # Allow main content to compress so sidebar can expand more
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
@@ -1310,6 +1390,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Stacked widget to hold different content pages
         from PySide6.QtWidgets import QStackedWidget
+
         self.content_stack = QStackedWidget()
 
         # Create placeholder for sensorgram (will be replaced with real graphs after window shows)
@@ -1334,10 +1415,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern)."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -1350,6 +1428,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Create QSplitter for resizable graph panels (30/70 split)
         from PySide6.QtWidgets import QSplitter
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(8)
         splitter.setChildrenCollapsible(False)
@@ -1358,22 +1437,33 @@ class AffilabsMainWindow(QMainWindow):
         self.full_timeline_graph, top_graph = self._create_graph_container(
             "Live Sensorgram",
             height=200,
-            show_delta_spr=False
+            show_delta_spr=False,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
         self.cycle_of_interest_graph, bottom_graph = self._create_graph_container(
             "Cycle of Interest",
             height=400,
-            show_delta_spr=True
+            show_delta_spr=True,
         )
 
         # Connect cursor signals for region selection
-        if self.full_timeline_graph.start_cursor and self.full_timeline_graph.stop_cursor:
-            self.full_timeline_graph.start_cursor.sigDragged.connect(self._on_cursor_dragged)
-            self.full_timeline_graph.stop_cursor.sigDragged.connect(self._on_cursor_dragged)
-            self.full_timeline_graph.start_cursor.sigPositionChangeFinished.connect(self._on_cursor_moved)
-            self.full_timeline_graph.stop_cursor.sigPositionChangeFinished.connect(self._on_cursor_moved)
+        if (
+            self.full_timeline_graph.start_cursor
+            and self.full_timeline_graph.stop_cursor
+        ):
+            self.full_timeline_graph.start_cursor.sigDragged.connect(
+                self._on_cursor_dragged,
+            )
+            self.full_timeline_graph.stop_cursor.sigDragged.connect(
+                self._on_cursor_dragged,
+            )
+            self.full_timeline_graph.start_cursor.sigPositionChangeFinished.connect(
+                self._on_cursor_moved,
+            )
+            self.full_timeline_graph.stop_cursor.sigPositionChangeFinished.connect(
+                self._on_cursor_moved,
+            )
 
         splitter.addWidget(top_graph)
         splitter.addWidget(bottom_graph)
@@ -1399,7 +1489,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: #1D1D1F;"
-            "}"
+            "}",
         )
 
         content_layout.addWidget(splitter, 1)
@@ -1454,7 +1544,9 @@ class AffilabsMainWindow(QMainWindow):
         """)
         skeleton_layout = QVBoxLayout(timeline_skeleton)
         skeleton_label = QLabel("Loading graph...")
-        skeleton_label.setStyleSheet(f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;")
+        skeleton_label.setStyleSheet(
+            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;",
+        )
         skeleton_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         skeleton_layout.addWidget(skeleton_label)
         timeline_layout.addWidget(timeline_skeleton)
@@ -1496,7 +1588,9 @@ class AffilabsMainWindow(QMainWindow):
         """)
         cycle_skeleton_layout = QVBoxLayout(cycle_skeleton)
         cycle_skeleton_label = QLabel("Loading graph...")
-        cycle_skeleton_label.setStyleSheet(f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;")
+        cycle_skeleton_label.setStyleSheet(
+            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;",
+        )
         cycle_skeleton_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cycle_skeleton_layout.addWidget(cycle_skeleton_label)
         cycle_layout.addWidget(cycle_skeleton)
@@ -1534,10 +1628,10 @@ class AffilabsMainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"❌ Failed to load deferred graphs: {e}", exc_info=True)
             # Update placeholder with error message
-            if hasattr(self, '_loading_label'):
+            if hasattr(self, "_loading_label"):
                 self._loading_label.setText(f"Error loading graphs: {e}")
                 self._loading_label.setStyleSheet(
-                    "QLabel { color: #FF3B30; font-size: 14px; }"
+                    "QLabel { color: #FF3B30; font-size: 14px; }",
                 )
 
     def _create_graph_header(self):
@@ -1555,16 +1649,10 @@ class AffilabsMainWindow(QMainWindow):
         first_row_layout.setSpacing(8)
 
         # Channel selection label
+        from affilabs.utils.ui_styles import UIStyleManager
+
         channels_label = QLabel("Channels:")
-        channels_label.setStyleSheet(
-            "QLabel {"
-            "  font-size: 13px;"
-            "  color: #86868B;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "  font-weight: 500;"
-            "}"
-        )
+        channels_label.setStyleSheet(UIStyleManager.get_header_label_style())
         channels_label.setToolTip("Toggle channel visibility on graphs")
         first_row_layout.addWidget(channels_label)
 
@@ -1574,7 +1662,7 @@ class AffilabsMainWindow(QMainWindow):
             "A": ("#1D1D1F", "Channel A (Black) - Toggle visibility"),
             "B": ("#FF3B30", "Channel B (Red) - Toggle visibility"),
             "C": ("#007AFF", "Channel C (Blue) - Toggle visibility"),
-            "D": ("#34C759", "Channel D (Green) - Toggle visibility")
+            "D": ("#34C759", "Channel D (Green) - Toggle visibility"),
         }
         for ch, (color, tooltip) in channel_names.items():
             ch_btn = QPushButton(f"Ch {ch}")
@@ -1582,28 +1670,17 @@ class AffilabsMainWindow(QMainWindow):
             ch_btn.setChecked(True)
             ch_btn.setFixedSize(56, 32)
             ch_btn.setToolTip(tooltip)
-            ch_btn.setStyleSheet(
-                f"QPushButton {{"
-                f"  background: {color};"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
-                "  font-size: 12px;"
-                "  font-weight: 600;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
-                "QPushButton:!checked {"
-                "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #86868B;"
-                "}"
-                "QPushButton:hover:!checked {"
-                "  background: rgba(0, 0, 0, 0.1);"
-                "}"
-            )
+            ch_btn.setStyleSheet(UIStyleManager.get_channel_button_style(color))
 
             # Store reference and connect to visibility toggle
             self.channel_toggles[ch] = ch_btn
-            ch_btn.toggled.connect(lambda checked, channel=ch: self._toggle_channel_visibility(channel, checked))
+            ch_btn.toggled.connect(
+                lambda checked,
+                channel=ch: self.sensogram_presenter.toggle_channel_visibility(
+                    channel,
+                    checked,
+                ),
+            )
 
             first_row_layout.addWidget(ch_btn)
 
@@ -1616,34 +1693,12 @@ class AffilabsMainWindow(QMainWindow):
             "Enable/disable live cursor auto-follow\n"
             "• Checked: Stop cursor follows latest data point\n"
             "• Unchecked: Stop cursor freezes, data keeps recording\n"
-            "• Cycle of Interest graph always updates between cursors"
+            "• Cycle of Interest graph always updates between cursors",
         )
-        self.live_data_checkbox.setStyleSheet(
-            "QCheckBox {"
-            "  font-size: 13px;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "  font-weight: 500;"
-            "  spacing: 6px;"
-            "}"
-            "QCheckBox::indicator {"
-            "  width: 18px;"
-            "  height: 18px;"
-            "  border: 2px solid #86868B;"
-            "  border-radius: 4px;"
-            "  background: white;"
-            "}"
-            "QCheckBox::indicator:checked {"
-            "  background: #007AFF;"
-            "  border-color: #007AFF;"
-            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEwLjUgMS41TDQgOEwxLjUgNS41IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==);"
-            "}"
-            "QCheckBox::indicator:hover {"
-            "  border-color: #007AFF;"
-            "}"
+        self.live_data_checkbox.setStyleSheet(UIStyleManager.get_live_checkbox_style())
+        self.live_data_checkbox.toggled.connect(
+            self.sensogram_presenter.set_live_data_enabled,
         )
-        self.live_data_checkbox.toggled.connect(self._toggle_live_data)
         first_row_layout.addWidget(self.live_data_checkbox)
 
         # Add spacing
@@ -1656,29 +1711,10 @@ class AffilabsMainWindow(QMainWindow):
             "Clear all timeline data and reset graphs\n"
             "• Clears all channel data (A, B, C, D)\n"
             "• Resets baseline wavelengths\n"
-            "• Does not stop acquisition"
+            "• Does not stop acquisition",
         )
         self.clear_graph_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "  color: #1D1D1F;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "  padding: 0 16px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(0, 0, 0, 0.15);"
-            "}"
-            "QPushButton:disabled {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  color: #86868B;"
-            "}"
+            UIStyleManager.get_clear_button_style("neutral"),
         )
         self.clear_graph_btn.clicked.connect(self._clear_graph_data)
         first_row_layout.addWidget(self.clear_graph_btn)
@@ -1689,31 +1725,10 @@ class AffilabsMainWindow(QMainWindow):
         self.clear_flags_btn.setToolTip(
             "Remove all flag markers from Cycle of Interest graph\n"
             "• Clears visual flag indicators\n"
-            "• Does not affect data"
+            "• Does not affect data",
         )
         self.clear_flags_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(255, 59, 48, 0.1);"
-            "  color: #FF3B30;"
-            "  border: 1px solid rgba(255, 59, 48, 0.3);"
-            "  border-radius: 6px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "  padding: 0 16px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(255, 59, 48, 0.15);"
-            "  border: 1px solid rgba(255, 59, 48, 0.5);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(255, 59, 48, 0.2);"
-            "}"
-            "QPushButton:disabled {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  color: #86868B;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "}"
+            UIStyleManager.get_clear_button_style("danger"),
         )
         self.clear_flags_btn.clicked.connect(self._clear_all_flags)
         first_row_layout.addWidget(self.clear_flags_btn)
@@ -1724,23 +1739,20 @@ class AffilabsMainWindow(QMainWindow):
 
     def _show_transmission_spectrum(self):
         """Show the transmission spectrum dialog."""
-        if hasattr(self, 'app') and self.app:
+        if hasattr(self, "app") and self.app:
             self.app.show_transmission_dialog()
 
     def _on_pipeline_changed(self, index: int):
         """DISABLED - Pipeline selector removed, only Fourier method used."""
-        pass
 
     def _update_pipeline_description(self, index: int):
         """DISABLED - Pipeline selector removed."""
-        pass
-
         descriptions = {
             "fourier": "Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.",
             "batch_savgol": "Batch Savitzky-Golay (GOLD STANDARD): Hardware averaging + batch processing + SG filtering. Achieves 0.008nm baseline.",
             "direct": "Direct ArgMin: Simplest method, finds minimum in SPR range. Fastest execution, optimal for clean signals.",
             "adaptive": "Adaptive Multi-Feature: Combines multiple detection methods with adaptive weighting. Best for challenging signals.",
-            "consensus": "Consensus: Combines 3 methods (centroid, parabolic, fourier) for robust multi-method validation."
+            "consensus": "Consensus: Combines 3 methods (centroid, parabolic, fourier) for robust multi-method validation.",
         }
 
         description = descriptions.get(pipeline_id, "Unknown pipeline selected.")
@@ -1748,7 +1760,6 @@ class AffilabsMainWindow(QMainWindow):
 
     def _init_pipeline_selector(self):
         """DISABLED - Pipeline selector removed, only Fourier method used."""
-        pass
 
     def _create_cursor_controls(self):
         """Create simplified cursor control panel with Quick Select presets only."""
@@ -1759,7 +1770,7 @@ class AffilabsMainWindow(QMainWindow):
             "  border: 1px solid rgba(0, 0, 0, 0.1);"
             "  border-radius: 8px;"
             "  padding: 6px;"
-            "}"
+            "}",
         )
 
         layout = QHBoxLayout(panel)
@@ -1775,7 +1786,7 @@ class AffilabsMainWindow(QMainWindow):
             "  font-weight: 500;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         presets_label.setToolTip("Quickly select common time ranges")
         layout.addWidget(presets_label)
@@ -1785,7 +1796,7 @@ class AffilabsMainWindow(QMainWindow):
             ("Last 30s", -30, "Select last 30 seconds"),
             ("Last 1min", -60, "Select last 1 minute"),
             ("Last 5min", -300, "Select last 5 minutes"),
-            ("All Data", None, "Select entire timeline")
+            ("All Data", None, "Select entire timeline"),
         ]
 
         for label, seconds, tooltip in preset_buttons:
@@ -1809,10 +1820,12 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: #D8D9DA;"
-                "}"
+                "}",
             )
             if seconds is not None:
-                btn.clicked.connect(lambda checked=False, s=seconds: self._select_time_range(s))
+                btn.clicked.connect(
+                    lambda checked=False, s=seconds: self._select_time_range(s),
+                )
             else:
                 btn.clicked.connect(self._select_all_data)
             layout.addWidget(btn)
@@ -1839,7 +1852,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #004BB5;"
-            "}"
+            "}",
         )
         export_btn.clicked.connect(self._export_cursor_range)
         layout.addWidget(export_btn)
@@ -1856,9 +1869,9 @@ class AffilabsMainWindow(QMainWindow):
 
     def _select_time_range(self, seconds_from_end):
         """Select time range relative to current end time."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
-        if not hasattr(self.full_timeline_graph, 'stop_cursor'):
+        if not hasattr(self.full_timeline_graph, "stop_cursor"):
             return
 
         try:
@@ -1875,15 +1888,17 @@ class AffilabsMainWindow(QMainWindow):
             # Update spinboxes
             self._update_cursor_inputs()
 
-            print(f"Selected range: {start_time:.1f}s to {stop_time:.1f}s ({abs(seconds_from_end)}s duration)")
+            print(
+                f"Selected range: {start_time:.1f}s to {stop_time:.1f}s ({abs(seconds_from_end)}s duration)",
+            )
         except Exception as e:
             print(f"Error selecting time range: {e}")
 
     def _select_all_data(self):
         """Select entire timeline from 0 to latest data."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
-        if not hasattr(self.full_timeline_graph, 'stop_cursor'):
+        if not hasattr(self.full_timeline_graph, "stop_cursor"):
             return
 
         try:
@@ -1902,13 +1917,13 @@ class AffilabsMainWindow(QMainWindow):
 
     def _on_start_input_changed(self, value):
         """Update start cursor when spinbox changes."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
-        if not hasattr(self.full_timeline_graph, 'start_cursor'):
+        if not hasattr(self.full_timeline_graph, "start_cursor"):
             return
 
         # Prevent circular updates
-        if hasattr(self, '_updating_cursor_inputs') and self._updating_cursor_inputs:
+        if hasattr(self, "_updating_cursor_inputs") and self._updating_cursor_inputs:
             return
 
         try:
@@ -1919,13 +1934,13 @@ class AffilabsMainWindow(QMainWindow):
 
     def _on_stop_input_changed(self, value):
         """Update stop cursor when spinbox changes."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
-        if not hasattr(self.full_timeline_graph, 'stop_cursor'):
+        if not hasattr(self.full_timeline_graph, "stop_cursor"):
             return
 
         # Prevent circular updates
-        if hasattr(self, '_updating_cursor_inputs') and self._updating_cursor_inputs:
+        if hasattr(self, "_updating_cursor_inputs") and self._updating_cursor_inputs:
             return
 
         try:
@@ -1936,9 +1951,12 @@ class AffilabsMainWindow(QMainWindow):
 
     def _update_cursor_inputs(self):
         """Update spinboxes to match cursor positions."""
-        if not hasattr(self, 'start_time_input') or not hasattr(self, 'stop_time_input'):
+        if not hasattr(self, "start_time_input") or not hasattr(
+            self,
+            "stop_time_input",
+        ):
             return
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         try:
@@ -1958,9 +1976,9 @@ class AffilabsMainWindow(QMainWindow):
 
     def _update_duration_label(self):
         """Update duration label based on cursor positions."""
-        if not hasattr(self, 'duration_label'):
+        if not hasattr(self, "duration_label"):
             return
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         try:
@@ -1968,12 +1986,12 @@ class AffilabsMainWindow(QMainWindow):
             stop = self.full_timeline_graph.stop_cursor.value()
             duration = abs(stop - start)
             self.duration_label.setText(f"({duration:.1f}s)")
-        except Exception as e:
+        except Exception:
             pass
 
     def _export_cursor_range(self):
         """Export data from selected cursor range to CSV."""
-        if not hasattr(self, 'app') or not self.app:
+        if not hasattr(self, "app") or not self.app:
             print("Application not initialized")
             return
 
@@ -1982,7 +2000,7 @@ class AffilabsMainWindow(QMainWindow):
             stop_time = self.full_timeline_graph.stop_cursor.value()
 
             # Forward to application's export cycle method
-            if hasattr(self.app, 'export_cycle_data'):
+            if hasattr(self.app, "export_cycle_data"):
                 self.app.export_cycle_data()
                 print(f"Exporting range: {start_time:.1f}s to {stop_time:.1f}s")
             else:
@@ -1997,16 +2015,16 @@ class AffilabsMainWindow(QMainWindow):
     def _on_cursor_moved(self, evt):
         """Handle cursor movement finished - update inputs and apply snap if enabled."""
         # Apply snap to data if enabled
-        if hasattr(self, 'snap_checkbox') and self.snap_checkbox.isChecked():
+        if hasattr(self, "snap_checkbox") and self.snap_checkbox.isChecked():
             self._apply_snap_to_data(evt)
 
         self._update_cursor_inputs()
 
     def _apply_snap_to_data(self, cursor):
         """Snap cursor to nearest data point timestamp."""
-        if not hasattr(self, 'app') or not self.app:
+        if not hasattr(self, "app") or not self.app:
             return
-        if not hasattr(self.app, 'buffer_mgr'):
+        if not hasattr(self.app, "buffer_mgr"):
             return
 
         try:
@@ -2017,9 +2035,9 @@ class AffilabsMainWindow(QMainWindow):
 
             # Find nearest timestamp from any channel with data
             nearest_time = cursor_time
-            min_distance = float('inf')
+            min_distance = float("inf")
 
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 time_data = self.app.buffer_mgr.timeline_data[ch].time
                 if len(time_data) > 0:
                     timestamps = np.array(time_data)
@@ -2032,60 +2050,70 @@ class AffilabsMainWindow(QMainWindow):
                             nearest_time = candidate
 
             # Snap to nearest (only if within 10% of viewport)
-            if min_distance < float('inf'):
+            if min_distance < float("inf"):
                 cursor.setValue(float(nearest_time))
         except Exception as e:
             print(f"Error applying snap: {e}")
 
     def _toggle_live_data(self, enabled: bool) -> None:
         """Toggle live data updates for graphs."""
-        self.live_data_enabled = enabled
-        if enabled:
-            print("Live data updates enabled")
+        # Delegate to presenter for consistent behavior
+        if hasattr(self, "sensogram_presenter"):
+            self.sensogram_presenter.set_live_data_enabled(enabled)
         else:
-            print("Live data updates disabled - graph frozen")
+            self.live_data_enabled = enabled
+            if enabled:
+                print("Live data updates enabled")
+            else:
+                print("Live data updates disabled - graph frozen")
 
     def _toggle_channel_visibility(self, channel, visible):
         """Toggle visibility of a channel on both graphs."""
-        channel_idx = {'A': 0, 'B': 1, 'C': 2, 'D': 3}[channel]
-
-        # Update full timeline graph
-        if hasattr(self, 'full_timeline_graph'):
-            curve = self.full_timeline_graph.curves[channel_idx]
-            if visible:
-                curve.show()
-            else:
-                curve.hide()
-
-        # Update cycle of interest graph
-        if hasattr(self, 'cycle_of_interest_graph'):
-            curve = self.cycle_of_interest_graph.curves[channel_idx]
-            if visible:
-                curve.show()
-            else:
-                curve.hide()
+        if hasattr(self, "sensogram_presenter"):
+            self.sensogram_presenter.toggle_channel_visibility(channel, visible)
+            return
+        # Fallback (should not be used once presenter is available)
+        channel_idx = {"A": 0, "B": 1, "C": 2, "D": 3}.get(channel)
+        if channel_idx is None:
+            return
+        if hasattr(self, "full_timeline_graph") and channel_idx < len(
+            self.full_timeline_graph.curves,
+        ):
+            (
+                self.full_timeline_graph.curves[channel_idx].show()
+                if visible
+                else self.full_timeline_graph.curves[channel_idx].hide()
+            )
+        if hasattr(self, "cycle_of_interest_graph") and channel_idx < len(
+            self.cycle_of_interest_graph.curves,
+        ):
+            (
+                self.cycle_of_interest_graph.curves[channel_idx].show()
+                if visible
+                else self.cycle_of_interest_graph.curves[channel_idx].hide()
+            )
 
     def _clear_graph_data(self):
         """Clear all timeline data and reset graphs."""
-        if hasattr(self, 'app') and self.app:
+        if hasattr(self, "app") and self.app:
             try:
                 # Clear all buffers
                 self.app.buffer_mgr.clear_all()
 
                 # Clear plot curves in full timeline graph
-                if hasattr(self, 'full_timeline_graph'):
+                if hasattr(self, "full_timeline_graph"):
                     for curve in self.full_timeline_graph.curves:
                         curve.setData([], [])
 
                 # Clear plot curves in cycle of interest graph
-                if hasattr(self, 'cycle_of_interest_graph'):
+                if hasattr(self, "cycle_of_interest_graph"):
                     for curve in self.cycle_of_interest_graph.curves:
                         curve.setData([], [])
 
                 # Reset cursors to initial position
-                if hasattr(self, 'start_cursor'):
+                if hasattr(self, "start_cursor"):
                     self.start_cursor.setValue(0)
-                if hasattr(self, 'stop_cursor'):
+                if hasattr(self, "stop_cursor"):
                     self.stop_cursor.setValue(0)
 
                 print("✅ Graph data cleared")
@@ -2095,31 +2123,36 @@ class AffilabsMainWindow(QMainWindow):
     def _clear_all_flags(self):
         """Remove all flag markers from the cycle of interest graph."""
         try:
-            if not hasattr(self, 'cycle_of_interest_graph'):
+            if not hasattr(self, "cycle_of_interest_graph"):
                 return
 
             # Remove all flag markers from the graph
-            if hasattr(self.cycle_of_interest_graph, 'flag_markers'):
+            if hasattr(self.cycle_of_interest_graph, "flag_markers"):
                 for marker in self.cycle_of_interest_graph.flag_markers:
                     # Remove line
-                    if 'line' in marker and marker['line'] is not None:
-                        self.cycle_of_interest_graph.removeItem(marker['line'])
+                    if "line" in marker and marker["line"] is not None:
+                        self.cycle_of_interest_graph.removeItem(marker["line"])
                     # Remove symbol
-                    if 'symbol' in marker and marker['symbol'] is not None:
-                        self.cycle_of_interest_graph.removeItem(marker['symbol'])
+                    if "symbol" in marker and marker["symbol"] is not None:
+                        self.cycle_of_interest_graph.removeItem(marker["symbol"])
 
                 # Clear the list
                 self.cycle_of_interest_graph.flag_markers.clear()
 
             # Also clear flag data if stored in app
-            if hasattr(self, 'app') and self.app and hasattr(self.app, '_flag_data'):
+            if hasattr(self, "app") and self.app and hasattr(self.app, "_flag_data"):
                 self.app._flag_data.clear()
 
             print("✅ All flags cleared from Cycle of Interest graph")
         except Exception as e:
             print(f"❌ Error clearing flags: {e}")
 
-    def _create_graph_container(self, title: str, height: int, show_delta_spr: bool = False) -> QFrame:
+    def _create_graph_container(
+        self,
+        title: str,
+        height: int,
+        show_delta_spr: bool = False,
+    ) -> QFrame:
         """Create a graph container with title and controls."""
         import pyqtgraph as pg
 
@@ -2130,7 +2163,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         # Add shadow
         shadow = QGraphicsDropShadowEffect()
@@ -2155,7 +2188,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         title_row.addWidget(title_label)
 
@@ -2164,7 +2197,9 @@ class AffilabsMainWindow(QMainWindow):
         # Delta SPR signal display (only for Cycle of Interest graph)
         delta_display = None
         if show_delta_spr:
-            delta_display = QLabel("Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm")
+            delta_display = QLabel(
+                "Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm",
+            )
             delta_display.setStyleSheet(
                 "QLabel {"
                 "  background: rgba(0, 0, 0, 0.04);"
@@ -2175,15 +2210,17 @@ class AffilabsMainWindow(QMainWindow):
                 f"  color: {Colors.PRIMARY_TEXT};"
                 f"  font-family: {Fonts.MONOSPACE};"
                 "  font-weight: 500;"
-                "}"
+                "}",
             )
-            delta_display.setToolTip("Real-time change in Surface Plasmon Resonance signal (relative to cycle start)")
+            delta_display.setToolTip(
+                "Real-time change in Surface Plasmon Resonance signal (relative to cycle start)",
+            )
             title_row.addWidget(delta_display)
 
         layout.addLayout(title_row)
 
         # Create standardized time-series plot
-        left_label = 'Δ SPR (RU)' if show_delta_spr else 'λ (nm)'
+        left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
         plot_widget = create_time_plot(left_label)
 
         # Create plot curves for 4 channels with distinct colors
@@ -2207,38 +2244,38 @@ class AffilabsMainWindow(QMainWindow):
             start_cursor = pg.InfiniteLine(
                 pos=0,
                 angle=90,
-                pen=pg.mkPen(color='#1D1D1F', width=3),  # 3px for easier click target
+                pen=pg.mkPen(color="#1D1D1F", width=3),  # 3px for easier click target
                 movable=True,
-                label='Start: {value:.1f}s',
+                label="Start: {value:.1f}s",
                 labelOpts={
-                    'position': 0.5,  # Center of graph
-                    'color': '#1D1D1F',
-                    'fill': '#FFFFFF',
-                    'movable': False,
-                    'rotateAxis': (1, 0)  # Rotate 180 degrees total (horizontal)
-                }
+                    "position": 0.5,  # Center of graph
+                    "color": "#1D1D1F",
+                    "fill": "#FFFFFF",
+                    "movable": False,
+                    "rotateAxis": (1, 0),  # Rotate 180 degrees total (horizontal)
+                },
             )
             # Thicker hover effect (5px) for clear visual feedback
-            start_cursor.setHoverPen(pg.mkPen(color='#666666', width=5))
+            start_cursor.setHoverPen(pg.mkPen(color="#666666", width=5))
             plot_widget.addItem(start_cursor)
 
             # Stop cursor - thicker line (3px) for easier interaction
             stop_cursor = pg.InfiniteLine(
                 pos=100,
                 angle=90,
-                pen=pg.mkPen(color='#1D1D1F', width=3),  # 3px for easier click target
+                pen=pg.mkPen(color="#1D1D1F", width=3),  # 3px for easier click target
                 movable=True,
-                label='Stop: {value:.1f}s',
+                label="Stop: {value:.1f}s",
                 labelOpts={
-                    'position': 0.5,  # Center of graph
-                    'color': '#1D1D1F',
-                    'fill': '#FFFFFF',
-                    'movable': False,
-                    'rotateAxis': (1, 0)  # Rotate 180 degrees total (horizontal)
-                }
+                    "position": 0.5,  # Center of graph
+                    "color": "#1D1D1F",
+                    "fill": "#FFFFFF",
+                    "movable": False,
+                    "rotateAxis": (1, 0),  # Rotate 180 degrees total (horizontal)
+                },
             )
             # Thicker hover effect (5px) for clear visual feedback
-            stop_cursor.setHoverPen(pg.mkPen(color='#666666', width=5))
+            stop_cursor.setHoverPen(pg.mkPen(color="#666666", width=5))
             plot_widget.addItem(stop_cursor)
 
         # Store references to curves and cursors on the plot widget
@@ -2247,12 +2284,19 @@ class AffilabsMainWindow(QMainWindow):
         plot_widget.start_cursor = start_cursor
         plot_widget.stop_cursor = stop_cursor
         plot_widget.flag_markers = []  # Store flag marker items
-        plot_widget.channel_flags = {0: [], 1: [], 2: [], 3: []}  # Store flags per channel (index: list of (x, y, note))
+        plot_widget.channel_flags = {
+            0: [],
+            1: [],
+            2: [],
+            3: [],
+        }  # Store flags per channel (index: list of (x, y, note))
 
         # Connect plot click event for flagging (ONLY for Live Sensorgram - top graph)
         # Bottom graph (Cycle of Interest) has default PyQtGraph interactions
         if not show_delta_spr:  # Live Sensorgram
-            plot_widget.scene().sigMouseClicked.connect(lambda event: self._on_plot_clicked(event, plot_widget))
+            plot_widget.scene().sigMouseClicked.connect(
+                lambda event: self._on_plot_clicked(event, plot_widget),
+            )
 
         # Mouse interaction mode: Rectangle zoom (default for both graphs)
         # Top graph: Rectangle zoom + flagging via right-click
@@ -2265,7 +2309,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def _on_curve_clicked(self, channel_idx):
         """Handle click on a channel curve in Live Sensorgram to select it for flagging."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         # Get channel letter for toggle button
@@ -2285,7 +2329,7 @@ class AffilabsMainWindow(QMainWindow):
                 curve.setPen(curve.original_pen)
 
         # Update channel toggle button to show selection (but don't change visibility)
-        if hasattr(self, 'channel_toggles') and channel_letter in self.channel_toggles:
+        if hasattr(self, "channel_toggles") and channel_letter in self.channel_toggles:
             # Visual feedback: briefly flash the button or update its appearance
             # For now, just ensure it's checked (visible)
             btn = self.channel_toggles[channel_letter]
@@ -2299,11 +2343,11 @@ class AffilabsMainWindow(QMainWindow):
 
     def _enable_flagging_mode(self, channel_idx, channel_letter):
         """Enable flagging mode for the selected channel."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         # Store current flagging mode state
-        if not hasattr(self, 'flagging_enabled'):
+        if not hasattr(self, "flagging_enabled"):
             self.flagging_enabled = False
 
         # Inform user that they can now click on points to flag them
@@ -2312,8 +2356,7 @@ class AffilabsMainWindow(QMainWindow):
         print("Ctrl+Right-click to remove a flag near that position")
 
     def _on_plot_clicked(self, event, plot_widget):
-        """
-        Handle clicks on the Live Sensorgram (top graph) for adding/removing flags.
+        """Handle clicks on the Live Sensorgram (top graph) for adding/removing flags.
         Bottom graph (Cycle of Interest) does not have this handler - uses default PyQtGraph interactions.
 
         Right-click: Add flag at position on selected channel
@@ -2324,7 +2367,7 @@ class AffilabsMainWindow(QMainWindow):
             return
 
         # Check if a channel is selected for flagging
-        if not hasattr(self, 'selected_channel_for_flagging'):
+        if not hasattr(self, "selected_channel_for_flagging"):
             print("Please select a channel first by clicking on its curve")
             return
 
@@ -2336,6 +2379,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Check for Ctrl modifier to remove flags
         from PySide6.QtCore import Qt
+
         modifiers = event.modifiers()
 
         if modifiers == Qt.KeyboardModifier.ControlModifier:
@@ -2349,7 +2393,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def _add_flag_to_point(self, channel_idx, x_pos, y_pos, note=""):
         """Add a flag marker at the specified position on the selected channel."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         import pyqtgraph as pg
@@ -2361,15 +2405,19 @@ class AffilabsMainWindow(QMainWindow):
         flag_line = pg.InfiniteLine(
             pos=x_pos,
             angle=90,
-            pen=pg.mkPen(color='#FF3B30', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
-            movable=False
+            pen=pg.mkPen(
+                color="#FF3B30",
+                width=2,
+                style=pg.QtCore.Qt.PenStyle.DashLine,
+            ),
+            movable=False,
         )
 
         # Add text label at the top
         flag_text = pg.TextItem(
             text=f"🚩 Ch{channel_letter}",
-            color='#FF3B30',
-            anchor=(0.5, 1)  # Center, bottom
+            color="#FF3B30",
+            anchor=(0.5, 1),  # Center, bottom
         )
         flag_text.setPos(x_pos, y_pos)
 
@@ -2379,12 +2427,12 @@ class AffilabsMainWindow(QMainWindow):
 
         # Store references
         flag_marker = {
-            'channel': channel_idx,
-            'x': x_pos,
-            'y': y_pos,
-            'note': note,
-            'line': flag_line,
-            'text': flag_text
+            "channel": channel_idx,
+            "x": x_pos,
+            "y": y_pos,
+            "note": note,
+            "line": flag_line,
+            "text": flag_text,
         }
 
         self.full_timeline_graph.flag_markers.append(flag_marker)
@@ -2397,7 +2445,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def _remove_flag_at_position(self, channel_idx, x_pos, tolerance=5.0):
         """Remove a flag marker near the specified x position on the selected channel."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         # Find and remove flags within tolerance
@@ -2405,10 +2453,13 @@ class AffilabsMainWindow(QMainWindow):
         markers_to_remove = []
 
         for marker in self.full_timeline_graph.flag_markers:
-            if marker['channel'] == channel_idx and abs(marker['x'] - x_pos) <= tolerance:
+            if (
+                marker["channel"] == channel_idx
+                and abs(marker["x"] - x_pos) <= tolerance
+            ):
                 # Remove visual elements
-                self.full_timeline_graph.removeItem(marker['line'])
-                self.full_timeline_graph.removeItem(marker['text'])
+                self.full_timeline_graph.removeItem(marker["line"])
+                self.full_timeline_graph.removeItem(marker["text"])
                 markers_to_remove.append(marker)
                 removed_count += 1
 
@@ -2418,7 +2469,8 @@ class AffilabsMainWindow(QMainWindow):
 
         # Update channel flags
         self.full_timeline_graph.channel_flags[channel_idx] = [
-            (x, y, note) for x, y, note in self.full_timeline_graph.channel_flags[channel_idx]
+            (x, y, note)
+            for x, y, note in self.full_timeline_graph.channel_flags[channel_idx]
             if abs(x - x_pos) > tolerance
         ]
 
@@ -2427,11 +2479,16 @@ class AffilabsMainWindow(QMainWindow):
 
         if removed_count > 0:
             channel_letter = chr(65 + channel_idx)
-            print(f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}")
+            print(
+                f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}",
+            )
 
     def _update_flags_table(self):
         """Update the Flags column in the cycle data table with current flags."""
-        if not hasattr(self, 'cycle_data_table') or not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "cycle_data_table") or not hasattr(
+            self,
+            "full_timeline_graph",
+        ):
             return
 
         # Count flags per channel
@@ -2446,13 +2503,15 @@ class AffilabsMainWindow(QMainWindow):
         # Note: This is a simplified version. In a full implementation, you'd have
         # one row per data segment/cycle and show flags for that specific segment
         if flag_counts:
-            flag_summary = ", ".join([f"Ch{ch}: {count}" for ch, count in flag_counts.items()])
+            flag_summary = ", ".join(
+                [f"Ch{ch}: {count}" for ch, count in flag_counts.items()],
+            )
             print(f"Flags summary: {flag_summary}")
             # In full implementation: update specific table cell in Flags column
 
     def _clear_all_flags(self, channel_idx=None):
         """Clear all flags, optionally for a specific channel only."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         markers_to_remove = []
@@ -2462,12 +2521,16 @@ class AffilabsMainWindow(QMainWindow):
             markers_to_remove = self.full_timeline_graph.flag_markers.copy()
         else:
             # Clear flags for specific channel
-            markers_to_remove = [m for m in self.full_timeline_graph.flag_markers if m['channel'] == channel_idx]
+            markers_to_remove = [
+                m
+                for m in self.full_timeline_graph.flag_markers
+                if m["channel"] == channel_idx
+            ]
 
         # Remove visual elements
         for marker in markers_to_remove:
-            self.full_timeline_graph.removeItem(marker['line'])
-            self.full_timeline_graph.removeItem(marker['text'])
+            self.full_timeline_graph.removeItem(marker["line"])
+            self.full_timeline_graph.removeItem(marker["text"])
             self.full_timeline_graph.flag_markers.remove(marker)
 
         # Clear channel_flags
@@ -2488,7 +2551,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def _on_cursor_dragged(self):
         """Handle cursor dragging - update label format dynamically."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         start_cursor = self.full_timeline_graph.start_cursor
@@ -2504,12 +2567,12 @@ class AffilabsMainWindow(QMainWindow):
                 start_pos, stop_pos = stop_pos, start_pos
 
             # Update label text dynamically
-            start_cursor.label.setFormat(f'Start: {start_pos:.1f}s')
-            stop_cursor.label.setFormat(f'Stop: {stop_pos:.1f}s')
+            start_cursor.label.setFormat(f"Start: {start_pos:.1f}s")
+            stop_cursor.label.setFormat(f"Stop: {stop_pos:.1f}s")
 
     def _on_cursor_moved(self):
         """Handle cursor movement finished - update selected region."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         start_cursor = self.full_timeline_graph.start_cursor
@@ -2534,17 +2597,14 @@ class AffilabsMainWindow(QMainWindow):
         # Special handling for different tabs
         if tab_name == "Edits":
             return self._create_edits_content()
-        elif tab_name == "Analyze":
+        if tab_name == "Analyze":
             return self._create_analyze_content()
-        elif tab_name == "Report":
+        if tab_name == "Report":
             return self._create_report_content()
 
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -2554,10 +2614,7 @@ class AffilabsMainWindow(QMainWindow):
         # Empty state message
         empty_icon = QLabel("📑")
         empty_icon.setStyleSheet(
-            "QLabel {"
-            "  font-size: 64px;"
-            "  background: transparent;"
-            "}"
+            "QLabel {  font-size: 64px;  background: transparent;}",
         )
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_icon)
@@ -2571,7 +2628,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  margin-top: 16px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_title)
@@ -2584,7 +2641,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  margin-top: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_desc)
@@ -2595,10 +2652,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Edits tab content with cycle data table and graph editing tools."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -2619,10 +2673,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with cycle data table and editing tools."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -2636,7 +2687,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2658,7 +2709,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         table_header.addWidget(table_title)
         table_header.addStretch()
@@ -2679,7 +2730,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         table_header.addWidget(filter_btn)
 
@@ -2687,20 +2738,26 @@ class AffilabsMainWindow(QMainWindow):
 
         # Master-Detail Pattern: Top table (Master) + Bottom detail panel
         # Temporarily simplified for debugging
-        from PySide6.QtWidgets import QTableWidget, QHeaderView
+        from PySide6.QtWidgets import QHeaderView, QTableWidget
 
         self.cycle_data_table = QTableWidget(10, 6)
-        self.cycle_data_table.setHorizontalHeaderLabels(["Type", "Start", "End", "Units", "Notes", "Flags"])
-        self.cycle_data_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.cycle_data_table.setHorizontalHeaderLabels(
+            ["Type", "Start", "End", "Units", "Notes", "Flags"],
+        )
+        self.cycle_data_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch,
+        )
         self.cycle_data_table.setColumnWidth(3, 80)  # Fixed width for Units column
-        self.cycle_data_table.verticalHeader().setVisible(True)  # Show row numbers as ID
+        self.cycle_data_table.verticalHeader().setVisible(
+            True,
+        )  # Show row numbers as ID
         self.cycle_data_table.setStyleSheet(
             "QTableWidget {"
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
             "  font-size: 12px;"
-            "}"
+            "}",
         )
 
         table_layout.addWidget(self.cycle_data_table, 1)
@@ -2714,7 +2771,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2735,7 +2792,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         tools_layout.addWidget(tools_title)
 
@@ -2769,7 +2826,7 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.12);"
-                "}"
+                "}",
             )
             tools_grid.addWidget(tool_btn)
 
@@ -2797,7 +2854,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         action_buttons.addWidget(apply_btn)
 
@@ -2816,7 +2873,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
-            "}"
+            "}",
         )
         action_buttons.addWidget(reset_btn)
 
@@ -2830,10 +2887,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with primary graph and thumbnail selectors."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -2847,7 +2901,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2869,13 +2923,18 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_header.addWidget(graph_title)
         graph_header.addStretch()
 
         # Channel toggles (compact)
-        for ch, color in [("A", "#1D1D1F"), ("B", "#FF3B30"), ("C", "#1D1D1F"), ("D", "#34C759")]:
+        for ch, color in [
+            ("A", "#1D1D1F"),
+            ("B", "#FF3B30"),
+            ("C", "#1D1D1F"),
+            ("D", "#34C759"),
+        ]:
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)
@@ -2893,7 +2952,7 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton:!checked {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
             graph_header.addWidget(ch_btn)
 
@@ -2906,13 +2965,13 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_canvas_layout = QVBoxLayout(graph_canvas)
         graph_placeholder = QLabel(
             "[Primary Graph Canvas]\n\n"
             "Selected cycle data displayed here\n"
-            "Interactive editing enabled"
+            "Interactive editing enabled",
         )
         graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         graph_placeholder.setStyleSheet(
@@ -2921,7 +2980,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_canvas_layout.addWidget(graph_placeholder)
 
@@ -2936,7 +2995,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2957,7 +3016,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         thumbnails_layout.addWidget(thumb_label)
 
@@ -2985,7 +3044,7 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 122, 255, 0.2);"
-                "}"
+                "}",
             )
             thumb_grid.addWidget(thumb)
 
@@ -2999,10 +3058,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Analyze tab content with processed data graph, statistics, and kinetic analysis."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -3023,10 +3079,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with processed data and statistics graphs."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3040,7 +3093,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3062,7 +3115,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_header.addWidget(graph_title)
         graph_header.addStretch()
@@ -3092,7 +3145,7 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             graph_header.addWidget(view_btn)
 
@@ -3105,13 +3158,13 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         canvas_layout = QVBoxLayout(graph_canvas)
         canvas_placeholder = QLabel(
             "[Processed Data Graph]\n\n"
             "Fitted curves with model overlay\n"
-            "Interactive zoom and pan enabled"
+            "Interactive zoom and pan enabled",
         )
         canvas_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         canvas_placeholder.setStyleSheet(
@@ -3120,7 +3173,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         canvas_layout.addWidget(canvas_placeholder)
         main_graph_layout.addWidget(graph_canvas, 1)
@@ -3134,7 +3187,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3156,7 +3209,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         stats_header.addWidget(stats_title)
         stats_header.addStretch()
@@ -3173,7 +3226,7 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 12px;"
             "  font-weight: 600;"
             f"  font-family: {Fonts.MONOSPACE};"
-            "}"
+            "}",
         )
         stats_header.addWidget(r_squared)
 
@@ -3186,13 +3239,13 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         stats_canvas_layout = QVBoxLayout(stats_canvas)
         stats_placeholder = QLabel(
             "[Residuals / Chi-Square Plot]\n\n"
             "Statistical analysis visualization\n"
-            "Chi² = 1.23e-4, RMSE = 0.012"
+            "Chi² = 1.23e-4, RMSE = 0.012",
         )
         stats_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_placeholder.setStyleSheet(
@@ -3201,7 +3254,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         stats_canvas_layout.addWidget(stats_placeholder)
         stats_layout.addWidget(stats_canvas, 1)
@@ -3214,10 +3267,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with model selection, data table, and export options."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3231,7 +3281,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3252,21 +3302,24 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(model_title)
 
         # Model selection dropdown
         from PySide6.QtWidgets import QComboBox
+
         model_dropdown = QComboBox()
-        model_dropdown.addItems([
-            "Langmuir 1:1",
-            "Two-State Binding",
-            "Bivalent Analyte",
-            "Mass Transport Limited",
-            "Heterogeneous Ligand",
-            "Custom Model"
-        ])
+        model_dropdown.addItems(
+            [
+                "Langmuir 1:1",
+                "Two-State Binding",
+                "Bivalent Analyte",
+                "Mass Transport Limited",
+                "Heterogeneous Ligand",
+                "Custom Model",
+            ],
+        )
         model_dropdown.setFixedHeight(36)
         model_dropdown.setStyleSheet(
             "QComboBox {"
@@ -3289,7 +3342,7 @@ class AffilabsMainWindow(QMainWindow):
             "QComboBox::down-arrow {"
             "  image: none;"
             "  border: none;"
-            "}"
+            "}",
         )
         model_layout.addWidget(model_dropdown)
 
@@ -3311,7 +3364,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         model_layout.addWidget(fit_btn)
 
@@ -3325,7 +3378,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  margin-top: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(params_label)
 
@@ -3333,7 +3386,7 @@ class AffilabsMainWindow(QMainWindow):
             "ka: Association rate constant\n"
             "kd: Dissociation rate constant\n"
             "KD: Equilibrium constant\n"
-            "Rmax: Maximum response"
+            "Rmax: Maximum response",
         )
         params_info.setStyleSheet(
             "QLabel {"
@@ -3342,7 +3395,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  line-height: 1.6;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(params_info)
 
@@ -3355,7 +3408,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3377,7 +3430,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         data_header.addWidget(data_title)
         data_header.addStretch()
@@ -3397,18 +3450,25 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         data_header.addWidget(copy_btn)
 
         data_layout.addLayout(data_header)
 
         # Data table
-        from PySide6.QtWidgets import QTableWidget, QHeaderView
+        from PySide6.QtWidgets import QHeaderView, QTableWidget
+
         data_table = QTableWidget(4, 2)
         data_table.setHorizontalHeaderLabels(["Parameter", "Value"])
-        data_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        data_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        data_table.horizontalHeader().setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        data_table.horizontalHeader().setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch,
+        )
         data_table.setStyleSheet(
             "QTableWidget {"
             "  background: #FFFFFF;"
@@ -3430,16 +3490,17 @@ class AffilabsMainWindow(QMainWindow):
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
-            "}"
+            "}",
         )
 
         # Sample data
         from PySide6.QtWidgets import QTableWidgetItem
+
         results = [
             ("ka (M⁻¹s⁻¹)", "1.23e5 ± 0.04e5"),
             ("kd (s⁻¹)", "3.45e-4 ± 0.12e-4"),
             ("KD (M)", "2.80e-9 ± 0.15e-9"),
-            ("Δ SPR (nm)", "0.45 ± 0.02")
+            ("Δ SPR (nm)", "0.45 ± 0.02"),
         ]
 
         for row, (param, value) in enumerate(results):
@@ -3457,7 +3518,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3477,7 +3538,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         export_layout.addWidget(export_title)
 
@@ -3499,7 +3560,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
-            "}"
+            "}",
         )
         export_btns.addWidget(csv_btn)
 
@@ -3520,10 +3581,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Report tab content for generating PDF reports with graphs, tables, and notes."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -3544,10 +3602,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with report preview canvas."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3565,7 +3620,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         header.addWidget(report_title)
         header.addStretch()
@@ -3590,7 +3645,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #CC2E25;"
-            "}"
+            "}",
         )
         header.addWidget(pdf_btn)
 
@@ -3603,7 +3658,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(12)
@@ -3619,10 +3674,7 @@ class AffilabsMainWindow(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet(
-            "QScrollArea {"
-            "  border: none;"
-            "  background: transparent;"
-            "}"
+            "QScrollArea {  border: none;  background: transparent;}",
         )
 
         scroll_content = QWidget()
@@ -3641,7 +3693,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(title_edit)
 
@@ -3655,7 +3707,7 @@ class AffilabsMainWindow(QMainWindow):
             "  padding: 4px 8px;"
             "  line-height: 1.6;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(info_label)
 
@@ -3667,7 +3719,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: rgba(0, 122, 255, 0.05);"
             "  border: 2px dashed rgba(0, 0, 0, 0.1);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_label = QLabel("[Graph Element]\n\nClick to insert graph")
         graph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3678,7 +3730,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  border: none;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_layout = QVBoxLayout(graph_placeholder)
         graph_layout.addWidget(graph_label)
@@ -3694,13 +3746,14 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(notes_label)
 
-        from PySide6.QtWidgets import QTextEdit
         notes_edit = QTextEdit()
-        notes_edit.setPlaceholderText("Add experiment notes, observations, or conclusions...")
+        notes_edit.setPlaceholderText(
+            "Add experiment notes, observations, or conclusions...",
+        )
         notes_edit.setFixedHeight(120)
         notes_edit.setStyleSheet(
             "QTextEdit {"
@@ -3711,7 +3764,7 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 13px;"
             "  color: #1D1D1F;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(notes_edit)
 
@@ -3723,7 +3776,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: rgba(52, 199, 89, 0.05);"
             "  border: 2px dashed rgba(52, 199, 89, 0.3);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         table_label = QLabel("[Table Element]\n\nClick to insert data table")
         table_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3734,7 +3787,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: transparent;"
             "  border: none;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         table_layout = QVBoxLayout(table_placeholder)
         table_layout.addWidget(table_label)
@@ -3753,10 +3806,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with report tools and content library."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3770,7 +3820,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3790,7 +3840,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         elements_layout.addWidget(elements_title)
 
@@ -3824,7 +3874,7 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.12);"
-                "}"
+                "}",
             )
             elements_layout.addWidget(elem_btn)
 
@@ -3837,7 +3887,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3857,7 +3907,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(chart_title)
 
@@ -3884,7 +3934,7 @@ class AffilabsMainWindow(QMainWindow):
                 "  background: #1D1D1F;"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
             chart_types.addWidget(type_btn)
 
@@ -3898,17 +3948,20 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(source_label)
 
         from PySide6.QtWidgets import QComboBox
+
         source_dropdown = QComboBox()
-        source_dropdown.addItems([
-            "Kinetic Results",
-            "Cycle Statistics",
-            "Custom Data"
-        ])
+        source_dropdown.addItems(
+            [
+                "Kinetic Results",
+                "Cycle Statistics",
+                "Custom Data",
+            ],
+        )
         source_dropdown.setFixedHeight(32)
         source_dropdown.setStyleSheet(
             "QComboBox {"
@@ -3919,7 +3972,7 @@ class AffilabsMainWindow(QMainWindow):
             "  padding: 6px 10px;"
             "  font-size: 12px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(source_dropdown)
 
@@ -3938,7 +3991,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: #3A3A3C;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(create_chart_btn)
 
@@ -3951,7 +4004,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3971,7 +4024,7 @@ class AffilabsMainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         library_layout.addWidget(library_title)
 
@@ -3999,7 +4052,7 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "}"
+                "}",
             )
             library_layout.addWidget(item_btn)
 
@@ -4028,7 +4081,7 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.5), stop:1 rgba(46, 48, 227, 0.6));"
                 "  border: 1px solid rgba(46, 48, 227, 0.3);"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Power On Device (Ctrl+P)\nGray = Disconnected")
         elif state == "searching":
@@ -4046,7 +4099,7 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E6B800, stop:1 #CCA300);"
                 "  border: 1px solid rgba(230, 184, 0, 0.3);"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Searching for Device...\nClick to CANCEL search")
         elif state == "connected":
@@ -4064,9 +4117,11 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2EAF4F, stop:1 #289845);"
                 "  border: 1px solid rgba(46, 175, 79, 0.3);"
-                "}"
+                "}",
             )
-            self.power_btn.setToolTip("Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off")
+            self.power_btn.setToolTip(
+                "Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off",
+            )
 
     def _handle_power_click(self):
         """Handle power button click - connects/disconnects hardware.
@@ -4093,10 +4148,13 @@ class AffilabsMainWindow(QMainWindow):
 
             # FORCE immediate visual update (process all pending events)
             from PySide6.QtCore import QCoreApplication
+
             self.power_btn.repaint()  # Force immediate repaint
             QCoreApplication.processEvents()  # Process all pending UI events
 
-            logger.info("[UI] Power button state updated to 'searching' - visual update FORCED")
+            logger.info(
+                "[UI] Power button state updated to 'searching' - visual update FORCED",
+            )
 
             # Emit signal to Application layer (clean architecture)
             logger.info("[UI] Emitting power_on_requested signal...")
@@ -4105,7 +4163,9 @@ class AffilabsMainWindow(QMainWindow):
 
         elif current_state == "searching":
             # Button is inactive while searching - ignore clicks
-            logger.info("[UI] Button clicked during search - ignoring (search in progress)")
+            logger.info(
+                "[UI] Button clicked during search - ignoring (search in progress)",
+            )
             print("[UI] Button clicked during search - ignoring (search in progress)")
             return  # Do nothing while hardware search is active
 
@@ -4118,7 +4178,9 @@ class AffilabsMainWindow(QMainWindow):
             warning.setIcon(QMessageBox.Icon.Warning)
             warning.setText("Are you sure you want to disconnect the device?")
             warning.setInformativeText("All hardware connections will be closed.")
-            warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+            warning.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
             warning.setDefaultButton(QMessageBox.StandardButton.Cancel)
 
             # Style the warning dialog
@@ -4151,7 +4213,7 @@ class AffilabsMainWindow(QMainWindow):
                 "}"
                 "QPushButton:default:hover {"
                 "  background: #E6342A;"
-                "}"
+                "}",
             )
 
             result = warning.exec()
@@ -4167,7 +4229,7 @@ class AffilabsMainWindow(QMainWindow):
                 self._reset_subunit_status()
 
                 # Emit signal to disconnect hardware
-                if hasattr(self, 'power_off_requested'):
+                if hasattr(self, "power_off_requested"):
                     self.power_off_requested.emit()
             else:
                 # User cancelled, revert button state
@@ -4179,6 +4241,7 @@ class AffilabsMainWindow(QMainWindow):
 
         Args:
             state: 'disconnected', 'searching', or 'connected'
+
         """
         self.power_btn.setProperty("powerState", state)
         self._update_power_button_style()
@@ -4198,32 +4261,34 @@ class AffilabsMainWindow(QMainWindow):
             self.record_btn.setEnabled(True)
             self.pause_btn.setEnabled(True)
             self.record_btn.setToolTip("Start Recording\n(Click to begin saving data)")
-            self.pause_btn.setToolTip("Pause Live Acquisition\n(Click to temporarily stop data flow)")
+            self.pause_btn.setToolTip(
+                "Pause Live Acquisition\n(Click to temporarily stop data flow)",
+            )
         except Exception as e:
             # Suppress Qt threading warnings that are false positives
-            if 'QTextDocument' not in str(e) and 'different thread' not in str(e):
+            if "QTextDocument" not in str(e) and "different thread" not in str(e):
                 raise
 
     def _reset_subunit_status(self) -> None:
         """Reset all subunit status indicators to 'Not Ready' state."""
         for subunit_name in ["Sensor", "Optics", "Fluidics"]:
             if subunit_name in self.sidebar.subunit_status:
-                indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-                status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+                indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+                status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
                 # Gray indicator and "Not Ready" text
                 indicator.setStyleSheet(
                     "font-size: 10px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
         # Also disable all operation modes when disconnecting
@@ -4241,7 +4306,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Emit signal to trigger actual hardware scan in Application
         # The Application class will handle the actual hardware manager scan
-        if hasattr(self, 'app') and self.app:
+        if hasattr(self, "app") and self.app:
             self.app.hardware_mgr.scan_and_connect()
         else:
             logger.warning("No application reference - cannot trigger hardware scan")
@@ -4253,7 +4318,7 @@ class AffilabsMainWindow(QMainWindow):
         self.sidebar.set_scan_state(False)  # Use encapsulated method
         logger.info("[SCAN] Hardware scan complete - button reset")
 
-    def update_hardware_status(self, status: Dict[str, Any]) -> None:
+    def update_hardware_status(self, status: dict[str, Any]) -> None:
         """Update hardware status display with real hardware information.
 
         Args:
@@ -4265,55 +4330,62 @@ class AffilabsMainWindow(QMainWindow):
                 - sensor_ready: Boolean
                 - optics_ready: Boolean
                 - fluidics_ready: Boolean
+
         """
         # Build list of connected devices
         # ONLY show the 5 valid hardware types: P4SPR, P4PRO, ezSPR, KNX, AffiPump
         devices = []
 
-        ctrl_type = status.get('ctrl_type')
+        ctrl_type = status.get("ctrl_type")
 
         # Map internal names to display names
         # Valid hardware: P4SPR, P4PRO, ezSPR, KNX, AffiPump
         # Common pairings: P4SPR+KNX, P4PRO+AffiPump
         CONTROLLER_DISPLAY_NAMES = {
-            'PicoP4SPR': 'P4SPR',
-            'P4SPR': 'P4SPR',
-            'PicoP4PRO': 'P4PRO',
-            'P4PRO': 'P4PRO',
-            'PicoEZSPR': 'P4PRO',  # PicoEZSPR hardware = P4PRO product
-            'EZSPR': 'ezSPR',
-            'ezSPR': 'ezSPR'
+            "PicoP4SPR": "P4SPR",
+            "P4SPR": "P4SPR",
+            "PicoP4PRO": "P4PRO",
+            "P4PRO": "P4PRO",
+            "PicoEZSPR": "P4PRO",  # PicoEZSPR hardware = P4PRO product
+            "EZSPR": "ezSPR",
+            "ezSPR": "ezSPR",
         }
 
         KNX_DISPLAY_NAMES = {
-            'KNX': 'KNX',
-            'KNX2': 'KNX',
-            'PicoKNX2': 'KNX'
+            "KNX": "KNX",
+            "KNX2": "KNX",
+            "PicoKNX2": "KNX",
         }
 
         # Controller (P4SPR, P4PRO, ezSPR)
         if ctrl_type:
-            display_name = CONTROLLER_DISPLAY_NAMES.get(ctrl_type, None)
+            display_name = CONTROLLER_DISPLAY_NAMES.get(ctrl_type)
             if display_name:
                 devices.append(display_name)
             else:
                 # Unknown controller - log warning but don't display
                 from affilabs.utils.logger import logger
-                logger.warning(f"⚠️ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected")
+
+                logger.warning(
+                    f"⚠️ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected",
+                )
 
         # Kinetic Controller (KNX)
-        knx_type = status.get('knx_type')
+        knx_type = status.get("knx_type")
         if knx_type:
-            display_name = KNX_DISPLAY_NAMES.get(knx_type, None)
+            display_name = KNX_DISPLAY_NAMES.get(knx_type)
             if display_name:
                 devices.append(display_name)
             else:
                 # Unknown kinetic type - log warning but don't display
                 from affilabs.utils.logger import logger
-                logger.warning(f"⚠️ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected")
+
+                logger.warning(
+                    f"⚠️ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected",
+                )
 
         # Pump (AffiPump)
-        if status.get('pump_connected'):
+        if status.get("pump_connected"):
             devices.append("AffiPump")
 
         # Update device labels
@@ -4333,36 +4405,42 @@ class AffilabsMainWindow(QMainWindow):
         # Update operation mode availability based on hardware
         self._update_operation_modes(status)
 
-    def _update_subunit_readiness_from_status(self, status: Dict[str, Any]) -> None:
+    def _update_subunit_readiness_from_status(self, status: dict[str, Any]) -> None:
         """Update subunit readiness based on hardware verification results."""
         # Sensor readiness
-        if 'sensor_ready' in status:
-            self._set_subunit_status('Sensor', status['sensor_ready'])
+        if "sensor_ready" in status:
+            self._set_subunit_status("Sensor", status["sensor_ready"])
 
         # Optics readiness
-        if 'optics_ready' in status:
-            optics_ready = status['optics_ready']
+        if "optics_ready" in status:
+            optics_ready = status["optics_ready"]
             optics_details = {
-                'failed_channels': status.get('optics_failed_channels', []),
-                'maintenance_channels': status.get('optics_maintenance_channels', [])
+                "failed_channels": status.get("optics_failed_channels", []),
+                "maintenance_channels": status.get("optics_maintenance_channels", []),
             }
-            self._set_subunit_status('Optics', optics_ready, details=optics_details)
+            self._set_subunit_status("Optics", optics_ready, details=optics_details)
 
         # Fluidics readiness
-        if 'fluidics_ready' in status:
-            self._set_subunit_status('Fluidics', status['fluidics_ready'])
+        if "fluidics_ready" in status:
+            self._set_subunit_status("Fluidics", status["fluidics_ready"])
 
-    def _set_subunit_status(self, subunit_name: str, is_ready: bool, details: Optional[Dict[str, Any]] = None) -> None:
+    def _set_subunit_status(
+        self,
+        subunit_name: str,
+        is_ready: bool,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         """Set the status of a specific subunit.
 
         Args:
             subunit_name: Name of subunit (Sensor, Optics, Fluidics)
             is_ready: True if ready, False otherwise
             details: Optional dict with 'failed_channels' and 'maintenance_channels' for Optics
+
         """
         if subunit_name in self.sidebar.subunit_status:
-            indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-            status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+            indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+            status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
             if is_ready:
                 # Green indicator and "Ready" text
@@ -4370,85 +4448,111 @@ class AffilabsMainWindow(QMainWindow):
                     "font-size: 14px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Ready")
                 status_label.setStyleSheet(
                     "font-size: 12px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 # Clear optics warning if it was active
-                if subunit_name == 'Optics' and hasattr(self, '_optics_warning_active'):
+                if subunit_name == "Optics" and hasattr(self, "_optics_warning_active"):
                     self._clear_optics_warning()
             else:
                 # Red indicator for Optics and Sensor, Gray for Fluidics
-                color = '#FF3B30' if subunit_name in ['Optics', 'Sensor'] else '#86868B'
+                color = "#FF3B30" if subunit_name in ["Optics", "Sensor"] else "#86868B"
                 indicator.setStyleSheet(
                     "font-size: 14px;"
                     f"color: {color};"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 12px;"
                     f"color: {color};"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 # Store optics status details for warning message
-                if subunit_name == 'Optics' and details:
+                if subunit_name == "Optics" and details:
                     self._optics_status_details = details
 
             from affilabs.utils.logger import logger
+
             logger.info(f"{subunit_name}: {'Ready' if is_ready else 'Not Ready'}")
 
     def _set_optics_warning(self) -> None:
         """Apply light red background to live sensorgram when proceeding with unready optics."""
         # Only set warning if we actually have optics issues (not just unverified)
-        if not hasattr(self, '_optics_status_details') or not self._optics_status_details:
+        if (
+            not hasattr(self, "_optics_status_details")
+            or not self._optics_status_details
+        ):
             from affilabs.utils.logger import logger
-            logger.debug("_set_optics_warning called but no optics issues detected - skipping red background")
+
+            logger.debug(
+                "_set_optics_warning called but no optics issues detected - skipping red background",
+            )
             return
 
-        if hasattr(self, 'full_timeline_graph') and self.full_timeline_graph:
-            self.full_timeline_graph.setBackground('#FFE5E5')  # Light red
+        if hasattr(self, "full_timeline_graph") and self.full_timeline_graph:
+            self.full_timeline_graph.setBackground("#FFE5E5")  # Light red
             self._optics_warning_active = True
 
             # Log warning with details
             if self._optics_status_details:
-                failed = self._optics_status_details.get('failed_channels', [])
-                maintenance = self._optics_status_details.get('maintenance_channels', [])
+                failed = self._optics_status_details.get("failed_channels", [])
+                maintenance = self._optics_status_details.get(
+                    "maintenance_channels",
+                    [],
+                )
 
                 if failed or maintenance:  # Only warn if there are actual problems
-                    failed_str = ', '.join([ch.upper() for ch in failed]) if failed else 'none'
-                    maint_str = ', '.join([ch.upper() for ch in maintenance]) if maintenance else 'none'
+                    failed_str = (
+                        ", ".join([ch.upper() for ch in failed]) if failed else "none"
+                    )
+                    maint_str = (
+                        ", ".join([ch.upper() for ch in maintenance])
+                        if maintenance
+                        else "none"
+                    )
 
                     from affilabs.utils.logger import logger
-                    logger.warning(f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]")
-                    logger.warning("   Live sensorgram background set to light red - please resolve optics issues")
+
+                    logger.warning(
+                        f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]",
+                    )
+                    logger.warning(
+                        "   Live sensorgram background set to light red - please resolve optics issues",
+                    )
 
     def _clear_optics_warning(self) -> None:
         """Clear light red background from live sensorgram when optics become ready."""
-        if hasattr(self, 'full_timeline_graph') and self.full_timeline_graph and self._optics_warning_active:
-            self.full_timeline_graph.setBackground('#FFFFFF')  # White
+        if (
+            hasattr(self, "full_timeline_graph")
+            and self.full_timeline_graph
+            and self._optics_warning_active
+        ):
+            self.full_timeline_graph.setBackground("#FFFFFF")  # White
             self._optics_warning_active = False
             self._optics_status_details = None
 
             from affilabs.utils.logger import logger
+
             logger.info("✅ Optics ready - sensorgram background restored to normal")
 
-    def _update_operation_modes(self, status: Dict[str, Any]) -> None:
+    def _update_operation_modes(self, status: dict[str, Any]) -> None:
         """Update available operation modes based on hardware type."""
-        ctrl_type = status.get('ctrl_type', '')
-        has_pump = status.get('pump_connected', False)
+        ctrl_type = status.get("ctrl_type", "")
+        has_pump = status.get("pump_connected", False)
 
         from affilabs.utils.logger import logger
 
         # P4SPR static device - only Static mode
-        if ctrl_type in ['P4SPR', 'PicoP4SPR']:
+        if ctrl_type in ["P4SPR", "PicoP4SPR"]:
             logger.info("P4SPR device detected - Static mode available")
             # Static mode always available for P4SPR
             # Flow mode only if pump is connected
@@ -4458,7 +4562,7 @@ class AffilabsMainWindow(QMainWindow):
                 logger.info("No pump - Flow mode disabled")
 
         # EZSPR or other devices
-        elif ctrl_type in ['EZSPR', 'PicoEZSPR']:
+        elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
             logger.info("EZSPR device detected - Static and Flow modes available")
 
     def _update_scan_button_style(self) -> None:
@@ -4472,8 +4576,9 @@ class AffilabsMainWindow(QMainWindow):
 
     def _handle_debug_log_download(self) -> None:
         """Handle debug log download button click."""
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
         import datetime
+
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         # Generate filename with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4484,7 +4589,7 @@ class AffilabsMainWindow(QMainWindow):
             self,
             "Save Debug Log",
             default_filename,
-            "Log Files (*.txt *.log);;All Files (*.*)"
+            "Log Files (*.txt *.log);;All Files (*.*)",
         )
 
         if file_path:
@@ -4550,7 +4655,7 @@ End of Debug Log
 """
 
                 # Write to file
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(debug_content)
 
                 # Show success message
@@ -4582,7 +4687,7 @@ End of Debug Log
                     "}"
                     "QPushButton:hover {"
                     "  background: #3A3A3C;"
-                    "}"
+                    "}",
                 )
                 msg.exec()
 
@@ -4594,7 +4699,7 @@ End of Debug Log
                 error_msg.setWindowTitle("Error")
                 error_msg.setIcon(QMessageBox.Icon.Critical)
                 error_msg.setText("Failed to save debug log")
-                error_msg.setInformativeText(f"Error: {str(e)}")
+                error_msg.setInformativeText(f"Error: {e!s}")
                 error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 error_msg.setStyleSheet(
                     "QMessageBox {"
@@ -4606,7 +4711,7 @@ End of Debug Log
                     "  border: none;"
                     "  border-radius: 6px;"
                     "  padding: 6px 16px;"
-                    "}"
+                    "}",
                 )
                 error_msg.exec()
 
@@ -4614,23 +4719,28 @@ End of Debug Log
 
     def _toggle_recording(self):
         """Toggle recording state - emit signal for Application to handle."""
-        logger.info(f"[RECORD-BTN] _toggle_recording called, is_recording={self.is_recording}")
+        logger.info(
+            f"[RECORD-BTN] _toggle_recording called, is_recording={self.is_recording}",
+        )
 
         # Emit signal based on current recording state
         if not self.is_recording:
             # Request to start recording - emit signal
-            if hasattr(self, 'recording_start_requested'):
+            if hasattr(self, "recording_start_requested"):
                 logger.info("[RECORD-BTN] Emitting recording_start_requested signal")
                 self.recording_start_requested.emit()
             else:
-                logger.error("[RECORD-BTN] ERROR: recording_start_requested signal not found!")
+                logger.error(
+                    "[RECORD-BTN] ERROR: recording_start_requested signal not found!",
+                )
+        # Request to stop recording - emit signal
+        elif hasattr(self, "recording_stop_requested"):
+            logger.info("[RECORD-BTN] Emitting recording_stop_requested signal")
+            self.recording_stop_requested.emit()
         else:
-            # Request to stop recording - emit signal
-            if hasattr(self, 'recording_stop_requested'):
-                logger.info("[RECORD-BTN] Emitting recording_stop_requested signal")
-                self.recording_stop_requested.emit()
-            else:
-                logger.error("[RECORD-BTN] ERROR: recording_stop_requested signal not found!")
+            logger.error(
+                "[RECORD-BTN] ERROR: recording_stop_requested signal not found!",
+            )
 
     def _toggle_pause(self):
         """Toggle pause state for live acquisition."""
@@ -4641,12 +4751,16 @@ End of Debug Log
             self.pause_btn.setToolTip("Resume Live Acquisition")
             logger.info("⏸ Live acquisition paused")
             # Emit signal to pause acquisition
-            if hasattr(self, 'acquisition_pause_requested'):
+            if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(True)
 
             # Add pause marker to live sensorgram using ELAPSED TIME (not wall clock)
-            if hasattr(self, 'full_timeline_graph') and hasattr(self, '_get_elapsed_time'):
+            if hasattr(self, "full_timeline_graph") and hasattr(
+                self,
+                "_get_elapsed_time",
+            ):
                 import pyqtgraph as pg
+
                 # Get elapsed time from experiment (matches X-axis of sensorgram)
                 pause_time = self._get_elapsed_time()
 
@@ -4654,29 +4768,41 @@ End of Debug Log
                     pause_line = pg.InfiniteLine(
                         pos=pause_time,
                         angle=90,
-                        pen=pg.mkPen(color='#FF9500', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                        pen=pg.mkPen(
+                            color="#FF9500",
+                            width=2,
+                            style=pg.QtCore.Qt.PenStyle.DashLine,
+                        ),
                         movable=False,
-                        label='⏸ Paused',
-                        labelOpts={'position': 0.95, 'color': '#FF9500'}
+                        label="⏸ Paused",
+                        labelOpts={"position": 0.95, "color": "#FF9500"},
                     )
                     self.full_timeline_graph.addItem(pause_line)
 
                     # Store reference to pause marker
-                    if not hasattr(self, 'pause_markers'):
+                    if not hasattr(self, "pause_markers"):
                         self.pause_markers = []
-                    self.pause_markers.append({'time': pause_time, 'line': pause_line, 'type': 'pause'})
-                    logger.debug(f"[PAUSE] Marker added at elapsed time: {pause_time:.1f}s")
+                    self.pause_markers.append(
+                        {"time": pause_time, "line": pause_line, "type": "pause"},
+                    )
+                    logger.debug(
+                        f"[PAUSE] Marker added at elapsed time: {pause_time:.1f}s",
+                    )
         else:
             # Resume acquisition
             self.pause_btn.setToolTip("Pause Live Acquisition")
             logger.info("▶️ Live acquisition resumed")
             # Emit signal to resume acquisition
-            if hasattr(self, 'acquisition_pause_requested'):
+            if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(False)
 
             # Add resume marker to live sensorgram using ELAPSED TIME
-            if hasattr(self, 'full_timeline_graph') and hasattr(self, '_get_elapsed_time'):
+            if hasattr(self, "full_timeline_graph") and hasattr(
+                self,
+                "_get_elapsed_time",
+            ):
                 import pyqtgraph as pg
+
                 # Get elapsed time from experiment (matches X-axis of sensorgram)
                 resume_time = self._get_elapsed_time()
 
@@ -4684,18 +4810,26 @@ End of Debug Log
                     resume_line = pg.InfiniteLine(
                         pos=resume_time,
                         angle=90,
-                        pen=pg.mkPen(color='#34C759', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                        pen=pg.mkPen(
+                            color="#34C759",
+                            width=2,
+                            style=pg.QtCore.Qt.PenStyle.DashLine,
+                        ),
                         movable=False,
-                        label='▶️ Resumed',
-                        labelOpts={'position': 0.95, 'color': '#34C759'}
+                        label="▶️ Resumed",
+                        labelOpts={"position": 0.95, "color": "#34C759"},
                     )
                     self.full_timeline_graph.addItem(resume_line)
 
                     # Store reference to resume marker
-                    if not hasattr(self, 'pause_markers'):
+                    if not hasattr(self, "pause_markers"):
                         self.pause_markers = []
-                    self.pause_markers.append({'time': resume_time, 'line': resume_line, 'type': 'resume'})
-                    logger.debug(f"[RESUME] Marker added at elapsed time: {resume_time:.1f}s")
+                    self.pause_markers.append(
+                        {"time": resume_time, "line": resume_line, "type": "resume"},
+                    )
+                    logger.debug(
+                        f"[RESUME] Marker added at elapsed time: {resume_time:.1f}s",
+                    )
 
     def set_recording_state(self, is_recording: bool, filename: str = ""):
         """Update recording UI state from external controller.
@@ -4703,6 +4837,7 @@ End of Debug Log
         Args:
             is_recording: True if recording is active
             filename: Name of the recording file (if recording)
+
         """
         self.is_recording = is_recording
         self.record_btn.setChecked(is_recording)
@@ -4710,7 +4845,9 @@ End of Debug Log
         if is_recording:
             # Update button tooltip
             display_name = Path(filename).name if filename else "data.csv"
-            self.record_btn.setToolTip(f"Stop Recording\n(Recording to: {display_name})")
+            self.record_btn.setToolTip(
+                f"Stop Recording\n(Recording to: {display_name})",
+            )
 
             # Recording indicator still hidden, but update internally for compatibility
             self.rec_status_dot.setStyleSheet(
@@ -4718,7 +4855,7 @@ End of Debug Log
                 "  color: #FF3B30;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
             display_name = Path(filename).name if filename else "data.csv"
             self.rec_status_text.setText(f"Recording to: {display_name}")
@@ -4729,18 +4866,20 @@ End of Debug Log
                 "  background: transparent;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
             self.recording_indicator.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(255, 59, 48, 0.1);"
                 "  border: 1px solid rgba(255, 59, 48, 0.3);"
                 "  border-radius: 6px;"
-                "}"
+                "}",
             )
         else:
             # Update button tooltip back to viewing mode
-            self.record_btn.setToolTip("Start Recording\n(Currently viewing - not saved)")
+            self.record_btn.setToolTip(
+                "Start Recording\n(Currently viewing - not saved)",
+            )
 
             # Update recording indicator back to viewing mode (hidden but kept for compatibility)
             self.rec_status_dot.setStyleSheet(
@@ -4748,41 +4887,41 @@ End of Debug Log
                 "  color: #86868B;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
             self.recording_indicator.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(0, 0, 0, 0.04);"
                 "  border-radius: 6px;"
-                "}"
+                "}",
             )
 
-    def _init_device_config(self, device_serial: Optional[str] = None):
+    def _init_device_config(self, device_serial: str | None = None):
         """Initialize device configuration (delegates to DeviceConfigManager).
 
         Args:
             device_serial: Spectrometer serial number for device-specific configuration.
+
         """
         self.device_config_manager.initialize_device_config(device_serial)
-
 
     def _check_missing_config_fields(self):
         """Check for missing critical configuration fields (delegates to DeviceConfigManager).
 
         Returns:
             List of missing field names, empty if all fields are present
+
         """
         return self.device_config_manager.check_missing_config_fields()
-
 
     def _get_controller_type_from_hardware(self) -> str:
         """Get controller type from connected hardware (delegates to DeviceConfigManager).
 
         Returns:
             Controller type string: 'Arduino', 'PicoP4SPR', 'PicoEZSPR', or ''
+
         """
         return self.device_config_manager.get_controller_type_from_hardware()
-
 
     def _get_polarizer_type_for_controller(self, controller_type: str) -> str:
         """Determine polarizer type based on controller (delegates to DeviceConfigManager).
@@ -4792,18 +4931,20 @@ End of Debug Log
 
         Returns:
             'round' or 'barrel'
-        """
-        return self.device_config_manager.get_polarizer_type_for_controller(controller_type)
 
+        """
+        return self.device_config_manager.get_polarizer_type_for_controller(
+            controller_type,
+        )
 
     def _prompt_device_config(self, device_serial: str):
         """Show dialog to collect missing device configuration (delegates to DeviceConfigManager).
 
         Args:
             device_serial: Device serial number
+
         """
         self.device_config_manager.prompt_device_config(device_serial)
-
 
     def _start_oem_calibration_workflow(self):
         """Start OEM calibration workflow (delegates to DeviceConfigManager).
@@ -4817,21 +4958,20 @@ End of Debug Log
         """
         self.device_config_manager.start_oem_calibration_workflow()
 
-
     def _update_maintenance_display(self):
         """Update the maintenance section with current values from device config."""
         if self.device_config is None:
             return
 
         # Check if maintenance widgets exist yet (UI might not be fully initialized)
-        if not hasattr(self, 'hours_value'):
+        if not hasattr(self, "hours_value"):
             return
 
         try:
             import datetime
 
             # Update operation hours
-            led_hours = self.device_config.config['maintenance']['led_on_hours']
+            led_hours = self.device_config.config["maintenance"]["led_on_hours"]
             self.hours_value.setText(f"{led_hours:,.1f} hrs")
 
             # Update last operation date
@@ -4862,7 +5002,7 @@ End of Debug Log
                     "background: transparent;"
                     "font-weight: 700;"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
             else:
                 self.next_maintenance_value.setStyleSheet(
@@ -4871,7 +5011,7 @@ End of Debug Log
                     "background: transparent;"
                     "font-weight: 600;"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
         except Exception as e:
             logger.error(f"Failed to update maintenance display: {e}")
@@ -4882,6 +5022,7 @@ End of Debug Log
             return
 
         import datetime
+
         self.led_start_time = datetime.datetime.now()
         self.last_powered_on = self.led_start_time
 
@@ -4904,7 +5045,9 @@ End of Debug Log
             self.device_config.add_led_on_time(elapsed_hours)
             self.device_config.save()
 
-            logger.info(f"LED operation stopped. Added {elapsed_hours:.2f} hours to total")
+            logger.info(
+                f"LED operation stopped. Added {elapsed_hours:.2f} hours to total",
+            )
 
             # Reset start time
             self.led_start_time = None
@@ -4920,9 +5063,12 @@ End of Debug Log
             return
 
         import datetime
+
         self.last_powered_on = datetime.datetime.now()
 
-        logger.info(f"Device powered on at {self.last_powered_on.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(
+            f"Device powered on at {self.last_powered_on.strftime('%Y-%m-%d %H:%M:%S')}",
+        )
         self._update_maintenance_display()
 
     def _on_start_queued_run(self):
@@ -4935,7 +5081,9 @@ End of Debug Log
         cycle_data = self.cycle_queue[0]  # Don't pop yet, wait for completion
         cycle_data["state"] = "running"
 
-        logger.info(f"🚀 Starting queued cycle: {cycle_data['type']} - {cycle_data['notes']}")
+        logger.info(
+            f"🚀 Starting queued cycle: {cycle_data['type']} - {cycle_data['notes']}",
+        )
 
         # Update display to show running state
         self._update_queue_display()
@@ -4944,7 +5092,7 @@ End of Debug Log
         self.sidebar.start_run_btn.setVisible(False)
 
         # Trigger the actual acquisition start through the app
-        if hasattr(self, 'app') and self.app:
+        if hasattr(self, "app") and self.app:
             self.app._on_start_button_clicked()
 
     def _on_clear_queue(self):
@@ -4954,12 +5102,13 @@ End of Debug Log
 
         # Confirm with user
         from PySide6.QtWidgets import QMessageBox
+
         reply = QMessageBox.question(
             self,
             "Clear Queue",
             f"Are you sure you want to clear {len(self.cycle_queue)} cycle(s) from the queue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
@@ -4981,8 +5130,11 @@ End of Debug Log
     def add_cycle_to_queue(self):
         """Add current cycle form values to the queue."""
         if len(self.cycle_queue) >= self.max_queue_size:
-            QMessageBox.warning(self, "Queue Full",
-                              f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.")
+            QMessageBox.warning(
+                self,
+                "Queue Full",
+                f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.",
+            )
             return
 
         # Extract values from cycle settings form widgets
@@ -4999,7 +5151,7 @@ End of Debug Log
             "end": f"00:{cycle_minutes:02d}:00",
             "notes": cycle_notes if cycle_notes else "No notes",
             "state": "queued",
-            "length_minutes": cycle_minutes
+            "length_minutes": cycle_minutes,
         }
 
         self.cycle_queue.append(cycle_data)
@@ -5036,8 +5188,10 @@ End of Debug Log
 
         Args:
             duration_minutes: Cycle duration in minutes
+
         """
         import time
+
         self.cycle_duration_seconds = duration_minutes * 60
         self.cycle_start_time = time.time()
         self.cycle_countdown_timer.start(1000)  # Update every second
@@ -5049,13 +5203,14 @@ End of Debug Log
             return
 
         import time
+
         elapsed = time.time() - self.cycle_start_time
         remaining = max(0, self.cycle_duration_seconds - elapsed)
 
         minutes = int(remaining // 60)
         seconds = int(remaining % 60)
 
-        if hasattr(self.sidebar, 'countdown_label'):
+        if hasattr(self.sidebar, "countdown_label"):
             self.sidebar.countdown_label.setText(f"{minutes:02d}:{seconds:02d}")
 
         # Stop timer when countdown reaches zero
@@ -5071,30 +5226,35 @@ End of Debug Log
     def _on_quick_csv_preset(self):
         """Quick CSV export preset - all data, all channels, CSV format."""
         config = self._get_export_config()
-        config['preset'] = 'quick_csv'
-        config['format'] = 'csv'
-        config['include_metadata'] = False
-        config['include_events'] = False
+        config["preset"] = "quick_csv"
+        config["format"] = "csv"
+        config["include_metadata"] = False
+        config["include_events"] = False
         self.export_requested.emit(config)
 
     def _on_analysis_preset(self):
         """Analysis-ready preset - processed data, summary table, Excel format."""
         config = self._get_export_config()
-        config['preset'] = 'analysis'
-        config['format'] = 'excel'
-        config['data_types'] = {'processed': True, 'summary': True, 'raw': False, 'cycles': False}
-        config['include_metadata'] = True
-        config['include_events'] = True
+        config["preset"] = "analysis"
+        config["format"] = "excel"
+        config["data_types"] = {
+            "processed": True,
+            "summary": True,
+            "raw": False,
+            "cycles": False,
+        }
+        config["include_metadata"] = True
+        config["include_events"] = True
         self.export_requested.emit(config)
 
     def _on_publication_preset(self):
         """Publication preset - high precision, metadata, Excel format."""
         config = self._get_export_config()
-        config['preset'] = 'publication'
-        config['format'] = 'excel'
-        config['precision'] = 5
-        config['include_metadata'] = True
-        config['include_events'] = True
+        config["preset"] = "publication"
+        config["format"] = "excel"
+        config["precision"] = 5
+        config["include_metadata"] = True
+        config["include_events"] = True
         self.export_requested.emit(config)
 
     def _get_export_config(self) -> dict:
@@ -5102,69 +5262,109 @@ End of Debug Log
 
         Returns:
             Dictionary with export settings
+
         """
         # Get selected data types
         data_types = {
-            'raw': getattr(self.sidebar, 'raw_data_check', None) and self.sidebar.raw_data_check.isChecked() if hasattr(self.sidebar, 'raw_data_check') else True,
-            'processed': getattr(self.sidebar, 'processed_data_check', None) and self.sidebar.processed_data_check.isChecked() if hasattr(self.sidebar, 'processed_data_check') else True,
-            'cycles': getattr(self.sidebar, 'cycle_segments_check', None) and self.sidebar.cycle_segments_check.isChecked() if hasattr(self.sidebar, 'cycle_segments_check') else True,
-            'summary': getattr(self.sidebar, 'summary_table_check', None) and self.sidebar.summary_table_check.isChecked() if hasattr(self.sidebar, 'summary_table_check') else True,
+            "raw": getattr(self.sidebar, "raw_data_check", None)
+            and self.sidebar.raw_data_check.isChecked()
+            if hasattr(self.sidebar, "raw_data_check")
+            else True,
+            "processed": getattr(self.sidebar, "processed_data_check", None)
+            and self.sidebar.processed_data_check.isChecked()
+            if hasattr(self.sidebar, "processed_data_check")
+            else True,
+            "cycles": getattr(self.sidebar, "cycle_segments_check", None)
+            and self.sidebar.cycle_segments_check.isChecked()
+            if hasattr(self.sidebar, "cycle_segments_check")
+            else True,
+            "summary": getattr(self.sidebar, "summary_table_check", None)
+            and self.sidebar.summary_table_check.isChecked()
+            if hasattr(self.sidebar, "summary_table_check")
+            else True,
         }
 
         # Get selected channels
         channels = []
-        if hasattr(self.sidebar, 'export_channel_checkboxes'):
-            channel_names = ['a', 'b', 'c', 'd']
+        if hasattr(self.sidebar, "export_channel_checkboxes"):
+            channel_names = ["a", "b", "c", "d"]
             for i, cb in enumerate(self.sidebar.export_channel_checkboxes):
                 if cb.isChecked():
                     channels.append(channel_names[i])
         else:
-            channels = ['a', 'b', 'c', 'd']  # Default all channels
+            channels = ["a", "b", "c", "d"]  # Default all channels
 
         # Get format
-        format_type = 'excel'  # Default
-        if hasattr(self.sidebar, 'excel_radio') and self.sidebar.excel_radio.isChecked():
-            format_type = 'excel'
-        elif hasattr(self.sidebar, 'csv_radio') and self.sidebar.csv_radio.isChecked():
-            format_type = 'csv'
-        elif hasattr(self.sidebar, 'json_radio') and self.sidebar.json_radio.isChecked():
-            format_type = 'json'
-        elif hasattr(self.sidebar, 'hdf5_radio') and self.sidebar.hdf5_radio.isChecked():
-            format_type = 'hdf5'
+        format_type = "excel"  # Default
+        if (
+            hasattr(self.sidebar, "excel_radio")
+            and self.sidebar.excel_radio.isChecked()
+        ):
+            format_type = "excel"
+        elif hasattr(self.sidebar, "csv_radio") and self.sidebar.csv_radio.isChecked():
+            format_type = "csv"
+        elif (
+            hasattr(self.sidebar, "json_radio") and self.sidebar.json_radio.isChecked()
+        ):
+            format_type = "json"
+        elif (
+            hasattr(self.sidebar, "hdf5_radio") and self.sidebar.hdf5_radio.isChecked()
+        ):
+            format_type = "hdf5"
 
         # Get options
-        include_metadata = getattr(self.sidebar, 'metadata_check', None) and self.sidebar.metadata_check.isChecked() if hasattr(self.sidebar, 'metadata_check') else True
-        include_events = getattr(self.sidebar, 'events_check', None) and self.sidebar.events_check.isChecked() if hasattr(self.sidebar, 'events_check') else False
+        include_metadata = (
+            getattr(self.sidebar, "metadata_check", None)
+            and self.sidebar.metadata_check.isChecked()
+            if hasattr(self.sidebar, "metadata_check")
+            else True
+        )
+        include_events = (
+            getattr(self.sidebar, "events_check", None)
+            and self.sidebar.events_check.isChecked()
+            if hasattr(self.sidebar, "events_check")
+            else False
+        )
 
         # Get precision
         precision = 4  # Default
-        if hasattr(self.sidebar, 'precision_combo'):
+        if hasattr(self.sidebar, "precision_combo"):
             precision = int(self.sidebar.precision_combo.currentText())
 
         # Get timestamp format
-        timestamp_format = 'relative'  # Default
-        if hasattr(self.sidebar, 'timestamp_combo'):
+        timestamp_format = "relative"  # Default
+        if hasattr(self.sidebar, "timestamp_combo"):
             timestamp_text = self.sidebar.timestamp_combo.currentText()
-            if 'Absolute' in timestamp_text:
-                timestamp_format = 'absolute'
-            elif 'seconds' in timestamp_text:
-                timestamp_format = 'elapsed'
+            if "Absolute" in timestamp_text:
+                timestamp_format = "absolute"
+            elif "seconds" in timestamp_text:
+                timestamp_format = "elapsed"
 
         # Get filename and destination
-        filename = getattr(self.sidebar, 'export_filename_input', None) and self.sidebar.export_filename_input.text() if hasattr(self.sidebar, 'export_filename_input') else ''
-        destination = getattr(self.sidebar, 'export_dest_input', None) and self.sidebar.export_dest_input.text() if hasattr(self.sidebar, 'export_dest_input') else ''
+        filename = (
+            getattr(self.sidebar, "export_filename_input", None)
+            and self.sidebar.export_filename_input.text()
+            if hasattr(self.sidebar, "export_filename_input")
+            else ""
+        )
+        destination = (
+            getattr(self.sidebar, "export_dest_input", None)
+            and self.sidebar.export_dest_input.text()
+            if hasattr(self.sidebar, "export_dest_input")
+            else ""
+        )
 
         return {
-            'data_types': data_types,
-            'channels': channels,
-            'format': format_type,
-            'include_metadata': include_metadata,
-            'include_events': include_events,
-            'precision': precision,
-            'timestamp_format': timestamp_format,
-            'filename': filename,
-            'destination': destination,
-            'preset': None  # Will be set by preset buttons
+            "data_types": data_types,
+            "channels": channels,
+            "format": format_type,
+            "include_metadata": include_metadata,
+            "include_events": include_events,
+            "precision": precision,
+            "timestamp_format": timestamp_format,
+            "filename": filename,
+            "destination": destination,
+            "preset": None,  # Will be set by preset buttons
         }
 
     def _refresh_intelligence_bar(self):
@@ -5218,7 +5418,7 @@ End of Debug Log
                 f"color: {status_color};"
                 f"background: transparent;"
                 f"font-weight: 700;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
             self.sidebar.intel_message_label.setText(message_text)
@@ -5227,7 +5427,7 @@ End of Debug Log
                 f"color: {message_color};"
                 f"background: transparent;"
                 f"font-weight: 600;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
         except Exception as e:
@@ -5235,8 +5435,8 @@ End of Debug Log
 
     def _update_queue_display(self):
         """Update the summary table to reflect current queue state."""
-        from PySide6.QtWidgets import QTableWidgetItem
         from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QTableWidgetItem
 
         # Clear table
         for row in range(5):
@@ -5299,34 +5499,41 @@ End of Debug Log
                 self.sidebar.load_hardware_settings(
                     s_pos=s_pos,
                     p_pos=p_pos,
-                    led_a=led_intensities.get('a', 0),
-                    led_b=led_intensities.get('b', 0),
-                    led_c=led_intensities.get('c', 0),
-                    led_d=led_intensities.get('d', 0)
+                    led_a=led_intensities.get("a", 0),
+                    led_b=led_intensities.get("b", 0),
+                    led_c=led_intensities.get("c", 0),
+                    led_d=led_intensities.get("d", 0),
                 )
 
-                logger.info(f"Loaded current settings: S={s_pos}, P={p_pos}, LEDs={led_intensities}")
+                logger.info(
+                    f"Loaded current settings: S={s_pos}, P={p_pos}, LEDs={led_intensities}",
+                )
 
                 # Initialize pipeline selector to current configuration
                 self._init_pipeline_selector()
             else:
-                logger.warning("Device config not available - cannot load current settings")
+                logger.warning(
+                    "Device config not available - cannot load current settings",
+                )
                 QMessageBox.warning(
                     self,
                     "Settings Not Available",
-                    "Device configuration is not available. Please connect to hardware first."
+                    "Device configuration is not available. Please connect to hardware first.",
                 )
         except Exception as e:
             logger.error(f"Error loading current settings: {e}")
             QMessageBox.critical(
                 self,
                 "Error Loading Settings",
-                f"Failed to load current settings: {str(e)}"
+                f"Failed to load current settings: {e!s}",
             )
 
     def eventFilter(self, obj, event):
         """Event filter to detect Control+10-click on advanced settings button."""
-        if obj == self.sidebar.advanced_settings_btn and event.type() == QEvent.Type.MouseButtonPress:
+        if (
+            obj == self.sidebar.advanced_settings_btn
+            and event.type() == QEvent.Type.MouseButtonPress
+        ):
             # Check if Control key is held
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                 self.advanced_params_click_count += 1
@@ -5352,13 +5559,13 @@ End of Debug Log
         self.advanced_params_unlocked = True
 
         # Enable dev mode environment variable
-        os.environ['AFFILABS_DEV'] = '1'
+        os.environ["AFFILABS_DEV"] = "1"
 
         # Show confirmation message
         QMessageBox.information(
             self,
             "Advanced Parameters Unlocked",
-            "Advanced parameters tab and developer mode are now enabled for 60 minutes."
+            "Advanced parameters tab and developer mode are now enabled for 60 minutes.",
         )
 
         # Set timer to lock after 60 minutes
@@ -5378,66 +5585,77 @@ End of Debug Log
         self.advanced_params_unlocked = False
 
         # Disable dev mode environment variable
-        if 'AFFILABS_DEV' in os.environ:
-            del os.environ['AFFILABS_DEV']
+        if "AFFILABS_DEV" in os.environ:
+            del os.environ["AFFILABS_DEV"]
 
         logger.info("Advanced parameters and dev mode locked after timeout")
 
     def open_advanced_settings(self):
         """Open the advanced settings dialog."""
         try:
-            dialog = AdvancedSettingsDialog(self, unlocked=getattr(self, 'advanced_params_unlocked', False))
+            dialog = AdvancedSettingsDialog(
+                self,
+                unlocked=getattr(self, "advanced_params_unlocked", False),
+            )
         except Exception as e:
             logger.error(f"Failed to create AdvancedSettingsDialog: {e}")
             return
 
         # Load current settings
-        if hasattr(dialog, 'ru_btn'):
-            dialog.ru_btn.setChecked(self.ru_btn.isChecked() if hasattr(self, 'ru_btn') else True)
-        if hasattr(dialog, 'nm_btn'):
-            dialog.nm_btn.setChecked(self.nm_btn.isChecked() if hasattr(self, 'nm_btn') else False)
+        if hasattr(dialog, "ru_btn"):
+            dialog.ru_btn.setChecked(
+                self.ru_btn.isChecked() if hasattr(self, "ru_btn") else True,
+            )
+        if hasattr(dialog, "nm_btn"):
+            dialog.nm_btn.setChecked(
+                self.nm_btn.isChecked() if hasattr(self, "nm_btn") else False,
+            )
 
         # Load LED delays from settings
         try:
             sys.path.insert(0, str(Path(__file__).parent.parent))
             from settings import settings
+
             pre_led_delay = settings.PRE_LED_DELAY_MS
             post_led_delay = settings.POST_LED_DELAY_MS
-            if hasattr(dialog, 'led_delay_input'):
+            if hasattr(dialog, "led_delay_input"):
                 dialog.led_delay_input.setValue(int(pre_led_delay))
-            if hasattr(dialog, 'post_led_delay_input'):
+            if hasattr(dialog, "post_led_delay_input"):
                 dialog.post_led_delay_input.setValue(int(post_led_delay))
         except Exception as e:
             logger.warning(f"Could not load LED delays, using defaults: {e}")
-            if hasattr(dialog, 'led_delay_input'):
+            if hasattr(dialog, "led_delay_input"):
                 dialog.led_delay_input.setValue(45)  # Default PRE LED
-            if hasattr(dialog, 'post_led_delay_input'):
+            if hasattr(dialog, "post_led_delay_input"):
                 dialog.post_led_delay_input.setValue(5)  # Default POST LED
 
         # Load current pipeline selection
         try:
             from affilabs.utils.processing_pipeline import get_pipeline_registry
+
             registry = get_pipeline_registry()
             active_pipeline = registry.get_active_pipeline()
             pipeline_id = active_pipeline.pipeline_id
-            
+
             # Map pipeline IDs to combo box indices
             pipeline_index_map = {
-                'fourier': 0,
-                'hybrid_original': 1,
-                'hybrid': 2,
+                "fourier": 0,
+                "hybrid_original": 1,
+                "hybrid": 2,
             }
-            
-            if pipeline_id in pipeline_index_map and hasattr(dialog, 'pipeline_combo'):
+
+            if pipeline_id in pipeline_index_map and hasattr(dialog, "pipeline_combo"):
                 dialog.pipeline_combo.setCurrentIndex(pipeline_index_map[pipeline_id])
-                logger.debug(f"Loaded pipeline: {pipeline_id} -> index {pipeline_index_map[pipeline_id]}")
+                logger.debug(
+                    f"Loaded pipeline: {pipeline_id} -> index {pipeline_index_map[pipeline_id]}",
+                )
         except Exception as e:
             logger.warning(f"Could not load pipeline selection: {e}")
 
         # Show dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Apply settings
-            if hasattr(self, 'ru_btn'):
+            if hasattr(self, "ru_btn"):
                 self.ru_btn.setChecked(dialog.ru_btn.isChecked())
                 self.nm_btn.setChecked(dialog.nm_btn.isChecked())
 
@@ -5446,7 +5664,7 @@ End of Debug Log
     def _toggle_polarizer_mode(self):
         """Toggle polarizer between S and P modes."""
         try:
-            if not hasattr(self, 'app') or not self.app:
+            if not hasattr(self, "app") or not self.app:
                 logger.warning("Application not connected")
                 return
 
@@ -5475,9 +5693,14 @@ End of Debug Log
             QMessageBox.warning(self, "Error", f"Failed to toggle polarizer: {e}")
 
     def _apply_settings(self):
-        """Apply polarizer and LED settings from the Settings tab."""
+        """Apply polarizer and LED settings from the Settings tab.
+
+        ARCHITECTURE: Signal-based communication (UI → Application)
+        UI validates input and emits signal with settings dict.
+        Application layer handles business logic (hardware access, config save).
+        """
         try:
-            logger.info("🔧 Applying Settings from UI...")
+            logger.info("🔧 UI: Parsing settings...")
 
             # Get polarizer positions
             s_pos_text = self.s_position_input.text()
@@ -5498,7 +5721,11 @@ End of Debug Log
                 led_c = int(led_c_text) if led_c_text else None
                 led_d = int(led_d_text) if led_d_text else None
             except ValueError as e:
-                QMessageBox.warning(self, "Invalid Input", f"Please enter valid integers: {e}")
+                QMessageBox.warning(
+                    self,
+                    "Invalid Input",
+                    f"Please enter valid integers: {e}",
+                )
                 return
 
             # Validate ranges
@@ -5509,76 +5736,35 @@ End of Debug Log
                 QMessageBox.warning(self, "Invalid Range", "P position must be 0-255")
                 return
 
-            for led_val, name in [(led_a, 'A'), (led_b, 'B'), (led_c, 'C'), (led_d, 'D')]:
+            for led_val, name in [
+                (led_a, "A"),
+                (led_b, "B"),
+                (led_c, "C"),
+                (led_d, "D"),
+            ]:
                 if led_val is not None and not (0 <= led_val <= 255):
-                    QMessageBox.warning(self, "Invalid Range", f"LED {name} must be 0-255")
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Range",
+                        f"LED {name} must be 0-255",
+                    )
                     return
 
-            # Get hardware manager from main window context
-            hardware_mgr = None
-            if hasattr(self, 'hardware_manager'):
-                hardware_mgr = self.hardware_manager
-            elif hasattr(self, 'parent') and callable(self.parent):
-                parent = self.parent()
-                if hasattr(parent, 'hardware_manager'):
-                    hardware_mgr = parent.hardware_manager
+            # Build settings dict (UI layer responsibility: parse and validate)
+            settings = {
+                "s_pos": s_pos,
+                "p_pos": p_pos,
+                "led_a": led_a,
+                "led_b": led_b,
+                "led_c": led_c,
+                "led_d": led_d,
+            }
 
-            if not hardware_mgr or not hardware_mgr.ctrl:
-                QMessageBox.warning(self, "Error", "Controller not connected. Please connect hardware first.")
-                logger.warning("❌ Cannot apply settings - controller not connected")
-                return
-
-            ctrl = hardware_mgr.ctrl
-
-            # Handle servo positions (save to config only - requires restart)
-            if s_pos is not None or p_pos is not None:
-                logger.warning("=" * 80)
-                logger.warning("⚠️ Servo positions changed - RESTART REQUIRED")
-                logger.warning("⚠️ Servo positions are LOCKED after controller initialization")
-                logger.warning("⚠️ Changes will be saved to device_config.json for next session")
-                logger.warning("=" * 80)
-
-                # Save to device_config for NEXT session only
-                if self.device_config:
-                    if s_pos is not None:
-                        self.device_config.data['hardware']['servo_s_position'] = s_pos
-                        logger.info(f"  Saved S position: {s_pos} (effective after restart)")
-                    if p_pos is not None:
-                        self.device_config.data['hardware']['servo_p_position'] = p_pos
-                        logger.info(f"  Saved P position: {p_pos} (effective after restart)")
-                    self.device_config.save()
-
-            # Apply LED intensities immediately
-            led_updates = []
-            if led_a is not None:
-                ctrl.set_intensity('a', led_a)
-                led_updates.append(f"A={led_a}")
-                if self.device_config:
-                    self.device_config.data['hardware']['led_intensities']['a'] = led_a
-
-            if led_b is not None:
-                ctrl.set_intensity('b', led_b)
-                led_updates.append(f"B={led_b}")
-                if self.device_config:
-                    self.device_config.data['hardware']['led_intensities']['b'] = led_b
-
-            if led_c is not None:
-                ctrl.set_intensity('c', led_c)
-                led_updates.append(f"C={led_c}")
-                if self.device_config:
-                    self.device_config.data['hardware']['led_intensities']['c'] = led_c
-
-            if led_d is not None:
-                ctrl.set_intensity('d', led_d)
-                led_updates.append(f"D={led_d}")
-                if self.device_config:
-                    self.device_config.data['hardware']['led_intensities']['d'] = led_d
-
-            # Save updated LED intensities to config
-            if led_updates and self.device_config:
-                self.device_config.save()
-                logger.info(f"✅ LED intensities applied: {', '.join(led_updates)}")
-                logger.info(f"✅ Settings saved to device config")
+            # Emit signal - Application layer handles business logic
+            # This respects HAL architecture: UI → Application → Hardware
+            logger.info("🔧 UI: Emitting apply_led_settings_requested signal")
+            self.apply_led_settings_requested.emit(settings)
+            logger.info("✅ Settings saved to device config")
 
             # Show success message
             if s_pos is not None or p_pos is not None:
@@ -5586,15 +5772,23 @@ End of Debug Log
                     self,
                     "Settings Applied",
                     "LED intensities applied immediately.\n\n"
-                    "Servo positions saved to config - RESTART REQUIRED to take effect."
+                    "Servo positions saved to config - RESTART REQUIRED to take effect.",
                 )
             else:
-                QMessageBox.information(self, "Success", "Settings applied and saved successfully!")
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    "Settings applied and saved successfully!",
+                )
 
         except Exception as e:
             logger.error(f"❌ Failed to apply settings: {e}", exc_info=True)
             QMessageBox.warning(self, "Error", f"Failed to apply settings: {e}")
-            QMessageBox.information(self, "Success", "Settings applied to hardware and saved to config")
+            QMessageBox.information(
+                self,
+                "Success",
+                "Settings applied to hardware and saved to config",
+            )
 
         except Exception as e:
             logger.error(f"Failed to apply settings: {e}")
@@ -5624,7 +5818,7 @@ End of Debug Log
         """Handle recording started signal (delegates to BaselineRecordingPresenter)."""
         self.baseline_recording_presenter.on_recording_started()
 
-    def _on_recording_progress(self, progress: Dict) -> None:
+    def _on_recording_progress(self, progress: dict) -> None:
         """Handle recording progress update (delegates to BaselineRecordingPresenter)."""
         self.baseline_recording_presenter.on_recording_progress(progress)
 
@@ -5634,7 +5828,7 @@ End of Debug Log
 
     def _on_recording_error(self, error_msg: str) -> None:
         """Handle recording error signal."""
-        if hasattr(self, 'baseline_capture_btn'):
+        if hasattr(self, "baseline_capture_btn"):
             self.baseline_capture_btn.setText("🔴 Record 5-Min Baseline Data")
             self.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
@@ -5656,7 +5850,7 @@ End of Debug Log
                 "QPushButton:disabled {"
                 "  background: #D1D1D6;"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
 
         QMessageBox.critical(self, "Recording Error", f"❌ {error_msg}")
@@ -5668,7 +5862,8 @@ End of Debug Log
         self.sidebar.debug_log_btn.clicked.connect(self._handle_debug_log_download)
 
         # Connect keyboard shortcuts
-        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtGui import QKeySequence, QShortcut
+
         power_shortcut = QShortcut(QKeySequence("Ctrl+P"), self)
         power_shortcut.activated.connect(self._handle_power_click)
 
@@ -5693,12 +5888,14 @@ End of Debug Log
 
         # Connect settings tab controls
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)
-        self.sidebar.load_current_settings_btn.clicked.connect(self._load_current_settings)
+        self.sidebar.load_current_settings_btn.clicked.connect(
+            self._load_current_settings,
+        )
         self.sidebar.apply_settings_btn.clicked.connect(self._apply_settings)
         self.sidebar.polarizer_toggle_btn.clicked.connect(self._toggle_polarizer_mode)
 
         # Connect spectrum button if it exists (may be removed)
-        if hasattr(self.sidebar, 'spectrum_btn'):
+        if hasattr(self.sidebar, "spectrum_btn"):
             self.sidebar.spectrum_btn.clicked.connect(self._show_transmission_spectrum)
 
         # Pipeline selector REMOVED - only Fourier method used in production
@@ -5707,10 +5904,14 @@ End of Debug Log
         self.sidebar.advanced_settings_btn.installEventFilter(self)
 
         # Connect calibration buttons
-        self.simple_led_calibration_btn.clicked.connect(self._handle_simple_led_calibration)
+        self.simple_led_calibration_btn.clicked.connect(
+            self._handle_simple_led_calibration,
+        )
         self.full_calibration_btn.clicked.connect(self._handle_full_calibration)
-        if hasattr(self, 'polarizer_calibration_btn'):
-            self.polarizer_calibration_btn.clicked.connect(self._handle_polarizer_calibration)
+        if hasattr(self, "polarizer_calibration_btn"):
+            self.polarizer_calibration_btn.clicked.connect(
+                self._handle_polarizer_calibration,
+            )
         self.oem_led_calibration_btn.clicked.connect(self._handle_oem_led_calibration)
 
         # NOTE: baseline_capture_btn is connected in Application layer (main-simplified.py)
@@ -5747,15 +5948,18 @@ End of Debug Log
             )
 
             # Check if app instance is available (it should be set by main_simplified)
-            if not hasattr(self, 'app') or self.app is None:
+            if not hasattr(self, "app") or self.app is None:
                 print("⚠️  Demo data: No app instance available")
-                print("   Demo data can only be loaded when running through main_simplified.py")
+                print(
+                    "   Demo data can only be loaded when running through main_simplified.py",
+                )
                 from PySide6.QtWidgets import QMessageBox
+
                 QMessageBox.warning(
                     self,
                     "Demo Data Unavailable",
                     "Demo data can only be loaded when the application is fully initialized.\n\n"
-                    "Please ensure you're running through main_simplified.py"
+                    "Please ensure you're running through main_simplified.py",
                 )
                 return
 
@@ -5775,35 +5979,44 @@ End of Debug Log
                     data_mgr.wavelength_buffer_d = []
 
                 data_mgr.time_buffer.append(time_point)
-                data_mgr.wavelength_buffer_a.append(channel_data['a'][i])
-                data_mgr.wavelength_buffer_b.append(channel_data['b'][i])
-                data_mgr.wavelength_buffer_c.append(channel_data['c'][i])
-                data_mgr.wavelength_buffer_d.append(channel_data['d'][i])
+                data_mgr.wavelength_buffer_a.append(channel_data["a"][i])
+                data_mgr.wavelength_buffer_b.append(channel_data["b"][i])
+                data_mgr.wavelength_buffer_c.append(channel_data["c"][i])
+                data_mgr.wavelength_buffer_d.append(channel_data["d"][i])
 
             # Now update the timeline data in buffer manager
             import numpy as np
-            for ch in ['a', 'b', 'c', 'd']:
-                if hasattr(self.app, 'buffer_mgr') and hasattr(self.app.buffer_mgr, 'timeline_data'):
+
+            for ch in ["a", "b", "c", "d"]:
+                if hasattr(self.app, "buffer_mgr") and hasattr(
+                    self.app.buffer_mgr,
+                    "timeline_data",
+                ):
                     self.app.buffer_mgr.timeline_data[ch].time = np.array(time_array)
-                    self.app.buffer_mgr.timeline_data[ch].wavelength = np.array(channel_data[ch])
+                    self.app.buffer_mgr.timeline_data[ch].wavelength = np.array(
+                        channel_data[ch],
+                    )
 
             # Trigger graph updates for both full timeline and cycle of interest
             # Update full timeline graph
-            if hasattr(self, 'full_timeline_graph'):
-                for ch_idx, ch in enumerate(['a', 'b', 'c', 'd']):
+            if hasattr(self, "full_timeline_graph"):
+                for ch_idx, ch in enumerate(["a", "b", "c", "d"]):
                     if ch_idx < len(self.full_timeline_graph.curves):
                         curve = self.full_timeline_graph.curves[ch_idx]
                         curve.setData(time_array, channel_data[ch])
 
             # Update cycle of interest graph
-            if hasattr(self.app, '_update_cycle_of_interest_graph'):
+            if hasattr(self.app, "_update_cycle_of_interest_graph"):
                 self.app._update_cycle_of_interest_graph()
 
-            print(f"✅ Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles")
+            print(
+                f"✅ Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles",
+            )
             print("   Use this view for promotional screenshots")
 
             # Show confirmation message
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.information(
                 self,
                 "Demo Data Loaded",
@@ -5811,30 +6024,33 @@ End of Debug Log
                 "The sensorgram now shows realistic binding curves for promotional use.\n"
                 f"Total duration: {time_array[-1]:.0f} seconds\n"
                 f"Data points: {len(time_array)}\n\n"
-                "Tip: Navigate to different views to capture various screenshots."
+                "Tip: Navigate to different views to capture various screenshots.",
             )
 
         except ImportError as e:
             print(f"❌ Error importing demo data generator: {e}")
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
                 self,
                 "Import Error",
-                f"Could not import demo data generator:\n{e}"
+                f"Could not import demo data generator:\n{e}",
             )
         except Exception as e:
             print(f"❌ Error loading demo data: {e}")
             import traceback
+
             try:
                 print(traceback.format_exc())
             except:
                 pass
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
                 self,
                 "Error Loading Demo Data",
-                f"An error occurred while loading demo data:\n\n{str(e)}\n\n"
-                "Please check the console for details."
+                f"An error occurred while loading demo data:\n\n{e!s}\n\n"
+                "Please check the console for details.",
             )
 
 
@@ -5845,5 +6061,3 @@ if __name__ == "__main__":
     window = MainWindowPrototype()
     window.show()
     sys.exit(app.exec())
-
-

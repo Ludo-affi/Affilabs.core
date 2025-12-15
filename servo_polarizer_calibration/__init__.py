@@ -1,5 +1,4 @@
-"""
-Servo Polarizer Calibration Package
+"""Servo Polarizer Calibration Package
 
 A complete, validated method for automatic servo-controlled polarizer calibration.
 Supports CIRCULAR and BARREL polarizer types with automatic detection.
@@ -41,5 +40,5 @@ __author__ = "ezControl-AI System"
 __status__ = "Production"
 
 __all__ = [
-    'calibrate_polarizer',
+    "calibrate_polarizer",
 ]

@@ -13,7 +13,7 @@ Complete hardware specifications have been documented for the KNX kinetic system
 - **Model:** Low Pressure 2-Position 6-Port Valve
 - **Product Link:** https://www.takasago-fluidics.com/products/2position-6port-valve?variant=37040799285414
 - **Function:** Sample injection switching (Load/Inject)
-- **Positions:** 
+- **Positions:**
   - 0 = LOAD (filling sample loop)
   - 1 = INJECT (injecting to flow cell)
 
@@ -195,8 +195,8 @@ These documents should be updated when:
 
 ## Version
 
-**Documentation Version:** 1.0  
-**Date:** October 7, 2025  
+**Documentation Version:** 1.0
+**Date:** October 7, 2025
 **Status:** Complete with placeholders for additional specifications
 
 ---

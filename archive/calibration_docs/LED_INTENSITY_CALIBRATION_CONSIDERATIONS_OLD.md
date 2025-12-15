@@ -1,6 +1,6 @@
 # LED Intensity and Optical System Calibration
 
-**Question**: Does LED intensity affect optical system calibration validity?  
+**Question**: Does LED intensity affect optical system calibration validity?
 **Answer**: For PicoP4SPR: **NO - intensity is fixed at 100%, so calibration is always at operating intensity** ✅
 
 ---
@@ -9,7 +9,7 @@
 
 ✅ **Current calibration is VALID**
 
-**Why**: 
+**Why**:
 - PicoP4SPR has **fixed LED intensity** (ON = 100%, OFF = 0%)
 - No PWM or current control available
 - Calibration automatically performed at operating intensity
@@ -129,11 +129,11 @@ During actual SPR measurement, check signal levels:
 for channel in [ChannelID.A, B, C, D]:
     ctrl.activate_channel(channel)
     time.sleep(0.020)  # Stabilization
-    
+
     spectrum = spec.intensities()
     mean_signal = np.mean(spectrum)
     peak_signal = np.max(spectrum)
-    
+
     print(f"Channel {channel.name}:")
     print(f"  Mean: {mean_signal:.0f} counts")
     print(f"  Peak: {peak_signal:.0f} counts")
@@ -235,7 +235,7 @@ for channel in [ChannelID.A, B, C, D]:
 
 ---
 
-**Date**: October 11, 2025  
-**Hardware**: PicoP4SPR + FLMT09788 + luminus_cool_white + 200µm  
-**Calibration File**: `led_afterglow_integration_time_models_20251011_210859.json`  
+**Date**: October 11, 2025
+**Hardware**: PicoP4SPR + FLMT09788 + luminus_cool_white + 200µm
+**Calibration File**: `led_afterglow_integration_time_models_20251011_210859.json`
 **Status**: ✅ VALID - No intensity-related concerns

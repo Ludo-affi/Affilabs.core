@@ -374,4 +374,3 @@ After all refactoring:
 - ✅ Memory growth <100 MB/hour
 - ✅ No acquisition jitter (consistent 10 Hz)
 - ✅ CPU usage <40% on modern hardware
-

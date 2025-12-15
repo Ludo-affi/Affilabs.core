@@ -60,7 +60,7 @@ class Ui_P4SPR_2:
             "	border: 2px solid rgba(46, 48, 227, 150);\n"
             "	border-radius: 3px;\n"
             "\n"
-            "}"
+            "}",
         )
         self.disconnect_btn = QPushButton(self.P4SPR)
         self.disconnect_btn.setObjectName("disconnect_btn")
@@ -69,7 +69,7 @@ class Ui_P4SPR_2:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.disconnect_btn.sizePolicy().hasHeightForWidth()
+            self.disconnect_btn.sizePolicy().hasHeightForWidth(),
         )
         self.disconnect_btn.setSizePolicy(sizePolicy1)
         self.disconnect_btn.setMinimumSize(QSize(30, 30))
@@ -90,7 +90,7 @@ class Ui_P4SPR_2:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 12px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/disconnect.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -109,7 +109,7 @@ class Ui_P4SPR_2:
         self.quick_calibrate_btn.setObjectName("quick_calibrate_btn")
         self.quick_calibrate_btn.setGeometry(QRect(10, 10, 101, 31))
         sizePolicy1.setHeightForWidth(
-            self.quick_calibrate_btn.sizePolicy().hasHeightForWidth()
+            self.quick_calibrate_btn.sizePolicy().hasHeightForWidth(),
         )
         self.quick_calibrate_btn.setSizePolicy(sizePolicy1)
         font3 = QFont()
@@ -130,7 +130,7 @@ class Ui_P4SPR_2:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.temp_display = QFrame(self.P4SPR)
         self.temp_display.setObjectName("temp_display")
@@ -171,19 +171,21 @@ class Ui_P4SPR_2:
         self.P4SPR.setTitle(QCoreApplication.translate("P4SPR_2", "SPR", None))
         # if QT_CONFIG(tooltip)
         self.disconnect_btn.setToolTip(
-            QCoreApplication.translate("P4SPR_2", "Disconnect P4SPR", None)
+            QCoreApplication.translate("P4SPR_2", "Disconnect P4SPR", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.disconnect_btn.setText("")
         self.quick_calibrate_btn.setText(
-            QCoreApplication.translate("P4SPR_2", "Calibrate", None)
+            QCoreApplication.translate("P4SPR_2", "Calibrate", None),
         )
         self.temp1.setText("")
         self.label_7.setText("")
         self.label_8.setText(
             QCoreApplication.translate(
-                "P4SPR_2", "<html><head/><body><p>Temp:</p></body></html>", None
-            )
+                "P4SPR_2",
+                "<html><head/><body><p>Temp:</p></body></html>",
+                None,
+            ),
         )
 
     # retranslateUi

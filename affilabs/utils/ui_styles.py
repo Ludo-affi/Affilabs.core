@@ -26,9 +26,9 @@ class UIStyleManager:
     # Color palette
     COLORS = {
         # Primary backgrounds
-        "background_primary": "#D3D3D3",  # Main window background
-        "background_secondary": "#C8C8C8",  # GroupBox background
-        "background_tertiary": "#E0E0E0",  # Table headers
+        "background_primary": "#FFFFFF",  # Main window and dialogs (white)
+        "background_secondary": "#F5F5F7",  # Subtle cards/sections
+        "background_tertiary": "#EDEEF0",  # Table headers
         # Widget backgrounds
         "widget_background": "#FFFFFF",  # LineEdit, SpinBox, ComboBox, Table
         "button_normal": "#E8E8E8",  # Default button background
@@ -52,30 +52,31 @@ class UIStyleManager:
 
     @classmethod
     def apply_app_theme(cls, app: QApplication) -> None:
-        """Apply professional modern theme using custom design system.
+        """Apply application theme with safe fallback.
 
-        This provides a modern, consistent look with proper hover states,
-        focus indicators, and professional styling throughout the app.
+        Tries the optional modern theme first; if unavailable, applies
+        our internal stylesheet which keeps a clean white background.
 
         Args:
             app: QApplication instance to apply theme to
 
         """
-        # Use the modern theme from styles package
         try:
-            from styles.theme_manager import apply_modern_theme
+            from styles.theme_manager import apply_modern_theme  # optional
 
             apply_modern_theme(app)
-        except ImportError:
-            # Fallback to basic styling if modern theme not available
+            return
+        except Exception:
+            # Fall through to internal stylesheet below
             pass
+
+        app.setStyleSheet(cls.get_main_stylesheet())
 
     @classmethod
     def get_main_stylesheet(cls) -> str:
         """Get the complete application-wide stylesheet.
 
-        DEPRECATED: Use apply_app_theme() instead for qt-material styling.
-        This method is kept for backwards compatibility only.
+        Used by apply_app_theme() when optional modern theme isn't available.
 
         Returns:
             str: Complete CSS stylesheet for the application.
@@ -323,12 +324,132 @@ class UIStyleManager:
             }}
         """
 
+    # ===== Channel / Graph Header Styles =====
     @classmethod
-    def apply_app_theme(cls, app) -> None:
-        """Apply the complete application theme to a QApplication.
+    def get_header_label_style(cls) -> str:
+        """Style for small header labels like 'Channels:' in the graphs header."""
+        return (
+            "QLabel {"
+            "  font-size: 13px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-weight: 500;"
+            "}"
+        )
+
+    @classmethod
+    def get_channel_button_style(cls, active_color: str) -> str:
+        """Return stylesheet for a checkable channel button with active color.
 
         Args:
-            app: QApplication instance to apply styling to.
+            active_color: Hex color for the checked state background
 
         """
-        app.setStyleSheet(cls.get_main_stylesheet())
+        return (
+            f"QPushButton {{"
+            f"  background: {active_color};"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:!checked {"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  color: #86868B;"
+            "}"
+            "QPushButton:hover:!checked {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "}"
+        )
+
+    @classmethod
+    def get_live_checkbox_style(cls) -> str:
+        """Style for the 'Live Data' checkbox in the graphs header."""
+        return (
+            "QCheckBox {"
+            "  font-size: 13px;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-weight: 500;"
+            "  spacing: 6px;"
+            "}"
+            "QCheckBox::indicator {"
+            "  width: 18px;"
+            "  height: 18px;"
+            "  border: 2px solid #86868B;"
+            "  border-radius: 4px;"
+            "  background: white;"
+            "}"
+            "QCheckBox::indicator:checked {"
+            "  background: #007AFF;"
+            "  border-color: #007AFF;"
+            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEwLjUgMS41TDQgOEwxLjUgNS41IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==);"
+            "}"
+            "QCheckBox::indicator:hover {"
+            "  border-color: #007AFF;"
+            "}"
+        )
+
+    @classmethod
+    def get_clear_button_style(cls, variant: str = "neutral") -> str:
+        """Style for Clear Graph/Flags buttons.
+
+        Args:
+            variant: 'neutral' for Clear Graph, 'danger' for Clear Flags
+
+        """
+        if variant == "danger":
+            return (
+                "QPushButton {"
+                "  background: rgba(255, 59, 48, 0.1);"
+                "  color: #FF3B30;"
+                "  border: 1px solid rgba(255, 59, 48, 0.3);"
+                "  border-radius: 6px;"
+                "  font-size: 13px;"
+                "  font-weight: 500;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  padding: 0 16px;"
+                "}"
+                "QPushButton:hover {"
+                "  background: rgba(255, 59, 48, 0.15);"
+                "  border: 1px solid rgba(255, 59, 48, 0.5);"
+                "}"
+                "QPushButton:pressed {"
+                "  background: rgba(255, 59, 48, 0.2);"
+                "}"
+                "QPushButton:disabled {"
+                "  background: rgba(0, 0, 0, 0.03);"
+                "  color: #86868B;"
+                "  border: 1px solid rgba(0, 0, 0, 0.1);"
+                "}"
+            )
+
+        # neutral
+        return (
+            "QPushButton {"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  color: #1D1D1F;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  padding: 0 16px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(0, 0, 0, 0.15);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: rgba(0, 0, 0, 0.03);"
+            "  color: #86868B;"
+            "}"
+        )
+
+    # Note: apply_app_theme implemented above (single source of truth)

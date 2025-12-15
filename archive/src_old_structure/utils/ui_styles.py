@@ -23,32 +23,28 @@ class UIStyleManager:
     # Color palette
     COLORS = {
         # Primary backgrounds
-        'background_primary': '#D3D3D3',     # Main window background
-        'background_secondary': '#C8C8C8',   # GroupBox background
-        'background_tertiary': '#E0E0E0',    # Table headers
-
+        "background_primary": "#D3D3D3",  # Main window background
+        "background_secondary": "#C8C8C8",  # GroupBox background
+        "background_tertiary": "#E0E0E0",  # Table headers
         # Widget backgrounds
-        'widget_background': '#FFFFFF',      # LineEdit, SpinBox, ComboBox, Table
-        'button_normal': '#E8E8E8',          # Default button background
-        'button_hover': '#F0F0F0',           # Button on hover
-        'button_pressed': '#C0C0C0',         # Button when pressed
-        'tab_normal': '#C0C0C0',             # Tab background
-        'tab_selected': '#D3D3D3',           # Selected tab background
-        'tab_hover': '#D0D0D0',              # Tab on hover
-
+        "widget_background": "#FFFFFF",  # LineEdit, SpinBox, ComboBox, Table
+        "button_normal": "#E8E8E8",  # Default button background
+        "button_hover": "#F0F0F0",  # Button on hover
+        "button_pressed": "#C0C0C0",  # Button when pressed
+        "tab_normal": "#C0C0C0",  # Tab background
+        "tab_selected": "#D3D3D3",  # Selected tab background
+        "tab_hover": "#D0D0D0",  # Tab on hover
         # Selection and highlight colors
-        'selection_background': '#B8B8B8',   # Medium gray for selections
-        'selection_inactive': '#D8D8D8',     # Gray for inactive selections
-        'alternate_row': '#F5F5F5',          # Alternate table row color
-        'highlight': '#6B6B6B',              # Dark gray accent for checkboxes, etc.
-
+        "selection_background": "#B8B8B8",  # Medium gray for selections
+        "selection_inactive": "#D8D8D8",  # Gray for inactive selections
+        "alternate_row": "#F5F5F5",  # Alternate table row color
+        "highlight": "#6B6B6B",  # Dark gray accent for checkboxes, etc.
         # Borders and lines
-        'border_primary': '#A0A0A0',         # Standard borders
-        'border_secondary': '#C0C0C0',       # Subtle borders (grid lines)
-
+        "border_primary": "#A0A0A0",  # Standard borders
+        "border_secondary": "#C0C0C0",  # Subtle borders (grid lines)
         # Text colors
-        'text_primary': '#000000',           # Primary text color
-        'text_on_highlight': '#FFFFFF',      # Text on highlighted items
+        "text_primary": "#000000",  # Primary text color
+        "text_on_highlight": "#FFFFFF",  # Text on highlighted items
     }
 
     @classmethod
@@ -60,10 +56,12 @@ class UIStyleManager:
 
         Args:
             app: QApplication instance to apply theme to
+
         """
         # Use the modern theme from styles package
         try:
             from styles.theme_manager import apply_modern_theme
+
             apply_modern_theme(app)
         except ImportError:
             # Fallback to basic styling if modern theme not available
@@ -78,6 +76,7 @@ class UIStyleManager:
 
         Returns:
             str: Complete CSS stylesheet for the application.
+
         """
         return f"""
         QMainWindow, QWidget {{
@@ -288,6 +287,7 @@ class UIStyleManager:
 
         Returns:
             str: CSS stylesheet for QGroupBox.
+
         """
         return f"""
             QGroupBox {{
@@ -303,6 +303,7 @@ class UIStyleManager:
 
         Returns:
             str: CSS stylesheet for QPushButton.
+
         """
         return f"""
             QPushButton {{
@@ -325,5 +326,6 @@ class UIStyleManager:
 
         Args:
             app: QApplication instance to apply styling to.
+
         """
         app.setStyleSheet(cls.get_main_stylesheet())

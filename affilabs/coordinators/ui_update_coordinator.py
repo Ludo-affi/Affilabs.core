@@ -1,5 +1,4 @@
-"""
-UI Update Coordinator
+"""UI Update Coordinator
 
 Manages all UI update operations with throttling and batching.
 Separates UI update logic from Application class.
@@ -14,16 +13,16 @@ Responsibilities:
 - Prevent UI blocking from excessive updates
 """
 
-from PySide6.QtCore import QObject, QTimer
-from typing import Optional, Dict
-import numpy as np
 import logging
+
+import numpy as np
+from PySide6.QtCore import QObject, QTimer
 
 logger = logging.getLogger(__name__)
 
 # Update rate constants (milliseconds)
 SETTINGS_SIDEBAR_UPDATE_RATE = 100  # 10 Hz for Settings tab (was 1000ms - too slow)
-LIVE_DATA_UPDATE_RATE = 100          # 10 Hz for live sensorgram (handled by main_simplified)
+LIVE_DATA_UPDATE_RATE = 100  # 10 Hz for live sensorgram (handled by main_simplified)
 
 
 class AL_UIUpdateCoordinator(QObject):
@@ -35,6 +34,7 @@ class AL_UIUpdateCoordinator(QObject):
         Args:
             app: Application instance
             main_window: Main window instance with UI widgets
+
         """
         super().__init__()
         self.app = app
@@ -42,14 +42,15 @@ class AL_UIUpdateCoordinator(QObject):
 
         # Initialize SpectroscopyPresenter for transmission/raw spectrum updates
         from presenters import SpectroscopyPresenter
+
         self.spectroscopy_presenter = SpectroscopyPresenter(main_window)
 
         # Pending transmission updates (queued from acquisition thread)
         self._pending_transmission_updates = {
-            'a': None,
-            'b': None,
-            'c': None,
-            'd': None
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
         }
 
         # Pending sensor IQ updates
@@ -58,20 +59,24 @@ class AL_UIUpdateCoordinator(QObject):
         # Setup throttled update timer for Settings sidebar graphs (1 Hz = 1000ms)
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self.process_pending_updates)
-        self._update_timer.start(SETTINGS_SIDEBAR_UPDATE_RATE)  # 1 Hz for Settings sidebar transmission/raw graphs
+        self._update_timer.start(
+            SETTINGS_SIDEBAR_UPDATE_RATE,
+        )  # 1 Hz for Settings sidebar transmission/raw graphs
 
         # Update flags
         self._transmission_updates_enabled = True
         self._raw_spectrum_updates_enabled = True
 
-        logger.info(f"[OK] AL_UIUpdateCoordinator initialized (Settings sidebar: {1000//SETTINGS_SIDEBAR_UPDATE_RATE} Hz, Live data: {1000//LIVE_DATA_UPDATE_RATE} Hz handled by main_simplified)")
+        logger.info(
+            f"[OK] AL_UIUpdateCoordinator initialized (Settings sidebar: {1000//SETTINGS_SIDEBAR_UPDATE_RATE} Hz, Live data: {1000//LIVE_DATA_UPDATE_RATE} Hz handled by main_simplified)",
+        )
 
     def queue_transmission_update(
         self,
         channel: str,
         wavelengths: np.ndarray,
         transmission: np.ndarray,
-        raw_spectrum: Optional[np.ndarray] = None
+        raw_spectrum: np.ndarray | None = None,
     ):
         """Queue transmission curve update for batch processing.
 
@@ -80,11 +85,12 @@ class AL_UIUpdateCoordinator(QObject):
             wavelengths: Wavelength array (nm)
             transmission: Transmission spectrum (%)
             raw_spectrum: Optional raw intensity data
+
         """
         self._pending_transmission_updates[channel] = {
-            'wavelengths': wavelengths,
-            'transmission': transmission,
-            'raw_spectrum': raw_spectrum
+            "wavelengths": wavelengths,
+            "transmission": transmission,
+            "raw_spectrum": raw_spectrum,
         }
 
     def queue_sensor_iq_update(self, channel: str, sensor_iq):
@@ -93,6 +99,7 @@ class AL_UIUpdateCoordinator(QObject):
         Args:
             channel: Channel identifier
             sensor_iq: SensorIQMetrics object
+
         """
         self._pending_sensor_iq_updates[channel] = sensor_iq
 
@@ -116,7 +123,9 @@ class AL_UIUpdateCoordinator(QObject):
             self.spectroscopy_presenter.check_plots_available()
 
         # DEBUG: Log pending updates
-        pending_count = sum(1 for v in self._pending_transmission_updates.values() if v is not None)
+        pending_count = sum(
+            1 for v in self._pending_transmission_updates.values() if v is not None
+        )
         if pending_count > 0:
             pass  # Processing pending updates
 
@@ -125,27 +134,35 @@ class AL_UIUpdateCoordinator(QObject):
                 continue
 
             try:
-                wavelengths = update_data['wavelengths']
-                transmission = update_data['transmission']
-                raw_spectrum = update_data.get('raw_spectrum')
+                wavelengths = update_data["wavelengths"]
+                transmission = update_data["transmission"]
+                raw_spectrum = update_data.get("raw_spectrum")
 
                 # Update transmission curve via presenter
                 if self._transmission_updates_enabled:
-                    self.spectroscopy_presenter.update_transmission(channel, wavelengths, transmission)
+                    self.spectroscopy_presenter.update_transmission(
+                        channel,
+                        wavelengths,
+                        transmission,
+                    )
 
                 # Update raw spectrum curve via presenter
                 if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
-                    self.spectroscopy_presenter.update_raw_spectrum(channel, wavelengths, raw_spectrum)
+                    self.spectroscopy_presenter.update_raw_spectrum(
+                        channel,
+                        wavelengths,
+                        raw_spectrum,
+                    )
 
             except Exception as e:
                 logger.warning(f"Failed to update curves for channel {channel}: {e}")
 
         # Clear processed updates
         self._pending_transmission_updates = {
-            'a': None,
-            'b': None,
-            'c': None,
-            'd': None
+            "a": None,
+            "b": None,
+            "c": None,
+            "d": None,
         }
 
     def _update_sensor_iq_displays(self):
@@ -155,10 +172,10 @@ class AL_UIUpdateCoordinator(QObject):
 
         try:
             from affilabs.utils.sensor_iq import (
-                SENSOR_IQ_ICONS,
+                FWHM_THRESHOLDS_DISPLAY,
                 SENSOR_IQ_COLORS,
+                SENSOR_IQ_ICONS,
                 ZONE_BOUNDARIES_DISPLAY,
-                FWHM_THRESHOLDS_DISPLAY
             )
 
             for channel, sensor_iq in self._pending_sensor_iq_updates.items():
@@ -187,15 +204,19 @@ class AL_UIUpdateCoordinator(QObject):
                 label.setText(display_text)
                 label.setStyleSheet(
                     f"font-size: 12px; color: {color}; font-weight: bold; "
-                    f"font-family: 'Consolas', 'Courier New', monospace;"
+                    f"font-family: 'Consolas', 'Courier New', monospace;",
                 )
 
                 # Update static info labels (only once, not per channel)
-                if channel == 'a':
-                    if hasattr(self.main_window, 'sensor_iq_zones_diag'):
-                        self.main_window.sensor_iq_zones_diag.setText(ZONE_BOUNDARIES_DISPLAY)
-                    if hasattr(self.main_window, 'sensor_iq_fwhm_diag'):
-                        self.main_window.sensor_iq_fwhm_diag.setText(FWHM_THRESHOLDS_DISPLAY)
+                if channel == "a":
+                    if hasattr(self.main_window, "sensor_iq_zones_diag"):
+                        self.main_window.sensor_iq_zones_diag.setText(
+                            ZONE_BOUNDARIES_DISPLAY,
+                        )
+                    if hasattr(self.main_window, "sensor_iq_fwhm_diag"):
+                        self.main_window.sensor_iq_fwhm_diag.setText(
+                            FWHM_THRESHOLDS_DISPLAY,
+                        )
 
         except Exception as e:
             logger.debug(f"Sensor IQ display update failed: {e}")

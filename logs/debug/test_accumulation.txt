@@ -4,7 +4,7 @@ At line:1 char:1
 + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (--- Logging error ---:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
- 
+
 Traceback (most recent call last):
   File "C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\logging\__init__.py", line 1163, in emit
     stream.write(msg + self.terminator)
@@ -37,7 +37,7 @@ Call stack:
   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
   File "<frozen importlib._bootstrap_external>", line 999, in exec_module
   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
-  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\hardware\spectrometer_adapter.py", line 18, in 
+  File "C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\ezControl-AI\affilabs\hardware\spectrometer_adapter.py", line 18, in
 <module>
     from affilabs.utils.usb4000_wrapper import USB4000
   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load

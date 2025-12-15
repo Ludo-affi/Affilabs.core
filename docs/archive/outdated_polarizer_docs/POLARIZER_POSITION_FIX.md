@@ -140,4 +140,3 @@ This is a **servo positioning issue**, not a software bug. The servos are at dif
 2. Verify calibration passes
 3. Test pipeline architecture with live measurements
 4. Measure performance improvements
-

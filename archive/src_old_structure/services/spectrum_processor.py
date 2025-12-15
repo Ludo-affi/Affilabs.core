@@ -4,11 +4,11 @@ Pure business logic for spectrum processing operations.
 NO Qt dependencies - fully testable.
 """
 
+import logging
+
 import numpy as np
-from typing import Optional, Tuple
 from scipy import signal
 from scipy.ndimage import gaussian_filter1d
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class SpectrumProcessor:
         self,
         spectrum: np.ndarray,
         window_length: int = 11,
-        polyorder: int = 2
+        polyorder: int = 2,
     ) -> np.ndarray:
         """Apply Savitzky-Golay smoothing filter.
 
@@ -39,21 +39,26 @@ class SpectrumProcessor:
 
         Returns:
             Smoothed spectrum
+
         """
         if len(spectrum) < window_length:
-            logger.warning(f"Spectrum too short for window {window_length}, using {len(spectrum)}")
-            window_length = len(spectrum) if len(spectrum) % 2 == 1 else len(spectrum) - 1
+            logger.warning(
+                f"Spectrum too short for window {window_length}, using {len(spectrum)}",
+            )
+            window_length = (
+                len(spectrum) if len(spectrum) % 2 == 1 else len(spectrum) - 1
+            )
 
         if window_length < polyorder + 2:
             polyorder = window_length - 2
             logger.warning(f"Adjusted polyorder to {polyorder}")
 
-        return signal.savgol_filter(spectrum, window_length, polyorder, mode='nearest')
+        return signal.savgol_filter(spectrum, window_length, polyorder, mode="nearest")
 
     def smooth_moving_average(
         self,
         spectrum: np.ndarray,
-        window_size: int = 5
+        window_size: int = 5,
     ) -> np.ndarray:
         """Apply moving average smoothing.
 
@@ -63,14 +68,15 @@ class SpectrumProcessor:
 
         Returns:
             Smoothed spectrum
+
         """
         kernel = np.ones(window_size) / window_size
-        return np.convolve(spectrum, kernel, mode='same')
+        return np.convolve(spectrum, kernel, mode="same")
 
     def smooth_gaussian(
         self,
         spectrum: np.ndarray,
-        sigma: float = 2.0
+        sigma: float = 2.0,
     ) -> np.ndarray:
         """Apply Gaussian smoothing.
 
@@ -80,16 +86,17 @@ class SpectrumProcessor:
 
         Returns:
             Smoothed spectrum
+
         """
-        return gaussian_filter1d(spectrum, sigma, mode='nearest')
+        return gaussian_filter1d(spectrum, sigma, mode="nearest")
 
     def find_peaks(
         self,
         spectrum: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None,
-        prominence: Optional[float] = None,
-        distance: Optional[int] = None
-    ) -> Tuple[np.ndarray, dict]:
+        wavelengths: np.ndarray | None = None,
+        prominence: float | None = None,
+        distance: int | None = None,
+    ) -> tuple[np.ndarray, dict]:
         """Find peaks in spectrum.
 
         Args:
@@ -100,6 +107,7 @@ class SpectrumProcessor:
 
         Returns:
             Tuple of (peak_indices, peak_properties)
+
         """
         # Auto-determine prominence if not provided
         if prominence is None:
@@ -109,23 +117,23 @@ class SpectrumProcessor:
         peak_indices, properties = signal.find_peaks(
             spectrum,
             prominence=prominence,
-            distance=distance
+            distance=distance,
         )
 
         # Add wavelength info if available
         if wavelengths is not None and len(wavelengths) == len(spectrum):
-            properties['wavelengths'] = wavelengths[peak_indices]
+            properties["wavelengths"] = wavelengths[peak_indices]
 
         # Add intensities
-        properties['intensities'] = spectrum[peak_indices]
+        properties["intensities"] = spectrum[peak_indices]
 
         return peak_indices, properties
 
     def calculate_derivative(
         self,
         spectrum: np.ndarray,
-        wavelengths: Optional[np.ndarray] = None,
-        order: int = 1
+        wavelengths: np.ndarray | None = None,
+        order: int = 1,
     ) -> np.ndarray:
         """Calculate spectrum derivative.
 
@@ -136,6 +144,7 @@ class SpectrumProcessor:
 
         Returns:
             Derivative spectrum
+
         """
         if wavelengths is not None and len(wavelengths) == len(spectrum):
             dx = np.gradient(wavelengths)
@@ -144,18 +153,17 @@ class SpectrumProcessor:
 
         if order == 1:
             return np.gradient(spectrum, dx)
-        elif order == 2:
+        if order == 2:
             first_deriv = np.gradient(spectrum, dx)
             return np.gradient(first_deriv, dx)
-        else:
-            raise ValueError(f"Unsupported derivative order: {order}")
+        raise ValueError(f"Unsupported derivative order: {order}")
 
     def interpolate(
         self,
         spectrum: np.ndarray,
         old_wavelengths: np.ndarray,
         new_wavelengths: np.ndarray,
-        kind: str = 'linear'
+        kind: str = "linear",
     ) -> np.ndarray:
         """Interpolate spectrum to new wavelength grid.
 
@@ -167,10 +175,17 @@ class SpectrumProcessor:
 
         Returns:
             Interpolated spectrum
+
         """
         from scipy.interpolate import interp1d
 
-        f = interp1d(old_wavelengths, spectrum, kind=kind, bounds_error=False, fill_value='extrapolate')
+        f = interp1d(
+            old_wavelengths,
+            spectrum,
+            kind=kind,
+            bounds_error=False,
+            fill_value="extrapolate",
+        )
         return f(new_wavelengths)
 
     def extract_roi(
@@ -178,8 +193,8 @@ class SpectrumProcessor:
         spectrum: np.ndarray,
         wavelengths: np.ndarray,
         roi_start: float,
-        roi_end: float
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        roi_end: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Extract region of interest from spectrum.
 
         Args:
@@ -190,6 +205,7 @@ class SpectrumProcessor:
 
         Returns:
             Tuple of (roi_spectrum, roi_wavelengths)
+
         """
         mask = (wavelengths >= roi_start) & (wavelengths <= roi_end)
         return spectrum[mask], wavelengths[mask]
@@ -198,8 +214,8 @@ class SpectrumProcessor:
         self,
         spectrum: np.ndarray,
         wavelengths: np.ndarray,
-        roi_start: Optional[float] = None,
-        roi_end: Optional[float] = None
+        roi_start: float | None = None,
+        roi_end: float | None = None,
     ) -> float:
         """Calculate spectral centroid (weighted mean wavelength).
 
@@ -211,10 +227,16 @@ class SpectrumProcessor:
 
         Returns:
             Centroid wavelength (nm)
+
         """
         # Extract ROI if specified
         if roi_start is not None and roi_end is not None:
-            spectrum, wavelengths = self.extract_roi(spectrum, wavelengths, roi_start, roi_end)
+            spectrum, wavelengths = self.extract_roi(
+                spectrum,
+                wavelengths,
+                roi_start,
+                roi_end,
+            )
 
         # Calculate weighted mean
         if np.sum(spectrum) == 0:
@@ -227,8 +249,8 @@ class SpectrumProcessor:
         self,
         spectrum: np.ndarray,
         wavelengths: np.ndarray,
-        peak_index: Optional[int] = None
-    ) -> Tuple[float, float, float]:
+        peak_index: int | None = None,
+    ) -> tuple[float, float, float]:
         """Calculate Full Width at Half Maximum of a peak.
 
         Args:
@@ -238,6 +260,7 @@ class SpectrumProcessor:
 
         Returns:
             Tuple of (fwhm, left_wavelength, right_wavelength)
+
         """
         if peak_index is None:
             peak_index = np.argmax(spectrum)
@@ -246,23 +269,34 @@ class SpectrumProcessor:
         half_max = peak_value / 2.0
 
         # Find left crossing
-        left_indices = np.where((spectrum[:peak_index] <= half_max) &
-                               (np.diff(spectrum[:peak_index+1]) > 0))[0]
+        left_indices = np.where(
+            (spectrum[:peak_index] <= half_max)
+            & (np.diff(spectrum[: peak_index + 1]) > 0),
+        )[0]
         left_index = left_indices[-1] if len(left_indices) > 0 else 0
 
         # Find right crossing
-        right_indices = np.where((spectrum[peak_index:] <= half_max) &
-                                (np.diff(spectrum[peak_index:]) < 0))[0]
-        right_index = peak_index + right_indices[0] if len(right_indices) > 0 else len(spectrum) - 1
+        right_indices = np.where(
+            (spectrum[peak_index:] <= half_max) & (np.diff(spectrum[peak_index:]) < 0),
+        )[0]
+        right_index = (
+            peak_index + right_indices[0]
+            if len(right_indices) > 0
+            else len(spectrum) - 1
+        )
 
         fwhm = wavelengths[right_index] - wavelengths[left_index]
 
-        return float(fwhm), float(wavelengths[left_index]), float(wavelengths[right_index])
+        return (
+            float(fwhm),
+            float(wavelengths[left_index]),
+            float(wavelengths[right_index]),
+        )
 
     def normalize(
         self,
         spectrum: np.ndarray,
-        method: str = 'minmax'
+        method: str = "minmax",
     ) -> np.ndarray:
         """Normalize spectrum.
 
@@ -272,8 +306,9 @@ class SpectrumProcessor:
 
         Returns:
             Normalized spectrum
+
         """
-        if method == 'minmax':
+        if method == "minmax":
             # Scale to [0, 1]
             min_val = np.min(spectrum)
             max_val = np.max(spectrum)
@@ -281,7 +316,7 @@ class SpectrumProcessor:
                 return np.ones_like(spectrum)
             return (spectrum - min_val) / (max_val - min_val)
 
-        elif method == 'zscore':
+        if method == "zscore":
             # Z-score normalization
             mean = np.mean(spectrum)
             std = np.std(spectrum)
@@ -289,12 +324,11 @@ class SpectrumProcessor:
                 return np.zeros_like(spectrum)
             return (spectrum - mean) / std
 
-        elif method == 'max':
+        if method == "max":
             # Scale by maximum value
             max_val = np.max(spectrum)
             if max_val == 0:
                 return np.zeros_like(spectrum)
             return spectrum / max_val
 
-        else:
-            raise ValueError(f"Unknown normalization method: {method}")
+        raise ValueError(f"Unknown normalization method: {method}")

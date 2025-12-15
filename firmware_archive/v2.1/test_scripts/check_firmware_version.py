@@ -1,12 +1,14 @@
 """Check firmware version and capabilities"""
-import serial
+
 import time
 
-print("="*60)
-print("FIRMWARE VERSION CHECK")
-print("="*60)
+import serial
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+print("=" * 60)
+print("FIRMWARE VERSION CHECK")
+print("=" * 60)
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -16,13 +18,13 @@ ser.write(b"v\n")
 time.sleep(0.5)
 
 print("\nFirmware response:")
-print("-"*60)
+print("-" * 60)
 while ser.in_waiting > 0:
-    line = ser.readline().decode('utf-8', errors='ignore').strip()
+    line = ser.readline().decode("utf-8", errors="ignore").strip()
     if line:
         print(f"  {line}")
 
-print("-"*60)
+print("-" * 60)
 
 # Try a simple rankbatch with 2 cycles to see behavior
 print("\nTesting rankbatch with 2 cycles...")
@@ -34,7 +36,7 @@ response = []
 start = time.time()
 while time.time() - start < 15:  # Wait up to 15 seconds
     if ser.in_waiting > 0:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
         if line:
             response.append(line)
             print(f"  {line}")

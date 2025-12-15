@@ -1,8 +1,9 @@
 """Try different command formats to identify the device."""
 
+import time
+
 import serial
 import serial.tools.list_ports
-import time
 
 PICO_VID = 0x2E8A
 PICO_PID = 0x000A
@@ -55,11 +56,11 @@ try:
 
         response = ser.read(100)
         if response:
-            decoded = response.decode('ascii', errors='replace')
+            decoded = response.decode("ascii", errors="replace")
             print(f"   Response: {response[:50]}")
             print(f"   Decoded: '{decoded.strip()}'")
 
-            if b'P4SPR' in response or b'pico' in response.lower():
+            if b"P4SPR" in response or b"pico" in response.lower():
                 print("   ✓✓✓ FOUND IDENTIFIER! ✓✓✓")
         else:
             print("   (no response)")
@@ -69,4 +70,5 @@ try:
 except Exception as e:
     print(f"\n✗ Error: {e}")
     import traceback
+
     traceback.print_exc()

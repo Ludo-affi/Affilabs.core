@@ -8,7 +8,8 @@ This manager encapsulates all cursor-related logic:
 - Export of selected ranges
 """
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
@@ -18,11 +19,12 @@ if TYPE_CHECKING:
 class CursorManager:
     """Manages cursor positioning, snap-to-data, and range selection."""
 
-    def __init__(self, window: 'AffilabsMainWindow'):
+    def __init__(self, window: "AffilabsMainWindow"):
         """Initialize the cursor manager.
 
         Args:
             window: Reference to the main window
+
         """
         self.window = window
         self._updating_cursor_inputs = False
@@ -32,10 +34,11 @@ class CursorManager:
 
         Args:
             seconds_from_end: Negative number of seconds to go back from end
+
         """
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
-        if not hasattr(self.window.full_timeline_graph, 'stop_cursor'):
+        if not hasattr(self.window.full_timeline_graph, "stop_cursor"):
             return
 
         try:
@@ -52,15 +55,17 @@ class CursorManager:
             # Update spinboxes
             self.update_cursor_inputs()
 
-            print(f"Selected range: {start_time:.1f}s to {stop_time:.1f}s ({abs(seconds_from_end)}s duration)")
+            print(
+                f"Selected range: {start_time:.1f}s to {stop_time:.1f}s ({abs(seconds_from_end)}s duration)",
+            )
         except Exception as e:
             print(f"Error selecting time range: {e}")
 
     def select_all_data(self) -> None:
         """Select entire timeline from 0 to latest data."""
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
-        if not hasattr(self.window.full_timeline_graph, 'stop_cursor'):
+        if not hasattr(self.window.full_timeline_graph, "stop_cursor"):
             return
 
         try:
@@ -82,10 +87,11 @@ class CursorManager:
 
         Args:
             value: New start time value
+
         """
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
-        if not hasattr(self.window.full_timeline_graph, 'start_cursor'):
+        if not hasattr(self.window.full_timeline_graph, "start_cursor"):
             return
 
         # Prevent circular updates
@@ -103,10 +109,11 @@ class CursorManager:
 
         Args:
             value: New stop time value
+
         """
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
-        if not hasattr(self.window.full_timeline_graph, 'stop_cursor'):
+        if not hasattr(self.window.full_timeline_graph, "stop_cursor"):
             return
 
         # Prevent circular updates
@@ -121,9 +128,12 @@ class CursorManager:
 
     def update_cursor_inputs(self) -> None:
         """Update spinboxes to match cursor positions."""
-        if not hasattr(self.window, 'start_time_input') or not hasattr(self.window, 'stop_time_input'):
+        if not hasattr(self.window, "start_time_input") or not hasattr(
+            self.window,
+            "stop_time_input",
+        ):
             return
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
 
         try:
@@ -143,9 +153,9 @@ class CursorManager:
 
     def update_duration_label(self) -> None:
         """Update duration label based on cursor positions."""
-        if not hasattr(self.window, 'duration_label'):
+        if not hasattr(self.window, "duration_label"):
             return
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
 
         try:
@@ -153,12 +163,12 @@ class CursorManager:
             stop = self.window.full_timeline_graph.stop_cursor.value()
             duration = abs(stop - start)
             self.window.duration_label.setText(f"({duration:.1f}s)")
-        except Exception as e:
+        except Exception:
             pass
 
     def export_cursor_range(self) -> None:
         """Export data from selected cursor range to CSV."""
-        if not hasattr(self.window, 'app') or not self.window.app:
+        if not hasattr(self.window, "app") or not self.window.app:
             print("Application not initialized")
             return
 
@@ -167,7 +177,7 @@ class CursorManager:
             stop_time = self.window.full_timeline_graph.stop_cursor.value()
 
             # Forward to application's export cycle method
-            if hasattr(self.window.app, 'export_cycle_data'):
+            if hasattr(self.window.app, "export_cycle_data"):
                 self.window.app.export_cycle_data()
                 print(f"Exporting range: {start_time:.1f}s to {stop_time:.1f}s")
             else:
@@ -180,6 +190,7 @@ class CursorManager:
 
         Args:
             evt: Cursor event
+
         """
         self.update_cursor_inputs()
 
@@ -188,9 +199,10 @@ class CursorManager:
 
         Args:
             evt: Cursor event
+
         """
         # Apply snap to data if enabled
-        if hasattr(self.window, 'snap_checkbox') and self.window.snap_checkbox.isChecked():
+        if hasattr(self.window, "snap_checkbox") and self.window.snap_checkbox.isChecked():
             self.apply_snap_to_data(evt)
 
         self.update_cursor_inputs()
@@ -200,10 +212,11 @@ class CursorManager:
 
         Args:
             cursor: The cursor to snap
+
         """
-        if not hasattr(self.window, 'app') or not self.window.app:
+        if not hasattr(self.window, "app") or not self.window.app:
             return
-        if not hasattr(self.window.app, 'buffer_mgr'):
+        if not hasattr(self.window.app, "buffer_mgr"):
             return
 
         try:
@@ -212,9 +225,9 @@ class CursorManager:
 
             # Find nearest timestamp from any channel with data
             nearest_time = cursor_time
-            min_distance = float('inf')
+            min_distance = float("inf")
 
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 time_data = self.window.app.buffer_mgr.timeline_data[ch].time
                 if len(time_data) > 0:
                     timestamps = np.array(time_data)
@@ -227,7 +240,7 @@ class CursorManager:
                             nearest_time = candidate
 
             # Snap to nearest (only if within reasonable distance)
-            if min_distance < float('inf'):
+            if min_distance < float("inf"):
                 cursor.setValue(float(nearest_time))
         except Exception as e:
             print(f"Error applying snap: {e}")

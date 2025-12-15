@@ -16,13 +16,13 @@ Usage:
     python compare_baseline_methods.py
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from scipy.signal import savgol_filter, medfilt
-from scipy.optimize import curve_fit
 from scipy.fft import dst, idct
-from scipy.stats import linregress
+from scipy.optimize import curve_fit
+from scipy.signal import medfilt, savgol_filter
 
 
 def load_baseline_data():
@@ -37,10 +37,10 @@ def load_baseline_data():
 
     # Extract all channels
     data = {
-        'channel_a': df['channel_a'].values,
-        'channel_b': df['channel_b'].values,
-        'channel_c': df['channel_c'].values,
-        'channel_d': df['channel_d'].values,
+        "channel_a": df["channel_a"].values,
+        "channel_b": df["channel_b"].values,
+        "channel_c": df["channel_c"].values,
+        "channel_d": df["channel_d"].values,
     }
 
     print(f"✅ Loaded {len(df)} baseline data points")
@@ -61,7 +61,7 @@ def method_moving_average(data, window=5):
     clean_data = data[~np.isnan(data)]
     if len(clean_data) < window:
         return clean_data
-    return np.convolve(clean_data, np.ones(window)/window, mode='valid')
+    return np.convolve(clean_data, np.ones(window) / window, mode="valid")
 
 
 def method_savgol_single(data, window=21, polyorder=3):
@@ -124,7 +124,7 @@ def method_batch_average(data, batch_size=12):
     batched = []
 
     for i in range(n_batches):
-        batch = clean_data[i*batch_size:(i+1)*batch_size]
+        batch = clean_data[i * batch_size : (i + 1) * batch_size]
         # Apply SG filter to batch
         filtered_batch = savgol_filter(batch, 5, 2)
         # Take mean
@@ -179,7 +179,7 @@ def method_lorentzian_fit(data):
             x,
             clean_data,
             p0=[pos_init, width_init, height_init, offset_init],
-            maxfev=5000
+            maxfev=5000,
         )
 
         # Generate fitted curve
@@ -187,7 +187,7 @@ def method_lorentzian_fit(data):
 
         return fitted
 
-    except Exception as e:
+    except Exception:
         # If fitting fails, return smoothed data
         return savgol_filter(clean_data, 21, 3)
 
@@ -239,9 +239,11 @@ def method_fourier_derivative(data, alpha=9000.0):
 
         return integrated
 
-    except Exception as e:
+    except Exception:
         # If Fourier method fails, return smoothed data
         return savgol_filter(clean_data, 21, 3)
+
+
 def analyze_method(name, method_func, data, **kwargs):
     """Analyze a noise reduction method"""
     try:
@@ -255,13 +257,13 @@ def analyze_method(name, method_func, data, **kwargs):
         mean_val = np.mean(filtered)
 
         return {
-            'method': name,
-            'peak_to_peak_nm': peak_to_peak,
-            'peak_to_peak_pm': peak_to_peak * 1000,
-            'std_nm': std_dev,
-            'std_pm': std_dev * 1000,
-            'mean_nm': mean_val,
-            'n_points': len(filtered)
+            "method": name,
+            "peak_to_peak_nm": peak_to_peak,
+            "peak_to_peak_pm": peak_to_peak * 1000,
+            "std_nm": std_dev,
+            "std_pm": std_dev * 1000,
+            "mean_nm": mean_val,
+            "n_points": len(filtered),
         }
     except Exception as e:
         print(f"⚠️  Error in {name}: {e}")
@@ -269,9 +271,9 @@ def analyze_method(name, method_func, data, **kwargs):
 
 
 def main():
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🧪 BASELINE DATA - NOISE REDUCTION METHOD COMPARISON")
-    print("="*80)
+    print("=" * 80)
 
     # Load data
     data = load_baseline_data()
@@ -289,7 +291,7 @@ def main():
         raw_std = np.std(channel_data)
         raw_mean = np.mean(channel_data)
 
-        print(f"\n📈 Raw Data Statistics:")
+        print("\n📈 Raw Data Statistics:")
         print(f"   Points:       {len(channel_data)}")
         print(f"   Peak-to-Peak: {raw_p2p:.6f} nm ({raw_p2p*1000:.3f} pm)")
         print(f"   Std Dev:      {raw_std:.6f} nm ({raw_std*1000:.3f} pm)")
@@ -302,70 +304,135 @@ def main():
         results.append(analyze_method("Raw (No Filtering)", method_raw, channel_data))
 
         # 2. Moving average
-        results.append(analyze_method("Moving Average (5pt)", method_moving_average, channel_data, window=5))
-        results.append(analyze_method("Moving Average (11pt)", method_moving_average, channel_data, window=11))
+        results.append(
+            analyze_method(
+                "Moving Average (5pt)",
+                method_moving_average,
+                channel_data,
+                window=5,
+            ),
+        )
+        results.append(
+            analyze_method(
+                "Moving Average (11pt)",
+                method_moving_average,
+                channel_data,
+                window=11,
+            ),
+        )
 
         # 3. Single-pass SG
-        results.append(analyze_method("Savitzky-Golay (21,3)", method_savgol_single, channel_data, window=21, polyorder=3))
+        results.append(
+            analyze_method(
+                "Savitzky-Golay (21,3)",
+                method_savgol_single,
+                channel_data,
+                window=21,
+                polyorder=3,
+            ),
+        )
 
         # 4. Dual-pass SG (GOLD STANDARD)
-        results.append(analyze_method("Dual SG (5,2)→(21,3) GOLD", method_savgol_dual, channel_data))
+        results.append(
+            analyze_method(
+                "Dual SG (5,2)→(21,3) GOLD",
+                method_savgol_dual,
+                channel_data,
+            ),
+        )
 
         # 5. Median filter
-        results.append(analyze_method("Median Filter (5pt)", method_median_filter, channel_data, kernel=5))
+        results.append(
+            analyze_method(
+                "Median Filter (5pt)",
+                method_median_filter,
+                channel_data,
+                kernel=5,
+            ),
+        )
 
         # 6. Batch averaging
-        results.append(analyze_method("Batch Average (12pt)", method_batch_average, channel_data, batch_size=12))
+        results.append(
+            analyze_method(
+                "Batch Average (12pt)",
+                method_batch_average,
+                channel_data,
+                batch_size=12,
+            ),
+        )
 
         # 7. Lorentzian fit (OLD SOFTWARE)
-        results.append(analyze_method("Lorentzian Fit (OLD SW)", method_lorentzian_fit, channel_data))
+        results.append(
+            analyze_method(
+                "Lorentzian Fit (OLD SW)",
+                method_lorentzian_fit,
+                channel_data,
+            ),
+        )
 
         # 8. Fourier derivative zero-crossing
-        results.append(analyze_method("Fourier DST/IDCT (OLD SW)", method_fourier_derivative, channel_data, alpha=9000.0))
+        results.append(
+            analyze_method(
+                "Fourier DST/IDCT (OLD SW)",
+                method_fourier_derivative,
+                channel_data,
+                alpha=9000.0,
+            ),
+        )
 
         # Remove failed results
         results = [r for r in results if r is not None]
 
         # Print results table
         print(f"\n{'='*80}")
-        print(f"📊 RESULTS")
+        print("📊 RESULTS")
         print(f"{'='*80}")
-        print(f"{'Method':<35} {'P2P (nm)':<12} {'P2P (pm)':<12} {'Std (nm)':<12} {'Points':<8}")
-        print("-"*80)
+        print(
+            f"{'Method':<35} {'P2P (nm)':<12} {'P2P (pm)':<12} {'Std (nm)':<12} {'Points':<8}",
+        )
+        print("-" * 80)
 
         for result in results:
-            print(f"{result['method']:<35} {result['peak_to_peak_nm']:<12.6f} "
-                  f"{result['peak_to_peak_pm']:<12.3f} {result['std_nm']:<12.6f} "
-                  f"{result['n_points']:<8}")
+            print(
+                f"{result['method']:<35} {result['peak_to_peak_nm']:<12.6f} "
+                f"{result['peak_to_peak_pm']:<12.3f} {result['std_nm']:<12.6f} "
+                f"{result['n_points']:<8}",
+            )
 
         # Sort by peak-to-peak
-        results_sorted = sorted(results, key=lambda x: x['peak_to_peak_nm'])
+        results_sorted = sorted(results, key=lambda x: x["peak_to_peak_nm"])
 
         print(f"\n{'='*80}")
-        print(f"🏆 RANKING (Best to Worst by Peak-to-Peak)")
+        print("🏆 RANKING (Best to Worst by Peak-to-Peak)")
         print(f"{'='*80}")
 
         for i, result in enumerate(results_sorted, 1):
-            improvement = (raw_p2p / result['peak_to_peak_nm'] - 1) * 100
-            print(f"{i}. {result['method']:<35} {result['peak_to_peak_pm']:>10.3f} pm "
-                  f"({improvement:>6.1f}% improvement)")
+            improvement = (raw_p2p / result["peak_to_peak_nm"] - 1) * 100
+            print(
+                f"{i}. {result['method']:<35} {result['peak_to_peak_pm']:>10.3f} pm "
+                f"({improvement:>6.1f}% improvement)",
+            )
 
         # Check for GOLD STANDARD target
         best = results_sorted[0]
         target_pm = 8.0  # 0.008 nm target
 
         print(f"\n{'='*80}")
-        print(f"🎯 TARGET ANALYSIS")
+        print("🎯 TARGET ANALYSIS")
         print(f"{'='*80}")
         print(f"   Target:        {target_pm:.1f} pm (0.008 nm)")
         print(f"   Best achieved: {best['peak_to_peak_pm']:.3f} pm ({best['method']})")
         print(f"   Gap:           {best['peak_to_peak_pm'] - target_pm:.3f} pm")
-        print(f"   Factor:        {best['peak_to_peak_pm'] / target_pm:.1f}x worse than target")
+        print(
+            f"   Factor:        {best['peak_to_peak_pm'] / target_pm:.1f}x worse than target",
+        )
 
-        if best['peak_to_peak_pm'] <= target_pm:
-            print(f"   ✅ TARGET ACHIEVED!")
+        if best["peak_to_peak_pm"] <= target_pm:
+            print("   ✅ TARGET ACHIEVED!")
         else:
-            print(f"   ❌ Target not achieved (need {(best['peak_to_peak_pm'] / target_pm):.1f}x better)")
+            print(
+                f"   ❌ Target not achieved (need {(best['peak_to_peak_pm'] / target_pm):.1f}x better)",
+            )
 
     print(f"\n{'='*80}")
     print("✅ Analysis complete!")

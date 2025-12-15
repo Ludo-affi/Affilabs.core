@@ -1,21 +1,20 @@
-"""
-Test if polarizer servo is physically rotating.
+"""Test if polarizer servo is physically rotating.
 This will slowly step through positions with visual confirmation pauses.
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 import time
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s :: %(levelname)s :: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s :: %(levelname)s :: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 logger = logging.getLogger(__name__)
@@ -55,9 +54,9 @@ for i, angle in enumerate(test_positions):
     result = ctrl.servo_set(s=angle, p=angle)
 
     if result:
-        logger.info(f"  ✓ Command sent successfully (servo_set returned True)")
+        logger.info("  ✓ Command sent successfully (servo_set returned True)")
     else:
-        logger.warning(f"  ✗ Command failed (servo_set returned False)")
+        logger.warning("  ✗ Command failed (servo_set returned False)")
 
     # Read back the command that was sent
     logger.info(f"  Command format: sv{angle:03d}{angle:03d}")

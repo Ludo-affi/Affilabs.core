@@ -1,6 +1,6 @@
 # Hardware Connection Logic - FIXED
 
-**Date:** November 22, 2025  
+**Date:** November 22, 2025
 **Status:** ✅ CORRECTED
 
 ## Issues Fixed
@@ -10,7 +10,7 @@
 
 **Root Cause:** The `hardware_connected` signal was always emitted, but the UI logic wasn't properly handling the "no hardware found" case.
 
-**Fix:** 
+**Fix:**
 - Backend now ALWAYS emits `hardware_connected` signal even when nothing is found
 - Frontend properly checks if any hardware exists and updates power button state accordingly
 - Power button goes: GRAY → YELLOW → GRAY (if nothing found) or GREEN (if hardware found)
@@ -30,10 +30,10 @@ If Arduino OR PicoP4SPR detected:
 
 If PicoP4SPR + RPi (KNX controller) detected:
     → Device = "P4SPR+KNX" or "ezSPR" (check serial number list)
-    
+
 If PicoEZSPR detected:
     → Device = "P4PRO"
-    
+
 If NOTHING detected:
     → Device = "" (empty)
     → Power button returns to GRAY (disconnected)
@@ -137,11 +137,11 @@ def _get_controller_type(self) -> str:
         return ''  # No controller = no device type
 
     name = getattr(self.ctrl, 'name', '')
-    
+
     # Arduino-based P4SPR
     if name == 'p4spr':
         return 'P4SPR'
-    
+
     # Pico-based P4SPR
     elif name == 'pico_p4spr':
         if self.knx is not None:
@@ -149,11 +149,11 @@ def _get_controller_type(self) -> str:
             return 'P4SPR+KNX'  # TODO: Check serial number for ezSPR variant
         else:
             return 'P4SPR'
-    
+
     # Pico-based ezSPR (P4PRO)
     elif name == 'pico_ezspr':
         return 'P4PRO'
-    
+
     return ''
 ```
 
@@ -209,7 +209,7 @@ elif name == 'pico_p4spr':
     if self.knx is not None:
         # TODO: Check serial number list to determine variant
         spectrometer_serial = self.usb.serial_number if self.usb else None
-        
+
         if spectrometer_serial in EZSPR_SERIAL_NUMBERS:
             return 'ezSPR'
         elif spectrometer_serial in P4SPR_KNX_SERIAL_NUMBERS:

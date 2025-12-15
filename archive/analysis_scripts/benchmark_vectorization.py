@@ -7,10 +7,11 @@ Compares performance of:
 Tests with various data sizes and window sizes to measure real-world impact.
 """
 
-import numpy as np
+import tempfile
 import time
 from pathlib import Path
-import tempfile
+
+import numpy as np
 
 
 def benchmark_median_filter():
@@ -51,7 +52,8 @@ def benchmark_median_filter():
         def scipy_filter(data, window_size):
             try:
                 from scipy.ndimage import median_filter
-                return median_filter(data, size=window_size, mode='nearest')
+
+                return median_filter(data, size=window_size, mode="nearest")
             except ImportError:
                 return None
 
@@ -59,8 +61,9 @@ def benchmark_median_filter():
         def stride_filter(data, window_size):
             try:
                 from numpy.lib.stride_tricks import sliding_window_view
+
                 pad_width = window_size // 2
-                padded = np.pad(data, pad_width, mode='edge')
+                padded = np.pad(data, pad_width, mode="edge")
                 windows = sliding_window_view(padded, window_size)
                 return np.nanmedian(windows, axis=1)
             except (ImportError, AttributeError):
@@ -81,10 +84,12 @@ def benchmark_median_filter():
             time_scipy = (time.perf_counter() - start) * 10  # ms per call
             speedup_scipy = time_orig / time_scipy
             print(f"  Original loop:     {time_orig:.3f} ms")
-            print(f"  Scipy vectorized:  {time_scipy:.3f} ms  ({speedup_scipy:.1f}x faster)")
+            print(
+                f"  Scipy vectorized:  {time_scipy:.3f} ms  ({speedup_scipy:.1f}x faster)",
+            )
         else:
             print(f"  Original loop:     {time_orig:.3f} ms")
-            print(f"  Scipy: NOT AVAILABLE")
+            print("  Scipy: NOT AVAILABLE")
 
         # Benchmark stride tricks
         result_stride = stride_filter(data, window_size)
@@ -94,9 +99,11 @@ def benchmark_median_filter():
                 result_stride = stride_filter(data, window_size)
             time_stride = (time.perf_counter() - start) * 10  # ms per call
             speedup_stride = time_orig / time_stride
-            print(f"  Stride tricks:     {time_stride:.3f} ms  ({speedup_stride:.1f}x faster)")
+            print(
+                f"  Stride tricks:     {time_stride:.3f} ms  ({speedup_stride:.1f}x faster)",
+            )
         else:
-            print(f"  Stride tricks: NOT AVAILABLE")
+            print("  Stride tricks: NOT AVAILABLE")
 
 
 def benchmark_csv_export():
@@ -118,46 +125,51 @@ def benchmark_csv_export():
 
         # Generate test data for 4 channels
         export_data = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             export_data[ch] = {
-                'time': np.linspace(0, 100, data_size),
-                'wavelength': np.random.randn(data_size) * 2 + 650,
-                'spr': np.random.randn(data_size) * 50 + 1000
+                "time": np.linspace(0, 100, data_size),
+                "wavelength": np.random.randn(data_size) * 2 + 650,
+                "spr": np.random.randn(data_size) * 50 + 1000,
             }
 
         # Original loop-based implementation
         def original_export(export_data, filepath):
             import csv
-            with open(filepath, 'w', newline='') as f:
+
+            with open(filepath, "w", newline="") as f:
                 writer = csv.writer(f)
 
                 # Metadata
-                writer.writerow(['# Test Export'])
+                writer.writerow(["# Test Export"])
                 writer.writerow([])
 
                 # Headers
-                headers = ['Time (s)']
-                for ch in ['a', 'b', 'c', 'd']:
-                    headers.extend([f'Ch {ch.upper()} Wavelength', f'Ch {ch.upper()} SPR'])
+                headers = ["Time (s)"]
+                for ch in ["a", "b", "c", "d"]:
+                    headers.extend(
+                        [f"Ch {ch.upper()} Wavelength", f"Ch {ch.upper()} SPR"],
+                    )
                 writer.writerow(headers)
 
                 # Data rows
-                max_len = max(len(export_data[ch]['time']) for ch in export_data.keys())
+                max_len = max(len(export_data[ch]["time"]) for ch in export_data.keys())
                 for i in range(max_len):
                     row = []
-                    if i < len(export_data['a']['time']):
+                    if i < len(export_data["a"]["time"]):
                         row.append(f"{export_data['a']['time'][i]:.3f}")
                     else:
-                        row.append('')
+                        row.append("")
 
-                    for ch in ['a', 'b', 'c', 'd']:
-                        if i < len(export_data[ch]['time']):
-                            row.extend([
-                                f"{export_data[ch]['wavelength'][i]:.4f}",
-                                f"{export_data[ch]['spr'][i]:.4f}"
-                            ])
+                    for ch in ["a", "b", "c", "d"]:
+                        if i < len(export_data[ch]["time"]):
+                            row.extend(
+                                [
+                                    f"{export_data[ch]['wavelength'][i]:.4f}",
+                                    f"{export_data[ch]['spr'][i]:.4f}",
+                                ],
+                            )
                         else:
-                            row.extend(['', ''])
+                            row.extend(["", ""])
                     writer.writerow(row)
 
         # Pandas vectorized implementation
@@ -165,20 +177,20 @@ def benchmark_csv_export():
             import pandas as pd
 
             # Build DataFrame
-            df_data = {'Time (s)': export_data['a']['time']}
-            for ch in ['a', 'b', 'c', 'd']:
-                df_data[f'Ch {ch.upper()} Wavelength'] = export_data[ch]['wavelength']
-                df_data[f'Ch {ch.upper()} SPR'] = export_data[ch]['spr']
+            df_data = {"Time (s)": export_data["a"]["time"]}
+            for ch in ["a", "b", "c", "d"]:
+                df_data[f"Ch {ch.upper()} Wavelength"] = export_data[ch]["wavelength"]
+                df_data[f"Ch {ch.upper()} SPR"] = export_data[ch]["spr"]
 
             df = pd.DataFrame(df_data)
 
             # Write to CSV
-            with open(filepath, 'w', newline='') as f:
-                f.write('# Test Export\n\n')
-                df.to_csv(f, index=False, float_format='%.4f')
+            with open(filepath, "w", newline="") as f:
+                f.write("# Test Export\n\n")
+                df.to_csv(f, index=False, float_format="%.4f")
 
         # Benchmark original
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as tmp:
             tmp_path = tmp.name
 
         start = time.perf_counter()
@@ -228,7 +240,7 @@ def estimate_system_impact():
     print("  Total Improvement:      45-60% overall")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     benchmark_median_filter()
     benchmark_csv_export()
     estimate_system_impact()

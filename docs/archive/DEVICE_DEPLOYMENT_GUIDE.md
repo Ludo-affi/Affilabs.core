@@ -592,4 +592,3 @@ def check_for_config_updates():
 ---
 
 **RECOMMENDATION**: Start with **Method 1 (USB Drive)** for reliability, add **Method 2 (QR Code)** as enhancement later.
-

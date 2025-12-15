@@ -1,5 +1,4 @@
-"""
-Settings Tab Builder
+"""Settings Tab Builder
 
 Handles building the Settings tab UI with hardware config and calibration controls.
 
@@ -7,8 +6,13 @@ Author: Affilabs
 """
 
 from PySide6.QtWidgets import (
-    QVBoxLayout, QFrame, QLabel, QHBoxLayout, QPushButton,
-    QLineEdit, QComboBox
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
 )
 
 # Import sections from central location
@@ -24,6 +28,7 @@ class SettingsTabBuilder:
 
         Args:
             sidebar: Parent AffilabsSidebar instance to attach widgets to
+
         """
         self.sidebar = sidebar
 
@@ -32,6 +37,7 @@ class SettingsTabBuilder:
 
         Args:
             tab_layout: QVBoxLayout to add settings tab widgets to
+
         """
         self._build_intelligence_bar(tab_layout)
         self._build_hardware_configuration(tab_layout)
@@ -56,7 +62,7 @@ class SettingsTabBuilder:
             "  background: rgba(0, 0, 0, 0.03);"
             "  border-radius: 8px;"
             "  padding: 40px;"
-            "}"
+            "}",
         )
         placeholder_layout = QVBoxLayout(placeholder)
         placeholder_layout.setContentsMargins(40, 40, 40, 40)
@@ -66,9 +72,10 @@ class SettingsTabBuilder:
             "font-size: 13px;"
             "color: #86868B;"
             "background: transparent;"
-            "font-style: italic;"
+            "font-style: italic;",
         )
         from PySide6.QtCore import Qt
+
         loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         placeholder_layout.addWidget(loading_label)
 
@@ -78,31 +85,34 @@ class SettingsTabBuilder:
         # Store reference for later replacement
         self.sidebar._spectroscopy_placeholder = spectro_section
 
-    def _build_spectroscopy_plots_real(self, tab_layout: QVBoxLayout, insert_index: int = -1):
+    def _build_spectroscopy_plots_real(
+        self,
+        tab_layout: QVBoxLayout,
+        insert_index: int = -1,
+    ):
         """Build actual spectroscopy plots (called on demand when Settings tab is opened)."""
-        from plot_helpers import create_spectroscopy_plot, add_channel_curves
+        from plot_helpers import add_channel_curves, create_spectroscopy_plot
         from sections import CollapsibleSection
 
         spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
 
-        spectro_help = QLabel("Real-time transmission and raw detector spectrum display")
+        spectro_help = QLabel(
+            "Real-time transmission and raw detector spectrum display",
+        )
         spectro_help.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
             "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         spectro_section.content_layout.addWidget(spectro_help)
 
         # Card container
         spectro_card = QFrame()
         spectro_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         spectro_card_layout = QVBoxLayout(spectro_card)
         spectro_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -115,21 +125,23 @@ class SettingsTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         spectro_card_layout.addWidget(trans_label)
 
         # Create transmission plot
         self.sidebar.transmission_plot = create_spectroscopy_plot(
             left_label="Transmission (%)",
-            bottom_label="Wavelength (nm)"
+            bottom_label="Wavelength (nm)",
         )
         self.sidebar.transmission_plot.setMinimumHeight(200)
         self.sidebar.transmission_plot.setMaximumHeight(300)
         spectro_card_layout.addWidget(self.sidebar.transmission_plot)
 
         # Add channel curves to transmission plot
-        self.sidebar.transmission_curves = add_channel_curves(self.sidebar.transmission_plot)
+        self.sidebar.transmission_curves = add_channel_curves(
+            self.sidebar.transmission_plot,
+        )
 
         # Add "Record Baseline Data" button
         record_baseline_btn = QPushButton("🔴 Record 5-Min Baseline Data")
@@ -154,11 +166,11 @@ class SettingsTabBuilder:
             "QPushButton:disabled {"
             "  background: #D1D1D6;"
             "  color: #86868B;"
-            "}"
+            "}",
         )
         record_baseline_btn.setToolTip(
             "Record 5 minutes of transmission data for baseline noise optimization analysis.\\n"
-            "Ensure stable baseline (no injections) before clicking."
+            "Ensure stable baseline (no injections) before clicking.",
         )
         self.sidebar.record_baseline_btn = record_baseline_btn
         spectro_card_layout.addWidget(record_baseline_btn)
@@ -172,14 +184,14 @@ class SettingsTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         spectro_card_layout.addWidget(raw_label)
 
         # Create raw data plot
         self.sidebar.raw_data_plot = create_spectroscopy_plot(
             left_label="Intensity (counts)",
-            bottom_label="Wavelength (nm)"
+            bottom_label="Wavelength (nm)",
         )
         self.sidebar.raw_data_plot.setMinimumHeight(200)
         self.sidebar.raw_data_plot.setMaximumHeight(300)
@@ -198,24 +210,26 @@ class SettingsTabBuilder:
 
         # Log successful creation
         from utils.logger import logger
-        logger.info(f"✅ Spectroscopy plots created: {len(self.sidebar.transmission_curves)} curves each")
+
+        logger.info(
+            f"✅ Spectroscopy plots created: {len(self.sidebar.transmission_curves)} curves each",
+        )
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
         """Build intelligence bar section."""
         intel_section = QLabel("INTELLIGENCE BAR")
         intel_section.setFixedHeight(15)
         intel_section.setStyleSheet(section_header_style())
-        intel_section.setToolTip("Real-time system status and guidance powered by AI diagnostics")
+        intel_section.setToolTip(
+            "Real-time system status and guidance powered by AI diagnostics",
+        )
         tab_layout.addWidget(intel_section)
         tab_layout.addSpacing(8)
 
         intel_bar = QFrame()
         intel_bar.setGeometry(20, 142, 411, 37)
         intel_bar.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
         intel_bar_layout = QHBoxLayout(intel_bar)
         intel_bar_layout.setContentsMargins(16, 12, 16, 8)
@@ -228,16 +242,14 @@ class SettingsTabBuilder:
             "color: #34C759;"
             "background: transparent;"
             "font-weight: 700;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_status_label)
 
         # Separator bullet
         self.sidebar.settings_intel_separator = QLabel("•")
         self.sidebar.settings_intel_separator.setStyleSheet(
-            "font-size: 12px;"
-            "color: #86868B;"
-            "background: transparent;"
+            "font-size: 12px;color: #86868B;background: transparent;",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_separator)
 
@@ -248,7 +260,7 @@ class SettingsTabBuilder:
             "color: #007AFF;"
             "background: transparent;"
             "font-weight: 600;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_message_label)
 
@@ -259,26 +271,28 @@ class SettingsTabBuilder:
 
     def _build_hardware_configuration(self, tab_layout: QVBoxLayout):
         """Build hardware configuration section with polarizer and LED settings (collapsible, starts expanded)."""
-        hardware_section = CollapsibleSection("⚙ Hardware Configuration", is_expanded=True)
+        hardware_section = CollapsibleSection(
+            "⚙ Hardware Configuration",
+            is_expanded=True,
+        )
 
-        hardware_help = QLabel("Configure polarizer positions and LED intensity for each channel")
+        hardware_help = QLabel(
+            "Configure polarizer positions and LED intensity for each channel",
+        )
         hardware_help.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
             "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         hardware_section.content_layout.addWidget(hardware_help)
 
         # Card container
         polarizer_led_card = QFrame()
         polarizer_led_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         polarizer_led_card_layout = QVBoxLayout(polarizer_led_card)
         polarizer_led_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -304,7 +318,7 @@ class SettingsTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(polarizer_label)
 
@@ -318,12 +332,14 @@ class SettingsTabBuilder:
 
         self.sidebar.s_position_input = QLineEdit()
         self.sidebar.s_position_input.setPlaceholderText("0-180")
-        self.sidebar.s_position_input.setToolTip("Servo position for S polarization mode (0-180 degrees)")
+        self.sidebar.s_position_input.setToolTip(
+            "Servo position for S polarization mode (0-180 degrees)",
+        )
         self.sidebar.s_position_input.setFixedWidth(70)
         self.sidebar.s_position_input.setStyleSheet(self._lineedit_style())
         # Connect to sync with device_config when changed
         self.sidebar.s_position_input.textChanged.connect(
-            lambda text: self._on_s_position_changed(text)
+            lambda text: self._on_s_position_changed(text),
         )
         polarizer_row.addWidget(self.sidebar.s_position_input)
 
@@ -336,12 +352,14 @@ class SettingsTabBuilder:
 
         self.sidebar.p_position_input = QLineEdit()
         self.sidebar.p_position_input.setPlaceholderText("0-180")
-        self.sidebar.p_position_input.setToolTip("Servo position for P polarization mode (0-180 degrees)")
+        self.sidebar.p_position_input.setToolTip(
+            "Servo position for P polarization mode (0-180 degrees)",
+        )
         self.sidebar.p_position_input.setFixedWidth(70)
         self.sidebar.p_position_input.setStyleSheet(self._lineedit_style())
         # Connect to sync with device_config when changed
         self.sidebar.p_position_input.textChanged.connect(
-            lambda text: self._on_p_position_changed(text)
+            lambda text: self._on_p_position_changed(text),
         )
         polarizer_row.addWidget(self.sidebar.p_position_input)
 
@@ -349,7 +367,9 @@ class SettingsTabBuilder:
         self.sidebar.polarizer_toggle_btn = QPushButton("Position: S")
         self.sidebar.polarizer_toggle_btn.setFixedWidth(100)
         self.sidebar.polarizer_toggle_btn.setFixedHeight(28)
-        self.sidebar.polarizer_toggle_btn.setToolTip("Click to toggle between S and P polarization modes")
+        self.sidebar.polarizer_toggle_btn.setToolTip(
+            "Click to toggle between S and P polarization modes",
+        )
         self.sidebar.polarizer_toggle_btn.setStyleSheet(
             "QPushButton {"
             "  background: #1D1D1F;"
@@ -366,10 +386,10 @@ class SettingsTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         # Track current polarizer position on sidebar
-        self.sidebar.current_polarizer_position = 'S'
+        self.sidebar.current_polarizer_position = "S"
         polarizer_row.addWidget(self.sidebar.polarizer_toggle_btn)
 
         polarizer_row.addStretch()
@@ -377,14 +397,13 @@ class SettingsTabBuilder:
 
     def _build_pipeline_selector(self, layout: QVBoxLayout):
         """Build processing pipeline selector."""
-
         pipeline_label = QLabel("Processing Pipeline:")
         pipeline_label.setStyleSheet(
             "font-size: 13px;"
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(pipeline_label)
 
@@ -395,7 +414,9 @@ class SettingsTabBuilder:
         self.sidebar.pipeline_selector = QComboBox()
         self.sidebar.pipeline_selector.setFixedHeight(32)
         self.sidebar.pipeline_selector.setMinimumWidth(200)
-        self.sidebar.pipeline_selector.setToolTip("Select data processing pipeline method")
+        self.sidebar.pipeline_selector.setToolTip(
+            "Select data processing pipeline method",
+        )
         self.sidebar.pipeline_selector.setStyleSheet(
             "QComboBox {"
             "  background: white;"
@@ -427,13 +448,19 @@ class SettingsTabBuilder:
             "  selection-background-color: #007AFF;"
             "  selection-color: white;"
             "  padding: 4px;"
-            "}"
+            "}",
         )
 
         # Add pipeline options
         self.sidebar.pipeline_selector.addItem("Fourier Transform (Default)", "fourier")
-        self.sidebar.pipeline_selector.addItem("Batch Savitzky-Golay (GOLD STANDARD)", "batch_savgol")
-        self.sidebar.pipeline_selector.addItem("Direct ArgMin (Simple & Fast)", "direct")
+        self.sidebar.pipeline_selector.addItem(
+            "Batch Savitzky-Golay (GOLD STANDARD)",
+            "batch_savgol",
+        )
+        self.sidebar.pipeline_selector.addItem(
+            "Direct ArgMin (Simple & Fast)",
+            "direct",
+        )
         self.sidebar.pipeline_selector.addItem("Adaptive Multi-Feature", "adaptive")
         self.sidebar.pipeline_selector.addItem("Consensus", "consensus")
 
@@ -446,7 +473,9 @@ class SettingsTabBuilder:
         layout.addLayout(pipeline_row)
 
         # Add description label
-        self.sidebar.pipeline_description = QLabel("Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.")
+        self.sidebar.pipeline_description = QLabel(
+            "Fourier Transform: Uses DST/IDCT for derivative zero-crossing detection. Established method for SPR.",
+        )
         self.sidebar.pipeline_description.setWordWrap(True)
         self.sidebar.pipeline_description.setStyleSheet(
             "font-size: 11px;"
@@ -454,7 +483,7 @@ class SettingsTabBuilder:
             "background: transparent;"
             "font-style: italic;"
             "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(self.sidebar.pipeline_description)
 
@@ -466,12 +495,12 @@ class SettingsTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(led_intensity_label)
 
         # Create channel inputs (A, B, C, D)
-        channels = ['a', 'b', 'c', 'd']
+        channels = ["a", "b", "c", "d"]
         for channel in channels:
             channel_row = QHBoxLayout()
             channel_row.setSpacing(10)
@@ -482,19 +511,21 @@ class SettingsTabBuilder:
                 "font-size: 12px;"
                 "color: #1D1D1F;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             channel_row.addWidget(channel_label)
 
             channel_input = QLineEdit()
             channel_input.setPlaceholderText("0-255")
-            channel_input.setToolTip(f"LED intensity for Channel {channel.upper()} (0-255)")
+            channel_input.setToolTip(
+                f"LED intensity for Channel {channel.upper()} (0-255)",
+            )
             channel_input.setFixedWidth(70)
             channel_input.setStyleSheet(self._lineedit_style())
             channel_row.addWidget(channel_input)
 
             # Store reference on sidebar
-            setattr(self.sidebar, f'channel_{channel}_input', channel_input)
+            setattr(self.sidebar, f"channel_{channel}_input", channel_input)
 
             channel_row.addStretch()
             layout.addLayout(channel_row)
@@ -507,7 +538,9 @@ class SettingsTabBuilder:
         # Load Current Settings button
         self.sidebar.load_current_settings_btn = QPushButton("↻ Load Current")
         self.sidebar.load_current_settings_btn.setFixedHeight(32)
-        self.sidebar.load_current_settings_btn.setToolTip("Load current settings from device")
+        self.sidebar.load_current_settings_btn.setToolTip(
+            "Load current settings from device",
+        )
         self.sidebar.load_current_settings_btn.setStyleSheet(
             "QPushButton {"
             "  background: #F2F2F7;"
@@ -524,7 +557,7 @@ class SettingsTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         settings_button_row.addWidget(self.sidebar.load_current_settings_btn)
 
@@ -547,7 +580,7 @@ class SettingsTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         settings_button_row.addWidget(self.sidebar.apply_settings_btn)
 
@@ -570,7 +603,7 @@ class SettingsTabBuilder:
             "}"
             "QPushButton:pressed {"
             "  background: rgba(0, 0, 0, 0.15);"
-            "}"
+            "}",
         )
         settings_button_row.addWidget(self.sidebar.advanced_settings_btn)
 
@@ -578,26 +611,28 @@ class SettingsTabBuilder:
 
     def _build_calibration_controls(self, tab_layout: QVBoxLayout):
         """Build calibration controls section with Simple, Full, and OEM calibrations (collapsible, starts collapsed)."""
-        calibration_section = CollapsibleSection("🔧 Calibration Controls", is_expanded=False)
+        calibration_section = CollapsibleSection(
+            "🔧 Calibration Controls",
+            is_expanded=False,
+        )
 
-        calibration_help = QLabel("Perform LED and system calibrations for optimal performance")
+        calibration_help = QLabel(
+            "Perform LED and system calibrations for optimal performance",
+        )
         calibration_help.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
             "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         calibration_section.content_layout.addWidget(calibration_help)
 
         # Card container
         calibration_card = QFrame()
         calibration_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         calibration_card_layout = QVBoxLayout(calibration_card)
         calibration_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -610,7 +645,7 @@ class SettingsTabBuilder:
             description="Quick LED intensity adjustment for all channels",
             button_text="Run Simple Calibration",
             button_ref="simple_led_calibration_btn",
-            primary=True
+            primary=True,
         )
 
         calibration_card_layout.addSpacing(12)
@@ -622,7 +657,7 @@ class SettingsTabBuilder:
             description="Complete calibration including dark reference and LED optimization",
             button_text="Run Full Calibration",
             button_ref="full_calibration_btn",
-            primary=False
+            primary=False,
         )
 
         calibration_card_layout.addSpacing(12)
@@ -634,7 +669,7 @@ class SettingsTabBuilder:
             description="Find optimal servo positions for S and P modes (~90° apart, 1.4 min)",
             button_text="Calibrate Polarizer",
             button_ref="polarizer_calibration_btn",
-            primary=False
+            primary=False,
         )
 
         calibration_card_layout.addSpacing(12)
@@ -646,7 +681,7 @@ class SettingsTabBuilder:
             description="Factory-level calibration for LED driver settings (advanced users)",
             button_text="Run OEM Calibration",
             button_ref="oem_led_calibration_btn",
-            primary=False
+            primary=False,
         )
 
         calibration_section.add_content_widget(calibration_card)
@@ -656,8 +691,15 @@ class SettingsTabBuilder:
         # by the parent window (main_simplified.py) to access the full application context
         # and handle hardware communication properly
 
-    def _add_calibration_option(self, layout: QVBoxLayout, title: str, description: str,
-                                  button_text: str, button_ref: str, primary: bool = False):
+    def _add_calibration_option(
+        self,
+        layout: QVBoxLayout,
+        title: str,
+        description: str,
+        button_text: str,
+        button_ref: str,
+        primary: bool = False,
+    ):
         """Add a calibration option with title, description, and button.
 
         Args:
@@ -667,6 +709,7 @@ class SettingsTabBuilder:
             button_text: Button label text
             button_ref: Attribute name on sidebar to store button reference
             primary: Whether to use primary (dark) button style
+
         """
         # Title
         title_label = QLabel(title)
@@ -675,7 +718,7 @@ class SettingsTabBuilder:
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 600;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(title_label)
 
@@ -687,7 +730,7 @@ class SettingsTabBuilder:
             "color: #86868B;"
             "background: transparent;"
             "margin-bottom: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         layout.addWidget(desc_label)
 
@@ -712,7 +755,7 @@ class SettingsTabBuilder:
                 "}"
                 "QPushButton:pressed {"
                 "  background: #48484A;"
-                "}"
+                "}",
             )
         else:
             button.setStyleSheet(
@@ -731,7 +774,7 @@ class SettingsTabBuilder:
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
 
         # Store button reference on sidebar
@@ -745,16 +788,17 @@ class SettingsTabBuilder:
 
         Args:
             text: New S position value from input field
+
         """
         try:
-            if text.strip() and hasattr(self.sidebar, 'device_config'):
+            if text.strip() and hasattr(self.sidebar, "device_config"):
                 s_pos = int(text)
                 if 0 <= s_pos <= 180:
                     device_config = self.sidebar.device_config
-                    if device_config and hasattr(device_config, 'config'):
-                        if 'hardware' not in device_config.config:
-                            device_config.config['hardware'] = {}
-                        device_config.config['hardware']['servo_s_position'] = s_pos
+                    if device_config and hasattr(device_config, "config"):
+                        if "hardware" not in device_config.config:
+                            device_config.config["hardware"] = {}
+                        device_config.config["hardware"]["servo_s_position"] = s_pos
         except (ValueError, AttributeError):
             pass  # Ignore invalid input or missing config
 
@@ -763,16 +807,17 @@ class SettingsTabBuilder:
 
         Args:
             text: New P position value from input field
+
         """
         try:
-            if text.strip() and hasattr(self.sidebar, 'device_config'):
+            if text.strip() and hasattr(self.sidebar, "device_config"):
                 p_pos = int(text)
                 if 0 <= p_pos <= 180:
                     device_config = self.sidebar.device_config
-                    if device_config and hasattr(device_config, 'config'):
-                        if 'hardware' not in device_config.config:
-                            device_config.config['hardware'] = {}
-                        device_config.config['hardware']['servo_p_position'] = p_pos
+                    if device_config and hasattr(device_config, "config"):
+                        if "hardware" not in device_config.config:
+                            device_config.config["hardware"] = {}
+                        device_config.config["hardware"]["servo_p_position"] = p_pos
         except (ValueError, AttributeError):
             pass  # Ignore invalid input or missing config
 
@@ -783,9 +828,7 @@ class SettingsTabBuilder:
         separator = QFrame()
         separator.setFixedHeight(1)
         separator.setStyleSheet(
-            "background: rgba(0, 0, 0, 0.06);"
-            "border: none;"
-            "margin: 4px 0px;"
+            "background: rgba(0, 0, 0, 0.06);border: none;margin: 4px 0px;",
         )
         layout.addWidget(separator)
 
@@ -821,11 +864,12 @@ class SettingsTabBuilder:
 
         Args:
             is_left: Whether this is the left button in a group (affects border radius)
+
         """
         border_radius = (
             "border-top-left-radius: 6px; border-bottom-left-radius: 6px; border-right: none;"
-            if is_left else
-            "border-top-right-radius: 6px; border-bottom-right-radius: 6px;"
+            if is_left
+            else "border-top-right-radius: 6px; border-bottom-right-radius: 6px;"
         )
 
         return (

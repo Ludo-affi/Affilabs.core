@@ -271,4 +271,3 @@ Expected S=165 P=50, got S=30 P=120
 
 **Solution**:
 Run Auto-Polarization from Settings to re-measure and re-set positions with verification.
-

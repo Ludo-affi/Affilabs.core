@@ -1,5 +1,4 @@
-"""
-Verify Polarizer Window Assignment (S vs P Mode)
+"""Verify Polarizer Window Assignment (S vs P Mode)
 
 Tests both possible assignments of the two discovered transmission windows:
 - Configuration 1: S=50 (Window 1), P=165 (Window 2)
@@ -17,10 +16,11 @@ Usage:
     python verify_polarizer_windows.py
 """
 
-import time
-import numpy as np
-from pathlib import Path
 import sys
+import time
+from pathlib import Path
+
+import numpy as np
 
 # Add project root to path
 ROOT_DIR = Path(__file__).parent
@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from utils.controller import PicoP4SPR
 from utils.usb4000_oceandirect import USB4000OceanDirect as USB4000
+
 
 def test_polarizer_config(ctrl, usb, s_pos, p_pos, config_name):
     """Test a specific S/P position configuration.
@@ -41,6 +42,7 @@ def test_polarizer_config(ctrl, usb, s_pos, p_pos, config_name):
 
     Returns:
         dict with 's_signal', 'p_signal', 'sp_ratio', 's_saturated', 'p_saturated'
+
     """
     print("\n" + "=" * 80)
     print(f"Testing Configuration: {config_name}")
@@ -70,7 +72,7 @@ def test_polarizer_config(ctrl, usb, s_pos, p_pos, config_name):
 
     print(f"   S-mode signal: max={s_max:.1f} counts, mean={s_mean:.1f} counts")
     if s_saturated:
-        print(f"   ⚠️  S-mode SATURATED (detector at max)")
+        print("   ⚠️  S-mode SATURATED (detector at max)")
 
     # Test P-mode
     print("\n📊 Testing P-mode...")
@@ -87,7 +89,7 @@ def test_polarizer_config(ctrl, usb, s_pos, p_pos, config_name):
 
     print(f"   P-mode signal: max={p_max:.1f} counts, mean={p_mean:.1f} counts")
     if p_saturated:
-        print(f"   ⚠️  P-mode SATURATED (detector at max)")
+        print("   ⚠️  P-mode SATURATED (detector at max)")
 
     # Calculate S/P ratio
     sp_ratio = s_max / p_max if p_max > 0 else 0.0
@@ -116,13 +118,14 @@ def test_polarizer_config(ctrl, usb, s_pos, p_pos, config_name):
         quality = "EXCELLENT"
 
     return {
-        's_signal': s_max,
-        'p_signal': p_max,
-        'sp_ratio': sp_ratio,
-        's_saturated': s_saturated,
-        'p_saturated': p_saturated,
-        'quality': quality
+        "s_signal": s_max,
+        "p_signal": p_max,
+        "sp_ratio": sp_ratio,
+        "s_saturated": s_saturated,
+        "p_saturated": p_saturated,
+        "quality": quality,
     }
+
 
 def main():
     print("=" * 80)
@@ -152,14 +155,15 @@ def main():
 
     # Set integration time for testing (fast acquisition)
     usb.set_integration_time(0.050)  # 50ms
-    print(f"Integration time: 50ms")
+    print("Integration time: 50ms")
 
     # Test Configuration 1: S=50, P=165
     results_config1 = test_polarizer_config(
-        ctrl, usb,
+        ctrl,
+        usb,
         s_pos=50,
         p_pos=165,
-        config_name="Config 1 (S=Window1, P=Window2)"
+        config_name="Config 1 (S=Window1, P=Window2)",
     )
 
     if results_config1 is None:
@@ -171,10 +175,11 @@ def main():
 
     # Test Configuration 2: S=165, P=50
     results_config2 = test_polarizer_config(
-        ctrl, usb,
+        ctrl,
+        usb,
         s_pos=165,
         p_pos=50,
-        config_name="Config 2 (S=Window2, P=Window1)"
+        config_name="Config 2 (S=Window2, P=Window1)",
     )
 
     if results_config2 is None:
@@ -208,47 +213,46 @@ def main():
     print()
 
     # Determine winner
-    quality_score = {'POOR': 0, 'FAIR': 1, 'GOOD': 2, 'EXCELLENT': 3}
-    score1 = quality_score.get(results_config1['quality'], 0)
-    score2 = quality_score.get(results_config2['quality'], 0)
+    quality_score = {"POOR": 0, "FAIR": 1, "GOOD": 2, "EXCELLENT": 3}
+    score1 = quality_score.get(results_config1["quality"], 0)
+    score2 = quality_score.get(results_config2["quality"], 0)
 
     if score1 > score2:
         winner = "Configuration 1"
         winner_s = 50
         winner_p = 165
-        winner_ratio = results_config1['sp_ratio']
+        winner_ratio = results_config1["sp_ratio"]
     elif score2 > score1:
         winner = "Configuration 2"
         winner_s = 165
         winner_p = 50
-        winner_ratio = results_config2['sp_ratio']
+        winner_ratio = results_config2["sp_ratio"]
+    # Same quality - pick higher S/P ratio
+    elif results_config1["sp_ratio"] > results_config2["sp_ratio"]:
+        winner = "Configuration 1"
+        winner_s = 50
+        winner_p = 165
+        winner_ratio = results_config1["sp_ratio"]
     else:
-        # Same quality - pick higher S/P ratio
-        if results_config1['sp_ratio'] > results_config2['sp_ratio']:
-            winner = "Configuration 1"
-            winner_s = 50
-            winner_p = 165
-            winner_ratio = results_config1['sp_ratio']
-        else:
-            winner = "Configuration 2"
-            winner_s = 165
-            winner_p = 50
-            winner_ratio = results_config2['sp_ratio']
+        winner = "Configuration 2"
+        winner_s = 165
+        winner_p = 50
+        winner_ratio = results_config2["sp_ratio"]
 
     print("=" * 80)
     print(f"🏆 WINNER: {winner}")
     print("=" * 80)
-    print(f"✅ Recommended Polarizer Positions:")
+    print("✅ Recommended Polarizer Positions:")
     print(f"   S-position: {winner_s}")
     print(f"   P-position: {winner_p}")
     print(f"   S/P Ratio: {winner_ratio:.2f}×")
     print()
     print("Next Steps:")
     print("1. Update device configuration file with these positions:")
-    print(f"   {{")
+    print("   {")
     print(f'     "polarizer_s_position": {winner_s},')
     print(f'     "polarizer_p_position": {winner_p}')
-    print(f"   }}")
+    print("   }")
     print()
     print("2. Re-run main SPR calibration:")
     print("   python run_app.py")
@@ -258,6 +262,7 @@ def main():
     print("reach 60-80% detector signal and complete successfully!")
     print("=" * 80)
 
+
 if __name__ == "__main__":
     try:
         main()
@@ -266,4 +271,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Error during test: {e}")
         import traceback
+
         traceback.print_exc()

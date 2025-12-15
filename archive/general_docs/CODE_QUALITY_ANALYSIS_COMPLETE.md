@@ -1,7 +1,7 @@
 # Code Quality Improvements: Channel Iteration & Sleep Calls
 
-**Date**: October 11, 2025  
-**Priorities**: #6 (Channel Iteration) & #7 (Blocking Sleep Calls)  
+**Date**: October 11, 2025
+**Priorities**: #6 (Channel Iteration) & #7 (Blocking Sleep Calls)
 **Status**: 📋 **ANALYSIS COMPLETE** - Implementation Plan Ready
 
 ---
@@ -133,18 +133,18 @@ Found **22 unique time.sleep() calls** in calibration code:
 ```python
 time.sleep(LED_DELAY)  # 100ms - wait for LED to stabilize
 ```
-**Locations**: Lines 1343, 1368, 1381, 1503, 1548, 1964, 2006, 2184, 2243, 2356, 2405  
-**Count**: 11 calls  
-**Total Time**: ~1.1 seconds per calibration  
+**Locations**: Lines 1343, 1368, 1381, 1503, 1548, 1964, 2006, 2184, 2243, 2356, 2405
+**Count**: 11 calls
+**Total Time**: ~1.1 seconds per calibration
 **Purpose**: LED warm-up, optical settling
 
 #### Category B: Mode Switch Delays
 ```python
 time.sleep(0.4)  # Allow mode/polarizer to switch
 ```
-**Locations**: Lines 1941, 2163, 2614  
-**Count**: 3 calls  
-**Total Time**: ~1.2 seconds  
+**Locations**: Lines 1941, 2163, 2614
+**Count**: 3 calls
+**Total Time**: ~1.2 seconds
 **Purpose**: Servo motor rotation, mode switching
 
 #### Category C: Hardware Settling
@@ -152,27 +152,27 @@ time.sleep(0.4)  # Allow mode/polarizer to switch
 time.sleep(0.5)  # Allow hardware to settle
 time.sleep(0.1)  # Quick stabilization
 ```
-**Locations**: Lines 1075 (×3), 1080, 1085, 1304, 1321  
-**Count**: 6 calls  
-**Total Time**: ~0.8 seconds  
+**Locations**: Lines 1075 (×3), 1080, 1085, 1304, 1321
+**Count**: 6 calls
+**Total Time**: ~0.8 seconds
 **Purpose**: Hardware state changes, firmware delays
 
 #### Category D: Integration Time Adjustment
 ```python
 time.sleep(0.02)  # 20ms - minimal delay
 ```
-**Locations**: Line 1444  
-**Count**: 1 call  
-**Total Time**: 0.02 seconds  
+**Locations**: Line 1444
+**Count**: 1 call
+**Total Time**: 0.02 seconds
 **Purpose**: Integration time update settling
 
 #### Category E: Adaptive Algorithm Stabilization
 ```python
 time.sleep(ADAPTIVE_STABILIZATION_DELAY)  # 150ms
 ```
-**Locations**: Line 1628  
-**Count**: 1 call per iteration × up to 10 iterations  
-**Total Time**: ~1.5 seconds (adaptive optimization)  
+**Locations**: Line 1628
+**Count**: 1 call per iteration × up to 10 iterations
+**Total Time**: ~1.5 seconds (adaptive optimization)
 **Purpose**: LED intensity stabilization during binary search
 
 ### Total Sleep Time Analysis
@@ -244,10 +244,10 @@ signal = self.usb.read_intensity()
 async def calibrate_led_intensity_async(self, ch: str, target: int):
     # Set LED (non-blocking)
     await self.ctrl.set_intensity_async(ch=ch, raw_val=intensity)
-    
+
     # Wait asynchronously (doesn't block event loop)
     await asyncio.sleep(LED_DELAY)
-    
+
     # Measure (non-blocking)
     signal = await self.usb.read_intensity_async()
     return signal
@@ -276,30 +276,30 @@ results = await asyncio.gather(
 ```python
 def wait_with_progress(self, duration: float, description: str = "Waiting") -> bool:
     """Wait with progress updates and cancellation support.
-    
+
     Args:
         duration: Wait time in seconds
         description: What we're waiting for (for progress updates)
-        
+
     Returns:
         True if completed, False if stopped
     """
     start_time = time.time()
     end_time = start_time + duration
-    
+
     while time.time() < end_time:
         # Check for cancellation
         if self._is_stopped():
             return False
-        
+
         # Update progress
         elapsed = time.time() - start_time
         progress_pct = (elapsed / duration) * 100
         self._emit_micro_progress(f"{description}: {progress_pct:.0f}%")
-        
+
         # Short sleep to prevent busy-waiting
         time.sleep(0.01)  # 10ms poll interval
-    
+
     return True
 
 # Usage
@@ -469,9 +469,9 @@ Complex refactoring (async/await, hardware polling) has **very low ROI**:
 - Quick win: Reduce LED_DELAY (50ms → saves ~0.55s)
 - Future: Only optimize if hardware capabilities change
 
-**Total estimated time savings from recommended actions**: ~0.55s per calibration (0.6% improvement)  
-**Implementation effort**: ~1 hour (mostly testing)  
-**Risk**: Low  
+**Total estimated time savings from recommended actions**: ~0.55s per calibration (0.6% improvement)
+**Implementation effort**: ~1 hour (mostly testing)
+**Risk**: Low
 **ROI**: Good for Priority #5 (LED_DELAY), poor for async/polling refactors
 
 **Bottom Line**: Focus optimization efforts on algorithmic improvements (Priorities #4, #6, #7, #9 from the optimization table) rather than refactoring sleep calls. The current sleep time is not the bottleneck.

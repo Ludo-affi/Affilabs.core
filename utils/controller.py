@@ -184,7 +184,9 @@ class KineticController(ControllerBase):
                 for attempt in range(3):
                     try:
                         self._ser = serial.Serial(
-                            port=dev.device, baudrate=BAUD_RATE, timeout=3
+                            port=dev.device,
+                            baudrate=BAUD_RATE,
+                            timeout=3,
                         )
                         info = self.get_info()
                         if info is not None:
@@ -204,7 +206,9 @@ class KineticController(ControllerBase):
                         if attempt < 2:  # Don't sleep on last attempt
                             time.sleep(0.2)
                     except Exception as e:
-                        logger.error(f"Failed to open KNX2 (attempt {attempt+1}/3) - {e}")
+                        logger.error(
+                            f"Failed to open KNX2 (attempt {attempt+1}/3) - {e}",
+                        )
                         if self._ser is not None:
                             try:
                                 self._ser.close()
@@ -218,12 +222,15 @@ class KineticController(ControllerBase):
         return False
 
     def _send_command(
-        self, cmd: str, parse_json: bool = False, reply: bool = True
+        self,
+        cmd: str,
+        parse_json: bool = False,
+        reply: bool = True,
     ) -> Any:
         """Send command with improved error handling and type safety."""
         if not self.valid():
             logger.warning(
-                f"Attempted to send command '{cmd}' to disconnected {self.name}"
+                f"Attempted to send command '{cmd}' to disconnected {self.name}",
             )
             return None
 
@@ -246,7 +253,7 @@ class KineticController(ControllerBase):
                 return json.loads(response)
             except JSONDecodeError as e:
                 logger.error(
-                    f"Failed to parse JSON response for '{cmd}': {response} - {e}"
+                    f"Failed to parse JSON response for '{cmd}': {response} - {e}",
                 )
                 return None
 
@@ -347,7 +354,7 @@ class PicoP4SPR(ControllerBase):
                     # If an interface marker is present (MI_XX) and it's not MI_00, skip it
                     if "MI_" in hwid and "MI_00" not in hwid:
                         logger.debug(
-                            f"Skipping non-CDC interface on {dev.device} (hwid={hwid})"
+                            f"Skipping non-CDC interface on {dev.device} (hwid={hwid})",
                         )
                         continue
                 except Exception:
@@ -355,7 +362,10 @@ class PicoP4SPR(ControllerBase):
                 try:
                     # Open with a slightly longer timeout for first handshake
                     self._ser = serial.Serial(
-                        port=dev.device, baudrate=115200, timeout=3, write_timeout=2
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=3,
+                        write_timeout=2,
                     )
 
                     # Many CDC firmwares only respond when DTR is asserted; assert DTR
@@ -401,7 +411,7 @@ class PicoP4SPR(ControllerBase):
                         self.version = v[0:4] if v else ""
                         return True
                     logger.debug(
-                        "Pico present but did not return expected ID; closing port"
+                        "Pico present but did not return expected ID; closing port",
                     )
                     self._ser.close()
                     self._ser = None
@@ -440,6 +450,7 @@ class PicoP4SPR(ControllerBase):
 
                     # NEW CODE: Don't wait, return immediately
                     import time
+
                     time.sleep(0.002)  # 2ms for serial transmission
                     logger.info(f"✅ LED command sent successfully: {cmd.strip()}")
                     return True
@@ -528,6 +539,7 @@ class PicoP4SPR(ControllerBase):
 
             # Batch (fast - 0.8ms total)  ← PREFER THIS
             ctrl.set_batch_intensities(a=128, b=64, c=192, d=255)
+
         """
         try:
             if ch not in {"a", "b", "c", "d"}:
@@ -580,6 +592,7 @@ class PicoP4SPR(ControllerBase):
             Sequential commands: ~12ms for 4 LEDs
             Batch command: ~0.8ms for 4 LEDs
             Speedup: 15x faster
+
         """
         try:
             # Clamp values to valid range (0-255)
@@ -594,18 +607,17 @@ class PicoP4SPR(ControllerBase):
 
             if self.valid():
                 if not self.safe_write(cmd):
-                    logger.error(f"❌ Failed to write batch LED command")
+                    logger.error("❌ Failed to write batch LED command")
                     return False
 
                 # The Pico's batch command may not send explicit acknowledgment
                 # or may send just a carriage return. Based on diagnostic testing,
                 # the command executes successfully even with minimal/no response.
                 # We consider the write success as command success.
-                logger.info(f"✅ Batch command sent successfully")
+                logger.info("✅ Batch command sent successfully")
                 return True
-            else:
-                logger.error("❌ pico serial port not valid for batch command")
-                return False
+            logger.error("❌ pico serial port not valid for batch command")
+            return False
 
         except Exception as e:
             logger.error(f"❌ error while setting batch LED intensities: {e}")
@@ -619,6 +631,7 @@ class PicoP4SPR(ControllerBase):
 
         Returns:
             True if successful, False otherwise
+
         """
         try:
             if self.valid():
@@ -629,21 +642,36 @@ class PicoP4SPR(ControllerBase):
                 else:
                     cmd = "sp\n"  # ✅ P-mode command
 
-                logger.info(f"🔄 Setting polarizer to {mode.upper()}-mode (command: {cmd.strip()})")
+                logger.info(
+                    f"🔄 Setting polarizer to {mode.upper()}-mode (command: {cmd.strip()})",
+                )
 
                 try:
                     if not self.safe_write(cmd):
-                        logger.error(f"❌ Failed to write polarizer command: {cmd.strip()}")
+                        logger.error(
+                            f"❌ Failed to write polarizer command: {cmd.strip()}",
+                        )
                         return False
 
                     response = self.safe_read()
                     # Accept b"1", b"\n", b"\r\n", or b"\r" as success (firmware variations)
-                    success = response in (b"1", b"\n", b"\r\n", b"\r", b"1\n", b"1\r\n")
+                    success = response in (
+                        b"1",
+                        b"\n",
+                        b"\r\n",
+                        b"\r",
+                        b"1\n",
+                        b"1\r\n",
+                    )
 
                     if success:
-                        logger.info(f"✅ Polarizer set to {mode.upper()}-mode successfully")
+                        logger.info(
+                            f"✅ Polarizer set to {mode.upper()}-mode successfully",
+                        )
                     else:
-                        logger.warning(f"⚠️ Unexpected polarizer response: {response!r} - may still have worked")
+                        logger.warning(
+                            f"⚠️ Unexpected polarizer response: {response!r} - may still have worked",
+                        )
 
                     # Return True even if response is unexpected - the command was sent
                     # and physical testing shows polarizer moves correctly
@@ -735,13 +763,13 @@ class PicoP4SPR(ControllerBase):
 
 
 class PicoEZSPR(ControllerBase):
-    """
-    PicoEZSPR controller (legacy hardware).
+    """PicoEZSPR controller (legacy hardware).
 
     ⚠️ NOTE: PicoEZSPR does NOT support polarizer servo control.
     Only PicoP4SPR and newer controllers have servo positioning capability.
     For OEM calibration and polarizer control, use PicoP4SPR hardware.
     """
+
     UPDATABLE_VERSIONS: Final[set] = {"V1.3", "V1.4"}
     VERSIONS_WITH_PUMP_CORRECTION: Final[set] = {"V1.4", "V1.5"}
     PUMP_CORRECTION_MULTIPLIER: Final[int] = 100
@@ -763,12 +791,16 @@ class PicoEZSPR(ControllerBase):
                 for attempt in range(3):
                     try:
                         self._ser = serial.Serial(
-                            port=dev.device, baudrate=115200, timeout=5
+                            port=dev.device,
+                            baudrate=115200,
+                            timeout=5,
                         )
                         cmd = "id\n"
                         self._ser.write(cmd.encode())
                         reply = self._ser.readline()[0:5].decode()
-                        logger.debug(f"Pico EZSPR reply - {reply} (attempt {attempt+1}/3)")
+                        logger.debug(
+                            f"Pico EZSPR reply - {reply} (attempt {attempt+1}/3)",
+                        )
                         if reply == "EZSPR":
                             cmd = "iv\n"
                             self._ser.write(cmd.encode())
@@ -778,7 +810,9 @@ class PicoEZSPR(ControllerBase):
                         if attempt < 2:  # Don't sleep on last attempt
                             time.sleep(0.2)
                     except Exception as e:
-                        logger.error(f"Failed to open Pico EZSPR (attempt {attempt+1}/3) - {e}")
+                        logger.error(
+                            f"Failed to open Pico EZSPR (attempt {attempt+1}/3) - {e}",
+                        )
                         if self._ser is not None:
                             try:
                                 self._ser.close()
@@ -873,6 +907,7 @@ class PicoEZSPR(ControllerBase):
 
         See Also:
             set_batch_intensities() - Preferred method for LED control
+
         """
         try:
             if ch in {"a", "b", "c", "d"}:
@@ -1124,7 +1159,7 @@ class PicoEZSPR(ControllerBase):
             if self.valid():
                 er = False
                 for cmd in cmds:
-                    if not self.safe_write(cmd) or not (self.safe_read() == b"1"):
+                    if not self.safe_write(cmd) or self.safe_read() != b"1":
                         er = True
                 if er:
                     logger.error("pico failed to confirm kinetics off")
@@ -1139,7 +1174,7 @@ class PicoEZSPR(ControllerBase):
             if self.valid():
                 if not self.safe_write(cmd):
                     logger.error("pico failed to turn device off")
-                elif not (self.safe_read() == b"1"):
+                elif self.safe_read() != b"1":
                     logger.error("pico failed to confirm device off")
             else:
                 logger.error("pico failed to turn device off")

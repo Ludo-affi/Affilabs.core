@@ -5,11 +5,10 @@ Eliminates duplication of styling code across multiple UI files.
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from PySide6.QtWidgets import QComboBox, QLabel, QWidget
 
-from widgets.ui_constants import CycleConfig, UIStyle
+from affilabs.widgets.ui_constants import CycleConfig
 
 
 class UIComponentFactory:
@@ -40,8 +39,8 @@ class UIComponentFactory:
     @classmethod
     def create_cycle_type_dropdown(
         cls,
-        parent: Optional[QWidget] = None,
-        object_name: str = "current_cycle_type"
+        parent: QWidget | None = None,
+        object_name: str = "current_cycle_type",
     ) -> QComboBox:
         """Create a styled cycle type dropdown.
 
@@ -51,6 +50,7 @@ class UIComponentFactory:
 
         Returns:
             Configured QComboBox with cycle types
+
         """
         combo = QComboBox(parent)
         combo.setObjectName(object_name)
@@ -61,9 +61,9 @@ class UIComponentFactory:
     @classmethod
     def create_cycle_time_dropdown(
         cls,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         object_name: str = "current_cycle_time",
-        enabled: bool = False
+        enabled: bool = False,
     ) -> QComboBox:
         """Create a styled cycle time dropdown.
 
@@ -74,6 +74,7 @@ class UIComponentFactory:
 
         Returns:
             Configured QComboBox with cycle time options
+
         """
         combo = QComboBox(parent)
         combo.setObjectName(object_name)
@@ -88,8 +89,8 @@ class UIComponentFactory:
     def create_label(
         cls,
         text: str,
-        parent: Optional[QWidget] = None,
-        object_name: Optional[str] = None
+        parent: QWidget | None = None,
+        object_name: str | None = None,
     ) -> QLabel:
         """Create a styled label for UI controls.
 
@@ -100,6 +101,7 @@ class UIComponentFactory:
 
         Returns:
             Configured QLabel
+
         """
         label = QLabel(parent)
         if object_name:
@@ -112,9 +114,9 @@ class UIComponentFactory:
     def create_styled_combobox(
         cls,
         items: list[str],
-        parent: Optional[QWidget] = None,
-        object_name: Optional[str] = None,
-        style: Optional[str] = None
+        parent: QWidget | None = None,
+        object_name: str | None = None,
+        style: str | None = None,
     ) -> QComboBox:
         """Create a generic styled combobox.
 
@@ -126,6 +128,7 @@ class UIComponentFactory:
 
         Returns:
             Configured QComboBox
+
         """
         combo = QComboBox(parent)
         if object_name:

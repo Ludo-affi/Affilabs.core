@@ -34,7 +34,7 @@ class KDWizardDialog(QDialog):
         delegate = NumericDelegate(self.ui.table)
         self.ui.table.setItemDelegate(delegate)
         self.ui.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeToContents
+            QHeaderView.ResizeToContents,
         )
         self.ui.graph.getAxis("bottom").enableAutoSIPrefix(False)
         self.ui.graph.getAxis("left").enableAutoSIPrefix(False)
@@ -65,7 +65,7 @@ class KDWizardDialog(QDialog):
         self._model = {ch: [] for ch in CH_LIST}
         for ch in CH_LIST:
             getattr(self.ui, f"ch_{ch}").toggled.connect(
-                partial(self._on_channel_changed, ch)
+                partial(self._on_channel_changed, ch),
             )
         self._load_channel_seg_data()
         self._on_btn_kd()
@@ -80,7 +80,8 @@ class KDWizardDialog(QDialog):
             s_list = self._shift_data[self._cur_ch]
             if np.all(c_list == 0):
                 show_message(
-                    msg="Please input concentration values!", msg_type="Warning"
+                    msg="Please input concentration values!",
+                    msg_type="Warning",
                 )
                 return
             if np.all(s_list == 0) or np.all(s_list == np.nan):
@@ -99,11 +100,13 @@ class KDWizardDialog(QDialog):
                 (max(c_list) - min(c_list)) / 100,
             )
             y_values = func_affinity_fit(
-                c_list=x_values, f=[ar["Rmax"], ar["KD"], ar["offset"]]
+                c_list=x_values,
+                f=[ar["Rmax"], ar["KD"], ar["offset"]],
             )
             x_values_m = x_values * 1e-9
             self.fitted_graph_data["affinity"][self._cur_ch] = dict(
-                x=x_values_m, y=y_values
+                x=x_values_m,
+                y=y_values,
             )
             self._result["affinity"][self._cur_ch] = deepcopy(ar)
             self._result["affinity"][self._cur_ch]["KD"] = (
@@ -118,7 +121,8 @@ class KDWizardDialog(QDialog):
             self._fitted_values["linear"][self._cur_ch] = lr["fitted"]
             self._sd_values["linear"][self._cur_ch] = lr["sd"]
             self.fitted_graph_data["linear"][self._cur_ch] = dict(
-                x=x_values_m, y=[lr["a"] * x + lr["b"] for x in x_values]
+                x=x_values_m,
+                y=[lr["a"] * x + lr["b"] for x in x_values],
             )
             if self.ui.fit_affinity.isChecked():
                 self._model[self._cur_ch] = "affinity"
@@ -134,7 +138,9 @@ class KDWizardDialog(QDialog):
     def _on_btn_save(self):
         try:
             export_file = QFileDialog.getSaveFileName(
-                self, "Choose directory and filename for KD export", ""
+                self,
+                "Choose directory and filename for KD export",
+                "",
             )[0]
             if export_file:
                 for ch in CH_LIST:
@@ -154,7 +160,9 @@ class KDWizardDialog(QDialog):
                                 f"SD_{ch.upper()}",
                             ]
                             writer = csv.DictWriter(
-                                txtfile, dialect="excel-tab", fieldnames=fieldnames
+                                txtfile,
+                                dialect="excel-tab",
+                                fieldnames=fieldnames,
                             )
                             writer.writeheader()
                             for i, seg in enumerate(self.seg_data):
@@ -208,24 +216,24 @@ class KDWizardDialog(QDialog):
             self._conc_plot.setData(x=c_list, y=s_list)
             try:
                 self.ui.kd_val.setText(
-                    f"{self._result['affinity'][self._cur_ch]['KD']:.2e}"
+                    f"{self._result['affinity'][self._cur_ch]['KD']:.2e}",
                 )
                 self.ui.rmax_val.setText(
-                    f"{self._result['affinity'][self._cur_ch]['Rmax']:.2f}"
+                    f"{self._result['affinity'][self._cur_ch]['Rmax']:.2f}",
                 )
                 self.ui.chi_sq_val.setText(
-                    f"{self._result['affinity'][self._cur_ch]['chi_sq']:.2f}"
+                    f"{self._result['affinity'][self._cur_ch]['chi_sq']:.2f}",
                 )
                 self.ui.lin_eqn.setText(
                     f"{self._result['linear'][self._cur_ch]['a']:.2e} X + "
-                    f"{self._result['linear'][self._cur_ch]['b']:.2e}"
+                    f"{self._result['linear'][self._cur_ch]['b']:.2e}",
                 )
                 self.ui.r_sq_val.setText(
-                    f"{self._result['linear'][self._cur_ch]['r_sq']:.2f}"
+                    f"{self._result['linear'][self._cur_ch]['r_sq']:.2f}",
                 )
                 if DEV:
                     self.ui.p_val.setText(
-                        f"p: {self._result['affinity'][self._cur_ch]['p_val']:.2f}"
+                        f"p: {self._result['affinity'][self._cur_ch]['p_val']:.2f}",
                     )
             except Exception as e:
                 logger.debug(f"current ch: {self._cur_ch}, result: {self._result}")
@@ -268,7 +276,9 @@ class KDWizardDialog(QDialog):
                 ]
         for i, _s in enumerate(self.seg_data):
             self.ui.table.setItem(
-                i, 2, CenteredQTableWidgetItem(str(self._shift_data[self._cur_ch][i]))
+                i,
+                2,
+                CenteredQTableWidgetItem(str(self._shift_data[self._cur_ch][i])),
             )
 
     def _on_channel_changed(self, ch, active):
@@ -291,7 +301,7 @@ class KDWizardDialog(QDialog):
         self._clear_plot()
         table = self.ui.table
         table.horizontalHeaderItem(2).setText(
-            f"Shift {self._cur_ch.upper()} ({self.units})"
+            f"Shift {self._cur_ch.upper()} ({self.units})",
         )
         table.horizontalHeaderItem(3).setText(f"Residual ({self.units})")
         table.setRowCount(0)
@@ -300,7 +310,9 @@ class KDWizardDialog(QDialog):
         for i, s in enumerate(self.seg_data):
             table.setItem(i, 0, CenteredQTableWidgetItem(f"{s.name}"))
             table.setItem(
-                i, 2, CenteredQTableWidgetItem(str(self._shift_data[self._cur_ch][i]))
+                i,
+                2,
+                CenteredQTableWidgetItem(str(self._shift_data[self._cur_ch][i])),
             )
             item = CenteredQTableWidgetItem(str(self.conc_data[self._cur_ch][i]))
             item.setFlags(Qt.NoItemFlags)

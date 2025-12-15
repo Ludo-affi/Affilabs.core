@@ -4,9 +4,8 @@
 try:
     from typing import Self  # Python 3.11+
 except ImportError:
-    from typing_extensions import Self  # Python < 3.11
+    from typing import Self  # Python < 3.11
 
-from typing import Optional
 
 from PySide6.QtWidgets import QDialog, QTabWidget, QVBoxLayout, QWidget
 
@@ -47,7 +46,7 @@ class Settings(QDialog):
         self: Self,
         spr_settings: ChannelMenu,
         advanced: P4SPRAdvMenu,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         """Create the settings menu."""
         super().__init__(parent)

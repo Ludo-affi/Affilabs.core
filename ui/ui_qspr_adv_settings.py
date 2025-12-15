@@ -170,11 +170,13 @@ class Ui_QSPR_Advanced:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.verticalLayout_2.addWidget(
-            self.set_btn, 0, Qt.AlignHCenter | Qt.AlignVCenter
+            self.set_btn,
+            0,
+            Qt.AlignHCenter | Qt.AlignVCenter,
         )
 
         self.verticalLayout.addLayout(self.verticalLayout_2)
@@ -187,40 +189,46 @@ class Ui_QSPR_Advanced:
 
     def retranslateUi(self, QSPR_Advanced):
         QSPR_Advanced.setWindowTitle(
-            QCoreApplication.translate("QSPR_Advanced", "Advanced Settings", None)
+            QCoreApplication.translate("QSPR_Advanced", "Advanced Settings", None),
         )
         self.label.setText(
             QCoreApplication.translate(
-                "QSPR_Advanced", "QSPR Adavanced Parameter Settings", None
-            )
+                "QSPR_Advanced",
+                "QSPR Adavanced Parameter Settings",
+                None,
+            ),
         )
         self.label_2.setText(
-            QCoreApplication.translate("QSPR_Advanced", "Polarizer S-Position:", None)
+            QCoreApplication.translate("QSPR_Advanced", "Polarizer S-Position:", None),
         )
         self.label_3.setText(
-            QCoreApplication.translate("QSPR_Advanced", "Crt. Up Timeout (s):", None)
+            QCoreApplication.translate("QSPR_Advanced", "Crt. Up Timeout (s):", None),
         )
         self.label_5.setText(
-            QCoreApplication.translate("QSPR_Advanced", "Crt. Down Timeout (s):", None)
+            QCoreApplication.translate("QSPR_Advanced", "Crt. Down Timeout (s):", None),
         )
         self.label_4.setText(
-            QCoreApplication.translate("QSPR_Advanced", "Polarizer P-Position:", None)
+            QCoreApplication.translate("QSPR_Advanced", "Polarizer P-Position:", None),
         )
         self.label_6.setText(
-            QCoreApplication.translate("QSPR_Advanced", "Crt. Adj Time (ms):", None)
+            QCoreApplication.translate("QSPR_Advanced", "Crt. Adj Time (ms):", None),
         )
         self.label_7.setText(
             QCoreApplication.translate(
-                "QSPR_Advanced", "Current Sense Debounce (ms):", None
-            )
+                "QSPR_Advanced",
+                "Current Sense Debounce (ms):",
+                None,
+            ),
         )
         self.label_8.setText(
             QCoreApplication.translate(
-                "QSPR_Advanced", "Startup Current Interval (ms):", None
-            )
+                "QSPR_Advanced",
+                "Startup Current Interval (ms):",
+                None,
+            ),
         )
         self.set_btn.setText(
-            QCoreApplication.translate("QSPR_Advanced", "Update Settings", None)
+            QCoreApplication.translate("QSPR_Advanced", "Update Settings", None),
         )
 
     # retranslateUi

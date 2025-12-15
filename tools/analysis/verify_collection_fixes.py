@@ -1,5 +1,4 @@
-"""
-Verification script to show the critical fixes made to collect_training_data.py
+"""Verification script to show the critical fixes made to collect_training_data.py
 
 Run this to confirm the bugs have been fixed before re-collecting data.
 """
@@ -12,12 +11,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.config_manager import ConfigurationManager
 
+
 def verify_fixes():
     """Verify all critical fixes are in place."""
-
-    print("="*80)
+    print("=" * 80)
     print("COLLECTION SCRIPT FIX VERIFICATION")
-    print("="*80)
+    print("=" * 80)
 
     # Check 1: Can we load calibration?
     print("\n✓ CHECK 1: Calibration Loading")
@@ -26,7 +25,7 @@ def verify_fixes():
         config_mgr.load_calibration()
 
         print(f"  Integration time: {config_mgr.calibration.integration} ms")
-        print(f"  LED intensities:")
+        print("  LED intensities:")
         for ch, intensity in config_mgr.calibration.ref_intensity.items():
             print(f"    Channel {ch}: {intensity}")
 
@@ -44,7 +43,7 @@ def verify_fixes():
         from utils.controller import PicoP4SPR
 
         # Check if set_mode method exists
-        if hasattr(PicoP4SPR, 'set_mode'):
+        if hasattr(PicoP4SPR, "set_mode"):
             print("  ✅ set_mode() method exists")
         else:
             print("  ❌ set_mode() method NOT FOUND")
@@ -57,7 +56,7 @@ def verify_fixes():
     print("\n✓ CHECK 3: Collection Script Fixes")
     try:
         script_path = Path(__file__).parent / "collect_training_data.py"
-        with open(script_path, 'r') as f:
+        with open(script_path) as f:
             content = f.read()
 
         # Check for polarizer control
@@ -104,16 +103,19 @@ def verify_fixes():
         print(f"  ❌ ERROR: {e}")
         return False
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("✅ ALL FIXES VERIFIED!")
-    print("="*80)
+    print("=" * 80)
     print("\nNEXT STEPS:")
-    print("1. Delete invalid datasets: training_data/used_current/ and training_data/new_sealed/")
+    print(
+        "1. Delete invalid datasets: training_data/used_current/ and training_data/new_sealed/",
+    )
     print("2. Re-run collection with fixed script")
     print("3. Verify transmission values are 0.05-0.15 (5-15%)")
-    print("="*80)
+    print("=" * 80)
 
     return True
+
 
 if __name__ == "__main__":
     success = verify_fixes()

@@ -8,7 +8,7 @@ This manager encapsulates all flag-related logic:
 - Flagging mode management
 """
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..affilabs_core_ui import AffilabsMainWindow
@@ -17,11 +17,12 @@ if TYPE_CHECKING:
 class FlagManager:
     """Manages flag markers on graphs and flag-related UI operations."""
 
-    def __init__(self, window: 'AffilabsMainWindow'):
+    def __init__(self, window: "AffilabsMainWindow"):
         """Initialize the flag manager.
 
         Args:
             window: Reference to the main window
+
         """
         self.window = window
         self.flagging_enabled = False
@@ -33,6 +34,7 @@ class FlagManager:
         Args:
             channel_idx: Channel index (0-3)
             channel_letter: Channel letter (A-D)
+
         """
         self.selected_channel_for_flagging = channel_idx
 
@@ -50,6 +52,7 @@ class FlagManager:
         Args:
             event: Mouse click event
             plot_widget: The plot widget that was clicked
+
         """
         # Only process right-clicks for flagging
         if event.button() != 2:  # 2 = right mouse button
@@ -68,6 +71,7 @@ class FlagManager:
 
         # Check for Ctrl modifier to remove flags
         from PySide6.QtCore import Qt
+
         modifiers = event.modifiers()
 
         if modifiers == Qt.KeyboardModifier.ControlModifier:
@@ -79,7 +83,13 @@ class FlagManager:
 
         event.accept()
 
-    def add_flag_to_point(self, channel_idx: int, x_pos: float, y_pos: float, note: str = "") -> None:
+    def add_flag_to_point(
+        self,
+        channel_idx: int,
+        x_pos: float,
+        y_pos: float,
+        note: str = "",
+    ) -> None:
         """Add a flag marker at the specified position on the selected channel.
 
         Args:
@@ -87,6 +97,7 @@ class FlagManager:
             x_pos: X position (time) for the flag
             y_pos: Y position (value) for the flag
             note: Optional note/label for the flag
+
         """
         # Get channel letter
         channel_letter = chr(65 + channel_idx)
@@ -97,27 +108,35 @@ class FlagManager:
             label += f": {note}"
 
         # Add flag using presenter
-        self.window.sensogram_presenter.add_flag_marker(x_pos, label, color='#FF3B30')
+        self.window.sensogram_presenter.add_flag_marker(x_pos, label, color="#FF3B30")
 
         # Store in channel flags for table tracking
-        if not hasattr(self.window.full_timeline_graph, 'channel_flags'):
+        if not hasattr(self.window.full_timeline_graph, "channel_flags"):
             self.window.full_timeline_graph.channel_flags = {0: [], 1: [], 2: [], 3: []}
-        self.window.full_timeline_graph.channel_flags[channel_idx].append((x_pos, y_pos, note))
+        self.window.full_timeline_graph.channel_flags[channel_idx].append(
+            (x_pos, y_pos, note),
+        )
 
         # Update the table Flags column
         self.update_flags_table()
 
         print(f"Flag added to Channel {channel_letter} at x={x_pos:.2f}, y={y_pos:.2f}")
 
-    def remove_flag_at_position(self, channel_idx: int, x_pos: float, tolerance: float = 5.0) -> None:
+    def remove_flag_at_position(
+        self,
+        channel_idx: int,
+        x_pos: float,
+        tolerance: float = 5.0,
+    ) -> None:
         """Remove a flag marker near the specified x position on the selected channel.
 
         Args:
             channel_idx: Channel index (0-3)
             x_pos: X position to search for flags
             tolerance: Distance tolerance for finding nearby flags
+
         """
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
 
         # Find and remove flags within tolerance
@@ -125,10 +144,10 @@ class FlagManager:
         markers_to_remove = []
 
         for marker in self.window.full_timeline_graph.flag_markers:
-            if marker['channel'] == channel_idx and abs(marker['x'] - x_pos) <= tolerance:
+            if marker["channel"] == channel_idx and abs(marker["x"] - x_pos) <= tolerance:
                 # Remove visual elements
-                self.window.full_timeline_graph.removeItem(marker['line'])
-                self.window.full_timeline_graph.removeItem(marker['text'])
+                self.window.full_timeline_graph.removeItem(marker["line"])
+                self.window.full_timeline_graph.removeItem(marker["text"])
                 markers_to_remove.append(marker)
                 removed_count += 1
 
@@ -138,7 +157,8 @@ class FlagManager:
 
         # Update channel flags
         self.window.full_timeline_graph.channel_flags[channel_idx] = [
-            (x, y, note) for x, y, note in self.window.full_timeline_graph.channel_flags[channel_idx]
+            (x, y, note)
+            for x, y, note in self.window.full_timeline_graph.channel_flags[channel_idx]
             if abs(x - x_pos) > tolerance
         ]
 
@@ -147,11 +167,16 @@ class FlagManager:
 
         if removed_count > 0:
             channel_letter = chr(65 + channel_idx)
-            print(f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}")
+            print(
+                f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}",
+            )
 
     def update_flags_table(self) -> None:
         """Update the Flags column in the cycle data table with current flags."""
-        if not hasattr(self.window, 'cycle_data_table') or not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "cycle_data_table") or not hasattr(
+            self.window,
+            "full_timeline_graph",
+        ):
             return
 
         # Count flags per channel
@@ -164,28 +189,35 @@ class FlagManager:
 
         # Update table - show flag summary
         if flag_counts:
-            flag_summary = ", ".join([f"Ch{ch}: {count}" for ch, count in flag_counts.items()])
+            flag_summary = ", ".join(
+                [f"Ch{ch}: {count}" for ch, count in flag_counts.items()],
+            )
             print(f"Flags summary: {flag_summary}")
 
-    def clear_all_flags(self, channel_idx: Optional[int] = None) -> None:
+    def clear_all_flags(self, channel_idx: int | None = None) -> None:
         """Clear all flags, optionally for a specific channel only.
 
         Args:
             channel_idx: If specified, only clear flags for this channel.
                         If None, clear all flags from all channels.
+
         """
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
 
         # Use presenter to clear flags
         self.window.sensogram_presenter.clear_all_flags()
 
         # Also clear flag data if stored in app
-        if hasattr(self.window, 'app') and self.window.app and hasattr(self.window.app, '_flag_data'):
+        if (
+            hasattr(self.window, "app")
+            and self.window.app
+            and hasattr(self.window.app, "_flag_data")
+        ):
             self.window.app._flag_data.clear()
 
         # Clear channel_flags tracking structure if present
-        if hasattr(self.window.full_timeline_graph, 'channel_flags'):
+        if hasattr(self.window.full_timeline_graph, "channel_flags"):
             if channel_idx is None:
                 for ch_idx in range(4):
                     self.window.full_timeline_graph.channel_flags[ch_idx] = []
@@ -198,17 +230,18 @@ class FlagManager:
         # Update table
         self.update_flags_table()
 
-    def clear_all_flags_legacy(self, channel_idx: Optional[int] = None) -> None:
+    def clear_all_flags_legacy(self, channel_idx: int | None = None) -> None:
         """Clear all flags (legacy method that directly manipulates flag_markers).
 
         This is kept for compatibility with older flag management code.
 
         Args:
             channel_idx: If specified, only clear flags for this channel.
+
         """
-        if not hasattr(self.window, 'full_timeline_graph'):
+        if not hasattr(self.window, "full_timeline_graph"):
             return
-        if not hasattr(self.window.full_timeline_graph, 'flag_markers'):
+        if not hasattr(self.window.full_timeline_graph, "flag_markers"):
             return
 
         markers_to_remove = []
@@ -218,17 +251,20 @@ class FlagManager:
             markers_to_remove = self.window.full_timeline_graph.flag_markers.copy()
         else:
             # Clear flags for specific channel
-            markers_to_remove = [m for m in self.window.full_timeline_graph.flag_markers
-                                if m['channel'] == channel_idx]
+            markers_to_remove = [
+                m
+                for m in self.window.full_timeline_graph.flag_markers
+                if m["channel"] == channel_idx
+            ]
 
         # Remove visual elements
         for marker in markers_to_remove:
-            self.window.full_timeline_graph.removeItem(marker['line'])
-            self.window.full_timeline_graph.removeItem(marker['text'])
+            self.window.full_timeline_graph.removeItem(marker["line"])
+            self.window.full_timeline_graph.removeItem(marker["text"])
             self.window.full_timeline_graph.flag_markers.remove(marker)
 
         # Clear channel_flags
-        if hasattr(self.window.full_timeline_graph, 'channel_flags'):
+        if hasattr(self.window.full_timeline_graph, "channel_flags"):
             if channel_idx is None:
                 for ch_idx in range(4):
                     self.window.full_timeline_graph.channel_flags[ch_idx] = []

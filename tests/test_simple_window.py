@@ -1,6 +1,8 @@
 """Test if a simple window can be shown."""
+
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel
+
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
 
 app = QApplication(sys.argv)
 

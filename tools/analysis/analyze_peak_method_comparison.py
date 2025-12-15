@@ -1,5 +1,4 @@
-"""
-Compare peak-finding methods on the latest training_data dataset.
+"""Compare peak-finding methods on the latest training_data dataset.
 
 This script keeps the processing pipeline identical and only changes the
 peak-finding method applied per spectrum. It computes the resonance position
@@ -21,25 +20,28 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from collect_training_data import OptimalProcessor
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import curve_fit
 
-from settings.settings import MIN_WAVELENGTH, MAX_WAVELENGTH, SPR_PEAK_EXPECTED_MIN, SPR_PEAK_EXPECTED_MAX
-from utils.usb4000_oceandirect import USB4000OceanDirect
-from collect_training_data import OptimalProcessor
+from settings.settings import (
+    MAX_WAVELENGTH,
+    MIN_WAVELENGTH,
+    SPR_PEAK_EXPECTED_MAX,
+    SPR_PEAK_EXPECTED_MIN,
+)
 from utils.enhanced_peak_tracking import find_resonance_wavelength_enhanced
 from utils.numerical_derivative_peak import find_peak_numerical_derivative
-
+from utils.usb4000_oceandirect import USB4000OceanDirect
 
 DATA_ROOT = Path("training_data")
 DEFAULT_STATE = "used_current"
 
 
-def find_latest_dataset(state: str, channel: str) -> Tuple[Path, Path]:
+def find_latest_dataset(state: str, channel: str) -> tuple[Path, Path]:
     state_dir = DATA_ROOT / state
     if not state_dir.exists():
         raise FileNotFoundError(f"No directory found: {state_dir}")
@@ -61,14 +63,19 @@ def find_latest_dataset(state: str, channel: str) -> Tuple[Path, Path]:
 def load_wavelengths_masked() -> np.ndarray:
     spec = USB4000OceanDirect()
     if not spec.connect():
-        raise RuntimeError("Failed to connect to USB4000 spectrometer to fetch wavelengths")
+        raise RuntimeError(
+            "Failed to connect to USB4000 spectrometer to fetch wavelengths",
+        )
     wl = np.array(spec.get_wavelengths())
     spec.disconnect()
     mask = (wl >= MIN_WAVELENGTH) & (wl <= MAX_WAVELENGTH)
     return wl[mask]
 
 
-def compute_transmission_series(s_npz: Path, p_npz: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def compute_transmission_series(
+    s_npz: Path,
+    p_npz: Path,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     s_data = np.load(s_npz)
     p_data = np.load(p_npz)
 
@@ -84,7 +91,10 @@ def compute_transmission_series(s_npz: Path, p_npz: Path) -> Tuple[np.ndarray, n
     trans_series = np.zeros_like(p_spectra, dtype=np.float64)
     for i in range(n):
         trans_series[i] = OptimalProcessor.process_transmission(
-            s_spectra[i], p_spectra[i], s_dark, p_dark
+            s_spectra[i],
+            p_spectra[i],
+            s_dark,
+            p_dark,
         )
 
     return trans_series, timestamps, s_dark, p_dark
@@ -93,7 +103,7 @@ def compute_transmission_series(s_npz: Path, p_npz: Path) -> Tuple[np.ndarray, n
 def _find_peak_spline(
     wavelengths_nm: np.ndarray,
     spectrum: np.ndarray,
-    search_range: Tuple[float, float],
+    search_range: tuple[float, float],
     smooth_factor: float = 0.001,
 ) -> float:
     """Cubic smoothing spline + derivative root inside range.
@@ -143,7 +153,7 @@ def _pseudo_voigt(x, mu, fwhm, eta, A, y0):
 def _find_peak_pvoigt(
     wavelengths_nm: np.ndarray,
     spectrum: np.ndarray,
-    search_range: Tuple[float, float],
+    search_range: tuple[float, float],
 ) -> float:
     """Fit pseudo-Voigt to inverted dip in a narrow window; return center mu."""
     mask = (wavelengths_nm >= search_range[0]) & (wavelengths_nm <= search_range[1])
@@ -153,7 +163,7 @@ def _find_peak_pvoigt(
         return float(wavelengths_nm[np.argmin(spectrum)])
 
     # Invert dip to positive peak-like for fitting stability
-    inv = (spec.max() - spec)
+    inv = spec.max() - spec
 
     # Initial guesses
     mu0 = float(wl[np.argmax(inv)])
@@ -163,8 +173,10 @@ def _find_peak_pvoigt(
     y00 = float(np.median(inv))
 
     p0 = [mu0, fwhm0, eta0, A0, y00]
-    bounds = ([search_range[0], 0.5, 0.0, 0.0, 0.0],
-              [search_range[1], 50.0, 1.0, np.inf, np.inf])
+    bounds = (
+        [search_range[0], 0.5, 0.0, 0.0, 0.0],
+        [search_range[1], 50.0, 1.0, np.inf, np.inf],
+    )
 
     try:
         popt, _ = curve_fit(_pseudo_voigt, wl, inv, p0=p0, bounds=bounds, maxfev=2000)
@@ -198,21 +210,36 @@ def peak_positions_by_method(
             pos[i] = wl_region[np.argmin(region)] if len(wl_region) else np.nan
 
         elif method == "centroid":
-            pos[i] = OptimalProcessor.find_minimum_centroid_nm(spectrum, wavelengths_nm, search_min_nm=rng[0], search_max_nm=rng[1])
+            pos[i] = OptimalProcessor.find_minimum_centroid_nm(
+                spectrum,
+                wavelengths_nm,
+                search_min_nm=rng[0],
+                search_max_nm=rng[1],
+            )
 
         elif method == "parabolic":
             peak_nm, _diag = find_resonance_wavelength_enhanced(
-                spectrum, wavelengths_nm, search_range=rng, method="parabolic"
+                spectrum,
+                wavelengths_nm,
+                search_range=rng,
+                method="parabolic",
             )
             pos[i] = float(peak_nm)
 
         elif method == "num_deriv":
-            pos[i] = find_peak_numerical_derivative(wavelengths_nm, spectrum, search_range=rng)
+            pos[i] = find_peak_numerical_derivative(
+                wavelengths_nm,
+                spectrum,
+                search_range=rng,
+            )
 
         elif method == "enhanced":
             # Note: Uses internal FFT+polynomial, but no temporal smoothing here
             peak_nm, _diag = find_resonance_wavelength_enhanced(
-                spectrum, wavelengths_nm, search_range=rng, method="enhanced"
+                spectrum,
+                wavelengths_nm,
+                search_range=rng,
+                method="enhanced",
             )
             pos[i] = float(peak_nm)
 
@@ -228,7 +255,7 @@ def peak_positions_by_method(
     return pos
 
 
-def summarize_metrics(x: np.ndarray) -> Dict[str, float]:
+def summarize_metrics(x: np.ndarray) -> dict[str, float]:
     return {
         "p2p": float(np.ptp(x)),
         "std": float(np.std(x)),
@@ -238,14 +265,21 @@ def summarize_metrics(x: np.ndarray) -> Dict[str, float]:
     }
 
 
-def plot_comparison(t: np.ndarray, methods: List[str], series: Dict[str, np.ndarray], metrics: Dict[str, Dict[str, float]], state: str, channel: str) -> Path:
+def plot_comparison(
+    t: np.ndarray,
+    methods: list[str],
+    series: dict[str, np.ndarray],
+    metrics: dict[str, dict[str, float]],
+    state: str,
+    channel: str,
+) -> Path:
     outdir = Path("analysis_results") / "peak_methods"
     outdir.mkdir(parents=True, exist_ok=True)
 
     fig = plt.figure(figsize=(16, 9))
     ax1 = plt.subplot(2, 1, 1)
 
-    cmap = plt.get_cmap('tab10')
+    cmap = plt.get_cmap("tab10")
     for idx, m in enumerate(methods):
         ax1.plot(t, series[m], label=f"{m}", color=cmap(idx))
 
@@ -266,30 +300,62 @@ def plot_comparison(t: np.ndarray, methods: List[str], series: Dict[str, np.ndar
     bars2 = ax2.bar(labels, p2p_vals, color=[cmap(i) for i in range(len(labels))])
     ax2.set_title("Peak-to-Peak (nm)")
     ax2.set_ylabel("nm")
-    ax2.grid(axis='y', alpha=0.3)
-    for b, v in zip(bars2, p2p_vals):
-        ax2.text(b.get_x() + b.get_width()/2, b.get_height(), f"{v:.2f}", ha='center', va='bottom', fontsize=9)
+    ax2.grid(axis="y", alpha=0.3)
+    for b, v in zip(bars2, p2p_vals, strict=False):
+        ax2.text(
+            b.get_x() + b.get_width() / 2,
+            b.get_height(),
+            f"{v:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     bars3 = ax3.bar(labels, std_vals, color=[cmap(i) for i in range(len(labels))])
     ax3.set_title("Standard Deviation (nm)")
     ax3.set_ylabel("nm")
-    ax3.grid(axis='y', alpha=0.3)
-    for b, v in zip(bars3, std_vals):
-        ax3.text(b.get_x() + b.get_width()/2, b.get_height(), f"{v:.2f}", ha='center', va='bottom', fontsize=9)
+    ax3.grid(axis="y", alpha=0.3)
+    for b, v in zip(bars3, std_vals, strict=False):
+        ax3.text(
+            b.get_x() + b.get_width() / 2,
+            b.get_height(),
+            f"{v:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     plt.tight_layout()
     outfile = outdir / f"peak_methods_comparison_{state}_{channel}.png"
-    plt.savefig(outfile, dpi=150, bbox_inches='tight')
+    plt.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return outfile
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare peak-finding methods on the same dataset")
-    parser.add_argument('--state', default=DEFAULT_STATE, help='Sensor state subfolder under training_data/')
-    parser.add_argument('--channel', default='A', help='Channel letter (A-D)')
-    parser.add_argument('--methods', nargs='*', default=["direct", "centroid", "parabolic", "num_deriv", "enhanced", "spline", "pvoigt"],
-                        help='Methods to compare (subset of: direct, centroid, parabolic, num_deriv, enhanced)')
+    parser = argparse.ArgumentParser(
+        description="Compare peak-finding methods on the same dataset",
+    )
+    parser.add_argument(
+        "--state",
+        default=DEFAULT_STATE,
+        help="Sensor state subfolder under training_data/",
+    )
+    parser.add_argument("--channel", default="A", help="Channel letter (A-D)")
+    parser.add_argument(
+        "--methods",
+        nargs="*",
+        default=[
+            "direct",
+            "centroid",
+            "parabolic",
+            "num_deriv",
+            "enhanced",
+            "spline",
+            "pvoigt",
+        ],
+        help="Methods to compare (subset of: direct, centroid, parabolic, num_deriv, enhanced)",
+    )
     args = parser.parse_args()
 
     channel = args.channel.upper()
@@ -302,8 +368,8 @@ def main():
     smin = max(SPR_PEAK_EXPECTED_MIN, float(wl.min()))
     smax = min(SPR_PEAK_EXPECTED_MAX, float(wl.max()))
 
-    results: Dict[str, np.ndarray] = {}
-    metrics: Dict[str, Dict[str, float]] = {}
+    results: dict[str, np.ndarray] = {}
+    metrics: dict[str, dict[str, float]] = {}
 
     for m in args.methods:
         pos = peak_positions_by_method(trans_series, wl, m, smin, smax)
@@ -314,7 +380,9 @@ def main():
     print("\n=== Peak Method Comparison (nm) ===")
     print(f"Methods: {', '.join(args.methods)}")
     for m in args.methods:
-        print(f"- {m:10s}  P-P: {metrics[m]['p2p']:.3f} nm   STD: {metrics[m]['std']:.3f} nm   mean: {metrics[m]['mean']:.2f} nm")
+        print(
+            f"- {m:10s}  P-P: {metrics[m]['p2p']:.3f} nm   STD: {metrics[m]['std']:.3f} nm   mean: {metrics[m]['mean']:.2f} nm",
+        )
 
     # Plot
     outpath = plot_comparison(t, args.methods, results, metrics, args.state, channel)

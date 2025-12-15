@@ -30,7 +30,7 @@ Use this instead:
 1. **POLARIZER_REFERENCE.md**
    - Status: Outdated physical understanding
    - Issue: Claims S-pol is "perpendicular" for SPR measurements
-   
+
 2. **POLARIZER_CALIBRATION_SYSTEM.md**
    - Status: Outdated algorithm description
    - Issue: Documents old auto_polarize method, not current implementation

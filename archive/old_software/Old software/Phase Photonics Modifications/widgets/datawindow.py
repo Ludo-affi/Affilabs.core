@@ -54,10 +54,10 @@ PROGRESS_BAR_UPDATE_TIME = 100
 class DataDict(TypedDict, total=False):
     """Dictionary for holding data."""
 
-    lambda_times: dict[str, np.ndarray[int, np.dtype[np.float_]]]
-    lambda_values: dict[str, np.ndarray[int, np.dtype[np.float_]]]
-    buffered_lambda_times: dict[str, np.ndarray[int, np.dtype[np.float_]]]
-    filtered_lambda_values: dict[str, np.ndarray[int, np.dtype[np.float_]]]
+    lambda_times: dict[str, np.ndarray[int, np.dtype[np.float64]]]
+    lambda_values: dict[str, np.ndarray[int, np.dtype[np.float64]]]
+    buffered_lambda_times: dict[str, np.ndarray[int, np.dtype[np.float64]]]
+    filtered_lambda_values: dict[str, np.ndarray[int, np.dtype[np.float64]]]
     filt: bool
     start: float
     rec: object
@@ -78,8 +78,8 @@ class Segment:
         self.start_index = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.end_index = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.shift = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
-        self.seg_x: dict[str, np.ndarray[int, np.dtype[np.float_]]] = {}
-        self.seg_y: dict[str, np.ndarray[int, np.dtype[np.float_]]] = {}
+        self.seg_x: dict[str, np.ndarray[int, np.dtype[np.float64]]] = {}
+        self.seg_y: dict[str, np.ndarray[int, np.dtype[np.float64]]] = {}
         self.name = str(seg_id + 1)
         self.note = ""
 
@@ -344,9 +344,11 @@ class DataWindow(QWidget):
 
         # live view and reset segment button if dynamic window, imports if static window
         if self.data_source == "dynamic" and isinstance(self.ui, Ui_Sensorgram):
-            self.ui.live_btn.setChecked(True)  # noqa: FBT003
+            self.ui.live_btn.setChecked(True)
             self.ui.live_btn.clicked.connect(self.toggle_view)
-            self.reference_channel_dlg.ui.export_data.clicked.connect(self.export_trigger)
+            self.reference_channel_dlg.ui.export_data.clicked.connect(
+                self.export_trigger,
+            )
 
         elif isinstance(self.ui, Ui_Processing):
             self.ui.export_raw_data_btn.clicked.connect(self.export_raw_data)
@@ -691,8 +693,8 @@ class DataWindow(QWidget):
         self.segment_edit = None
         self.viewing = False
         if isinstance(self.ui, Ui_Processing):
-            self.ui.reference_channel_btn.setEnabled(True)  # noqa: FBT003
-            self.ui.curr_seg_box.setEnabled(True)  # noqa: FBT003
+            self.ui.reference_channel_btn.setEnabled(True)
+            self.ui.curr_seg_box.setEnabled(True)
         self.full_segment_view.movable_cursors(state=True)
         self.cursors_text_edit(state=True)
         self.ui.data_table.clearSelection()
@@ -991,15 +993,15 @@ class DataWindow(QWidget):
     def set_reference(self: Self, ch: str | None) -> None:
         """Set the reference channel."""
         if ch == "a":
-            self.reference_channel_dlg.ui.channelA.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelA.setChecked(True)
         elif ch == "b":
-            self.reference_channel_dlg.ui.channelB.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelB.setChecked(True)
         elif ch == "c":
-            self.reference_channel_dlg.ui.channelC.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelC.setChecked(True)
         elif ch == "d":
-            self.reference_channel_dlg.ui.channelD.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelD.setChecked(True)
         else:
-            self.reference_channel_dlg.ui.noRef.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.noRef.setChecked(True)
 
     def setup(self: Self) -> None:
         """Set up the widget."""
@@ -1017,12 +1019,12 @@ class DataWindow(QWidget):
         if len(error_channels) == 0:
             for ch in CH_LIST:
                 getattr(self.ui, f"segment_{ch.upper()}").setEnabled(
-                    True,  # noqa: FBT003
+                    True,
                 )
         else:
             for ch in error_channels:
                 getattr(self.ui, f"segment_{ch.upper()}").setEnabled(
-                    False,  # noqa: FBT003
+                    False,
                 )
 
     def unit_to_nm(self: Self) -> None:
@@ -1130,8 +1132,8 @@ class DataWindow(QWidget):
             self.viewing = True
             self.full_segment_view.block_updates = True
             if isinstance(self.ui, Ui_Processing):
-                self.ui.curr_seg_box.setEnabled(False)  # noqa: FBT003
-                self.ui.reference_channel_btn.setEnabled(False)  # noqa: FBT003
+                self.ui.curr_seg_box.setEnabled(False)
+                self.ui.reference_channel_btn.setEnabled(False)
             row: int = self.ui.data_table.currentRow()
             logger.debug(f"row = {row}")
             if self.data_source == "dynamic":
@@ -1169,8 +1171,8 @@ class DataWindow(QWidget):
         """Enter edit mode."""
         if self.ui.data_table.currentRow() > -1 and self.segment_edit is None:
             if isinstance(self.ui, Ui_Processing):
-                self.ui.curr_seg_box.setEnabled(True)  # noqa: FBT003
-                self.ui.reference_channel_btn.setEnabled(True)  # noqa: FBT003
+                self.ui.curr_seg_box.setEnabled(True)
+                self.ui.reference_channel_btn.setEnabled(True)
             self.viewing = False
             if self.data_source == "dynamic":
                 self.set_live(on=False)
@@ -1660,8 +1662,7 @@ class DataWindow(QWidget):
 
                         row_count = len(l_time_data["a"])
                         for ch in CH_LIST:
-                            if len(l_time_data[ch]) < row_count:
-                                row_count = len(l_time_data[ch])
+                            row_count = min(len(l_time_data[ch]), row_count)
 
                         for i in range(row_count):
                             for ch in CH_LIST:
@@ -1943,8 +1944,7 @@ class DataWindow(QWidget):
 
                         row_count = len(seg.seg_x["a"])
                         for ch in CH_LIST:
-                            if len(seg.seg_x[ch]) < row_count:
-                                row_count = len(seg.seg_x[ch])
+                            row_count = min(len(seg.seg_x[ch]), row_count)
 
                         for j in range(row_count):
                             for ch in CH_LIST:
@@ -1992,7 +1992,7 @@ if __name__ == "__main__":
 
     widget = DataWindow("static")
     for key in widget.data["lambda_times"]:
-        widget.data["lambda_times"][key] = np.arange(500, dtype=np.float_)
+        widget.data["lambda_times"][key] = np.arange(500, dtype=np.float64)
         widget.data["lambda_values"][key] = np.random.default_rng().random(500)
 
     widget.export_raw_data(preset=True, preset_dir=Path("data_export") / Path("Test"))

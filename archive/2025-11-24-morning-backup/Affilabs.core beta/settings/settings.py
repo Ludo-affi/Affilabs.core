@@ -55,9 +55,9 @@ GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 100, 0
 # Colorblind-friendly palette (Okabe-Ito)
 # Designed to be distinguishable for all types of colorblindness
 GRAPH_COLORS_COLORBLIND = {
-    "a": (1, 115, 178),    # Blue
-    "b": (222, 143, 5),    # Orange
-    "c": (2, 158, 115),    # Green
+    "a": (1, 115, 178),  # Blue
+    "b": (222, 143, 5),  # Orange
+    "c": (2, 158, 115),  # Green
     "d": (204, 120, 188),  # Magenta
 }
 
@@ -91,12 +91,20 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.050  # LED stabilization delay (50ms - default, adjustable in Advanced Settings)
-                   # NOTE: Used for signal acquisition, NOT for afterglow measurement
-                   # Afterglow calibration uses immediate measurement after LED off (no delay)
-USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
-LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
-LED_POST_DELAY = 0.005  # additional dark time after LED off before switching channel (s)
+LED_DELAY = (
+    0.050  # LED stabilization delay (50ms - default, adjustable in Advanced Settings)
+)
+# NOTE: Used for signal acquisition, NOT for afterglow measurement
+# Afterglow calibration uses immediate measurement after LED off (no delay)
+USE_DYNAMIC_LED_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
+LED_DELAY_TARGET_RESIDUAL = (
+    2.0  # percent residual allowed when computing dynamic LED delay
+)
+LED_POST_DELAY = (
+    0.005  # additional dark time after LED off before switching channel (s)
+)
 
 # === AUTOMATIC AFTERGLOW CORRECTION STRATEGY ===
 # Three-tier system based on total acquisition delay (PRE + POST):
@@ -117,16 +125,22 @@ LED_POST_DELAY = 0.005  # additional dark time after LED off before switching ch
 #    - Benefit: Saves computation, avoids over-correction
 #
 # The system automatically determines mode based on LED_DELAY + LED_POST_DELAY
-AFTERGLOW_FAST_THRESHOLD_MS = 50.0   # Below this: high-speed mode (correction enabled)
+AFTERGLOW_FAST_THRESHOLD_MS = 50.0  # Below this: high-speed mode (correction enabled)
 AFTERGLOW_SLOW_THRESHOLD_MS = 100.0  # Above this: slow mode (correction disabled)
-AFTERGLOW_AUTO_MODE = True  # Automatic mode selection (recommended, set False to force enable/disable)
-USE_DYNAMIC_POST_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
+AFTERGLOW_AUTO_MODE = (
+    True  # Automatic mode selection (recommended, set False to force enable/disable)
+)
+USE_DYNAMIC_POST_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 49152  # DEPRECATED: Now queried from detector HAL via usb.target_counts (75% of detector max)
-P_COUNT_THRESHOLD = 300  # DEPRECATED: Replaced by dynamic 30% of target_counts in verify_calibration()
+P_COUNT_THRESHOLD = (
+    300  # DEPRECATED: Replaced by dynamic 30% of target_counts in verify_calibration()
+)
 MIN_INTEGRATION = 10  # minimum detector integration time in milliseconds - start low and increase as needed
 INTEGRATION_STEP = 5  # integration time step in milliseconds
 MAX_INTEGRATION = 100  # maximum detector integration time in milliseconds
@@ -147,7 +161,9 @@ MAX_NUM_SCANS = 25
 #    - Trade-offs: Variable integration time per channel, may hit timing budget on weak channels
 #
 # IMPORTANT: Keep ALTERNATIVE method DISABLED until thoroughly tested
-USE_ALTERNATIVE_CALIBRATION = False  # Set to True to use Global LED Intensity method (EXPERIMENTAL)
+USE_ALTERNATIVE_CALIBRATION = (
+    False  # Set to True to use Global LED Intensity method (EXPERIMENTAL)
+)
 
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment
@@ -157,12 +173,14 @@ FILTERING_ON = True  # enabled/disable filtering
 MED_FILT_WIN = 3  # default median filter window size
 
 # === Display Smoothing Settings ===
-ENABLE_INTERPOLATED_DISPLAY = True  # Emit preview points during batch processing for smooth visualization
+ENABLE_INTERPOLATED_DISPLAY = (
+    True  # Emit preview points during batch processing for smooth visualization
+)
 BATCH_SIZE = 8  # Number of raw spectra to buffer before processing (balances throughput vs latency)
-                # Recommended values:
-                # - 4: Lower latency (~1.3s), good throughput
-                # - 8: Medium latency (~2.6s), better throughput (recommended for smooth display)
-                # - 16: Higher latency (~5.2s), maximum throughput (research/batch mode)
+# Recommended values:
+# - 4: Lower latency (~1.3s), good throughput
+# - 8: Medium latency (~2.6s), better throughput (recommended for smooth display)
+# - 16: Higher latency (~5.2s), maximum throughput (research/batch mode)
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data
@@ -181,10 +199,11 @@ PROFILING_REPORT_INTERVAL = 30  # Seconds between profiling reports (if enabled)
 
 # === Timezone Settings ===
 import datetime
+
 try:
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 except AttributeError:
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 DEFAULT_CONFIG = {
     "unit": UNIT,
@@ -198,17 +217,18 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 if not os.path.exists(CONFIG_FILE):
     import tempfile
     from pathlib import Path
+
     config_path = Path(CONFIG_FILE)
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Atomic write using temp file
     try:
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
+            mode="w",
+            encoding="utf-8",
             dir=config_path.parent,
             delete=False,
-            suffix='.tmp'
+            suffix=".tmp",
         ) as tmp_file:
             json.dump(DEFAULT_CONFIG, tmp_file, indent=2)
             tmp_path = Path(tmp_file.name)

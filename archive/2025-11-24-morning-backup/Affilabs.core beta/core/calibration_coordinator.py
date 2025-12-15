@@ -3,10 +3,12 @@
 Handles UI interactions and delegates actual calibration to CalibrationManager.
 """
 
+from typing import Any
+
 import numpy as np
 from PySide6.QtCore import QObject, QTimer
+
 from utils.logger import logger
-from typing import Optional, Dict, Any
 
 
 class CalibrationCoordinator(QObject):
@@ -17,14 +19,16 @@ class CalibrationCoordinator(QObject):
 
         Args:
             app: Reference to main Application instance
+
         """
         super().__init__()
         self.app = app
-        self._calibration_dialog: Optional[Any] = None
+        self._calibration_dialog: Any | None = None
         self._calibration_completed: bool = False
 
         # Create calibration manager
         from core.calibration_manager import CalibrationManager
+
         self.manager = CalibrationManager(app)
 
         # Connect manager signals
@@ -56,7 +60,7 @@ class CalibrationCoordinator(QObject):
             parent=self.app.main_window,
             title="Calibrating SPR System",
             message=message,
-            show_start_button=True
+            show_start_button=True,
         )
 
         # Connect dialog signals
@@ -83,7 +87,9 @@ class CalibrationCoordinator(QObject):
             if self._calibration_dialog.start_button:
                 self._calibration_dialog.start_button.setEnabled(False)
             self._calibration_dialog.show_progress_bar()
-            self._calibration_dialog.update_status("Running LED intensity calibration...")
+            self._calibration_dialog.update_status(
+                "Running LED intensity calibration...",
+            )
 
         # Start calibration
         self.manager.start_calibration()
@@ -100,17 +106,19 @@ class CalibrationCoordinator(QObject):
         Args:
             message: Progress message
             percent: Progress percentage (0-100)
+
         """
         logger.info(f"📊 Calibration progress: {message} ({percent}%)")
         if self._calibration_dialog:
             self._calibration_dialog.update_status(message)
             self._calibration_dialog.set_progress(percent, 100)
 
-    def _on_calibration_complete(self, calibration_data: Dict[str, Any]) -> None:
+    def _on_calibration_complete(self, calibration_data: dict[str, Any]) -> None:
         """Handle calibration completion.
 
         Args:
             calibration_data: Dictionary containing calibration results
+
         """
         logger.info("🎯 Calibration complete!")
 
@@ -138,6 +146,7 @@ class CalibrationCoordinator(QObject):
 
         Args:
             error: Error message
+
         """
         logger.error(f"❌ Calibration failed: {error}")
 
@@ -147,6 +156,7 @@ class CalibrationCoordinator(QObject):
             QTimer.singleShot(4000, self._close_dialog)
 
         from widgets.message import show_message
+
         show_message(error, "Calibration Error")
 
     def _show_qc_report(self) -> None:
@@ -158,19 +168,21 @@ class CalibrationCoordinator(QObject):
             data_mgr = self.app.data_mgr
 
             # Get wavelengths
-            wavelengths = data_mgr.wave_data if hasattr(data_mgr, 'wave_data') else None
+            wavelengths = data_mgr.wave_data if hasattr(data_mgr, "wave_data") else None
             if wavelengths is None:
                 wavelengths = np.linspace(560, 720, 3648)
 
             # Collect S-pol spectra
-            s_pol_spectra = dict(data_mgr.ref_sig) if hasattr(data_mgr, 'ref_sig') else {}
+            s_pol_spectra = (
+                dict(data_mgr.ref_sig) if hasattr(data_mgr, "ref_sig") else {}
+            )
 
             # P-pol spectra (use S-pol as placeholder since P-mode data isn't stored separately)
             p_pol_spectra = s_pol_spectra.copy()
 
             # Dark scan
             dark_scan = {}
-            if hasattr(data_mgr, 'dark_noise') and data_mgr.dark_noise is not None:
+            if hasattr(data_mgr, "dark_noise") and data_mgr.dark_noise is not None:
                 for ch in s_pol_spectra.keys():
                     dark_scan[ch] = data_mgr.dark_noise
 
@@ -183,30 +195,31 @@ class CalibrationCoordinator(QObject):
             transmission_spectra = {}
             for ch in s_pol_spectra.keys():
                 if ch in p_pol_spectra:
-                    with np.errstate(divide='ignore', invalid='ignore'):
+                    with np.errstate(divide="ignore", invalid="ignore"):
                         transmission = np.where(
                             s_pol_spectra[ch] > 0,
                             (p_pol_spectra[ch] / s_pol_spectra[ch]) * 100.0,
-                            0.0
+                            0.0,
                         )
                     transmission_spectra[ch] = transmission
 
             qc_data = {
-                's_pol_spectra': s_pol_spectra,
-                'p_pol_spectra': p_pol_spectra,
-                'dark_scan': dark_scan,
-                'afterglow_curves': afterglow_curves,
-                'transmission_spectra': transmission_spectra,
-                'wavelengths': wavelengths,
-                'integration_time': data_mgr.integration_time,
-                'led_intensities': data_mgr.leds_calibrated
+                "s_pol_spectra": s_pol_spectra,
+                "p_pol_spectra": p_pol_spectra,
+                "dark_scan": dark_scan,
+                "afterglow_curves": afterglow_curves,
+                "transmission_spectra": transmission_spectra,
+                "wavelengths": wavelengths,
+                "integration_time": data_mgr.integration_time,
+                "led_intensities": data_mgr.leds_calibrated,
             }
 
             # Show QC dialog
             from widgets.calibration_qc_dialog import CalibrationQCDialog
+
             CalibrationQCDialog.show_qc_report(
                 parent=self.app.main_window,
-                calibration_data=qc_data
+                calibration_data=qc_data,
             )
 
             logger.info("✅ QC report shown")
@@ -214,25 +227,29 @@ class CalibrationCoordinator(QObject):
         except Exception as e:
             logger.error(f"❌ Failed to show QC report: {e}", exc_info=True)
 
-    def _save_calibration_to_device_config(self, calibration_data: Dict[str, Any]) -> None:
+    def _save_calibration_to_device_config(
+        self,
+        calibration_data: dict[str, Any],
+    ) -> None:
         """Save calibration results to device_config.json.
 
         Args:
             calibration_data: Calibration results dictionary
+
         """
         try:
             logger.info("💾 Saving calibration to device_config.json...")
 
             from utils.device_configuration import DeviceConfiguration
 
-            device_serial = getattr(self.app.hardware_mgr.usb, 'serial_number', None)
+            device_serial = getattr(self.app.hardware_mgr.usb, "serial_number", None)
             device_config = DeviceConfiguration(device_serial=device_serial)
 
             device_config.save_led_calibration(
-                integration_time=calibration_data['integration_time'],
-                s_mode_intensities=calibration_data['ref_intensity'],
-                p_mode_intensities=calibration_data['leds_calibrated'],
-                calibration_method='standard'
+                integration_time=calibration_data["integration_time"],
+                s_mode_intensities=calibration_data["ref_intensity"],
+                p_mode_intensities=calibration_data["leds_calibrated"],
+                calibration_method="standard",
             )
 
             logger.info("✅ Calibration saved to device_config.json")
@@ -245,7 +262,7 @@ class CalibrationCoordinator(QObject):
         try:
             data_mgr = self.app.data_mgr
 
-            if hasattr(data_mgr, 'leds_calibrated') and data_mgr.leds_calibrated:
+            if hasattr(data_mgr, "leds_calibrated") and data_mgr.leds_calibrated:
                 for ch, intensity in data_mgr.leds_calibrated.items():
                     logger.info(f"LED {ch.upper()}: {intensity}/255")
 

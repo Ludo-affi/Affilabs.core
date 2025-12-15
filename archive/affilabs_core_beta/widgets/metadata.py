@@ -689,7 +689,7 @@ class MetadataPrompt(QDialog):
             "metadata in the save file. All fields are optional, just leave any field "
             "blank to exclude it.",
         )
-        self.prompt.setWordWrap(True)  # noqa: FBT003
+        self.prompt.setWordWrap(True)
         self.metadata = metadata
         self.dont_show = QCheckBox(
             "Do not show this window again (Also available in SPR Setting)",

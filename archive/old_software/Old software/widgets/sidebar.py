@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QLabel, QTabWidget, QVBoxLayout, QWidget, QScrollArea, QFrame
+    QFrame,
+    QLabel,
+    QScrollArea,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from widgets.device_status import DeviceStatusWidget
@@ -60,7 +64,7 @@ class ModernSidebar(QWidget):
             "QTabBar::tab:hover:!selected {"
             "  background: rgba(0, 0, 0, 0.03);"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
 
         # Add tabs with prototype structure
@@ -98,7 +102,7 @@ class ModernSidebar(QWidget):
                 "}"
                 "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
                 "  height: 0px;"
-                "}"
+                "}",
             )
 
             tab_content = QWidget()
@@ -116,7 +120,7 @@ class ModernSidebar(QWidget):
                 "background: transparent;"
                 "line-height: 1.2;"
                 "letter-spacing: -0.3px;"
-                "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;",
             )
             tab_layout.addWidget(title)
 
@@ -136,7 +140,7 @@ class ModernSidebar(QWidget):
                     "color: #86868B;"
                     "background: transparent;"
                     "font-style: italic;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(placeholder)
                 tab_layout.addStretch()
@@ -148,11 +152,16 @@ class ModernSidebar(QWidget):
 
         main_layout.addWidget(self.tab_widget)
 
-    def set_widgets(self, cycle_controls_widget=None, static_cycle_controls=None, flow_cycle_controls=None):
+    def set_widgets(
+        self,
+        cycle_controls_widget=None,
+        static_cycle_controls=None,
+        flow_cycle_controls=None,
+    ):
         """Set up legacy widgets for backwards compatibility."""
         # Device widget is now handled by DeviceStatusWidget in Device Status tab
         # Keep reference for backwards compatibility
-        if hasattr(self, 'device_status_widget'):
+        if hasattr(self, "device_status_widget"):
             self.device_widget = self.device_status_widget
 
         # Install cycle controls if provided
@@ -198,7 +207,10 @@ class ModernSidebar(QWidget):
             if item and item.widget():
                 widget_item = item.widget()
                 # Keep the title (first QLabel with specific styling)
-                if isinstance(widget_item, QLabel) and "20px" in widget_item.styleSheet():
+                if (
+                    isinstance(widget_item, QLabel)
+                    and "20px" in widget_item.styleSheet()
+                ):
                     continue
                 items_to_remove.append(widget_item)
 
@@ -217,4 +229,3 @@ class ModernSidebar(QWidget):
 # Legacy class alias for backwards compatibility
 class Sidebar(ModernSidebar):
     """Legacy class name - redirects to ModernSidebar."""
-    pass

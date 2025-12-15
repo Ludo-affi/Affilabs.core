@@ -23,17 +23,14 @@ current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
+from affilabs.utils.controller import ArduinoController, PicoP4SPR
 from affilabs.utils.logger import logger
-from affilabs.utils.controller import PicoP4SPR, ArduinoController
-from affilabs.utils.detector_factory import create_detector
 from affilabs.utils.usb4000_wrapper import USB4000
 from settings import (
     CH_LIST,
     LED_DELAY,
-    MIN_INTEGRATION,
     MAX_INTEGRATION,
-    MIN_WAVELENGTH,
-    MAX_WAVELENGTH
+    MIN_INTEGRATION,
 )
 
 
@@ -46,7 +43,7 @@ def find_controller():
         logger.debug("Trying PicoP4SPR...")
         ctrl = PicoP4SPR()
         if ctrl.open():
-            logger.info(f"[OK] Found PicoP4SPR controller")
+            logger.info("[OK] Found PicoP4SPR controller")
             return ctrl
         ctrl.close()
     except Exception as e:
@@ -57,7 +54,7 @@ def find_controller():
         logger.debug("Trying ArduinoController...")
         ctrl = ArduinoController()
         if ctrl.open():
-            logger.info(f"[OK] Found Arduino controller")
+            logger.info("[OK] Found Arduino controller")
             return ctrl
         ctrl.close()
     except Exception as e:
@@ -82,7 +79,9 @@ def find_spectrometer():
         if usb.open():
             # USB4000 doesn't have .model attribute, use class name
             model_name = type(usb).__name__
-            logger.info(f"[OK] Found {model_name} spectrometer (S/N: {usb.serial_number})")
+            logger.info(
+                f"[OK] Found {model_name} spectrometer (S/N: {usb.serial_number})",
+            )
             return usb
     except Exception as e:
         logger.debug(f"USB4000 not found: {e}")
@@ -92,9 +91,9 @@ def find_spectrometer():
 
 def test_hardware_connection():
     """Test Step 1: Verify hardware is connected and responding."""
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("TEST 1: Hardware Connection")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     try:
         # Connect controller
@@ -124,7 +123,13 @@ def test_hardware_connection():
         return None, None
 
 
-def calibrate_integration_per_channel_test(usb, ctrl, ch, led_intensity=255, target_counts=None):
+def calibrate_integration_per_channel_test(
+    usb,
+    ctrl,
+    ch,
+    led_intensity=255,
+    target_counts=None,
+):
     """Test implementation of per-channel integration time calibration.
 
     This is the core function used in Mode 2 (Alternative Method).
@@ -144,6 +149,7 @@ def calibrate_integration_per_channel_test(usb, ctrl, ch, led_intensity=255, tar
             'target_met': True if target was reached,
             'timing_budget_ok': True if under 100ms
         }
+
     """
     if target_counts is None:
         target_counts = usb.target_counts
@@ -195,7 +201,7 @@ def calibrate_integration_per_channel_test(usb, ctrl, ch, led_intensity=255, tar
 
         int_array = usb.read_intensity()
         if int_array is None:
-            logger.error(f"[ERROR] Read failed during optimization")
+            logger.error("[ERROR] Read failed during optimization")
             return None
 
         new_count = int_array.max()
@@ -203,7 +209,9 @@ def calibrate_integration_per_channel_test(usb, ctrl, ch, led_intensity=255, tar
 
         # Log every 5th iteration to reduce spam
         if iterations % 5 == 0 or new_count >= target_counts:
-            logger.info(f"  Step {iterations}: {integration}ms → {new_count:.0f} counts (Δ{delta:+.0f})")
+            logger.info(
+                f"  Step {iterations}: {integration}ms → {new_count:.0f} counts (Δ{delta:+.0f})",
+            )
 
         current_count = new_count
 
@@ -218,17 +226,21 @@ def calibrate_integration_per_channel_test(usb, ctrl, ch, led_intensity=255, tar
     logger.info(f"✓ Final signal: {current_count:.0f} counts")
     logger.info(f"✓ Iterations: {iterations}")
     logger.info(f"✓ Target met: {'YES [OK]' if target_met else 'NO [ERROR]'}")
-    logger.info(f"✓ Timing budget (< 100ms): {'OK [OK]' if timing_budget_ok else 'EXCEEDED [WARN]'}")
+    logger.info(
+        f"✓ Timing budget (< 100ms): {'OK [OK]' if timing_budget_ok else 'EXCEEDED [WARN]'}",
+    )
 
     if not target_met:
         shortage = target_counts - current_count
         logger.warning(f"[WARN] Signal {shortage:.0f} counts below target")
-        logger.warning(f"   This indicates weak optical coupling for channel {ch.upper()}")
+        logger.warning(
+            f"   This indicates weak optical coupling for channel {ch.upper()}",
+        )
 
     if not timing_budget_ok:
         overage = integration - max_integration_allowed
         logger.warning(f"[WARN] Integration time exceeds budget by {overage}ms")
-        logger.warning(f"   This will reduce acquisition frequency")
+        logger.warning("   This will reduce acquisition frequency")
 
     # Calculate headroom
     headroom_ms = max_integration_allowed - integration
@@ -243,30 +255,32 @@ def calibrate_integration_per_channel_test(usb, ctrl, ch, led_intensity=255, tar
     else:
         strength = "LIMITED"
 
-    logger.info(f"✓ Integration headroom: {headroom_ms}ms ({headroom_pct:.1f}%) - {strength}")
+    logger.info(
+        f"✓ Integration headroom: {headroom_ms}ms ({headroom_pct:.1f}%) - {strength}",
+    )
 
     # Turn off LED
     ctrl.set_intensity(ch=ch, raw_val=0)
     ctrl.turn_off_channels()
 
     return {
-        'channel': ch,
-        'integration_time': integration,
-        'final_signal': current_count,
-        'iterations': iterations,
-        'target_met': target_met,
-        'timing_budget_ok': timing_budget_ok,
-        'headroom_ms': headroom_ms,
-        'headroom_pct': headroom_pct,
-        'strength': strength
+        "channel": ch,
+        "integration_time": integration,
+        "final_signal": current_count,
+        "iterations": iterations,
+        "target_met": target_met,
+        "timing_budget_ok": timing_budget_ok,
+        "headroom_ms": headroom_ms,
+        "headroom_pct": headroom_pct,
+        "strength": strength,
     }
 
 
 def test_all_channels(usb, ctrl):
     """Test Step 2: Calibrate integration time for all channels."""
-    logger.info("\n" + "="*80)
+    logger.info("\n" + "=" * 80)
     logger.info("TEST 2: Per-Channel Integration Time Calibration")
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("Mode 2 (Alternative): LED fixed at 255, integration time varies\n")
 
     # Set S-mode
@@ -282,7 +296,7 @@ def test_all_channels(usb, ctrl):
             ctrl=ctrl,
             ch=ch,
             led_intensity=255,
-            target_counts=usb.target_counts
+            target_counts=usb.target_counts,
         )
 
         if result:
@@ -297,23 +311,23 @@ def test_all_channels(usb, ctrl):
 
 def analyze_results(results):
     """Test Step 3: Analyze cross-channel performance."""
-    logger.info("\n" + "="*80)
+    logger.info("\n" + "=" * 80)
     logger.info("TEST 3: Cross-Channel Analysis")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     if not results:
         logger.error("[ERROR] No results to analyze")
         return
 
     # Calculate statistics
-    integration_times = [r['integration_time'] for r in results.values()]
-    signals = [r['final_signal'] for r in results.values()]
+    integration_times = [r["integration_time"] for r in results.values()]
+    signals = [r["final_signal"] for r in results.values()]
 
     min_int = min(integration_times)
     max_int = max(integration_times)
     avg_int = sum(integration_times) / len(integration_times)
 
-    logger.info(f"\nIntegration Time Statistics:")
+    logger.info("\nIntegration Time Statistics:")
     logger.info(f"  Min: {min_int}ms (strongest channel)")
     logger.info(f"  Max: {max_int}ms (weakest channel)")
     logger.info(f"  Avg: {avg_int:.1f}ms")
@@ -322,24 +336,28 @@ def analyze_results(results):
     # Global integration time (max across channels)
     global_int = max_int
     logger.info(f"\n✓ Global Integration Time: {global_int}ms")
-    logger.info(f"  (This is the max time needed across all channels)")
+    logger.info("  (This is the max time needed across all channels)")
 
     # Channel-by-channel summary
-    logger.info(f"\nPer-Channel Summary:")
-    logger.info(f"{'Channel':<10} {'Int Time':<12} {'Signal':<12} {'Headroom':<15} {'Status'}")
+    logger.info("\nPer-Channel Summary:")
+    logger.info(
+        f"{'Channel':<10} {'Int Time':<12} {'Signal':<12} {'Headroom':<15} {'Status'}",
+    )
     logger.info(f"{'-'*70}")
 
     for ch, result in results.items():
-        status = "[OK]" if result['target_met'] and result['timing_budget_ok'] else "[WARN]"
+        status = (
+            "[OK]" if result["target_met"] and result["timing_budget_ok"] else "[WARN]"
+        )
         logger.info(
             f"{ch.upper():<10} {result['integration_time']:<12}ms "
             f"{result['final_signal']:<12.0f} "
             f"{result['headroom_pct']:<15.1f}% "
-            f"{status} {result['strength']}"
+            f"{status} {result['strength']}",
         )
 
     # Timing analysis
-    logger.info(f"\nTiming Budget Analysis:")
+    logger.info("\nTiming Budget Analysis:")
     overhead_ms = 50  # Estimated hardware overhead
     channel_time = global_int + overhead_ms
     channel_hz = 1000 / channel_time if channel_time > 0 else 0
@@ -347,39 +365,54 @@ def analyze_results(results):
 
     logger.info(f"  Per-channel time: {channel_time}ms ({channel_hz:.2f}Hz)")
     logger.info(f"  System rate (4-ch): ~{system_hz:.2f}Hz")
-    logger.info(f"  Timing budget status: {'OK [OK]' if global_int < 100 else 'EXCEEDED [WARN]'}")
+    logger.info(
+        f"  Timing budget status: {'OK [OK]' if global_int < 100 else 'EXCEEDED [WARN]'}",
+    )
 
     # Check for weak channels
     weak_channels = [
-        ch for ch, r in results.items()
-        if not r['target_met'] or r['integration_time'] > 90
+        ch
+        for ch, r in results.items()
+        if not r["target_met"] or r["integration_time"] > 90
     ]
 
     if weak_channels:
-        logger.warning(f"\n[WARN] Weak Channels Detected: {', '.join([c.upper() for c in weak_channels])}")
-        logger.warning(f"   → Check optical coupling (fiber alignment, sensor placement)")
-        logger.warning(f"   → Consider cleaning optical surfaces")
+        logger.warning(
+            f"\n[WARN] Weak Channels Detected: {', '.join([c.upper() for c in weak_channels])}",
+        )
+        logger.warning(
+            "   → Check optical coupling (fiber alignment, sensor placement)",
+        )
+        logger.warning("   → Consider cleaning optical surfaces")
     else:
-        logger.info(f"\n[OK] All channels have good optical performance")
-        logger.info(f"   → System is well-aligned and ready for measurements")
+        logger.info("\n[OK] All channels have good optical performance")
+        logger.info("   → System is well-aligned and ready for measurements")
 
     # Check uniformity
     if max_int - min_int > 30:
-        logger.warning(f"\n[WARN] Large variation in integration times ({max_int - min_int}ms)")
-        logger.warning(f"   → This suggests non-uniform LED brightness or optical coupling")
-        logger.warning(f"   → Channels {[ch.upper() for ch, r in results.items() if r['integration_time'] == max_int]} need attention")
+        logger.warning(
+            f"\n[WARN] Large variation in integration times ({max_int - min_int}ms)",
+        )
+        logger.warning(
+            "   → This suggests non-uniform LED brightness or optical coupling",
+        )
+        logger.warning(
+            f"   → Channels {[ch.upper() for ch, r in results.items() if r['integration_time'] == max_int]} need attention",
+        )
     else:
-        logger.info(f"\n[OK] Good uniformity across channels")
-        logger.info(f"   → Integration time variation: {max_int - min_int}ms (acceptable)")
+        logger.info("\n[OK] Good uniformity across channels")
+        logger.info(
+            f"   → Integration time variation: {max_int - min_int}ms (acceptable)",
+        )
 
 
 def test_led_delay_impact(usb, ctrl):
     """Test Step 4: Measure LED settling time impact."""
-    logger.info("\n" + "="*80)
+    logger.info("\n" + "=" * 80)
     logger.info("TEST 4: LED Delay Impact Analysis")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
-    ch = 'a'  # Test with channel A
+    ch = "a"  # Test with channel A
     logger.info(f"Testing LED settling behavior on channel {ch.upper()}")
 
     # Ensure LED off
@@ -393,7 +426,7 @@ def test_led_delay_impact(usb, ctrl):
     # Test different delay times
     delays = [0.001, 0.005, 0.01, 0.02, LED_DELAY]
 
-    logger.info(f"\nTesting signal stability with varying delays:")
+    logger.info("\nTesting signal stability with varying delays:")
     logger.info(f"{'Delay (s)':<12} {'Signal (counts)':<20} {'Stability'}")
     logger.info(f"{'-'*50}")
 
@@ -417,25 +450,33 @@ def test_led_delay_impact(usb, ctrl):
 
         if readings:
             avg_signal = sum(readings) / len(readings)
-            std_signal = (sum((x - avg_signal)**2 for x in readings) / len(readings))**0.5
+            std_signal = (
+                sum((x - avg_signal) ** 2 for x in readings) / len(readings)
+            ) ** 0.5
             stability = "STABLE [OK]" if std_signal < 100 else "UNSTABLE [WARN]"
 
-            logger.info(f"{delay:<12.3f} {avg_signal:<20.0f} {stability} (σ={std_signal:.1f})")
+            logger.info(
+                f"{delay:<12.3f} {avg_signal:<20.0f} {stability} (σ={std_signal:.1f})",
+            )
         else:
             logger.error(f"{delay:<12.3f} READ FAILED")
 
     logger.info(f"\n✓ Current LED_DELAY setting: {LED_DELAY}s")
-    logger.info(f"  This is {'SUFFICIENT [OK]' if LED_DELAY >= 0.02 else 'TOO SHORT [WARN]'} for Mode 2")
+    logger.info(
+        f"  This is {'SUFFICIENT [OK]' if LED_DELAY >= 0.02 else 'TOO SHORT [WARN]'} for Mode 2",
+    )
 
 
 def test_afterglow_measurement(usb, ctrl):
     """Test Step 5: Measure LED afterglow decay and impact on stability for all channels."""
-    logger.info("\n" + "="*80)
+    logger.info("\n" + "=" * 80)
     logger.info("TEST 5: LED Afterglow Decay Measurement (All Channels)")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     logger.info("Measuring LED afterglow decay for all 4 channels")
-    logger.info("This tests whether afterglow significantly affects measurement stability")
+    logger.info(
+        "This tests whether afterglow significantly affects measurement stability",
+    )
 
     # Ensure LED off and wait for complete decay
     ctrl.turn_off_channels()
@@ -447,8 +488,8 @@ def test_afterglow_measurement(usb, ctrl):
     time.sleep(0.1)
 
     # STEP 0: Measure dark reference (detector baseline with LED off)
-    logger.info(f"\n📊 STEP 0: Dark Reference Measurement")
-    logger.info(f"Measuring detector dark current + stray light baseline")
+    logger.info("\n📊 STEP 0: Dark Reference Measurement")
+    logger.info("Measuring detector dark current + stray light baseline")
 
     ctrl.turn_off_channels()
     time.sleep(0.5)  # Ensure complete darkness
@@ -461,23 +502,35 @@ def test_afterglow_measurement(usb, ctrl):
         time.sleep(0.1)
 
     dark_signal = sum(dark_readings) / len(dark_readings) if dark_readings else 0
-    dark_std = (sum((x - dark_signal)**2 for x in dark_readings) / len(dark_readings))**0.5 if len(dark_readings) > 1 else 0
+    dark_std = (
+        (sum((x - dark_signal) ** 2 for x in dark_readings) / len(dark_readings)) ** 0.5
+        if len(dark_readings) > 1
+        else 0
+    )
     logger.info(f"Dark signal: {dark_signal:.0f} ± {dark_std:.1f} counts")
-    logger.info(f"This will be subtracted to isolate true afterglow")
+    logger.info("This will be subtracted to isolate true afterglow")
 
     # Test all 4 channels
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     all_afterglow_data = {}
     delays_ms = [1, 5, 10, 20, 50, 100, 150, 200, 250]
 
     for ch in channels:
         logger.info(f"\n{'='*80}")
-        logger.info(f"PART 1: Channel {ch.upper()} - LED Turn-off Afterglow Decay Profile")
+        logger.info(
+            f"PART 1: Channel {ch.upper()} - LED Turn-off Afterglow Decay Profile",
+        )
         logger.info(f"{'='*80}")
-        logger.info(f"{'Delay (ms)':<12} {'Raw (counts)':<15} {'Dark-Sub':<15} {'% of Peak':<15} {'Status'}")
+        logger.info(
+            f"{'Delay (ms)':<12} {'Raw (counts)':<15} {'Dark-Sub':<15} {'% of Peak':<15} {'Status'}",
+        )
         logger.info(f"{'-'*75}")
-        logger.info(f"NOTE: Measurements taken DURING integration window ({integration_ms}ms)")
-        logger.info(f"      Effective delay = delay + {integration_ms/2:.0f}ms (integration midpoint)")
+        logger.info(
+            f"NOTE: Measurements taken DURING integration window ({integration_ms}ms)",
+        )
+        logger.info(
+            f"      Effective delay = delay + {integration_ms/2:.0f}ms (integration midpoint)",
+        )
         logger.info(f"{'-'*75}")
 
         # First get peak signal (LED fully on)
@@ -486,7 +539,9 @@ def test_afterglow_measurement(usb, ctrl):
         int_array = usb.read_intensity()
         raw_peak = int_array.max() if int_array is not None else 0
         peak_signal = raw_peak - dark_signal  # Dark-subtracted peak
-        logger.info(f"Peak signal (LED on): {raw_peak:.0f} counts (dark-subtracted: {peak_signal:.0f} counts)")
+        logger.info(
+            f"Peak signal (LED on): {raw_peak:.0f} counts (dark-subtracted: {peak_signal:.0f} counts)",
+        )
 
         # Now measure afterglow at different delays
         afterglow_data = []
@@ -519,26 +574,30 @@ def test_afterglow_measurement(usb, ctrl):
                 else:
                     status = "LOW [OK]"
 
-                logger.info(f"{delay_ms:<12} {raw_signal:<15.0f} {signal:<15.0f} {pct_of_peak:<15.2f} {status}")
+                logger.info(
+                    f"{delay_ms:<12} {raw_signal:<15.0f} {signal:<15.0f} {pct_of_peak:<15.2f} {status}",
+                )
 
             # Wait for complete decay before next measurement
             time.sleep(0.3)
 
         all_afterglow_data[ch] = {
-            'peak': peak_signal,
-            'data': afterglow_data
+            "peak": peak_signal,
+            "data": afterglow_data,
         }
 
     # Summary comparison across channels
     logger.info(f"\n{'='*80}")
-    logger.info(f"AFTERGLOW SUMMARY - All Channels @ 50ms Delay")
+    logger.info("AFTERGLOW SUMMARY - All Channels @ 50ms Delay")
     logger.info(f"{'='*80}")
-    logger.info(f"{'Channel':<12} {'Peak (counts)':<18} {'Afterglow @ 50ms':<20} {'% of Peak':<15} {'Status'}")
+    logger.info(
+        f"{'Channel':<12} {'Peak (counts)':<18} {'Afterglow @ 50ms':<20} {'% of Peak':<15} {'Status'}",
+    )
     logger.info(f"{'-'*75}")
 
     for ch in channels:
-        peak = all_afterglow_data[ch]['peak']
-        data = all_afterglow_data[ch]['data']
+        peak = all_afterglow_data[ch]["peak"]
+        data = all_afterglow_data[ch]["data"]
         # Find 50ms measurement
         afterglow_50ms = next((d[1] for d in data if d[0] == 50), 0)
         pct_50ms = (afterglow_50ms / peak * 100) if peak > 0 else 0
@@ -548,21 +607,25 @@ def test_afterglow_measurement(usb, ctrl):
         else:
             status = "LOW [OK]"
 
-        logger.info(f"{ch.upper():<12} {peak:<18.0f} {afterglow_50ms:<20.0f} {pct_50ms:<15.2f} {status}")
+        logger.info(
+            f"{ch.upper():<12} {peak:<18.0f} {afterglow_50ms:<20.0f} {pct_50ms:<15.2f} {status}",
+        )
 
-        logger.info(f"{ch.upper():<12} {peak:<18.0f} {afterglow_50ms:<20.0f} {pct_50ms:<15.2f} {status}")
+        logger.info(
+            f"{ch.upper():<12} {peak:<18.0f} {afterglow_50ms:<20.0f} {pct_50ms:<15.2f} {status}",
+        )
 
     # PART 2: Test stability on channel A (representative test)
-    ch = 'a'
+    ch = "a"
     logger.info(f"\n{'='*80}")
-    logger.info(f"PART 2: Stability Test - Fast Acquisition (25ms delay)")
+    logger.info("PART 2: Stability Test - Fast Acquisition (25ms delay)")
     logger.info(f"{'='*80}")
-    logger.info(f"Testing 25ms delay (2x faster) with and without afterglow correction")
-    logger.info(f"Extended time series: 30 measurements each")
+    logger.info("Testing 25ms delay (2x faster) with and without afterglow correction")
+    logger.info("Extended time series: 30 measurements each")
 
     # Test A: 25ms delay WITHOUT afterglow correction
-    logger.info(f"\nTest A: 25ms delay WITHOUT afterglow correction (30 points)")
-    logger.info(f"  LED on 200ms → 25ms wait after off → Acquire (raw signal)")
+    logger.info("\nTest A: 25ms delay WITHOUT afterglow correction (30 points)")
+    logger.info("  LED on 200ms → 25ms wait after off → Acquire (raw signal)")
 
     ctrl.turn_off_channels()
     time.sleep(0.5)  # Start fresh
@@ -585,7 +648,10 @@ def test_afterglow_measurement(usb, ctrl):
 
     if fast_no_correction:
         avg_fast_raw = sum(fast_no_correction) / len(fast_no_correction)
-        std_fast_raw = (sum((x - avg_fast_raw)**2 for x in fast_no_correction) / len(fast_no_correction))**0.5
+        std_fast_raw = (
+            sum((x - avg_fast_raw) ** 2 for x in fast_no_correction)
+            / len(fast_no_correction)
+        ) ** 0.5
         cv_fast_raw = (std_fast_raw / avg_fast_raw * 100) if avg_fast_raw > 0 else 0
         min_raw = min(fast_no_correction)
         max_raw = max(fast_no_correction)
@@ -593,17 +659,28 @@ def test_afterglow_measurement(usb, ctrl):
         logger.info(f"  Data points: {len(fast_no_correction)}")
         logger.info(f"  First 10: {[f'{r:.0f}' for r in fast_no_correction[:10]]}")
         logger.info(f"  Last 10:  {[f'{r:.0f}' for r in fast_no_correction[-10:]]}")
-        logger.info(f"  Mean: {avg_fast_raw:.0f}, Std: {std_fast_raw:.1f}, CV: {cv_fast_raw:.2f}%")
-        logger.info(f"  Range: {min_raw:.0f} - {max_raw:.0f} (Δ={range_raw:.0f} counts)")
-        logger.info(f"  Stability: {'POOR [WARN]' if cv_fast_raw > 1.0 else 'GOOD [OK]'}")
+        logger.info(
+            f"  Mean: {avg_fast_raw:.0f}, Std: {std_fast_raw:.1f}, CV: {cv_fast_raw:.2f}%",
+        )
+        logger.info(
+            f"  Range: {min_raw:.0f} - {max_raw:.0f} (Δ={range_raw:.0f} counts)",
+        )
+        logger.info(
+            f"  Stability: {'POOR [WARN]' if cv_fast_raw > 1.0 else 'GOOD [OK]'}",
+        )
 
     # Test B: 25ms delay WITH afterglow correction (subtract measured afterglow)
-    logger.info(f"\nTest B: 25ms delay WITH afterglow correction (30 points)")
-    logger.info(f"  LED on 200ms → 25ms wait after off → Acquire → Subtract afterglow (~0.6% correction)")
+    logger.info("\nTest B: 25ms delay WITH afterglow correction (30 points)")
+    logger.info(
+        "  LED on 200ms → 25ms wait after off → Acquire → Subtract afterglow (~0.6% correction)",
+    )
 
     # Get afterglow value for 25ms delay (from earlier measurements)
     # Use the 20ms measurement as proxy (closest to 25ms effective delay)
-    afterglow_25ms = next((s for t, s, _ in all_afterglow_data['a']['data'] if t == 20), 260)
+    afterglow_25ms = next(
+        (s for t, s, _ in all_afterglow_data["a"]["data"] if t == 20),
+        260,
+    )
     logger.info(f"  Using afterglow correction: {afterglow_25ms:.0f} counts")
 
     ctrl.turn_off_channels()
@@ -628,7 +705,10 @@ def test_afterglow_measurement(usb, ctrl):
 
     if fast_with_correction:
         avg_fast_corr = sum(fast_with_correction) / len(fast_with_correction)
-        std_fast_corr = (sum((x - avg_fast_corr)**2 for x in fast_with_correction) / len(fast_with_correction))**0.5
+        std_fast_corr = (
+            sum((x - avg_fast_corr) ** 2 for x in fast_with_correction)
+            / len(fast_with_correction)
+        ) ** 0.5
         cv_fast_corr = (std_fast_corr / avg_fast_corr * 100) if avg_fast_corr > 0 else 0
         min_corr = min(fast_with_correction)
         max_corr = max(fast_with_correction)
@@ -636,13 +716,19 @@ def test_afterglow_measurement(usb, ctrl):
         logger.info(f"  Data points: {len(fast_with_correction)}")
         logger.info(f"  First 10: {[f'{r:.0f}' for r in fast_with_correction[:10]]}")
         logger.info(f"  Last 10:  {[f'{r:.0f}' for r in fast_with_correction[-10:]]}")
-        logger.info(f"  Mean: {avg_fast_corr:.0f}, Std: {std_fast_corr:.1f}, CV: {cv_fast_corr:.2f}%")
-        logger.info(f"  Range: {min_corr:.0f} - {max_corr:.0f} (Δ={range_corr:.0f} counts)")
-        logger.info(f"  Stability: {'POOR [WARN]' if cv_fast_corr > 1.0 else 'GOOD [OK]'}")
+        logger.info(
+            f"  Mean: {avg_fast_corr:.0f}, Std: {std_fast_corr:.1f}, CV: {cv_fast_corr:.2f}%",
+        )
+        logger.info(
+            f"  Range: {min_corr:.0f} - {max_corr:.0f} (Δ={range_corr:.0f} counts)",
+        )
+        logger.info(
+            f"  Stability: {'POOR [WARN]' if cv_fast_corr > 1.0 else 'GOOD [OK]'}",
+        )
 
     # Test C: Original 50ms baseline for comparison
-    logger.info(f"\nTest C: 50ms delay - baseline (30 points)")
-    logger.info(f"  LED on 200ms → 50ms wait after off → Acquire")
+    logger.info("\nTest C: 50ms delay - baseline (30 points)")
+    logger.info("  LED on 200ms → 50ms wait after off → Acquire")
 
     ctrl.turn_off_channels()
     time.sleep(0.5)  # Start fresh
@@ -665,7 +751,9 @@ def test_afterglow_measurement(usb, ctrl):
 
     if baseline_50ms:
         avg_baseline = sum(baseline_50ms) / len(baseline_50ms)
-        std_baseline = (sum((x - avg_baseline)**2 for x in baseline_50ms) / len(baseline_50ms))**0.5
+        std_baseline = (
+            sum((x - avg_baseline) ** 2 for x in baseline_50ms) / len(baseline_50ms)
+        ) ** 0.5
         cv_baseline = (std_baseline / avg_baseline * 100) if avg_baseline > 0 else 0
         min_baseline = min(baseline_50ms)
         max_baseline = max(baseline_50ms)
@@ -673,40 +761,58 @@ def test_afterglow_measurement(usb, ctrl):
         logger.info(f"  Data points: {len(baseline_50ms)}")
         logger.info(f"  First 10: {[f'{r:.0f}' for r in baseline_50ms[:10]]}")
         logger.info(f"  Last 10:  {[f'{r:.0f}' for r in baseline_50ms[-10:]]}")
-        logger.info(f"  Mean: {avg_baseline:.0f}, Std: {std_baseline:.1f}, CV: {cv_baseline:.2f}%")
-        logger.info(f"  Range: {min_baseline:.0f} - {max_baseline:.0f} (Δ={range_baseline:.0f} counts)")
-        logger.info(f"  Stability: {'POOR [WARN]' if cv_baseline > 1.0 else 'GOOD [OK]'}")
+        logger.info(
+            f"  Mean: {avg_baseline:.0f}, Std: {std_baseline:.1f}, CV: {cv_baseline:.2f}%",
+        )
+        logger.info(
+            f"  Range: {min_baseline:.0f} - {max_baseline:.0f} (Δ={range_baseline:.0f} counts)",
+        )
+        logger.info(
+            f"  Stability: {'POOR [WARN]' if cv_baseline > 1.0 else 'GOOD [OK]'}",
+        )
 
     # Compare all three
-    logger.info(f"\n📊 COMPARISON - 25ms vs 50ms delay:")
+    logger.info("\n📊 COMPARISON - 25ms vs 50ms delay:")
     if fast_no_correction and fast_with_correction and baseline_50ms:
-        logger.info(f"  25ms (no correction):   σ = {std_fast_raw:.1f} counts, CV = {cv_fast_raw:.2f}%")
-        logger.info(f"  25ms (with correction): σ = {std_fast_corr:.1f} counts, CV = {cv_fast_corr:.2f}%")
-        logger.info(f"  50ms (baseline):        σ = {std_baseline:.1f} counts, CV = {cv_baseline:.2f}%")
+        logger.info(
+            f"  25ms (no correction):   σ = {std_fast_raw:.1f} counts, CV = {cv_fast_raw:.2f}%",
+        )
+        logger.info(
+            f"  25ms (with correction): σ = {std_fast_corr:.1f} counts, CV = {cv_fast_corr:.2f}%",
+        )
+        logger.info(
+            f"  50ms (baseline):        σ = {std_baseline:.1f} counts, CV = {cv_baseline:.2f}%",
+        )
 
-        improvement_correction = ((std_fast_raw - std_fast_corr) / std_fast_raw * 100) if std_fast_raw > 0 else 0
-        logger.info(f"\n  Afterglow correction improvement: {improvement_correction:.1f}%")
+        improvement_correction = (
+            ((std_fast_raw - std_fast_corr) / std_fast_raw * 100)
+            if std_fast_raw > 0
+            else 0
+        )
+        logger.info(
+            f"\n  Afterglow correction improvement: {improvement_correction:.1f}%",
+        )
 
         if cv_fast_corr < 0.5:
-            logger.info(f"\n  [OK] 25ms delay with correction is EXCELLENT")
-            logger.info(f"     → 2x faster than 50ms with good precision")
-            logger.info(f"     → Afterglow correction RECOMMENDED for 25ms operation")
+            logger.info("\n  [OK] 25ms delay with correction is EXCELLENT")
+            logger.info("     → 2x faster than 50ms with good precision")
+            logger.info("     → Afterglow correction RECOMMENDED for 25ms operation")
         elif cv_fast_raw < 0.5:
-            logger.info(f"\n  [OK] 25ms delay without correction is ACCEPTABLE")
-            logger.info(f"     → 2x faster than 50ms")
-            logger.info(f"     → Afterglow correction optional")
+            logger.info("\n  [OK] 25ms delay without correction is ACCEPTABLE")
+            logger.info("     → 2x faster than 50ms")
+            logger.info("     → Afterglow correction optional")
         else:
-            logger.info(f"\n  [WARN] 25ms delay shows increased noise")
-            logger.info(f"     → Consider using 50ms delay for better stability")
+            logger.info("\n  [WARN] 25ms delay shows increased noise")
+            logger.info("     → Consider using 50ms delay for better stability")
 
     # PART 3: Estimate decay constant (tau) for each channel
     logger.info(f"\n{'='*80}")
-    logger.info(f"PART 3: Afterglow Decay Analysis (All Channels)")
+    logger.info("PART 3: Afterglow Decay Analysis (All Channels)")
     logger.info(f"{'='*80}")
 
     for ch in channels:
-        afterglow_data = all_afterglow_data[ch]['data']
-        peak = all_afterglow_data[ch]['peak']
+        afterglow_data = all_afterglow_data[ch]["data"]
+        peak = all_afterglow_data[ch]["peak"]
 
         logger.info(f"\nChannel {ch.upper()}:")
 
@@ -724,38 +830,53 @@ def test_afterglow_measurement(usb, ctrl):
 
                 # Linear fit in log space
                 t_vals = [t for t, s in early_data]
-                y_vals = [math.log(s - baseline) if s > baseline else 0 for t, s in early_data]
+                y_vals = [
+                    math.log(s - baseline) if s > baseline else 0 for t, s in early_data
+                ]
 
                 # Simple linear regression
                 n = len(t_vals)
                 if n >= 2 and all(y > 0 for y in y_vals):
                     mean_t = sum(t_vals) / n
                     mean_y = sum(y_vals) / n
-                    slope = sum((t - mean_t) * (y - mean_y) for t, y in zip(t_vals, y_vals)) / sum((t - mean_t)**2 for t in t_vals)
+                    slope = sum(
+                        (t - mean_t) * (y - mean_y)
+                        for t, y in zip(t_vals, y_vals, strict=False)
+                    ) / sum((t - mean_t) ** 2 for t in t_vals)
 
                     tau_ms = -1.0 / slope if slope < 0 else 0
 
                     if 5 < tau_ms < 200:  # Physically reasonable for LED phosphors
                         logger.info(f"  Estimated decay constant (τ): {tau_ms:.1f}ms")
-                        logger.info(f"  Decay equation: y(t) = A × exp(-t/{tau_ms:.1f})")
+                        logger.info(
+                            f"  Decay equation: y(t) = A × exp(-t/{tau_ms:.1f})",
+                        )
 
                         # Predict residual at 50ms (typical operating delay)
                         residual_50ms = early_data[0][1] * math.exp(-50 / tau_ms)
                         residual_pct = (residual_50ms / peak * 100) if peak > 0 else 0
-                        logger.info(f"  Predicted residual @ 50ms: {residual_50ms:.0f} counts ({residual_pct:.2f}% of peak)")
+                        logger.info(
+                            f"  Predicted residual @ 50ms: {residual_50ms:.0f} counts ({residual_pct:.2f}% of peak)",
+                        )
 
                         if residual_pct > 1:
-                            logger.info(f"     [WARN] Significant residual - afterglow correction RECOMMENDED")
+                            logger.info(
+                                "     [WARN] Significant residual - afterglow correction RECOMMENDED",
+                            )
                         else:
-                            logger.info(f"     [OK] Low residual - afterglow correction optional")
+                            logger.info(
+                                "     [OK] Low residual - afterglow correction optional",
+                            )
                     else:
-                        logger.warning(f"  Could not fit decay constant (τ = {tau_ms:.1f}ms outside expected range)")
+                        logger.warning(
+                            f"  Could not fit decay constant (τ = {tau_ms:.1f}ms outside expected range)",
+                        )
                 else:
-                    logger.warning(f"  Insufficient data for decay fit")
+                    logger.warning("  Insufficient data for decay fit")
             else:
-                logger.warning(f"  Insufficient early decay data points")
+                logger.warning("  Insufficient early decay data points")
         else:
-            logger.warning(f"  Insufficient afterglow data")
+            logger.warning("  Insufficient afterglow data")
 
     # Clean up
     ctrl.turn_off_channels()
@@ -763,14 +884,22 @@ def test_afterglow_measurement(usb, ctrl):
 
 def main():
     """Run all tests for Mode 2 integration time calibration."""
-    logger.info("╔" + "="*78 + "╗")
-    logger.info("║" + " "*78 + "║")
-    logger.info("║" + "  MODE 2 (ALTERNATIVE) INTEGRATION TIME CALIBRATION TEST".center(78) + "║")
-    logger.info("║" + " "*78 + "║")
-    logger.info("║" + "  Tests per-channel integration time optimization".center(78) + "║")
-    logger.info("║" + "  with LEDs fixed at 255 (Global LED Intensity method)".center(78) + "║")
-    logger.info("║" + " "*78 + "║")
-    logger.info("╚" + "="*78 + "╝")
+    logger.info("╔" + "=" * 78 + "╗")
+    logger.info("║" + " " * 78 + "║")
+    logger.info(
+        "║"
+        + "  MODE 2 (ALTERNATIVE) INTEGRATION TIME CALIBRATION TEST".center(78)
+        + "║",
+    )
+    logger.info("║" + " " * 78 + "║")
+    logger.info(
+        "║" + "  Tests per-channel integration time optimization".center(78) + "║",
+    )
+    logger.info(
+        "║" + "  with LEDs fixed at 255 (Global LED Intensity method)".center(78) + "║",
+    )
+    logger.info("║" + " " * 78 + "║")
+    logger.info("╚" + "=" * 78 + "╝")
     logger.info("")
 
     # Test 1: Hardware connection
@@ -797,13 +926,12 @@ def main():
         test_afterglow_measurement(usb, ctrl)
 
         # Final summary
-        logger.info("\n" + "="*80)
+        logger.info("\n" + "=" * 80)
         logger.info("TEST SUMMARY")
-        logger.info("="*80)
+        logger.info("=" * 80)
 
         all_passed = all(
-            r['target_met'] and r['timing_budget_ok']
-            for r in results.values()
+            r["target_met"] and r["timing_budget_ok"] for r in results.values()
         )
 
         if all_passed:
@@ -815,7 +943,7 @@ def main():
             logger.warning("   Review warnings above for specific issues")
             logger.warning("   System may need optical alignment or LED replacement")
 
-        logger.info("\n" + "="*80)
+        logger.info("\n" + "=" * 80)
 
         return 0 if all_passed else 1
 

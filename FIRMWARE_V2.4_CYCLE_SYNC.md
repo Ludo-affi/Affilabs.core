@@ -25,7 +25,7 @@ Firmware sends: CYCLE_START (when LED_A turns on)
 Python calculates:
   LED A: CYCLE_START + 50ms   → Read detector
   LED B: CYCLE_START + 300ms  → Read detector
-  LED C: CYCLE_START + 550ms  → Read detector  
+  LED C: CYCLE_START + 550ms  → Read detector
   LED D: CYCLE_START + 800ms  → Read detector
 ```
 

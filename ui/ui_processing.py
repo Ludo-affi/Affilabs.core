@@ -54,13 +54,19 @@ class Ui_Processing:
         self.horizontalLayout_3.setObjectName("horizontalLayout_3")
         self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
         self.horizontalSpacer_2 = QSpacerItem(
-            429, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            429,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_2)
 
         self.verticalSpacer = QSpacerItem(
-            20, 393, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            393,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.horizontalLayout_3.addItem(self.verticalSpacer)
@@ -77,13 +83,19 @@ class Ui_Processing:
         self.horizontalLayout_4.setObjectName("horizontalLayout_4")
         self.horizontalLayout_4.setContentsMargins(0, 0, 0, 0)
         self.horizontalSpacer_4 = QSpacerItem(
-            429, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            429,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_4.addItem(self.horizontalSpacer_4)
 
         self.verticalSpacer_2 = QSpacerItem(
-            20, 392, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            392,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.horizontalLayout_4.addItem(self.verticalSpacer_2)
@@ -117,7 +129,7 @@ class Ui_Processing:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.sensorgram_controls.sizePolicy().hasHeightForWidth()
+            self.sensorgram_controls.sizePolicy().hasHeightForWidth(),
         )
         self.sensorgram_controls.setSizePolicy(sizePolicy1)
         self.sensorgram_controls.setMinimumSize(QSize(500, 130))
@@ -144,7 +156,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_A.setChecked(True)
         self.segment_B = QCheckBox(self.groupBox)
@@ -157,7 +169,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_B.setChecked(True)
         self.segment_C = QCheckBox(self.groupBox)
@@ -170,7 +182,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_C.setChecked(True)
         self.segment_D = QCheckBox(self.groupBox)
@@ -183,7 +195,7 @@ class Ui_Processing:
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	background: white;\n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.segment_D.setChecked(True)
         self.reference_channel_btn = QPushButton(self.sensorgram_controls)
@@ -193,7 +205,7 @@ class Ui_Processing:
         sizePolicy2.setHorizontalStretch(0)
         sizePolicy2.setVerticalStretch(0)
         sizePolicy2.setHeightForWidth(
-            self.reference_channel_btn.sizePolicy().hasHeightForWidth()
+            self.reference_channel_btn.sizePolicy().hasHeightForWidth(),
         )
         self.reference_channel_btn.setSizePolicy(sizePolicy2)
         self.reference_channel_btn.setFont(font)
@@ -210,7 +222,7 @@ class Ui_Processing:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.groupBox_6 = QGroupBox(self.sensorgram_controls)
         self.groupBox_6.setObjectName("groupBox_6")
@@ -232,7 +244,7 @@ class Ui_Processing:
             "	background-color: rgb(240, 255, 245);\n"
             "	border: 1px solid rgb(171, 171, 171);\n"
             "	border-radius: 2px;\n"
-            "}"
+            "}",
         )
         self.right_cursor_time = QLineEdit(self.groupBox_6)
         self.right_cursor_time.setObjectName("right_cursor_time")
@@ -251,7 +263,7 @@ class Ui_Processing:
             "	background-color: rgb(240, 255, 245);\n"
             "	border: 1px solid rgb(171, 171, 171);\n"
             "	border-radius: 2px;\n"
-            "}"
+            "}",
         )
         self.label_14 = QLabel(self.groupBox_6)
         self.label_14.setObjectName("label_14")
@@ -286,7 +298,7 @@ class Ui_Processing:
         self.label_6.setStyleSheet(
             "background: yellow;\n"
             "border-radius: 2px;\n"
-            "border: 2px solid rgb(100, 100, 100);"
+            "border: 2px solid rgb(100, 100, 100);",
         )
         self.label_6.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)
         self.label_7 = QLabel(self.groupBox_6)
@@ -296,14 +308,14 @@ class Ui_Processing:
         self.label_7.setStyleSheet(
             "background: red;\n"
             "border-radius: 2px;\n"
-            "border: 2px solid rgb(100, 100, 100);"
+            "border: 2px solid rgb(100, 100, 100);",
         )
         self.label_7.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)
         self.reset_segment_btn = QPushButton(self.sensorgram_controls)
         self.reset_segment_btn.setObjectName("reset_segment_btn")
         self.reset_segment_btn.setGeometry(QRect(350, 80, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.reset_segment_btn.sizePolicy().hasHeightForWidth()
+            self.reset_segment_btn.sizePolicy().hasHeightForWidth(),
         )
         self.reset_segment_btn.setSizePolicy(sizePolicy2)
         self.reset_segment_btn.setMinimumSize(QSize(30, 30))
@@ -325,7 +337,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/reload.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -339,7 +351,7 @@ class Ui_Processing:
         self.export_raw_data_btn.setObjectName("export_raw_data_btn")
         self.export_raw_data_btn.setGeometry(QRect(470, 80, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.export_raw_data_btn.sizePolicy().hasHeightForWidth()
+            self.export_raw_data_btn.sizePolicy().hasHeightForWidth(),
         )
         self.export_raw_data_btn.setSizePolicy(sizePolicy2)
         self.export_raw_data_btn.setMinimumSize(QSize(30, 30))
@@ -358,7 +370,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon1 = QIcon()
         icon1.addFile(":/img/img/save.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -372,7 +384,7 @@ class Ui_Processing:
         self.import_raw_data_btn.setObjectName("import_raw_data_btn")
         self.import_raw_data_btn.setGeometry(QRect(430, 80, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.import_raw_data_btn.sizePolicy().hasHeightForWidth()
+            self.import_raw_data_btn.sizePolicy().hasHeightForWidth(),
         )
         self.import_raw_data_btn.setSizePolicy(sizePolicy2)
         self.import_raw_data_btn.setMinimumSize(QSize(30, 30))
@@ -391,7 +403,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon2 = QIcon()
         icon2.addFile(":/img/img/folder.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -405,7 +417,7 @@ class Ui_Processing:
         self.import_sens_btn.setObjectName("import_sens_btn")
         self.import_sens_btn.setGeometry(QRect(390, 80, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.import_sens_btn.sizePolicy().hasHeightForWidth()
+            self.import_sens_btn.sizePolicy().hasHeightForWidth(),
         )
         self.import_sens_btn.setSizePolicy(sizePolicy2)
         self.import_sens_btn.setMinimumSize(QSize(30, 30))
@@ -424,7 +436,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon3 = QIcon()
         icon3.addFile(":/img/img/import.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -480,7 +492,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.SOI_A.setChecked(True)
         self.SOI_B = QCheckBox(self.groupBox_2)
@@ -493,7 +505,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.SOI_B.setChecked(True)
         self.SOI_C = QCheckBox(self.groupBox_2)
@@ -506,7 +518,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.SOI_C.setChecked(True)
         self.SOI_D = QCheckBox(self.groupBox_2)
@@ -519,7 +531,7 @@ class Ui_Processing:
             "	border: 1px solid rgb(171, 171, 171); \n"
             "	background: white;\n"
             "	border-radius: 3px;\n"
-            "}"
+            "}",
         )
         self.SOI_D.setChecked(True)
         self.groupBox_3 = QGroupBox(self.curr_seg_box)
@@ -556,7 +568,7 @@ class Ui_Processing:
         self.shift_A.setStyleSheet(
             "background: white;\n"
             "border: 1px solid rgb(171, 171, 171);\n"
-            "border-radius: 2px;"
+            "border-radius: 2px;",
         )
         self.shift_A.setAlignment(Qt.AlignCenter)
         self.shift_B = QLabel(self.groupBox_3)
@@ -566,7 +578,7 @@ class Ui_Processing:
         self.shift_B.setStyleSheet(
             "background: white;\n"
             "border: 1px solid rgb(171, 171, 171);\n"
-            "border-radius: 2px;"
+            "border-radius: 2px;",
         )
         self.shift_B.setAlignment(Qt.AlignCenter)
         self.shift_C = QLabel(self.groupBox_3)
@@ -576,7 +588,7 @@ class Ui_Processing:
         self.shift_C.setStyleSheet(
             "background: white;\n"
             "border: 1px solid rgb(171, 171, 171);\n"
-            "border-radius: 2px;"
+            "border-radius: 2px;",
         )
         self.shift_C.setAlignment(Qt.AlignCenter)
         self.shift_D = QLabel(self.groupBox_3)
@@ -586,7 +598,7 @@ class Ui_Processing:
         self.shift_D.setStyleSheet(
             "background: white;\n"
             "border: 1px solid rgb(171, 171, 171);\n"
-            "border-radius: 2px;"
+            "border-radius: 2px;",
         )
         self.shift_D.setAlignment(Qt.AlignCenter)
         self.label_20 = QLabel(self.groupBox_3)
@@ -617,7 +629,7 @@ class Ui_Processing:
         self.current_note.setEnabled(True)
         self.current_note.setGeometry(QRect(10, 110, 201, 25))
         sizePolicy2.setHeightForWidth(
-            self.current_note.sizePolicy().hasHeightForWidth()
+            self.current_note.sizePolicy().hasHeightForWidth(),
         )
         self.current_note.setSizePolicy(sizePolicy2)
         self.current_note.setFont(font)
@@ -635,7 +647,7 @@ class Ui_Processing:
             "	background-color: rgb(240, 255, 245);\n"
             "	border: 1px solid rgb(171, 171, 171);\n"
             "	border-radius: 2px;\n"
-            "}"
+            "}",
         )
         self.end_time = QLabel(self.groupBox_4)
         self.end_time.setObjectName("end_time")
@@ -697,13 +709,16 @@ class Ui_Processing:
             "	background-color: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_2.addWidget(self.save_segment_btn)
 
         self.horizontalSpacer_3 = QSpacerItem(
-            10, 20, QSizePolicy.Fixed, QSizePolicy.Minimum
+            10,
+            20,
+            QSizePolicy.Fixed,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_3)
@@ -725,13 +740,16 @@ class Ui_Processing:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_2.addWidget(self.new_segment_btn)
 
         self.horizontalSpacer = QSpacerItem(
-            120, 20, QSizePolicy.Preferred, QSizePolicy.Minimum
+            120,
+            20,
+            QSizePolicy.Preferred,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer)
@@ -753,7 +771,7 @@ class Ui_Processing:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_2.addWidget(self.align_seg_btn)
@@ -776,7 +794,7 @@ class Ui_Processing:
         self.delete_row_btn.setObjectName("delete_row_btn")
         self.delete_row_btn.setGeometry(QRect(30, 10, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.delete_row_btn.sizePolicy().hasHeightForWidth()
+            self.delete_row_btn.sizePolicy().hasHeightForWidth(),
         )
         self.delete_row_btn.setSizePolicy(sizePolicy2)
         self.delete_row_btn.setMinimumSize(QSize(30, 30))
@@ -795,7 +813,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon4 = QIcon()
         icon4.addFile(":/img/img/trash.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -826,7 +844,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon5 = QIcon()
         icon5.addFile(":/img/img/undo.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -840,7 +858,7 @@ class Ui_Processing:
         self.export_table_btn.setObjectName("export_table_btn")
         self.export_table_btn.setGeometry(QRect(460, 10, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.export_table_btn.sizePolicy().hasHeightForWidth()
+            self.export_table_btn.sizePolicy().hasHeightForWidth(),
         )
         self.export_table_btn.setSizePolicy(sizePolicy2)
         self.export_table_btn.setMinimumSize(QSize(30, 30))
@@ -859,7 +877,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         self.export_table_btn.setIcon(icon1)
         self.export_table_btn.setIconSize(QSize(25, 25))
@@ -871,7 +889,7 @@ class Ui_Processing:
         self.import_table_btn.setObjectName("import_table_btn")
         self.import_table_btn.setGeometry(QRect(420, 10, 30, 30))
         sizePolicy2.setHeightForWidth(
-            self.import_table_btn.sizePolicy().hasHeightForWidth()
+            self.import_table_btn.sizePolicy().hasHeightForWidth(),
         )
         self.import_table_btn.setSizePolicy(sizePolicy2)
         self.import_table_btn.setMinimumSize(QSize(30, 30))
@@ -890,7 +908,7 @@ class Ui_Processing:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         self.import_table_btn.setIcon(icon2)
         self.import_table_btn.setIconSize(QSize(25, 25))
@@ -1001,76 +1019,76 @@ class Ui_Processing:
 
     def retranslateUi(self, Processing):
         Processing.setWindowTitle(
-            QCoreApplication.translate("Processing", "Form", None)
+            QCoreApplication.translate("Processing", "Form", None),
         )
         self.label_3.setText(
-            QCoreApplication.translate("Processing", "Control Panel", None)
+            QCoreApplication.translate("Processing", "Control Panel", None),
         )
         self.groupBox.setTitle(
-            QCoreApplication.translate("Processing", "Display", None)
+            QCoreApplication.translate("Processing", "Display", None),
         )
         self.segment_A.setText(QCoreApplication.translate("Processing", "A", None))
         self.segment_B.setText(QCoreApplication.translate("Processing", "B", None))
         self.segment_C.setText(QCoreApplication.translate("Processing", "C", None))
         self.segment_D.setText(QCoreApplication.translate("Processing", "D", None))
         self.reference_channel_btn.setText(
-            QCoreApplication.translate("Processing", "SPR Settings", None)
+            QCoreApplication.translate("Processing", "SPR Settings", None),
         )
         self.groupBox_6.setTitle(
-            QCoreApplication.translate("Processing", "Cycle Cursors", None)
+            QCoreApplication.translate("Processing", "Cycle Cursors", None),
         )
         self.label_14.setText(
-            QCoreApplication.translate("Processing", "Start Cursor:", None)
+            QCoreApplication.translate("Processing", "Start Cursor:", None),
         )
         self.label_16.setText(
-            QCoreApplication.translate("Processing", "End Cursor:", None)
+            QCoreApplication.translate("Processing", "End Cursor:", None),
         )
         self.label_9.setText(QCoreApplication.translate("Processing", "s", None))
         self.label_10.setText(QCoreApplication.translate("Processing", "s", None))
         self.exp_clock.setText(
-            QCoreApplication.translate("Processing", "HH.MM.SS", None)
+            QCoreApplication.translate("Processing", "HH.MM.SS", None),
         )
         self.label_19.setText(
-            QCoreApplication.translate("Processing", "Experiment Time:", None)
+            QCoreApplication.translate("Processing", "Experiment Time:", None),
         )
         self.label_6.setText("")
         self.label_7.setText("")
         # if QT_CONFIG(tooltip)
         self.reset_segment_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Clear All Data", None)
+            QCoreApplication.translate("Processing", "Clear All Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.reset_segment_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.export_raw_data_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Export Raw Data", None)
+            QCoreApplication.translate("Processing", "Export Raw Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.export_raw_data_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.import_raw_data_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Import Raw Data", None)
+            QCoreApplication.translate("Processing", "Import Raw Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.import_raw_data_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.import_sens_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Load Sensorgram Data", None)
+            QCoreApplication.translate("Processing", "Load Sensorgram Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.import_sens_btn.setText("")
         self.label_4.setText(
-            QCoreApplication.translate("Processing", "Cycle of Interest", None)
+            QCoreApplication.translate("Processing", "Cycle of Interest", None),
         )
         self.groupBox_2.setTitle(
-            QCoreApplication.translate("Processing", "Display", None)
+            QCoreApplication.translate("Processing", "Display", None),
         )
         self.SOI_A.setText(QCoreApplication.translate("Processing", "A", None))
         self.SOI_B.setText(QCoreApplication.translate("Processing", "B", None))
         self.SOI_C.setText(QCoreApplication.translate("Processing", "C", None))
         self.SOI_D.setText(QCoreApplication.translate("Processing", "D", None))
         self.groupBox_3.setTitle(
-            QCoreApplication.translate("Processing", "Cycle Shift", None)
+            QCoreApplication.translate("Processing", "Cycle Shift", None),
         )
         self.unit_a.setText(QCoreApplication.translate("Processing", "RU", None))
         self.unit_b.setText(QCoreApplication.translate("Processing", "RU", None))
@@ -1081,19 +1099,19 @@ class Ui_Processing:
         self.shift_C.setText(QCoreApplication.translate("Processing", "-", None))
         self.shift_D.setText(QCoreApplication.translate("Processing", "-", None))
         self.label_20.setText(
-            QCoreApplication.translate("Processing", "Shift A:", None)
+            QCoreApplication.translate("Processing", "Shift A:", None),
         )
         self.label_21.setText(
-            QCoreApplication.translate("Processing", "Shift B:", None)
+            QCoreApplication.translate("Processing", "Shift B:", None),
         )
         self.label_22.setText(
-            QCoreApplication.translate("Processing", "Shift C:", None)
+            QCoreApplication.translate("Processing", "Shift C:", None),
         )
         self.label_23.setText(
-            QCoreApplication.translate("Processing", "Shift D:", None)
+            QCoreApplication.translate("Processing", "Shift D:", None),
         )
         self.groupBox_4.setTitle(
-            QCoreApplication.translate("Processing", "Time && Note", None)
+            QCoreApplication.translate("Processing", "Time && Note", None),
         )
         self.current_note.setText("")
         self.end_time.setText(QCoreApplication.translate("Processing", "-", None))
@@ -1102,78 +1120,78 @@ class Ui_Processing:
         self.label.setText(QCoreApplication.translate("Processing", "s", None))
         self.label_13.setText(QCoreApplication.translate("Processing", "Note:", None))
         self.label_12.setText(
-            QCoreApplication.translate("Processing", "End Time:", None)
+            QCoreApplication.translate("Processing", "End Time:", None),
         )
         self.label_11.setText(
-            QCoreApplication.translate("Processing", "Start Time:", None)
+            QCoreApplication.translate("Processing", "Start Time:", None),
         )
         self.save_segment_btn.setText(
-            QCoreApplication.translate("Processing", "Save\nCycle", None)
+            QCoreApplication.translate("Processing", "Save\nCycle", None),
         )
         self.new_segment_btn.setText(
-            QCoreApplication.translate("Processing", "Start From\nLast Cycle", None)
+            QCoreApplication.translate("Processing", "Start From\nLast Cycle", None),
         )
         self.align_seg_btn.setText(
-            QCoreApplication.translate("Processing", "Send to\nData Analysis", None)
+            QCoreApplication.translate("Processing", "Send to\nData Analysis", None),
         )
         # if QT_CONFIG(tooltip)
         self.delete_row_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Delete Cycle", None)
+            QCoreApplication.translate("Processing", "Delete Cycle", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.delete_row_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.add_row_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Restore Last Deleted", None)
+            QCoreApplication.translate("Processing", "Restore Last Deleted", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.add_row_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.export_table_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Export Data Table", None)
+            QCoreApplication.translate("Processing", "Export Data Table", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.export_table_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.import_table_btn.setToolTip(
-            QCoreApplication.translate("Processing", "Import Data Table", None)
+            QCoreApplication.translate("Processing", "Import Data Table", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.import_table_btn.setText("")
         self.table_toggle.setText(
-            QCoreApplication.translate("Processing", "Cycle Data Table", None)
+            QCoreApplication.translate("Processing", "Cycle Data Table", None),
         )
         ___qtablewidgetitem = self.data_table.horizontalHeaderItem(1)
         ___qtablewidgetitem.setText(
-            QCoreApplication.translate("Processing", "Start", None)
+            QCoreApplication.translate("Processing", "Start", None),
         )
         ___qtablewidgetitem1 = self.data_table.horizontalHeaderItem(2)
         ___qtablewidgetitem1.setText(
-            QCoreApplication.translate("Processing", "End", None)
+            QCoreApplication.translate("Processing", "End", None),
         )
         ___qtablewidgetitem2 = self.data_table.horizontalHeaderItem(3)
         ___qtablewidgetitem2.setText(
-            QCoreApplication.translate("Processing", "Shift A", None)
+            QCoreApplication.translate("Processing", "Shift A", None),
         )
         ___qtablewidgetitem3 = self.data_table.horizontalHeaderItem(4)
         ___qtablewidgetitem3.setText(
-            QCoreApplication.translate("Processing", "Shift B", None)
+            QCoreApplication.translate("Processing", "Shift B", None),
         )
         ___qtablewidgetitem4 = self.data_table.horizontalHeaderItem(5)
         ___qtablewidgetitem4.setText(
-            QCoreApplication.translate("Processing", "Shift C", None)
+            QCoreApplication.translate("Processing", "Shift C", None),
         )
         ___qtablewidgetitem5 = self.data_table.horizontalHeaderItem(6)
         ___qtablewidgetitem5.setText(
-            QCoreApplication.translate("Processing", "Shift D", None)
+            QCoreApplication.translate("Processing", "Shift D", None),
         )
         ___qtablewidgetitem6 = self.data_table.horizontalHeaderItem(7)
         ___qtablewidgetitem6.setText(
-            QCoreApplication.translate("Processing", "Ref", None)
+            QCoreApplication.translate("Processing", "Ref", None),
         )
         ___qtablewidgetitem7 = self.data_table.horizontalHeaderItem(8)
         ___qtablewidgetitem7.setText(
-            QCoreApplication.translate("Processing", "Note", None)
+            QCoreApplication.translate("Processing", "Note", None),
         )
 
     # retranslateUi

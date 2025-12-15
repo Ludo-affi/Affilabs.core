@@ -1,4 +1,5 @@
 """Test that LED delay setting connects to PRE_LED_DELAY_MS."""
+
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ test_delay = 120.0
 settings.PRE_LED_DELAY_MS = float(test_delay)
 
 print(f"Updated PRE_LED_DELAY_MS to: {settings.PRE_LED_DELAY_MS}")
-print(f"Verification: {settings.PRE_LED_DELAY_MS == test_delay}")
+print(f"Verification: {test_delay == settings.PRE_LED_DELAY_MS}")
 
 # Reset to default
 settings.PRE_LED_DELAY_MS = 95.0

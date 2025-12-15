@@ -8,8 +8,7 @@ Single source of truth: Use LEDCalibrationResult from models.led_calibration_res
 
 from __future__ import annotations
 
-
-from models.led_calibration_result import LEDCalibrationResult
+from affilabs.models.led_calibration_result import LEDCalibrationResult
 
 # Type alias: CalibrationData is just LEDCalibrationResult
 CalibrationData = LEDCalibrationResult

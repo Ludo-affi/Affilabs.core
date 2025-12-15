@@ -4,9 +4,9 @@ Manages calibration workflow state and coordinates validation.
 Bridges CalibrationValidator service with Qt UI.
 """
 
-from PySide6.QtCore import QObject, Signal
-from typing import Optional, Dict, List
 import logging
+
+from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class CalibrationViewModel(QObject):
 
     def __init__(self):
         super().__init__()
-        self._state = 'idle'  # idle, running, complete, failed
+        self._state = "idle"  # idle, running, complete, failed
         self._validation_results = []
         self._calibration_data = None
 
@@ -47,6 +47,7 @@ class CalibrationViewModel(QObject):
     def set_validator(self, validator):
         """Inject CalibrationValidator service dependency."""
         from services import CalibrationValidator
+
         if not isinstance(validator, CalibrationValidator):
             raise TypeError(f"Expected CalibrationValidator, got {type(validator)}")
         self._validator = validator
@@ -60,25 +61,25 @@ class CalibrationViewModel(QObject):
     @property
     def is_running(self) -> bool:
         """Check if calibration is currently running."""
-        return self._state == 'running'
+        return self._state == "running"
 
     @property
     def is_complete(self) -> bool:
         """Check if calibration completed successfully."""
-        return self._state == 'complete'
+        return self._state == "complete"
 
     @property
-    def validation_results(self) -> List:
+    def validation_results(self) -> list:
         """Get latest validation results."""
         return self._validation_results.copy()
 
     def start_calibration(self):
         """Start calibration workflow."""
-        if self._state == 'running':
+        if self._state == "running":
             logger.warning("Calibration already running")
             return
 
-        self._state = 'running'
+        self._state = "running"
         self._validation_results = []
         self._calibration_data = None
         self.calibration_started.emit()
@@ -90,8 +91,9 @@ class CalibrationViewModel(QObject):
         Args:
             percent: Progress percentage (0-100)
             message: Status message
+
         """
-        if self._state != 'running':
+        if self._state != "running":
             logger.warning(f"Progress update ignored - state is {self._state}")
             return
 
@@ -103,8 +105,9 @@ class CalibrationViewModel(QObject):
 
         Args:
             calibration_data: Calibration data dictionary
+
         """
-        self._state = 'complete'
+        self._state = "complete"
         self._calibration_data = calibration_data
         self.calibration_complete.emit(calibration_data)
         logger.info("Calibration completed successfully")
@@ -114,14 +117,15 @@ class CalibrationViewModel(QObject):
 
         Args:
             error_message: Error description
+
         """
-        self._state = 'failed'
+        self._state = "failed"
         self.calibration_failed.emit(error_message)
         logger.error(f"Calibration failed: {error_message}")
 
     def reset(self):
         """Reset to idle state."""
-        self._state = 'idle'
+        self._state = "idle"
         self._validation_results = []
         self._calibration_data = None
         logger.debug("Calibration viewmodel reset")
@@ -135,6 +139,7 @@ class CalibrationViewModel(QObject):
 
         Returns:
             List of ValidationResult objects
+
         """
         if self._validator is None:
             logger.error("CalibrationValidator not injected")
@@ -142,7 +147,9 @@ class CalibrationViewModel(QObject):
 
         try:
             results = self._validator.validate_spectrum(spectrum, channel)
-            logger.debug(f"Validated spectrum for channel {channel}: {len(results)} checks")
+            logger.debug(
+                f"Validated spectrum for channel {channel}: {len(results)} checks",
+            )
             return results
         except Exception as e:
             logger.exception(f"Spectrum validation failed: {e}")
@@ -150,12 +157,12 @@ class CalibrationViewModel(QObject):
 
     def validate_calibration_set(
         self,
-        s_pol_ref: Dict,
+        s_pol_ref: dict,
         wavelengths,
-        p_mode_intensities: Dict,
-        s_mode_intensities: Dict,
+        p_mode_intensities: dict,
+        s_mode_intensities: dict,
         integration_time_s: float,
-        integration_time_p: float
+        integration_time_p: float,
     ):
         """Validate complete calibration dataset using service.
 
@@ -168,6 +175,7 @@ class CalibrationViewModel(QObject):
             s_mode_intensities: S-mode LED intensities
             integration_time_s: S-mode integration time
             integration_time_p: P-mode integration time
+
         """
         if self._validator is None:
             logger.error("CalibrationValidator not injected")
@@ -181,15 +189,17 @@ class CalibrationViewModel(QObject):
                 p_mode_intensities=p_mode_intensities,
                 s_mode_intensities=s_mode_intensities,
                 integration_time_s=integration_time_s,
-                integration_time_p=integration_time_p
+                integration_time_p=integration_time_p,
             )
 
             self._validation_results = results
             self.validation_complete.emit(passed, results)
 
-            logger.info(f"Calibration validation: {'PASSED' if passed else 'FAILED'} "
-                       f"({len([r for r in results if r.severity == 'error'])} errors, "
-                       f"{len([r for r in results if r.severity == 'warning'])} warnings)")
+            logger.info(
+                f"Calibration validation: {'PASSED' if passed else 'FAILED'} "
+                f"({len([r for r in results if r.severity == 'error'])} errors, "
+                f"{len([r for r in results if r.severity == 'warning'])} warnings)",
+            )
 
         except Exception as e:
             logger.exception(f"Calibration validation failed: {e}")
@@ -200,6 +210,7 @@ class CalibrationViewModel(QObject):
 
         Returns:
             Formatted text report
+
         """
         if self._validator is None or not self._validation_results:
             return "No validation results available"
@@ -212,8 +223,8 @@ class CalibrationViewModel(QObject):
 
     def get_error_count(self) -> int:
         """Get number of validation errors."""
-        return len([r for r in self._validation_results if r.severity == 'error'])
+        return len([r for r in self._validation_results if r.severity == "error"])
 
     def get_warning_count(self) -> int:
         """Get number of validation warnings."""
-        return len([r for r in self._validation_results if r.severity == 'warning'])
+        return len([r for r in self._validation_results if r.severity == "warning"])

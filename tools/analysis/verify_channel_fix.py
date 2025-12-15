@@ -3,16 +3,17 @@
 import sys
 from pathlib import Path
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("CHANNEL VISIBILITY FIX - VERIFICATION TEST")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
 # Test 1: Import check
 print("Test 1: Verify imports...")
 try:
     from settings import CH_LIST
+
     print(f"✅ CH_LIST imported: {CH_LIST}")
-    assert 'd' in CH_LIST, "Channel 'd' not in CH_LIST!"
+    assert "d" in CH_LIST, "Channel 'd' not in CH_LIST!"
     print("✅ Channel 'd' in CH_LIST")
 except Exception as e:
     print(f"❌ Import failed: {e}")
@@ -22,7 +23,7 @@ except Exception as e:
 print("\nTest 2: Verify datawindow.py contains visibility initialization...")
 datawindow_file = Path("widgets/datawindow.py")
 if datawindow_file.exists():
-    content = datawindow_file.read_text(encoding='utf-8')
+    content = datawindow_file.read_text(encoding="utf-8")
     if "Initialize plot visibility" in content:
         print("✅ Visibility initialization code found")
         if "display_channel_changed(ch, is_checked)" in content:
@@ -38,7 +39,7 @@ else:
 print("\nTest 3: Verify graphs.py has numpy import...")
 graphs_file = Path("widgets/graphs.py")
 if graphs_file.exists():
-    content = graphs_file.read_text(encoding='utf-8')
+    content = graphs_file.read_text(encoding="utf-8")
     if "import numpy as np" in content:
         print("✅ numpy import found")
     else:
@@ -71,8 +72,8 @@ except Exception as e:
 print("\nTest 5: Verify UI has all channel checkboxes...")
 ui_file = Path("ui/ui_sensorgram.py")
 if ui_file.exists():
-    content = ui_file.read_text(encoding='utf-8')
-    for ch in ['A', 'B', 'C', 'D']:
+    content = ui_file.read_text(encoding="utf-8")
+    for ch in ["A", "B", "C", "D"]:
         checkbox_name = f"segment_{ch}"
         if checkbox_name in content:
             is_checked = f"{checkbox_name}.setChecked(True)" in content
@@ -83,13 +84,13 @@ if ui_file.exists():
 else:
     print("❌ ui_sensorgram.py not found")
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("VERIFICATION COMPLETE")
-print("="*70)
+print("=" * 70)
 print("\n📋 SUMMARY:")
 print("   - All 4 channels in CH_LIST: ✅")
 print("   - Visibility initialization code added: ✅")
 print("   - Enhanced debug logging added: ✅")
 print("   - All UI checkboxes exist: ✅")
 print("\n✅ Fix is ready to test! Run: python run_app.py")
-print("="*70 + "\n")
+print("=" * 70 + "\n")

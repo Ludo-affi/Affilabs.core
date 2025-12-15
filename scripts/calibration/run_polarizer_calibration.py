@@ -1,26 +1,26 @@
-"""
-Run actual polarizer calibration.
+"""Run actual polarizer calibration.
 This script performs a real polarizer calibration with the connected hardware.
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 # Setup logging with UTF-8 encoding
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s :: %(levelname)s :: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s :: %(levelname)s :: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 # Force UTF-8 for console
-if sys.stdout.encoding != 'utf-8':
+if sys.stdout.encoding != "utf-8":
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,10 @@ logger.info("=" * 80)
 # Import required modules
 logger.info("\nImporting modules...")
 try:
-    from utils.servo_calibration import auto_calibrate_polarizer
-    from utils.detector_factory import create_detector
     from utils.controller import PicoP4SPR
+    from utils.detector_factory import create_detector
+    from utils.servo_calibration import auto_calibrate_polarizer
+
     logger.info("[OK] All modules imported successfully")
 except Exception as e:
     logger.error(f"[FAIL] Import error: {e}")
@@ -48,7 +49,9 @@ try:
     if not usb:
         logger.error("[FAIL] Could not connect to spectrometer")
         sys.exit(1)
-    logger.info(f"[OK] Spectrometer connected: {usb.serial_number if hasattr(usb, 'serial_number') else 'Unknown'}")
+    logger.info(
+        f"[OK] Spectrometer connected: {usb.serial_number if hasattr(usb, 'serial_number') else 'Unknown'}",
+    )
 
     # Connect controller
     ctrl = PicoP4SPR()
@@ -76,26 +79,30 @@ try:
         usb=usb,
         ctrl=ctrl,
         require_water=True,
-        polarizer_type='circular'
+        polarizer_type="circular",
     )
 
-    if result and result.get('success'):
+    if result and result.get("success"):
         logger.info("\n" + "=" * 80)
         logger.info("CALIBRATION SUCCESSFUL!")
         logger.info("=" * 80)
-        logger.info(f"\nResults:")
-        logger.info(f"  Polarizer Type: {result.get('polarizer_type', 'unknown').upper()}")
+        logger.info("\nResults:")
+        logger.info(
+            f"  Polarizer Type: {result.get('polarizer_type', 'unknown').upper()}",
+        )
         logger.info(f"  S Position: {result.get('s_pos')} degrees")
         logger.info(f"  P Position: {result.get('p_pos')} degrees")
         logger.info(f"  S/P Ratio: {result.get('sp_ratio', 0):.2f}x")
         logger.info(f"  SPR Dip Depth: {result.get('dip_depth_percent', 0):.1f}%")
-        if 'resonance_wavelength' in result:
-            logger.info(f"  Resonance Wavelength: {result.get('resonance_wavelength'):.1f} nm")
+        if "resonance_wavelength" in result:
+            logger.info(
+                f"  Resonance Wavelength: {result.get('resonance_wavelength'):.1f} nm",
+            )
 
         # Show validation checks
-        if 'validation_checks' in result:
-            logger.info(f"\nValidation Checks:")
-            for check_name, passed, detail in result['validation_checks']:
+        if "validation_checks" in result:
+            logger.info("\nValidation Checks:")
+            for check_name, passed, detail in result["validation_checks"]:
                 status = "[PASS]" if passed else "[FAIL]"
                 logger.info(f"  {status} {check_name}: {detail}")
 

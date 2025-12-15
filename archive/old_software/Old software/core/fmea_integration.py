@@ -8,8 +8,7 @@ This module provides integration helpers to connect the FMEA tracker to:
 Each area has specific event types and metrics to track.
 """
 
-from typing import Dict, Any, Optional
-from core.fmea_tracker import FMEATracker, FailureMode, Severity
+from core.fmea_tracker import FailureMode, FMEATracker, Severity
 
 
 class FMEAIntegrationHelper:
@@ -28,7 +27,7 @@ class FMEAIntegrationHelper:
         intensity: float,
         target_intensity: float,
         tolerance: float = 0.1,
-        r_squared: Optional[float] = None
+        r_squared: float | None = None,
     ) -> None:
         """Check LED calibration result and log to FMEA.
 
@@ -38,22 +37,23 @@ class FMEAIntegrationHelper:
             target_intensity: Target intensity
             tolerance: Acceptable deviation (fraction, e.g., 0.1 = 10%)
             r_squared: LED response model R² if available
+
         """
         # Check for saturation
         if intensity > 60000:
             self.fmea.log_calibration_event(
-                event_type='led_calibration',
+                event_type="led_calibration",
                 channel=channel,
                 passed=False,
                 metrics={
-                    'intensity': intensity,
-                    'target': target_intensity,
-                    'saturation_threshold': 60000
+                    "intensity": intensity,
+                    "target": target_intensity,
+                    "saturation_threshold": 60000,
                 },
                 failure_mode=FailureMode.LED_SATURATION,
                 severity=Severity.HIGH,
                 mitigation="Reduce LED intensity and recalibrate",
-                notes=f"Channel {channel.upper()} saturated at {intensity} counts"
+                notes=f"Channel {channel.upper()} saturated at {intensity} counts",
             )
             return
 
@@ -69,7 +69,11 @@ class FMEAIntegrationHelper:
         if not passed:
             failure_mode = FailureMode.LED_DRIFT
             severity = Severity.MEDIUM if deviation < 0.2 else Severity.HIGH
-            mitigation = "Recalibrate LED intensity" if deviation < 0.2 else "Check LED PCB, may need replacement"
+            mitigation = (
+                "Recalibrate LED intensity"
+                if deviation < 0.2
+                else "Check LED PCB, may need replacement"
+            )
 
         if r_squared is not None and r_squared < 0.95:
             if not failure_mode:
@@ -78,28 +82,28 @@ class FMEAIntegrationHelper:
             mitigation = f"{mitigation or 'Review'} - Poor LED response linearity (R²={r_squared:.3f})"
 
         self.fmea.log_calibration_event(
-            event_type='led_calibration',
+            event_type="led_calibration",
             channel=channel,
             passed=passed,
             metrics={
-                'intensity': intensity,
-                'target': target_intensity,
-                'deviation_pct': deviation * 100,
-                'r_squared': r_squared
+                "intensity": intensity,
+                "target": target_intensity,
+                "deviation_pct": deviation * 100,
+                "r_squared": r_squared,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"LED cal: {intensity:.0f} counts (target: {target_intensity:.0f}, dev: {deviation*100:.1f}%)"
+            notes=f"LED cal: {intensity:.0f} counts (target: {target_intensity:.0f}, dev: {deviation*100:.1f}%)",
         )
 
     def check_dark_noise(
         self,
-        channel: Optional[str],
+        channel: str | None,
         dark_mean: float,
         dark_std: float,
         expected_dark: float = 100.0,
-        max_std: float = 50.0
+        max_std: float = 50.0,
     ) -> None:
         """Check dark noise measurement quality.
 
@@ -109,6 +113,7 @@ class FMEAIntegrationHelper:
             dark_std: Standard deviation
             expected_dark: Expected dark noise level
             max_std: Maximum acceptable standard deviation
+
         """
         # Check if dark noise is abnormally high
         high_dark = dark_mean > (expected_dark + 100)
@@ -130,19 +135,19 @@ class FMEAIntegrationHelper:
             mitigation = "Check detector stability, reduce integration time, verify USB connection"
 
         self.fmea.log_calibration_event(
-            event_type='dark_noise_measurement',
+            event_type="dark_noise_measurement",
             channel=channel,
             passed=passed,
             metrics={
-                'dark_mean': dark_mean,
-                'dark_std': dark_std,
-                'expected': expected_dark,
-                'snr': dark_mean / dark_std if dark_std > 0 else 0
+                "dark_mean": dark_mean,
+                "dark_std": dark_std,
+                "expected": expected_dark,
+                "snr": dark_mean / dark_std if dark_std > 0 else 0,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"Dark noise: {dark_mean:.1f} ± {dark_std:.1f} counts"
+            notes=f"Dark noise: {dark_mean:.1f} ± {dark_std:.1f} counts",
         )
 
     # ========================================================================
@@ -155,7 +160,7 @@ class FMEAIntegrationHelper:
         tau_ms: float,
         led_type: str,
         expected_range: tuple[float, float],
-        warn_range: tuple[float, float]
+        warn_range: tuple[float, float],
     ) -> None:
         """Check afterglow tau value against expected range.
 
@@ -165,6 +170,7 @@ class FMEAIntegrationHelper:
             led_type: LED type code ('LCW', 'OWW')
             expected_range: (min, max) expected tau range
             warn_range: (min, max) warning threshold range
+
         """
         in_expected = expected_range[0] <= tau_ms <= expected_range[1]
         in_warn = warn_range[0] <= tau_ms <= warn_range[1]
@@ -184,19 +190,19 @@ class FMEAIntegrationHelper:
             mitigation = "Tau significantly out of range - check LED timing, verify LED type correct, consider re-characterization"
 
         self.fmea.log_afterglow_event(
-            event_type='afterglow_tau_validation',
+            event_type="afterglow_tau_validation",
             channel=channel,
             passed=passed,
             metrics={
-                'tau_ms': tau_ms,
-                'led_type': led_type,
-                'expected_range': expected_range,
-                'warn_range': warn_range
+                "tau_ms": tau_ms,
+                "led_type": led_type,
+                "expected_range": expected_range,
+                "warn_range": warn_range,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"Tau: {tau_ms:.2f}ms (expected: {expected_range[0]}-{expected_range[1]}ms)"
+            notes=f"Tau: {tau_ms:.2f}ms (expected: {expected_range[0]}-{expected_range[1]}ms)",
         )
 
     def check_afterglow_amplitude(
@@ -204,7 +210,7 @@ class FMEAIntegrationHelper:
         channel: str,
         amplitude: float,
         integration_time_ms: float,
-        max_amplitude: float = 10000.0
+        max_amplitude: float = 10000.0,
     ) -> None:
         """Check afterglow amplitude for LED timing issues.
 
@@ -213,6 +219,7 @@ class FMEAIntegrationHelper:
             amplitude: Measured amplitude
             integration_time_ms: Integration time used
             max_amplitude: Maximum reasonable amplitude
+
         """
         passed = amplitude < max_amplitude
         failure_mode = None
@@ -225,18 +232,18 @@ class FMEAIntegrationHelper:
             mitigation = "High amplitude suggests LED timing issue - increase settle delay from 45ms to 75ms"
 
         self.fmea.log_afterglow_event(
-            event_type='afterglow_amplitude_check',
+            event_type="afterglow_amplitude_check",
             channel=channel,
             passed=passed,
             metrics={
-                'amplitude': amplitude,
-                'integration_time_ms': integration_time_ms,
-                'max_threshold': max_amplitude
+                "amplitude": amplitude,
+                "integration_time_ms": integration_time_ms,
+                "max_threshold": max_amplitude,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"Amplitude: {amplitude:.0f} counts @ {integration_time_ms:.1f}ms integration"
+            notes=f"Amplitude: {amplitude:.0f} counts @ {integration_time_ms:.1f}ms integration",
         )
 
     def check_afterglow_fit_quality(
@@ -244,7 +251,7 @@ class FMEAIntegrationHelper:
         channel: str,
         r_squared: float,
         min_r_squared: float = 0.85,
-        good_r_squared: float = 0.95
+        good_r_squared: float = 0.95,
     ) -> None:
         """Check afterglow exponential fit quality.
 
@@ -253,6 +260,7 @@ class FMEAIntegrationHelper:
             r_squared: Fit R² value
             min_r_squared: Minimum acceptable R²
             good_r_squared: Good quality threshold
+
         """
         passed = r_squared >= min_r_squared
         failure_mode = None
@@ -269,18 +277,18 @@ class FMEAIntegrationHelper:
             mitigation = "Poor fit quality - check LED stability, verify measurement timing, may need re-characterization"
 
         self.fmea.log_afterglow_event(
-            event_type='afterglow_fit_quality',
+            event_type="afterglow_fit_quality",
             channel=channel,
             passed=passed,
             metrics={
-                'r_squared': r_squared,
-                'min_threshold': min_r_squared,
-                'good_threshold': good_r_squared
+                "r_squared": r_squared,
+                "min_threshold": min_r_squared,
+                "good_threshold": good_r_squared,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"Fit R²: {r_squared:.4f} ({'excellent' if r_squared >= good_r_squared else 'acceptable' if passed else 'poor'})"
+            notes=f"Fit R²: {r_squared:.4f} ({'excellent' if r_squared >= good_r_squared else 'acceptable' if passed else 'poor'})",
         )
 
     # ========================================================================
@@ -295,7 +303,7 @@ class FMEAIntegrationHelper:
         snr: float,
         min_intensity: float = 1000.0,
         max_fwhm: float = 60.0,
-        min_snr: float = 10.0
+        min_snr: float = 10.0,
     ) -> None:
         """Check live data signal quality.
 
@@ -307,6 +315,7 @@ class FMEAIntegrationHelper:
             min_intensity: Minimum acceptable intensity
             max_fwhm: Maximum acceptable FWHM
             min_snr: Minimum acceptable SNR
+
         """
         signal_weak = peak_intensity < min_intensity
         peak_degraded = fwhm_nm > max_fwhm
@@ -324,25 +333,27 @@ class FMEAIntegrationHelper:
         elif peak_degraded:
             failure_mode = FailureMode.PEAK_QUALITY_DEGRADED
             severity = Severity.MEDIUM
-            mitigation = "FWHM degraded - check sensor temperature, verify optical alignment"
+            mitigation = (
+                "FWHM degraded - check sensor temperature, verify optical alignment"
+            )
         elif noisy:
             failure_mode = FailureMode.PEAK_QUALITY_DEGRADED
             severity = Severity.LOW
             mitigation = "Increase integration time or averaging to improve SNR"
 
         self.fmea.log_live_data_event(
-            event_type='signal_quality_check',
+            event_type="signal_quality_check",
             channel=channel,
             passed=passed,
             metrics={
-                'peak_intensity': peak_intensity,
-                'fwhm_nm': fwhm_nm,
-                'snr': snr
+                "peak_intensity": peak_intensity,
+                "fwhm_nm": fwhm_nm,
+                "snr": snr,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"Signal: {peak_intensity:.0f} counts, FWHM: {fwhm_nm:.1f}nm, SNR: {snr:.1f}"
+            notes=f"Signal: {peak_intensity:.0f} counts, FWHM: {fwhm_nm:.1f}nm, SNR: {snr:.1f}",
         )
 
     def check_pump_correlation(
@@ -351,7 +362,7 @@ class FMEAIntegrationHelper:
         pump_flow_rate: float,
         signal_change: float,
         time_since_pump_change: float,
-        expected_correlation: bool = True
+        expected_correlation: bool = True,
     ) -> None:
         """Check for pump-induced signal artifacts.
 
@@ -361,12 +372,13 @@ class FMEAIntegrationHelper:
             signal_change: Signal change magnitude (RU or counts)
             time_since_pump_change: Time since last pump flow change (seconds)
             expected_correlation: Whether correlation is expected (e.g., during injection)
+
         """
         # Check for unexpected pump artifacts
         unexpected_artifact = (
-            time_since_pump_change < 2.0 and  # Recent pump change
-            abs(signal_change) > 100 and  # Significant signal change
-            not expected_correlation  # Not during injection
+            time_since_pump_change < 2.0  # Recent pump change
+            and abs(signal_change) > 100  # Significant signal change
+            and not expected_correlation  # Not during injection
         )
 
         passed = not unexpected_artifact
@@ -380,19 +392,19 @@ class FMEAIntegrationHelper:
             mitigation = "Apply temporal filtering, flag affected data region, consider flow stabilization time"
 
         self.fmea.log_live_data_event(
-            event_type='pump_correlation_check',
+            event_type="pump_correlation_check",
             channel=channel,
             passed=passed,
             metrics={
-                'pump_flow_rate': pump_flow_rate,
-                'signal_change': signal_change,
-                'time_since_pump_change': time_since_pump_change,
-                'expected_correlation': expected_correlation
+                "pump_flow_rate": pump_flow_rate,
+                "signal_change": signal_change,
+                "time_since_pump_change": time_since_pump_change,
+                "expected_correlation": expected_correlation,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"Pump @ {pump_flow_rate:.0f} µL/min, signal Δ{signal_change:.1f}, Δt={time_since_pump_change:.1f}s"
+            notes=f"Pump @ {pump_flow_rate:.0f} µL/min, signal Δ{signal_change:.1f}, Δt={time_since_pump_change:.1f}s",
         )
 
     def check_fwhm_trend(
@@ -401,7 +413,7 @@ class FMEAIntegrationHelper:
         current_fwhm: float,
         calibration_fwhm: float,
         fwhm_rate_nm_per_min: float,
-        max_rate: float = 0.5
+        max_rate: float = 0.5,
     ) -> None:
         """Check for FWHM degradation over time.
 
@@ -411,6 +423,7 @@ class FMEAIntegrationHelper:
             calibration_fwhm: FWHM at calibration
             fwhm_rate_nm_per_min: Rate of FWHM increase
             max_rate: Maximum acceptable rate
+
         """
         degrading = fwhm_rate_nm_per_min > max_rate
 
@@ -425,19 +438,19 @@ class FMEAIntegrationHelper:
             mitigation = "FWHM degrading - check sensor temperature, verify optical alignment, consider recalibration"
 
         self.fmea.log_live_data_event(
-            event_type='fwhm_trend_check',
+            event_type="fwhm_trend_check",
             channel=channel,
             passed=passed,
             metrics={
-                'current_fwhm': current_fwhm,
-                'calibration_fwhm': calibration_fwhm,
-                'delta_fwhm': current_fwhm - calibration_fwhm,
-                'rate_nm_per_min': fwhm_rate_nm_per_min
+                "current_fwhm": current_fwhm,
+                "calibration_fwhm": calibration_fwhm,
+                "delta_fwhm": current_fwhm - calibration_fwhm,
+                "rate_nm_per_min": fwhm_rate_nm_per_min,
             },
             failure_mode=failure_mode,
             severity=severity,
             mitigation=mitigation,
-            notes=f"FWHM: {current_fwhm:.1f}nm (cal: {calibration_fwhm:.1f}nm, rate: {fwhm_rate_nm_per_min:.2f}nm/min)"
+            notes=f"FWHM: {current_fwhm:.1f}nm (cal: {calibration_fwhm:.1f}nm, rate: {fwhm_rate_nm_per_min:.2f}nm/min)",
         )
 
     # ========================================================================
@@ -450,34 +463,39 @@ class FMEAIntegrationHelper:
         This should be called after both calibration and afterglow validation complete.
         """
         # Query recent events from both phases
-        cal_events = self.fmea.query_events(phase='calibration', time_window_minutes=30)
-        afterglow_events = self.fmea.query_events(phase='afterglow', time_window_minutes=30)
+        cal_events = self.fmea.query_events(phase="calibration", time_window_minutes=30)
+        afterglow_events = self.fmea.query_events(
+            phase="afterglow",
+            time_window_minutes=30,
+        )
 
         if not cal_events or not afterglow_events:
             return  # Not enough data yet
 
         # Check LED calibration pass rate
-        led_events = [e for e in cal_events if e.event_type == 'led_calibration']
+        led_events = [e for e in cal_events if e.event_type == "led_calibration"]
         if led_events:
             led_pass_rate = sum(e.passed for e in led_events) / len(led_events)
 
             # Check afterglow pass rate
-            afterglow_pass_rate = sum(e.passed for e in afterglow_events) / len(afterglow_events)
+            afterglow_pass_rate = sum(e.passed for e in afterglow_events) / len(
+                afterglow_events,
+            )
 
             # If LED calibration passed but afterglow failed, flag mismatch
             if led_pass_rate > 0.75 and afterglow_pass_rate < 0.5:
                 self.fmea.log_calibration_event(
-                    event_type='calibration_afterglow_correlation',
+                    event_type="calibration_afterglow_correlation",
                     channel=None,
                     passed=False,
                     metrics={
-                        'led_pass_rate': led_pass_rate,
-                        'afterglow_pass_rate': afterglow_pass_rate
+                        "led_pass_rate": led_pass_rate,
+                        "afterglow_pass_rate": afterglow_pass_rate,
                     },
                     failure_mode=FailureMode.CALIBRATION_AFTERGLOW_MISMATCH,
                     severity=Severity.MEDIUM,
                     mitigation="Review LED calibration quality - may have drift or timing issues affecting afterglow",
-                    notes="Calibration passed but afterglow validation failed - possible LED timing issue"
+                    notes="Calibration passed but afterglow validation failed - possible LED timing issue",
                 )
 
     def check_afterglow_live_correlation(self) -> None:
@@ -486,14 +504,19 @@ class FMEAIntegrationHelper:
         This should be called periodically during live data acquisition.
         """
         # Query recent afterglow and live events
-        afterglow_events = self.fmea.query_events(phase='afterglow', time_window_minutes=60)
-        live_events = self.fmea.query_events(phase='live_data', time_window_minutes=10)
+        afterglow_events = self.fmea.query_events(
+            phase="afterglow",
+            time_window_minutes=60,
+        )
+        live_events = self.fmea.query_events(phase="live_data", time_window_minutes=10)
 
         if not afterglow_events or not live_events:
             return
 
         # Check if afterglow validation passed
-        afterglow_passed = sum(e.passed for e in afterglow_events) / len(afterglow_events) > 0.75
+        afterglow_passed = (
+            sum(e.passed for e in afterglow_events) / len(afterglow_events) > 0.75
+        )
 
         # Check live data quality
         live_passed = sum(e.passed for e in live_events) / len(live_events)
@@ -501,17 +524,20 @@ class FMEAIntegrationHelper:
         # If afterglow passed but live data degrading, flag issue
         if afterglow_passed and live_passed < 0.5:
             self.fmea.log_live_data_event(
-                event_type='afterglow_live_correlation',
+                event_type="afterglow_live_correlation",
                 channel=None,
                 passed=False,
                 metrics={
-                    'afterglow_validation_pass_rate': sum(e.passed for e in afterglow_events) / len(afterglow_events),
-                    'live_data_pass_rate': live_passed
+                    "afterglow_validation_pass_rate": sum(
+                        e.passed for e in afterglow_events
+                    )
+                    / len(afterglow_events),
+                    "live_data_pass_rate": live_passed,
                 },
                 failure_mode=FailureMode.LIVE_DATA_DEGRADATION_POST_CALIBRATION,
                 severity=Severity.MEDIUM,
                 mitigation="Afterglow correction validated but live data degrading - check for optical leak, LED drift, or temperature effects",
-                notes="Live data quality degrading despite good afterglow validation"
+                notes="Live data quality degrading despite good afterglow validation",
             )
 
 

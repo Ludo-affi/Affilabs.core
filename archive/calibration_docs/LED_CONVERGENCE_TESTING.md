@@ -7,8 +7,8 @@ Standalone LED convergence test module **aligned with main calibration logic** f
 - **Intensity mode**: Boost LED intensity (keep integration time fixed) → Matches `LEDnormalizationintensity` + `LEDconverge` with `adjust_leds=True`
 - **Time mode**: Boost integration time (keep LED at 255) → Matches `LEDnormalizationtime` strategy
 
-**Commit:** `bf67c58` - Align convergence test with main calibration logic  
-**Branch:** `affilabs.core-beta`  
+**Commit:** `bf67c58` - Align convergence test with main calibration logic
+**Branch:** `affilabs.core-beta`
 **Status:** ✅ Pushed to GitHub
 
 ---
@@ -51,7 +51,7 @@ Standalone LED convergence test module **aligned with main calibration logic** f
 ## Files Created/Modified
 
 ### 1. `test_led_convergence.py` (NEW - 543 lines)
-**Purpose:** Standalone convergence test module  
+**Purpose:** Standalone convergence test module
 
 **Key Features:**
 - Auto-boost to 80% of max detector count (52,428 counts for 16-bit USB4000)
@@ -85,7 +85,7 @@ from test_led_convergence import test_led_convergence_optimized, plot_optimized_
 
 # After normalization...
 metrics = test_led_convergence_optimized(
-    normalizer, 
+    normalizer,
     results,
     led='a',
     mode='intensity',
@@ -154,7 +154,7 @@ The convergence test now aligns with the main calibration code's (`LEDCONVERGENC
 **Main Calibration Code (`led_methods.py`)**
 ```python
 # LEDnormalizationintensity() + LEDconverge()
-def LEDconverge(controller, spectrometer, target_counts, led_channel, 
+def LEDconverge(controller, spectrometer, target_counts, led_channel,
                 fixed_integration_time, adjust_leds=True):
     """
     Intensity mode: Keep integration time fixed, adjust LED intensity
@@ -413,8 +413,8 @@ cd c:\Users\ludol\ezControl-AI
 
 ## Git Status
 
-**Branch:** `affilabs.core-beta`  
-**Commit:** `acf949c`  
+**Branch:** `affilabs.core-beta`
+**Commit:** `acf949c`
 **Status:** ✅ Pushed to https://github.com/Ludo-affi/ezControl-AI
 
 **Changes:**

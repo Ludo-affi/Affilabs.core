@@ -114,7 +114,10 @@ class DataBufferManager:
                 buffer.timestamp = np.append(buffer.timestamp, timestamp)
 
     def append_intensity_point(
-        self, channel: str, timestamp: float, intensity: float,
+        self,
+        channel: str,
+        timestamp: float,
+        intensity: float,
     ) -> None:
         """Append an intensity measurement for leak detection.
 
@@ -350,9 +353,7 @@ class DataBufferManager:
             return np.array([]), np.array([]), np.array([])
 
         mask = (buffer.time >= start_time) & (buffer.time <= stop_time)
-        timestamps = (
-            buffer.timestamp[mask] if len(buffer.timestamp) > 0 else np.array([])
-        )
+        timestamps = buffer.timestamp[mask] if len(buffer.timestamp) > 0 else np.array([])
         return buffer.time[mask], buffer.wavelength[mask], timestamps
 
     def clear_all(self) -> None:

@@ -74,7 +74,9 @@ def initialize_device_on_connection(usb_device: Any) -> Path | None:
     try:
         # Get detector serial number
         serial_number = getattr(usb_device, "serial_number", None) or getattr(
-            usb_device, "_serial_number", None,
+            usb_device,
+            "_serial_number",
+            None,
         )
 
         if not serial_number or serial_number == "Unknown":

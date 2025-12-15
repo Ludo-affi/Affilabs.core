@@ -1,19 +1,16 @@
 """Quick UI Dev Helpers - Speed up UI iteration with Copilot."""
 
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import QRect, QPoint, QSize
 
 
 class UIInspector:
-    """
-    Quick inspection and code generation for UI elements.
+    """Quick inspection and code generation for UI elements.
     Helps you rapidly iterate on UI layouts with Copilot.
     """
 
     @staticmethod
     def inspect_widget(widget: QWidget, name: str = "widget"):
-        """
-        Get current widget properties as copy-paste code.
+        """Get current widget properties as copy-paste code.
 
         Usage in Python console or debug:
             from widgets.ui_dev_helpers import UIInspector
@@ -29,13 +26,13 @@ class UIInspector:
             f"# Max Size: {widget.maximumWidth()}x{widget.maximumHeight()}",
             f"# Visible: {widget.isVisible()}",
             "",
-            f"# Apply these settings:",
+            "# Apply these settings:",
             f"{name}.move({widget.x()}, {widget.y()})",
             f"{name}.setFixedSize({widget.width()}, {widget.height()})",
-            f"# OR",
+            "# OR",
             f"{name}.setGeometry({widget.x()}, {widget.y()}, {widget.width()}, {widget.height()})",
             "",
-            f"# Quick adjustments:",
+            "# Quick adjustments:",
             f"adjust.move_widget({name}, {widget.x()}, {widget.y()})",
             f"adjust.resize_widget({name}, {widget.width()}, {widget.height()})",
         ]
@@ -54,19 +51,26 @@ class UIInspector:
             f"# Margins: {layout.contentsMargins().left()}, {layout.contentsMargins().top()}, "
             f"{layout.contentsMargins().right()}, {layout.contentsMargins().bottom()}",
             "",
-            f"# Child widgets:",
+            "# Child widgets:",
         ]
 
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item.widget():
                 w = item.widget()
-                code_lines.append(f"#   [{i}] {type(w).__name__} - {w.objectName() or 'unnamed'}")
+                code_lines.append(
+                    f"#   [{i}] {type(w).__name__} - {w.objectName() or 'unnamed'}",
+                )
 
         return "\n".join(code_lines)
 
     @staticmethod
-    def compare_widgets(widget1: QWidget, widget2: QWidget, name1="widget1", name2="widget2") -> str:
+    def compare_widgets(
+        widget1: QWidget,
+        widget2: QWidget,
+        name1="widget1",
+        name2="widget2",
+    ) -> str:
         """Compare two widgets to see differences."""
         code_lines = [
             f"# Comparison: {name1} vs {name2}",
@@ -81,8 +85,7 @@ class UIInspector:
 
 
 class QuickLayoutAdjuster:
-    """
-    Quick layout adjustments without dialog boxes.
+    """Quick layout adjustments without dialog boxes.
     Call these methods directly to adjust UI elements.
     """
 
@@ -155,8 +158,7 @@ def find_and_inspect(parent: QWidget, name: str):
 
 
 def print_widget_tree(widget: QWidget, indent: int = 0):
-    """
-    Print widget hierarchy tree.
+    """Print widget hierarchy tree.
     Helpful for understanding UI structure.
     """
     name = widget.objectName() or type(widget).__name__
@@ -205,7 +207,7 @@ WORKFLOW 1: Inspect and adjust a widget
 ========================================
 
 # In Python console or add to your code temporarily:
-from widgets.ui_dev_helpers import inspect, adjust
+from affilabs.widgets.ui_dev_helpers import inspect, adjust
 
 # 1. See current state
 print(inspect(self.device_status_widget, "device_status"))
@@ -220,7 +222,7 @@ adjust.resize_widget(self.device_status_widget, 340, 300)
 WORKFLOW 2: Find and modify a widget
 =====================================
 
-from widgets.ui_dev_helpers import find_widget_by_name, adjust
+from affilabs.widgets.ui_dev_helpers import find_widget_by_name, adjust
 
 # Find widget
 my_widget = find_widget_by_name(self, "spr_frame")
@@ -235,7 +237,7 @@ adjust.set_fixed_size(my_widget, 300, 150)
 WORKFLOW 3: Understand widget hierarchy
 ========================================
 
-from widgets.ui_dev_helpers import print_widget_tree
+from affilabs.widgets.ui_dev_helpers import print_widget_tree
 
 # Print entire tree
 print_widget_tree(self.sidebar)
@@ -249,7 +251,7 @@ print_widget_tree(self.sidebar)
 WORKFLOW 4: Find all widgets of a type
 =======================================
 
-from widgets.ui_dev_helpers import get_all_widgets_of_type
+from affilabs.widgets.ui_dev_helpers import get_all_widgets_of_type
 from PySide6.QtWidgets import QPushButton
 
 # Find all buttons
@@ -261,7 +263,7 @@ for btn in buttons:
 WORKFLOW 5: Compare before/after
 =================================
 
-from widgets.ui_dev_helpers import compare, adjust
+from affilabs.widgets.ui_dev_helpers import compare, adjust
 
 # Store original state
 original_x = widget.x()
@@ -277,7 +279,7 @@ print(f"Moved from ({original_x}, {original_y}) to ({widget.x()}, {widget.y()})"
 WORKFLOW 6: Batch adjustments
 ==============================
 
-from widgets.ui_dev_helpers import adjust
+from affilabs.widgets.ui_dev_helpers import adjust
 
 # Adjust multiple related elements
 adjust.set_layout_spacing(self.main_layout, 8)
@@ -290,7 +292,7 @@ adjust.set_min_size(self.device_status_widget, 300, 200)
 WORKFLOW 7: Debug layout issues
 ================================
 
-from widgets.ui_dev_helpers import inspect_layout, print_widget_tree
+from affilabs.widgets.ui_dev_helpers import inspect_layout, print_widget_tree
 
 # See what's in a layout
 print(inspect_layout(self.main_layout, "main_layout"))
@@ -299,7 +301,7 @@ print(inspect_layout(self.main_layout, "main_layout"))
 print_widget_tree(self.main_container)
 
 # Find hidden widgets
-from widgets.ui_dev_helpers import get_all_widgets_of_type
+from affilabs.widgets.ui_dev_helpers import get_all_widgets_of_type
 all_widgets = get_all_widgets_of_type(self, QWidget)
 hidden = [w for w in all_widgets if not w.isVisible()]
 print(f"Hidden widgets: {[w.objectName() for w in hidden]}")

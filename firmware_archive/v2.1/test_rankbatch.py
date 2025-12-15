@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Test script for Firmware V2.1 rankbatch command
+"""Test script for Firmware V2.1 rankbatch command
 
 This script validates the new rankbatch command functionality:
 - Batch intensities (individual per LED)
@@ -14,24 +13,25 @@ Usage:
 Example:
     python test_rankbatch.py COM5
     python test_rankbatch.py /dev/ttyACM0
+
 """
 
-import serial
-import time
 import sys
-from typing import Dict, List, Tuple
+import time
+
+import serial
 
 
 class RankbatchTester:
     """Test harness for V2.1 rankbatch command."""
 
     def __init__(self, port: str, baudrate: int = 115200):
-        """
-        Initialize tester with serial connection.
+        """Initialize tester with serial connection.
 
         Args:
             port: Serial port (COM5, /dev/ttyACM0, etc.)
             baudrate: Baud rate (default: 115200)
+
         """
         self.port = port
         self.baudrate = baudrate
@@ -51,56 +51,56 @@ class RankbatchTester:
             print("\n📡 Disconnected")
 
     def send_command(self, cmd: str) -> str:
-        """
-        Send command and get immediate response (ACK/NAK).
+        """Send command and get immediate response (ACK/NAK).
 
         Args:
             cmd: Command string (with newline)
 
         Returns:
             Response string
+
         """
         self.ser.write(cmd.encode())
         return self.ser.readline().decode().strip()
 
     def read_signal(self) -> str:
-        """
-        Read one line from firmware.
+        """Read one line from firmware.
 
         Returns:
             Signal string (stripped)
+
         """
         return self.ser.readline().decode().strip()
 
     def acknowledge(self):
         """Send acknowledgment to firmware after READ signal."""
-        self.ser.write(b'1\n')
+        self.ser.write(b"1\n")
 
     def check_version(self) -> str:
-        """
-        Check firmware version.
+        """Check firmware version.
 
         Returns:
             Version string
+
         """
         print("🔍 Checking firmware version...")
-        self.ser.write(b'iv\n')
+        self.ser.write(b"iv\n")
         version = self.ser.readline().decode().strip()
         print(f"   Version: {version}")
 
         if "2.1" not in version:
             print(f"   ⚠️  Warning: Expected V2.1, got {version}")
         else:
-            print(f"   ✅ V2.1 detected!\n")
+            print("   ✅ V2.1 detected!\n")
 
         return version
 
-    def test_single_cycle(self) -> Tuple[bool, float]:
-        """
-        Test single cycle with equal intensities.
+    def test_single_cycle(self) -> tuple[bool, float]:
+        """Test single cycle with equal intensities.
 
         Returns:
             (success, elapsed_time)
+
         """
         print("=" * 60)
         print("TEST 1: Single cycle with equal intensities")
@@ -140,18 +140,18 @@ class RankbatchTester:
                 # Simulate detector read
                 time.sleep(0.150)
                 self.acknowledge()
-                print(f"      → Sent ACK")
+                print("      → Sent ACK")
 
             elif line.endswith(":DONE"):
                 ch = line[0]
                 print(f"      → LED {ch.upper()} turned off")
 
             elif line.startswith("CYCLE_END:"):
-                print(f"      → Cycle complete")
+                print("      → Cycle complete")
 
             elif line == "BATCH_END":
                 elapsed = time.time() - start_time
-                print(f"      → Batch sequence complete!")
+                print("      → Batch sequence complete!")
                 print(f"\n⏱️  Total time: {elapsed:.3f}s")
                 print(f"📊 Channels measured: {channel_count}")
                 print(f"📈 Average per channel: {elapsed/channel_count*1000:.1f}ms")
@@ -163,15 +163,25 @@ class RankbatchTester:
 
         # Validate
         expected_signals = [
-            "BATCH_START", "CYCLE:1",
-            "a:READY", "a:READ", "a:DONE",
-            "b:READY", "b:READ", "b:DONE",
-            "c:READY", "c:READ", "c:DONE",
-            "d:READY", "d:READ", "d:DONE",
-            "CYCLE_END:1", "BATCH_END"
+            "BATCH_START",
+            "CYCLE:1",
+            "a:READY",
+            "a:READ",
+            "a:DONE",
+            "b:READY",
+            "b:READ",
+            "b:DONE",
+            "c:READY",
+            "c:READ",
+            "c:DONE",
+            "d:READY",
+            "d:READ",
+            "d:DONE",
+            "CYCLE_END:1",
+            "BATCH_END",
         ]
 
-        success = (signals == expected_signals and channel_count == 4)
+        success = signals == expected_signals and channel_count == 4
 
         if success:
             print("✅ TEST 1 PASSED\n")
@@ -180,15 +190,15 @@ class RankbatchTester:
 
         return success, elapsed
 
-    def test_multi_cycle(self, num_cycles: int = 3) -> Tuple[bool, float]:
-        """
-        Test multi-cycle execution.
+    def test_multi_cycle(self, num_cycles: int = 3) -> tuple[bool, float]:
+        """Test multi-cycle execution.
 
         Args:
             num_cycles: Number of cycles to execute
 
         Returns:
             (success, elapsed_time)
+
         """
         print("=" * 60)
         print(f"TEST 2: Multi-cycle execution ({num_cycles} cycles)")
@@ -222,7 +232,7 @@ class RankbatchTester:
 
             elif line == "BATCH_END":
                 elapsed = time.time() - start_time
-                print(f"      → Batch sequence complete!")
+                print("      → Batch sequence complete!")
                 print(f"\n⏱️  Total time: {elapsed:.3f}s")
                 print(f"📊 Cycles executed: {cycle_count}")
                 print(f"📊 Channels measured: {channel_count}")
@@ -235,21 +245,23 @@ class RankbatchTester:
         print(f"✅ Final response: {final_ack}\n")
 
         # Validate
-        success = (cycle_count == num_cycles and channel_count == num_cycles * 4)
+        success = cycle_count == num_cycles and channel_count == num_cycles * 4
 
         if success:
             print("✅ TEST 2 PASSED\n")
         else:
-            print(f"❌ TEST 2 FAILED - Expected {num_cycles} cycles, got {cycle_count}\n")
+            print(
+                f"❌ TEST 2 FAILED - Expected {num_cycles} cycles, got {cycle_count}\n",
+            )
 
         return success, elapsed
 
-    def test_batch_intensities(self) -> Tuple[bool, float]:
-        """
-        Test different intensities per LED.
+    def test_batch_intensities(self) -> tuple[bool, float]:
+        """Test different intensities per LED.
 
         Returns:
             (success, elapsed_time)
+
         """
         print("=" * 60)
         print("TEST 3: Batch intensities (different per LED)")
@@ -286,7 +298,7 @@ class RankbatchTester:
         final_ack = self.read_signal()
         print(f"✅ Final response: {final_ack}\n")
 
-        success = (channel_count == 4)
+        success = channel_count == 4
 
         if success:
             print("✅ TEST 3 PASSED\n")
@@ -295,12 +307,12 @@ class RankbatchTester:
 
         return success, elapsed
 
-    def test_selective_channels(self) -> Tuple[bool, float]:
-        """
-        Test selective channel measurement (zero intensity = skip).
+    def test_selective_channels(self) -> tuple[bool, float]:
+        """Test selective channel measurement (zero intensity = skip).
 
         Returns:
             (success, elapsed_time)
+
         """
         print("=" * 60)
         print("TEST 4: Selective channels (zero intensity skips)")
@@ -308,7 +320,9 @@ class RankbatchTester:
 
         cmd = "rankbatch:255,0,0,255,35,5,1\n"
         print(f"📤 Sending: {cmd.strip()}")
-        print("   LED A: 255 (measure), LED B: 0 (skip), LED C: 0 (skip), LED D: 255 (measure)")
+        print(
+            "   LED A: 255 (measure), LED B: 0 (skip), LED C: 0 (skip), LED D: 255 (measure)",
+        )
 
         start_time = time.time()
         self.ser.write(cmd.encode())
@@ -337,7 +351,7 @@ class RankbatchTester:
                 elapsed = time.time() - start_time
                 print(f"\n⏱️  Total time: {elapsed:.3f}s")
                 print(f"📊 Channels measured: {channel_count}")
-                print(f"📊 Channels skipped: 2")
+                print("📊 Channels skipped: 2")
                 break
 
         # Read final ACK
@@ -345,7 +359,7 @@ class RankbatchTester:
         print(f"✅ Final response: {final_ack}\n")
 
         # Validate
-        success = (channel_count == 2 and "b:SKIP" in signals and "c:SKIP" in signals)
+        success = channel_count == 2 and "b:SKIP" in signals and "c:SKIP" in signals
 
         if success:
             print("✅ TEST 4 PASSED\n")
@@ -354,12 +368,12 @@ class RankbatchTester:
 
         return success, elapsed
 
-    def test_backward_compatibility(self) -> Tuple[bool, float]:
-        """
-        Test V2.0 rank command still works.
+    def test_backward_compatibility(self) -> tuple[bool, float]:
+        """Test V2.0 rank command still works.
 
         Returns:
             (success, elapsed_time)
+
         """
         print("=" * 60)
         print("TEST 5: Backward compatibility (V2.0 rank command)")
@@ -395,7 +409,7 @@ class RankbatchTester:
         final_ack = self.read_signal()
         print(f"✅ Final response: {final_ack}\n")
 
-        success = (channel_count == 4)
+        success = channel_count == 4
 
         if success:
             print("✅ TEST 5 PASSED - V2.0 rank command works\n")
@@ -470,6 +484,7 @@ def main():
     except Exception as e:
         print(f"\n\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(3)
 

@@ -18,9 +18,9 @@ Author: AI Assistant
 Date: November 24, 2025
 """
 
-import numpy as np
-from typing import Optional, Dict, Tuple
 import logging
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class ConsensusPipeline:
 
         Args:
             config: Optional configuration dict (for compatibility with pipeline registry)
+
         """
         self.name = "Consensus"
         self.description = "Combines 3 methods (centroid, parabolic, fourier) for robust peak detection"
@@ -41,26 +42,27 @@ class ConsensusPipeline:
         # Import the consensus functions
         try:
             from utils.peak_consensus import find_peak_consensus
+
             self.find_peak_consensus = find_peak_consensus
         except ImportError:
             logger.warning("peak_consensus module not found, using fallback")
             self.find_peak_consensus = None
 
-    def get_metadata(self) -> Dict:
+    def get_metadata(self) -> dict:
         """Return pipeline metadata."""
         return {
-            'name': self.name,
-            'description': self.description,
-            'version': '1.0',
-            'features': ['multi_method', 'weighted_consensus', 'outlier_detection'],
+            "name": self.name,
+            "description": self.description,
+            "version": "1.0",
+            "features": ["multi_method", "weighted_consensus", "outlier_detection"],
         }
 
     def find_resonance_wavelength(
         self,
         transmission: np.ndarray,
         wavelengths: np.ndarray,
-        timestamp: Optional[float] = None,
-        **kwargs
+        timestamp: float | None = None,
+        **kwargs,
     ) -> float:
         """Find resonance wavelength using consensus of multiple methods.
 
@@ -82,6 +84,7 @@ class ConsensusPipeline:
 
         Returns:
             Consensus resonance wavelength in nm
+
         """
         if transmission is None or wavelengths is None:
             raise ValueError("Invalid input data")
@@ -89,7 +92,7 @@ class ConsensusPipeline:
             raise ValueError("Data length mismatch")
 
         # Get minimum hint if provided
-        minimum_hint_nm = kwargs.get('minimum_hint_nm', None)
+        minimum_hint_nm = kwargs.get("minimum_hint_nm")
 
         # Run multiple methods in parallel
         results = {}
@@ -98,47 +101,51 @@ class ConsensusPipeline:
         try:
             # Method 1: Centroid (60% weight) - robust for broad peaks
             from utils.pipelines.centroid_pipeline import CentroidPipeline
+
             centroid_pipeline = CentroidPipeline()
-            results['centroid'] = centroid_pipeline.find_resonance_wavelength(
+            results["centroid"] = centroid_pipeline.find_resonance_wavelength(
                 transmission=transmission,
                 wavelengths=wavelengths,
                 minimum_hint_nm=minimum_hint_nm,
-                search_window=100
+                search_window=100,
             )
-            weights['centroid'] = 0.6
+            weights["centroid"] = 0.6
         except Exception as e:
             logger.warning(f"Centroid method failed: {e}")
-            results['centroid'] = None
-            weights['centroid'] = 0.0
+            results["centroid"] = None
+            weights["centroid"] = 0.0
 
         try:
             # Method 2: Parabolic (30% weight) - good for narrow peaks
-            results['parabolic'] = self._find_peak_parabolic(
-                transmission, wavelengths, minimum_hint_nm
+            results["parabolic"] = self._find_peak_parabolic(
+                transmission,
+                wavelengths,
+                minimum_hint_nm,
             )
-            weights['parabolic'] = 0.3
+            weights["parabolic"] = 0.3
         except Exception as e:
             logger.warning(f"Parabolic method failed: {e}")
-            results['parabolic'] = None
-            weights['parabolic'] = 0.0
+            results["parabolic"] = None
+            weights["parabolic"] = 0.0
 
         try:
             # Method 3: Fourier (10% weight) - derivative zero-crossing
             from utils.spr_signal_processing import find_resonance_wavelength_fourier
+
             # Try to get Fourier weights (may not be available)
             fourier_weights = self._calculate_simple_weights(len(transmission))
-            results['fourier'] = find_resonance_wavelength_fourier(
+            results["fourier"] = find_resonance_wavelength_fourier(
                 transmission_spectrum=transmission,
                 wavelengths=wavelengths,
-                fourier_weights=fourier_weights
+                fourier_weights=fourier_weights,
             )
-            if np.isnan(results['fourier']):
-                results['fourier'] = None
-            weights['fourier'] = 0.1
+            if np.isnan(results["fourier"]):
+                results["fourier"] = None
+            weights["fourier"] = 0.1
         except Exception as e:
             logger.warning(f"Fourier method failed: {e}")
-            results['fourier'] = None
-            weights['fourier'] = 0.0
+            results["fourier"] = None
+            weights["fourier"] = 0.0
 
         # Filter out None results and renormalize weights
         valid_results = {k: v for k, v in results.items() if v is not None}
@@ -161,24 +168,31 @@ class ConsensusPipeline:
                 filtered_results[method] = wl
                 filtered_weights[method] = weights[method]
             else:
-                logger.warning(f"Outlier detected: {method} = {wl:.2f}nm (median = {median_wl:.2f}nm)")
+                logger.warning(
+                    f"Outlier detected: {method} = {wl:.2f}nm (median = {median_wl:.2f}nm)",
+                )
 
         # If all filtered out, use all valid results
         if len(filtered_results) == 0:
             filtered_results = valid_results
-            filtered_weights = {k: weights[k] for k in valid_results.keys()}
+            filtered_weights = {k: weights[k] for k in valid_results}
 
         # Normalize weights
         total_weight = sum(filtered_weights.values())
         if total_weight > 0:
-            normalized_weights = {k: v / total_weight for k, v in filtered_weights.items()}
+            normalized_weights = {
+                k: v / total_weight for k, v in filtered_weights.items()
+            }
         else:
             # Equal weights if all zero
-            normalized_weights = {k: 1.0 / len(filtered_results) for k in filtered_results.keys()}
+            normalized_weights = {
+                k: 1.0 / len(filtered_results) for k in filtered_results.keys()
+            }
 
         # Calculate weighted consensus
-        consensus_wl = sum(filtered_results[k] * normalized_weights[k]
-                          for k in filtered_results.keys())
+        consensus_wl = sum(
+            filtered_results[k] * normalized_weights[k] for k in filtered_results.keys()
+        )
 
         logger.debug(f"Consensus: {filtered_results} → {consensus_wl:.3f}nm")
 
@@ -188,7 +202,7 @@ class ConsensusPipeline:
         self,
         spectrum: np.ndarray,
         wavelengths: np.ndarray,
-        minimum_hint_nm: Optional[float] = None
+        minimum_hint_nm: float | None = None,
     ) -> float:
         """Find peak using 3-point parabolic interpolation.
 
@@ -209,16 +223,22 @@ class ConsensusPipeline:
 
         # Parabolic interpolation around minimum
         if 0 < min_idx < len(spectrum) - 1:
-            x = wavelengths[min_idx-1:min_idx+2]
-            y = spectrum[min_idx-1:min_idx+2]
+            x = wavelengths[min_idx - 1 : min_idx + 2]
+            y = spectrum[min_idx - 1 : min_idx + 2]
 
             # Analytical parabolic vertex: y = Ax² + Bx + C
             denom = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2])
             if abs(denom) < 1e-10:
                 return float(wavelengths[min_idx])
 
-            A = (x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])) / denom
-            B = (x[2]**2 * (y[0] - y[1]) + x[1]**2 * (y[2] - y[0]) + x[0]**2 * (y[1] - y[2])) / denom
+            A = (
+                x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])
+            ) / denom
+            B = (
+                x[2] ** 2 * (y[0] - y[1])
+                + x[1] ** 2 * (y[2] - y[0])
+                + x[0] ** 2 * (y[1] - y[2])
+            ) / denom
 
             if A > 0:  # Parabola opens upward (minimum exists)
                 peak_wl = -B / (2 * A)
@@ -236,4 +256,4 @@ class ConsensusPipeline:
 
     def reset_temporal_state(self):
         """Reset any temporal state (for compatibility with other pipelines)."""
-        pass  # Consensus pipeline is stateless
+        # Consensus pipeline is stateless

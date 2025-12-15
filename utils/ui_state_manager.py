@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from utils.logger import logger
 
 if TYPE_CHECKING:
-    from widgets.mainwindow import MainWindow
+    from affilabs.affilabs_core_ui import AffilabsMainWindow as MainWindow
 
 
 class UIStateManager:

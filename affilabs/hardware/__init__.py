@@ -19,92 +19,84 @@ Benefits:
 """
 
 # Abstract interfaces
-from affilabs.hardware.device_interface import (
-    IController,
-    ISpectrometer,
-    IServo,
-    DeviceCapabilities,
-    ControllerCapabilities,
-    SpectrometerCapabilities,
-    ServoCapabilities,
-    ConnectionState,
-    DeviceError,
-    DeviceInfo
-)
-
 # Real hardware adapters
 from affilabs.hardware.controller_adapter import (
     ControllerAdapter,
     create_controller_adapter,
-    wrap_existing_controller
+    wrap_existing_controller,
+)
+from affilabs.hardware.device_interface import (
+    ConnectionState,
+    ControllerCapabilities,
+    DeviceCapabilities,
+    DeviceError,
+    DeviceInfo,
+    IController,
+    IServo,
+    ISpectrometer,
+    ServoCapabilities,
+    SpectrometerCapabilities,
 )
 
-from affilabs.hardware.spectrometer_adapter import (
-    USB4000Adapter,
-    PhasePhotonicsAdapter,
-    create_spectrometer_adapter,
-    wrap_existing_spectrometer
-)
-
-from affilabs.hardware.servo_adapter import (
-    ServoAdapter,
-    create_servo_adapter
+# Device manager
+from affilabs.hardware.device_manager import (
+    DeviceHealth,
+    DeviceManager,
+    SystemHealth,
+    SystemState,
 )
 
 # Mock devices
 from affilabs.hardware.mock_devices import (
     MockController,
-    MockSpectrometer,
     MockServo,
+    MockSpectrometer,
+    create_full_mock_system,
     create_mock_controller,
-    create_mock_spectrometer,
     create_mock_servo,
-    create_full_mock_system
+    create_mock_spectrometer,
 )
-
-# Device manager
-from affilabs.hardware.device_manager import (
-    DeviceManager,
-    SystemState,
-    DeviceHealth,
-    SystemHealth
+from affilabs.hardware.servo_adapter import ServoAdapter, create_servo_adapter
+from affilabs.hardware.spectrometer_adapter import (
+    PhasePhotonicsAdapter,
+    USB4000Adapter,
+    create_spectrometer_adapter,
+    wrap_existing_spectrometer,
 )
 
 __all__ = [
     # Interfaces
-    'IController',
-    'ISpectrometer',
-    'IServo',
-    'DeviceCapabilities',
-    'ControllerCapabilities',
-    'SpectrometerCapabilities',
-    'ServoCapabilities',
-    'ConnectionState',
-    'DeviceError',
-    'DeviceInfo',
+    "IController",
+    "ISpectrometer",
+    "IServo",
+    "DeviceCapabilities",
+    "ControllerCapabilities",
+    "SpectrometerCapabilities",
+    "ServoCapabilities",
+    "ConnectionState",
+    "DeviceError",
+    "DeviceInfo",
     # Real hardware adapters
-    'ControllerAdapter',
-    'USB4000Adapter',
-    'PhasePhotonicsAdapter',
-    'ServoAdapter',
-    'create_controller_adapter',
-    'create_spectrometer_adapter',
-    'create_servo_adapter',
-    'wrap_existing_controller',
-    'wrap_existing_spectrometer',
+    "ControllerAdapter",
+    "USB4000Adapter",
+    "PhasePhotonicsAdapter",
+    "ServoAdapter",
+    "create_controller_adapter",
+    "create_spectrometer_adapter",
+    "create_servo_adapter",
+    "wrap_existing_controller",
+    "wrap_existing_spectrometer",
     # Mock devices
-    'MockController',
-    'MockSpectrometer',
-    'MockServo',
-    'create_mock_controller',
-    'create_mock_spectrometer',
-    'create_mock_servo',
-    'create_full_mock_system',
+    "MockController",
+    "MockSpectrometer",
+    "MockServo",
+    "create_mock_controller",
+    "create_mock_spectrometer",
+    "create_mock_servo",
+    "create_full_mock_system",
     # Device manager
-    'DeviceManager',
-    'SystemState',
-    'DeviceHealth',
-    'SystemHealth',
+    "DeviceManager",
+    "SystemState",
+    "DeviceHealth",
+    "SystemHealth",
 ]
-
-

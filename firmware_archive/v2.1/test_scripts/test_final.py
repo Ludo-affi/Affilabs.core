@@ -1,10 +1,10 @@
-"""
-Final test - verify 10 cycles execute correctly
-"""
-import serial
+"""Final test - verify 10 cycles execute correctly"""
+
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+import serial
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(0.1)
 ser.reset_input_buffer()
 
@@ -20,11 +20,11 @@ batch_ended = False
 
 while not batch_ended and time.time() - start_time < 60:
     if ser.in_waiting:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
-        if 'CYCLE:' in line:
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
+        if "CYCLE:" in line:
             cycle_count += 1
             print(f"  Cycle {cycle_count}")
-        elif 'BATCH_END' in line:
+        elif "BATCH_END" in line:
             batch_ended = True
             break
 

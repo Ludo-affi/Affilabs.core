@@ -6,15 +6,15 @@ Works with SegmentDataFrame for efficient pandas-based operations.
 """
 
 from __future__ import annotations
+
 from copy import deepcopy
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
 
 from widgets.ui_constants import COLUMNS_TO_TOGGLE
-from utils.logger import logger
 
 if TYPE_CHECKING:
     from widgets.datawindow import Segment
@@ -38,13 +38,14 @@ class CycleTableManager:
     def __init__(
         self,
         table_widget: QTableWidget,
-        toggle_indicators: Optional[list] = None
+        toggle_indicators: list | None = None,
     ):
         """Initialize table manager.
 
         Args:
             table_widget: The QTableWidget to manage
             toggle_indicators: Optional list of circle indicators for tab state
+
         """
         self.table = table_widget
         self.toggle_indicators = toggle_indicators or []
@@ -74,10 +75,10 @@ class CycleTableManager:
 
     def delete_row(
         self,
-        row: Optional[int] = None,
-        saved_segments: Optional[SegmentDataFrame] = None,
-        first_available: bool = False
-    ) -> Optional[Segment]:
+        row: int | None = None,
+        saved_segments: SegmentDataFrame | None = None,
+        first_available: bool = False,
+    ) -> Segment | None:
         """Delete a row from the table.
 
         Args:
@@ -87,6 +88,7 @@ class CycleTableManager:
 
         Returns:
             The deleted segment, or None if no deletion occurred
+
         """
         if saved_segments is None or len(saved_segments) == 0:
             return None
@@ -116,6 +118,7 @@ class CycleTableManager:
 
         Returns:
             Dictionary with 'name', 'cycle_type', and 'note' keys
+
         """
         name = ""
         cycle_type = "Auto-read"
@@ -135,11 +138,12 @@ class CycleTableManager:
 
         return {"name": name, "cycle_type": cycle_type, "note": note}
 
-    def clear_all_rows(self, saved_segments: Optional[SegmentDataFrame] = None) -> None:
+    def clear_all_rows(self, saved_segments: SegmentDataFrame | None = None) -> None:
         """Clear all rows from the table.
 
         Args:
             saved_segments: SegmentDataFrame to clear (optional)
+
         """
         for _i in range(self.table.rowCount()):
             self.table.removeRow(0)
@@ -152,6 +156,7 @@ class CycleTableManager:
 
         Returns:
             Current row index, or -1 if no row selected
+
         """
         return self.table.currentRow()
 
@@ -160,6 +165,7 @@ class CycleTableManager:
 
         Returns:
             Number of rows
+
         """
         return self.table.rowCount()
 
@@ -168,6 +174,7 @@ class CycleTableManager:
 
         Args:
             row: Row index to select
+
         """
         if 0 <= row < self.table.rowCount():
             self.table.setCurrentCell(row, 0)
@@ -177,6 +184,7 @@ class CycleTableManager:
 
         Returns:
             True if in simplified view (columns hidden)
+
         """
         return self.hide_columns
 
@@ -185,6 +193,7 @@ class CycleTableManager:
 
         Returns:
             True if in detailed view (columns visible)
+
         """
         return not self.hide_columns
 
@@ -195,6 +204,7 @@ class CycleTableManager:
             row: Row index
             column: Column index
             text: Text to set
+
         """
         item = self.table.item(row, column)
         if item is None:
@@ -212,6 +222,7 @@ class CycleTableManager:
 
         Returns:
             Cell text, or empty string if cell is None
+
         """
         item = self.table.item(row, column)
         return item.text() if item is not None else ""

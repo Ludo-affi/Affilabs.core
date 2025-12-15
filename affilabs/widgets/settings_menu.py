@@ -1,20 +1,18 @@
 """Contains the widget and code for the settings menu of the ezControl app."""
 
+from __future__ import annotations
 
 from typing import Self
 
 from PySide6.QtWidgets import QDialog, QTabWidget, QVBoxLayout, QWidget
 
-from widgets.advanced import P4SPRAdvMenu
-from widgets.channelmenu import ChannelMenu
-from widgets.metadata import Metadata
+from affilabs.widgets.advanced import P4SPRAdvMenu
+from affilabs.widgets.channelmenu import ChannelMenu
+from affilabs.widgets.metadata import Metadata
 
 
 class Settings(QDialog):
     """Settings menu widget."""
-
-from __future__ import annotations
-
 
     spr_settings: QWidget
     """Contains settings for refence channel, data filtering and units. This is

@@ -32,12 +32,13 @@ Usage:
 """
 
 from __future__ import annotations
-from typing import Optional, Dict, List, Any
+
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import json
 from pathlib import Path
+from typing import Any
 
 from utils.logger import logger
 
@@ -81,52 +82,56 @@ class FailureMode(Enum):
 
 class Severity(Enum):
     """Impact severity levels."""
-    INFO = 1       # Informational, no impact
-    LOW = 2        # Minor impact, experiment can continue
-    MEDIUM = 3     # Moderate impact, reduced data quality
-    HIGH = 4       # Significant impact, may need intervention
-    CRITICAL = 5   # Experiment should stop
+
+    INFO = 1  # Informational, no impact
+    LOW = 2  # Minor impact, experiment can continue
+    MEDIUM = 3  # Moderate impact, reduced data quality
+    HIGH = 4  # Significant impact, may need intervention
+    CRITICAL = 5  # Experiment should stop
 
 
 @dataclass
 class FMEAEvent:
     """Single FMEA event record."""
+
     timestamp: datetime
     phase: str  # 'calibration', 'afterglow', 'live_data'
     event_type: str  # Event name
-    channel: Optional[str]  # Channel ID ('a', 'b', 'c', 'd') or None for system-wide
+    channel: str | None  # Channel ID ('a', 'b', 'c', 'd') or None for system-wide
     passed: bool  # True if check passed, False if failed
-    failure_mode: Optional[FailureMode] = None
+    failure_mode: FailureMode | None = None
     severity: Severity = Severity.INFO
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    mitigation_applied: Optional[str] = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    mitigation_applied: str | None = None
     notes: str = ""
 
 
 @dataclass
 class ScenarioDefinition:
     """Defines a specific failure scenario and its mitigation."""
+
     name: str
     description: str
     detection_logic: str  # Description of how to detect this scenario
-    required_events: List[str]  # Event types that must be present
+    required_events: list[str]  # Event types that must be present
     mitigation_strategy: str
     severity: Severity
-    correlation_check: Optional[str] = None  # Cross-phase correlation to check
+    correlation_check: str | None = None  # Cross-phase correlation to check
 
 
 class FMEATracker:
     """Tracks failures, mitigations, and correlations across the system."""
 
-    def __init__(self, session_id: Optional[str] = None):
+    def __init__(self, session_id: str | None = None):
         """Initialize FMEA tracker.
 
         Args:
             session_id: Unique identifier for this session (auto-generated if None)
+
         """
         self.session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.events: List[FMEAEvent] = []
-        self.active_failures: Dict[str, FMEAEvent] = {}  # failure_mode -> latest event
+        self.events: list[FMEAEvent] = []
+        self.active_failures: dict[str, FMEAEvent] = {}  # failure_mode -> latest event
 
         # Phase completion tracking
         self.calibration_completed = False
@@ -140,100 +145,93 @@ class FMEATracker:
 
         logger.info(f"FMEA Tracker initialized: session_id={self.session_id}")
 
-    def _define_scenarios(self) -> Dict[str, ScenarioDefinition]:
+    def _define_scenarios(self) -> dict[str, ScenarioDefinition]:
         """Define failure scenarios and their mitigations."""
         return {
-            'led_timing_causes_high_afterglow': ScenarioDefinition(
+            "led_timing_causes_high_afterglow": ScenarioDefinition(
                 name="LED Timing → High Afterglow",
                 description="LED turn-off timing too fast causes elevated afterglow amplitude",
                 detection_logic="Afterglow amplitude > 10,000 counts AND LED calibration passed",
-                required_events=['led_calibration', 'afterglow_amplitude_check'],
+                required_events=["led_calibration", "afterglow_amplitude_check"],
                 mitigation_strategy="Increase LED settle delay from 45ms to 75ms",
                 severity=Severity.MEDIUM,
-                correlation_check="Compare LED intensity vs afterglow amplitude"
+                correlation_check="Compare LED intensity vs afterglow amplitude",
             ),
-
-            'poor_calibration_invalidates_afterglow': ScenarioDefinition(
+            "poor_calibration_invalidates_afterglow": ScenarioDefinition(
                 name="Poor Calibration → Invalid Afterglow",
                 description="LED calibration drift/saturation invalidates afterglow model",
                 detection_logic="LED saturation OR drift >10% AND afterglow tau out of range",
-                required_events=['led_calibration', 'afterglow_tau_validation'],
+                required_events=["led_calibration", "afterglow_tau_validation"],
                 mitigation_strategy="Re-run full optical calibration with lower LED intensities",
                 severity=Severity.HIGH,
-                correlation_check="LED stability correlates with tau consistency"
+                correlation_check="LED stability correlates with tau consistency",
             ),
-
-            'afterglow_correction_insufficient': ScenarioDefinition(
+            "afterglow_correction_insufficient": ScenarioDefinition(
                 name="Afterglow Correction Insufficient",
                 description="Afterglow correction applied but live data shows baseline drift",
                 detection_logic="Afterglow correction enabled AND live dark noise increasing >5 counts/min",
-                required_events=['afterglow_validation', 'live_dark_noise_trend'],
+                required_events=["afterglow_validation", "live_dark_noise_trend"],
                 mitigation_strategy="Check for optical leak, increase LED delay, or recalibrate afterglow",
                 severity=Severity.MEDIUM,
-                correlation_check="Compare afterglow-corrected dark noise vs live dark noise"
+                correlation_check="Compare afterglow-corrected dark noise vs live dark noise",
             ),
-
-            'pump_pulse_artifacts': ScenarioDefinition(
+            "pump_pulse_artifacts": ScenarioDefinition(
                 name="Pump Pulse Artifacts",
                 description="Pump flow changes cause transient signal spikes",
                 detection_logic="Pump flow change event within 2s of signal spike >100 RU",
-                required_events=['pump_flow_change', 'signal_spike'],
+                required_events=["pump_flow_change", "signal_spike"],
                 mitigation_strategy="Apply temporal filtering (moving average), flag affected regions",
                 severity=Severity.LOW,
-                correlation_check="Temporal correlation: pump events precede signal changes by 0.5-2s"
+                correlation_check="Temporal correlation: pump events precede signal changes by 0.5-2s",
             ),
-
-            'fwhm_degradation_post_calibration': ScenarioDefinition(
+            "fwhm_degradation_post_calibration": ScenarioDefinition(
                 name="FWHM Degradation Post-Calibration",
                 description="Peak quality degrades during experiment despite good calibration",
                 detection_logic="Calibration FWHM <40nm AND live FWHM increasing >0.5nm/min",
-                required_events=['calibration_fwhm', 'live_fwhm_trend'],
+                required_events=["calibration_fwhm", "live_fwhm_trend"],
                 mitigation_strategy="Check sensor temperature, verify optical alignment, consider recalibration",
                 severity=Severity.MEDIUM,
-                correlation_check="Calibration FWHM vs Live FWHM trend"
+                correlation_check="Calibration FWHM vs Live FWHM trend",
             ),
-
-            'dark_noise_jump_after_led_change': ScenarioDefinition(
+            "dark_noise_jump_after_led_change": ScenarioDefinition(
                 name="Dark Noise Jump After LED Changes",
                 description="Dark noise increases after LED intensity adjustments",
                 detection_logic="LED intensity change >50 units AND dark noise increases >20 counts",
-                required_events=['led_intensity_change', 'dark_noise_measurement'],
+                required_events=["led_intensity_change", "dark_noise_measurement"],
                 mitigation_strategy="Wait 500ms settle time after LED changes, verify afterglow correction",
                 severity=Severity.LOW,
-                correlation_check="LED change magnitude vs dark noise delta"
+                correlation_check="LED change magnitude vs dark noise delta",
             ),
-
-            'channel_cross_contamination': ScenarioDefinition(
+            "channel_cross_contamination": ScenarioDefinition(
                 name="Channel Cross-Contamination",
                 description="Signal from previous channel bleeds into current measurement",
                 detection_logic="Channel switch AND signal baseline >expected by 2σ",
-                required_events=['channel_switch', 'baseline_measurement'],
+                required_events=["channel_switch", "baseline_measurement"],
                 mitigation_strategy="Increase inter-channel delay, verify afterglow correction active",
                 severity=Severity.MEDIUM,
-                correlation_check="Previous channel intensity vs current baseline elevation"
+                correlation_check="Previous channel intensity vs current baseline elevation",
             ),
-
-            'usb_communication_degradation': ScenarioDefinition(
+            "usb_communication_degradation": ScenarioDefinition(
                 name="USB Communication Degradation",
                 description="USB read errors or timeouts increasing over time",
                 detection_logic="USB read failures >5% within 10-minute window",
-                required_events=['usb_read_attempt', 'usb_read_failure'],
+                required_events=["usb_read_attempt", "usb_read_failure"],
                 mitigation_strategy="Reduce acquisition rate, check USB cable, restart spectrometer",
                 severity=Severity.HIGH,
-                correlation_check="USB error rate vs time since session start"
+                correlation_check="USB error rate vs time since session start",
             ),
         }
 
     def log_calibration_event(
         self,
         event_type: str,
-        channel: Optional[str],
+        channel: str | None,
         passed: bool,
-        metrics: Optional[Dict[str, Any]] = None,
-        failure_mode: Optional[FailureMode] = None,
+        metrics: dict[str, Any] | None = None,
+        failure_mode: FailureMode | None = None,
         severity: Severity = Severity.INFO,
-        mitigation: Optional[str] = None,
-        notes: str = ""
+        mitigation: str | None = None,
+        notes: str = "",
     ) -> None:
         """Log a calibration-related event.
 
@@ -246,10 +244,11 @@ class FMEATracker:
             severity: Impact severity
             mitigation: Mitigation strategy applied
             notes: Additional context
+
         """
         event = FMEAEvent(
             timestamp=datetime.now(),
-            phase='calibration',
+            phase="calibration",
             event_type=event_type,
             channel=channel,
             passed=passed,
@@ -257,7 +256,7 @@ class FMEATracker:
             severity=severity,
             metrics=metrics or {},
             mitigation_applied=mitigation,
-            notes=notes
+            notes=notes,
         )
 
         self._add_event(event)
@@ -265,18 +264,18 @@ class FMEATracker:
     def log_afterglow_event(
         self,
         event_type: str,
-        channel: Optional[str],
+        channel: str | None,
         passed: bool,
-        metrics: Optional[Dict[str, Any]] = None,
-        failure_mode: Optional[FailureMode] = None,
+        metrics: dict[str, Any] | None = None,
+        failure_mode: FailureMode | None = None,
         severity: Severity = Severity.INFO,
-        mitigation: Optional[str] = None,
-        notes: str = ""
+        mitigation: str | None = None,
+        notes: str = "",
     ) -> None:
         """Log an afterglow validation event."""
         event = FMEAEvent(
             timestamp=datetime.now(),
-            phase='afterglow',
+            phase="afterglow",
             event_type=event_type,
             channel=channel,
             passed=passed,
@@ -284,7 +283,7 @@ class FMEATracker:
             severity=severity,
             metrics=metrics or {},
             mitigation_applied=mitigation,
-            notes=notes
+            notes=notes,
         )
 
         self._add_event(event)
@@ -292,18 +291,18 @@ class FMEATracker:
     def log_live_data_event(
         self,
         event_type: str,
-        channel: Optional[str],
+        channel: str | None,
         passed: bool,
-        metrics: Optional[Dict[str, Any]] = None,
-        failure_mode: Optional[FailureMode] = None,
+        metrics: dict[str, Any] | None = None,
+        failure_mode: FailureMode | None = None,
         severity: Severity = Severity.INFO,
-        mitigation: Optional[str] = None,
-        notes: str = ""
+        mitigation: str | None = None,
+        notes: str = "",
     ) -> None:
         """Log a live data processing event."""
         event = FMEAEvent(
             timestamp=datetime.now(),
-            phase='live_data',
+            phase="live_data",
             event_type=event_type,
             channel=channel,
             passed=passed,
@@ -311,7 +310,7 @@ class FMEATracker:
             severity=severity,
             metrics=metrics or {},
             mitigation_applied=mitigation,
-            notes=notes
+            notes=notes,
         )
 
         self._add_event(event)
@@ -326,14 +325,16 @@ class FMEATracker:
             self.active_failures[key] = event
             logger.warning(
                 f"🔴 FMEA: Active failure - {event.failure_mode.value} "
-                f"(ch={event.channel}, severity={event.severity.name})"
+                f"(ch={event.channel}, severity={event.severity.name})",
             )
         elif event.passed and event.failure_mode:
             # Clear failure if now passing
             key = f"{event.failure_mode.value}_{event.channel or 'system'}"
             if key in self.active_failures:
                 del self.active_failures[key]
-                logger.info(f"🟢 FMEA: Resolved - {event.failure_mode.value} (ch={event.channel})")
+                logger.info(
+                    f"🟢 FMEA: Resolved - {event.failure_mode.value} (ch={event.channel})",
+                )
 
         # Check for scenario matches
         self._check_scenarios(event)
@@ -353,10 +354,10 @@ class FMEATracker:
                     f"⚠️ FMEA Scenario Detected: {scenario.name}\n"
                     f"   Description: {scenario.description}\n"
                     f"   Mitigation: {scenario.mitigation_strategy}\n"
-                    f"   Severity: {scenario.severity.name}"
+                    f"   Severity: {scenario.severity.name}",
                 )
 
-    def get_system_health(self) -> Dict[str, Any]:
+    def get_system_health(self) -> dict[str, Any]:
         """Get current system health summary.
 
         Returns:
@@ -366,6 +367,7 @@ class FMEATracker:
                 - active_scenarios: List of detected scenarios
                 - phase_status: Completion status of each phase
                 - correlation_score: 0-100 score of calibration→afterglow→live correlation
+
         """
         # Count failures by severity
         severity_counts = {s: 0 for s in Severity}
@@ -374,39 +376,46 @@ class FMEATracker:
 
         # Determine overall health
         if severity_counts[Severity.CRITICAL] > 0:
-            overall = 'critical'
+            overall = "critical"
         elif severity_counts[Severity.HIGH] > 0 or len(self.active_failures) >= 3:
-            overall = 'degraded'
+            overall = "degraded"
         else:
-            overall = 'healthy'
+            overall = "healthy"
 
         # Calculate correlation score (placeholder - would implement full logic)
         correlation_score = self._calculate_correlation_score()
 
         return {
-            'overall_health': overall,
-            'session_id': self.session_id,
-            'session_duration_minutes': (datetime.now() - self.session_start).total_seconds() / 60,
-            'active_failures': {
-                'count': len(self.active_failures),
-                'failures': [
+            "overall_health": overall,
+            "session_id": self.session_id,
+            "session_duration_minutes": (
+                datetime.now() - self.session_start
+            ).total_seconds()
+            / 60,
+            "active_failures": {
+                "count": len(self.active_failures),
+                "failures": [
                     {
-                        'mode': f.failure_mode.value if f.failure_mode else 'unknown',
-                        'channel': f.channel,
-                        'severity': f.severity.name,
-                        'since': (datetime.now() - f.timestamp).total_seconds()
+                        "mode": f.failure_mode.value if f.failure_mode else "unknown",
+                        "channel": f.channel,
+                        "severity": f.severity.name,
+                        "since": (datetime.now() - f.timestamp).total_seconds(),
                     }
                     for f in self.active_failures.values()
-                ]
+                ],
             },
-            'severity_distribution': {s.name: count for s, count in severity_counts.items()},
-            'phase_status': {
-                'calibration_completed': self.calibration_completed,
-                'afterglow_validated': self.afterglow_validation_completed,
-                'live_data_active': any(e.phase == 'live_data' for e in self.events[-10:])
+            "severity_distribution": {
+                s.name: count for s, count in severity_counts.items()
             },
-            'correlation_score': correlation_score,
-            'total_events': len(self.events)
+            "phase_status": {
+                "calibration_completed": self.calibration_completed,
+                "afterglow_validated": self.afterglow_validation_completed,
+                "live_data_active": any(
+                    e.phase == "live_data" for e in self.events[-10:]
+                ),
+            },
+            "correlation_score": correlation_score,
+            "total_events": len(self.events),
         }
 
     def _calculate_correlation_score(self) -> float:
@@ -415,14 +424,16 @@ class FMEATracker:
 
         # Deduct points for cross-phase inconsistencies
         # Example: if calibration passed but afterglow validation failed
-        cal_events = [e for e in self.events if e.phase == 'calibration']
-        afterglow_events = [e for e in self.events if e.phase == 'afterglow']
-        live_events = [e for e in self.events if e.phase == 'live_data']
+        cal_events = [e for e in self.events if e.phase == "calibration"]
+        afterglow_events = [e for e in self.events if e.phase == "afterglow"]
+        live_events = [e for e in self.events if e.phase == "live_data"]
 
         # Check calibration → afterglow correlation
         if cal_events and afterglow_events:
             cal_passed_rate = sum(e.passed for e in cal_events) / len(cal_events)
-            afterglow_passed_rate = sum(e.passed for e in afterglow_events) / len(afterglow_events)
+            afterglow_passed_rate = sum(e.passed for e in afterglow_events) / len(
+                afterglow_events,
+            )
 
             # If calibration passed but afterglow failed, deduct points
             if cal_passed_rate > 0.8 and afterglow_passed_rate < 0.5:
@@ -430,8 +441,13 @@ class FMEATracker:
 
         # Check afterglow → live data correlation
         if afterglow_events and live_events:
-            afterglow_passed_rate = sum(e.passed for e in afterglow_events) / len(afterglow_events)
-            live_passed_rate = sum(e.passed for e in live_events[-20:]) / min(20, len(live_events))
+            afterglow_passed_rate = sum(e.passed for e in afterglow_events) / len(
+                afterglow_events,
+            )
+            live_passed_rate = sum(e.passed for e in live_events[-20:]) / min(
+                20,
+                len(live_events),
+            )
 
             # If afterglow passed but live data degrading, deduct points
             if afterglow_passed_rate > 0.8 and live_passed_rate < 0.5:
@@ -439,11 +455,12 @@ class FMEATracker:
 
         return max(0.0, min(100.0, score))
 
-    def get_active_scenarios(self) -> List[Dict[str, Any]]:
+    def get_active_scenarios(self) -> list[dict[str, Any]]:
         """Get list of currently active failure scenarios.
 
         Returns:
             List of scenario descriptions with detection details
+
         """
         active = []
         recent_window = datetime.now() - timedelta(minutes=5)
@@ -452,18 +469,20 @@ class FMEATracker:
         for scenario_key, scenario in self.scenarios.items():
             event_types_present = {e.event_type for e in recent_events}
             if all(req in event_types_present for req in scenario.required_events):
-                active.append({
-                    'name': scenario.name,
-                    'description': scenario.description,
-                    'detection_logic': scenario.detection_logic,
-                    'mitigation': scenario.mitigation_strategy,
-                    'severity': scenario.severity.name,
-                    'correlation_check': scenario.correlation_check
-                })
+                active.append(
+                    {
+                        "name": scenario.name,
+                        "description": scenario.description,
+                        "detection_logic": scenario.detection_logic,
+                        "mitigation": scenario.mitigation_strategy,
+                        "severity": scenario.severity.name,
+                        "correlation_check": scenario.correlation_check,
+                    },
+                )
 
         return active
 
-    def export_session_report(self, output_path: Optional[Path] = None) -> Path:
+    def export_session_report(self, output_path: Path | None = None) -> Path:
         """Export FMEA session report to JSON file.
 
         Args:
@@ -471,6 +490,7 @@ class FMEATracker:
 
         Returns:
             Path to saved report file
+
         """
         if output_path is None:
             output_path = Path(f"fmea_reports/session_{self.session_id}.json")
@@ -478,29 +498,29 @@ class FMEATracker:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         report = {
-            'session_id': self.session_id,
-            'session_start': self.session_start.isoformat(),
-            'session_end': datetime.now().isoformat(),
-            'system_health': self.get_system_health(),
-            'active_scenarios': self.get_active_scenarios(),
-            'all_events': [
+            "session_id": self.session_id,
+            "session_start": self.session_start.isoformat(),
+            "session_end": datetime.now().isoformat(),
+            "system_health": self.get_system_health(),
+            "active_scenarios": self.get_active_scenarios(),
+            "all_events": [
                 {
-                    'timestamp': e.timestamp.isoformat(),
-                    'phase': e.phase,
-                    'event_type': e.event_type,
-                    'channel': e.channel,
-                    'passed': e.passed,
-                    'failure_mode': e.failure_mode.value if e.failure_mode else None,
-                    'severity': e.severity.name,
-                    'metrics': e.metrics,
-                    'mitigation': e.mitigation_applied,
-                    'notes': e.notes
+                    "timestamp": e.timestamp.isoformat(),
+                    "phase": e.phase,
+                    "event_type": e.event_type,
+                    "channel": e.channel,
+                    "passed": e.passed,
+                    "failure_mode": e.failure_mode.value if e.failure_mode else None,
+                    "severity": e.severity.name,
+                    "metrics": e.metrics,
+                    "mitigation": e.mitigation_applied,
+                    "notes": e.notes,
                 }
                 for e in self.events
-            ]
+            ],
         }
 
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(report, f, indent=2)
 
         logger.info(f"📊 FMEA report exported: {output_path}")
@@ -518,12 +538,12 @@ class FMEATracker:
 
     def query_events(
         self,
-        phase: Optional[str] = None,
-        channel: Optional[str] = None,
-        event_type: Optional[str] = None,
-        passed: Optional[bool] = None,
-        time_window_minutes: Optional[int] = None
-    ) -> List[FMEAEvent]:
+        phase: str | None = None,
+        channel: str | None = None,
+        event_type: str | None = None,
+        passed: bool | None = None,
+        time_window_minutes: int | None = None,
+    ) -> list[FMEAEvent]:
         """Query events with filters.
 
         Args:
@@ -535,6 +555,7 @@ class FMEATracker:
 
         Returns:
             Filtered list of events
+
         """
         results = self.events
 

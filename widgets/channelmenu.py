@@ -4,12 +4,21 @@
 try:
     from typing import Literal, Self  # Python 3.11+
 except ImportError:
-    from typing import Literal
-    from typing_extensions import Self  # Python < 3.11
+    from typing import (
+        Literal,
+        Self,  # Python < 3.11
+    )
 
 from PySide6.QtCore import Signal  # type: ignore
 from PySide6.QtGui import QIcon  # type: ignore
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QVBoxLayout, QWidget, QRadioButton, QLabel  # type: ignore
+from PySide6.QtWidgets import (  # type: ignore
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QRadioButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.ui_channelmenu import Ui_ChannelMenu
 from widgets.metadata import Metadata
@@ -81,13 +90,19 @@ class ChannelMenu(QWidget):
         self.peak_centroid = QRadioButton("Centroid (Physics-aware)")
 
         # Determine initial selection from settings
-        if app_settings is not None and getattr(app_settings, 'WIDTH_BIAS_CORRECTION_ENABLED', False):
+        if app_settings is not None and getattr(
+            app_settings,
+            "WIDTH_BIAS_CORRECTION_ENABLED",
+            False,
+        ):
             self.peak_centroid.setChecked(True)
         else:
             self.peak_old.setChecked(True)
 
         # Optional helper text
-        info_label = QLabel("Switch tracker used in live measurements.\nOld = Fourier derivative + linear fit (±165 pts).\nCentroid = width/asymmetry-aware for lower noise.")
+        info_label = QLabel(
+            "Switch tracker used in live measurements.\nOld = Fourier derivative + linear fit (±165 pts).\nCentroid = width/asymmetry-aware for lower noise.",
+        )
         info_label.setStyleSheet("color: gray; font-size: 8pt;")
         info_label.setWordWrap(True)
 
@@ -98,7 +113,7 @@ class ChannelMenu(QWidget):
 
         # Insert after existing filtering group within the left settings column
         # The generated UI exposes a verticalLayout on data_settings; append our group
-        if hasattr(self.ui, 'verticalLayout'):
+        if hasattr(self.ui, "verticalLayout"):
             self.ui.verticalLayout.addWidget(self.peak_group)
 
         # Wire up handlers
@@ -166,10 +181,11 @@ class ChannelMenu(QWidget):
         """Apply peak tracking model selection to runtime settings."""
         try:
             from settings import settings as app_settings
+
             if self.peak_old.isChecked():
                 # Exact old software method: disable centroid correction, use numerical derivative
                 app_settings.WIDTH_BIAS_CORRECTION_ENABLED = False
-                app_settings.PEAK_TRACKING_METHOD = 'numerical_derivative'
+                app_settings.PEAK_TRACKING_METHOD = "numerical_derivative"
                 # Emit signal to notify backend
                 self.peak_model_sig.emit("old")
             elif self.peak_centroid.isChecked():

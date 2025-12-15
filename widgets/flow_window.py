@@ -1,7 +1,6 @@
 """Widgets related to fluidic controls."""
 
 from math import inf
-from typing import Optional
 
 # Python version compatibility
 try:
@@ -37,7 +36,7 @@ class PumpControl(QGroupBox):
     def __init__(
         self: Self,
         number: Literal[1, 2],
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         """Make a pump control group box."""
         super().__init__(f"Pump {number}", parent)
@@ -73,7 +72,7 @@ class FlowWindow(QDialog):
 
     def __init__(
         self: Self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         flags: Qt.WindowType = Qt.WindowType.Dialog,
     ) -> None:
         """Make a flow window."""

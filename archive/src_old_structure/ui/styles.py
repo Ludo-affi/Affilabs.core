@@ -1,46 +1,45 @@
-"""
-Centralized UI Styles for ezControl
+"""Centralized UI Styles for ezControl
 Modern Apple-inspired grayscale design system
 Single source of truth for ALL UI styling
 """
 
 from PySide6.QtGui import QFont
 
-
 # ============================================================================
 # DESIGN TOKENS - Modern Grayscale Theme (Apple-inspired)
 # ============================================================================
+
 
 class Colors:
     """Color palette following modern grayscale design principles"""
 
     # Primary grayscale colors (Apple-inspired)
-    GRAY_900 = "#1D1D1F"                   # Almost black - primary dark
-    GRAY_700 = "#3A3A3C"                   # Dark gray - hover states
-    GRAY_600 = "#48484A"                   # Medium-dark gray
-    GRAY_500 = "#86868B"                   # Mid gray - secondary text
-    GRAY_300 = "rgba(0, 0, 0, 0.1)"       # Light gray - borders
-    GRAY_100 = "rgba(0, 0, 0, 0.06)"      # Very light gray - backgrounds
-    GRAY_50 = "#F5F5F7"                    # Off-white backgrounds
+    GRAY_900 = "#1D1D1F"  # Almost black - primary dark
+    GRAY_700 = "#3A3A3C"  # Dark gray - hover states
+    GRAY_600 = "#48484A"  # Medium-dark gray
+    GRAY_500 = "#86868B"  # Mid gray - secondary text
+    GRAY_300 = "rgba(0, 0, 0, 0.1)"  # Light gray - borders
+    GRAY_100 = "rgba(0, 0, 0, 0.06)"  # Very light gray - backgrounds
+    GRAY_50 = "#F5F5F7"  # Off-white backgrounds
 
     # Surface colors
-    SURFACE = "#FFFFFF"                    # Pure white backgrounds
-    SURFACE_ELEVATED = "#FAFAFA"           # Slightly elevated surfaces
-    BACKGROUND = "#F8F9FA"                 # Page background
+    SURFACE = "#FFFFFF"  # Pure white backgrounds
+    SURFACE_ELEVATED = "#FAFAFA"  # Slightly elevated surfaces
+    BACKGROUND = "#F8F9FA"  # Page background
 
     # State colors (semantic)
-    SUCCESS = "#34C759"                    # Green for success
+    SUCCESS = "#34C759"  # Green for success
     SUCCESS_HOVER = "#2FB350"
-    ERROR = "#FF3B30"                      # Red for errors
+    ERROR = "#FF3B30"  # Red for errors
     ERROR_HOVER = "#E6342A"
-    WARNING = "#FFCC00"                    # Yellow for warnings
+    WARNING = "#FFCC00"  # Yellow for warnings
     WARNING_HOVER = "#E6B800"
 
     # Channel colors (data visualization) - kept for compatibility
-    CHANNEL_A = "rgb(0, 0, 0)"             # Black
-    CHANNEL_B = "rgb(255, 0, 81)"          # Red/Pink
-    CHANNEL_C = "rgb(0, 174, 255)"         # Blue
-    CHANNEL_D = "rgb(0, 150, 80)"          # Green
+    CHANNEL_A = "rgb(0, 0, 0)"  # Black
+    CHANNEL_B = "rgb(255, 0, 81)"  # Red/Pink
+    CHANNEL_C = "rgb(0, 174, 255)"  # Blue
+    CHANNEL_D = "rgb(0, 150, 80)"  # Green
 
     # Legacy aliases for backwards compatibility
     PRIMARY = GRAY_900
@@ -56,26 +55,29 @@ class Colors:
 
 class Spacing:
     """Consistent spacing system (8px base unit - Apple standard)"""
-    XS = 4    # Extra small
-    SM = 8    # Small
-    MD = 12   # Medium
-    LG = 16   # Large
-    XL = 20   # Extra large
+
+    XS = 4  # Extra small
+    SM = 8  # Small
+    MD = 12  # Medium
+    LG = 16  # Large
+    XL = 20  # Extra large
     XXL = 24  # Extra extra large
 
 
 class Radius:
     """Border radius values (Apple-inspired rounded corners)"""
+
     NONE = 0
-    SM = 4    # Small elements
-    MD = 8    # Standard containers (primary radius)
-    LG = 12   # Large containers
-    XL = 20   # Pill-shaped buttons
+    SM = 4  # Small elements
+    MD = 8  # Standard containers (primary radius)
+    LG = 12  # Large containers
+    XL = 20  # Pill-shaped buttons
     FULL = 9999  # Circular
 
 
 class Shadows:
     """Subtle elevation shadows (Apple-inspired minimal shadows)"""
+
     ELEVATION_1 = "0 1px 2px rgba(0, 0, 0, 0.04)"
     ELEVATION_2 = "0 2px 4px rgba(0, 0, 0, 0.06)"
     ELEVATION_3 = "0 4px 8px rgba(0, 0, 0, 0.08)"
@@ -84,6 +86,7 @@ class Shadows:
 # Backwards compatibility aliases
 class ChannelColors:
     """Channel colors for data visualization"""
+
     A = Colors.CHANNEL_A
     B = Colors.CHANNEL_B
     C = Colors.CHANNEL_C
@@ -92,6 +95,7 @@ class ChannelColors:
 
 class UIColors:
     """Legacy UI colors - use Colors.* instead"""
+
     BACKGROUND_LIGHT = Colors.GRAY_50
     BACKGROUND_WHITE = Colors.SURFACE
     BORDER = Colors.GRAY_300
@@ -104,23 +108,30 @@ class UIColors:
 # TYPOGRAPHY - Apple SF Pro inspired
 # ============================================================================
 
+
 class Typography:
     """Font definitions following Apple's typography scale"""
+
     FAMILY = "-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif"
-    FAMILY_DISPLAY = "-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif"
+    FAMILY_DISPLAY = (
+        "-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif"
+    )
 
     # Font sizes (Apple-inspired scale)
-    SIZE_CAPTION = 11     # Small text, captions
-    SIZE_BODY_SMALL = 8   # Small body text, groupbox titles
-    SIZE_BODY = 9         # Standard body text
-    SIZE_SUBTITLE = 10    # Subtitles
-    SIZE_TITLE = 11       # Section titles
-    SIZE_HEADLINE = 13    # Large headings
+    SIZE_CAPTION = 11  # Small text, captions
+    SIZE_BODY_SMALL = 8  # Small body text, groupbox titles
+    SIZE_BODY = 9  # Standard body text
+    SIZE_SUBTITLE = 10  # Subtitles
+    SIZE_TITLE = 11  # Section titles
+    SIZE_HEADLINE = 13  # Large headings
 
 
-def get_font(size: int = Typography.SIZE_BODY, bold: bool = False, weight: int = -1) -> 'QFont':
-    """
-    Create a font with specified parameters
+def get_font(
+    size: int = Typography.SIZE_BODY,
+    bold: bool = False,
+    weight: int = -1,
+) -> "QFont":
+    """Create a font with specified parameters
 
     Args:
         size: Font size in points (default: 9)
@@ -129,8 +140,10 @@ def get_font(size: int = Typography.SIZE_BODY, bold: bool = False, weight: int =
 
     Returns:
         QFont configured with specified parameters
+
     """
     from PySide6.QtGui import QFont
+
     font = QFont(Typography.FAMILY, size)
     if weight > 0:
         font.setWeight(weight)
@@ -158,6 +171,7 @@ def get_standard_font():
 def get_title_font():
     """Title font (11pt semi-bold)"""
     from PySide6.QtGui import QFont
+
     font = get_font(Typography.SIZE_TITLE)
     font.setWeight(QFont.Weight.DemiBold)
     return font
@@ -168,62 +182,60 @@ def get_small_font():
     return get_font(Typography.SIZE_CAPTION)
 
 
-
-
-
 # ============================================================================
 # COMPONENT STYLES - Modern Grayscale Design
 # ============================================================================
 
-def get_button_style(variant: str = 'standard') -> str:
-    """
-    Modern grayscale button styles (Apple-inspired)
+
+def get_button_style(variant: str = "standard") -> str:
+    """Modern grayscale button styles (Apple-inspired)
 
     Args:
         variant: 'standard', 'primary', 'success', 'error', 'text'
 
     Returns:
         Complete stylesheet string for QPushButton
+
     """
     variants = {
-        'standard': {
-            'bg': 'rgba(0, 0, 0, 0.06)',
-            'hover_bg': 'rgba(0, 0, 0, 0.1)',
-            'pressed_bg': 'rgba(0, 0, 0, 0.14)',
-            'text': '#1D1D1F',
-            'border_radius': '8px'
+        "standard": {
+            "bg": "rgba(0, 0, 0, 0.06)",
+            "hover_bg": "rgba(0, 0, 0, 0.1)",
+            "pressed_bg": "rgba(0, 0, 0, 0.14)",
+            "text": "#1D1D1F",
+            "border_radius": "8px",
         },
-        'primary': {
-            'bg': '#1D1D1F',
-            'hover_bg': '#3A3A3C',
-            'pressed_bg': '#48484A',
-            'text': 'white',
-            'border_radius': '8px'
+        "primary": {
+            "bg": "#1D1D1F",
+            "hover_bg": "#3A3A3C",
+            "pressed_bg": "#48484A",
+            "text": "white",
+            "border_radius": "8px",
         },
-        'success': {
-            'bg': '#34C759',
-            'hover_bg': '#2FB350',
-            'pressed_bg': '#28A745',
-            'text': 'white',
-            'border_radius': '8px'
+        "success": {
+            "bg": "#34C759",
+            "hover_bg": "#2FB350",
+            "pressed_bg": "#28A745",
+            "text": "white",
+            "border_radius": "8px",
         },
-        'error': {
-            'bg': '#FF3B30',
-            'hover_bg': '#E6342A',
-            'pressed_bg': '#CC2E24',
-            'text': 'white',
-            'border_radius': '8px'
+        "error": {
+            "bg": "#FF3B30",
+            "hover_bg": "#E6342A",
+            "pressed_bg": "#CC2E24",
+            "text": "white",
+            "border_radius": "8px",
         },
-        'text': {
-            'bg': 'transparent',
-            'hover_bg': 'rgba(0, 0, 0, 0.06)',
-            'pressed_bg': 'rgba(0, 0, 0, 0.1)',
-            'text': '#1D1D1F',
-            'border_radius': '8px'
-        }
+        "text": {
+            "bg": "transparent",
+            "hover_bg": "rgba(0, 0, 0, 0.06)",
+            "pressed_bg": "rgba(0, 0, 0, 0.1)",
+            "text": "#1D1D1F",
+            "border_radius": "8px",
+        },
     }
 
-    style = variants.get(variant, variants['standard'])
+    style = variants.get(variant, variants["standard"])
 
     return f"""
     QPushButton {{
@@ -254,17 +266,21 @@ def get_button_style(variant: str = 'standard') -> str:
 
 
 def get_container_style(elevated: bool = True) -> str:
-    """
-    Modern container/surface style with subtle elevation
+    """Modern container/surface style with subtle elevation
 
     Args:
         elevated: Whether to show elevation shadow (Note: Qt doesn't support box-shadow)
 
     Returns:
         Stylesheet for QFrame/QGroupBox containers
+
     """
     # Qt doesn't support box-shadow, use border instead for elevation effect
-    border = f"border: 2px solid {Colors.PRIMARY_LIGHT};" if elevated else f"border: 1px solid {Colors.OUTLINE};"
+    border = (
+        f"border: 2px solid {Colors.PRIMARY_LIGHT};"
+        if elevated
+        else f"border: 1px solid {Colors.OUTLINE};"
+    )
 
     return f"""
     QFrame {{
@@ -276,14 +292,14 @@ def get_container_style(elevated: bool = True) -> str:
 
 
 def get_groupbox_style(background: str = Colors.SURFACE) -> str:
-    """
-    Material Design groupbox style
+    """Material Design groupbox style
 
     Args:
         background: Background color
 
     Returns:
         Stylesheet for QGroupBox
+
     """
     return f"""
     QGroupBox {{
@@ -447,20 +463,20 @@ def get_combobox_style() -> str:
 
 
 def get_channel_checkbox_style(channel: str) -> str:
-    """
-    Channel-specific checkbox style with color coding
+    """Channel-specific checkbox style with color coding
 
     Args:
         channel: 'A', 'B', 'C', or 'D'
 
     Returns:
         Stylesheet for channel checkbox
+
     """
     color_map = {
-        'A': Colors.CHANNEL_A,
-        'B': Colors.CHANNEL_B,
-        'C': Colors.CHANNEL_C,
-        'D': Colors.CHANNEL_D
+        "A": Colors.CHANNEL_A,
+        "B": Colors.CHANNEL_B,
+        "C": Colors.CHANNEL_C,
+        "D": Colors.CHANNEL_D,
     }
 
     color = color_map.get(channel.upper(), Colors.CHANNEL_A)
@@ -532,14 +548,15 @@ def get_toggle_dot_style() -> str:
 # LEGACY COMPATIBILITY FUNCTIONS
 # ============================================================================
 
+
 def get_standard_button_style() -> str:
     """Legacy: Use get_button_style('standard') instead"""
-    return get_button_style('standard')
+    return get_button_style("standard")
 
 
 def get_clear_button_style() -> str:
     """Legacy: Use get_button_style('text') instead"""
-    return get_button_style('text')
+    return get_button_style("text")
 
 
 def get_main_display_style() -> str:
@@ -571,13 +588,14 @@ def get_standard_checkbox_style() -> str:
 # HELPER FUNCTIONS
 # ============================================================================
 
+
 def apply_channel_checkbox_style(checkbox, channel: str):
-    """
-    Apply standard style to a channel checkbox
+    """Apply standard style to a channel checkbox
 
     Args:
         checkbox: QCheckBox widget
         channel: 'A', 'B', 'C', or 'D'
+
     """
     checkbox.setFont(get_segment_checkbox_font())
     checkbox.setStyleSheet(get_channel_checkbox_style(channel))

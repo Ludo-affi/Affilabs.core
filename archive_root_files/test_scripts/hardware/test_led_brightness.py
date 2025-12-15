@@ -1,19 +1,19 @@
 """Simple test to verify LED commands work properly with firmware V1.2"""
 
-import time
 import sys
+import time
 from pathlib import Path
 
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from utils.controller import PicoP4SPR
-from utils.logger import logger
+
 
 def main():
-    print("="*80)
+    print("=" * 80)
     print("LED BRIGHTNESS TEST - Firmware V1.2 Command Verification")
-    print("="*80)
+    print("=" * 80)
 
     print("\nInitializing controller...")
     ctrl = PicoP4SPR()
@@ -39,7 +39,7 @@ def main():
         print("-" * 40)
         print("   Sending: la (enable channel)")
         print("   Sending: ba051 (set intensity 51)")
-        ctrl.set_intensity(ch='a', raw_val=51)
+        ctrl.set_intensity(ch="a", raw_val=51)
         time.sleep(0.5)
         print("   👀 Only LED A should be DIM (20%)")
         input("   Press ENTER to confirm...\n")
@@ -48,7 +48,7 @@ def main():
         print("TEST 3: Channel A at 100% (255/255)")
         print("-" * 40)
         print("   Sending: ba255 (set intensity 255)")
-        ctrl.set_intensity(ch='a', raw_val=255)
+        ctrl.set_intensity(ch="a", raw_val=255)
         time.sleep(0.5)
         print("   👀 LED A should be BRIGHT (100%)")
         input("   Press ENTER to confirm...\n")
@@ -64,7 +64,7 @@ def main():
 
         print("   Sending: lb (enable B)")
         print("   Sending: bb255 (set intensity 255)")
-        ctrl.set_intensity(ch='b', raw_val=255)
+        ctrl.set_intensity(ch="b", raw_val=255)
         time.sleep(0.5)
         print("   👀 Only LED B should be BRIGHT (100%)")
         input("   Press ENTER to confirm...\n")
@@ -88,16 +88,16 @@ def main():
         input("   Press ENTER to confirm...\n")
 
         # Results
-        print("="*80)
+        print("=" * 80)
         print("TEST COMPLETE")
-        print("="*80)
+        print("=" * 80)
         print("\nPlease report your observations:")
         print("1. Did LEDs turn on/off as expected?")
         print("2. Was brightness changing properly (dim vs bright)?")
         print("3. Did only the specified LED light up each time?")
         print("4. Did 'lx' command turn off ALL LEDs including A?")
         print("\nIf any test failed, firmware V1.2 has LED control bugs.")
-        print("="*80)
+        print("=" * 80)
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Test interrupted")
@@ -105,6 +105,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
     finally:
@@ -117,6 +118,7 @@ def main():
         ctrl.close()
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,11 +1,14 @@
 """Test script to verify preallocation optimization works correctly."""
-import sys
-sys.path.insert(0, r'c:\Users\ludol\ezControl-AI\Old software')
 
-import numpy as np
+import sys
+
+sys.path.insert(0, r"c:\Users\ludol\ezControl-AI\Old software")
+
 import time
-from utils.channel_manager import ChannelManager
+
 from settings import CH_LIST
+from utils.channel_manager import ChannelManager
+
 
 def test_preallocation():
     """Test that preallocated buffers work correctly."""
@@ -15,13 +18,13 @@ def test_preallocation():
     mgr = ChannelManager()
 
     # Check initial state
-    print(f"\nInitial state:")
+    print("\nInitial state:")
     print(f"  Buffer capacity: {mgr._buffer_capacity}")
     print(f"  Current lengths: {mgr._current_length}")
     print(f"  Buffer index: {mgr.buffer_index}")
 
     # Add some data points
-    print(f"\nAdding 10 data points...")
+    print("\nAdding 10 data points...")
     for i in range(10):
         timestamp = time.perf_counter()
 
@@ -44,22 +47,26 @@ def test_preallocation():
     print(f"  Buffer index: {mgr.buffer_index}")
 
     # Check that data is stored correctly
-    print(f"\nVerifying data storage...")
+    print("\nVerifying data storage...")
     stats = mgr.get_statistics()
     for ch in CH_LIST:
-        print(f"  Channel {ch}: {stats[ch]['total_points']} points, "
-              f"latest = {stats[ch]['latest_wavelength']:.3f} nm")
+        print(
+            f"  Channel {ch}: {stats[ch]['total_points']} points, "
+            f"latest = {stats[ch]['latest_wavelength']:.3f} nm",
+        )
 
     # Get sensorgram data
-    print(f"\nRetrieving sensorgram data...")
+    print("\nRetrieving sensorgram data...")
     data = mgr.get_sensorgram_data()
     for ch in CH_LIST:
-        values = data[ch]['values']
-        print(f"  Channel {ch}: {len(values)} values, "
-              f"first = {values[0]:.3f}, last = {values[-1]:.3f}")
+        values = data[ch]["values"]
+        print(
+            f"  Channel {ch}: {len(values)} values, "
+            f"first = {values[0]:.3f}, last = {values[-1]:.3f}",
+        )
 
     # Test growth by adding many points
-    print(f"\nTesting buffer growth (adding 10,000 more points)...")
+    print("\nTesting buffer growth (adding 10,000 more points)...")
     start_time = time.perf_counter()
 
     for i in range(10000):
@@ -84,11 +91,14 @@ def test_preallocation():
     print(f"  Utilization: {100 * max_len / mgr._buffer_capacity:.1f}%")
 
     # Test clear
-    print(f"\nTesting clear_data()...")
+    print("\nTesting clear_data()...")
     mgr.clear_data()
-    print(f"  After clear: length = {mgr._current_length}, capacity = {mgr._buffer_capacity}")
+    print(
+        f"  After clear: length = {mgr._current_length}, capacity = {mgr._buffer_capacity}",
+    )
 
-    print(f"\n✅ All tests passed!")
+    print("\n✅ All tests passed!")
+
 
 if __name__ == "__main__":
     test_preallocation()

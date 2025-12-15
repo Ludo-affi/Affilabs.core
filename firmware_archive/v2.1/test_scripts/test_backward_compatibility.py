@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 """Test backward compatibility with V1.9 commands"""
-import serial
+
 import time
 
-PORT = 'COM5'
+import serial
+
+PORT = "COM5"
 BAUD = 115200
+
 
 def test_command(ser, cmd, desc):
     """Send command and check response"""
     print(f"\n{desc}")
     print(f"  Sending: {cmd}")
-    ser.write(cmd.encode() + b'\n')
+    ser.write(cmd.encode() + b"\n")
     time.sleep(0.2)
     resp = ser.read(100)
-    if resp == b'6':
-        print(f"  ✅ ACK")
+    if resp == b"6":
+        print("  ✅ ACK")
         return True
-    else:
-        print(f"  ❌ Response: {resp}")
-        return False
+    print(f"  ❌ Response: {resp}")
+    return False
 
-print("="*60)
+
+print("=" * 60)
 print("V2.0 Backward Compatibility Test")
-print("="*60)
+print("=" * 60)
 
 ser = serial.Serial(PORT, BAUD, timeout=2)
 time.sleep(2)
@@ -60,8 +63,8 @@ print("-" * 40)
 # Test new rank command
 test_command(ser, "rank:128,100,50", "Rank LED sequence")
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("✅ All backward compatibility tests complete!")
-print("="*60)
+print("=" * 60)
 
 ser.close()

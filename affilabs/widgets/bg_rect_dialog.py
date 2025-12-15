@@ -1,14 +1,13 @@
 """Dialog for adjusting background rectangle position and dimensions."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QSpinBox,
     QPushButton,
-    QGroupBox,
+    QSpinBox,
+    QVBoxLayout,
 )
 
 
@@ -22,7 +21,7 @@ class BgRectDialog(QDialog):
         self.setModal(False)  # Allow interaction with main window
 
         # Initial values from the data window - now using margins
-        if data_window and hasattr(data_window, 'bg_rect_margin_left'):
+        if data_window and hasattr(data_window, "bg_rect_margin_left"):
             self.margin_left = data_window.bg_rect_margin_left
             self.margin_top = data_window.bg_rect_margin_top
             self.margin_right = data_window.bg_rect_margin_right
@@ -127,7 +126,7 @@ class BgRectDialog(QDialog):
 
     def _on_param_changed(self):
         """Update widget when any parameter changes."""
-        if self.data_window and hasattr(self.data_window, 'bg_rect_widget'):
+        if self.data_window and hasattr(self.data_window, "bg_rect_widget"):
             margin_left = self.margin_left_spin.value()
             margin_top = self.margin_top_spin.value()
             margin_right = self.margin_right_spin.value()
@@ -145,7 +144,7 @@ class BgRectDialog(QDialog):
             self.data_window.bg_rect_widget.setStyleSheet(
                 f"background-color: rgb(255, 255, 255);"
                 f"border: 1px solid rgb(100, 100, 100);"
-                f"border-radius: {radius}px;"
+                f"border-radius: {radius}px;",
             )
 
             # Recalculate position and size

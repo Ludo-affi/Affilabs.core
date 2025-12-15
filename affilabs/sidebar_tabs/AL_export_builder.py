@@ -1,5 +1,4 @@
-"""
-Export Tab Builder
+"""Export Tab Builder
 
 Handles building the Export tab UI with data export options, format selection, and file management.
 
@@ -7,14 +6,27 @@ Author: Affilabs
 """
 
 from PySide6.QtWidgets import (
-    QVBoxLayout, QFrame, QLabel, QHBoxLayout, QPushButton,
-    QCheckBox, QRadioButton, QButtonGroup, QComboBox, QLineEdit, QFileDialog
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
 )
 
 # Import styles from central location
-from ui_styles import (
-    section_header_style, card_style, label_style, checkbox_style, primary_button_style,
-    Colors, Fonts
+from affilabs.ui_styles import (
+    Colors,
+    Fonts,
+    card_style,
+    checkbox_style,
+    label_style,
+    primary_button_style,
+    section_header_style,
 )
 
 
@@ -26,6 +38,7 @@ class ExportTabBuilder:
 
         Args:
             sidebar: Parent AffilabsSidebar instance to attach widgets to
+
         """
         self.sidebar = sidebar
 
@@ -34,6 +47,7 @@ class ExportTabBuilder:
 
         Args:
             tab_layout: QVBoxLayout to add export tab widgets to
+
         """
         self._build_data_selection(tab_layout)
         self._build_channel_selection(tab_layout)
@@ -59,13 +73,19 @@ class ExportTabBuilder:
         self.sidebar.raw_data_check = QCheckBox("Raw Sensorgram Data")
         self.sidebar.raw_data_check.setChecked(True)
         self.sidebar.raw_data_check.setStyleSheet(checkbox_style())
-        self.sidebar.raw_data_check.setToolTip("Export unprocessed sensorgram data (time-series wavelength shifts)")
+        self.sidebar.raw_data_check.setToolTip(
+            "Export unprocessed sensorgram data (time-series wavelength shifts)",
+        )
         data_selection_card_layout.addWidget(self.sidebar.raw_data_check)
 
-        self.sidebar.processed_data_check = QCheckBox("Processed Data (filtered/smoothed)")
+        self.sidebar.processed_data_check = QCheckBox(
+            "Processed Data (filtered/smoothed)",
+        )
         self.sidebar.processed_data_check.setChecked(True)
         self.sidebar.processed_data_check.setStyleSheet(checkbox_style())
-        self.sidebar.processed_data_check.setToolTip("Export data with filtering and smoothing applied")
+        self.sidebar.processed_data_check.setToolTip(
+            "Export data with filtering and smoothing applied",
+        )
         data_selection_card_layout.addWidget(self.sidebar.processed_data_check)
 
         self.sidebar.cycle_segments_check = QCheckBox("Cycle Segments (with metadata)")
@@ -126,9 +146,11 @@ class ExportTabBuilder:
             f"}}"
             f"QPushButton:hover {{"
             f"  background: {Colors.OVERLAY_LIGHT_6};"
-            f"}}"
+            f"}}",
         )
-        self.sidebar.select_all_channels_btn.clicked.connect(self.sidebar._toggle_all_channels)
+        self.sidebar.select_all_channels_btn.clicked.connect(
+            self.sidebar._toggle_all_channels,
+        )
         channel_card_layout.addWidget(self.sidebar.select_all_channels_btn)
 
         tab_layout.addWidget(channel_card)
@@ -190,12 +212,16 @@ class ExportTabBuilder:
         options_card_layout.setSpacing(8)
 
         # Options checkboxes
-        self.sidebar.metadata_check = QCheckBox("Include Metadata (instrument settings, calibration)")
+        self.sidebar.metadata_check = QCheckBox(
+            "Include Metadata (instrument settings, calibration)",
+        )
         self.sidebar.metadata_check.setChecked(True)
         self.sidebar.metadata_check.setStyleSheet(checkbox_style())
         options_card_layout.addWidget(self.sidebar.metadata_check)
 
-        self.sidebar.events_check = QCheckBox("Include Event Markers (injection/wash/spike)")
+        self.sidebar.events_check = QCheckBox(
+            "Include Event Markers (injection/wash/spike)",
+        )
         self.sidebar.events_check.setChecked(False)
         self.sidebar.events_check.setStyleSheet(checkbox_style())
         options_card_layout.addWidget(self.sidebar.events_check)
@@ -226,7 +252,9 @@ class ExportTabBuilder:
         timestamp_row.addWidget(timestamp_label)
 
         self.sidebar.timestamp_combo = QComboBox()
-        self.sidebar.timestamp_combo.addItems(["Relative (00:00:00)", "Absolute (datetime)", "Elapsed seconds"])
+        self.sidebar.timestamp_combo.addItems(
+            ["Relative (00:00:00)", "Absolute (datetime)", "Elapsed seconds"],
+        )
         self.sidebar.timestamp_combo.setFixedWidth(180)
         self.sidebar.timestamp_combo.setStyleSheet(self._combo_style())
         timestamp_row.addWidget(self.sidebar.timestamp_combo)
@@ -255,8 +283,12 @@ class ExportTabBuilder:
         file_card_layout.addWidget(filename_label)
 
         self.sidebar.export_filename_input = QLineEdit()
-        self.sidebar.export_filename_input.setPlaceholderText("experiment_20251120_143022")
-        self.sidebar.export_filename_input.setToolTip("Base filename (extension will be added automatically based on format)")
+        self.sidebar.export_filename_input.setPlaceholderText(
+            "experiment_20251120_143022",
+        )
+        self.sidebar.export_filename_input.setToolTip(
+            "Base filename (extension will be added automatically based on format)",
+        )
         self.sidebar.export_filename_input.setStyleSheet(self._lineedit_style())
         file_card_layout.addWidget(self.sidebar.export_filename_input)
 
@@ -269,8 +301,12 @@ class ExportTabBuilder:
         dest_row.setSpacing(8)
 
         self.sidebar.export_dest_input = QLineEdit()
-        self.sidebar.export_dest_input.setPlaceholderText("C:/Users/Documents/Experiments")
-        self.sidebar.export_dest_input.setToolTip("Default export directory (can browse or type path)")
+        self.sidebar.export_dest_input.setPlaceholderText(
+            "C:/Users/Documents/Experiments",
+        )
+        self.sidebar.export_dest_input.setToolTip(
+            "Default export directory (can browse or type path)",
+        )
         self.sidebar.export_dest_input.setStyleSheet(self._lineedit_style())
         dest_row.addWidget(self.sidebar.export_dest_input)
 
@@ -288,15 +324,22 @@ class ExportTabBuilder:
             f"  font-weight: 600;"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
-            f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_6}; }}"
+            f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_6}; }}",
         )
-        self.sidebar.export_browse_btn.clicked.connect(self.sidebar._browse_export_destination)
+        self.sidebar.export_browse_btn.clicked.connect(
+            self.sidebar._browse_export_destination,
+        )
         dest_row.addWidget(self.sidebar.export_browse_btn)
         file_card_layout.addLayout(dest_row)
 
         # Estimated file size
-        self.sidebar.export_filesize_label = QLabel("Estimated file size: Calculating...")
-        self.sidebar.export_filesize_label.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic; margin-top: 4px;")
+        self.sidebar.export_filesize_label = QLabel(
+            "Estimated file size: Calculating...",
+        )
+        self.sidebar.export_filesize_label.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT)
+            + "font-style: italic; margin-top: 4px;",
+        )
         file_card_layout.addWidget(self.sidebar.export_filesize_label)
 
         # Export button
@@ -312,7 +355,10 @@ class ExportTabBuilder:
     def _build_quick_presets(self, tab_layout: QVBoxLayout):
         """Build quick export presets section with preset buttons (CSV, Analysis, Publication)."""
         presets_label = QLabel("Quick Export Presets")
-        presets_label.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT) + "font-weight: 600; margin-top: 4px;")
+        presets_label.setStyleSheet(
+            label_style(13, Colors.SECONDARY_TEXT)
+            + "font-weight: 600; margin-top: 4px;",
+        )
         tab_layout.addWidget(presets_label)
         tab_layout.addSpacing(4)
 
@@ -336,19 +382,25 @@ class ExportTabBuilder:
 
         self.sidebar.quick_csv_btn = QPushButton("Quick CSV")
         self.sidebar.quick_csv_btn.setFixedHeight(32)
-        self.sidebar.quick_csv_btn.setToolTip("Fast CSV export with all data, no metadata (ideal for quick review)")
+        self.sidebar.quick_csv_btn.setToolTip(
+            "Fast CSV export with all data, no metadata (ideal for quick review)",
+        )
         self.sidebar.quick_csv_btn.setStyleSheet(preset_btn_style)
         preset_row.addWidget(self.sidebar.quick_csv_btn)
 
         self.sidebar.analysis_btn = QPushButton("Analysis Ready")
         self.sidebar.analysis_btn.setFixedHeight(32)
-        self.sidebar.analysis_btn.setToolTip("Excel export with processed data, summary table, and metadata (ideal for analysis software)")
+        self.sidebar.analysis_btn.setToolTip(
+            "Excel export with processed data, summary table, and metadata (ideal for analysis software)",
+        )
         self.sidebar.analysis_btn.setStyleSheet(preset_btn_style)
         preset_row.addWidget(self.sidebar.analysis_btn)
 
         self.sidebar.publication_btn = QPushButton("Publication")
         self.sidebar.publication_btn.setFixedHeight(32)
-        self.sidebar.publication_btn.setToolTip("High-precision Excel export with all metadata (ideal for publications)")
+        self.sidebar.publication_btn.setToolTip(
+            "High-precision Excel export with all metadata (ideal for publications)",
+        )
         self.sidebar.publication_btn.setStyleSheet(preset_btn_style)
         preset_row.addWidget(self.sidebar.publication_btn)
 

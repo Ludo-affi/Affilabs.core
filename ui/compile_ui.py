@@ -30,7 +30,7 @@ if __name__ == "__main__":
         for rc in glob.glob(os.path.join(ui_folder, "ui_*.py")):
             if platform.system() == "Linux":
                 os.system(
-                    f'sed -i -- "s/import {RC_NAME}_rc/import ui.{RC_NAME}_rc/g" {rc}'
+                    f'sed -i -- "s/import {RC_NAME}_rc/import ui.{RC_NAME}_rc/g" {rc}',
                 )
             else:
                 with open(rc) as sources:

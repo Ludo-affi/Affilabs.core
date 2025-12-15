@@ -117,7 +117,10 @@ class HALOperationError(HALError):
     """Raised when a device operation fails."""
 
     def __init__(
-        self, message: str, operation: str, device_info: dict[str, Any] | None = None
+        self,
+        message: str,
+        operation: str,
+        device_info: dict[str, Any] | None = None,
     ) -> None:
         """Initialize operation error.
 

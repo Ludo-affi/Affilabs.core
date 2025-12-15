@@ -1,9 +1,12 @@
 """Add entry debug to rankbatch handler"""
+
 from pathlib import Path
 
-FIRMWARE_PATH = Path(r"C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\pico-p4spr-firmware\affinite_p4spr.c")
+FIRMWARE_PATH = Path(
+    r"C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\pico-p4spr-firmware\affinite_p4spr.c",
+)
 
-with open(FIRMWARE_PATH, 'r', encoding='utf-8') as f:
+with open(FIRMWARE_PATH, encoding="utf-8") as f:
     content = f.read()
 
 # Add debug right after entering rankbatch handler
@@ -20,7 +23,7 @@ new_text = """command[7] == 'c' && command[8] == 'h' && command[9] == ':'){
 
 if old_text in content:
     content = content.replace(old_text, new_text)
-    with open(FIRMWARE_PATH, 'w', encoding='utf-8') as f:
+    with open(FIRMWARE_PATH, "w", encoding="utf-8") as f:
         f.write(content)
     print("✅ Added entry debug")
 else:

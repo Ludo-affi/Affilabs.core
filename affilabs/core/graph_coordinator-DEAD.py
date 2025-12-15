@@ -69,7 +69,10 @@ class GraphCoordinator(QObject):
 
             # Store in buffer manager
             self.app.buffer_mgr.update_cycle_data(
-                ch_letter, cycle_time, cycle_wavelength, delta_spr,
+                ch_letter,
+                cycle_time,
+                cycle_wavelength,
+                delta_spr,
             )
 
         # Apply reference subtraction if enabled
@@ -127,7 +130,8 @@ class GraphCoordinator(QObject):
             display_data = wavelength_data
             if self.app._filter_enabled:
                 display_data = self.app._apply_smoothing(
-                    wavelength_data, self.app._filter_strength,
+                    wavelength_data,
+                    self.app._filter_strength,
                 )
 
             # Update curve
@@ -183,11 +187,15 @@ class GraphCoordinator(QObject):
 
             if self.app._selected_axis == "x":
                 self.app.main_window.cycle_of_interest_graph.setXRange(
-                    min_val, max_val, padding=0,
+                    min_val,
+                    max_val,
+                    padding=0,
                 )
             else:
                 self.app.main_window.cycle_of_interest_graph.setYRange(
-                    min_val, max_val, padding=0,
+                    min_val,
+                    max_val,
+                    padding=0,
                 )
 
         except ValueError as e:

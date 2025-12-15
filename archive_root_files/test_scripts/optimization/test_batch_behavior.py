@@ -1,9 +1,12 @@
 """Test if batch command keeps LEDs on or turns them off."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def test_batch_behavior():
     """Test batch command behavior."""
@@ -18,7 +21,7 @@ def test_batch_behavior():
 
     # First enable and set all channels individually
     print("Step 1: Enable and light all 4 LEDs individually")
-    for ch in ['a', 'b', 'c', 'd']:
+    for ch in ["a", "b", "c", "d"]:
         pico._ser.reset_input_buffer()
         pico._ser.write(f"l{ch}\n".encode())
         time.sleep(0.02)
@@ -38,7 +41,7 @@ def test_batch_behavior():
     pico._ser.write(b"batch:255,0,0,0\n")
     time.sleep(0.05)
     response = pico._ser.read(10)
-    print(f"Batch response: {repr(response)}")
+    print(f"Batch response: {response!r}")
 
     print(">>> Only LED A should be ON, B/C/D should be OFF <<<")
     time.sleep(3)
@@ -49,7 +52,7 @@ def test_batch_behavior():
     pico._ser.write(b"batch:0,255,255,0\n")
     time.sleep(0.05)
     response = pico._ser.read(10)
-    print(f"Batch response: {repr(response)}")
+    print(f"Batch response: {response!r}")
 
     print(">>> Only LEDs B and C should be ON <<<")
     time.sleep(3)
@@ -62,6 +65,7 @@ def test_batch_behavior():
 
     pico.close()
     print("\nTest complete!")
+
 
 if __name__ == "__main__":
     test_batch_behavior()

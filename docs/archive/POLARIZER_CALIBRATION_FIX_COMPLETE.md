@@ -1,6 +1,6 @@
 # Polarizer Calibration Fix - Complete Implementation
 
-**Date**: 2025-10-19  
+**Date**: 2025-10-19
 **Status**: ✅ **COMPLETE AND TESTED**
 
 ---
@@ -62,7 +62,7 @@ Tested both configurations using `verify_polarizer_windows.py`:
 
 **Configuration 1: S=50 (Window 1), P=165 (Window 2) ✅ WINNER**
 - S-mode: 60,470 counts (92% detector max)
-- P-mode: 3,805 counts (6% detector max)  
+- P-mode: 3,805 counts (6% detector max)
 - **S/P Ratio: 15.89× (EXCELLENT)**
 - Quality: Provides proper polarization discrimination
 
@@ -266,24 +266,24 @@ Expected:
 ## Lessons Learned
 
 ### 1. Mode Switching is CRITICAL
-**Issue**: Initial sweep showed ALL positions blocking  
-**Cause**: Missing `ctrl.set_mode("s")` call before measurement  
-**User Insight**: "Are you sure you had one LED on when you swept the polarizer?"  
+**Issue**: Initial sweep showed ALL positions blocking
+**Cause**: Missing `ctrl.set_mode("s")` call before measurement
+**User Insight**: "Are you sure you had one LED on when you swept the polarizer?"
 **Fix**: Always call `set_mode()` + settle time before spectrum acquisition
 
 ### 2. Barrel Polarizers Have TWO Windows
-**Discovery**: Full sweep revealed 2 distinct transmission regions  
-**Physics**: Barrel design has 2 perpendicular windows ~90° apart  
+**Discovery**: Full sweep revealed 2 distinct transmission regions
+**Physics**: Barrel design has 2 perpendicular windows ~90° apart
 **Implication**: Peak detection must enforce minimum separation
 
 ### 3. OEM Tool Needs Separation Validation
-**Problem**: Previous calibration found S=30, P=12 (only 18 units apart)  
-**Root Cause**: Both peaks from same window (noise/shoulders)  
+**Problem**: Previous calibration found S=30, P=12 (only 18 units apart)
+**Root Cause**: Both peaks from same window (noise/shoulders)
 **Solution**: Enforce 40+ servo unit minimum (rejects same-window peaks)
 
 ### 4. Test Both S/P Assignments
-**Reason**: Two windows → two possible assignments  
-**Method**: Measure S-mode and P-mode for both configurations  
+**Reason**: Two windows → two possible assignments
+**Method**: Measure S-mode and P-mode for both configurations
 **Selection**: Choose configuration with high S/P ratio and no saturation
 
 ---
@@ -348,9 +348,9 @@ Expected:
 
 ## Contact & Support
 
-**Issue Resolution**: Complete ✅  
-**Configuration Applied**: Yes ✅  
-**Tool Enhanced**: Yes ✅  
+**Issue Resolution**: Complete ✅
+**Configuration Applied**: Yes ✅
+**Tool Enhanced**: Yes ✅
 **Documentation**: Complete ✅
 
 **Verification Command**:
@@ -372,7 +372,7 @@ python run_app.py
 
 **Blocking Positions (30)**: Signal ~3000 counts (dark noise level)
 ```
-[0, 5, 10, 15, 20, 25, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 
+[0, 5, 10, 15, 20, 25, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120,
  190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 255]
 ```
 
@@ -398,6 +398,6 @@ Window 2: [145, 150, 155, 160, 165, 170, 175, 180, 185]
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2025-10-19  
+**Document Version**: 1.0
+**Last Updated**: 2025-10-19
 **Status**: Implementation Complete ✅

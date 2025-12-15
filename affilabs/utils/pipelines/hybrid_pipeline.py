@@ -44,14 +44,19 @@ Date: December 3, 2025
 Optimization Report: data_processing_analysis/HYBRID_OPTIMIZATION_RESULTS.md
 """
 
-import numpy as np
-from scipy.signal import savgol_filter
-from scipy.ndimage import gaussian_filter1d
-from scipy.fft import dst, idct
-from typing import Dict, Any
 import logging
+from typing import Any
 
-from affilabs.utils.processing_pipeline import ProcessingPipeline, ProcessingResult, PipelineMetadata
+import numpy as np
+from scipy.fft import dst, idct
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import savgol_filter
+
+from affilabs.utils.processing_pipeline import (
+    PipelineMetadata,
+    ProcessingPipeline,
+    ProcessingResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +64,12 @@ logger = logging.getLogger(__name__)
 class HybridPipeline(ProcessingPipeline):
     """Hybrid pipeline: Optimized Fourier + Light Gaussian filtering."""
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: dict[str, Any] = None):
         """Initialize hybrid pipeline with optimized parameters.
 
         Args:
             config: Optional configuration dict. If not provided, uses optimized defaults.
+
         """
         super().__init__(config)
         self.name = "Hybrid (Optimized)"
@@ -73,11 +79,14 @@ class HybridPipeline(ProcessingPipeline):
         cfg = config or {}
 
         # Optimized parameters (Hybrid Light v2)
-        self.alpha = cfg.get('fourier_alpha', 2000)  # Lower than standard for more filtering
-        self.sg_window = cfg.get('sg_window', 11)
-        self.sg_poly = cfg.get('sg_poly', 3)
-        self.gaussian_sigma = cfg.get('gaussian_sigma', 1.0)  # Reduced from 1.5
-        self.regression_window = cfg.get('regression_window', 50)
+        self.alpha = cfg.get(
+            "fourier_alpha",
+            2000,
+        )  # Lower than standard for more filtering
+        self.sg_window = cfg.get("sg_window", 11)
+        self.sg_poly = cfg.get("sg_poly", 3)
+        self.gaussian_sigma = cfg.get("gaussian_sigma", 1.0)  # Reduced from 1.5
+        self.regression_window = cfg.get("regression_window", 50)
 
     def get_metadata(self) -> PipelineMetadata:
         """Return pipeline metadata."""
@@ -87,38 +96,57 @@ class HybridPipeline(ProcessingPipeline):
             version="1.0",
             author="ezControl Team",
             parameters={
-                'alpha': self.alpha,
-                'sg_window': self.sg_window,
-                'sg_poly': self.sg_poly,
-                'gaussian_sigma': self.gaussian_sigma,
-                'regression_window': self.regression_window
-            }
+                "alpha": self.alpha,
+                "sg_window": self.sg_window,
+                "sg_poly": self.sg_poly,
+                "gaussian_sigma": self.gaussian_sigma,
+                "regression_window": self.regression_window,
+            },
         )
 
-    def calculate_transmission(self, intensity: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    def calculate_transmission(
+        self,
+        intensity: np.ndarray,
+        reference: np.ndarray,
+    ) -> np.ndarray:
         """Standard transmission calculation."""
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             transmission = (intensity / reference) * 100
             transmission = np.where(reference == 0, 0, transmission)
         return transmission
 
-    def find_resonance_wavelength(self, transmission: np.ndarray, wavelengths: np.ndarray, **kwargs) -> float:
+    def find_resonance_wavelength(
+        self,
+        transmission: np.ndarray,
+        wavelengths: np.ndarray,
+        **kwargs,
+    ) -> float:
         """Find resonance wavelength using optimized hybrid method."""
         result = self._hybrid_process(wavelengths, transmission)
         return result.resonance_wavelength if result.success else np.nan
 
-    def _hybrid_process(self, wavelengths: np.ndarray, transmission: np.ndarray) -> ProcessingResult:
+    def _hybrid_process(
+        self,
+        wavelengths: np.ndarray,
+        transmission: np.ndarray,
+    ) -> ProcessingResult:
         """Internal processing method using optimized hybrid approach."""
         return self.process(wavelengths, transmission)
 
         # Complexity removed
-        self.use_quadratic = cfg.get('use_quadratic', False)  # Always False
-        self.gaussian_refinement = cfg.get('gaussian_refinement', False)  # Always False
+        self.use_quadratic = cfg.get("use_quadratic", False)  # Always False
+        self.gaussian_refinement = cfg.get("gaussian_refinement", False)  # Always False
 
-        logger.info(f"[OK] Hybrid Pipeline initialized: alpha={self.alpha}, sigma={self.gaussian_sigma}")
+        logger.info(
+            f"[OK] Hybrid Pipeline initialized: alpha={self.alpha}, sigma={self.gaussian_sigma}",
+        )
 
-    def process(self, wavelengths: np.ndarray, transmission: np.ndarray,
-                metadata: Dict[str, Any] = None) -> ProcessingResult:
+    def process(
+        self,
+        wavelengths: np.ndarray,
+        transmission: np.ndarray,
+        metadata: dict[str, Any] = None,
+    ) -> ProcessingResult:
         """Process spectrum using optimized hybrid method.
 
         Args:
@@ -128,11 +156,14 @@ class HybridPipeline(ProcessingPipeline):
 
         Returns:
             ProcessingResult with resonance wavelength and processing info
+
         """
         try:
             # Validate inputs
             if len(wavelengths) != len(transmission):
-                raise ValueError("Wavelength and transmission arrays must have same length")
+                raise ValueError(
+                    "Wavelength and transmission arrays must have same length",
+                )
 
             if len(wavelengths) < 50:
                 raise ValueError("Insufficient data points for hybrid processing")
@@ -141,7 +172,7 @@ class HybridPipeline(ProcessingPipeline):
             transmission_sg = savgol_filter(
                 transmission,
                 window_length=self.sg_window,
-                polyorder=self.sg_poly
+                polyorder=self.sg_poly,
             )
 
             # Step 2: Fourier transform derivative estimation
@@ -151,13 +182,15 @@ class HybridPipeline(ProcessingPipeline):
 
             # Apply alpha smoothing parameter
             if self.alpha > 0:
-                smoothed_derivative = smoothed_derivative / (1 + self.alpha / len(derivative))
+                smoothed_derivative = smoothed_derivative / (
+                    1 + self.alpha / len(derivative)
+                )
 
             # Step 3: Light Gaussian filtering (noise suppression without over-smoothing)
             if self.gaussian_sigma > 0:
                 smoothed_derivative = gaussian_filter1d(
                     smoothed_derivative,
-                    sigma=self.gaussian_sigma
+                    sigma=self.gaussian_sigma,
                 )
 
             # Step 4: Find zero-crossing (peak center)
@@ -170,7 +203,9 @@ class HybridPipeline(ProcessingPipeline):
             else:
                 # Use the zero-crossing closest to argmin
                 argmin_idx = np.argmin(transmission_sg)
-                peak_idx = zero_crossings[np.argmin(np.abs(zero_crossings - argmin_idx))]
+                peak_idx = zero_crossings[
+                    np.argmin(np.abs(zero_crossings - argmin_idx))
+                ]
 
             # Step 5: Linear regression refinement (50-pixel window)
             # No quadratic regression to avoid DC offset
@@ -188,18 +223,20 @@ class HybridPipeline(ProcessingPipeline):
 
             # Validate result
             if not (wavelengths[0] <= resonance_wavelength <= wavelengths[-1]):
-                logger.warning(f"Peak outside wavelength range: {resonance_wavelength:.2f} nm")
+                logger.warning(
+                    f"Peak outside wavelength range: {resonance_wavelength:.2f} nm",
+                )
                 resonance_wavelength = wavelengths[np.argmin(transmission)]
 
             # Prepare metadata
             result_metadata = {
-                'method': 'hybrid_optimized',
-                'alpha': self.alpha,
-                'gaussian_sigma': self.gaussian_sigma,
-                'sg_window': self.sg_window,
-                'sg_poly': self.sg_poly,
-                'peak_transmission': float(transmission_sg[peak_idx]),
-                'confidence': 0.95,  # High confidence with this optimized method
+                "method": "hybrid_optimized",
+                "alpha": self.alpha,
+                "gaussian_sigma": self.gaussian_sigma,
+                "sg_window": self.sg_window,
+                "sg_poly": self.sg_poly,
+                "peak_transmission": float(transmission_sg[peak_idx]),
+                "confidence": 0.95,  # High confidence with this optimized method
             }
 
             if metadata:
@@ -209,7 +246,7 @@ class HybridPipeline(ProcessingPipeline):
                 transmission=transmission,
                 resonance_wavelength=float(resonance_wavelength),
                 metadata=result_metadata,
-                success=True
+                success=True,
             )
 
         except Exception as e:
@@ -220,21 +257,21 @@ class HybridPipeline(ProcessingPipeline):
                 transmission=transmission,
                 resonance_wavelength=float(wavelengths[peak_idx]),
                 metadata={
-                    'method': 'hybrid_fallback',
-                    'error': str(e)
+                    "method": "hybrid_fallback",
+                    "error": str(e),
                 },
                 success=False,
-                error_message=str(e)
+                error_message=str(e),
             )
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """Get current configuration."""
         return {
-            'fourier_alpha': self.alpha,
-            'sg_window': self.sg_window,
-            'sg_poly': self.sg_poly,
-            'gaussian_sigma': self.gaussian_sigma,
-            'regression_window': self.regression_window,
-            'use_quadratic': self.use_quadratic,
-            'gaussian_refinement': self.gaussian_refinement,
+            "fourier_alpha": self.alpha,
+            "sg_window": self.sg_window,
+            "sg_poly": self.sg_poly,
+            "gaussian_sigma": self.gaussian_sigma,
+            "regression_window": self.regression_window,
+            "use_quadratic": self.use_quadratic,
+            "gaussian_refinement": self.gaussian_refinement,
         }

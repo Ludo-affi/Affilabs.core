@@ -5,24 +5,25 @@ All mocks implement the same interfaces as real hardware (IController, ISpectrom
 """
 
 import time
-from typing import Optional, Dict, Any
+from typing import Any
+
 import numpy as np
 
 from .device_interface import (
-    IController,
-    ISpectrometer,
-    IServo,
-    DeviceInfo,
     ControllerCapabilities,
-    SpectrometerCapabilities,
+    DeviceError,
+    DeviceInfo,
+    IController,
+    IServo,
+    ISpectrometer,
     ServoCapabilities,
-    DeviceError
+    SpectrometerCapabilities,
 )
-
 
 # ============================================================================
 # MOCK CONTROLLER
 # ============================================================================
+
 
 class MockController(IController):
     """Mock SPR controller for testing.
@@ -39,13 +40,14 @@ class MockController(IController):
 
         Args:
             model: Mock model name ('MockPicoP4SPR', 'MockPicoEZSPR', etc.)
+
         """
         self._model = model
         self._connected = False
-        self._led_intensities = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-        self._mode = 's'
+        self._led_intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
+        self._mode = "s"
         self._servo_position = 128
-        self._eeprom_config: Optional[Dict[str, Any]] = None
+        self._eeprom_config: dict[str, Any] | None = None
         self._temperature = 25.0  # Mock temperature
 
     # ========================================================================
@@ -74,7 +76,7 @@ class MockController(IController):
             serial_number="MOCK12345",
             firmware_version="1.0.0-mock",
             hardware_version="Rev A",
-            port="MOCK_COM1"
+            port="MOCK_COM1",
         )
 
     def get_capabilities(self) -> ControllerCapabilities:
@@ -91,7 +93,7 @@ class MockController(IController):
             supports_pump=supports_pump,
             supports_temperature=True,
             supports_eeprom_config=True,
-            is_flow_controller=is_flow
+            is_flow_controller=is_flow,
         )
 
     # ========================================================================
@@ -100,19 +102,19 @@ class MockController(IController):
 
     def turn_on_channel(self, channel: str) -> bool:
         """Turn on LED channel (set to default intensity)."""
-        if channel not in ['a', 'b', 'c', 'd']:
+        if channel not in ["a", "b", "c", "d"]:
             raise ValueError(f"Invalid channel: {channel}")
         self._led_intensities[channel] = 180  # Default intensity
         return True
 
     def turn_off_channels(self) -> bool:
         """Turn off all LED channels."""
-        self._led_intensities = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+        self._led_intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
         return True
 
     def set_intensity(self, channel: str, intensity: int) -> bool:
         """Set LED intensity."""
-        if channel not in ['a', 'b', 'c', 'd']:
+        if channel not in ["a", "b", "c", "d"]:
             raise ValueError(f"Invalid channel: {channel}")
         if not 0 <= intensity <= 255:
             raise ValueError(f"Intensity must be 0-255, got {intensity}")
@@ -120,12 +122,18 @@ class MockController(IController):
         self._led_intensities[channel] = intensity
         return True
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         """Set all LED intensities."""
-        self._led_intensities = {'a': a, 'b': b, 'c': c, 'd': d}
+        self._led_intensities = {"a": a, "b": b, "c": c, "d": d}
         return True
 
-    def get_led_intensities(self) -> Dict[str, int]:
+    def get_led_intensities(self) -> dict[str, int]:
         """Get current LED intensities."""
         return self._led_intensities.copy()
 
@@ -135,7 +143,7 @@ class MockController(IController):
 
     def set_mode(self, mode: str) -> bool:
         """Set polarizer mode."""
-        if mode not in ['s', 'p']:
+        if mode not in ["s", "p"]:
             raise ValueError(f"Mode must be 's' or 'p', got '{mode}'")
         self._mode = mode
         return True
@@ -152,7 +160,7 @@ class MockController(IController):
         self._servo_position = position
 
         if save_to_eeprom and self._eeprom_config:
-            self._eeprom_config['servo_position'] = position
+            self._eeprom_config["servo_position"] = position
 
         return True
 
@@ -160,10 +168,11 @@ class MockController(IController):
     # TEMPERATURE MONITORING
     # ========================================================================
 
-    def get_temperature(self) -> Optional[float]:
+    def get_temperature(self) -> float | None:
         """Get mock temperature."""
         # Add small random variation
         import random
+
         return self._temperature + random.uniform(-0.5, 0.5)
 
     # ========================================================================
@@ -174,11 +183,11 @@ class MockController(IController):
         """Check if EEPROM has valid config."""
         return self._eeprom_config is not None
 
-    def read_config_from_eeprom(self) -> Optional[Dict[str, Any]]:
+    def read_config_from_eeprom(self) -> dict[str, Any] | None:
         """Read EEPROM config."""
         return self._eeprom_config.copy() if self._eeprom_config else None
 
-    def write_config_to_eeprom(self, config: Dict[str, Any]) -> bool:
+    def write_config_to_eeprom(self, config: dict[str, Any]) -> bool:
         """Write EEPROM config."""
         self._eeprom_config = config.copy()
         return True
@@ -187,6 +196,7 @@ class MockController(IController):
 # ============================================================================
 # MOCK SPECTROMETER
 # ============================================================================
+
 
 class MockSpectrometer(ISpectrometer):
     """Mock spectrometer for testing.
@@ -203,6 +213,7 @@ class MockSpectrometer(ISpectrometer):
         Args:
             model: Mock model name
             num_pixels: Number of pixels to simulate
+
         """
         self._model = model
         self._num_pixels = num_pixels
@@ -238,7 +249,7 @@ class MockSpectrometer(ISpectrometer):
             serial_number="MOCK_SPEC_001",
             firmware_version="2.0.0-mock",
             hardware_version=None,
-            port=None
+            port=None,
         )
 
     def get_capabilities(self) -> SpectrometerCapabilities:
@@ -254,7 +265,7 @@ class MockSpectrometer(ISpectrometer):
             supports_dark_correction=True,
             supports_averaging=True,
             max_averages=100,
-            backend="mock"
+            backend="mock",
         )
 
     # ========================================================================
@@ -284,7 +295,7 @@ class MockSpectrometer(ISpectrometer):
     # ACQUISITION
     # ========================================================================
 
-    def read_spectrum(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_spectrum(self, num_scans: int = 1) -> np.ndarray | None:
         """Generate mock spectrum.
 
         Creates a Gaussian peak centered at 640nm with noise.
@@ -300,7 +311,9 @@ class MockSpectrometer(ISpectrometer):
         width = 30.0  # FWHM
 
         # Calculate Gaussian
-        intensities = 20000.0 * np.exp(-0.5 * ((self._wavelengths - center_wl) / width) ** 2)
+        intensities = 20000.0 * np.exp(
+            -0.5 * ((self._wavelengths - center_wl) / width) ** 2,
+        )
 
         # Add baseline
         baseline = 2000.0
@@ -315,7 +328,7 @@ class MockSpectrometer(ISpectrometer):
 
         return intensities.astype(np.uint16)
 
-    def read_intensities(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_intensities(self, num_scans: int = 1) -> np.ndarray | None:
         """Alias for read_spectrum()."""
         return self.read_spectrum(num_scans)
 
@@ -323,6 +336,7 @@ class MockSpectrometer(ISpectrometer):
 # ============================================================================
 # MOCK SERVO
 # ============================================================================
+
 
 class MockServo(IServo):
     """Mock servo for testing.
@@ -335,11 +349,11 @@ class MockServo(IServo):
 
     def __init__(self):
         """Initialize mock servo."""
-        self._controller: Optional[IController] = None
+        self._controller: IController | None = None
         self._connected = False
         self._position = 128
-        self._s_position: Optional[int] = None
-        self._p_position: Optional[int] = None
+        self._s_position: int | None = None
+        self._p_position: int | None = None
 
     # ========================================================================
     # LIFECYCLE
@@ -376,7 +390,7 @@ class MockServo(IServo):
             serial_number=None,
             firmware_version=None,
             hardware_version=None,
-            port=None
+            port=None,
         )
 
     def get_capabilities(self) -> ServoCapabilities:
@@ -389,7 +403,7 @@ class MockServo(IServo):
             polarizer_type="barrel",
             s_position=self._s_position,
             p_position=self._p_position,
-            supports_calibration=True
+            supports_calibration=True,
         )
 
     # ========================================================================
@@ -400,8 +414,8 @@ class MockServo(IServo):
         self,
         spectrometer: ISpectrometer,
         controller: IController,
-        **kwargs
-    ) -> Dict[str, int]:
+        **kwargs,
+    ) -> dict[str, int]:
         """Simulate servo calibration.
 
         Returns mock calibrated positions without running actual calibration.
@@ -414,18 +428,18 @@ class MockServo(IServo):
         self._p_position = 135
 
         return {
-            's_position': self._s_position,
-            'p_position': self._p_position
+            "s_position": self._s_position,
+            "p_position": self._p_position,
         }
 
-    def get_calibrated_positions(self) -> Optional[Dict[str, int]]:
+    def get_calibrated_positions(self) -> dict[str, int] | None:
         """Get calibrated positions."""
         if self._s_position is None or self._p_position is None:
             return None
 
         return {
-            's_position': self._s_position,
-            'p_position': self._p_position
+            "s_position": self._s_position,
+            "p_position": self._p_position,
         }
 
     def set_calibrated_positions(self, s_position: int, p_position: int) -> None:
@@ -451,15 +465,15 @@ class MockServo(IServo):
 
     def move_to_mode(self, mode: str, wait: bool = True) -> bool:
         """Move to calibrated S or P position."""
-        if mode not in ['s', 'p']:
+        if mode not in ["s", "p"]:
             raise ValueError(f"Mode must be 's' or 'p', got '{mode}'")
 
-        if mode == 's' and self._s_position is None:
+        if mode == "s" and self._s_position is None:
             raise DeviceError("S position not calibrated")
-        if mode == 'p' and self._p_position is None:
+        if mode == "p" and self._p_position is None:
             raise DeviceError("P position not calibrated")
 
-        position = self._s_position if mode == 's' else self._p_position
+        position = self._s_position if mode == "s" else self._p_position
         return self.move_to_position(position, wait=wait)
 
 
@@ -467,24 +481,27 @@ class MockServo(IServo):
 # FACTORY FUNCTIONS
 # ============================================================================
 
+
 def create_mock_controller(model: str = "MockPicoP4SPR") -> MockController:
     """Create mock controller.
 
     Args:
         model: 'MockPicoP4SPR', 'MockPicoEZSPR', 'MockKNX2', etc.
+
     """
     return MockController(model=model)
 
 
 def create_mock_spectrometer(
     model: str = "MockUSB4000",
-    num_pixels: int = 3648
+    num_pixels: int = 3648,
 ) -> MockSpectrometer:
     """Create mock spectrometer.
 
     Args:
         model: 'MockUSB4000', 'MockPhasePhotonics', etc.
         num_pixels: Number of pixels to simulate
+
     """
     return MockSpectrometer(model=model, num_pixels=num_pixels)
 
@@ -494,7 +511,7 @@ def create_mock_servo() -> MockServo:
     return MockServo()
 
 
-def create_full_mock_system() -> Dict[str, Any]:
+def create_full_mock_system() -> dict[str, Any]:
     """Create complete mock hardware system.
 
     Returns:
@@ -503,6 +520,7 @@ def create_full_mock_system() -> Dict[str, Any]:
             'spectrometer': MockSpectrometer (connected),
             'servo': MockServo (connected)
         }
+
     """
     # Create devices
     controller = create_mock_controller()
@@ -515,7 +533,7 @@ def create_full_mock_system() -> Dict[str, Any]:
     servo.connect(controller)
 
     return {
-        'controller': controller,
-        'spectrometer': spectrometer,
-        'servo': servo
+        "controller": controller,
+        "spectrometer": spectrometer,
+        "servo": servo,
     }

@@ -13,17 +13,18 @@ Usage:
 
 Example:
     python test_afterglow_correction.py optical_calibration/system_FLMT09788_20251011_210859.json
+
 """
 
 import sys
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from afterglow_correction import AfterglowCorrection
-from utils.logger import logger
 
 
 def test_load_calibration(cal_file: str):
@@ -37,11 +38,13 @@ def test_load_calibration(cal_file: str):
         print(f"✅ Successfully loaded: {cal_file}")
 
         info = cal.get_calibration_info()
-        print(f"\n📋 Calibration Info:")
+        print("\n📋 Calibration Info:")
         print(f"   Channels: {info['channels']}")
-        print(f"   Integration time range: {info['integration_time_range_ms'][0]:.1f} - {info['integration_time_range_ms'][1]:.1f} ms")
+        print(
+            f"   Integration time range: {info['integration_time_range_ms'][0]:.1f} - {info['integration_time_range_ms'][1]:.1f} ms",
+        )
 
-        for ch, (min_tau, max_tau) in info['tau_ranges'].items():
+        for ch, (min_tau, max_tau) in info["tau_ranges"].items():
             print(f"   Channel {ch.upper()} τ range: {min_tau:.2f} - {max_tau:.2f} ms")
 
         return cal
@@ -59,24 +62,30 @@ def test_interpolation(cal: AfterglowCorrection):
 
     # Test integration times between calibrated points
     test_cases = [
-        ('a', 25.0, 5.0),  # Between 20-30ms
-        ('b', 35.0, 5.0),  # Between 30-40ms
-        ('c', 55.0, 5.0),  # At typical measurement point
-        ('d', 65.0, 5.0),  # Between 60-70ms
+        ("a", 25.0, 5.0),  # Between 20-30ms
+        ("b", 35.0, 5.0),  # Between 30-40ms
+        ("c", 55.0, 5.0),  # At typical measurement point
+        ("d", 65.0, 5.0),  # Between 60-70ms
     ]
 
-    print(f"\n{'Channel':<10} {'Int Time (ms)':<15} {'Delay (ms)':<12} {'Correction (counts)':<20}")
+    print(
+        f"\n{'Channel':<10} {'Int Time (ms)':<15} {'Delay (ms)':<12} {'Correction (counts)':<20}",
+    )
     print("-" * 70)
 
     for channel, int_time, delay in test_cases:
         try:
             correction = cal.calculate_correction(channel, int_time, delay)
-            print(f"{channel.upper():<10} {int_time:<15.1f} {delay:<12.1f} {correction:<20.1f}")
+            print(
+                f"{channel.upper():<10} {int_time:<15.1f} {delay:<12.1f} {correction:<20.1f}",
+            )
         except Exception as e:
-            print(f"{channel.upper():<10} {int_time:<15.1f} {delay:<12.1f} ❌ ERROR: {e}")
+            print(
+                f"{channel.upper():<10} {int_time:<15.1f} {delay:<12.1f} ❌ ERROR: {e}",
+            )
             return False
 
-    print(f"\n✅ Interpolation tests passed")
+    print("\n✅ Interpolation tests passed")
     return True
 
 
@@ -96,22 +105,21 @@ def test_delay_dependency(cal: AfterglowCorrection):
 
     corrections = []
     for delay in delays:
-        correction = cal.calculate_correction('a', int_time, delay)
+        correction = cal.calculate_correction("a", int_time, delay)
         corrections.append(correction)
 
     reference = corrections[1]  # 5ms delay as reference
 
-    for delay, correction in zip(delays, corrections):
+    for delay, correction in zip(delays, corrections, strict=False):
         ratio = correction / reference if reference > 0 else 0
         print(f"{delay:<15.1f} {correction:<20.1f} {ratio:<15.3f}")
 
     # Verify exponential decay: longer delays → smaller corrections
-    if all(corrections[i] >= corrections[i+1] for i in range(len(corrections)-1)):
-        print(f"\n✅ Exponential decay verified (corrections decrease with delay)")
+    if all(corrections[i] >= corrections[i + 1] for i in range(len(corrections) - 1)):
+        print("\n✅ Exponential decay verified (corrections decrease with delay)")
         return True
-    else:
-        print(f"\n❌ FAILED: Corrections don't decrease monotonically")
-        return False
+    print("\n❌ FAILED: Corrections don't decrease monotonically")
+    return False
 
 
 def test_array_correction(cal: AfterglowCorrection):
@@ -127,9 +135,9 @@ def test_array_correction(cal: AfterglowCorrection):
 
     # Add some realistic spectral shape
     wavelengths = np.linspace(500, 900, spectrum_size)
-    spectrum *= 0.8 + 0.2 * np.exp(-((wavelengths - 650) / 100)**2)  # Gaussian-ish
+    spectrum *= 0.8 + 0.2 * np.exp(-(((wavelengths - 650) / 100) ** 2))  # Gaussian-ish
 
-    print(f"\nOriginal spectrum:")
+    print("\nOriginal spectrum:")
     print(f"   Shape: {spectrum.shape}")
     print(f"   Mean: {np.mean(spectrum):.1f} counts")
     print(f"   Min: {np.min(spectrum):.1f}, Max: {np.max(spectrum):.1f}")
@@ -137,12 +145,12 @@ def test_array_correction(cal: AfterglowCorrection):
     # Apply correction
     corrected = cal.apply_correction(
         spectrum,
-        previous_channel='b',
+        previous_channel="b",
         integration_time_ms=55.0,
-        delay_ms=5.0
+        delay_ms=5.0,
     )
 
-    print(f"\nCorrected spectrum:")
+    print("\nCorrected spectrum:")
     print(f"   Shape: {corrected.shape}")
     print(f"   Mean: {np.mean(corrected):.1f} counts")
     print(f"   Min: {np.min(corrected):.1f}, Max: {np.max(corrected):.1f}")
@@ -152,11 +160,10 @@ def test_array_correction(cal: AfterglowCorrection):
 
     # Verify shape preserved
     if corrected.shape == spectrum.shape:
-        print(f"✅ Array shape preserved")
+        print("✅ Array shape preserved")
         return True
-    else:
-        print(f"❌ FAILED: Array shape mismatch")
-        return False
+    print("❌ FAILED: Array shape mismatch")
+    return False
 
 
 def test_channel_variation(cal: AfterglowCorrection):
@@ -174,7 +181,7 @@ def test_channel_variation(cal: AfterglowCorrection):
     print("-" * 30)
 
     corrections = {}
-    for channel in ['a', 'b', 'c', 'd']:
+    for channel in ["a", "b", "c", "d"]:
         correction = cal.calculate_correction(channel, int_time, delay)
         corrections[channel] = correction
         print(f"{channel.upper():<10} {correction:<20.1f}")
@@ -182,11 +189,12 @@ def test_channel_variation(cal: AfterglowCorrection):
     # Verify channels are different (LEDs have different characteristics)
     unique_corrections = len(set(corrections.values()))
     if unique_corrections >= 3:  # At least 3 different values
-        print(f"\n✅ Channel-specific corrections verified ({unique_corrections} unique values)")
+        print(
+            f"\n✅ Channel-specific corrections verified ({unique_corrections} unique values)",
+        )
         return True
-    else:
-        print(f"\n⚠️ WARNING: Only {unique_corrections} unique correction values")
-        return True  # Not a failure, but worth noting
+    print(f"\n⚠️ WARNING: Only {unique_corrections} unique correction values")
+    return True  # Not a failure, but worth noting
 
 
 def test_scalar_correction(cal: AfterglowCorrection):
@@ -202,9 +210,9 @@ def test_scalar_correction(cal: AfterglowCorrection):
 
     corrected = cal.apply_correction(
         avg_intensity,
-        previous_channel='c',
+        previous_channel="c",
         integration_time_ms=55.0,
-        delay_ms=5.0
+        delay_ms=5.0,
     )
 
     print(f"Corrected averaged intensity: {corrected:.1f} counts")
@@ -212,11 +220,10 @@ def test_scalar_correction(cal: AfterglowCorrection):
 
     # Verify it's a scalar
     if isinstance(corrected, (int, float, np.number)):
-        print(f"✅ Scalar correction works")
+        print("✅ Scalar correction works")
         return True
-    else:
-        print(f"❌ FAILED: Expected scalar, got {type(corrected)}")
-        return False
+    print(f"❌ FAILED: Expected scalar, got {type(corrected)}")
+    return False
 
 
 def run_all_tests(cal_file: str):
@@ -231,26 +238,27 @@ def run_all_tests(cal_file: str):
     try:
         # Test 1: Load calibration
         cal = test_load_calibration(cal_file)
-        results['Load'] = True
+        results["Load"] = True
 
         # Test 2: Interpolation
-        results['Interpolation'] = test_interpolation(cal)
+        results["Interpolation"] = test_interpolation(cal)
 
         # Test 3: Delay dependency
-        results['Delay Decay'] = test_delay_dependency(cal)
+        results["Delay Decay"] = test_delay_dependency(cal)
 
         # Test 4: Array correction
-        results['Array'] = test_array_correction(cal)
+        results["Array"] = test_array_correction(cal)
 
         # Test 5: Channel variation
-        results['Channel Variation'] = test_channel_variation(cal)
+        results["Channel Variation"] = test_channel_variation(cal)
 
         # Test 6: Scalar correction
-        results['Scalar'] = test_scalar_correction(cal)
+        results["Scalar"] = test_scalar_correction(cal)
 
     except Exception as e:
         print(f"\n❌ Test suite failed with exception: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -291,8 +299,8 @@ def main():
     if not Path(cal_file).exists():
         print(f"\n❌ Error: Calibration file not found: {cal_file}")
         print(f"   Absolute path: {Path(cal_file).resolve()}")
-        print(f"\nℹ️ Run optical calibration first to generate the file:")
-        print(f"   python led_afterglow_integration_time_model.py")
+        print("\nℹ️ Run optical calibration first to generate the file:")
+        print("   python led_afterglow_integration_time_model.py")
         sys.exit(1)
 
     # Run tests

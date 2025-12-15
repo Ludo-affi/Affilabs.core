@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 print("=" * 70)
@@ -9,8 +10,8 @@ print("CONTROLLER CONNECTION TEST")
 print("=" * 70)
 
 # Test direct controller connection
+from settings.settings import PICO_PID, PICO_VID
 from utils.controller import PicoP4SPR
-from settings.settings import PICO_VID, PICO_PID
 
 print(f"\n[1] Looking for PicoP4SPR (VID:PID = {hex(PICO_VID)}:{hex(PICO_PID)})...")
 pico_p4spr = PicoP4SPR()
@@ -20,7 +21,7 @@ if pico_p4spr.open():
 
     # Test basic command
     print("\n[2] Testing LED control...")
-    result = pico_p4spr.set_intensity(ch='a', raw_val=200)
+    result = pico_p4spr.set_intensity(ch="a", raw_val=200)
     print(f"   set_intensity('a', 200): {result}")
 
     pico_p4spr.close()
@@ -30,6 +31,7 @@ else:
 
     # List available serial ports
     import serial.tools.list_ports
+
     ports = list(serial.tools.list_ports.comports())
     print(f"\nAvailable COM ports ({len(ports)}):")
     for port in ports:

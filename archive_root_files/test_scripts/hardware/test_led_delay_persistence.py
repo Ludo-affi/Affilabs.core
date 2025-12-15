@@ -1,5 +1,4 @@
-"""
-Test script to verify LED delay persistence implementation.
+"""Test script to verify LED delay persistence implementation.
 
 Tests:
 1. Device config can store/load PRE/POST LED delays
@@ -9,13 +8,15 @@ Tests:
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 
 def test_device_config_led_delays():
     """Test device config can store and retrieve LED delays."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 1: Device Config LED Delay Storage")
-    print("="*70)
+    print("=" * 70)
 
     from utils.device_configuration import DeviceConfiguration
 
@@ -58,11 +59,12 @@ def test_device_config_led_delays():
     print("\n✅ TEST 1 PASSED: Device config LED delay storage works correctly")
     return True
 
+
 def test_acquisition_manager_loading():
     """Test that acquisition manager loads delays from config."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 2: Acquisition Manager Loads Delays from Config")
-    print("="*70)
+    print("=" * 70)
 
     from utils.device_configuration import DeviceConfiguration
 
@@ -84,41 +86,43 @@ def test_acquisition_manager_loading():
     print("   (Full test requires hardware - verified API only)")
     return True
 
+
 def test_schema_structure():
     """Test that device config schema includes LED delay fields."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 3: Device Config Schema Structure")
-    print("="*70)
+    print("=" * 70)
 
     from utils.device_configuration import DeviceConfiguration
 
     config = DeviceConfiguration(device_serial="TEST_DEVICE")
 
     # Check schema includes new fields
-    timing_params = config.config.get('timing_parameters', {})
+    timing_params = config.config.get("timing_parameters", {})
 
     print("Checking timing_parameters schema:")
-    assert 'pre_led_delay_ms' in timing_params, "Missing 'pre_led_delay_ms' field"
+    assert "pre_led_delay_ms" in timing_params, "Missing 'pre_led_delay_ms' field"
     print("  ✓ pre_led_delay_ms exists")
 
-    assert 'post_led_delay_ms' in timing_params, "Missing 'post_led_delay_ms' field"
+    assert "post_led_delay_ms" in timing_params, "Missing 'post_led_delay_ms' field"
     print("  ✓ post_led_delay_ms exists")
 
     # Check old fields still exist (backward compatibility)
-    assert 'led_a_delay_ms' in timing_params, "Missing 'led_a_delay_ms' field"
+    assert "led_a_delay_ms" in timing_params, "Missing 'led_a_delay_ms' field"
     print("  ✓ led_a_delay_ms exists (backward compatibility)")
 
-    print(f"\nFull timing_parameters structure:")
+    print("\nFull timing_parameters structure:")
     for key, value in timing_params.items():
         print(f"  - {key}: {value}")
 
     print("\n✅ TEST 3 PASSED: Schema structure is correct")
     return True
 
+
 if __name__ == "__main__":
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("LED DELAY PERSISTENCE - IMPLEMENTATION TEST")
-    print("="*70)
+    print("=" * 70)
 
     try:
         # Run all tests
@@ -127,12 +131,18 @@ if __name__ == "__main__":
         test3_passed = test_schema_structure()
 
         # Summary
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("TEST SUMMARY")
-        print("="*70)
-        print(f"Test 1 (Device Config Storage): {'✅ PASSED' if test1_passed else '❌ FAILED'}")
-        print(f"Test 2 (Acquisition Manager API): {'✅ PASSED' if test2_passed else '❌ FAILED'}")
-        print(f"Test 3 (Schema Structure): {'✅ PASSED' if test3_passed else '❌ FAILED'}")
+        print("=" * 70)
+        print(
+            f"Test 1 (Device Config Storage): {'✅ PASSED' if test1_passed else '❌ FAILED'}",
+        )
+        print(
+            f"Test 2 (Acquisition Manager API): {'✅ PASSED' if test2_passed else '❌ FAILED'}",
+        )
+        print(
+            f"Test 3 (Schema Structure): {'✅ PASSED' if test3_passed else '❌ FAILED'}",
+        )
 
         if all([test1_passed, test2_passed, test3_passed]):
             print("\n🎉 ALL TESTS PASSED - LED delay persistence is working!")
@@ -148,5 +158,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ TEST ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

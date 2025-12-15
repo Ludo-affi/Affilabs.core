@@ -266,4 +266,3 @@ The fix is applied. Next run should:
 5. **Calibration should proceed!**
 
 Let's test it now!
-

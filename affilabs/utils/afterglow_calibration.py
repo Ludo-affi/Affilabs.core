@@ -64,7 +64,10 @@ class AfterglowFit:
 
 
 def _exp_decay(
-    t_ms: np.ndarray, baseline: float, amplitude: float, tau_ms: float,
+    t_ms: np.ndarray,
+    baseline: float,
+    amplitude: float,
+    tau_ms: float,
 ) -> np.ndarray:
     return baseline + amplitude * np.exp(-t_ms / max(tau_ms, 1e-6))
 
@@ -181,7 +184,10 @@ def _fit_decay(t_ms: np.ndarray, y: np.ndarray) -> AfterglowFit:
         ss_tot = float(np.nansum((y - np.nanmean(y)) ** 2)) or 1.0
         r2 = 1.0 - ss_res / ss_tot
         return AfterglowFit(
-            tau_ms=tau_ms, amplitude=amplitude, baseline=baseline, r_squared=r2,
+            tau_ms=tau_ms,
+            amplitude=amplitude,
+            baseline=baseline,
+            r_squared=r2,
         )
     except Exception:
         # Fallback: simple estimates
@@ -505,7 +511,8 @@ def _analyze_led_aging(current_data: dict, usb) -> dict:
 
             # SPECTRAL SHIFT ANALYSIS (LED color change - early aging indicator)
             curr_spectral = current_data["channel_data"][ch].get(
-                "led_spectral_info", {},
+                "led_spectral_info",
+                {},
             )
             prev_spectral = (
                 prev_data["channel_data"].get(ch, {}).get("led_spectral_info", {})

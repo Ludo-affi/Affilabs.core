@@ -1,5 +1,4 @@
-"""
-Visual diagram showing the channel click selection feature
+"""Visual diagram showing the channel click selection feature
 
 BEFORE CLICK:
 ┌─────────────────────────────────────────────────────────────────┐

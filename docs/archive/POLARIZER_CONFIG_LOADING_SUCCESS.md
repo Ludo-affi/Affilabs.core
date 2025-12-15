@@ -24,7 +24,7 @@ Fixed the issue where polarizer positions from `config/device_config.json` were 
 def to_dict(self) -> Dict[str, Any]:
     """
     Return configuration as dictionary.
-    
+
     Returns:
         Configuration dictionary
     """
@@ -102,7 +102,7 @@ INFO :: 🔄 Real-time data acquisition started
 ## Known Minor Issue
 
 **Profile Save Failure** (non-critical):
-- The auto-save after calibration failed because it checks `self.state.polarizer_s_position` 
+- The auto-save after calibration failed because it checks `self.state.polarizer_s_position`
 - This happens in `save_profile()` method
 - Positions ARE loaded and applied during validation, but not persisted to state early enough for save
 - **Impact**: Minimal - calibration works, measurements work, only the auto-save profile feature affected

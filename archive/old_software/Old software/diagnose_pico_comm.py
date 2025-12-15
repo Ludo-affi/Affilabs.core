@@ -1,8 +1,9 @@
 """Diagnose PicoP4SPR communication."""
 
+import time
+
 import serial
 import serial.tools.list_ports
-import time
 
 PICO_VID = 0x2E8A
 PICO_PID = 0x000A
@@ -70,21 +71,27 @@ try:
     print(f"   First 5 chars: '{line[0:5].decode('ascii', errors='replace')}'")
 
     # Firmware version
-    ser.reset_input_buffer(); ser.reset_output_buffer(); time.sleep(0.1)
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    time.sleep(0.1)
     print("\nTest 4: Firmware version 'iv' ...")
     ser.write(b"iv\n")
     line = ser.readline()
     print(f"   Version: '{line.decode('ascii', errors='replace').strip()}'")
 
     # Temperature command(s)
-    ser.reset_input_buffer(); ser.reset_output_buffer(); time.sleep(0.1)
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    time.sleep(0.1)
     print("\nTest 5: Temperature 'it' ...")
     ser.write(b"it\n")
     line = ser.readline()
     print(f"   'it' reply: '{line.decode('ascii', errors='replace').strip()}'")
 
     # Optional LED-board temperature (if supported by FW)
-    ser.reset_input_buffer(); ser.reset_output_buffer(); time.sleep(0.1)
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    time.sleep(0.1)
     print("\nTest 6: LED-board temperature 'ilt' (if available) ...")
     ser.write(b"ilt\n")
     time.sleep(0.15)
@@ -100,4 +107,5 @@ try:
 except Exception as e:
     print(f"\n✗ Error: {e}")
     import traceback
+
     traceback.print_exc()

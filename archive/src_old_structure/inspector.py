@@ -2,9 +2,11 @@
 
 Provides contextual right-click copy of widget information for debugging.
 """
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QApplication, QMenu
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QApplication, QMenu, QWidget
+
 
 class ElementInspector:
     """Utility to inspect UI elements and copy their information."""
@@ -15,18 +17,24 @@ class ElementInspector:
         if widget is None:
             return
         widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        widget.customContextMenuRequested.connect(lambda pos: ElementInspector.show_inspector_menu(widget, pos))
+        widget.customContextMenuRequested.connect(
+            lambda pos: ElementInspector.show_inspector_menu(widget, pos),
+        )
         # Recursively attach to children
         for child in widget.findChildren(QWidget):
             child.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            child.customContextMenuRequested.connect(lambda pos, w=child: ElementInspector.show_inspector_menu(w, pos))
+            child.customContextMenuRequested.connect(
+                lambda pos, w=child: ElementInspector.show_inspector_menu(w, pos),
+            )
 
     @staticmethod
     def show_inspector_menu(widget: QWidget, pos):
         """Show context menu with copy element info action."""
         menu = QMenu(widget)
         inspect_action = QAction("🔍 Copy Element Info", menu)
-        inspect_action.triggered.connect(lambda: ElementInspector.copy_element_info(widget))
+        inspect_action.triggered.connect(
+            lambda: ElementInspector.copy_element_info(widget),
+        )
         menu.addAction(inspect_action)
         menu.exec(widget.mapToGlobal(pos))
 
@@ -41,7 +49,7 @@ class ElementInspector:
         if name:
             parts.append(f"ObjectName: {name}")
         # Text if available
-        if hasattr(widget, 'text') and callable(getattr(widget, 'text')):
+        if hasattr(widget, "text") and callable(widget.text):
             try:
                 text_val = widget.text()
                 if text_val:

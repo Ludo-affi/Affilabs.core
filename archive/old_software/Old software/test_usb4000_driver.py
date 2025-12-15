@@ -10,8 +10,9 @@ print("=" * 60)
 print("\n1. Checking SeaBreeze installation...")
 try:
     import seabreeze
+
     print(f"   ✓ SeaBreeze version: {seabreeze.__version__}")
-    seabreeze.use('cseabreeze')
+    seabreeze.use("cseabreeze")
     print("   ✓ Using cseabreeze backend")
 except ImportError as e:
     print(f"   ✗ SeaBreeze not installed: {e}")
@@ -21,6 +22,7 @@ except ImportError as e:
 print("\n2. Scanning for devices...")
 try:
     from seabreeze.spectrometers import list_devices
+
     devices = list_devices()
     print(f"   Found {len(devices)} device(s)")
     for i, dev in enumerate(devices):
@@ -28,17 +30,23 @@ try:
 except Exception as e:
     print(f"   ✗ Error listing devices: {e}")
     import traceback
+
     traceback.print_exc()
 
 # Test 3: Check USB devices in Windows
 print("\n3. Checking Windows USB devices...")
 try:
     import subprocess
+
     result = subprocess.run(
-        ['powershell', '-Command',
-         "Get-PnpDevice | Where-Object { $_.FriendlyName -like '*USB4000*' -or $_.FriendlyName -like '*Ocean*' } | Select-Object FriendlyName, Status, InstanceId | Format-List"],
+        [
+            "powershell",
+            "-Command",
+            "Get-PnpDevice | Where-Object { $_.FriendlyName -like '*USB4000*' -or $_.FriendlyName -like '*Ocean*' } | Select-Object FriendlyName, Status, InstanceId | Format-List",
+        ],
         capture_output=True,
-        text=True
+        text=True,
+        check=False,
     )
     if result.stdout.strip():
         print(result.stdout)
@@ -51,6 +59,7 @@ except Exception as e:
 print("\n4. Checking libusb backend...")
 try:
     import usb.core
+
     devices = usb.core.find(find_all=True, idVendor=0x2457)  # Ocean Optics vendor ID
     device_list = list(devices)
     print(f"   Found {len(device_list)} Ocean Optics USB device(s) via libusb")

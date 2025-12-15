@@ -1,10 +1,13 @@
 """Test with proper reset between commands"""
-import serial
+
 import time
 
-print("="*70)
+import serial
+
+print("=" * 70)
 print("COMMAND ISOLATION TEST")
-print("="*70)
+print("=" * 70)
+
 
 def run_isolated_test(ser, cycles_requested):
     """Run a single test with proper isolation"""
@@ -15,7 +18,7 @@ def run_isolated_test(ser, cycles_requested):
     # Close and reopen connection to fully reset
     ser.close()
     time.sleep(2)
-    ser = serial.Serial('COM5', 115200, timeout=10)
+    ser = serial.Serial("COM5", 115200, timeout=10)
     time.sleep(2)
     ser.reset_input_buffer()
 
@@ -30,11 +33,11 @@ def run_isolated_test(ser, cycles_requested):
 
     while time.time() - start < timeout:
         if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
 
             if line:
                 if line.startswith("BATCH_START"):
-                    print(f"  🚀 START")
+                    print("  🚀 START")
                 elif line.startswith("CYCLE:"):
                     cycle_num = int(line.split(":")[1])
                     cycles_seen = cycle_num
@@ -47,19 +50,22 @@ def run_isolated_test(ser, cycles_requested):
                 elif line == "BATCH_END":
                     elapsed = time.time() - start
                     print(f"  ✅ END - Time: {elapsed:.1f}s")
-                    print(f"  Result: {cycles_seen} cycles (expected {cycles_requested})")
+                    print(
+                        f"  Result: {cycles_seen} cycles (expected {cycles_requested})",
+                    )
                     if cycles_seen == cycles_requested:
-                        print(f"  ✅ PASS")
+                        print("  ✅ PASS")
                     else:
-                        print(f"  ❌ FAIL - Mismatch!")
+                        print("  ❌ FAIL - Mismatch!")
                     return ser, cycles_seen
 
     print(f"\n  ⚠️ Timeout after {timeout}s")
     print(f"  Result: {cycles_seen} cycles seen (expected {cycles_requested})")
     return ser, cycles_seen
 
+
 # Open connection
-ser = serial.Serial('COM5', 115200, timeout=10)
+ser = serial.Serial("COM5", 115200, timeout=10)
 time.sleep(2)
 
 # Test sequence with isolation

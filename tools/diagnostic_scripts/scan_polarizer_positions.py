@@ -7,10 +7,11 @@ which positions allow light through (useful signal).
 This helps diagnose polarizer misconfiguration without running full OEM calibration.
 """
 
-import time
-import numpy as np
-from pathlib import Path
 import sys
+import time
+from pathlib import Path
+
+import numpy as np
 
 # Add project root to path
 ROOT_DIR = Path(__file__).parent
@@ -26,13 +27,13 @@ LED_INTENSITY = 255  # Maximum LED
 POSITION_STEP = 5  # Scan every 5 positions (0-255 range)
 SETTLE_TIME = 0.3  # Time for servo to reach position
 
+
 def main():
     """Scan polarizer positions and identify blocking orientations."""
-
     print("=" * 80)
     print("POLARIZER POSITION SCANNER")
     print("=" * 80)
-    print(f"Test Configuration:")
+    print("Test Configuration:")
     print(f"  LED Channel: {LED_CHANNEL}")
     print(f"  LED Intensity: {LED_INTENSITY}")
     print(f"  Integration Time: {INTEGRATION_TIME_MS}ms")
@@ -55,8 +56,8 @@ def main():
         ctrl.close()
         return
 
-    print(f"✅ Connected to controller")
-    print(f"✅ Connected to spectrometer")
+    print("✅ Connected to controller")
+    print("✅ Connected to spectrometer")
     print()
 
     try:
@@ -102,14 +103,18 @@ def main():
                 else:  # Good signal
                     status = "✅ GOOD"
 
-                results.append({
-                    'position': pos,
-                    'max': signal_max,
-                    'mean': signal_mean,
-                    'status': status
-                })
+                results.append(
+                    {
+                        "position": pos,
+                        "max": signal_max,
+                        "mean": signal_mean,
+                        "status": status,
+                    },
+                )
 
-                print(f"{pos:4d}     | {signal_max:7.0f}    | {signal_mean:7.1f}     | {status}")
+                print(
+                    f"{pos:4d}     | {signal_max:7.0f}    | {signal_mean:7.1f}     | {status}",
+                )
             else:
                 print(f"{pos:4d}     | ERROR acquiring spectrum")
 
@@ -119,25 +124,35 @@ def main():
         print("=" * 80)
 
         # Identify blocking positions
-        blocking = [r for r in results if r['max'] < 5000]
-        weak = [r for r in results if 5000 <= r['max'] < 20000]
-        good = [r for r in results if r['max'] >= 20000]
+        blocking = [r for r in results if r["max"] < 5000]
+        weak = [r for r in results if 5000 <= r["max"] < 20000]
+        good = [r for r in results if r["max"] >= 20000]
 
-        print(f"🚫 BLOCKING positions ({len(blocking)}): {[r['position'] for r in blocking]}")
+        print(
+            f"🚫 BLOCKING positions ({len(blocking)}): {[r['position'] for r in blocking]}",
+        )
         if blocking:
-            print(f"   Signal range: {min([r['max'] for r in blocking]):.0f} - {max([r['max'] for r in blocking]):.0f} counts")
+            print(
+                f"   Signal range: {min([r['max'] for r in blocking]):.0f} - {max([r['max'] for r in blocking]):.0f} counts",
+            )
         print()
 
         print(f"⚠️  WEAK positions ({len(weak)}): {[r['position'] for r in weak]}")
         if weak:
-            print(f"   Signal range: {min([r['max'] for r in weak]):.0f} - {max([r['max'] for r in weak]):.0f} counts")
+            print(
+                f"   Signal range: {min([r['max'] for r in weak]):.0f} - {max([r['max'] for r in weak]):.0f} counts",
+            )
         print()
 
         print(f"✅ GOOD positions ({len(good)}): {[r['position'] for r in good]}")
         if good:
-            print(f"   Signal range: {min([r['max'] for r in good]):.0f} - {max([r['max'] for r in good]):.0f} counts")
+            print(
+                f"   Signal range: {min([r['max'] for r in good]):.0f} - {max([r['max'] for r in good]):.0f} counts",
+            )
             print()
-            print(f"💡 RECOMMENDATION: Use polarizer position around {good[len(good)//2]['position']} (middle of good range)")
+            print(
+                f"💡 RECOMMENDATION: Use polarizer position around {good[len(good)//2]['position']} (middle of good range)",
+            )
         print()
 
         # Check current device configuration
@@ -146,6 +161,7 @@ def main():
         print("=" * 80)
 
         from utils.device_configuration import DeviceConfiguration
+
         dev_config = DeviceConfiguration()
 
         if dev_config.load_configuration("TEST001"):
@@ -157,16 +173,16 @@ def main():
             print()
 
             # Check if current positions are in blocking range
-            if s_pos in [r['position'] for r in blocking]:
+            if s_pos in [r["position"] for r in blocking]:
                 print(f"❌ PROBLEM FOUND: S position ({s_pos}) is in BLOCKING range!")
-            elif s_pos in [r['position'] for r in weak]:
+            elif s_pos in [r["position"] for r in weak]:
                 print(f"⚠️  WARNING: S position ({s_pos}) is in WEAK range")
             else:
                 print(f"✅ S position ({s_pos}) looks OK")
 
-            if p_pos in [r['position'] for r in blocking]:
+            if p_pos in [r["position"] for r in blocking]:
                 print(f"❌ PROBLEM FOUND: P position ({p_pos}) is in BLOCKING range!")
-            elif p_pos in [r['position'] for r in weak]:
+            elif p_pos in [r["position"] for r in weak]:
                 print(f"⚠️  WARNING: P position ({p_pos}) is in WEAK range")
             else:
                 print(f"✅ P position ({p_pos}) looks OK")
@@ -184,6 +200,7 @@ def main():
         ctrl.close()
         usb.disconnect()
         print("✅ Hardware disconnected")
+
 
 if __name__ == "__main__":
     main()

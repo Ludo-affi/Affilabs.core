@@ -341,6 +341,7 @@ class FMEATracker:
 
     def _check_scenarios(self, latest_event: FMEAEvent) -> None:
         """Check if recent events match any defined scenarios."""
+        _ = latest_event  # parameter reserved for future use
         # Look at events in last 5 minutes
         recent_window = datetime.now() - timedelta(minutes=5)
         recent_events = [e for e in self.events if e.timestamp >= recent_window]
@@ -388,10 +389,7 @@ class FMEATracker:
         return {
             "overall_health": overall,
             "session_id": self.session_id,
-            "session_duration_minutes": (
-                datetime.now() - self.session_start
-            ).total_seconds()
-            / 60,
+            "session_duration_minutes": (datetime.now() - self.session_start).total_seconds() / 60,
             "active_failures": {
                 "count": len(self.active_failures),
                 "failures": [
@@ -404,15 +402,11 @@ class FMEATracker:
                     for f in self.active_failures.values()
                 ],
             },
-            "severity_distribution": {
-                s.name: count for s, count in severity_counts.items()
-            },
+            "severity_distribution": {s.name: count for s, count in severity_counts.items()},
             "phase_status": {
                 "calibration_completed": self.calibration_completed,
                 "afterglow_validated": self.afterglow_validation_completed,
-                "live_data_active": any(
-                    e.phase == "live_data" for e in self.events[-10:]
-                ),
+                "live_data_active": any(e.phase == "live_data" for e in self.events[-10:]),
             },
             "correlation_score": correlation_score,
             "total_events": len(self.events),
@@ -445,7 +439,8 @@ class FMEATracker:
                 afterglow_events,
             )
             live_passed_rate = sum(e.passed for e in live_events[-20:]) / min(
-                20, len(live_events),
+                20,
+                len(live_events),
             )
 
             # If afterglow passed but live data degrading, deduct points

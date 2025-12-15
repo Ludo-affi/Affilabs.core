@@ -1,10 +1,11 @@
-from utils.controller import PicoP4SPR
 import time
+
+from utils.controller import PicoP4SPR
 
 ctrl = PicoP4SPR()
 ctrl.open()
 print("Moving to S position...")
-ctrl.set_mode('s')
+ctrl.set_mode("s")
 time.sleep(1)
 try:
     pos = ctrl.servo_get()

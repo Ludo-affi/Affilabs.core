@@ -101,17 +101,17 @@ def set_calibration_mode(self, mode: str) -> bool:
     if mode not in ['global', 'per_channel']:
         logger.error(f"Invalid calibration mode: {mode}")
         return False
-    
+
     self.state.calibration_mode = mode
     logger.info(f"📊 Calibration mode set to: {mode.upper()}")
-    
+
     if mode == 'global':
         logger.info("   • Step 4: LED calibration + global integration time")
         logger.info("   • Step 6: LED balancing")
     else:
         logger.info("   • All LEDs fixed at 255")
         logger.info("   • Per-channel integration times")
-    
+
     return True
 ```
 
@@ -153,14 +153,14 @@ if self.state.calibration_mode == 'per_channel':
     logger.info(f"   Step 6 → SKIPPED (no LED balancing needed)")
     logger.info(f"")
     logger.info(f"   Setting all LEDs to maximum intensity (255)...")
-    
+
     # Set all LEDs to 255
     ch_list = self.state.led_ranking if self.state.led_ranking else [('a', (0,)), ('b', (0,)), ('c', (0,)), ('d', (0,))]
     for ch_info in ch_list:
         ch = ch_info[0]
         self.ctrl.set_intensity(ch, MAX_LED_INTENSITY)
         self.state.led_intensities[ch] = MAX_LED_INTENSITY
-    
+
     logger.info(f"   ✅ All LEDs set to 255")
     self.ctrl.turn_off_channels()
     return True
@@ -188,7 +188,7 @@ if self.state.calibration_mode == 'per_channel':
 # Line ~3370-3545: New method optimize_per_channel_integration_times
 def optimize_per_channel_integration_times(self, ch_list: list[str]) -> bool:
     """Optimize integration time for each channel independently (per_channel mode).
-    
+
     Each channel gets its own integration time to reach 50-75% of detector max.
     The 200ms budget is applied per-channel with scan averaging if needed.
     """
@@ -196,16 +196,16 @@ def optimize_per_channel_integration_times(self, ch_list: list[str]) -> bool:
     for ch in ch_list:
         integration_min = min_int
         integration_max = max_int
-        
+
         # Find optimal integration time
         for iteration in range(max_iterations):
             test_integration = (integration_min + integration_max) / 2.0
             self.usb.set_integration(test_integration)
-            
+
             # Measure at LED=255
             result = self._measure_channel_in_roi(ch, MAX_LED_INTENSITY, ...)
             signal_max, _ = result
-            
+
             # Adjust search range
             if target_min <= signal_max <= target_max:
                 best_integration = test_integration
@@ -214,7 +214,7 @@ def optimize_per_channel_integration_times(self, ch_list: list[str]) -> bool:
                 integration_min = test_integration
             else:
                 integration_max = test_integration
-        
+
         # Apply 200ms budget (scan averaging if needed)
         integration_ms = best_integration * 1000
         if integration_ms <= 200.0:
@@ -222,11 +222,11 @@ def optimize_per_channel_integration_times(self, ch_list: list[str]) -> bool:
         else:
             num_scans = int(np.ceil(integration_ms / 200.0))
             best_integration = 200.0 / 1000 / num_scans
-        
+
         # Store per-channel parameters
         self.state.integration_per_channel[ch] = best_integration
         self.state.scans_per_channel[ch] = num_scans
-    
+
     return True
 ```
 
@@ -253,14 +253,14 @@ if self.state.calibration_mode == 'per_channel':
 # Line ~4465-4510: Updated step 7 for per-channel mode
 def step_7_measure_reference_signals(self, ch_list: list[str]) -> bool:
     """Measure S-mode references with appropriate parameters per mode."""
-    
+
     # Determine parameters based on mode
     if self.state.calibration_mode == 'per_channel':
         logger.info(f"   Mode: PER_CHANNEL (using per-channel integration times)")
     else:
         logger.info(f"   Mode: GLOBAL (using global integration time)")
         ref_scans = calculate_dynamic_scans(self.state.integration)
-    
+
     for ch in ch_list:
         # Set per-channel integration time if in per_channel mode
         if self.state.calibration_mode == 'per_channel':
@@ -268,13 +268,13 @@ def step_7_measure_reference_signals(self, ch_list: list[str]) -> bool:
             ch_scans = self.state.scans_per_channel[ch]
             self.usb.set_integration(ch_integration)
             ref_scans = ch_scans
-        
+
         # Set LED intensity based on mode
         if self.state.calibration_mode == 'per_channel':
             intensities_dict = {ch: MAX_LED_INTENSITY}  # LED=255
         else:
             intensities_dict = {ch: self.state.ref_intensity[ch]}  # Calibrated
-        
+
         # Acquire reference
         averaged_signal = self._acquire_averaged_spectrum(
             num_scans=ref_scans,
@@ -290,7 +290,7 @@ self.integration_per_channel: dict[str, float] = {}  # Per-channel integration t
 # Line ~830-845: Set per-channel integration in _acquire_raw_spectrum
 def _acquire_raw_spectrum(self, ch: str):
     """Acquire spectrum with per-channel integration if available."""
-    
+
     # Set per-channel integration time if available
     if hasattr(self, 'integration_per_channel') and ch in self.integration_per_channel:
         ch_integration = self.integration_per_channel[ch]
@@ -300,7 +300,7 @@ def _acquire_raw_spectrum(self, ch: str):
         elif hasattr(self.usb, 'set_integration_time'):
             self.usb.set_integration_time(ch_integration)
             time.sleep(0.05)
-    
+
     # Use per-channel scan count
     scans_for_channel = self.scans_per_channel.get(ch, self.num_scans)
 ```
@@ -342,18 +342,18 @@ if self.calib_state is not None and hasattr(self.calib_state, 'integration_per_c
 ## Benefits
 
 ### Global Mode
-✅ Balanced signal levels across channels  
-✅ Single integration time simplifies timing  
-✅ Consistent LED power consumption  
-✅ Traditional, well-tested approach  
+✅ Balanced signal levels across channels
+✅ Single integration time simplifies timing
+✅ Consistent LED power consumption
+✅ Traditional, well-tested approach
 
 ### Per-Channel Mode
-✅ Maximum LED brightness for all channels  
-✅ Optimal signal level per channel independently  
-✅ Handles widely varying channel responses  
-✅ Flexible integration times per channel  
-✅ Similar to proven s-roi-stability-test mode  
-✅ Better for channels with very different LED brightnesses  
+✅ Maximum LED brightness for all channels
+✅ Optimal signal level per channel independently
+✅ Handles widely varying channel responses
+✅ Flexible integration times per channel
+✅ Similar to proven s-roi-stability-test mode
+✅ Better for channels with very different LED brightnesses
 
 ## Files Modified
 
@@ -417,5 +417,5 @@ if self.calib_state is not None and hasattr(self.calib_state, 'integration_per_c
 - `P_MODE_S_BASED_CALIBRATION.md` - S-mode calibration strategy
 
 ---
-**Implementation Complete:** October 24, 2025  
+**Implementation Complete:** October 24, 2025
 **Status:** Ready for testing

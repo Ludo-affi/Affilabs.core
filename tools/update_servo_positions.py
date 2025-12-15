@@ -8,15 +8,29 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from utils.common import update_config_file, get_config
 from settings import CONFIG_FILE
+from utils.common import get_config, update_config_file
 from utils.logger import logger
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Update servo S/P positions in device_config (generated-files/config.json)")
-    parser.add_argument("--s", dest="s_pos", type=int, required=True, help="S-mode servo position (e.g., 133)")
-    parser.add_argument("--p", dest="p_pos", type=int, required=True, help="P-mode servo position (e.g., 43)")
+    parser = argparse.ArgumentParser(
+        description="Update servo S/P positions in device_config (generated-files/config.json)",
+    )
+    parser.add_argument(
+        "--s",
+        dest="s_pos",
+        type=int,
+        required=True,
+        help="S-mode servo position (e.g., 133)",
+    )
+    parser.add_argument(
+        "--p",
+        dest="p_pos",
+        type=int,
+        required=True,
+        help="P-mode servo position (e.g., 43)",
+    )
     args = parser.parse_args()
 
     s = int(args.s_pos)
@@ -42,7 +56,9 @@ def main():
     if s_written == s and p_written == p:
         logger.info(f"✅ Updated: S={s_written}°, P={p_written}°")
     else:
-        logger.warning(f"⚠️ Verify update: S={s_written}°, P={p_written}° (expected S={s}°, P={p}°)")
+        logger.warning(
+            f"⚠️ Verify update: S={s_written}°, P={p_written}° (expected S={s}°, P={p}°)",
+        )
 
 
 if __name__ == "__main__":

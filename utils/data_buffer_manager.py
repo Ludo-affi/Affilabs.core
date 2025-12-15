@@ -10,7 +10,7 @@ repeated np.append() operations.
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from numpy import ndarray
@@ -123,7 +123,10 @@ class DataBufferManager:
             logger.exception(f"Error clearing buffers for channel {channel}: {e}")
 
     def add_sensorgram_point(
-        self, channel: str, value: float, timestamp: float
+        self,
+        channel: str,
+        value: float,
+        timestamp: float,
     ) -> None:
         """Add a data point to sensorgram buffers.
 
@@ -141,7 +144,7 @@ class DataBufferManager:
             # Add to TimeSeriesBuffer (batched operation for performance)
             self._time_series_buffers[channel].append(
                 timestamp=timestamp,
-                lambda_val=value
+                lambda_val=value,
             )
 
             # Update property references to point to new array views
@@ -174,7 +177,7 @@ class DataBufferManager:
             buffer.append(
                 timestamp=last_time,
                 lambda_val=buffer.lambda_values[-1] if len(buffer) > 0 else value,
-                filtered=value
+                filtered=value,
             )
 
             # Update property reference
@@ -204,7 +207,7 @@ class DataBufferManager:
                 timestamp=buffer.lambda_times[-1] if len(buffer) > 0 else timestamp,
                 lambda_val=buffer.lambda_values[-1] if len(buffer) > 0 else value,
                 buffered=value,
-                buffered_time=timestamp
+                buffered_time=timestamp,
             )
 
             # Update property references
@@ -329,7 +332,7 @@ class DataBufferManager:
         """
         return {ch: self.get_channel_data_count(ch) for ch in self.channels}
 
-    def get_latest_value(self, channel: str) -> Optional[float]:
+    def get_latest_value(self, channel: str) -> float | None:
         """Get the latest lambda value for a channel.
 
         Args:
@@ -351,7 +354,7 @@ class DataBufferManager:
             logger.exception(f"Error getting latest value for {channel}: {e}")
             return None
 
-    def get_latest_timestamp(self, channel: str) -> Optional[float]:
+    def get_latest_timestamp(self, channel: str) -> float | None:
         """Get the latest timestamp for a channel.
 
         Args:
@@ -403,7 +406,7 @@ class DataBufferManager:
                     for i in range(pad_count):
                         buffer.append(
                             lambda_value=last_value,
-                            lambda_time=last_time + i * 0.1
+                            lambda_time=last_time + i * 0.1,
                         )
 
                     # Update property references
@@ -487,7 +490,7 @@ class DataBufferManager:
                 self._update_property_references(channel)
 
                 logger.debug(
-                    f"Trimmed buffers for channel {channel} to {self.buffer_trim_size} points"
+                    f"Trimmed buffers for channel {channel} to {self.buffer_trim_size} points",
                 )
 
         except Exception as e:
@@ -523,9 +526,14 @@ class DataBufferManager:
 
         Args:
             channel: Channel to update
+
         """
         self.lambda_values[channel] = self._time_series_buffers[channel].lambda_values
         self.lambda_times[channel] = self._time_series_buffers[channel].lambda_times
-        self.filtered_lambda[channel] = self._time_series_buffers[channel].filtered_lambda
-        self.buffered_lambda[channel] = self._time_series_buffers[channel].buffered_lambda
+        self.filtered_lambda[channel] = self._time_series_buffers[
+            channel
+        ].filtered_lambda
+        self.buffered_lambda[channel] = self._time_series_buffers[
+            channel
+        ].buffered_lambda
         self.buffered_times[channel] = self._time_series_buffers[channel].buffered_times

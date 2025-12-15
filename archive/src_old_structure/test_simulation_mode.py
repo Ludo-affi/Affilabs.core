@@ -1,5 +1,4 @@
-"""
-Simulation Test Mode
+"""Simulation Test Mode
 ====================
 Tests the complete data acquisition and recording pipeline with simulated spectra.
 
@@ -18,16 +17,17 @@ Default: 30 seconds
 
 import sys
 import time
-import numpy as np
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
+
+import numpy as np
 from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from main_simplified import AffilabsApplication
 from loggers import logger
+from main_simplified import AffilabsApplication
 
 
 class SimulationMode:
@@ -39,6 +39,7 @@ class SimulationMode:
         Args:
             app: AffilabsApplication instance
             duration_seconds: How long to run simulation
+
         """
         self.app = app
         self.duration_seconds = duration_seconds
@@ -52,7 +53,7 @@ class SimulationMode:
         logger.info("=" * 80)
         logger.info("🎬 SIMULATION MODE STARTED")
         logger.info(f"   Duration: {self.duration_seconds} seconds")
-        logger.info(f"   Rate: 10 spectra/second")
+        logger.info("   Rate: 10 spectra/second")
         logger.info("=" * 80)
 
         self.start_time = time.time()
@@ -91,12 +92,14 @@ class SimulationMode:
             spectrum = self._generate_fake_spectrum()
 
             # Inject directly into data manager's processing
-            if self.app.data_mgr and hasattr(self.app.data_mgr, 'spectrum_acquired'):
+            if self.app.data_mgr and hasattr(self.app.data_mgr, "spectrum_acquired"):
                 self.app.data_mgr.spectrum_acquired.emit(spectrum)
                 self.spectrum_count += 1
 
                 if self.spectrum_count % 50 == 0:  # Log every 5 seconds
-                    logger.info(f"📊 Sent {self.spectrum_count} spectra (elapsed: {elapsed:.1f}s)")
+                    logger.info(
+                        f"📊 Sent {self.spectrum_count} spectra (elapsed: {elapsed:.1f}s)",
+                    )
 
         except Exception as e:
             logger.exception(f"❌ Error sending simulated spectrum: {e}")
@@ -107,6 +110,7 @@ class SimulationMode:
 
         Returns:
             dict: Spectrum data matching real hardware format
+
         """
         # Use realistic wavelength range (Ocean Optics USB4000: ~200-1100nm)
         n_pixels = 3648
@@ -120,19 +124,19 @@ class SimulationMode:
         noise = np.random.normal(0, 50, n_pixels)
 
         # Channel A: Strong peak at 650nm (typical SPR)
-        peak_a = 15000 * np.exp(-((wavelengths - 650) ** 2) / (2 * 20 ** 2))
+        peak_a = 15000 * np.exp(-((wavelengths - 650) ** 2) / (2 * 20**2))
         channel_a = peak_a + noise + 1000
 
         # Channel B: Moderate peak at 660nm
-        peak_b = 12000 * np.exp(-((wavelengths - 660) ** 2) / (2 * 22 ** 2))
+        peak_b = 12000 * np.exp(-((wavelengths - 660) ** 2) / (2 * 22**2))
         channel_b = peak_b + noise + 800
 
         # Channel C: Weak peak at 655nm
-        peak_c = 10000 * np.exp(-((wavelengths - 655) ** 2) / (2 * 18 ** 2))
+        peak_c = 10000 * np.exp(-((wavelengths - 655) ** 2) / (2 * 18**2))
         channel_c = peak_c + noise + 900
 
         # Channel D: Strong peak at 670nm
-        peak_d = 14000 * np.exp(-((wavelengths - 670) ** 2) / (2 * 25 ** 2))
+        peak_d = 14000 * np.exp(-((wavelengths - 670) ** 2) / (2 * 25**2))
         channel_d = peak_d + noise + 1100
 
         # Add slight drift over time (simulate real binding event)
@@ -143,14 +147,14 @@ class SimulationMode:
         channel_d += drift * 110
 
         return {
-            'wavelengths': wavelengths.astype(np.float32),
-            'channel_a': channel_a.astype(np.float32),
-            'channel_b': channel_b.astype(np.float32),
-            'channel_c': channel_c.astype(np.float32),
-            'channel_d': channel_d.astype(np.float32),
-            'timestamp': time.time(),
-            'integration_time': 40.0,
-            'simulated': True
+            "wavelengths": wavelengths.astype(np.float32),
+            "channel_a": channel_a.astype(np.float32),
+            "channel_b": channel_b.astype(np.float32),
+            "channel_c": channel_c.astype(np.float32),
+            "channel_d": channel_d.astype(np.float32),
+            "timestamp": time.time(),
+            "integration_time": 40.0,
+            "simulated": True,
         }
 
     def _stop_simulation(self):
@@ -172,7 +176,10 @@ class SimulationMode:
                 self.app.data_mgr.stop_acquisition()
                 logger.info("✅ Acquisition stopped")
 
-            if self.app.recording_mgr and hasattr(self.app.recording_mgr, 'stop_recording'):
+            if self.app.recording_mgr and hasattr(
+                self.app.recording_mgr,
+                "stop_recording",
+            ):
                 self.app.recording_mgr.stop_recording()
                 logger.info("✅ Recording stopped")
         except Exception as e:
@@ -180,6 +187,7 @@ class SimulationMode:
 
         # Show results dialog
         from widgets.message import show_message
+
         show_message(
             f"Simulation Complete!\n\n"
             f"✅ Duration: {elapsed:.1f}s\n"
@@ -187,7 +195,7 @@ class SimulationMode:
             f"✅ Rate: {self.spectrum_count / elapsed:.1f}/sec\n\n"
             f"Check logs for any errors during pipeline processing.",
             msg_type="Info",
-            title="Simulation Test Results"
+            title="Simulation Test Results",
         )
 
         logger.info("💡 You can now close the application or run another test")
@@ -224,5 +232,5 @@ def main():
     sys.exit(qt_app.exec())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

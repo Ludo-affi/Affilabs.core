@@ -206,7 +206,9 @@ class PhasePhotonicsAPI:
     # ========================================================================
 
     def usb_read_image_v2(
-        self, ftHandle: ctypes.c_void_p, sensor_frame_t_obj: SENSOR_FRAME_T,
+        self,
+        ftHandle: ctypes.c_void_p,
+        sensor_frame_t_obj: SENSOR_FRAME_T,
     ) -> int:
         """Read image into pre-allocated buffer (fast version).
 
@@ -300,7 +302,10 @@ class PhasePhotonicsAPI:
         return (ret, cc)
 
     def usb_write_config(
-        self, ftHandle: ctypes.c_void_p, cc: config_contents, area_number: int,
+        self,
+        ftHandle: ctypes.c_void_p,
+        cc: config_contents,
+        area_number: int,
     ) -> int:
         """Write configuration data to EEPROM.
 

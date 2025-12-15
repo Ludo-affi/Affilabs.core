@@ -408,4 +408,3 @@ Total: 1.11s
 ---
 
 **Next Action**: Run `tools/optimize_integration_time.py` to test 40ms! 🚀
-

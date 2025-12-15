@@ -123,7 +123,8 @@ def check_special_case(detector_serial: str | None) -> dict[str, Any] | None:
 
 
 def apply_special_case(
-    special_case: dict[str, Any], device_config: dict[str, Any],
+    special_case: dict[str, Any],
+    device_config: dict[str, Any],
 ) -> dict[str, Any]:
     """Apply special case parameters to device configuration.
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import csv
 import datetime as dt
 import faulthandler
 import gc
@@ -33,36 +32,30 @@ import numpy as np
 import pandas as pd
 import pyqtgraph
 import serial
+
 try:
     from pump_controller import FTDIError, PumpController
 except ImportError:
     # pump_controller is optional - only needed for hardware control
     FTDIError = Exception
     PumpController = None
+import sys
+from pathlib import Path
+
 from PySide6.QtAsyncio import QAsyncioEventLoopPolicy
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
-from utils.spr_signal_processing import (
-    find_resonance_wavelength_fourier,
-    apply_centered_median_filter,
-    calculate_fourier_weights,
-)
-from utils.spectrum_processor import SpectrumProcessor, TemporalFilter
-from utils.channel_manager import ChannelManager
 
 from settings import (
     CH_LIST,
-    LED_POST_DELAY,
-    USE_DYNAMIC_POST_DELAY,
     # DARK_NOISE_SCANS,
     DEV,
-    EZ_CH_LIST,
     FILTERING_ON,
     FLUSH_RATE,
     INTEGRATION_STEP,
     LED_DELAY,
-    USE_DYNAMIC_LED_DELAY,
     LED_DELAY_TARGET_RESIDUAL,
+    LED_POST_DELAY,
     MAX_INTEGRATION,
     # MAX_NUM_SCANS,
     # MAX_READ_TIME,
@@ -83,35 +76,46 @@ from settings import (
     SENSOR_POLL_INTERVAL,
     SW_VERSION,
     TRANS_SEG_H_REQ,
+    USE_DYNAMIC_LED_DELAY,
+    USE_DYNAMIC_POST_DELAY,
 )
-from utils.common import get_config, update_config_file
+from utils.acquisition_service import AcquisitionService
+from utils.channel_manager import ChannelManager
+from utils.common import get_config
+from utils.hal.adapters import (
+    CtrlLEDAdapter,
+    OceanSpectrometerAdapter,
+    UsbSpectrometerInfoAdapter,
+)
 from utils.hardware_state import HardwareStateManager
 from utils.led_calibration import perform_full_led_calibration
 from utils.spectrum_acquisition import SpectrumAcquisition
-from utils.acquisition_service import AcquisitionService
-from utils.hal.adapters import CtrlLEDAdapter, UsbSpectrometerInfoAdapter, OceanSpectrometerAdapter
-import sys
-from pathlib import Path
+from utils.spectrum_processor import SpectrumProcessor, TemporalFilter
+from utils.spr_signal_processing import (
+    calculate_fourier_weights,
+    find_resonance_wavelength_fourier,
+)
+
 _repo_root = str(Path(__file__).parent.parent.parent)
 if _repo_root not in sys.path:
     sys.path.append(_repo_root)
+# Initialize processing pipelines
 from afterglow_correction import AfterglowCorrection
-from utils.ui_styles import UIStyleManager
 from utils.controller import (
     ArduinoController,
+    FlowController,
     KineticController,
     PicoEZSPR,
     PicoKNX2,
     PicoP4SPR,
     QSPRController,
     StaticController,
-    FlowController,
 )
-from utils.logger import logger
+
 # from utils.SpectrometerAPI import SENSOR_FRAME_T
 from utils.detector_factory import create_detector
-# Initialize processing pipelines
-import utils.pipelines  # This auto-registers all pipelines
+from utils.logger import logger
+from utils.ui_styles import UIStyleManager
 from widgets.datawindow import Segment
 from widgets.mainwindow import MainWindow
 from widgets.message import show_message
@@ -119,7 +123,8 @@ from widgets.priming import PrimingWindow
 
 # Import modern theme system
 try:
-    from styles import apply_modern_theme, apply_modern_graph_style
+    from styles import apply_modern_graph_style, apply_modern_theme
+
     MODERN_THEME_AVAILABLE = True
 except ImportError:
     logger.warning("Modern theme system not available, using default styling")
@@ -138,12 +143,19 @@ else:
 
 
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-DEVICES = ["P4SPR", "PicoP4SPR", "EZSPR", "PicoEZSPR"]  # QSPR removed - obsolete hardware
+DEVICES = [
+    "P4SPR",
+    "PicoP4SPR",
+    "EZSPR",
+    "PicoEZSPR",
+]  # QSPR removed - obsolete hardware
 TIME_ZONE = dt.datetime.now(dt.UTC).astimezone().tzinfo
 
 # Type unions organized by capability
 Controller = StaticController | FlowController  # All controllers
-KNX = KineticController | PicoKNX2 | PicoEZSPR  # Flow controllers with pump/valve support
+KNX = (
+    KineticController | PicoKNX2 | PicoEZSPR
+)  # Flow controllers with pump/valve support
 
 
 class AffiniteApp(QMainWindow):
@@ -197,7 +209,7 @@ class AffiniteApp(QMainWindow):
 
         # Defer garbage collection until after startup
         gc.disable()
-        
+
         self.main_window = MainWindow(self)
         self.device_config = {"ctrl": "", "knx": ""}
         self.conf = get_config()
@@ -245,7 +257,9 @@ class AffiniteApp(QMainWindow):
         self.spectrum_acq = None  # Initialized after USB device is opened
 
         # Spectrum processor (centralized processing logic)
-        self.spectrum_processor = None  # Initialized after calibration with fourier_weights
+        self.spectrum_processor = (
+            None  # Initialized after calibration with fourier_weights
+        )
         self.temporal_filter = None  # Initialized with median window settings
 
         # User settable advanced parameters
@@ -282,7 +296,7 @@ class AffiniteApp(QMainWindow):
 
         # Connect thread-safe UI messaging (simplified)
         self.ui_message_sig.connect(self._show_ui_message)
-        
+
         self._c_kill.clear()
         self._c_tr = threading.Thread(target=self.calibrate)
         self._c_tr.start()
@@ -310,7 +324,9 @@ class AffiniteApp(QMainWindow):
         self.timer2.timeout.connect(self.turn_off_six_ch2)
 
         # Temperature log - using pandas DataFrame
-        self.temp_log = pd.DataFrame(columns=["Timestamp", "Experiment Time", "Device Temp"])
+        self.temp_log = pd.DataFrame(
+            columns=["Timestamp", "Experiment Time", "Device Temp"],
+        )
 
         self.temp = 0.0
         self.flow_buf_1: list[float] = []
@@ -319,8 +335,12 @@ class AffiniteApp(QMainWindow):
         self.temp_buf_2: list[float] = []
 
         # Event logs - using pandas DataFrames
-        self.log_ch1 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
-        self.log_ch2 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
+        self.log_ch1 = pd.DataFrame(
+            columns=["timestamp", "time", "event", "flow", "temp", "dev"],
+        )
+        self.log_ch2 = pd.DataFrame(
+            columns=["timestamp", "time", "event", "flow", "temp", "dev"],
+        )
 
         self.exp_start = time.time()
         self.exp_start_perf = time.perf_counter()
@@ -335,7 +355,7 @@ class AffiniteApp(QMainWindow):
 
         # Register cleanup handler for graceful shutdown
         atexit.register(self._emergency_cleanup)
-        
+
         # Re-enable garbage collection after startup and schedule first collection
         QTimer.singleShot(1000, lambda: (gc.enable(), gc.collect()))
 
@@ -351,9 +371,11 @@ class AffiniteApp(QMainWindow):
 
     def _on_adv_delay_status(self: Self, led, post, dled, dpost, path) -> None:
         """Handle advanced delay status updates (lazy check for menu)."""
-        if (hasattr(self.main_window, "advanced_menu") and 
-            self.main_window.advanced_menu is not None and 
-            hasattr(self.main_window.advanced_menu, "set_delay_status")):
+        if (
+            hasattr(self.main_window, "advanced_menu")
+            and self.main_window.advanced_menu is not None
+            and hasattr(self.main_window.advanced_menu, "set_delay_status")
+        ):
             self.main_window.advanced_menu.set_delay_status(
                 led_delay_s=float(led),
                 post_delay_s=float(post),
@@ -364,16 +386,30 @@ class AffiniteApp(QMainWindow):
 
     def _on_adv_status_text(self: Self, txt: str) -> None:
         """Handle advanced status text updates (lazy check for menu)."""
-        if (hasattr(self.main_window, "advanced_menu") and 
-            self.main_window.advanced_menu is not None and 
-            hasattr(self.main_window.advanced_menu, "set_status_text")):
+        if (
+            hasattr(self.main_window, "advanced_menu")
+            and self.main_window.advanced_menu is not None
+            and hasattr(self.main_window.advanced_menu, "set_status_text")
+        ):
             self.main_window.advanced_menu.set_status_text(str(txt))
 
-    def _show_ui_message(self: Self, msg: str, msg_type: str, auto_close_time: int) -> None:
+    def _show_ui_message(
+        self: Self,
+        msg: str,
+        msg_type: str,
+        auto_close_time: int,
+    ) -> None:
         """Show UI message (simplified wrapper)."""
         show_message(msg=msg, msg_type=msg_type, auto_close_time=auto_close_time)
 
-    def _log_event(self: Self, channel: str, event: str, flow: str = "-", temp: str = "-", dev: str = "-") -> None:
+    def _log_event(
+        self: Self,
+        channel: str,
+        event: str,
+        flow: str = "-",
+        temp: str = "-",
+        dev: str = "-",
+    ) -> None:
         """Add event to log using pandas DataFrame.
 
         Args:
@@ -382,19 +418,26 @@ class AffiniteApp(QMainWindow):
             flow: Flow rate value (default "-")
             temp: Temperature value (default "-")
             dev: Device value (default "-")
+
         """
         time_now = dt.datetime.now(TIME_ZONE)
-        log_timestamp = f"{time_now.hour:02d}:{time_now.minute:02d}:{time_now.second:02d}"
+        log_timestamp = (
+            f"{time_now.hour:02d}:{time_now.minute:02d}:{time_now.second:02d}"
+        )
         log_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
 
-        new_event = pd.DataFrame([{
-            'timestamp': log_timestamp,
-            'time': log_time,
-            'event': event,
-            'flow': flow,
-            'temp': temp,
-            'dev': dev
-        }])
+        new_event = pd.DataFrame(
+            [
+                {
+                    "timestamp": log_timestamp,
+                    "time": log_time,
+                    "event": event,
+                    "flow": flow,
+                    "temp": temp,
+                    "dev": dev,
+                },
+            ],
+        )
 
         if channel == "CH1":
             self.log_ch1 = pd.concat([self.log_ch1, new_event], ignore_index=True)
@@ -417,7 +460,9 @@ class AffiniteApp(QMainWindow):
 
         # === Data Update Signals (App -> UI) ===
         if hasattr(self.main_window, "sidebar_spectroscopy"):
-            self.update_spec_signal.connect(self.main_window.sidebar_spectroscopy.update_data)
+            self.update_spec_signal.connect(
+                self.main_window.sidebar_spectroscopy.update_data,
+            )
         self.update_live_signal.connect(self.main_window.sensorgram.update_data)
         self.update_temp_display.connect(
             self.main_window.sidebar.device_widget.update_temp,
@@ -455,7 +500,9 @@ class AffiniteApp(QMainWindow):
         self.main_window.sensorgram.ui.regen_button.clicked.connect(
             self.handle_regen_button,
         )
-        self.main_window.sensorgram.ui.flush_button.clicked.connect(self.handle_flush_button)
+        self.main_window.sensorgram.ui.flush_button.clicked.connect(
+            self.handle_flush_button,
+        )
         self.main_window.sensorgram.ui.prime_button.clicked.connect(self.prime)
         self.main_window.sensorgram.ui.flow_rate.editingFinished.connect(
             self.change_flow_rate,
@@ -518,21 +565,31 @@ class AffiniteApp(QMainWindow):
 
         # === Sidebar Spectroscopy Signals ===
         if hasattr(self.main_window, "sidebar_spectroscopy"):
-            self.main_window.sidebar_spectroscopy.full_cal_sig.connect(self.full_recalibration)
-            logger.info("Connected sidebar spectroscopy full_calibrate_btn to full_recalibration")
+            self.main_window.sidebar_spectroscopy.full_cal_sig.connect(
+                self.full_recalibration,
+            )
+            logger.info(
+                "Connected sidebar spectroscopy full_calibrate_btn to full_recalibration",
+            )
 
         # === Advanced Menu ===
         self.main_window.connect_adv_sig.connect(self.connect_advanced_menu)
 
         # === Pipeline Selector Signal ===
-        if hasattr(self.main_window.sidebar, 'pipeline_widget') and self.main_window.sidebar.pipeline_widget:
-            self.main_window.sidebar.pipeline_widget.pipeline_changed.connect(self._on_pipeline_changed)
+        if (
+            hasattr(self.main_window.sidebar, "pipeline_widget")
+            and self.main_window.sidebar.pipeline_widget
+        ):
+            self.main_window.sidebar.pipeline_widget.pipeline_changed.connect(
+                self._on_pipeline_changed,
+            )
             logger.info("Connected pipeline selector signal")
 
     def _on_pipeline_changed(self: Self, pipeline_id: str) -> None:
         """Handle pipeline selection change"""
         try:
             from utils.processing_pipeline import get_pipeline_registry
+
             registry = get_pipeline_registry()
             active = registry.get_active_pipeline()
             metadata = active.get_metadata()
@@ -541,10 +598,11 @@ class AffiniteApp(QMainWindow):
 
             # Show confirmation message to user
             from widgets.message import show_message
+
             show_message(
                 msg=f"Processing pipeline changed to:\n{metadata.name}\n\nNew pipeline will be used for all subsequent spectra.",
                 msg_type="Information",
-                auto_close_time=3
+                auto_close_time=3,
             )
         except Exception as e:
             logger.exception(f"Error handling pipeline change: {e}")
@@ -588,10 +646,15 @@ class AffiniteApp(QMainWindow):
                         self.ctrl = pico_p4spr
                         # Initialize device-specific configuration
                         try:
-                            from utils.device_integration import initialize_device_on_connection
+                            from utils.device_integration import (
+                                initialize_device_on_connection,
+                            )
+
                             device_dir = initialize_device_on_connection(self.usb)
                             if device_dir:
-                                logger.info(f"✅ Device-specific config initialized: {device_dir.name}")
+                                logger.info(
+                                    f"✅ Device-specific config initialized: {device_dir.name}",
+                                )
                         except Exception as e:
                             logger.warning(f"⚠️ Device initialization failed: {e}")
                     else:
@@ -610,8 +673,12 @@ class AffiniteApp(QMainWindow):
                             yes_no=True,
                         )
                     ):
-                        if getattr(sys, "frozen", False) and getattr(sys, "_MEIPASS", None):
-                            base_dir = getattr(sys, "_MEIPASS")  # noqa: SLF001 - runtime attribute set by PyInstaller
+                        if getattr(sys, "frozen", False) and getattr(
+                            sys,
+                            "_MEIPASS",
+                            None,
+                        ):
+                            base_dir = sys._MEIPASS  # noqa: SLF001 - runtime attribute set by PyInstaller
                             firmware = Path(base_dir) / "affinite_ezspr.uf2"
                         else:
                             firmware = Path("affinite_ezspr.uf2")
@@ -739,9 +806,15 @@ class AffiniteApp(QMainWindow):
                 # ✨ MODIFIED: Calculate contact time as 20% of injection time
                 # Injection time = 80 µL / flow_rate (mL/min converted to µL/min)
                 # Contact time = 20% of injection time
-                injection_time_minutes = 80 / (self.flow_rate * 1000)  # 80 µL / (flow_rate in µL/min)
-                contact_time = injection_time_minutes * 0.20 * 60  # 20% converted to seconds
-                logger.debug(f"Regeneration contact time: {contact_time:.1f}s (20% of {injection_time_minutes*60:.1f}s injection)")
+                injection_time_minutes = 80 / (
+                    self.flow_rate * 1000
+                )  # 80 µL / (flow_rate in µL/min)
+                contact_time = (
+                    injection_time_minutes * 0.20 * 60
+                )  # 20% converted to seconds
+                logger.debug(
+                    f"Regeneration contact time: {contact_time:.1f}s (20% of {injection_time_minutes*60:.1f}s injection)",
+                )
 
                 self.pump.send_command(0x41, b"T")
                 cmd = (
@@ -752,13 +825,18 @@ class AffiniteApp(QMainWindow):
                 ).encode()
                 self.pump.send_command(0x41, cmd)
                 self.main_window.sensorgram.start_progress_bar(
-                    int(48_000 + 1125 * contact_time),  # ✨ MODIFIED: Adjusted for 3s delay (was 67s + 1.125*contact)
+                    int(
+                        48_000 + 1125 * contact_time,
+                    ),  # ✨ MODIFIED: Adjusted for 3s delay (was 67s + 1.125*contact)
                 )
                 await asyncio.sleep(3)  # ✨ MODIFIED: Reduced from 22 to 3 seconds
                 self.knx.knx_six(state=1, ch=3)
                 await asyncio.sleep(contact_time)
                 self.knx.knx_six(state=0, ch=3)
-                self.pump.send_command(0x41, b"V6,1R")  # ✨ MODIFIED: Changed from 83.333 to 6 mL/min
+                self.pump.send_command(
+                    0x41,
+                    b"V6,1R",
+                )  # ✨ MODIFIED: Changed from 83.333 to 6 mL/min
                 await asyncio.sleep(0.8)
                 self.pump.send_command(0x41, b"V6000R")
             except ValueError as e:
@@ -779,10 +857,7 @@ class AffiniteApp(QMainWindow):
             try:
                 self.pump.send_command(0x41, b"T")
                 cmd = (
-                    "IS12A181490"
-                    "OS15A0"
-                    "IS12A181490"
-                    f"OV{self.flow_rate:.3f},1A0R"
+                    "IS12A181490OS15A0IS12A181490" f"OV{self.flow_rate:.3f},1A0R"
                 ).encode()
                 self.pump.send_command(0x41, cmd)
                 self.main_window.sensorgram.start_progress_bar(29_000)
@@ -917,6 +992,7 @@ class AffiniteApp(QMainWindow):
         # This ensures self.data in datawindow has the correct shifted times
         if self.main_window.active_page == "sensorgram":
             from PySide6.QtCore import QCoreApplication
+
             self.update_live_signal.emit(self.sensorgram_data())
             # Process events to ensure data update is applied before segment reload
             QCoreApplication.processEvents()
@@ -930,17 +1006,23 @@ class AffiniteApp(QMainWindow):
             # Initialize AfterglowCorrection instance using device-specific calibration
             if getattr(self, "afterglow_correction", None) is None:
                 try:
-                    from utils.device_integration import get_device_optical_calibration_path
+                    from utils.device_integration import (
+                        get_device_optical_calibration_path,
+                    )
 
                     optical_cal_path = get_device_optical_calibration_path()
 
                     if optical_cal_path and optical_cal_path.exists():
-                        self.afterglow_correction = AfterglowCorrection(optical_cal_path)
-                        logger.info(f"✅ Device-specific afterglow correction loaded")
+                        self.afterglow_correction = AfterglowCorrection(
+                            optical_cal_path,
+                        )
+                        logger.info("✅ Device-specific afterglow correction loaded")
                         logger.info(f"   Calibration file: {optical_cal_path.name}")
                     else:
                         logger.info("No device-specific optical calibration found")
-                        logger.info("   Afterglow correction disabled (run manual calibration from settings)")
+                        logger.info(
+                            "   Afterglow correction disabled (run manual calibration from settings)",
+                        )
                 except Exception as e:
                     logger.warning(f"AfterglowCorrection unavailable: {e}")
             # Initialize spectrum acquisition helper
@@ -951,48 +1033,87 @@ class AffiniteApp(QMainWindow):
                 logger.debug("Initialized spectrum acquisition helper")
                 # Initialize HAL adapters and acquisition service once helper is ready
                 try:
-                    self.led_controller = CtrlLEDAdapter(self.ctrl) if self.ctrl is not None else None
+                    self.led_controller = (
+                        CtrlLEDAdapter(self.ctrl) if self.ctrl is not None else None
+                    )
                     self.spec_info = UsbSpectrometerInfoAdapter(self.usb)
-                    if self.led_controller is not None and self.spectrum_acq is not None:
-                        self.acq_service = AcquisitionService(self.led_controller, self.spec_info, self.spectrum_acq)
+                    if (
+                        self.led_controller is not None
+                        and self.spectrum_acq is not None
+                    ):
+                        self.acq_service = AcquisitionService(
+                            self.led_controller,
+                            self.spec_info,
+                            self.spectrum_acq,
+                        )
                         logger.debug("Initialized AcquisitionService (HAL)")
                 except Exception as e:
-                    logger.exception(f"Failed to initialize AcquisitionService (HAL): {e}")
+                    logger.exception(
+                        f"Failed to initialize AcquisitionService (HAL): {e}",
+                    )
 
             # If enabled, attempt to compute dynamic LED delay based on afterglow model
             if USE_DYNAMIC_LED_DELAY:
                 try:
-                    if getattr(self, "integration", None) is not None and getattr(self, "afterglow_correction", None) is not None:
-                        dyn_delay = float(self.afterglow_correction.get_optimal_led_delay(
-                            integration_time_ms=float(self.integration),
-                            target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                        ))
-                        logger.info(f"Dynamic LED delay computed: {dyn_delay*1000:.1f} ms (was {self.led_delay*1000:.1f} ms)")
+                    if (
+                        getattr(self, "integration", None) is not None
+                        and getattr(self, "afterglow_correction", None) is not None
+                    ):
+                        dyn_delay = float(
+                            self.afterglow_correction.get_optimal_led_delay(
+                                integration_time_ms=float(self.integration),
+                                target_residual_percent=float(
+                                    LED_DELAY_TARGET_RESIDUAL,
+                                ),
+                            ),
+                        )
+                        logger.info(
+                            f"Dynamic LED delay computed: {dyn_delay*1000:.1f} ms (was {self.led_delay*1000:.1f} ms)",
+                        )
                         # Only adopt if sane (e.g., 5 ms <= delay <= 200 ms)
                         if 0.005 <= dyn_delay <= 0.200:
                             self.led_delay = dyn_delay
                         else:
-                            logger.warning(f"Dynamic LED delay {dyn_delay:.3f}s out of range; keeping legacy {self.led_delay:.3f}s")
+                            logger.warning(
+                                f"Dynamic LED delay {dyn_delay:.3f}s out of range; keeping legacy {self.led_delay:.3f}s",
+                            )
                     else:
-                        logger.info("Dynamic LED delay enabled, but integration/afterglow not ready.")
+                        logger.info(
+                            "Dynamic LED delay enabled, but integration/afterglow not ready.",
+                        )
                 except Exception as e:
-                    logger.warning(f"Dynamic LED delay unavailable: {e}. Using legacy fixed delay {self.led_delay:.3f}s")
+                    logger.warning(
+                        f"Dynamic LED delay unavailable: {e}. Using legacy fixed delay {self.led_delay:.3f}s",
+                    )
 
             # If enabled, compute dynamic post delay (dark time after LED off)
             if USE_DYNAMIC_POST_DELAY:
                 try:
-                    if getattr(self, "integration", None) is not None and getattr(self, "afterglow_correction", None) is not None:
-                        dyn_post = float(self.afterglow_correction.get_optimal_led_delay(
-                            integration_time_ms=float(self.integration),
-                            target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                        ))
-                        logger.info(f"Dynamic post delay computed: {dyn_post*1000:.1f} ms (was {self.post_delay*1000:.1f} ms)")
+                    if (
+                        getattr(self, "integration", None) is not None
+                        and getattr(self, "afterglow_correction", None) is not None
+                    ):
+                        dyn_post = float(
+                            self.afterglow_correction.get_optimal_led_delay(
+                                integration_time_ms=float(self.integration),
+                                target_residual_percent=float(
+                                    LED_DELAY_TARGET_RESIDUAL,
+                                ),
+                            ),
+                        )
+                        logger.info(
+                            f"Dynamic post delay computed: {dyn_post*1000:.1f} ms (was {self.post_delay*1000:.1f} ms)",
+                        )
                         if 0.000 <= dyn_post <= 0.300:
                             self.post_delay = dyn_post
                     else:
-                        logger.info("Dynamic post delay enabled, but integration/afterglow not ready.")
+                        logger.info(
+                            "Dynamic post delay enabled, but integration/afterglow not ready.",
+                        )
                 except Exception as e:
-                    logger.debug(f"Dynamic post delay unavailable: {e}. Using configured post delay {self.post_delay:.3f}s")
+                    logger.debug(
+                        f"Dynamic post delay unavailable: {e}. Using configured post delay {self.post_delay:.3f}s",
+                    )
 
             if DEV:
                 for _ in range(10):
@@ -1028,29 +1149,46 @@ class AffiniteApp(QMainWindow):
                         try:
                             import json
                             from pathlib import Path
-                            cache_file = Path(__file__).parent / ".dev_calibration_cache.json"
+
+                            cache_file = (
+                                Path(__file__).parent / ".dev_calibration_cache.json"
+                            )
                             if cache_file.exists():
-                                with open(cache_file, 'r', encoding='utf-8') as f:
+                                with open(cache_file, encoding="utf-8") as f:
                                     cache = json.load(f)
 
                                 # Validate cache version
                                 if cache.get("version") != CACHE_VERSION:
-                                    logger.warning(f"Cache version mismatch: {cache.get('version')} != {CACHE_VERSION}, ignoring cache")
+                                    logger.warning(
+                                        f"Cache version mismatch: {cache.get('version')} != {CACHE_VERSION}, ignoring cache",
+                                    )
                                     cache_file.unlink()
                                     raise ValueError("Cache version mismatch")
 
                                 # Load cached values
                                 self.integration = cache.get("integration_time", 15)
                                 self.num_scans = cache.get("num_scans", 5)
-                                self.hw_state.ref_intensity = cache.get("ref_intensity", 255)
-                                self.hw_state.leds_calibrated = cache.get("leds_calibrated", {ch: 180 for ch in CH_LIST})
+                                self.hw_state.ref_intensity = cache.get(
+                                    "ref_intensity",
+                                    255,
+                                )
+                                self.hw_state.leds_calibrated = cache.get(
+                                    "leds_calibrated",
+                                    {ch: 180 for ch in CH_LIST},
+                                )
 
                                 # Still need wavelength data and fourier weights from hardware
                                 if self.device_config["ctrl"] in DEVICES:
                                     wave_data = self.usb.read_wavelength()
-                                    self.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
-                                    self.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
-                                    self.wave_data = wave_data[self.wave_min_index:self.wave_max_index]
+                                    self.wave_min_index = wave_data.searchsorted(
+                                        MIN_WAVELENGTH,
+                                    )
+                                    self.wave_max_index = wave_data.searchsorted(
+                                        MAX_WAVELENGTH,
+                                    )
+                                    self.wave_data = wave_data[
+                                        self.wave_min_index : self.wave_max_index
+                                    ]
 
                                     # Get dark noise
                                     self.dark_noise = self.usb.read_spectrum()
@@ -1063,14 +1201,25 @@ class AffiniteApp(QMainWindow):
                                     self.ctrl.ref_off()
 
                                     # Compute Fourier weights
-                                    from utils.spr_signal_processing import compute_fourier_weights
-                                    self.fourier_weights = compute_fourier_weights(self.wave_data)
+                                    from utils.spr_signal_processing import (
+                                        compute_fourier_weights,
+                                    )
+
+                                    self.fourier_weights = compute_fourier_weights(
+                                        self.wave_data,
+                                    )
 
                                     cached_loaded = True
                                     self.calibration_status.emit(True, "")
-                                    logger.info("✅ DEV MODE: Loaded cached calibration parameters")
-                                    logger.info(f"   Integration: {self.integration}ms, Scans: {self.num_scans}")
-                                    logger.info(f"   LED intensities: {self.hw_state.leds_calibrated}")
+                                    logger.info(
+                                        "✅ DEV MODE: Loaded cached calibration parameters",
+                                    )
+                                    logger.info(
+                                        f"   Integration: {self.integration}ms, Scans: {self.num_scans}",
+                                    )
+                                    logger.info(
+                                        f"   LED intensities: {self.hw_state.leds_calibrated}",
+                                    )
                         except Exception as e:
                             logger.warning(f"Failed to load dev calibration cache: {e}")
                             cached_loaded = False
@@ -1084,16 +1233,24 @@ class AffiniteApp(QMainWindow):
                             # and min indices
                             if self.device_config["ctrl"] in DEVICES:
                                 serial_number = self.usb.serial_number
-                                logger.debug(f"Spectrometer serial number: {serial_number}")
+                                logger.debug(
+                                    f"Spectrometer serial number: {serial_number}",
+                                )
                                 wave_data = self.usb.read_wavelength()
                                 integration_step = INTEGRATION_STEP
                             else:
-                                logger.debug(f"unrecognized controller: {self.ctrl.name}")
+                                logger.debug(
+                                    f"unrecognized controller: {self.ctrl.name}",
+                                )
                                 wave_data = []
                                 self.error_handler("ctrl")
                             if not self._c_stop.is_set():
-                                self.wave_min_index = wave_data.searchsorted(MIN_WAVELENGTH)
-                                self.wave_max_index = wave_data.searchsorted(MAX_WAVELENGTH)
+                                self.wave_min_index = wave_data.searchsorted(
+                                    MIN_WAVELENGTH,
+                                )
+                                self.wave_max_index = wave_data.searchsorted(
+                                    MAX_WAVELENGTH,
+                                )
                                 self.wave_data = wave_data[
                                     self.wave_min_index : self.wave_max_index
                                 ]
@@ -1103,7 +1260,9 @@ class AffiniteApp(QMainWindow):
                                 )
 
                                 # Standardize Fourier weights calculation via utility
-                                self.fourier_weights = calculate_fourier_weights(len(self.wave_data))
+                                self.fourier_weights = calculate_fourier_weights(
+                                    len(self.wave_data),
+                                )
 
                             # Automatically calibrate polarizer servo alignment if option is
                             # enabled
@@ -1132,14 +1291,20 @@ class AffiniteApp(QMainWindow):
                                         # Update application state with calibration results
                                         self.integration = cal_result.integration_time
                                         self.num_scans = cal_result.num_scans
-                                        self.hw_state.ref_intensity = cal_result.ref_intensity
-                                        self.hw_state.leds_calibrated = cal_result.leds_calibrated
+                                        self.hw_state.ref_intensity = (
+                                            cal_result.ref_intensity
+                                        )
+                                        self.hw_state.leds_calibrated = (
+                                            cal_result.leds_calibrated
+                                        )
                                         self.dark_noise = cal_result.dark_noise
                                         self.ref_sig = cal_result.ref_sig
                                         self.wave_data = cal_result.wave_data
                                         self.wave_min_index = cal_result.wave_min_index
                                         self.wave_max_index = cal_result.wave_max_index
-                                        self.fourier_weights = cal_result.fourier_weights
+                                        self.fourier_weights = (
+                                            cal_result.fourier_weights
+                                        )
                                         self.ch_error_list = cal_result.ch_error_list
 
                                         # Format error message for UI
@@ -1155,28 +1320,45 @@ class AffiniteApp(QMainWindow):
                                             calibration_success = True
 
                                         # Update calibration status
-                                        self.calibration_status.emit(calibration_success, ch_str)
+                                        self.calibration_status.emit(
+                                            calibration_success,
+                                            ch_str,
+                                        )
 
                                         # Compute spectral correction from S-mode reference
-                                        spectral_correction = self._compute_spectral_correction()
+                                        spectral_correction = (
+                                            self._compute_spectral_correction()
+                                        )
 
                                         # Initialize or update SpectrumProcessor with spectral correction
-                                        if self.spectrum_processor is None and self.fourier_weights is not None:
+                                        if (
+                                            self.spectrum_processor is None
+                                            and self.fourier_weights is not None
+                                        ):
                                             self.spectrum_processor = SpectrumProcessor(
                                                 fourier_weights=self.fourier_weights,
                                                 fourier_window_size=165,
                                                 spectral_correction=spectral_correction,
                                             )
-                                            logger.info("SpectrumProcessor initialized with spectral correction")
+                                            logger.info(
+                                                "SpectrumProcessor initialized with spectral correction",
+                                            )
                                         elif self.spectrum_processor is not None:
                                             self.spectrum_processor.spectral_correction = spectral_correction
-                                            logger.info("Spectral correction updated in SpectrumProcessor")
+                                            logger.info(
+                                                "Spectral correction updated in SpectrumProcessor",
+                                            )
 
                                         # Auto-trigger optical calibration if device doesn't have one
-                                        from utils.device_integration import get_device_manager
+                                        from utils.device_integration import (
+                                            get_device_manager,
+                                        )
+
                                         device_manager = get_device_manager()
                                         if device_manager.needs_optical_calibration():
-                                            logger.info("🔄 No optical calibration found - auto-starting afterglow measurement...")
+                                            logger.info(
+                                                "🔄 No optical calibration found - auto-starting afterglow measurement...",
+                                            )
                                             try:
                                                 self.ui_message_sig.emit(
                                                     "Running first-time optical calibration\n\nThis measures LED phosphor decay for accurate corrections.",
@@ -1191,36 +1373,76 @@ class AffiniteApp(QMainWindow):
                                         # Recompute dynamic LED delay after calibration, if enabled
                                         if USE_DYNAMIC_LED_DELAY:
                                             try:
-                                                if getattr(self, "afterglow_correction", None) is not None:
-                                                    dyn_delay = float(self.afterglow_correction.get_optimal_led_delay(
-                                                        integration_time_ms=float(self.integration),
-                                                        target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                                                    ))
+                                                if (
+                                                    getattr(
+                                                        self,
+                                                        "afterglow_correction",
+                                                        None,
+                                                    )
+                                                    is not None
+                                                ):
+                                                    dyn_delay = float(
+                                                        self.afterglow_correction.get_optimal_led_delay(
+                                                            integration_time_ms=float(
+                                                                self.integration,
+                                                            ),
+                                                            target_residual_percent=float(
+                                                                LED_DELAY_TARGET_RESIDUAL,
+                                                            ),
+                                                        ),
+                                                    )
                                                 else:
-                                                    raise RuntimeError("AfterglowCorrection not initialized")
-                                                logger.info(f"[Calib] Dynamic LED delay: {dyn_delay*1000:.1f} ms (legacy {self.led_delay*1000:.1f} ms)")
+                                                    raise RuntimeError(
+                                                        "AfterglowCorrection not initialized",
+                                                    )
+                                                logger.info(
+                                                    f"[Calib] Dynamic LED delay: {dyn_delay*1000:.1f} ms (legacy {self.led_delay*1000:.1f} ms)",
+                                                )
                                                 if 0.005 <= dyn_delay <= 0.200:
                                                     self.led_delay = dyn_delay
                                                 else:
-                                                    logger.warning(f"[Calib] Dynamic delay {dyn_delay:.3f}s out of range; keeping {self.led_delay:.3f}s")
+                                                    logger.warning(
+                                                        f"[Calib] Dynamic delay {dyn_delay:.3f}s out of range; keeping {self.led_delay:.3f}s",
+                                                    )
                                             except Exception as e:
-                                                logger.warning(f"[Calib] Dynamic LED delay unavailable: {e}. Using legacy delay {self.led_delay:.3f}s")
+                                                logger.warning(
+                                                    f"[Calib] Dynamic LED delay unavailable: {e}. Using legacy delay {self.led_delay:.3f}s",
+                                                )
 
                                         # Recompute dynamic post delay after calibration, if enabled
                                         if USE_DYNAMIC_POST_DELAY:
                                             try:
-                                                if getattr(self, "afterglow_correction", None) is not None:
-                                                    dyn_post = float(self.afterglow_correction.get_optimal_led_delay(
-                                                        integration_time_ms=float(self.integration),
-                                                        target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                                                    ))
-                                                    logger.info(f"[Calib] Dynamic post delay: {dyn_post*1000:.1f} ms (legacy {self.post_delay*1000:.1f} ms)")
+                                                if (
+                                                    getattr(
+                                                        self,
+                                                        "afterglow_correction",
+                                                        None,
+                                                    )
+                                                    is not None
+                                                ):
+                                                    dyn_post = float(
+                                                        self.afterglow_correction.get_optimal_led_delay(
+                                                            integration_time_ms=float(
+                                                                self.integration,
+                                                            ),
+                                                            target_residual_percent=float(
+                                                                LED_DELAY_TARGET_RESIDUAL,
+                                                            ),
+                                                        ),
+                                                    )
+                                                    logger.info(
+                                                        f"[Calib] Dynamic post delay: {dyn_post*1000:.1f} ms (legacy {self.post_delay*1000:.1f} ms)",
+                                                    )
                                                     if 0.000 <= dyn_post <= 0.300:
                                                         self.post_delay = dyn_post
                                                 else:
-                                                    raise RuntimeError("AfterglowCorrection not initialized")
+                                                    raise RuntimeError(
+                                                        "AfterglowCorrection not initialized",
+                                                    )
                                             except Exception as e:
-                                                logger.debug(f"[Calib] Dynamic post delay not updated: {e}")
+                                                logger.debug(
+                                                    f"[Calib] Dynamic post delay not updated: {e}",
+                                                )
 
                                 else:
                                     logger.debug("controller does not match in config")
@@ -1280,7 +1502,9 @@ class AffiniteApp(QMainWindow):
                         else:
                             self.usb.set_integration(self.integration)
                     except Exception as e:
-                        logger.debug(f"HAL set_integration failed; falling back to USB: {e}")
+                        logger.debug(
+                            f"HAL set_integration failed; falling back to USB: {e}",
+                        )
                         with suppress(Exception):
                             self.usb.set_integration(self.integration)
                 self._new_sig_tr = threading.Thread(target=self.new_ref_thread)
@@ -1314,7 +1538,10 @@ class AffiniteApp(QMainWindow):
                 self.ctrl.turn_off_channels()
                 time.sleep(0.4)
                 for ch in CH_LIST:
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.ref_intensity[ch])
+                    self.ctrl.set_intensity(
+                        ch=ch,
+                        raw_val=self.hw_state.ref_intensity[ch],
+                    )
                     time.sleep(self.led_delay)
                     ref_data_sum = np.zeros_like(self.dark_noise)
                     ref_scans = REF_SCANS
@@ -1324,7 +1551,9 @@ class AffiniteApp(QMainWindow):
                     for _scan in range(ref_scans):
                         int_val = self.usb.read_intensity()
                         if int_val is None:
-                            logger.error("USB disconnected during reference acquisition")
+                            logger.error(
+                                "USB disconnected during reference acquisition",
+                            )
                             self._on_spec_error()
                             return
                         ref_data_single = (
@@ -1333,7 +1562,10 @@ class AffiniteApp(QMainWindow):
                         )
                         ref_data_sum += ref_data_single
                     self.ref_sig[ch] = deepcopy(ref_data_sum / REF_SCANS)
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.leds_calibrated[ch])
+                    self.ctrl.set_intensity(
+                        ch=ch,
+                        raw_val=self.hw_state.leds_calibrated[ch],
+                    )
                     self.ctrl.turn_off_channels()
                 self.ctrl.set_mode(mode="p")
                 self.new_ref_done_sig.emit()
@@ -1349,7 +1581,6 @@ class AffiniteApp(QMainWindow):
         Calibration always processes all 4 channels (a, b, c, d).
         """
         # This function can be removed or kept for future single-channel features
-        pass
 
     def _compute_spectral_correction(self: Self) -> dict[str, np.ndarray]:
         """Compute per-channel spectral response correction from S-mode reference.
@@ -1363,6 +1594,7 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             Dictionary mapping channel -> correction weight array
+
         """
         spectral_correction = {}
 
@@ -1385,7 +1617,9 @@ class AffiniteApp(QMainWindow):
                 if median_weight > 0 and np.isfinite(median_weight):
                     weights = weights / median_weight
                 else:
-                    logger.warning(f"Invalid median weight for channel {ch}, skipping correction")
+                    logger.warning(
+                        f"Invalid median weight for channel {ch}, skipping correction",
+                    )
                     continue
 
                 # Sanity check: clip extreme weights to prevent noise amplification
@@ -1395,7 +1629,9 @@ class AffiniteApp(QMainWindow):
                 spectral_correction[ch] = weights
 
                 logger.info(f"Spectral correction computed for channel {ch}")
-                logger.info(f"  Weight range: {weights.min():.3f} - {weights.max():.3f}")
+                logger.info(
+                    f"  Weight range: {weights.min():.3f} - {weights.max():.3f}",
+                )
                 logger.info(f"  Median weight: {np.nanmedian(weights):.3f}")
                 logger.info(f"  Mean weight: {np.nanmean(weights):.3f}")
 
@@ -1412,12 +1648,18 @@ class AffiniteApp(QMainWindow):
             time.sleep(0.5)
             if "s" in pos or "S" in pos:
                 for ch in CH_LIST:
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.ref_intensity[ch])
+                    self.ctrl.set_intensity(
+                        ch=ch,
+                        raw_val=self.hw_state.ref_intensity[ch],
+                    )
                 logger.debug(f"set to S intensities: {self.hw_state.ref_intensity}")
                 set_pos = "s"
             else:
                 for ch in CH_LIST:
-                    self.ctrl.set_intensity(ch=ch, raw_val=self.hw_state.leds_calibrated[ch])
+                    self.ctrl.set_intensity(
+                        ch=ch,
+                        raw_val=self.hw_state.leds_calibrated[ch],
+                    )
                 logger.debug(f"set to P intensities: {self.hw_state.leds_calibrated}")
                 set_pos = "p"
             self.ctrl.set_mode(mode=set_pos)
@@ -1550,10 +1792,12 @@ class AffiniteApp(QMainWindow):
         # Initialize TemporalFilter for time-series smoothing
         if self.temporal_filter is None:
             self.temporal_filter = TemporalFilter(
-                method='median',
+                method="median",
                 window_size=self.med_filt_win,
             )
-            logger.debug(f"TemporalFilter initialized (method=median, window={self.med_filt_win})")
+            logger.debug(
+                f"TemporalFilter initialized (method=median, window={self.med_filt_win})",
+            )
 
         if hasattr(self.main_window, "sidebar_spectroscopy"):
             self.main_window.sidebar_spectroscopy.enable_controls(True)
@@ -1610,6 +1854,7 @@ class AffiniteApp(QMainWindow):
             try:
                 # Warn user about data loss
                 from PySide6.QtWidgets import QMessageBox
+
                 warning = QMessageBox(self)
                 warning.setIcon(QMessageBox.Warning)
                 warning.setWindowTitle("Start Recording")
@@ -1618,7 +1863,7 @@ class AffiniteApp(QMainWindow):
                     "To save current data before recording:\n"
                     "• Right-click on the graph\n"
                     "• Select 'Export unsaved data'\n\n"
-                    "Do you want to start recording?"
+                    "Do you want to start recording?",
                 )
                 warning.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
                 warning.setDefaultButton(QMessageBox.Cancel)
@@ -1657,7 +1902,9 @@ class AffiniteApp(QMainWindow):
                     # Also update channel manager's time references
                     self.channel_mgr.exp_start_time = self.exp_start
                     self.channel_mgr.exp_start_perf = self.exp_start_perf
-                    logger.debug("Experiment time reset - recording will start at time zero")
+                    logger.debug(
+                        "Experiment time reset - recording will start at time zero",
+                    )
 
                     # Start recording - this will reset time reference and move yellow cursor to 0
                     if self.device_config["ctrl"] != "":
@@ -1678,6 +1925,7 @@ class AffiniteApp(QMainWindow):
     def save_rec_data(self: Self) -> None:
         """Save recorded data using DataExporter."""
         from pathlib import Path
+
         from utils.data_exporter import DataExporter
 
         # Get experiment name from rec_dir
@@ -1707,7 +1955,11 @@ class AffiniteApp(QMainWindow):
             try:
                 if self.log_ch1 is not None and not self.log_ch1.empty:
                     version = self.knx.version if self.knx else "1.0"
-                    log_ch2 = self.log_ch2 if hasattr(self, 'log_ch2') and self.log_ch2 is not None else None
+                    log_ch2 = (
+                        self.log_ch2
+                        if hasattr(self, "log_ch2") and self.log_ch2 is not None
+                        else None
+                    )
                     exporter.export_kinetic_log(self.log_ch1, log_ch2, version)
             except Exception as e:
                 logger.error(f"Failed to export kinetic logs: {e}")
@@ -1717,7 +1969,7 @@ class AffiniteApp(QMainWindow):
             settings = {
                 "integration_time": self.usb.integration_time if self.usb else None,
                 "channels": CH_LIST,
-                "temperature": self.temp if hasattr(self, 'temp') else None
+                "temperature": self.temp if hasattr(self, "temp") else None,
             }
             exporter.save_metadata(self.device_config, settings)
             exporter.save_manifest()
@@ -1786,10 +2038,17 @@ class AffiniteApp(QMainWindow):
                         break
 
                     # Acquire spectrum and capture timestamp immediately after hardware read
-                    wavelength, acquisition_timestamp = self._process_channel_with_timing(ch, active_channels)
+                    wavelength, acquisition_timestamp = (
+                        self._process_channel_with_timing(ch, active_channels)
+                    )
 
                     # Buffer the data point with accurate acquisition timestamp
-                    self._buffer_channel_data(ch, wavelength, active_channels, acquisition_timestamp)
+                    self._buffer_channel_data(
+                        ch,
+                        wavelength,
+                        active_channels,
+                        acquisition_timestamp,
+                    )
 
                 # Increment buffer index after all channels processed
                 self.channel_mgr.increment_buffer_index()
@@ -1809,11 +2068,9 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             True if acquisition should pause, False otherwise
+
         """
-        return (
-            self._b_stop.is_set()
-            or self.device_config["ctrl"] not in DEVICES
-        )
+        return self._b_stop.is_set() or self.device_config["ctrl"] not in DEVICES
 
     def _initialize_acquisition(self: Self) -> None:
         """Initialize acquisition on first run."""
@@ -1831,7 +2088,7 @@ class AffiniteApp(QMainWindow):
         )
 
         logger.info(
-            f"Acquisition initialized: device={self.device_config['ctrl']}"
+            f"Acquisition initialized: device={self.device_config['ctrl']}",
         )
 
     def _ensure_channel_synchronization(self: Self) -> None:
@@ -1842,7 +2099,7 @@ class AffiniteApp(QMainWindow):
     def _process_channel(
         self: Self,
         channel: str,
-        active_channels: list[str]
+        active_channels: list[str],
     ) -> float:
         """Acquire and process data for a single channel.
 
@@ -1852,6 +2109,7 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             Resonance wavelength (nm), or NaN if channel inactive/error
+
         """
         # Skip if channel is inactive or acquisition disabled
         if not self._should_acquire_channel(channel, active_channels):
@@ -1873,7 +2131,7 @@ class AffiniteApp(QMainWindow):
     def _process_channel_with_timing(
         self: Self,
         channel: str,
-        active_channels: list[str]
+        active_channels: list[str],
     ) -> tuple[float, float]:
         """Acquire and process data for a single channel with accurate timing.
 
@@ -1885,6 +2143,7 @@ class AffiniteApp(QMainWindow):
             Tuple of (resonance_wavelength, acquisition_timestamp)
             - resonance_wavelength: Wavelength in nm, or NaN if inactive/error
             - acquisition_timestamp: Time immediately after hardware acquisition
+
         """
         # Skip if channel is inactive or acquisition disabled
         if not self._should_acquire_channel(channel, active_channels):
@@ -1913,7 +2172,7 @@ class AffiniteApp(QMainWindow):
     def _should_acquire_channel(
         self: Self,
         channel: str,
-        active_channels: list[str]
+        active_channels: list[str],
     ) -> bool:
         """Check if channel should be acquired.
 
@@ -1923,6 +2182,7 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             True if channel should be acquired
+
         """
         return (
             channel in active_channels
@@ -1939,6 +2199,7 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             Tuple of (intensity_data, transmission_data)
+
         """
         if getattr(self, "acq_service", None) is None:
             logger.error("AcquisitionService not initialized")
@@ -1959,7 +2220,7 @@ class AffiniteApp(QMainWindow):
     def _find_resonance_wavelength(
         self: Self,
         channel: str,
-        transmission: np.ndarray
+        transmission: np.ndarray,
     ) -> float:
         """Find resonance wavelength from transmission spectrum.
 
@@ -1969,6 +2230,7 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             Resonance wavelength (nm), or NaN on error
+
         """
         if self._b_stop.is_set() or transmission is None:
             return np.nan
@@ -1987,7 +2249,9 @@ class AffiniteApp(QMainWindow):
                 return np.nan
         else:
             # Fallback if processor not initialized
-            logger.warning("SpectrumProcessor not initialized, using legacy Fourier method")
+            logger.warning(
+                "SpectrumProcessor not initialized, using legacy Fourier method",
+            )
             return find_resonance_wavelength_fourier(
                 transmission_spectrum=transmission,
                 wavelengths=self.wave_data,
@@ -2000,7 +2264,7 @@ class AffiniteApp(QMainWindow):
         channel: str,
         wavelength: float,
         active_channels: list[str],
-        acquisition_timestamp: float
+        acquisition_timestamp: float,
     ) -> None:
         """Buffer channel data point with filtering.
 
@@ -2009,12 +2273,17 @@ class AffiniteApp(QMainWindow):
             wavelength: Raw resonance wavelength (nm)
             active_channels: List of currently active channels
             acquisition_timestamp: Timestamp captured immediately after hardware acquisition
+
         """
         # Use the provided timestamp (captured right after hardware read)
         current_time = acquisition_timestamp
 
         # Apply temporal filtering for active channels (only if filter is enabled)
-        if channel in active_channels and self.temporal_filter is not None and self.filt_on:
+        if (
+            channel in active_channels
+            and self.temporal_filter is not None
+            and self.filt_on
+        ):
             # Get current values from ChannelManager for filtering
             # (slice to actual data length for THIS CHANNEL, excluding preallocated space)
             n = self.channel_mgr._current_length[channel]
@@ -2042,8 +2311,6 @@ class AffiniteApp(QMainWindow):
             filtered_value=filtered_value,
         )
 
-
-
     def _update_ui_displays(self: Self) -> None:
         """Update UI with latest sensorgram and spectroscopy data."""
         self.update_live_signal.emit(self.sensorgram_data())
@@ -2052,9 +2319,9 @@ class AffiniteApp(QMainWindow):
     def _update_temperature_display(self: Self) -> None:
         """Update temperature display if using P4SPR-based device."""
         # PicoP4SPR and PicoEZSPR support temperature readout
-        if (
-            self.device_config["ctrl"] in ["PicoP4SPR", "PicoEZSPR"]
-            and isinstance(self.ctrl, (PicoP4SPR, PicoEZSPR))
+        if self.device_config["ctrl"] in ["PicoP4SPR", "PicoEZSPR"] and isinstance(
+            self.ctrl,
+            (PicoP4SPR, PicoEZSPR),
         ):
             self.temp_sig.emit(self.ctrl.get_temp())
 
@@ -2064,9 +2331,10 @@ class AffiniteApp(QMainWindow):
         Args:
             error: Exception that occurred
             channel: Channel being processed when error occurred
+
         """
         logger.exception(
-            f"Error while grabbing data: {type(error)}: {error}: channel {channel}"
+            f"Error while grabbing data: {type(error)}: {error}: channel {channel}",
         )
 
         # Ensure buffers are synchronized after error
@@ -2086,7 +2354,6 @@ class AffiniteApp(QMainWindow):
         else:
             self.raise_error.emit("ctrl")
 
-
     @staticmethod
     def median_window(win_size: int) -> int:
         """Make an odd integer."""
@@ -2098,7 +2365,9 @@ class AffiniteApp(QMainWindow):
         """Filter data with vectorized median filtering (optimized)."""
         try:
             for ch in CH_LIST:
-                n = self.channel_mgr._current_length[ch]  # Actual data length for THIS CHANNEL
+                n = self.channel_mgr._current_length[
+                    ch
+                ]  # Actual data length for THIS CHANNEL
                 if n == 0:
                     continue
 
@@ -2107,7 +2376,11 @@ class AffiniteApp(QMainWindow):
                 lambda_times = self.channel_mgr.lambda_times[ch][:n]
                 buffered_times = self.channel_mgr.buffered_times[ch][:n]
 
-                if len(lambda_values) > 0 and len(lambda_times) > 0 and len(buffered_times) > 0:
+                if (
+                    len(lambda_values) > 0
+                    and len(lambda_times) > 0
+                    and len(buffered_times) > 0
+                ):
                     # VECTORIZED median filter - much faster than loop
                     half_win = self.med_filt_win // 2
                     new_filtered = np.empty(len(lambda_values))
@@ -2120,16 +2393,23 @@ class AffiniteApp(QMainWindow):
                     # Find offset to match buffered times
                     offset = 0
                     max_offset = min(len(lambda_times), len(buffered_times))
-                    while offset < max_offset and lambda_times[offset] != buffered_times[0]:
+                    while (
+                        offset < max_offset
+                        and lambda_times[offset] != buffered_times[0]
+                    ):
                         offset += 1
 
                     # Only update if we found a valid offset
                     if offset < max_offset:
                         # Write directly to the preallocated buffer
                         filtered_slice = new_filtered[offset:]
-                        self.channel_mgr.filtered_lambda[ch][:len(filtered_slice)] = filtered_slice
+                        self.channel_mgr.filtered_lambda[ch][: len(filtered_slice)] = (
+                            filtered_slice
+                        )
                     else:
-                        logger.warning(f"Could not find matching times for channel {ch}")
+                        logger.warning(
+                            f"Could not find matching times for channel {ch}",
+                        )
         except Exception as e:
             logger.exception(f"error updating the filter win size: {e}")
             show_message("Filter window could not be updated", msg_type="Warning")
@@ -2147,15 +2427,44 @@ class AffiniteApp(QMainWindow):
     def sensorgram_data(self: Self) -> object:
         """Return sensorgram data (only valid data points, not preallocated space)."""
         # Get maximum data length across all channels
-        max_n = max(self.channel_mgr._current_length.values()) if self.channel_mgr._current_length else 0
+        max_n = (
+            max(self.channel_mgr._current_length.values())
+            if self.channel_mgr._current_length
+            else 0
+        )
 
         sens_data = {
             # Only copy valid data per channel, not entire preallocated buffers
-            "lambda_values": {ch: self.channel_mgr.lambda_values[ch][:self.channel_mgr._current_length[ch]].copy() for ch in CH_LIST},
-            "lambda_times": {ch: self.channel_mgr.lambda_times[ch][:self.channel_mgr._current_length[ch]].copy() for ch in CH_LIST},
-            "buffered_lambda_values": {ch: self.channel_mgr.buffered_lambda[ch][:self.channel_mgr._current_length[ch]].copy() for ch in CH_LIST},
-            "filtered_lambda_values": {ch: self.channel_mgr.filtered_lambda[ch][:self.channel_mgr._current_length[ch]].copy() for ch in CH_LIST},
-            "buffered_lambda_times": {ch: self.channel_mgr.buffered_times[ch][:self.channel_mgr._current_length[ch]].copy() for ch in CH_LIST},
+            "lambda_values": {
+                ch: self.channel_mgr.lambda_values[ch][
+                    : self.channel_mgr._current_length[ch]
+                ].copy()
+                for ch in CH_LIST
+            },
+            "lambda_times": {
+                ch: self.channel_mgr.lambda_times[ch][
+                    : self.channel_mgr._current_length[ch]
+                ].copy()
+                for ch in CH_LIST
+            },
+            "buffered_lambda_values": {
+                ch: self.channel_mgr.buffered_lambda[ch][
+                    : self.channel_mgr._current_length[ch]
+                ].copy()
+                for ch in CH_LIST
+            },
+            "filtered_lambda_values": {
+                ch: self.channel_mgr.filtered_lambda[ch][
+                    : self.channel_mgr._current_length[ch]
+                ].copy()
+                for ch in CH_LIST
+            },
+            "buffered_lambda_times": {
+                ch: self.channel_mgr.buffered_times[ch][
+                    : self.channel_mgr._current_length[ch]
+                ].copy()
+                for ch in CH_LIST
+            },
             "filt": self.filt_on,
             "start": self.exp_start,
             "start_perf": self.exp_start_perf,
@@ -2182,6 +2491,7 @@ class AffiniteApp(QMainWindow):
 
         Returns:
             Tuple of (is_valid, sp_ratio, s_pos, p_pos)
+
         """
         try:
             logger.info("=== Quick Polarizer Validation ===")
@@ -2200,7 +2510,10 @@ class AffiniteApp(QMainWindow):
             # Use HAL to set integration; convert seconds→milliseconds
             try:
                 detector = getattr(self, "spec_adapter", self.usb)
-                min_sec = max(MIN_INTEGRATION / 1000.0, detector.min_integration if detector else 0.001)
+                min_sec = max(
+                    MIN_INTEGRATION / 1000.0,
+                    detector.min_integration if detector else 0.001,
+                )
                 integ_ms = int(round(min_sec * 1000.0))
                 if getattr(self, "spec_adapter", None) is not None:
                     self.spec_adapter.set_integration(integ_ms)
@@ -2211,7 +2524,10 @@ class AffiniteApp(QMainWindow):
                 with suppress(Exception):
                     # Final fallback to legacy path with ms
                     if self.usb is not None:
-                        min_sec = max(MIN_INTEGRATION / 1000.0, self.usb.min_integration)
+                        min_sec = max(
+                            MIN_INTEGRATION / 1000.0,
+                            self.usb.min_integration,
+                        )
                         self.usb.set_integration(int(round(min_sec * 1000.0)))
 
             # Measure S-mode (should be HIGH)
@@ -2251,9 +2567,8 @@ class AffiniteApp(QMainWindow):
                 status = "✅ VALID" if sp_ratio >= IDEAL_RATIO else "✅ ACCEPTABLE"
                 logger.info(f"   {status} - Stored positions are good")
                 return True, sp_ratio, s_pos, p_pos
-            else:
-                logger.warning(f"   ❌ INVALID - Ratio too low (minimum: {MIN_RATIO:.2f}×)")
-                return False, sp_ratio, s_pos, p_pos
+            logger.warning(f"   ❌ INVALID - Ratio too low (minimum: {MIN_RATIO:.2f}×)")
+            return False, sp_ratio, s_pos, p_pos
 
         except Exception as e:
             logger.warning(f"   ⚠️ Validation failed: {e}")
@@ -2266,18 +2581,21 @@ class AffiniteApp(QMainWindow):
 
         Args:
             force_full_calibration: If True, skip validation and always do full sweep
+
         """
         from utils.servo_calibration import (
-            perform_quadrant_search,
             analyze_peaks,
-            verify_and_correct_positions,
-            perform_full_sweep_fallback,
             perform_barrel_window_search,
+            perform_full_sweep_fallback,
+            perform_quadrant_search,
+            verify_and_correct_positions,
         )
 
         # Try quick validation first unless forced to do full calibration
         if not force_full_calibration:
-            is_valid, sp_ratio, s_pos, p_pos = self.validate_existing_polarizer_positions()
+            is_valid, sp_ratio, s_pos, p_pos = (
+                self.validate_existing_polarizer_positions()
+            )
 
             if is_valid:
                 logger.info("✅ POLARIZER VALIDATION SUCCESSFUL (fast mode)")
@@ -2286,20 +2604,24 @@ class AffiniteApp(QMainWindow):
                 logger.info("   Skipping full calibration sweep")
                 self.ctrl.servo_set(s_pos, p_pos)
                 logger.info(
-                    "   Note: Validation path does NOT flash EEPROM. Positions will not persist across power cycles."
+                    "   Note: Validation path does NOT flash EEPROM. Positions will not persist across power cycles.",
                 )
                 return
-            else:
-                logger.info("⚠️ Validation failed - proceeding with full calibration sweep")
+            logger.info("⚠️ Validation failed - proceeding with full calibration sweep")
         else:
             logger.info("🔧 Full calibration requested - skipping validation")
 
         # Full calibration with retry logic
         max_retries = 2
         retry_count = 0
-        calibration_channel = "b"  # Default LED channel for servo calibration (can be changed in config)
+        calibration_channel = (
+            "b"  # Default LED channel for servo calibration (can be changed in config)
+        )
         # Use calibrated LED intensity if available, otherwise start lower than max to avoid saturation
-        if self.hw_state.leds_calibrated and calibration_channel in self.hw_state.leds_calibrated:
+        if (
+            self.hw_state.leds_calibrated
+            and calibration_channel in self.hw_state.leds_calibrated
+        ):
             led_intensity = self.hw_state.leds_calibrated[calibration_channel]
             logger.info(f"📊 Using calibrated LED intensity: {led_intensity}")
         else:
@@ -2309,7 +2631,7 @@ class AffiniteApp(QMainWindow):
         # Determine polarizer type by serial number (legacy path)
         serial_number = None
         try:
-            serial_number = getattr(self.usb, 'serial_number', None)
+            serial_number = getattr(self.usb, "serial_number", None)
         except Exception:
             serial_number = None
         # Known barrel units (can expand or move to config later)
@@ -2318,7 +2640,9 @@ class AffiniteApp(QMainWindow):
         while retry_count < max_retries:
             try:
                 if self.device_config["ctrl"] in DEVICES and self.ctrl is not None:
-                    logger.info(f"=== Auto-Polarization Attempt {retry_count + 1}/{max_retries} ===")
+                    logger.info(
+                        f"=== Auto-Polarization Attempt {retry_count + 1}/{max_retries} ===",
+                    )
 
                     # Setup hardware - LED only (integration time already set by LED calibration)
                     self.ctrl.set_intensity(calibration_channel, led_intensity)
@@ -2338,14 +2662,20 @@ class AffiniteApp(QMainWindow):
                                     ws["p_pos"],
                                 )
                                 if verification is None:
-                                    logger.warning("⚠️ SATURATION DETECTED during barrel verify - reducing LED intensity")
+                                    logger.warning(
+                                        "⚠️ SATURATION DETECTED during barrel verify - reducing LED intensity",
+                                    )
                                     led_intensity = int(led_intensity * 0.8)
-                                    logger.info(f"   Reducing LED intensity to {led_intensity}")
+                                    logger.info(
+                                        f"   Reducing LED intensity to {led_intensity}",
+                                    )
                                     retry_count += 1
                                     continue
 
                                 s_pos, p_pos, was_inverted = verification
-                                logger.info("✅ AUTO-POLARIZATION SUCCESSFUL (barrel window)")
+                                logger.info(
+                                    "✅ AUTO-POLARIZATION SUCCESSFUL (barrel window)",
+                                )
                                 logger.info(f"   S position: {s_pos}°")
                                 logger.info(f"   P position: {p_pos}°")
                                 if was_inverted:
@@ -2355,26 +2685,38 @@ class AffiniteApp(QMainWindow):
                                 time.sleep(0.2)
                                 self.ctrl.flash()
                                 logger.info(
-                                    f"   Saved polarizer positions to EEPROM: S={s_pos}, P={p_pos}"
+                                    f"   Saved polarizer positions to EEPROM: S={s_pos}, P={p_pos}",
                                 )
                                 self.new_default_values = True
                                 self.get_device_parameters()
                                 return
-                            else:
-                                logger.warning("⚠️ Barrel window search returned no result - falling back to full sweep")
+                            logger.warning(
+                                "⚠️ Barrel window search returned no result - falling back to full sweep",
+                            )
                         except Exception as e:
-                            logger.warning(f"⚠️ Barrel window search failed: {e} - falling back to full sweep")
+                            logger.warning(
+                                f"⚠️ Barrel window search failed: {e} - falling back to full sweep",
+                            )
                     else:
                         # Try quadrant search first (faster - 13 measurements)
                         try:
                             logger.info("🔍 Attempting QUADRANT SEARCH (fast method)")
-                            positions, intensities, p_pos, s_pos = perform_quadrant_search(
-                                self.usb,
-                                self.ctrl
+                            positions, intensities, p_pos, s_pos = (
+                                perform_quadrant_search(
+                                    self.usb,
+                                    self.ctrl,
+                                )
                             )
 
                             # Analyze results with pre-determined positions
-                            results = analyze_peaks(positions, intensities, self.usb, self.ctrl, p_pos, s_pos)
+                            results = analyze_peaks(
+                                positions,
+                                intensities,
+                                self.usb,
+                                self.ctrl,
+                                p_pos,
+                                s_pos,
+                            )
 
                             if results is not None:
                                 # Verify and correct for inversion + saturation check
@@ -2382,25 +2724,33 @@ class AffiniteApp(QMainWindow):
                                     self.usb,
                                     self.ctrl,
                                     results["s_pos"],
-                                    results["p_pos"]
+                                    results["p_pos"],
                                 )
 
                                 if verification is None:
-                                    logger.warning("⚠️ SATURATION DETECTED - Reducing LED intensity")
+                                    logger.warning(
+                                        "⚠️ SATURATION DETECTED - Reducing LED intensity",
+                                    )
                                     # Reduce LED intensity by 20% and retry
                                     led_intensity = int(led_intensity * 0.8)
-                                    logger.info(f"   Reducing LED intensity to {led_intensity}")
+                                    logger.info(
+                                        f"   Reducing LED intensity to {led_intensity}",
+                                    )
                                     retry_count += 1
                                     continue  # Retry with lower LED intensity
 
                                 s_pos, p_pos, was_inverted = verification
                                 sp_ratio = results["sp_ratio"]
 
-                                logger.info("✅ AUTO-POLARIZATION SUCCESSFUL (quadrant search)")
+                                logger.info(
+                                    "✅ AUTO-POLARIZATION SUCCESSFUL (quadrant search)",
+                                )
                                 logger.info(f"   S position: {s_pos}°")
                                 logger.info(f"   P position: {p_pos}°")
                                 logger.info(f"   S/P ratio: {sp_ratio:.2f}×")
-                                logger.info(f"   Separation: {results['separation']:.0f}°")
+                                logger.info(
+                                    f"   Separation: {results['separation']:.0f}°",
+                                )
                                 if was_inverted:
                                     logger.info("   ⚠️  Inversion corrected")
 
@@ -2408,16 +2758,19 @@ class AffiniteApp(QMainWindow):
                                 time.sleep(0.2)  # Wait for servo to settle
                                 self.ctrl.flash()  # Save to EEPROM
                                 logger.info(
-                                    f"   Saved polarizer positions to EEPROM: S={s_pos}, P={p_pos}"
+                                    f"   Saved polarizer positions to EEPROM: S={s_pos}, P={p_pos}",
                                 )
                                 self.new_default_values = True
                                 self.get_device_parameters()  # Update UI with new S/P positions
                                 return  # Success - exit
-                            else:
-                                logger.warning("⚠️ Quadrant search validation failed - falling back to full sweep")
+                            logger.warning(
+                                "⚠️ Quadrant search validation failed - falling back to full sweep",
+                            )
 
                         except Exception as e:
-                            logger.warning(f"⚠️ Quadrant search failed: {e} - falling back to full sweep")
+                            logger.warning(
+                                f"⚠️ Quadrant search failed: {e} - falling back to full sweep",
+                            )
 
                     # Fallback to full sweep in utils
                     fs_results = perform_full_sweep_fallback(self.usb, self.ctrl)
@@ -2425,19 +2778,22 @@ class AffiniteApp(QMainWindow):
                         retry_count += 1
                         continue
 
-                    s_pos = fs_results["s_pos"]; p_pos = fs_results["p_pos"]
+                    s_pos = fs_results["s_pos"]
+                    p_pos = fs_results["p_pos"]
                     self.ctrl.servo_set(s_pos, p_pos)
                     time.sleep(0.2)
                     self.ctrl.flash()
                     logger.info(
-                        f"   Saved polarizer positions to EEPROM: S={s_pos}, P={p_pos}"
+                        f"   Saved polarizer positions to EEPROM: S={s_pos}, P={p_pos}",
                     )
                     self.new_default_values = True
                     self.get_device_parameters()
                     return
 
             except Exception as e:
-                logger.exception(f"Error during auto-polarization attempt {retry_count + 1}: {e}")
+                logger.exception(
+                    f"Error during auto-polarization attempt {retry_count + 1}: {e}",
+                )
                 retry_count += 1
 
         # All retries failed
@@ -2449,7 +2805,7 @@ class AffiniteApp(QMainWindow):
         logger.error("   4. Spectrometer is working properly")
         show_message(
             "Auto-polarization failed. Please check hardware and try again.",
-            msg_type="Critical"
+            msg_type="Critical",
         )
 
     def stop_pump(self: Self, stop_ch: str) -> None:
@@ -2483,7 +2839,10 @@ class AffiniteApp(QMainWindow):
                 if log2:
                     self._log_event("CH2", "CH 2 Stop")
                 self._s_stop.clear()
-                self.update_pump_display.emit(self.hw_state.pump_states, self.hw_state.synced)
+                self.update_pump_display.emit(
+                    self.hw_state.pump_states,
+                    self.hw_state.synced,
+                )
             except Exception as e:
                 logger.exception(f"Error stopping pump: {e}")
 
@@ -2518,7 +2877,10 @@ class AffiniteApp(QMainWindow):
                 if log2:
                     self._log_event("CH2", f"CH 2 {state} ({run_rate})")
                 self._s_stop.clear()
-                self.update_pump_display.emit(self.hw_state.pump_states, self.hw_state.synced)
+                self.update_pump_display.emit(
+                    self.hw_state.pump_states,
+                    self.hw_state.synced,
+                )
             except Exception as e:
                 logger.exception(f"Error running pump: {e}")
 
@@ -2594,7 +2956,10 @@ class AffiniteApp(QMainWindow):
             if self.hw_state.valve_states[ch_name] != fw_state:
                 self.hw_state.valve_states[ch_name] = fw_state
                 logger.debug(f"correcting valve state error on ch {ch}")
-                self.update_valve_display.emit(self.hw_state.valve_states, self.hw_state.synced)
+                self.update_valve_display.emit(
+                    self.hw_state.valve_states,
+                    self.hw_state.synced,
+                )
 
     @Slot(str)
     def three_way_handler(self: Self, ch: str) -> None:
@@ -2613,7 +2978,9 @@ class AffiniteApp(QMainWindow):
             self.three_way(ch, 0)
             self.hw_state.valve_states[ch] = "Waste"
         if self.hw_state.synced:
-            self.hw_state.valve_states["CH2"] = deepcopy(self.hw_state.valve_states["CH1"])
+            self.hw_state.valve_states["CH2"] = deepcopy(
+                self.hw_state.valve_states["CH1"],
+            )
         self.update_valve_display.emit(self.hw_state.valve_states, self.hw_state.synced)
 
     @Slot(str)
@@ -2659,7 +3026,9 @@ class AffiniteApp(QMainWindow):
                     + 2
                 )
                 if self.hw_state.synced:
-                    self.hw_state.valve_states["CH2"] = deepcopy(self.hw_state.valve_states["CH1"])
+                    self.hw_state.valve_states["CH2"] = deepcopy(
+                        self.hw_state.valve_states["CH1"],
+                    )
                 else:
                     self.timer2.start(int(1000 * 60 * timeout_mins))
                 self.main_window.sidebar.kinetic_widget.ui.inject_time_ch2.setText(
@@ -2677,7 +3046,9 @@ class AffiniteApp(QMainWindow):
             if (ch == "CH2") or self.hw_state.synced:
                 self.timer2.stop()
             if self.hw_state.synced:
-                self.hw_state.valve_states["CH2"] = deepcopy(self.hw_state.valve_states["CH1"])
+                self.hw_state.valve_states["CH2"] = deepcopy(
+                    self.hw_state.valve_states["CH1"],
+                )
         self.update_valve_display.emit(self.hw_state.valve_states, self.hw_state.synced)
 
     def turn_off_six_ch1(self: Self) -> None:
@@ -2732,22 +3103,39 @@ class AffiniteApp(QMainWindow):
     def update_channel_visibility(self: Self, visible_channels: list) -> None:
         """Update which channels are visible in sensorgram based on valve position."""
         # Update checkboxes in sensorgram
-        for ch in ['a', 'b', 'c', 'd']:
-            checkbox = getattr(self.main_window.sensorgram.ui, f"segment_{ch.upper()}", None)
+        for ch in ["a", "b", "c", "d"]:
+            checkbox = getattr(
+                self.main_window.sensorgram.ui,
+                f"segment_{ch.upper()}",
+                None,
+            )
             if checkbox:
                 should_be_checked = ch in visible_channels
                 if checkbox.isChecked() != should_be_checked:
                     checkbox.setChecked(should_be_checked)
 
-    def _on_advanced_smoothing_changed(self: Self, enabled: bool, mode: str, level: str) -> None:
+    def _on_advanced_smoothing_changed(
+        self: Self,
+        enabled: bool,
+        mode: str,
+        level: str,
+    ) -> None:
         """Handle advanced smoothing settings change from kinetics widget."""
-        logger.info(f"Advanced smoothing changed: enabled={enabled}, mode={mode}, level={level}")
+        logger.info(
+            f"Advanced smoothing changed: enabled={enabled}, mode={mode}, level={level}",
+        )
         # Update sensorgram window (DataWindow instance)
-        if hasattr(self.main_window, 'sensorgram') and hasattr(self.main_window.sensorgram, 'set_advanced_smoothing'):
+        if hasattr(self.main_window, "sensorgram") and hasattr(
+            self.main_window.sensorgram,
+            "set_advanced_smoothing",
+        ):
             self.main_window.sensorgram.set_advanced_smoothing(enabled, mode, level)
         # Update spectroscopy window if it has the method
         # Update processing window if exists and has the method
-        if hasattr(self.main_window, 'processing') and hasattr(self.main_window.processing, 'set_advanced_smoothing'):
+        if hasattr(self.main_window, "processing") and hasattr(
+            self.main_window.processing,
+            "set_advanced_smoothing",
+        ):
             self.main_window.processing.set_advanced_smoothing(enabled, mode, level)
 
     def enable_sensor_reading(self: Self) -> None:
@@ -2757,8 +3145,12 @@ class AffiniteApp(QMainWindow):
     def clear_kin_log(self: Self) -> None:
         """Clear kinetics log."""
         self.clear_sensor_reading_buffers()
-        self.log_ch1 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
-        self.log_ch2 = pd.DataFrame(columns=["timestamp", "time", "event", "flow", "temp", "dev"])
+        self.log_ch1 = pd.DataFrame(
+            columns=["timestamp", "time", "event", "flow", "temp", "dev"],
+        )
+        self.log_ch2 = pd.DataFrame(
+            columns=["timestamp", "time", "event", "flow", "temp", "dev"],
+        )
 
     def clear_sensor_reading_buffers(self: Self) -> None:
         """Clear sensor reading buffer."""
@@ -2769,7 +3161,9 @@ class AffiniteApp(QMainWindow):
         self.update_sensor_display.emit(
             {"flow1": "", "temp1": "", "flow2": "", "temp2": ""},
         )
-        self.temp_log = pd.DataFrame(columns=["Timestamp", "Experiment Time", "Device Temp"])
+        self.temp_log = pd.DataFrame(
+            columns=["Timestamp", "Experiment Time", "Device Temp"],
+        )
         self.update_temp_display.emit(0.0, "ctrl")
 
     # Note: save_temp_log and save_kinetic_log are now handled by DataExporter in save_rec_data
@@ -2819,7 +3213,9 @@ class AffiniteApp(QMainWindow):
                         ):
                             self.flow_buf_1.append(update1["flow"])
                             self.temp_buf_1.append(update1["temp"])
-                            flow_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
+                            flow_time = (
+                                f"{(time.perf_counter() - self.exp_start_perf):.2f}"
+                            )
                             if len(self.flow_buf_1) <= SENSOR_AVG:
                                 flow1_text = f"{(np.nanmean(self.flow_buf_1)):.2f}"
                                 temp1_text = f"{(np.nanmean(self.temp_buf_1)):.2f}"
@@ -2830,7 +3226,12 @@ class AffiniteApp(QMainWindow):
                                 temp1_text = (
                                     f"{(np.nanmean(self.temp_buf_1[-SENSOR_AVG:])):.2f}"
                                 )
-                            self._log_event("CH1", "Sensor reading", flow=flow1_text, temp=temp1_text)
+                            self._log_event(
+                                "CH1",
+                                "Sensor reading",
+                                flow=flow1_text,
+                                temp=temp1_text,
+                            )
                             logger.debug(
                                 f"CH1 append flow1={flow1_text}, temp1={temp1_text}",
                             )
@@ -2841,7 +3242,9 @@ class AffiniteApp(QMainWindow):
                         ):
                             self.flow_buf_2.append(update2["flow"])
                             self.temp_buf_2.append(update2["temp"])
-                            flow_time = f"{(time.perf_counter() - self.exp_start_perf):.2f}"
+                            flow_time = (
+                                f"{(time.perf_counter() - self.exp_start_perf):.2f}"
+                            )
                             if len(self.flow_buf_2) <= SENSOR_AVG:
                                 flow2_text = f"{(np.nanmean(self.flow_buf_2)):.2f}"
                                 temp2_text = f"{(np.nanmean(self.temp_buf_2)):.2f}"
@@ -2852,7 +3255,12 @@ class AffiniteApp(QMainWindow):
                                 temp2_text = (
                                     f"{(np.nanmean(self.temp_buf_2[-SENSOR_AVG:])):.2f}"
                                 )
-                            self._log_event("CH2", "Sensor reading", flow=flow2_text, temp=temp2_text)
+                            self._log_event(
+                                "CH2",
+                                "Sensor reading",
+                                flow=flow2_text,
+                                temp=temp2_text,
+                            )
                             logger.debug(
                                 f"CH2 append flow2={flow2_text}, temp2={temp2_text}",
                             )
@@ -2864,7 +3272,8 @@ class AffiniteApp(QMainWindow):
                         }
                         self.update_sensor_display.emit(sensor_data)
                     if (
-                        self.device_config["ctrl"] in ["EZSPR", "PicoEZSPR"]  # QSPR removed
+                        self.device_config["ctrl"]
+                        in ["EZSPR", "PicoEZSPR"]  # QSPR removed
                     ) or (self.device_config["knx"] in ["KNX", "KNX2", "PicoKNX2"]):
                         temp = ""
                         try:
@@ -2911,12 +3320,19 @@ class AffiniteApp(QMainWindow):
                                     f":{time_now.minute:02d}"
                                     f":{time_now.second:02d}"
                                 )
-                                new_row = pd.DataFrame([{
-                                    "Timestamp": dev_timestamp,
-                                    "Experiment Time": f"{exp_time:.2f}",
-                                    "Device Temp": temp,
-                                }])
-                                self.temp_log = pd.concat([self.temp_log, new_row], ignore_index=True)
+                                new_row = pd.DataFrame(
+                                    [
+                                        {
+                                            "Timestamp": dev_timestamp,
+                                            "Experiment Time": f"{exp_time:.2f}",
+                                            "Device Temp": temp,
+                                        },
+                                    ],
+                                )
+                                self.temp_log = pd.concat(
+                                    [self.temp_log, new_row],
+                                    ignore_index=True,
+                                )
                                 self.update_temp_display.emit(temp, "ctrl")
                         except Exception as e:
                             logger.exception(f"error geting device temp: {e}")
@@ -2937,7 +3353,7 @@ class AffiniteApp(QMainWindow):
             "PicoP4SPR",
             "EZSPR",
             "PicoEZSPR",
-        ] and hasattr(self.ctrl, 'flash'):
+        ] and hasattr(self.ctrl, "flash"):
             if show_message(
                 msg="Save settings permanently to device?\n"
                 "This will overwrite factory default settings",
@@ -2955,10 +3371,14 @@ class AffiniteApp(QMainWindow):
         if filt_win != self.proc_filt_win:
             # Validate filter window size
             if filt_win < 3:
-                logger.warning(f"Filter window too small ({filt_win}), using minimum of 3")
+                logger.warning(
+                    f"Filter window too small ({filt_win}), using minimum of 3",
+                )
                 filt_win = 3
             elif filt_win > 51:
-                logger.warning(f"Filter window too large ({filt_win}), using maximum of 51")
+                logger.warning(
+                    f"Filter window too large ({filt_win}), using maximum of 51",
+                )
                 filt_win = 51
 
             with self._filter_lock:
@@ -2972,19 +3392,25 @@ class AffiniteApp(QMainWindow):
 
     def set_live_filt(self: Self, filt_en: bool, filt_win: int) -> None:  # noqa: FBT001
         """Set live view filter."""
-        filter_state_changed = (filt_en != self.filt_on)
+        filter_state_changed = filt_en != self.filt_on
         self.filt_on = filt_en
 
-        logger.info(f"Filter {'enabled' if filt_en else 'disabled'} with window size {filt_win}")
+        logger.info(
+            f"Filter {'enabled' if filt_en else 'disabled'} with window size {filt_win}",
+        )
 
         window_changed = False
         if filt_win != self.med_filt_win:
             # Validate filter window size
             if filt_win < 3:
-                logger.warning(f"Filter window too small ({filt_win}), using minimum of 3")
+                logger.warning(
+                    f"Filter window too small ({filt_win}), using minimum of 3",
+                )
                 filt_win = 3
             elif filt_win > 51:
-                logger.warning(f"Filter window too large ({filt_win}), using maximum of 51")
+                logger.warning(
+                    f"Filter window too large ({filt_win}), using maximum of 51",
+                )
                 filt_win = 51
 
             with self._filter_lock:
@@ -2993,7 +3419,7 @@ class AffiniteApp(QMainWindow):
                 # Recreate TemporalFilter with new window size
                 if self.temporal_filter is not None:
                     self.temporal_filter = TemporalFilter(
-                        method='median',
+                        method="median",
                         window_size=self.med_filt_win,
                     )
                     logger.debug(f"TemporalFilter updated (window={self.med_filt_win})")
@@ -3002,7 +3428,9 @@ class AffiniteApp(QMainWindow):
 
         # Retroactively apply filter to all existing data when filter settings change
         if filter_state_changed or window_changed:
-            logger.info(f"Filter settings changed - reprocessing all data (enabled={filt_en}, window={self.med_filt_win})")
+            logger.info(
+                f"Filter settings changed - reprocessing all data (enabled={filt_en}, window={self.med_filt_win})",
+            )
             self.update_filtered_lambda()
 
             # Force immediate display update
@@ -3018,6 +3446,7 @@ class AffiniteApp(QMainWindow):
 
                 logger.debug("Display updated with new filter settings")
                 from PySide6.QtCore import QCoreApplication
+
                 QCoreApplication.processEvents()
 
                 # Now update the segment (cycle of interest) display with fresh filtered data
@@ -3037,10 +3466,10 @@ class AffiniteApp(QMainWindow):
             logger.info("Switched to standard palette")
 
         # Update all graph colors
-        if hasattr(self.main_window, 'sensorgram'):
+        if hasattr(self.main_window, "sensorgram"):
             self.main_window.sensorgram.full_segment_view.update_colors()
             self.main_window.sensorgram.SOI_view.update_colors()
-        if hasattr(self.main_window, 'data_processing'):
+        if hasattr(self.main_window, "data_processing"):
             self.main_window.data_processing.full_segment_view.update_colors()
             self.main_window.data_processing.SOI_view.update_colors()
 
@@ -3055,21 +3484,40 @@ class AffiniteApp(QMainWindow):
             )
             # Enable hidden afterglow measurement button in DEV builds, if available
             try:
-                if DEV and hasattr(self.main_window.advanced_menu, "enable_afterglow_button"):
+                if DEV and hasattr(
+                    self.main_window.advanced_menu,
+                    "enable_afterglow_button",
+                ):
                     self.main_window.advanced_menu.enable_afterglow_button(True)
                 # Also enable delay status display in DEV mode
-                if DEV and hasattr(self.main_window.advanced_menu, "enable_delay_status"):
+                if DEV and hasattr(
+                    self.main_window.advanced_menu,
+                    "enable_delay_status",
+                ):
                     self.main_window.advanced_menu.enable_delay_status(True)
                 # Connect measurement signal if present
                 if hasattr(self.main_window.advanced_menu, "measure_afterglow_sig"):
-                    self.main_window.advanced_menu.measure_afterglow_sig.connect(self.measure_afterglow)
+                    self.main_window.advanced_menu.measure_afterglow_sig.connect(
+                        self.measure_afterglow,
+                    )
                 # Connect session quality monitoring toggle
-                if hasattr(self.main_window.advanced_menu, "quality_monitoring_toggled"):
-                    self.main_window.advanced_menu.quality_monitoring_toggled.connect(self._toggle_quality_monitoring)
+                if hasattr(
+                    self.main_window.advanced_menu,
+                    "quality_monitoring_toggled",
+                ):
+                    self.main_window.advanced_menu.quality_monitoring_toggled.connect(
+                        self._toggle_quality_monitoring,
+                    )
                     # Set initial state
-                    if hasattr(self.main_window.advanced_menu, "set_quality_monitoring_state"):
+                    if hasattr(
+                        self.main_window.advanced_menu,
+                        "set_quality_monitoring_state",
+                    ):
                         from settings.settings import ENABLE_SESSION_QUALITY_MONITORING
-                        self.main_window.advanced_menu.set_quality_monitoring_state(ENABLE_SESSION_QUALITY_MONITORING)
+
+                        self.main_window.advanced_menu.set_quality_monitoring_state(
+                            ENABLE_SESSION_QUALITY_MONITORING,
+                        )
             except Exception as _adv_err:
                 logger.debug(f"Advanced afterglow controls not fully wired: {_adv_err}")
             self.adv_connected = True
@@ -3092,7 +3540,9 @@ class AffiniteApp(QMainWindow):
             ]:
                 s_pos, p_pos = self._read_servo_positions_decoded()
                 if s_pos == 0 and p_pos == 0:
-                    logger.debug("Servo positions will display as 0 - try re-calibrating servo")
+                    logger.debug(
+                        "Servo positions will display as 0 - try re-calibrating servo",
+                    )
                 logger.debug(f"curr s = {s_pos}, curr p = {p_pos}")
             params = {
                 "led_del": self.led_delay,
@@ -3119,8 +3569,14 @@ class AffiniteApp(QMainWindow):
             try:
                 cal_file = None
                 try:
-                    optical_cfg = (self.conf or {}).get('optical_calibration', {}) if hasattr(self, 'conf') else {}
-                    cal_file = optical_cfg.get('optical_calibration_file') or (self.conf or {}).get('optical_calibration_file')
+                    optical_cfg = (
+                        (self.conf or {}).get("optical_calibration", {})
+                        if hasattr(self, "conf")
+                        else {}
+                    )
+                    cal_file = optical_cfg.get("optical_calibration_file") or (
+                        self.conf or {}
+                    ).get("optical_calibration_file")
                 except Exception:
                     pass
                 self.adv_delay_status_sig.emit(
@@ -3167,13 +3623,21 @@ class AffiniteApp(QMainWindow):
                     if USE_DYNAMIC_LED_DELAY:
                         try:
                             if getattr(self, "afterglow_correction", None) is not None:
-                                dyn_delay = float(self.afterglow_correction.get_optimal_led_delay(
-                                    integration_time_ms=float(self.integration),
-                                    target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                                ))
+                                dyn_delay = float(
+                                    self.afterglow_correction.get_optimal_led_delay(
+                                        integration_time_ms=float(self.integration),
+                                        target_residual_percent=float(
+                                            LED_DELAY_TARGET_RESIDUAL,
+                                        ),
+                                    ),
+                                )
                             else:
-                                raise RuntimeError("AfterglowCorrection not initialized")
-                            logger.info(f"[UI] Dynamic LED delay: {dyn_delay*1000:.1f} ms (legacy {self.led_delay*1000:.1f} ms)")
+                                raise RuntimeError(
+                                    "AfterglowCorrection not initialized",
+                                )
+                            logger.info(
+                                f"[UI] Dynamic LED delay: {dyn_delay*1000:.1f} ms (legacy {self.led_delay*1000:.1f} ms)",
+                            )
                             if 0.005 <= dyn_delay <= 0.200:
                                 self.led_delay = dyn_delay
                         except Exception as e:
@@ -3182,11 +3646,17 @@ class AffiniteApp(QMainWindow):
                     if USE_DYNAMIC_POST_DELAY:
                         try:
                             if getattr(self, "afterglow_correction", None) is not None:
-                                dyn_post = float(self.afterglow_correction.get_optimal_led_delay(
-                                    integration_time_ms=float(self.integration),
-                                    target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                                ))
-                                logger.info(f"[UI] Dynamic post delay: {dyn_post*1000:.1f} ms (legacy {self.post_delay*1000:.1f} ms)")
+                                dyn_post = float(
+                                    self.afterglow_correction.get_optimal_led_delay(
+                                        integration_time_ms=float(self.integration),
+                                        target_residual_percent=float(
+                                            LED_DELAY_TARGET_RESIDUAL,
+                                        ),
+                                    ),
+                                )
+                                logger.info(
+                                    f"[UI] Dynamic post delay: {dyn_post*1000:.1f} ms (legacy {self.post_delay*1000:.1f} ms)",
+                                )
                                 if 0.000 <= dyn_post <= 0.300:
                                     self.post_delay = dyn_post
                         except Exception as e:
@@ -3195,8 +3665,14 @@ class AffiniteApp(QMainWindow):
                     try:
                         cal_file = None
                         try:
-                            optical_cfg = (self.conf or {}).get('optical_calibration', {}) if hasattr(self, 'conf') else {}
-                            cal_file = optical_cfg.get('optical_calibration_file') or (self.conf or {}).get('optical_calibration_file')
+                            optical_cfg = (
+                                (self.conf or {}).get("optical_calibration", {})
+                                if hasattr(self, "conf")
+                                else {}
+                            )
+                            cal_file = optical_cfg.get("optical_calibration_file") or (
+                                self.conf or {}
+                            ).get("optical_calibration_file")
                         except Exception:
                             pass
                         self.adv_delay_status_sig.emit(
@@ -3214,7 +3690,9 @@ class AffiniteApp(QMainWindow):
                         else:
                             self.usb.set_integration(new_intg)
                     except Exception as e:
-                        logger.debug(f"HAL set_integration failed; falling back to USB: {e}")
+                        logger.debug(
+                            f"HAL set_integration failed; falling back to USB: {e}",
+                        )
                         with suppress(Exception):
                             self.usb.set_integration(new_intg)
                     new_led_ints = {
@@ -3231,7 +3709,9 @@ class AffiniteApp(QMainWindow):
                         elif new_led_ints[ch] < min_intensity:
                             new_led_ints[ch] = min_intensity
                         if self.hw_state.leds_calibrated[ch] != new_led_ints[ch]:
-                            logger.info(f"Updating LED {ch.upper()}: {self.hw_state.leds_calibrated[ch]}→{new_led_ints[ch]}")
+                            logger.info(
+                                f"Updating LED {ch.upper()}: {self.hw_state.leds_calibrated[ch]}→{new_led_ints[ch]}",
+                            )
                         self.hw_state.leds_calibrated[ch] = new_led_ints[ch]
                         self.ctrl.set_intensity(ch=ch, raw_val=new_led_ints[ch])
                         time.sleep(0.1)
@@ -3246,15 +3726,17 @@ class AffiniteApp(QMainWindow):
                         s_bytes = current_servo_positions["s"]
                         p_bytes = current_servo_positions["p"]
                         if isinstance(s_bytes, bytes):
-                            old_s = int(s_bytes.decode('utf-8').strip())
+                            old_s = int(s_bytes.decode("utf-8").strip())
                         else:
                             old_s = int(str(s_bytes).strip())
                         if isinstance(p_bytes, bytes):
-                            old_p = int(p_bytes.decode('utf-8').strip())
+                            old_p = int(p_bytes.decode("utf-8").strip())
                         else:
                             old_p = int(str(p_bytes).strip())
                     except Exception as e:
-                        logger.warning(f"Could not read current servo positions: {e}, using defaults")
+                        logger.warning(
+                            f"Could not read current servo positions: {e}, using defaults",
+                        )
                         old_s = 0
                         old_p = 0
 
@@ -3277,45 +3759,79 @@ class AffiniteApp(QMainWindow):
                         new_s = max(0, min(180, new_s))
                         new_p = max(0, min(180, new_p))
                         if old_s != new_s or old_p != new_p:
-                            logger.info(f"Updating servo positions: S {old_s}→{new_s}, P {old_p}→{new_p}")
+                            logger.info(
+                                f"Updating servo positions: S {old_s}→{new_s}, P {old_p}→{new_p}",
+                            )
 
                             # Set the servo positions
                             self.ctrl.servo_set(s=new_s, p=new_p)
-                            time.sleep(0.3)  # Allow servos to settle before verification
+                            time.sleep(
+                                0.3,
+                            )  # Allow servos to settle before verification
 
                             # Verify and correct inversion if detected (non-QSPR path)
                             try:
-                                from utils.servo_calibration import verify_and_correct_positions
-                                verification = verify_and_correct_positions(self.usb, self.ctrl, new_s, new_p)
+                                from utils.servo_calibration import (
+                                    verify_and_correct_positions,
+                                )
+
+                                verification = verify_and_correct_positions(
+                                    self.usb,
+                                    self.ctrl,
+                                    new_s,
+                                    new_p,
+                                )
                                 if verification is not None:
                                     vs, vp, was_inverted = verification
                                     if was_inverted and (vs != new_s or vp != new_p):
-                                        logger.info(f"   Applied inversion correction → S={vs}, P={vp}")
+                                        logger.info(
+                                            f"   Applied inversion correction → S={vs}, P={vp}",
+                                        )
                                         self.ctrl.servo_set(s=vs, p=vp)
                                         new_s, new_p = vs, vp
-                                        time.sleep(0.3)  # Allow servos to settle after correction
+                                        time.sleep(
+                                            0.3,
+                                        )  # Allow servos to settle after correction
                             except Exception as _verr:
                                 logger.debug(f"Advanced S/P verify skipped: {_verr}")
 
                             # Flash EEPROM to persist servo positions
-                            logger.info(f"💾 Flashing EEPROM to save S={new_s}, P={new_p}...")
-                            logger.info(f"   This will make the positions persist across power cycles")
+                            logger.info(
+                                f"💾 Flashing EEPROM to save S={new_s}, P={new_p}...",
+                            )
+                            logger.info(
+                                "   This will make the positions persist across power cycles",
+                            )
                             try:
                                 flash_result = self.ctrl.flash()
                                 if flash_result:
-                                    logger.info(f"✅ EEPROM flash successful - S/P persisted: {new_s}/{new_p}")
-                                    logger.info(f"   The device will now remember these positions even after power off/on")
+                                    logger.info(
+                                        f"✅ EEPROM flash successful - S/P persisted: {new_s}/{new_p}",
+                                    )
+                                    logger.info(
+                                        "   The device will now remember these positions even after power off/on",
+                                    )
                                 else:
-                                    logger.error(f"❌ EEPROM flash FAILED - S/P may not persist across power cycles!")
-                                    logger.error(f"   The device will revert to old values (likely 30/120) when powered off")
-                                    logger.error(f"   Check serial connection and device firmware")
+                                    logger.error(
+                                        "❌ EEPROM flash FAILED - S/P may not persist across power cycles!",
+                                    )
+                                    logger.error(
+                                        "   The device will revert to old values (likely 30/120) when powered off",
+                                    )
+                                    logger.error(
+                                        "   Check serial connection and device firmware",
+                                    )
                             except Exception as flash_err:
                                 logger.error(f"❌ EEPROM flash error: {flash_err}")
-                                logger.error(f"   Servo positions set temporarily but NOT saved to EEPROM")
+                                logger.error(
+                                    "   Servo positions set temporarily but NOT saved to EEPROM",
+                                )
                             time.sleep(0.3)  # Wait for flash to complete
                             self.get_device_parameters()  # Refresh UI after saving
                         else:
-                            logger.debug(f"Servo positions unchanged: S={new_s}, P={new_p}")
+                            logger.debug(
+                                f"Servo positions unchanged: S={new_s}, P={new_p}",
+                            )
 
                     # Update pump corrections if needed
                     if isinstance(self.knx, PicoEZSPR):
@@ -3348,25 +3864,27 @@ class AffiniteApp(QMainWindow):
 
         Args:
             enabled: True to enable quality monitoring, False to disable
+
         """
         try:
             from settings import settings
+
             # Update the setting dynamically
             settings.ENABLE_SESSION_QUALITY_MONITORING = enabled
 
             if enabled:
                 # Initialize quality monitor if not already done
                 if self.quality_monitor is None and self.usb is not None:
-                    from utils.device_integration import get_device_directory
-                    from utils.session_quality_monitor import SessionQualityMonitor
                     from settings.settings import (
                         FWHM_EXCELLENT_THRESHOLD_NM,
                         FWHM_GOOD_THRESHOLD_NM,
-                        QC_WAVELENGTH_MIN_NM,
-                        QC_WAVELENGTH_MAX_NM,
                         QC_DEGRADATION_ALERT_THRESHOLD,
                         QC_MAX_SESSION_HISTORY,
+                        QC_WAVELENGTH_MAX_NM,
+                        QC_WAVELENGTH_MIN_NM,
                     )
+                    from utils.device_integration import get_device_directory
+                    from utils.session_quality_monitor import SessionQualityMonitor
 
                     device_dir = get_device_directory(self.usb)
                     if device_dir:
@@ -3379,11 +3897,20 @@ class AffiniteApp(QMainWindow):
                             degradation_alert_threshold=QC_DEGRADATION_ALERT_THRESHOLD,
                             max_session_history=QC_MAX_SESSION_HISTORY,
                         )
-                        logger.info(f"✅ Session quality monitoring ENABLED: {device_dir.name}")
+                        logger.info(
+                            f"✅ Session quality monitoring ENABLED: {device_dir.name}",
+                        )
                     else:
-                        logger.warning("⚠️  Cannot enable quality monitoring: no device directory")
-                        if hasattr(self.main_window.advanced_menu, "set_quality_monitoring_state"):
-                            self.main_window.advanced_menu.set_quality_monitoring_state(False)
+                        logger.warning(
+                            "⚠️  Cannot enable quality monitoring: no device directory",
+                        )
+                        if hasattr(
+                            self.main_window.advanced_menu,
+                            "set_quality_monitoring_state",
+                        ):
+                            self.main_window.advanced_menu.set_quality_monitoring_state(
+                                False,
+                            )
                         return
                 else:
                     logger.info("✅ Session quality monitoring ENABLED")
@@ -3407,7 +3934,9 @@ class AffiniteApp(QMainWindow):
             if not DEV:
                 # Provide a small hint in non-DEV builds
                 try:
-                    self.adv_status_text_sig.emit("Afterglow calibration is a DEV feature.")
+                    self.adv_status_text_sig.emit(
+                        "Afterglow calibration is a DEV feature.",
+                    )
                 except Exception:
                     pass
                 return
@@ -3461,9 +3990,11 @@ class AffiniteApp(QMainWindow):
                     # Grid favors coverage while keeping acquisition short
                     integration_grid = [10.0, 25.0, 40.0, 55.0, 70.0, 85.0]
                     # Ensure within configured limits
-                    from settings import MIN_INTEGRATION, MAX_INTEGRATION
+                    from settings import MAX_INTEGRATION, MIN_INTEGRATION
+
                     integration_grid = [
-                        float(max(MIN_INTEGRATION, min(MAX_INTEGRATION, x))) for x in integration_grid
+                        float(max(MIN_INTEGRATION, min(MAX_INTEGRATION, x)))
+                        for x in integration_grid
                     ]
 
                     # LED intensities (use calibrated P-mode intensities if available)
@@ -3485,13 +4016,15 @@ class AffiniteApp(QMainWindow):
                     # Save to device-specific directory
                     from utils.device_integration import (
                         get_device_manager,
-                        save_optical_calibration_result
+                        save_optical_calibration_result,
                     )
 
                     device_manager = get_device_manager()
 
                     if device_manager.current_device_serial is None:
-                        logger.error("❌ No device set - cannot save optical calibration")
+                        logger.error(
+                            "❌ No device set - cannot save optical calibration",
+                        )
                         try:
                             self.ui_message_sig.emit(
                                 "Error: No device detected. Cannot save calibration.",
@@ -3506,13 +4039,14 @@ class AffiniteApp(QMainWindow):
                     out_path = device_dir / "optical_calibration.json"
 
                     import json
+
                     with out_path.open("w", encoding="utf-8") as f:
                         json.dump(data, f, indent=2)
 
                     # Update device configuration
                     save_optical_calibration_result(out_path)
 
-                    logger.info(f"✅ Optical calibration saved to device directory")
+                    logger.info("✅ Optical calibration saved to device directory")
                     logger.info(f"   Device: {device_manager.current_device_serial}")
                     logger.info(f"   File: {out_path}")
 
@@ -3522,9 +4056,12 @@ class AffiniteApp(QMainWindow):
                         logger.info(f"[Afterglow] Calibration saved: {out_path}")
                         try:
                             import os
+
                             done_msg = f"Afterglow calibration completed — saved: {os.path.basename(str(out_path))}"
                         except Exception:
-                            done_msg = f"Afterglow calibration completed — saved: {out_path}"
+                            done_msg = (
+                                f"Afterglow calibration completed — saved: {out_path}"
+                            )
                         try:
                             self.adv_status_text_sig.emit(done_msg)
                         except Exception:
@@ -3538,42 +4075,66 @@ class AffiniteApp(QMainWindow):
                         except Exception:
                             pass
                     except Exception as e:
-                        logger.warning(f"[Afterglow] Could not load saved calibration: {e}")
+                        logger.warning(
+                            f"[Afterglow] Could not load saved calibration: {e}",
+                        )
 
                     # Optionally update dynamic LED delay if feature enabled
                     try:
-                        if USE_DYNAMIC_LED_DELAY and getattr(self, "afterglow_correction", None) is not None:
-                            dyn_delay = float(self.afterglow_correction.get_optimal_led_delay(
-                                integration_time_ms=float(self.integration),
-                                target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                            ))
+                        if (
+                            USE_DYNAMIC_LED_DELAY
+                            and getattr(self, "afterglow_correction", None) is not None
+                        ):
+                            dyn_delay = float(
+                                self.afterglow_correction.get_optimal_led_delay(
+                                    integration_time_ms=float(self.integration),
+                                    target_residual_percent=float(
+                                        LED_DELAY_TARGET_RESIDUAL,
+                                    ),
+                                ),
+                            )
                             if 0.005 <= dyn_delay <= 0.200:
                                 logger.info(
-                                    f"[Afterglow] Dynamic LED delay updated: {dyn_delay*1000:.1f} ms"
+                                    f"[Afterglow] Dynamic LED delay updated: {dyn_delay*1000:.1f} ms",
                                 )
                                 self.led_delay = dyn_delay
                     except Exception as e:
                         logger.debug(f"Afterglow dynamic delay refresh skipped: {e}")
                     # Optionally update dynamic post delay if feature enabled
                     try:
-                        if USE_DYNAMIC_POST_DELAY and getattr(self, "afterglow_correction", None) is not None:
-                            dyn_post = float(self.afterglow_correction.get_optimal_led_delay(
-                                integration_time_ms=float(self.integration),
-                                target_residual_percent=float(LED_DELAY_TARGET_RESIDUAL),
-                            ))
+                        if (
+                            USE_DYNAMIC_POST_DELAY
+                            and getattr(self, "afterglow_correction", None) is not None
+                        ):
+                            dyn_post = float(
+                                self.afterglow_correction.get_optimal_led_delay(
+                                    integration_time_ms=float(self.integration),
+                                    target_residual_percent=float(
+                                        LED_DELAY_TARGET_RESIDUAL,
+                                    ),
+                                ),
+                            )
                             if 0.000 <= dyn_post <= 0.300:
                                 logger.info(
-                                    f"[Afterglow] Dynamic post delay updated: {dyn_post*1000:.1f} ms"
+                                    f"[Afterglow] Dynamic post delay updated: {dyn_post*1000:.1f} ms",
                                 )
                                 self.post_delay = dyn_post
                     except Exception as e:
-                        logger.debug(f"Afterglow dynamic post delay refresh skipped: {e}")
+                        logger.debug(
+                            f"Afterglow dynamic post delay refresh skipped: {e}",
+                        )
                     # Refresh Advanced dialog status line with new delays and calibration file
                     try:
                         cal_file = None
                         try:
-                            optical_cfg = (self.conf or {}).get('optical_calibration', {}) if hasattr(self, 'conf') else {}
-                            cal_file = optical_cfg.get('optical_calibration_file') or (self.conf or {}).get('optical_calibration_file')
+                            optical_cfg = (
+                                (self.conf or {}).get("optical_calibration", {})
+                                if hasattr(self, "conf")
+                                else {}
+                            )
+                            cal_file = optical_cfg.get("optical_calibration_file") or (
+                                self.conf or {}
+                            ).get("optical_calibration_file")
                         except Exception:
                             pass
                         self.adv_delay_status_sig.emit(
@@ -3589,11 +4150,17 @@ class AffiniteApp(QMainWindow):
                     logger.exception(f"Afterglow calibration failed: {e}")
                     # Notify failure on main thread
                     try:
-                        self.ui_message_sig.emit(f"Afterglow calibration failed: {e}", "Warning", 0)
+                        self.ui_message_sig.emit(
+                            f"Afterglow calibration failed: {e}",
+                            "Warning",
+                            0,
+                        )
                     except Exception:
                         pass
                     try:
-                        self.adv_status_text_sig.emit("Afterglow calibration failed. See logs.")
+                        self.adv_status_text_sig.emit(
+                            "Afterglow calibration failed. See logs.",
+                        )
                     except Exception:
                         pass
                 finally:
@@ -3630,7 +4197,9 @@ class AffiniteApp(QMainWindow):
             # Use threaded connection like autoconnect does at startup
             # This ensures the same connection path is followed
             if self._con_tr.is_alive():
-                logger.warning("Connection thread already running, waiting for it to complete")
+                logger.warning(
+                    "Connection thread already running, waiting for it to complete",
+                )
                 self._con_tr.join(timeout=5.0)
 
             # Create and start connection thread (same as startup)
@@ -3665,7 +4234,6 @@ class AffiniteApp(QMainWindow):
     def crt_control_handler(self: Self, command: str) -> None:
         """Crt control handler - QSPR cartridge control disabled (obsolete hardware)."""
         # QSPR cartridge control disabled
-        pass
 
     def shutdown_handler(self: Self, device_type: str) -> None:
         """Shutdown."""
@@ -3863,14 +4431,14 @@ class AffiniteApp(QMainWindow):
 
     def _emergency_cleanup(self: Self) -> None:
         """Emergency cleanup for unexpected exits (called by atexit)."""
-        if hasattr(self, 'closing') and self.closing:
+        if hasattr(self, "closing") and self.closing:
             return  # Normal close already happened
 
         logger.warning("Emergency cleanup triggered - forcing resource release")
 
         # Force close all hardware connections without waiting
         try:
-            if hasattr(self, 'ctrl') and self.ctrl is not None:
+            if hasattr(self, "ctrl") and self.ctrl is not None:
                 try:
                     self.ctrl.close()
                 except Exception as e:
@@ -3879,7 +4447,7 @@ class AffiniteApp(QMainWindow):
             pass
 
         try:
-            if hasattr(self, 'usb') and self.usb is not None:
+            if hasattr(self, "usb") and self.usb is not None:
                 try:
                     self.usb.close()
                 except Exception as e:
@@ -3888,7 +4456,7 @@ class AffiniteApp(QMainWindow):
             pass
 
         try:
-            if hasattr(self, 'knx') and self.knx is not None:
+            if hasattr(self, "knx") and self.knx is not None:
                 try:
                     self.knx.close()
                 except Exception as e:

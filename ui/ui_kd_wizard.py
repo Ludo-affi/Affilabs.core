@@ -45,7 +45,10 @@ class Ui_KDWizardDialog:
         self.horizontalLayout = QHBoxLayout(self.graph)
         self.horizontalLayout.setObjectName("horizontalLayout")
         self.horizontalSpacer = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
@@ -58,7 +61,7 @@ class Ui_KDWizardDialog:
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(
-            self.label_cur_info.sizePolicy().hasHeightForWidth()
+            self.label_cur_info.sizePolicy().hasHeightForWidth(),
         )
         self.label_cur_info.setSizePolicy(sizePolicy)
         font1 = QFont()
@@ -70,7 +73,10 @@ class Ui_KDWizardDialog:
         self.verticalLayout_2.addWidget(self.label_cur_info)
 
         self.verticalSpacer = QSpacerItem(
-            20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding
+            20,
+            40,
+            QSizePolicy.Minimum,
+            QSizePolicy.Expanding,
         )
 
         self.verticalLayout_2.addItem(self.verticalSpacer)
@@ -130,7 +136,10 @@ class Ui_KDWizardDialog:
         self.horizontalLayout_9.addWidget(self.add_shifts, 0, Qt.AlignHCenter)
 
         self.horizontalSpacer_5 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_9.addItem(self.horizontalSpacer_5)
@@ -154,7 +163,7 @@ class Ui_KDWizardDialog:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.btn_kd.setAutoDefault(False)
 
@@ -235,7 +244,7 @@ class Ui_KDWizardDialog:
         self.chk_fitting_curve = QCheckBox(self.groupBox)
         self.chk_fitting_curve.setObjectName("chk_fitting_curve")
         sizePolicy.setHeightForWidth(
-            self.chk_fitting_curve.sizePolicy().hasHeightForWidth()
+            self.chk_fitting_curve.sizePolicy().hasHeightForWidth(),
         )
         self.chk_fitting_curve.setSizePolicy(sizePolicy)
         self.chk_fitting_curve.setMinimumSize(QSize(0, 0))
@@ -248,7 +257,10 @@ class Ui_KDWizardDialog:
         self.horizontalLayout_8.addWidget(self.groupBox)
 
         self.horizontalSpacer_4 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_8.addItem(self.horizontalSpacer_4)
@@ -390,7 +402,7 @@ class Ui_KDWizardDialog:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 10px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/save.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -417,61 +429,63 @@ class Ui_KDWizardDialog:
 
     def retranslateUi(self, KDWizardDialog):
         KDWizardDialog.setWindowTitle(
-            QCoreApplication.translate("KDWizardDialog", "Fitting Wizard", None)
+            QCoreApplication.translate("KDWizardDialog", "Fitting Wizard", None),
         )
         self.label_cur_info.setText("")
         ___qtablewidgetitem = self.table.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(
-            QCoreApplication.translate("KDWizardDialog", "Cycle", None)
+            QCoreApplication.translate("KDWizardDialog", "Cycle", None),
         )
         ___qtablewidgetitem1 = self.table.horizontalHeaderItem(1)
         ___qtablewidgetitem1.setText(
-            QCoreApplication.translate("KDWizardDialog", "Conc'n (nM)", None)
+            QCoreApplication.translate("KDWizardDialog", "Conc'n (nM)", None),
         )
         ___qtablewidgetitem2 = self.table.horizontalHeaderItem(2)
         ___qtablewidgetitem2.setText(
-            QCoreApplication.translate("KDWizardDialog", "Shift (RU)", None)
+            QCoreApplication.translate("KDWizardDialog", "Shift (RU)", None),
         )
         ___qtablewidgetitem3 = self.table.horizontalHeaderItem(3)
         ___qtablewidgetitem3.setText(
-            QCoreApplication.translate("KDWizardDialog", "Residual (RU)", None)
+            QCoreApplication.translate("KDWizardDialog", "Residual (RU)", None),
         )
         self.add_shifts.setText(
             QCoreApplication.translate(
-                "KDWizardDialog", "Cumulative Shift Values", None
-            )
+                "KDWizardDialog",
+                "Cumulative Shift Values",
+                None,
+            ),
         )
         self.btn_kd.setText(
-            QCoreApplication.translate("KDWizardDialog", "Calculate KD", None)
+            QCoreApplication.translate("KDWizardDialog", "Calculate KD", None),
         )
         self.groupBox_2.setTitle(
-            QCoreApplication.translate("KDWizardDialog", "Channel", None)
+            QCoreApplication.translate("KDWizardDialog", "Channel", None),
         )
         self.ch_a.setText(QCoreApplication.translate("KDWizardDialog", "A", None))
         self.ch_b.setText(QCoreApplication.translate("KDWizardDialog", "B", None))
         self.ch_c.setText(QCoreApplication.translate("KDWizardDialog", "C", None))
         self.ch_d.setText(QCoreApplication.translate("KDWizardDialog", "D", None))
         self.groupBox.setTitle(
-            QCoreApplication.translate("KDWizardDialog", "Fitting Model", None)
+            QCoreApplication.translate("KDWizardDialog", "Fitting Model", None),
         )
         self.fit_linear.setText(
-            QCoreApplication.translate("KDWizardDialog", "Linear", None)
+            QCoreApplication.translate("KDWizardDialog", "Linear", None),
         )
         self.fit_affinity.setText(
-            QCoreApplication.translate("KDWizardDialog", "Affinity", None)
+            QCoreApplication.translate("KDWizardDialog", "Affinity", None),
         )
         self.chk_fitting_curve.setText(
-            QCoreApplication.translate("KDWizardDialog", "Plot Fitting Curve", None)
+            QCoreApplication.translate("KDWizardDialog", "Plot Fitting Curve", None),
         )
         self.affinity_result.setTitle(
-            QCoreApplication.translate("KDWizardDialog", "Affinity Result", None)
+            QCoreApplication.translate("KDWizardDialog", "Affinity Result", None),
         )
         self.label_6.setText(
             QCoreApplication.translate(
                 "KDWizardDialog",
                 '<html><head/><body><p>R<span style=" vertical-align:sub;">MAX</span>:</p></body></html>',
                 None,
-            )
+            ),
         )
         self.rmax_val.setText("")
         self.label.setText(QCoreApplication.translate("KDWizardDialog", "KD:", None))
@@ -481,12 +495,12 @@ class Ui_KDWizardDialog:
                 "KDWizardDialog",
                 '<html><head/><body><p>\u03c7<span style=" vertical-align:super;">2</span>:</p></body></html>',
                 None,
-            )
+            ),
         )
         self.chi_sq_val.setText("")
         self.p_val.setText(QCoreApplication.translate("KDWizardDialog", "p:", None))
         self.linear_result.setTitle(
-            QCoreApplication.translate("KDWizardDialog", "Linear Result", None)
+            QCoreApplication.translate("KDWizardDialog", "Linear Result", None),
         )
         self.label_4.setText(QCoreApplication.translate("KDWizardDialog", "Y = ", None))
         self.lin_eqn.setText("")
@@ -495,12 +509,12 @@ class Ui_KDWizardDialog:
                 "KDWizardDialog",
                 '<html><head/><body><p>R<span style=" vertical-align:super;">2</span>:</p></body></html>',
                 None,
-            )
+            ),
         )
         self.r_sq_val.setText("")
         # if QT_CONFIG(tooltip)
         self.btn_save.setToolTip(
-            QCoreApplication.translate("KDWizardDialog", "Export Segment Data", None)
+            QCoreApplication.translate("KDWizardDialog", "Export Segment Data", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.btn_save.setText("")

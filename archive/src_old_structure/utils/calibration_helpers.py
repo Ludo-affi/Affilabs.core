@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+
 
 @dataclass
 class DetectorParams:
@@ -8,6 +8,7 @@ class DetectorParams:
     INTEGRATION TIME STANDARD: All integration times use MILLISECONDS.
     This matches usb.set_integration(time_ms) API throughout the codebase.
     """
+
     max_counts: int
     saturation_threshold: int
     min_integration_time: int  # MILLISECONDS (not seconds, not microseconds)
@@ -35,7 +36,11 @@ def get_detector_params(usb) -> DetectorParams:
     )
 
 
-def determine_channel_list(device_type: str, single_mode: bool, single_ch: str) -> List[str]:
+def determine_channel_list(
+    device_type: str,
+    single_mode: bool,
+    single_ch: str,
+) -> list[str]:
     if single_mode:
         return [single_ch.lower()]
     return ["a", "b", "c", "d"]

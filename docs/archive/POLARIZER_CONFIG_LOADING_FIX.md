@@ -55,7 +55,7 @@ The `validate_polarizer_positions()` method had the following flow:
    ```python
    # OLD: Read hardware → Swap → Overwrite state → Apply
    # NEW: Apply state → Read hardware → Verify match → Re-apply if mismatch
-   
+
    # Verify hardware matches what we just set from config
    if s_hardware != self.state.polarizer_s_position or p_hardware != self.state.polarizer_p_position:
        logger.warning(f"   ⚠️ Hardware mismatch: Expected S={...}, got S={...}")

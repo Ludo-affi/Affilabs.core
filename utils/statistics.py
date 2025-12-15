@@ -100,7 +100,7 @@ def optimize_by_linear(xdata, ydata):
         "r_sq": r_squared(ydata, fitted),
     }
     logger.debug(
-        f"Linear result: a = {result['a']}, b = {result['b']}, Rsq = {result['r_sq']}"
+        f"Linear result: a = {result['a']}, b = {result['b']}, Rsq = {result['r_sq']}",
     )
     return result
 
@@ -115,7 +115,7 @@ def func_assoc(data, k):
             * (1 - np.exp(-1 * ((k[0] * data[1]) + data[2]) * t))
             / ((k[0] * data[1]) + data[2])
             for t in data[0]
-        ]
+        ],
     )
 
 

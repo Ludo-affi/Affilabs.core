@@ -1,27 +1,26 @@
-"""
-Example: Using the Reference Baseline Method
+"""Example: Using the Reference Baseline Method
 
 This script demonstrates practical usage of the reference baseline processing
 method for comparing experimental approaches against the validated baseline.
 """
 
-import numpy as np
 import sys
 from pathlib import Path
 
+import numpy as np
+
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from utils.reference_baseline_processing import (
-    process_spectrum_reference,
+    REFERENCE_PARAMETERS,
     calculate_fourier_weights_reference,
-    REFERENCE_PARAMETERS
+    process_spectrum_reference,
 )
 
 
 def example_1_basic_usage():
     """Example 1: Basic usage with synthetic data."""
-
     print("=" * 70)
     print("EXAMPLE 1: Basic Usage")
     print("=" * 70)
@@ -31,7 +30,7 @@ def example_1_basic_usage():
     wavelengths = np.linspace(560, 720, 650)  # ~650 pixels in SPR region
 
     # Simulate P-mode intensity (with SPR dip at 625nm)
-    p_intensity = 30000 - 10000 * np.exp(-((wavelengths - 625)**2) / (2*8**2))
+    p_intensity = 30000 - 10000 * np.exp(-((wavelengths - 625) ** 2) / (2 * 8**2))
     p_intensity += np.random.normal(0, 150, len(wavelengths))
 
     # Simulate S-mode reference (from calibration)
@@ -44,7 +43,7 @@ def example_1_basic_usage():
 
     # LED intensities (from calibration)
     p_led = 220  # P-mode LED intensity
-    s_led = 80   # S-mode LED intensity
+    s_led = 80  # S-mode LED intensity
 
     print("Data prepared:")
     print(f"  Wavelength range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
@@ -68,9 +67,9 @@ def example_1_basic_usage():
         dark_noise=dark_noise,
         p_led_intensity=p_led,
         s_led_intensity=s_led,
-        window_size=REFERENCE_PARAMETERS['fourier_window'],
-        sg_window=REFERENCE_PARAMETERS['sg_window'],
-        sg_polyorder=REFERENCE_PARAMETERS['sg_polyorder']
+        window_size=REFERENCE_PARAMETERS["fourier_window"],
+        sg_window=REFERENCE_PARAMETERS["sg_window"],
+        sg_polyorder=REFERENCE_PARAMETERS["sg_polyorder"],
     )
 
     # Display results
@@ -78,15 +77,16 @@ def example_1_basic_usage():
     print()
     print("Results:")
     print(f"  Resonance wavelength: {result['resonance_wavelength']:.3f} nm")
-    print(f"  Transmission range: {np.min(result['transmission']):.1f}% - {np.max(result['transmission']):.1f}%")
-    print(f"  Expected resonance: ~625.0 nm")
+    print(
+        f"  Transmission range: {np.min(result['transmission']):.1f}% - {np.max(result['transmission']):.1f}%",
+    )
+    print("  Expected resonance: ~625.0 nm")
     print(f"  Error: {abs(result['resonance_wavelength'] - 625.0):.3f} nm")
     print()
 
 
 def example_2_compare_window_sizes():
     """Example 2: Compare standard vs optimized Fourier window."""
-
     print("=" * 70)
     print("EXAMPLE 2: Comparing Fourier Window Sizes")
     print("=" * 70)
@@ -109,7 +109,9 @@ def example_2_compare_window_sizes():
 
     for i in range(num_measurements):
         # Generate spectrum with noise
-        p_intensity = 30000 - 10000 * np.exp(-((wavelengths - true_resonance)**2) / (2*8**2))
+        p_intensity = 30000 - 10000 * np.exp(
+            -((wavelengths - true_resonance) ** 2) / (2 * 8**2),
+        )
         p_intensity += np.random.normal(0, 150, len(wavelengths))
 
         s_reference = np.full_like(wavelengths, 50000.0)
@@ -126,9 +128,9 @@ def example_2_compare_window_sizes():
             dark_noise=dark_noise,
             p_led_intensity=220,
             s_led_intensity=80,
-            window_size=165  # STANDARD
+            window_size=165,  # STANDARD
         )
-        resonances_standard.append(result_std['resonance_wavelength'])
+        resonances_standard.append(result_std["resonance_wavelength"])
 
         # Process with OPTIMIZED window (1500)
         result_opt = process_spectrum_reference(
@@ -139,9 +141,9 @@ def example_2_compare_window_sizes():
             dark_noise=dark_noise,
             p_led_intensity=220,
             s_led_intensity=80,
-            window_size=1500  # OPTIMIZED
+            window_size=1500,  # OPTIMIZED
         )
-        resonances_optimized.append(result_opt['resonance_wavelength'])
+        resonances_optimized.append(result_opt["resonance_wavelength"])
 
     # Calculate statistics
     std_mean = np.mean(resonances_standard)
@@ -184,7 +186,6 @@ def example_2_compare_window_sizes():
 
 def example_3_experimental_comparison():
     """Example 3: Compare reference method with experimental method."""
-
     print("=" * 70)
     print("EXAMPLE 3: Reference vs Experimental Method Comparison")
     print("=" * 70)
@@ -194,7 +195,9 @@ def example_3_experimental_comparison():
     wavelengths = np.linspace(560, 720, 650)
     true_resonance = 628.5
 
-    p_intensity = 30000 - 10000 * np.exp(-((wavelengths - true_resonance)**2) / (2*8**2))
+    p_intensity = 30000 - 10000 * np.exp(
+        -((wavelengths - true_resonance) ** 2) / (2 * 8**2),
+    )
     p_intensity += np.random.normal(0, 150, len(wavelengths))
 
     s_reference = np.full_like(wavelengths, 50000.0)
@@ -212,7 +215,7 @@ def example_3_experimental_comparison():
         dark_noise=dark_noise,
         p_led_intensity=220,
         s_led_intensity=80,
-        window_size=165
+        window_size=165,
     )
     print(f"  ✅ Resonance: {result_ref['resonance_wavelength']:.3f} nm")
     print()
@@ -234,14 +237,18 @@ def example_3_experimental_comparison():
     # Compare methods
     print("Comparison:")
     print(f"  True resonance: {true_resonance:.3f} nm")
-    print(f"  Reference error: {abs(result_ref['resonance_wavelength'] - true_resonance):.3f} nm")
+    print(
+        f"  Reference error: {abs(result_ref['resonance_wavelength'] - true_resonance):.3f} nm",
+    )
     print(f"  Experimental error: {abs(resonance_exp - true_resonance):.3f} nm")
     print()
 
-    diff = abs(result_ref['resonance_wavelength'] - resonance_exp)
+    diff = abs(result_ref["resonance_wavelength"] - resonance_exp)
     print(f"  Difference between methods: {diff:.3f} nm")
 
-    if abs(result_ref['resonance_wavelength'] - true_resonance) < abs(resonance_exp - true_resonance):
+    if abs(result_ref["resonance_wavelength"] - true_resonance) < abs(
+        resonance_exp - true_resonance,
+    ):
         print("  ✅ REFERENCE method is more accurate")
     else:
         print("  ✅ EXPERIMENTAL method is more accurate")
@@ -257,7 +264,6 @@ def example_3_experimental_comparison():
 
 def example_4_batch_processing():
     """Example 4: Batch processing multiple spectra efficiently."""
-
     print("=" * 70)
     print("EXAMPLE 4: Batch Processing (Efficient Usage)")
     print("=" * 70)
@@ -282,7 +288,7 @@ def example_4_batch_processing():
     resonances = []
     for i in range(num_spectra):
         # Generate spectrum (in real code, read from detector)
-        p_intensity = 30000 - 10000 * np.exp(-((wavelengths - 625)**2) / (2*8**2))
+        p_intensity = 30000 - 10000 * np.exp(-((wavelengths - 625) ** 2) / (2 * 8**2))
         p_intensity += np.random.normal(0, 150, len(wavelengths))
 
         # Process using reference method
@@ -293,10 +299,10 @@ def example_4_batch_processing():
             fourier_weights=fourier_weights,  # REUSE (don't recalculate!)
             dark_noise=dark_noise,
             p_led_intensity=p_led,
-            s_led_intensity=s_led
+            s_led_intensity=s_led,
         )
 
-        resonances.append(result['resonance_wavelength'])
+        resonances.append(result["resonance_wavelength"])
 
     # Calculate statistics
     resonances = np.array(resonances)
@@ -304,7 +310,7 @@ def example_4_batch_processing():
     std_res = np.std(resonances)
     p2p_res = np.max(resonances) - np.min(resonances)
 
-    print(f"  ✅ Complete!")
+    print("  ✅ Complete!")
     print()
     print("Batch statistics:")
     print(f"  Mean resonance: {mean_res:.3f} nm")
@@ -316,7 +322,7 @@ def example_4_batch_processing():
     print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run all examples
     example_1_basic_usage()
     print("\n")

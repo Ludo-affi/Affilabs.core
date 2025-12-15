@@ -8,6 +8,7 @@ Fourier transform methods, and median filtering.
 import numpy as np
 from scipy.fftpack import dst, idct
 from scipy.stats import linregress
+
 from utils.logger import logger
 
 
@@ -25,12 +26,15 @@ def calculate_transmission(intensity: np.ndarray, reference: np.ndarray) -> np.n
 
     Raises:
         ValueError: If arrays have incompatible shapes
+
     """
     if intensity.shape != reference.shape:
-        raise ValueError(f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}")
+        raise ValueError(
+            f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}",
+        )
 
     # Avoid division by zero
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         transmission = (intensity / reference) * 100
         transmission = np.where(reference == 0, 0, transmission)
 
@@ -41,7 +45,7 @@ def find_resonance_wavelength_fourier(
     transmission_spectrum: np.ndarray,
     wavelengths: np.ndarray,
     fourier_weights: np.ndarray,
-    window_size: int = 165
+    window_size: int = 165,
 ) -> float:
     """Find SPR resonance wavelength using Fourier transform method.
 
@@ -63,6 +67,7 @@ def find_resonance_wavelength_fourier(
 
     Returns:
         float: Resonance wavelength in nm, or np.nan if not found
+
     """
     try:
         spectrum = transmission_spectrum
@@ -73,7 +78,8 @@ def find_resonance_wavelength_fourier(
 
         # Apply DST with linear detrending and Fourier weights
         fourier_coeff[1:-1] = fourier_weights * dst(
-            spectrum[1:-1] - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
+            spectrum[1:-1]
+            - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
             1,
         )
 
@@ -103,7 +109,7 @@ def find_resonance_wavelength_fourier(
 def apply_centered_median_filter(
     values: np.ndarray,
     current_index: int,
-    window_size: int
+    window_size: int,
 ) -> float:
     """Apply centered median filter at a specific index.
 
@@ -118,6 +124,7 @@ def apply_centered_median_filter(
 
     Returns:
         float: Filtered value (median of window), or np.nan if input is NaN
+
     """
     # If current value is NaN, return NaN
     if current_index >= len(values):
@@ -129,7 +136,7 @@ def apply_centered_median_filter(
     # Not enough data for filtering yet
     if len(values) <= window_size:
         # Use all available data for initial values
-        return float(np.nanmedian(values[:current_index + 1]))
+        return float(np.nanmedian(values[: current_index + 1]))
 
     # Center the window on current point
     half_win = window_size // 2
@@ -153,6 +160,7 @@ def calculate_fourier_weights(num_points: int, alpha: float = 2e3) -> np.ndarray
 
     Returns:
         np.ndarray: Fourier weights array of length (num_points - 1)
+
     """
     n = num_points - 1
     phi = np.pi / n * np.arange(1, n)

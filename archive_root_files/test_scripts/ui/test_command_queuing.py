@@ -1,9 +1,12 @@
 """Test if we can send multiple LED commands without waiting for response."""
+
 import sys
 import time
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 from utils.controller import PicoP4SPR
+
 
 def test_command_queuing():
     """Test rapid command sending without waiting for responses."""
@@ -21,7 +24,7 @@ def test_command_queuing():
     print("TEST 1: Send 4 LED ON commands rapidly (no response wait)")
     print("=" * 60)
 
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     start = time.time()
 
     for ch in channels:
@@ -63,6 +66,7 @@ def test_command_queuing():
 
     print("\nTest complete!")
     pico.close()
+
 
 if __name__ == "__main__":
     test_command_queuing()

@@ -12,13 +12,13 @@ def main():
         if ok:
             logger.info("✓ Cleared servo positions in EEPROM (set to 0/0)")
             return 0
-        else:
-            logger.error("Failed to clear servo positions in EEPROM.")
-            return 2
+        logger.error("Failed to clear servo positions in EEPROM.")
+        return 2
     finally:
         ctrl.close()
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

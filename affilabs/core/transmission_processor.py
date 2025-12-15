@@ -357,6 +357,9 @@ class TransmissionProcessor:
             detector_max_counts: Detector maximum counts (default: 65535)
             saturation_threshold: Saturation limit (default: 95% of max)
 
+        # Consume reserved parameter to keep signature stable
+        _ = detector_max_counts
+
         Returns:
             Dictionary with QC metrics:
             {
@@ -505,10 +508,7 @@ class TransmissionProcessor:
                 qc["dip_detected"]
                 and qc["fwhm"] is not None
                 and qc["fwhm"] < 100.0
-                and (
-                    qc["orientation_correct"] is True
-                    or qc["orientation_correct"] is None
-                )
+                and (qc["orientation_correct"] is True or qc["orientation_correct"] is None)
                 and not qc["s_saturated"]
                 and not qc["p_saturated"]
             )

@@ -6,11 +6,12 @@ print("=" * 60)
 try:
     # Must call seabreeze.use() before any imports
     import seabreeze
-    seabreeze.use('pyseabreeze')
+
+    seabreeze.use("pyseabreeze")
     print(f"SeaBreeze version: {seabreeze.__version__}")
     print("Using pyseabreeze backend (pure Python)")
 
-    from seabreeze.spectrometers import list_devices, Spectrometer
+    from seabreeze.spectrometers import Spectrometer, list_devices
 
     print("\nScanning for devices...")
     devices = list_devices()
@@ -23,22 +24,26 @@ try:
             print(f"  Serial: {dev.serial_number}")
 
             # Try connecting
-            print(f"\n  Attempting connection...")
+            print("\n  Attempting connection...")
             spec = Spectrometer.from_serial_number(dev.serial_number)
-            print(f"  ✓ Connected!")
+            print("  ✓ Connected!")
 
             # Get info
             wavelengths = spec.wavelengths()
-            print(f"  ✓ Wavelength range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm")
+            print(
+                f"  ✓ Wavelength range: {wavelengths[0]:.1f} - {wavelengths[-1]:.1f} nm",
+            )
             print(f"  ✓ Pixels: {len(wavelengths)}")
 
             # Set integration time and read spectrum
             spec.integration_time_micros(100000)  # 100ms
             intensities = spec.intensities()
-            print(f"  ✓ Spectrum acquired: min={intensities.min():.1f}, max={intensities.max():.1f}")
+            print(
+                f"  ✓ Spectrum acquired: min={intensities.min():.1f}, max={intensities.max():.1f}",
+            )
 
             spec.close()
-            print(f"  ✓ Connection closed")
+            print("  ✓ Connection closed")
 
             print("\n" + "=" * 60)
             print("SUCCESS! pyseabreeze backend works!")
@@ -53,6 +58,7 @@ try:
 except Exception as e:
     print(f"\n✗ Error: {e}")
     import traceback
+
     traceback.print_exc()
 
     print("\n" + "=" * 60)

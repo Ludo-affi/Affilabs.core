@@ -4,10 +4,10 @@ Manages spectrum processing and display state.
 Bridges spectrum processing services with Qt UI.
 """
 
-from PySide6.QtCore import QObject, Signal
-import numpy as np
-from typing import Optional, Dict, Tuple
 import logging
+
+import numpy as np
+from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,11 @@ class SpectrumViewModel(QObject):
 
     # Signals
     spectrum_updated = Signal(str, object, object)  # channel, wavelengths, transmission
-    raw_spectrum_updated = Signal(str, object, object)  # channel, wavelengths, intensities
+    raw_spectrum_updated = Signal(
+        str,
+        object,
+        object,
+    )  # channel, wavelengths, intensities
     processing_error = Signal(str)  # error_message
     statistics_updated = Signal(str, dict)  # channel, stats
 
@@ -42,7 +46,7 @@ class SpectrumViewModel(QObject):
         self._smoothing_window = 11
         self._smoothing_polyorder = 2
         self._baseline_correction_enabled = True
-        self._baseline_method = 'polynomial'
+        self._baseline_method = "polynomial"
         self._baseline_order = 1
 
         # Latest data cache
@@ -54,22 +58,34 @@ class SpectrumViewModel(QObject):
         self._baseline_corrector = None
         self._spectrum_processor = None
 
-    def set_services(self, transmission_calculator, baseline_corrector, spectrum_processor):
+    def set_services(
+        self,
+        transmission_calculator,
+        baseline_corrector,
+        spectrum_processor,
+    ):
         """Inject service dependencies.
 
         Args:
             transmission_calculator: TransmissionCalculator instance
             baseline_corrector: BaselineCorrector instance
             spectrum_processor: SpectrumProcessor instance
+
         """
         # Use duck typing instead of isinstance() to avoid import path issues
-        if not hasattr(transmission_calculator, 'calculate_transmission'):
-            raise TypeError(f"transmission_calculator must have calculate_transmission method, got {type(transmission_calculator)}")
-        if not hasattr(baseline_corrector, 'correct_baseline'):
-            raise TypeError(f"baseline_corrector must have correct_baseline method, got {type(baseline_corrector)}")
+        if not hasattr(transmission_calculator, "calculate_transmission"):
+            raise TypeError(
+                f"transmission_calculator must have calculate_transmission method, got {type(transmission_calculator)}",
+            )
+        if not hasattr(baseline_corrector, "correct_baseline"):
+            raise TypeError(
+                f"baseline_corrector must have correct_baseline method, got {type(baseline_corrector)}",
+            )
         # SpectrumProcessor provides smooth_savgol, find_peaks, calculate_centroid methods
-        if not hasattr(spectrum_processor, 'smooth_savgol'):
-            raise TypeError(f"spectrum_processor must have smooth_savgol method, got {type(spectrum_processor)}")
+        if not hasattr(spectrum_processor, "smooth_savgol"):
+            raise TypeError(
+                f"spectrum_processor must have smooth_savgol method, got {type(spectrum_processor)}",
+            )
 
         self._transmission_calculator = transmission_calculator
         self._baseline_corrector = baseline_corrector
@@ -88,6 +104,7 @@ class SpectrumViewModel(QObject):
         Args:
             window: Window length (must be odd)
             polyorder: Polynomial order
+
         """
         if window % 2 == 0:
             window += 1  # Ensure odd
@@ -109,6 +126,7 @@ class SpectrumViewModel(QObject):
         Args:
             method: 'polynomial', 'moving_min', or 'als'
             poly_order: Polynomial order (for polynomial method)
+
         """
         self._baseline_method = method
         self._baseline_order = poly_order
@@ -120,8 +138,8 @@ class SpectrumViewModel(QObject):
         wavelengths: np.ndarray,
         p_spectrum: np.ndarray,
         s_reference: np.ndarray,
-        p_led_intensity: Optional[int] = None,
-        s_led_intensity: Optional[int] = None
+        p_led_intensity: int | None = None,
+        s_led_intensity: int | None = None,
     ):
         """Process raw P-mode spectrum through services pipeline.
 
@@ -134,6 +152,7 @@ class SpectrumViewModel(QObject):
             s_reference: S-mode reference
             p_led_intensity: P-mode LED brightness
             s_led_intensity: S-mode LED brightness
+
         """
         if self._transmission_calculator is None:
             logger.error("Services not injected")
@@ -150,7 +169,7 @@ class SpectrumViewModel(QObject):
                 p_spectrum=p_spectrum,
                 s_reference=s_reference,
                 p_led_intensity=p_led_intensity,
-                s_led_intensity=s_led_intensity
+                s_led_intensity=s_led_intensity,
             )
 
             # Apply baseline correction if enabled
@@ -165,7 +184,7 @@ class SpectrumViewModel(QObject):
                 transmission = self._spectrum_processor.smooth_savgol(
                     transmission,
                     window_length=self._smoothing_window,
-                    polyorder=self._smoothing_polyorder
+                    polyorder=self._smoothing_polyorder,
                 )
 
             # Store processed data
@@ -178,8 +197,10 @@ class SpectrumViewModel(QObject):
             stats = self._transmission_calculator.get_statistics(transmission)
             self.statistics_updated.emit(channel, stats)
 
-            logger.debug(f"Processed spectrum for channel {channel}: "
-                        f"mean={stats['mean']:.1f}%, range={stats['range']:.1f}%")
+            logger.debug(
+                f"Processed spectrum for channel {channel}: "
+                f"mean={stats['mean']:.1f}%, range={stats['range']:.1f}%",
+            )
 
         except Exception as e:
             error_msg = f"Failed to process spectrum for channel {channel}: {e}"
@@ -192,9 +213,9 @@ class SpectrumViewModel(QObject):
         wavelengths: np.ndarray,
         p_spectra: np.ndarray,
         s_references: np.ndarray,
-        p_led_intensities: Optional[np.ndarray] = None,
-        s_led_intensities: Optional[np.ndarray] = None
-    ) -> Optional[np.ndarray]:
+        p_led_intensities: np.ndarray | None = None,
+        s_led_intensities: np.ndarray | None = None,
+    ) -> np.ndarray | None:
         """Process batch of spectra (vectorized).
 
         Args:
@@ -207,6 +228,7 @@ class SpectrumViewModel(QObject):
 
         Returns:
             Processed transmission spectra (N × wavelengths)
+
         """
         if self._transmission_calculator is None:
             logger.error("Services not injected")
@@ -218,7 +240,7 @@ class SpectrumViewModel(QObject):
                 p_spectra=p_spectra,
                 s_references=s_references,
                 p_led_intensities=p_led_intensities,
-                s_led_intensities=s_led_intensities
+                s_led_intensities=s_led_intensities,
             )
 
             # Apply baseline correction if enabled
@@ -234,10 +256,12 @@ class SpectrumViewModel(QObject):
                     transmissions[i] = self._spectrum_processor.smooth_savgol(
                         transmissions[i],
                         window_length=self._smoothing_window,
-                        polyorder=self._smoothing_polyorder
+                        polyorder=self._smoothing_polyorder,
                     )
 
-            logger.debug(f"Processed batch of {len(transmissions)} spectra for channel {channel}")
+            logger.debug(
+                f"Processed batch of {len(transmissions)} spectra for channel {channel}",
+            )
             return transmissions
 
         except Exception as e:
@@ -245,7 +269,7 @@ class SpectrumViewModel(QObject):
             self.processing_error.emit(f"Batch processing failed: {e}")
             return None
 
-    def get_latest_spectrum(self, channel: str) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    def get_latest_spectrum(self, channel: str) -> tuple[np.ndarray, np.ndarray] | None:
         """Get latest processed spectrum for channel.
 
         Args:
@@ -253,10 +277,11 @@ class SpectrumViewModel(QObject):
 
         Returns:
             Tuple of (wavelengths, transmission) or None
+
         """
         return self._latest_spectra.get(channel)
 
-    def get_latest_raw(self, channel: str) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    def get_latest_raw(self, channel: str) -> tuple[np.ndarray, np.ndarray] | None:
         """Get latest raw spectrum for channel.
 
         Args:
@@ -264,10 +289,15 @@ class SpectrumViewModel(QObject):
 
         Returns:
             Tuple of (wavelengths, intensities) or None
+
         """
         return self._latest_raw.get(channel)
 
-    def find_peaks(self, channel: str, prominence: float = 2.0) -> Optional[Tuple[np.ndarray, dict]]:
+    def find_peaks(
+        self,
+        channel: str,
+        prominence: float = 2.0,
+    ) -> tuple[np.ndarray, dict] | None:
         """Find peaks in latest processed spectrum.
 
         Args:
@@ -276,6 +306,7 @@ class SpectrumViewModel(QObject):
 
         Returns:
             Tuple of (peak_indices, properties) or None
+
         """
         spectrum_data = self._latest_spectra.get(channel)
         if spectrum_data is None or self._spectrum_processor is None:
@@ -285,7 +316,9 @@ class SpectrumViewModel(QObject):
 
         try:
             peak_indices, props = self._spectrum_processor.find_peaks(
-                transmission, wavelengths, prominence=prominence
+                transmission,
+                wavelengths,
+                prominence=prominence,
             )
             logger.debug(f"Found {len(peak_indices)} peaks in channel {channel}")
             return peak_indices, props
@@ -293,7 +326,7 @@ class SpectrumViewModel(QObject):
             logger.exception(f"Peak finding failed: {e}")
             return None
 
-    def calculate_centroid(self, channel: str) -> Optional[float]:
+    def calculate_centroid(self, channel: str) -> float | None:
         """Calculate spectral centroid for latest spectrum.
 
         Args:
@@ -301,6 +334,7 @@ class SpectrumViewModel(QObject):
 
         Returns:
             Centroid wavelength (nm) or None
+
         """
         spectrum_data = self._latest_spectra.get(channel)
         if spectrum_data is None or self._spectrum_processor is None:
@@ -309,7 +343,10 @@ class SpectrumViewModel(QObject):
         wavelengths, transmission = spectrum_data
 
         try:
-            centroid = self._spectrum_processor.calculate_centroid(transmission, wavelengths)
+            centroid = self._spectrum_processor.calculate_centroid(
+                transmission,
+                wavelengths,
+            )
             return centroid
         except Exception as e:
             logger.exception(f"Centroid calculation failed: {e}")

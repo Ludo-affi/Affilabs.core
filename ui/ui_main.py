@@ -146,8 +146,6 @@ class Ui_mainWindow:
 
         self.horizontalLayout_4.addWidget(self.sensorgram_btn)
 
-
-
         self.data_processing_btn = QPushButton(self.frame_2)
         self.data_processing_btn.setObjectName("data_processing_btn")
         sizePolicy1.setHeightForWidth(

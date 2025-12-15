@@ -1,38 +1,36 @@
-"""
-Extract Peak Tracking Data from Log File
+"""Extract Peak Tracking Data from Log File
 
 Analyzes the log output to extract lambda values and calculate stability metrics.
 """
 
 import re
 from pathlib import Path
-from datetime import datetime
+
 import numpy as np
 
 
 def analyze_log_file(log_path: Path):
     """Analyze log file for peak tracking performance."""
-
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("PEAK TRACKING LOG ANALYSIS")
-    print("="*70)
+    print("=" * 70)
     print(f"Log file: {log_path}")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     # Data storage
     data = {
-        'a': [],
-        'b': [],
-        'c': [],
-        'd': []
+        "a": [],
+        "b": [],
+        "c": [],
+        "d": [],
     }
 
     # Pattern to match lambda values
     # Looking for lines like: "Channel A: λ = 628.1234 nm"
-    pattern = re.compile(r'Channel ([A-D]):.*?λ\s*=\s*(\d+\.\d+)\s*nm', re.IGNORECASE)
+    pattern = re.compile(r"Channel ([A-D]):.*?λ\s*=\s*(\d+\.\d+)\s*nm", re.IGNORECASE)
 
     # Read log file
-    with open(log_path, 'r') as f:
+    with open(log_path) as f:
         for line in f:
             match = pattern.search(line)
             if match:
@@ -41,39 +39,39 @@ def analyze_log_file(log_path: Path):
                 data[channel].append(lambda_val)
 
     # Analyze data
-    if all(len(data[ch]) == 0 for ch in ['a', 'b', 'c', 'd']):
+    if all(len(data[ch]) == 0 for ch in ["a", "b", "c", "d"]):
         print("❌ No lambda data found in log file")
         print("\nTip: Make sure INFO level logging is enabled")
         return
 
     print("Data collection summary:")
-    for ch in ['a', 'b', 'c', 'd']:
+    for ch in ["a", "b", "c", "d"]:
         print(f"  Channel {ch.upper()}: {len(data[ch])} samples")
     print()
 
     # Calculate statistics
-    print("="*70)
+    print("=" * 70)
     print("RESULTS - PEAK TRACKING STABILITY")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     stats = {}
-    for ch in ['a', 'b', 'c', 'd']:
+    for ch in ["a", "b", "c", "d"]:
         if len(data[ch]) > 10:  # Need at least 10 samples
             arr = np.array(data[ch])
             stats[ch] = {
-                'count': len(arr),
-                'min': np.min(arr),
-                'max': np.max(arr),
-                'mean': np.mean(arr),
-                'std': np.std(arr),
-                'p2p': np.max(arr) - np.min(arr)
+                "count": len(arr),
+                "min": np.min(arr),
+                "max": np.max(arr),
+                "mean": np.mean(arr),
+                "std": np.std(arr),
+                "p2p": np.max(arr) - np.min(arr),
             }
 
             # SNR calculation
-            if stats[ch]['std'] > 0:
-                stats[ch]['snr'] = stats[ch]['mean'] / stats[ch]['std']
+            if stats[ch]["std"] > 0:
+                stats[ch]["snr"] = stats[ch]["mean"] / stats[ch]["std"]
             else:
-                stats[ch]['snr'] = float('inf')
+                stats[ch]["snr"] = float("inf")
 
             # Print channel results
             print(f"Channel {ch.upper()}:")
@@ -84,11 +82,11 @@ def analyze_log_file(log_path: Path):
             print(f"  Peak-to-Peak: {stats[ch]['p2p']:.4f} nm  ", end="")
 
             # Assessment
-            if stats[ch]['p2p'] < 0.1:
+            if stats[ch]["p2p"] < 0.1:
                 print("✅ EXCELLENT")
-            elif stats[ch]['p2p'] < 0.2:
+            elif stats[ch]["p2p"] < 0.2:
                 print("✅ GOOD")
-            elif stats[ch]['p2p'] < 0.5:
+            elif stats[ch]["p2p"] < 0.5:
                 print("⚠️  ACCEPTABLE")
             else:
                 print("❌ POOR")
@@ -97,17 +95,19 @@ def analyze_log_file(log_path: Path):
             print(f"  SNR:          {stats[ch]['snr']:.1f}")
             print()
         else:
-            print(f"Channel {ch.upper()}: ⚠️ Insufficient data ({len(data[ch])} samples)")
+            print(
+                f"Channel {ch.upper()}: ⚠️ Insufficient data ({len(data[ch])} samples)",
+            )
             print()
 
     # Overall assessment
     if stats:
-        print("="*70)
+        print("=" * 70)
         print("OVERALL ASSESSMENT")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
-        avg_p2p = np.mean([stats[ch]['p2p'] for ch in stats.keys()])
-        avg_snr = np.mean([stats[ch]['snr'] for ch in stats.keys()])
+        avg_p2p = np.mean([stats[ch]["p2p"] for ch in stats])
+        avg_snr = np.mean([stats[ch]["snr"] for ch in stats])
 
         print(f"Average Peak-to-Peak: {avg_p2p:.4f} nm")
         print(f"Average SNR:          {avg_snr:.1f}")
@@ -132,7 +132,7 @@ def analyze_log_file(log_path: Path):
             print("   • Check for mechanical vibrations")
             print("   • Verify fluid stability")
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
 
 
 if __name__ == "__main__":

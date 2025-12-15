@@ -1,13 +1,11 @@
-"""
-Theme Loader & Manager
+"""Theme Loader & Manager
 Loads and applies modern theme to the application
 """
 
 from pathlib import Path
+
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QFont, QPalette, QColor
-from PySide6.QtCore import Qt
-import pyqtgraph as pg
 
 # Import design system
 try:
@@ -17,6 +15,7 @@ except ImportError:
     # Fallback for different import contexts
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).parent))
     from design_system import *
     from graph_styling import apply_modern_graph_style
@@ -33,7 +32,7 @@ class ThemeManager:
         """Load QSS stylesheet file."""
         qss_path = self.theme_dir / qss_file
         if qss_path.exists():
-            with open(qss_path, 'r', encoding='utf-8') as f:
+            with open(qss_path, encoding="utf-8") as f:
                 return f.read()
         return ""
 
@@ -47,8 +46,8 @@ class ThemeManager:
             app.setStyleSheet(qss)
 
         # 2. Set application font
-        font = QFont(FONT_FAMILY.split(',')[0].strip("'"))
-        font.setPointSize(int(FONT_BASE.replace('px', '')) * 0.75)  # Convert px to pt
+        font = QFont(FONT_FAMILY.split(",")[0].strip("'"))
+        font.setPointSize(int(FONT_BASE.replace("px", "")) * 0.75)  # Convert px to pt
         app.setFont(font)
 
         # 3. Apply PyQtGraph styling
@@ -84,34 +83,47 @@ class ThemeManager:
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(TEXT_INVERSE))
 
         # Disabled state
-        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(TEXT_DISABLED))
-        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(TEXT_DISABLED))
-        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(TEXT_DISABLED))
+        palette.setColor(
+            QPalette.ColorGroup.Disabled,
+            QPalette.ColorRole.WindowText,
+            QColor(TEXT_DISABLED),
+        )
+        palette.setColor(
+            QPalette.ColorGroup.Disabled,
+            QPalette.ColorRole.Text,
+            QColor(TEXT_DISABLED),
+        )
+        palette.setColor(
+            QPalette.ColorGroup.Disabled,
+            QPalette.ColorRole.ButtonText,
+            QColor(TEXT_DISABLED),
+        )
 
         app.setPalette(palette)
 
     def get_color(self, color_name):
         """Get color from design system by name."""
         color_map = {
-            'primary': PRIMARY,
-            'success': SUCCESS,
-            'warning': WARNING,
-            'error': ERROR,
-            'info': INFO,
-            'background': BACKGROUND,
-            'surface': SURFACE,
-            'text_primary': TEXT_PRIMARY,
-            'text_secondary': TEXT_SECONDARY,
-            'channel_a': CHANNEL_A,
-            'channel_b': CHANNEL_B,
-            'channel_c': CHANNEL_C,
-            'channel_d': CHANNEL_D,
+            "primary": PRIMARY,
+            "success": SUCCESS,
+            "warning": WARNING,
+            "error": ERROR,
+            "info": INFO,
+            "background": BACKGROUND,
+            "surface": SURFACE,
+            "text_primary": TEXT_PRIMARY,
+            "text_secondary": TEXT_SECONDARY,
+            "channel_a": CHANNEL_A,
+            "channel_b": CHANNEL_B,
+            "channel_c": CHANNEL_C,
+            "channel_d": CHANNEL_D,
         }
         return color_map.get(color_name, TEXT_PRIMARY)
 
 
 # Global theme manager instance
 _theme_manager = None
+
 
 def get_theme_manager() -> ThemeManager:
     """Get or create global theme manager instance."""
@@ -180,4 +192,4 @@ if __name__ == "__main__":
     print("Theme Manager Ready ✓")
     print(f"Theme Directory: {Path(__file__).parent}")
     print(f"Primary Color: {PRIMARY}")
-    print(f"Available themes: modern")
+    print("Available themes: modern")

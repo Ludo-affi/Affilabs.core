@@ -1,20 +1,18 @@
-"""
-Test servo with EEPROM flash - positions might need to be saved to firmware first.
-"""
+"""Test servo with EEPROM flash - positions might need to be saved to firmware first."""
 
-import sys
-import os
 import logging
+import os
+import sys
 import time
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 # Setup logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s :: %(levelname)s :: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s :: %(levelname)s :: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 logger = logging.getLogger(__name__)
@@ -66,17 +64,17 @@ logger.info("TEST 2: Use mode commands (ss/sp)")
 logger.info("=" * 80)
 
 logger.info("\nMoving to S mode (ss command)...")
-result = ctrl.set_mode('s')
+result = ctrl.set_mode("s")
 logger.info(f"  set_mode('s') result: {result}")
 input("Press Enter after observing S position (should be 45°)...")
 
 logger.info("\nMoving to P mode (sp command)...")
-result = ctrl.set_mode('p')
+result = ctrl.set_mode("p")
 logger.info(f"  set_mode('p') result: {result}")
 input("Press Enter after observing P position (should be 135°)...")
 
 logger.info("\nMoving to S mode again...")
-result = ctrl.set_mode('s')
+result = ctrl.set_mode("s")
 logger.info(f"  set_mode('s') result: {result}")
 input("Press Enter after observing S position (should be 45°)...")
 
@@ -86,7 +84,9 @@ logger.info("TEST 3: Read servo positions")
 logger.info("=" * 80)
 
 positions = ctrl.servo_get()
-logger.info(f"  Current positions: S={positions['s'].decode()}, P={positions['p'].decode()}")
+logger.info(
+    f"  Current positions: S={positions['s'].decode()}, P={positions['p'].decode()}",
+)
 
 logger.info("\n" + "=" * 80)
 logger.info("DIAGNOSIS")

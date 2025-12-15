@@ -1,5 +1,4 @@
-"""
-Automated fix for traceback.print_exc() bytes issue.
+"""Automated fix for traceback.print_exc() bytes issue.
 
 This script finds all instances of traceback.print_exc() and replaces them
 with traceback.format_exc() to avoid TypeError: string argument expected, got 'bytes'
@@ -8,13 +7,14 @@ with traceback.format_exc() to avoid TypeError: string argument expected, got 'b
 import os
 import re
 from pathlib import Path
-from typing import List, Tuple
 
-def find_print_exc_instances(root_dir: str) -> List[Tuple[str, int, str]]:
+
+def find_print_exc_instances(root_dir: str) -> list[tuple[str, int, str]]:
     """Find all traceback.print_exc() calls in Python files.
 
     Returns:
         List of (file_path, line_number, line_content) tuples
+
     """
     instances = []
     src_dir = Path(root_dir) / "src"
@@ -25,33 +25,37 @@ def find_print_exc_instances(root_dir: str) -> List[Tuple[str, int, str]]:
             continue
 
         try:
-            with open(py_file, 'r', encoding='utf-8') as f:
+            with open(py_file, encoding="utf-8") as f:
                 lines = f.readlines()
 
             for line_num, line in enumerate(lines, 1):
-                if 'traceback.print_exc()' in line and not line.strip().startswith('#'):
+                if "traceback.print_exc()" in line and not line.strip().startswith("#"):
                     instances.append((str(py_file), line_num, line.rstrip()))
         except Exception as e:
             print(f"Error reading {py_file}: {e}")
 
     return instances
 
+
 def fix_print_exc_in_file(file_path: str) -> int:
     """Replace traceback.print_exc() with format_exc() in a file.
 
     Returns:
         Number of replacements made
+
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         original_content = content
         replacements = 0
 
         # Pattern 1: Simple traceback.print_exc()
-        pattern1 = r'(\s+)traceback\.print_exc\(\)'
-        replacement1 = r'\1try:\n\1    print(traceback.format_exc())\n\1except:\n\1    pass'
+        pattern1 = r"(\s+)traceback\.print_exc\(\)"
+        replacement1 = (
+            r"\1try:\n\1    print(traceback.format_exc())\n\1except:\n\1    pass"
+        )
 
         # Count matches first
         matches = list(re.finditer(pattern1, content))
@@ -68,7 +72,7 @@ def fix_print_exc_in_file(file_path: str) -> int:
                 replacements += 1
 
         if content != original_content:
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f"✅ Fixed {replacements} instance(s) in {file_path}")
             return replacements
@@ -79,13 +83,14 @@ def fix_print_exc_in_file(file_path: str) -> int:
         print(f"❌ Error fixing {file_path}: {e}")
         return 0
 
+
 def main():
     """Main function to find and fix all instances."""
     root_dir = os.path.dirname(os.path.abspath(__file__))
 
-    print("="*80)
+    print("=" * 80)
     print("TRACEBACK BYTES ISSUE - AUTOMATED FIX")
-    print("="*80)
+    print("=" * 80)
 
     # Find all instances
     print("\n🔍 Scanning for traceback.print_exc() calls...")
@@ -102,10 +107,10 @@ def main():
         print(f"    {line_content.strip()}")
 
     # Ask for confirmation
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     response = input("🔧 Fix all instances? (y/n): ")
 
-    if response.lower() != 'y':
+    if response.lower() != "y":
         print("Aborted.")
         return
 
@@ -120,9 +125,12 @@ def main():
             total_fixed += fixed
             files_processed.add(file_path)
 
-    print("\n" + "="*80)
-    print(f"✅ COMPLETE: Fixed {total_fixed} instance(s) in {len(files_processed)} file(s)")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print(
+        f"✅ COMPLETE: Fixed {total_fixed} instance(s) in {len(files_processed)} file(s)",
+    )
+    print("=" * 80)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

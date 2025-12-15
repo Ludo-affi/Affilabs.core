@@ -6,13 +6,23 @@ Author: AI Assistant
 Date: November 21, 2025
 """
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                               QPushButton, QTextEdit, QGroupBox, QScrollArea)
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from core.system_intelligence import (get_system_intelligence, SystemState,
-                                      IssueSeverity)
+from affilabs.core.system_intelligence import (
+    IssueSeverity,
+    SystemState,
+    get_system_intelligence,
+)
 from affilabs.utils.logger import logger
 
 
@@ -106,7 +116,7 @@ class SystemIntelligenceWidget(QWidget):
             SystemState.DEGRADED: ("#ffaa00", "Degraded"),
             SystemState.WARNING: ("#ff6600", "Warning"),
             SystemState.ERROR: ("#ff0000", "Error"),
-            SystemState.UNKNOWN: ("#888888", "Unknown")
+            SystemState.UNKNOWN: ("#888888", "Unknown"),
         }
 
         color, status_text = status_colors.get(state, ("#888888", "Unknown"))
@@ -124,13 +134,15 @@ class SystemIntelligenceWidget(QWidget):
                     IssueSeverity.CRITICAL: "🔴",
                     IssueSeverity.ERROR: "🟠",
                     IssueSeverity.WARNING: "🟡",
-                    IssueSeverity.INFO: "🔵"
+                    IssueSeverity.INFO: "🔵",
                 }
                 emoji = severity_emoji.get(issue.severity, "⚪")
 
                 # Format issue
-                html_parts.append(f"<p><b>{emoji} {issue.title}</b> "
-                                f"(Confidence: {issue.confidence*100:.0f}%)<br>")
+                html_parts.append(
+                    f"<p><b>{emoji} {issue.title}</b> "
+                    f"(Confidence: {issue.confidence*100:.0f}%)<br>",
+                )
                 html_parts.append(f"<i>{issue.description}</i><br>")
 
                 # Show top 2 recommended actions

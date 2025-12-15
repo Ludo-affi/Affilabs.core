@@ -1,6 +1,6 @@
 # ✅ Phase 2 Status Verification - COMPLETE
 
-**Date**: January 2025  
+**Date**: January 2025
 **Status**: ✅ **PHASE 2 IS FULLY IMPLEMENTED**
 
 ---
@@ -97,11 +97,11 @@ if self.afterglow_correction and last_ch:
 
             # Apply correction delta to ALL reference signals
             dark_correction_delta = corrected_dark - dark_after_all
-            
+
             for ch in ch_list:
                 if self.state.ref_sig[ch] is not None:
                     self.state.ref_sig[ch] = self.state.ref_sig[ch] + dark_correction_delta
-                    
+
                     logger.debug(
                         f"   Applied afterglow correction to ref_sig[{ch}]: "
                         f"delta_mean={float(np.mean(dark_correction_delta)):.2f} counts"
@@ -241,17 +241,17 @@ if self.afterglow_correction and last_ch:
         last_active_channel=last_ch,
         integration_time_ms=self.state.integration * 1000
     )
-    
+
     # Calculate contamination and effectiveness
     contamination = dark_mean_before - baseline_dark_mean
     correction_effectiveness = dark_mean_before - dark_mean_after
-    
+
     # Log results
     logger.info(f"   ✨ Step 7 afterglow correction: ...")
-    
+
     # Apply to ALL reference signals
     dark_correction_delta = corrected_dark - dark_after_all
-    
+
     for ch in ch_list:
         if self.state.ref_sig[ch] is not None:
             self.state.ref_sig[ch] = self.state.ref_sig[ch] + dark_correction_delta
@@ -271,7 +271,7 @@ if self.afterglow_correction and last_ch:
 - ✅ Graceful fallback for backward compatibility
 - ✅ Comprehensive logging and diagnostics
 
-**The report of "Missing Afterglow Correction in Step 7" is incorrect.**  
+**The report of "Missing Afterglow Correction in Step 7" is incorrect.**
 The implementation IS present and working as designed.
 
 ---
@@ -285,7 +285,7 @@ The implementation IS present and working as designed.
 
 ---
 
-**Verification Date**: January 2025  
-**Verified By**: AI Assistant  
-**Status**: ✅ Phase 2 is COMPLETE and VERIFIED  
+**Verification Date**: January 2025
+**Verified By**: AI Assistant
+**Status**: ✅ Phase 2 is COMPLETE and VERIFIED
 **Action Required**: None - implementation is correct

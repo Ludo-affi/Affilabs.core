@@ -85,7 +85,7 @@ class KAKDWizardDialog(QDialog):
         # Check for concentration series (multi-cycle indicator)
         if unique_conc_count >= 3:  # Need at least 3 points for good multi-cycle fit
             logger.debug(
-                f"Multi-cycle detected: {unique_conc_count} unique concentrations"
+                f"Multi-cycle detected: {unique_conc_count} unique concentrations",
             )
             return "multi-cycle"
 
@@ -105,7 +105,7 @@ class KAKDWizardDialog(QDialog):
 
         # Default to multi-cycle for marginal cases
         logger.debug(
-            f"Defaulting to multi-cycle: {unique_conc_count} concentrations, {len(seg_data)} segments"
+            f"Defaulting to multi-cycle: {unique_conc_count} concentrations, {len(seg_data)} segments",
         )
         return "multi-cycle"
 
@@ -203,7 +203,7 @@ class KAKDWizardDialog(QDialog):
             }
 
             logger.debug(
-                f"Single-cycle results: KD={KD:.2e}, Rmax={rmax:.2f}, R²={r_sq:.3f}"
+                f"Single-cycle results: KD={KD:.2e}, Rmax={rmax:.2f}, R²={r_sq:.3f}",
             )
             return results
 
@@ -401,7 +401,8 @@ class KAKDWizardDialog(QDialog):
             else:
                 # Automatic model selection
                 kinetic_model = self._detect_kinetic_model(
-                    self.seg_data, self.conc_data[ch]
+                    self.seg_data,
+                    self.conc_data[ch],
                 )
                 logger.info(f"Selected kinetic model: {kinetic_model}")
 
@@ -410,7 +411,8 @@ class KAKDWizardDialog(QDialog):
                     if len(self.seg_data) == 1:
                         concentration = self.conc_data[ch][0] * 1e-9  # Convert to M
                         result = self._analyze_single_cycle(
-                            self.seg_data[0], concentration
+                            self.seg_data[0],
+                            concentration,
                         )
 
                         # Store results
@@ -418,10 +420,11 @@ class KAKDWizardDialog(QDialog):
 
                         # Update UI
                         self.ui.graph.plotItem.setTitle(
-                            "Single-Cycle Kinetic Analysis", color="w"
+                            "Single-Cycle Kinetic Analysis",
+                            color="w",
                         )
                         logger.info(
-                            f"Single-cycle results: KD={result['KD']:.2e}, ka={result['ka']:.2e}, kd={result['kd']:.2e}"
+                            f"Single-cycle results: KD={result['KD']:.2e}, ka={result['ka']:.2e}, kd={result['kd']:.2e}",
                         )
                     else:
                         show_message(
@@ -448,10 +451,11 @@ class KAKDWizardDialog(QDialog):
 
                     # Update UI
                     self.ui.graph.plotItem.setTitle(
-                        "Multi-Cycle Kinetic Analysis", color="w"
+                        "Multi-Cycle Kinetic Analysis",
+                        color="w",
                     )
                     logger.info(
-                        f"Multi-cycle results: KD={result['KD']:.2e}, ka={result['ka']:.2e}, kd={result['kd']:.2e}"
+                        f"Multi-cycle results: KD={result['KD']:.2e}, ka={result['ka']:.2e}, kd={result['kd']:.2e}",
                     )
 
                 # Draw plot and enable save button

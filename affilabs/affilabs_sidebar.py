@@ -14,43 +14,42 @@ NOT TO BE CONFUSED WITH:
 Author: AffiLabs Team
 Last Updated: December 4, 2025 - Added MVVM refactoring with CycleConfigViewModel
 """
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QTextCharFormat, QSyntaxHighlighter
-from PySide6.QtCore import QRegularExpression
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QTabWidget, QScrollArea, QFrame, QLabel,
-    QHBoxLayout, QPushButton, QButtonGroup, QCheckBox, QTableWidget,
-    QTableWidgetItem, QSpinBox, QLineEdit, QSlider, QComboBox, QRadioButton,
-    QTextEdit, QHeaderView
-)
-from ui_styles import (
-    Colors, Fonts, label_style, section_header_style, title_style, card_style,
-    primary_button_style, status_indicator_style, divider_style,
-    separator_style, segmented_button_style, checkbox_style, spinbox_style,
-    scrollbar_style
-)
-from sections import CollapsibleSection
-from cycle_table_dialog import CycleTableDialog
-from plot_helpers import create_time_plot, create_spectroscopy_plot, add_channel_curves
-import pyqtgraph as pg
 
-# ViewModels - MVVM architecture
-from viewmodels import CycleConfigViewModel
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Tab builders
-from sidebar_tabs.AL_device_status_builder import DeviceStatusTabBuilder
-from sidebar_tabs.AL_graphic_control_builder import GraphicControlTabBuilder
-from sidebar_tabs.AL_static_builder import StaticTabBuilder
-from sidebar_tabs.AL_flow_builder import FlowTabBuilder
-from sidebar_tabs.AL_export_builder import ExportTabBuilder
-from sidebar_tabs.AL_settings_builder import SettingsTabBuilder
+from affilabs.sidebar_tabs.AL_device_status_builder import DeviceStatusTabBuilder
+from affilabs.sidebar_tabs.AL_export_builder import ExportTabBuilder
+from affilabs.sidebar_tabs.AL_flow_builder import FlowTabBuilder
+from affilabs.sidebar_tabs.AL_graphic_control_builder import GraphicControlTabBuilder
+from affilabs.sidebar_tabs.AL_settings_builder import SettingsTabBuilder
+from affilabs.sidebar_tabs.AL_static_builder import StaticTabBuilder
+from affilabs.ui_styles import (
+    Colors,
+    Fonts,
+    label_style,
+    scrollbar_style,
+    title_style,
+)
+
+# ViewModels - MVVM architecture
+from affilabs.viewmodels import CycleConfigViewModel
 
 # Colorblind-safe palette (Tol bright scheme)
-COLORBLIND_PALETTE = ['#4477AA', '#EE6677', '#228833', '#CCBB44']
+COLORBLIND_PALETTE = ["#4477AA", "#EE6677", "#228833", "#CCBB44"]
+
 
 class AffilabsSidebar(QWidget):
-    """
-    Production sidebar for AffiLabs.core application.
+    """Production sidebar for AffiLabs.core application.
 
     Used by: affilabs_core_ui.AffilabsMainWindow
 
@@ -118,7 +117,7 @@ class AffilabsSidebar(QWidget):
             "  background-color: #D1D1D6;"
             "  color: #86868B;"
             "  border: 2px solid #C7C7CC;"
-            "}"
+            "}",
         )
         self.baseline_capture_btn.setToolTip(
             "Capture 5 minutes of baseline transmission data\n"
@@ -126,11 +125,11 @@ class AffilabsSidebar(QWidget):
             "Requirements:\n"
             "• Stable baseline (no injections)\n"
             "• Live acquisition running\n"
-            "• System calibrated"
+            "• System calibrated",
         )
 
     def _setup_ui(self):
-        if getattr(self, '_ui_setup_done', False):
+        if getattr(self, "_ui_setup_done", False):
             return
         self._ui_setup_done = True
         self.setStyleSheet(f"background: {Colors.BACKGROUND_LIGHT};")
@@ -186,12 +185,37 @@ class AffilabsSidebar(QWidget):
 
         # Tab definitions with builder method mapping and subtitles
         tab_definitions = [
-            ("Device Status", "Device Status", "Hardware readiness check", self._build_device_status_tab),
-            ("Graphic Control", "Display Setup", "Configure cycle of interest graph", self._build_graphic_control_tab),
-            ("Static", "Cycle Control", "Start and manage experiments", self._build_static_tab),
+            (
+                "Device Status",
+                "Device Status",
+                "Hardware readiness check",
+                self._build_device_status_tab,
+            ),
+            (
+                "Graphic Control",
+                "Display Setup",
+                "Configure cycle of interest graph",
+                self._build_graphic_control_tab,
+            ),
+            (
+                "Static",
+                "Cycle Control",
+                "Start and manage experiments",
+                self._build_static_tab,
+            ),
             ("Flow", "Flow Control", "Fluidics experiments", self._build_flow_tab),
-            ("Export", "Export Data", "Save and export experiment results", self._build_export_tab),
-            ("Settings", "Settings & Diagnostics", "Calibration and maintenance", self._build_settings_tab),
+            (
+                "Export",
+                "Export Data",
+                "Save and export experiment results",
+                self._build_export_tab,
+            ),
+            (
+                "Settings",
+                "Settings & Diagnostics",
+                "Calibration and maintenance",
+                self._build_settings_tab,
+            ),
         ]
 
         # Store tab references for dynamic control
@@ -227,7 +251,7 @@ class AffilabsSidebar(QWidget):
                 f"color: {Colors.SECONDARY_TEXT};"
                 f"background: transparent;"
                 f"font-style: italic;"
-                f"font-family: {Fonts.SYSTEM};"
+                f"font-family: {Fonts.SYSTEM};",
             )
             tab_layout.addWidget(subtitle)
 
@@ -264,25 +288,27 @@ class AffilabsSidebar(QWidget):
         # Over time, external connections should migrate to these signals.
 
         # Wait for UI setup to complete before connecting
-        if hasattr(self, 'scan_btn'):
+        if hasattr(self, "scan_btn"):
             self.scan_btn.clicked.connect(self.scan_requested.emit)
-        if hasattr(self, 'export_data_btn'):
+        if hasattr(self, "export_data_btn"):
             self.export_data_btn.clicked.connect(self.export_requested.emit)
-        if hasattr(self, 'debug_log_btn'):
+        if hasattr(self, "debug_log_btn"):
             self.debug_log_btn.clicked.connect(self.debug_log_requested.emit)
-        if hasattr(self, 'polarizer_toggle_btn'):
-            self.polarizer_toggle_btn.clicked.connect(self.polarizer_toggle_requested.emit)
-        if hasattr(self, 'apply_settings_btn'):
+        if hasattr(self, "polarizer_toggle_btn"):
+            self.polarizer_toggle_btn.clicked.connect(
+                self.polarizer_toggle_requested.emit,
+            )
+        if hasattr(self, "apply_settings_btn"):
             self.apply_settings_btn.clicked.connect(self.settings_apply_requested.emit)
 
         # High-level cycle signals (MVVM refactoring)
-        if hasattr(self, 'start_cycle_btn'):
+        if hasattr(self, "start_cycle_btn"):
             self.start_cycle_btn.clicked.connect(self._on_start_cycle_clicked)
-        if hasattr(self, 'add_to_queue_btn'):
+        if hasattr(self, "add_to_queue_btn"):
             self.add_to_queue_btn.clicked.connect(self._on_add_to_queue_clicked)
-        if hasattr(self, 'clear_queue_btn'):
+        if hasattr(self, "clear_queue_btn"):
             self.clear_queue_btn.clicked.connect(self._on_clear_queue_clicked)
-        if hasattr(self, 'start_run_btn'):
+        if hasattr(self, "start_run_btn"):
             self.start_run_btn.clicked.connect(self._on_start_run_clicked)
 
     def _on_start_cycle_clicked(self):
@@ -293,6 +319,7 @@ class AffilabsSidebar(QWidget):
         else:
             # Could show validation errors here
             from affilabs.utils.logger import logger
+
             errors = config.validate()
             logger.warning(f"Invalid cycle configuration: {errors}")
 
@@ -303,6 +330,7 @@ class AffilabsSidebar(QWidget):
             self.cycle_queued.emit(config)
         else:
             from affilabs.utils.logger import logger
+
             errors = config.validate()
             logger.warning(f"Invalid cycle configuration: {errors}")
 
@@ -321,8 +349,9 @@ class AffilabsSidebar(QWidget):
 
         Args:
             scanning: True if scan is in progress, False otherwise
+
         """
-        if not hasattr(self, 'scan_btn'):
+        if not hasattr(self, "scan_btn"):
             return
 
         self.scan_btn.setProperty("scanning", scanning)
@@ -331,7 +360,7 @@ class AffilabsSidebar(QWidget):
             self.scan_btn.setEnabled(False)
             self.scan_btn.setStyleSheet(
                 "QPushButton { background: #FF9500; color: white; border: none; "
-                "border-radius: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; }"
+                "border-radius: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; }",
             )
         else:
             self.scan_btn.setText("Scan for Hardware")
@@ -341,7 +370,7 @@ class AffilabsSidebar(QWidget):
                 "stop:0 #007AFF, stop:1 #0051D5); color: white; border: none; "
                 "border-radius: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; }"
                 "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-                "stop:0 #0051D5, stop:1 #003D99); }"
+                "stop:0 #0051D5, stop:1 #003D99); }",
             )
 
     def set_export_enabled(self, enabled: bool):
@@ -349,8 +378,9 @@ class AffilabsSidebar(QWidget):
 
         Args:
             enabled: True to enable, False to disable
+
         """
-        if hasattr(self, 'export_data_btn'):
+        if hasattr(self, "export_data_btn"):
             self.export_data_btn.setEnabled(enabled)
 
     def set_polarizer_mode(self, mode: str):
@@ -358,28 +388,33 @@ class AffilabsSidebar(QWidget):
 
         Args:
             mode: Current polarizer mode ('S' or 'P')
+
         """
-        if hasattr(self, 'polarizer_toggle_btn'):
+        if hasattr(self, "polarizer_toggle_btn"):
             self.polarizer_toggle_btn.setText(f"Current: {mode}-Mode")
 
     def set_operation_mode(self, mode: str):
         """Set the active operation mode (static or flow) and update tab states."""
-        if mode.lower() == 'static':
+        if mode.lower() == "static":
             # Enable Static, disable Flow
-            self.tab_widget.setTabEnabled(self.tab_indices['Static'], True)
-            self.tab_widget.setTabEnabled(self.tab_indices['Flow'], False)
-            self.tab_widget.setTabToolTip(self.tab_indices['Flow'],
-                                          "Flow mode unavailable - requires pump hardware")
-        elif mode.lower() == 'flow':
+            self.tab_widget.setTabEnabled(self.tab_indices["Static"], True)
+            self.tab_widget.setTabEnabled(self.tab_indices["Flow"], False)
+            self.tab_widget.setTabToolTip(
+                self.tab_indices["Flow"],
+                "Flow mode unavailable - requires pump hardware",
+            )
+        elif mode.lower() == "flow":
             # Enable Flow, disable Static
-            self.tab_widget.setTabEnabled(self.tab_indices['Flow'], True)
-            self.tab_widget.setTabEnabled(self.tab_indices['Static'], False)
-            self.tab_widget.setTabToolTip(self.tab_indices['Static'],
-                                          "Static mode unavailable - flow mode active")
+            self.tab_widget.setTabEnabled(self.tab_indices["Flow"], True)
+            self.tab_widget.setTabEnabled(self.tab_indices["Static"], False)
+            self.tab_widget.setTabToolTip(
+                self.tab_indices["Static"],
+                "Static mode unavailable - flow mode active",
+            )
         else:
             # Enable both (default fallback)
-            self.tab_widget.setTabEnabled(self.tab_indices['Static'], True)
-            self.tab_widget.setTabEnabled(self.tab_indices['Flow'], True)
+            self.tab_widget.setTabEnabled(self.tab_indices["Static"], True)
+            self.tab_widget.setTabEnabled(self.tab_indices["Flow"], True)
 
     def _build_device_status_tab(self, tab_layout: QVBoxLayout):
         """Build Device Status tab with hardware and subunit indicators using builder."""
@@ -466,6 +501,7 @@ class AffilabsSidebar(QWidget):
     def _browse_export_destination(self):
         """Open directory picker for export destination."""
         from PySide6.QtWidgets import QFileDialog
+
         directory = QFileDialog.getExistingDirectory(self, "Select Export Destination")
         if directory:
             self.export_dest_input.setText(directory)
@@ -476,6 +512,7 @@ class AffilabsSidebar(QWidget):
         Args:
             num_data_points: Total number of data points across all time series
             num_channels: Number of channels selected for export
+
         """
         if num_data_points == 0:
             self.export_filesize_label.setText("Estimated file size: No data")
@@ -483,26 +520,28 @@ class AffilabsSidebar(QWidget):
 
         # Rough estimates per format (bytes per data point)
         bytes_per_point = {
-            'csv': 20,      # Text-based, ~20 bytes per number
-            'excel': 16,    # Binary, more efficient
-            'json': 30,     # Text with structure overhead
-            'hdf5': 12      # Most efficient binary format
+            "csv": 20,  # Text-based, ~20 bytes per number
+            "excel": 16,  # Binary, more efficient
+            "json": 30,  # Text with structure overhead
+            "hdf5": 12,  # Most efficient binary format
         }
 
         # Determine selected format
-        format_type = 'excel'  # Default
-        if hasattr(self, 'csv_radio') and self.csv_radio.isChecked():
-            format_type = 'csv'
-        elif hasattr(self, 'json_radio') and self.json_radio.isChecked():
-            format_type = 'json'
-        elif hasattr(self, 'hdf5_radio') and self.hdf5_radio.isChecked():
-            format_type = 'hdf5'
+        format_type = "excel"  # Default
+        if hasattr(self, "csv_radio") and self.csv_radio.isChecked():
+            format_type = "csv"
+        elif hasattr(self, "json_radio") and self.json_radio.isChecked():
+            format_type = "json"
+        elif hasattr(self, "hdf5_radio") and self.hdf5_radio.isChecked():
+            format_type = "hdf5"
 
         # Calculate estimate
-        bytes_estimate = num_data_points * num_channels * bytes_per_point.get(format_type, 16)
+        bytes_estimate = (
+            num_data_points * num_channels * bytes_per_point.get(format_type, 16)
+        )
 
         # Add metadata overhead if enabled
-        if hasattr(self, 'metadata_check') and self.metadata_check.isChecked():
+        if hasattr(self, "metadata_check") and self.metadata_check.isChecked():
             bytes_estimate += 10 * 1024  # ~10 KB for metadata
 
         # Format size string
@@ -525,14 +564,17 @@ class AffilabsSidebar(QWidget):
     def _on_tab_changed(self, index: int):
         """Handle tab change events."""
         # Settings tab plots now loaded immediately during initialization
-        pass
 
     def _build_deferred_spectroscopy_plots(self):
         """Build spectroscopy plots on-demand when Settings tab is first opened."""
-        from plot_helpers import create_spectroscopy_plot, add_channel_curves
+        from plot_helpers import add_channel_curves, create_spectroscopy_plot
+
         from affilabs.utils.logger import logger
 
-        if not hasattr(self, '_spectroscopy_placeholder') or not self._spectroscopy_placeholder:
+        if (
+            not hasattr(self, "_spectroscopy_placeholder")
+            or not self._spectroscopy_placeholder
+        ):
             return
 
         # Clear placeholder text
@@ -546,24 +588,23 @@ class AffilabsSidebar(QWidget):
                 item.widget().deleteLater()
 
         # Add actual plots
-        spectro_help = QLabel("Real-time transmission and raw detector spectrum display")
+        spectro_help = QLabel(
+            "Real-time transmission and raw detector spectrum display",
+        )
         spectro_help.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
             "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         content_layout.addWidget(spectro_help)
 
         # Card container
         spectro_card = QFrame()
         spectro_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         spectro_card_layout = QVBoxLayout(spectro_card)
         spectro_card_layout.setContentsMargins(12, 8, 12, 8)
@@ -576,13 +617,13 @@ class AffilabsSidebar(QWidget):
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         spectro_card_layout.addWidget(trans_label)
 
         self.transmission_plot = create_spectroscopy_plot(
             left_label="Transmission (%)",
-            bottom_label="Wavelength (nm)"
+            bottom_label="Wavelength (nm)",
         )
         self.transmission_plot.setFixedHeight(180)
         self.transmission_plot.setMinimumHeight(180)
@@ -602,13 +643,13 @@ class AffilabsSidebar(QWidget):
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         spectro_card_layout.addWidget(raw_label)
 
         self.raw_data_plot = create_spectroscopy_plot(
             left_label="Intensity (counts)",
-            bottom_label="Wavelength (nm)"
+            bottom_label="Wavelength (nm)",
         )
         self.raw_data_plot.setFixedHeight(180)
         self.raw_data_plot.setMinimumHeight(180)
@@ -618,7 +659,9 @@ class AffilabsSidebar(QWidget):
 
         content_layout.addWidget(spectro_card)
 
-        logger.info("[OK] Spectroscopy plots created: transmission=4 curves, raw=4 curves")
+        logger.info(
+            "[OK] Spectroscopy plots created: transmission=4 curves, raw=4 curves",
+        )
 
     def toggle_polarizer_position(self):
         """Toggle polarizer between S and P positions and update button text.
@@ -626,11 +669,11 @@ class AffilabsSidebar(QWidget):
         Note: This only updates the UI. The actual hardware movement is handled
         by main_simplified.py via the clicked signal connection.
         """
-        if self.current_polarizer_position == 'S':
-            self.current_polarizer_position = 'P'
+        if self.current_polarizer_position == "S":
+            self.current_polarizer_position = "P"
             self.polarizer_toggle_btn.setText("Position: P")
         else:
-            self.current_polarizer_position = 'S'
+            self.current_polarizer_position = "S"
             self.polarizer_toggle_btn.setText("Position: S")
 
         # This method can be called from main window to actually move the polarizer
@@ -642,9 +685,10 @@ class AffilabsSidebar(QWidget):
 
         Args:
             position: 'S' or 'P'
+
         """
         position = position.upper()
-        if position not in ['S', 'P']:
+        if position not in ["S", "P"]:
             return
 
         self.current_polarizer_position = position
@@ -656,28 +700,35 @@ class AffilabsSidebar(QWidget):
         Args:
             status: Status text (e.g., "Ready", "Acquiring", "Error")
             color: Color code for status indicator (default: green)
+
         """
-        if hasattr(self, 'transmission_status_indicator'):
+        if hasattr(self, "transmission_status_indicator"):
             self.transmission_status_indicator.setText(f"● {status}")
             self.transmission_status_indicator.setStyleSheet(
                 f"font-size: 11px;"
                 f"color: {color};"
                 f"background: transparent;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
-        if hasattr(self, 'raw_data_status_indicator'):
+        if hasattr(self, "raw_data_status_indicator"):
             self.raw_data_status_indicator.setText(f"● {status}")
             self.raw_data_status_indicator.setStyleSheet(
                 f"font-size: 11px;"
                 f"color: {color};"
                 f"background: transparent;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
-    def load_hardware_settings(self, s_pos: int = None, p_pos: int = None,
-                               led_a: int = None, led_b: int = None,
-                               led_c: int = None, led_d: int = None):
+    def load_hardware_settings(
+        self,
+        s_pos: int = None,
+        p_pos: int = None,
+        led_a: int = None,
+        led_b: int = None,
+        led_c: int = None,
+        led_d: int = None,
+    ):
         """Load hardware settings into the input fields.
 
         Args:
@@ -687,23 +738,24 @@ class AffilabsSidebar(QWidget):
             led_b: Channel B LED intensity (0-255)
             led_c: Channel C LED intensity (0-255)
             led_d: Channel D LED intensity (0-255)
+
         """
-        if s_pos is not None and hasattr(self, 's_position_input'):
+        if s_pos is not None and hasattr(self, "s_position_input"):
             self.s_position_input.setText(str(s_pos))
 
-        if p_pos is not None and hasattr(self, 'p_position_input'):
+        if p_pos is not None and hasattr(self, "p_position_input"):
             self.p_position_input.setText(str(p_pos))
 
-        if led_a is not None and hasattr(self, 'channel_a_input'):
+        if led_a is not None and hasattr(self, "channel_a_input"):
             self.channel_a_input.setText(str(led_a))
 
-        if led_b is not None and hasattr(self, 'channel_b_input'):
+        if led_b is not None and hasattr(self, "channel_b_input"):
             self.channel_b_input.setText(str(led_b))
 
-        if led_c is not None and hasattr(self, 'channel_c_input'):
+        if led_c is not None and hasattr(self, "channel_c_input"):
             self.channel_c_input.setText(str(led_c))
 
-        if led_d is not None and hasattr(self, 'channel_d_input'):
+        if led_d is not None and hasattr(self, "channel_d_input"):
             self.channel_d_input.setText(str(led_d))
 
     def update_queue_status(self, count: int):
@@ -711,27 +763,32 @@ class AffilabsSidebar(QWidget):
 
         Args:
             count: Number of cycles currently in queue (0-5)
-        """
-        if hasattr(self, 'queue_status_label'):
-            if count == 0:
-                self.queue_status_label.setText("Queue: 0 cycles | Click 'Add to Queue' to plan batch runs")
-            else:
-                self.queue_status_label.setText(f"Queue: {count} cycle{'s' if count > 1 else ''} ready")
 
-        if hasattr(self, 'clear_queue_btn'):
+        """
+        if hasattr(self, "queue_status_label"):
+            if count == 0:
+                self.queue_status_label.setText(
+                    "Queue: 0 cycles | Click 'Add to Queue' to plan batch runs",
+                )
+            else:
+                self.queue_status_label.setText(
+                    f"Queue: {count} cycle{'s' if count > 1 else ''} ready",
+                )
+
+        if hasattr(self, "clear_queue_btn"):
             self.clear_queue_btn.setVisible(count > 0)
 
-        if hasattr(self, 'start_run_btn'):
+        if hasattr(self, "start_run_btn"):
             self.start_run_btn.setVisible(count > 0)
 
     def update_operation_hours(self, hours: int):
         """Update the operation hours display."""
-        if hasattr(self, 'hours_value'):
+        if hasattr(self, "hours_value"):
             self.hours_value.setText(f"{hours:,} hrs")
 
     def update_last_operation(self, date_str: str):
         """Update the last operation date display."""
-        if hasattr(self, 'last_op_value'):
+        if hasattr(self, "last_op_value"):
             self.last_op_value.setText(date_str)
 
     def update_next_maintenance(self, date_str: str, is_overdue: bool = False):
@@ -740,17 +797,18 @@ class AffilabsSidebar(QWidget):
         Args:
             date_str: Date string to display
             is_overdue: If True, display in red warning color
+
         """
-        if hasattr(self, 'next_maintenance_value'):
+        if hasattr(self, "next_maintenance_value"):
             color = "#FF3B30" if is_overdue else "#FF9500"
             self.next_maintenance_value.setText(date_str)
             self.next_maintenance_value.setStyleSheet(
-                label_style(13, color) + "font-weight: 600; margin-top: 6px;"
+                label_style(13, color) + "font-weight: 600; margin-top: 6px;",
             )
 
     def show_settings_applied_feedback(self):
         """Provide visual feedback when settings are successfully applied."""
-        if hasattr(self, 'apply_settings_btn'):
+        if hasattr(self, "apply_settings_btn"):
             # Store original style
             original_style = self.apply_settings_btn.styleSheet()
 
@@ -766,16 +824,17 @@ class AffilabsSidebar(QWidget):
                 "  font-size: 13px;"
                 "  font-weight: 600;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
+                "}",
             )
 
             # Reset after 2 seconds
             from PySide6.QtCore import QTimer
+
             QTimer.singleShot(2000, lambda: self._reset_apply_button(original_style))
 
     def _reset_apply_button(self, original_style: str):
         """Reset the apply button to its original state."""
-        if hasattr(self, 'apply_settings_btn'):
+        if hasattr(self, "apply_settings_btn"):
             self.apply_settings_btn.setText("Apply Settings")
             self.apply_settings_btn.setStyleSheet(original_style)
 
@@ -786,12 +845,13 @@ class AffilabsSidebar(QWidget):
             channel: Channel identifier ('a', 'b', 'c', 'd')
             wavelength: Wavelength array in nm
             transmission_spectrum: Transmission percentage array
+
         """
-        if not hasattr(self, 'transmission_curves'):
+        if not hasattr(self, "transmission_curves"):
             return
 
         # Map channel to curve index
-        channel_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+        channel_map = {"a": 0, "b": 1, "c": 2, "d": 3}
         idx = channel_map.get(channel.lower())
 
         if idx is not None and idx < len(self.transmission_curves):
@@ -799,7 +859,7 @@ class AffilabsSidebar(QWidget):
                 self.transmission_curves[idx].setData(wavelength, transmission_spectrum)
                 # Update status to show we're receiving data
                 self.update_spectroscopy_status("Acquiring", "#007AFF")
-            except Exception as e:
+            except Exception:
                 pass  # Silently ignore plotting errors
 
     def update_raw_data_plot(self, channel: str, wavelength, raw_spectrum):
@@ -809,12 +869,13 @@ class AffilabsSidebar(QWidget):
             channel: Channel identifier ('a', 'b', 'c', 'd')
             wavelength: Wavelength array in nm
             raw_spectrum: Raw intensity array (counts)
+
         """
-        if not hasattr(self, 'raw_data_curves'):
+        if not hasattr(self, "raw_data_curves"):
             return
 
         # Map channel to curve index
-        channel_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+        channel_map = {"a": 0, "b": 1, "c": 2, "d": 3}
         idx = channel_map.get(channel.lower())
 
         if idx is not None and idx < len(self.raw_data_curves):
@@ -822,7 +883,7 @@ class AffilabsSidebar(QWidget):
                 self.raw_data_curves[idx].setData(wavelength, raw_spectrum)
                 # Update status to show we're receiving data
                 self.update_spectroscopy_status("Acquiring", "#007AFF")
-            except Exception as e:
+            except Exception:
                 pass  # Silently ignore plotting errors
 
     # ===================================================================
@@ -832,7 +893,7 @@ class AffilabsSidebar(QWidget):
     # configuration without exposing internal widget structure.
     # External code should use these instead of accessing widgets directly.
 
-    def get_cycle_configuration(self) -> 'CycleConfigViewModel':
+    def get_cycle_configuration(self) -> "CycleConfigViewModel":
         """Get current cycle configuration as view model (ENCAPSULATED).
 
         This is the preferred way for external code to read cycle settings.
@@ -840,17 +901,18 @@ class AffilabsSidebar(QWidget):
 
         Returns:
             CycleConfigViewModel with current configuration
+
         """
         from viewmodels import CycleConfigViewModel
 
         # Extract cycle type
         cycle_type = "Auto-read"  # default
-        if hasattr(self, 'cycle_type_combo'):
+        if hasattr(self, "cycle_type_combo"):
             cycle_type = self.cycle_type_combo.currentText()
 
         # Extract cycle length (parse "5 min" -> 5)
         cycle_length_min = 5  # default
-        if hasattr(self, 'cycle_length_combo'):
+        if hasattr(self, "cycle_length_combo"):
             length_text = self.cycle_length_combo.currentText()
             try:
                 cycle_length_min = int(length_text.split()[0])
@@ -859,12 +921,12 @@ class AffilabsSidebar(QWidget):
 
         # Extract note
         note = ""
-        if hasattr(self, 'note_input'):
+        if hasattr(self, "note_input"):
             note = self.note_input.toPlainText()
 
         # Extract units (parse "nM (Nanomolar)" -> "nM")
         units = "nM"  # default
-        if hasattr(self, 'units_combo'):
+        if hasattr(self, "units_combo"):
             units_text = self.units_combo.currentText()
             units = units_text.split()[0]  # Extract prefix before space
 
@@ -872,10 +934,10 @@ class AffilabsSidebar(QWidget):
             cycle_type=cycle_type,
             cycle_length_min=cycle_length_min,
             note=note,
-            units=units
+            units=units,
         )
 
-    def set_cycle_configuration(self, config: 'CycleConfigViewModel'):
+    def set_cycle_configuration(self, config: "CycleConfigViewModel"):
         """Set cycle configuration from view model (ENCAPSULATED).
 
         This is the preferred way for external code to update cycle settings.
@@ -883,26 +945,27 @@ class AffilabsSidebar(QWidget):
 
         Args:
             config: CycleConfigViewModel with desired configuration
+
         """
         # Set cycle type
-        if hasattr(self, 'cycle_type_combo'):
+        if hasattr(self, "cycle_type_combo"):
             index = self.cycle_type_combo.findText(config.cycle_type)
             if index >= 0:
                 self.cycle_type_combo.setCurrentIndex(index)
 
         # Set cycle length (convert 5 -> "5 min")
-        if hasattr(self, 'cycle_length_combo'):
+        if hasattr(self, "cycle_length_combo"):
             length_text = f"{config.cycle_length_min} min"
             index = self.cycle_length_combo.findText(length_text)
             if index >= 0:
                 self.cycle_length_combo.setCurrentIndex(index)
 
         # Set note
-        if hasattr(self, 'note_input'):
+        if hasattr(self, "note_input"):
             self.note_input.setPlainText(config.note)
 
         # Set units (find matching display name)
-        if hasattr(self, 'units_combo'):
+        if hasattr(self, "units_combo"):
             display_name = config.get_units_display_name()
             index = self.units_combo.findText(display_name)
             if index >= 0:
@@ -913,6 +976,7 @@ class AffilabsSidebar(QWidget):
 
         Returns:
             Tuple of (is_valid, error_messages)
+
         """
         config = self.get_cycle_configuration()
         errors = config.validate()

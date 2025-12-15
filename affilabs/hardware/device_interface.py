@@ -7,16 +7,18 @@ All concrete implementations (real hardware or mocks) must implement these inter
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Tuple, Any
-import numpy as np
+from typing import Any
 
+import numpy as np
 
 # ============================================================================
 # ENUMS
 # ============================================================================
 
+
 class ConnectionState(Enum):
     """Device connection state."""
+
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -28,44 +30,44 @@ class ConnectionState(Enum):
 # EXCEPTIONS
 # ============================================================================
 
+
 class DeviceError(Exception):
     """Base exception for hardware device errors."""
-    pass
 
 
 class ConnectionError(DeviceError):
     """Device connection failed."""
-    pass
 
 
 class CommandError(DeviceError):
     """Hardware command failed."""
-    pass
 
 
 class TimeoutError(DeviceError):
     """Operation timed out."""
-    pass
 
 
 # ============================================================================
 # DATA CLASSES
 # ============================================================================
 
+
 @dataclass
 class DeviceInfo:
     """General device identification."""
-    device_type: str        # "controller", "spectrometer", "servo", "pump"
-    model: str              # "PicoP4SPR", "USB4000", etc.
-    serial_number: Optional[str] = None
-    firmware_version: Optional[str] = None
-    hardware_version: Optional[str] = None
-    port: Optional[str] = None  # COM port or USB address
+
+    device_type: str  # "controller", "spectrometer", "servo", "pump"
+    model: str  # "PicoP4SPR", "USB4000", etc.
+    serial_number: str | None = None
+    firmware_version: str | None = None
+    hardware_version: str | None = None
+    port: str | None = None  # COM port or USB address
 
 
 @dataclass
 class DeviceCapabilities:
     """Base capabilities all devices share."""
+
     supports_reconnect: bool = True
     supports_firmware_update: bool = False
     requires_calibration: bool = False
@@ -78,7 +80,7 @@ class ControllerCapabilities(DeviceCapabilities):
     # LED control
     num_led_channels: int = 4
     supports_batch_led_control: bool = True
-    led_intensity_range: Tuple[int, int] = (0, 255)
+    led_intensity_range: tuple[int, int] = (0, 255)
 
     # Polarizer control
     supports_polarizer: bool = True
@@ -102,7 +104,7 @@ class SpectrometerCapabilities(DeviceCapabilities):
     """Spectrometer capabilities."""
 
     # Wavelength range
-    wavelength_range: Tuple[float, float] = (200.0, 1100.0)  # nm
+    wavelength_range: tuple[float, float] = (200.0, 1100.0)  # nm
     wavelength_resolution: float = 0.3  # nm
     num_pixels: int = 3648
 
@@ -134,9 +136,9 @@ class ServoCapabilities(DeviceCapabilities):
     mode_switch_time: float = 0.15  # seconds
 
     # Polarizer
-    polarizer_type: Optional[str] = None  # "barrel" or "round"
-    s_position: Optional[int] = None
-    p_position: Optional[int] = None
+    polarizer_type: str | None = None  # "barrel" or "round"
+    s_position: int | None = None
+    p_position: int | None = None
 
     # Calibration
     supports_calibration: bool = True
@@ -145,6 +147,7 @@ class ServoCapabilities(DeviceCapabilities):
 # ============================================================================
 # ABSTRACT INTERFACES
 # ============================================================================
+
 
 class IController(ABC):
     """Abstract interface for SPR controllers.
@@ -170,28 +173,24 @@ class IController(ABC):
 
         Raises:
             ConnectionError: If connection fails
+
         """
-        pass
 
     @abstractmethod
     def disconnect(self) -> None:
         """Disconnect from controller. Should never raise."""
-        pass
 
     @abstractmethod
     def is_connected(self) -> bool:
         """Check if controller is connected and responsive."""
-        pass
 
     @abstractmethod
     def get_info(self) -> DeviceInfo:
         """Get device identification information."""
-        pass
 
     @abstractmethod
     def get_capabilities(self) -> ControllerCapabilities:
         """Get device capabilities."""
-        pass
 
     # ========================================================================
     # LED CONTROL
@@ -206,8 +205,8 @@ class IController(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     @abstractmethod
     def turn_off_channels(self) -> bool:
@@ -215,8 +214,8 @@ class IController(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     @abstractmethod
     def set_intensity(self, channel: str, intensity: int) -> bool:
@@ -228,11 +227,17 @@ class IController(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     @abstractmethod
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         """Set all LED intensities in batch.
 
         Uses single command if supported, otherwise sequential commands.
@@ -242,17 +247,17 @@ class IController(ABC):
 
         Returns:
             True if all commands succeeded
+
         """
-        pass
 
     @abstractmethod
-    def get_led_intensities(self) -> Dict[str, int]:
+    def get_led_intensities(self) -> dict[str, int]:
         """Get current LED intensities.
 
         Returns:
             {'a': 0-255, 'b': 0-255, 'c': 0-255, 'd': 0-255}
+
         """
-        pass
 
     # ========================================================================
     # POLARIZER CONTROL
@@ -267,8 +272,8 @@ class IController(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     @abstractmethod
     def get_mode(self) -> str:
@@ -276,8 +281,8 @@ class IController(ABC):
 
         Returns:
             's' or 'p'
+
         """
-        pass
 
     @abstractmethod
     def set_servo_position(self, position: int, save_to_eeprom: bool = False) -> bool:
@@ -289,21 +294,21 @@ class IController(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     # ========================================================================
     # TEMPERATURE MONITORING
     # ========================================================================
 
     @abstractmethod
-    def get_temperature(self) -> Optional[float]:
+    def get_temperature(self) -> float | None:
         """Get controller temperature in Celsius.
 
         Returns:
             Temperature or None if not supported
+
         """
-        pass
 
     # ========================================================================
     # EEPROM CONFIGURATION
@@ -312,19 +317,18 @@ class IController(ABC):
     @abstractmethod
     def is_config_valid_in_eeprom(self) -> bool:
         """Check if valid configuration exists in EEPROM."""
-        pass
 
     @abstractmethod
-    def read_config_from_eeprom(self) -> Optional[Dict[str, Any]]:
+    def read_config_from_eeprom(self) -> dict[str, Any] | None:
         """Read device configuration from EEPROM.
 
         Returns:
             Configuration dict or None if not available
+
         """
-        pass
 
     @abstractmethod
-    def write_config_to_eeprom(self, config: Dict[str, Any]) -> bool:
+    def write_config_to_eeprom(self, config: dict[str, Any]) -> bool:
         """Write device configuration to EEPROM.
 
         Args:
@@ -332,8 +336,8 @@ class IController(ABC):
 
         Returns:
             True if successful
+
         """
-        pass
 
 
 class ISpectrometer(ABC):
@@ -360,28 +364,24 @@ class ISpectrometer(ABC):
 
         Raises:
             ConnectionError: If connection fails
+
         """
-        pass
 
     @abstractmethod
     def disconnect(self) -> None:
         """Disconnect from spectrometer. Should never raise."""
-        pass
 
     @abstractmethod
     def is_connected(self) -> bool:
         """Check if spectrometer is connected and responsive."""
-        pass
 
     @abstractmethod
     def get_info(self) -> DeviceInfo:
         """Get device identification information."""
-        pass
 
     @abstractmethod
     def get_capabilities(self) -> SpectrometerCapabilities:
         """Get device capabilities."""
-        pass
 
     # ========================================================================
     # WAVELENGTH CALIBRATION
@@ -393,8 +393,8 @@ class ISpectrometer(ABC):
 
         Returns:
             Wavelengths in nanometers (one per pixel)
+
         """
-        pass
 
     # ========================================================================
     # INTEGRATION TIME
@@ -409,20 +409,19 @@ class ISpectrometer(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     @abstractmethod
     def get_integration_time(self) -> float:
         """Get current integration time in milliseconds."""
-        pass
 
     # ========================================================================
     # ACQUISITION
     # ========================================================================
 
     @abstractmethod
-    def read_spectrum(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_spectrum(self, num_scans: int = 1) -> np.ndarray | None:
         """Capture and return spectrum.
 
         Args:
@@ -430,13 +429,12 @@ class ISpectrometer(ABC):
 
         Returns:
             Intensity array or None on error
+
         """
-        pass
 
     @abstractmethod
-    def read_intensities(self, num_scans: int = 1) -> Optional[np.ndarray]:
+    def read_intensities(self, num_scans: int = 1) -> np.ndarray | None:
         """Alias for read_spectrum() for compatibility."""
-        pass
 
 
 class IServo(ABC):
@@ -458,28 +456,24 @@ class IServo(ABC):
 
         Returns:
             True if connection successful
+
         """
-        pass
 
     @abstractmethod
     def disconnect(self) -> None:
         """Disconnect servo. Should never raise."""
-        pass
 
     @abstractmethod
     def is_connected(self) -> bool:
         """Check if servo is connected."""
-        pass
 
     @abstractmethod
     def get_info(self) -> DeviceInfo:
         """Get device identification information."""
-        pass
 
     @abstractmethod
     def get_capabilities(self) -> ServoCapabilities:
         """Get servo capabilities."""
-        pass
 
     # ========================================================================
     # CALIBRATION
@@ -490,8 +484,8 @@ class IServo(ABC):
         self,
         spectrometer: ISpectrometer,
         controller: IController,
-        **kwargs
-    ) -> Dict[str, int]:
+        **kwargs,
+    ) -> dict[str, int]:
         """Calibrate servo positions for S and P polarization.
 
         Args:
@@ -504,17 +498,17 @@ class IServo(ABC):
 
         Raises:
             DeviceError: If calibration fails
+
         """
-        pass
 
     @abstractmethod
-    def get_calibrated_positions(self) -> Optional[Dict[str, int]]:
+    def get_calibrated_positions(self) -> dict[str, int] | None:
         """Get previously calibrated S/P positions.
 
         Returns:
             {'s_position': 0-255, 'p_position': 0-255} or None if not calibrated
+
         """
-        pass
 
     @abstractmethod
     def set_calibrated_positions(self, s_position: int, p_position: int) -> None:
@@ -523,8 +517,8 @@ class IServo(ABC):
         Args:
             s_position: S-polarization servo position (0-255)
             p_position: P-polarization servo position (0-255)
+
         """
-        pass
 
     # ========================================================================
     # POSITION CONTROL
@@ -540,8 +534,8 @@ class IServo(ABC):
 
         Returns:
             True if command succeeded
+
         """
-        pass
 
     @abstractmethod
     def move_to_mode(self, mode: str, wait: bool = True) -> bool:
@@ -556,5 +550,5 @@ class IServo(ABC):
 
         Raises:
             DeviceError: If positions not calibrated
+
         """
-        pass

@@ -7,8 +7,8 @@ This method finds the center of mass of the inverted transmission dip.
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
-from utils.processing_pipeline import ProcessingPipeline, PipelineMetadata
 from utils.logger import logger
+from utils.processing_pipeline import PipelineMetadata, ProcessingPipeline
 
 
 class CentroidPipeline(ProcessingPipeline):
@@ -22,9 +22,15 @@ class CentroidPipeline(ProcessingPipeline):
         super().__init__(config)
 
         # Default parameters
-        self.smoothing_sigma = self.config.get('smoothing_sigma', 2.0)
-        self.search_window = self.config.get('search_window', 100)  # pixels around minimum
-        self.min_dip_depth = self.config.get('min_dip_depth', 5.0)  # % transmission drop
+        self.smoothing_sigma = self.config.get("smoothing_sigma", 2.0)
+        self.search_window = self.config.get(
+            "search_window",
+            100,
+        )  # pixels around minimum
+        self.min_dip_depth = self.config.get(
+            "min_dip_depth",
+            5.0,
+        )  # % transmission drop
 
     def get_metadata(self) -> PipelineMetadata:
         return PipelineMetadata(
@@ -33,27 +39,29 @@ class CentroidPipeline(ProcessingPipeline):
             version="1.0",
             author="ezControl Team",
             parameters={
-                'smoothing_sigma': self.smoothing_sigma,
-                'search_window': self.search_window,
-                'min_dip_depth': self.min_dip_depth,
-                'method': 'Centroid (Center of Mass)'
-            }
+                "smoothing_sigma": self.smoothing_sigma,
+                "search_window": self.search_window,
+                "min_dip_depth": self.min_dip_depth,
+                "method": "Centroid (Center of Mass)",
+            },
         )
 
     def calculate_transmission(
         self,
         intensity: np.ndarray,
-        reference: np.ndarray
+        reference: np.ndarray,
     ) -> np.ndarray:
         """Standard transmission calculation
 
         Transmission = (Intensity / Reference) * 100
         """
         if intensity.shape != reference.shape:
-            raise ValueError(f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}")
+            raise ValueError(
+                f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}",
+            )
 
         # Avoid division by zero
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             transmission = (intensity / reference) * 100
             transmission = np.where(reference == 0, 0, transmission)
 
@@ -63,7 +71,7 @@ class CentroidPipeline(ProcessingPipeline):
         self,
         transmission: np.ndarray,
         wavelengths: np.ndarray,
-        **kwargs
+        **kwargs,
     ) -> float:
         """Find resonance using centroid method with double filtering
 
@@ -83,13 +91,17 @@ class CentroidPipeline(ProcessingPipeline):
                 - smoothing_sigma: Gaussian sigma for centroid weights (default: 1.0)
                 - search_window: Window size around minimum (default: 100 pixels)
                 - min_dip_depth: Minimum dip depth threshold (default: 5.0%)
+
         """
         try:
             # Allow parameter overrides
-            minimum_hint_nm = kwargs.get('minimum_hint_nm', None)
-            smoothing_sigma = kwargs.get('smoothing_sigma', 1.0)  # Light smoothing for weights
-            search_window = kwargs.get('search_window', self.search_window)
-            min_dip_depth = kwargs.get('min_dip_depth', self.min_dip_depth)
+            minimum_hint_nm = kwargs.get("minimum_hint_nm")
+            smoothing_sigma = kwargs.get(
+                "smoothing_sigma",
+                1.0,
+            )  # Light smoothing for weights
+            search_window = kwargs.get("search_window", self.search_window)
+            min_dip_depth = kwargs.get("min_dip_depth", self.min_dip_depth)
 
             # DOUBLE FILTERING: Apply light Gaussian to improve centroid weight distribution
             # This is AFTER SG filter (which preserved shape), now smooth weights for better center-of-mass
@@ -118,7 +130,9 @@ class CentroidPipeline(ProcessingPipeline):
             dip_depth = baseline - min_value
 
             if dip_depth < min_dip_depth:
-                logger.debug(f"Dip too shallow ({dip_depth:.1f}% < {min_dip_depth}%), using minimum")
+                logger.debug(
+                    f"Dip too shallow ({dip_depth:.1f}% < {min_dip_depth}%), using minimum",
+                )
                 return float(wavelengths[min_idx])
 
             # Invert spectrum (make dip into peak for centroid calculation)
@@ -130,7 +144,9 @@ class CentroidPipeline(ProcessingPipeline):
 
             # Calculate centroid (weighted average): Σ(λ × weight) / Σ(weight)
             if np.sum(inverted) > 0:
-                centroid_wavelength = np.sum(window_wavelengths * inverted) / np.sum(inverted)
+                centroid_wavelength = np.sum(window_wavelengths * inverted) / np.sum(
+                    inverted,
+                )
             else:
                 # Fallback to minimum position
                 centroid_wavelength = wavelengths[min_idx]

@@ -53,6 +53,10 @@ check = [
     "types-pyserial>=3.5.0.8",
     "mypy>=1.4.1",
     "types-pyinstaller>=5.13.0.1",
+    "pre-commit>=3.7.0",
+    "pyright>=1.1.378",
+    "codespell>=2.3.0",
+    "import-linter>=2.0.0",
 ]
 interactive = [
     "ipython>=8.14.0",
@@ -91,7 +95,11 @@ username = "gitlab+deploy-token-2403834"
 password = "CqMCStJe9N9WxYkixeYY"
 
 [tool.ruff]
-select = ["ALL"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+extend-ignore = ["COM812", "ISC001", "E501", "E402", "F821"]
 
 [tool.mypy]
 strict = false

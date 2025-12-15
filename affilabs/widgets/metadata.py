@@ -6,11 +6,10 @@ in a format compatible with TraceDrawer.
 
 from __future__ import annotations
 
-
 import csv
 import re
 from collections.abc import Collection, Hashable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Generic, NamedTuple, Self, TypeVar
 
 from PySide6.QtCore import QSize, Qt, Slot
@@ -30,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from settings import SW_VERSION
 
-TIME_ZONE = datetime.now(timezone.utc).astimezone().tzinfo
+TIME_ZONE = datetime.now(UTC).astimezone().tzinfo
 
 
 class ConcentrationEntry(NamedTuple):
@@ -692,7 +691,7 @@ class MetadataPrompt(QDialog):
             "metadata in the save file. All fields are optional, just leave any field "
             "blank to exclude it.",
         )
-        self.prompt.setWordWrap(True)  # noqa: FBT003
+        self.prompt.setWordWrap(True)
         self.metadata = metadata
         self.dont_show = QCheckBox(
             "Do not show this window again (Also available in SPR Setting)",

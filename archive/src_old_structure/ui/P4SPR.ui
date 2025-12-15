@@ -81,7 +81,7 @@
 }
 
 QGroupBox#P4SPR{
-	
+
 	border: 2px solid rgba(46, 48, 227, 150);
 	border-radius: 3px;
 
@@ -214,9 +214,9 @@ QPushButton::hover{
        </property>
        <property name="styleSheet">
         <string notr="true">QPushButton {
-		
+
 		background-color: rgb(230, 230, 230);
-	    border: 1px solid rgb(171, 171, 171); 
+	    border: 1px solid rgb(171, 171, 171);
 		border-radius: 3px;
 
 }

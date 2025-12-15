@@ -25,7 +25,7 @@ from .led_convergence_algorithm import LEDconverge
 # Re-export for backward compatibility
 __all__ = [
     'DetectorParams',
-    'count_saturated_pixels', 
+    'count_saturated_pixels',
     'analyze_saturation_severity',
     'calculate_led_reduction_from_saturation',
     'LEDconverge',
@@ -415,12 +415,12 @@ def LEDnormalizationintensity(
     # Track channels for which we've already increased integration time
     # (to avoid exponential time growth when channel can't reach target)
     time_boosted_for_channels: set[str] = set()
-    
+
     # Track maximum LED intensity that caused saturation for each channel
     # Key: channel name, Value: max LED intensity that saturated
     # If a channel saturates at intensity X, never try X or higher again
     max_saturating_intensity: dict[str, int] = {}
-    
+
     # Key: channel name, Value: min LED intensity that undershot target (signal below min_sig)
     # If a channel undershot at intensity Y, never go below Y when reducing from saturation
     # This prevents oscillation: don't drop below a value you know is too low
@@ -484,7 +484,7 @@ def LEDnormalizationintensity(
                         logger.info(
                             f"{step_name} iter {i + 1}: {ch.upper()} saturated @ LED={current_intensity} - will not exceed this"
                         )
-        
+
         # Track which channels undershot target (signal below minimum)
         # These define lower bounds - never go below an intensity that was too dim
         for ch in signals:
@@ -496,13 +496,13 @@ def LEDnormalizationintensity(
                         logger.info(
                             f"{step_name} iter {i + 1}: {ch.upper()} undershot @ LED={current_intensity} ({signals[ch]/detector_max*100:.1f}%) - will not go below this"
                         )
-        
+
         # Success condition: signals within tolerance band AND zero saturation
         # Zero saturation tolerance enforced - must continue iterating if any pixels saturated
         total_sat = sum(sat_per_ch.values()) if sat_per_ch else 0
         if signals and all(min_sig <= signals[ch] <= max_sig for ch in signals) and total_sat == 0:
             return current, signals, True
-        
+
         # EARLY EXIT: If S and P polarization channels have converged, exit early
         # even if iteration cap not reached (optimization requested by user)
         # Zero saturation tolerance enforced for all early exits
@@ -515,13 +515,13 @@ def LEDnormalizationintensity(
                         f"{step_name} iter {i + 1}: {polarization.upper()}-pol converged early (all channels within target, zero saturation)"
                     )
                 return current, signals, True
-            
+
             # Additional early exit: If channels are stuck due to constraints and stable for 3+ iterations
             # (LED values haven't changed for 3 iterations), accept current state
             # Only if zero saturation achieved
             if i >= 5:  # Only after iteration 5+
                 channels_in_relaxed_tolerance = [
-                    ch for ch in sp_channels 
+                    ch for ch in sp_channels
                     if (target_percent - 0.10) * detector_max <= signals[ch] <= (target_percent + 0.15) * detector_max
                 ]
                 if len(channels_in_relaxed_tolerance) == len(sp_channels) and sp_sat == 0:
@@ -537,7 +537,7 @@ def LEDnormalizationintensity(
                 ch for ch in ch_list
                 if ch in signals and not (min_sig <= signals[ch] <= max_sig)
             ]
-            
+
             if not channels_needing_adjustment:
                 # All channels are within tolerance - check saturation before accepting
                 total_sat = sum(sat_per_ch.values()) if sat_per_ch else 0
@@ -553,7 +553,7 @@ def LEDnormalizationintensity(
             errors = {ch: abs(signals[ch] - target) for ch in channels_needing_adjustment}
             ranked = sorted(errors.items(), key=lambda kv: kv[1], reverse=True)
             furthest = {ch for ch, _ in ranked[:2]}  # Top 2 channels furthest from target
-            
+
             for ch in channels_needing_adjustment:
                 sig = signals[ch]
 
@@ -609,25 +609,25 @@ def LEDnormalizationintensity(
                     if model_slopes and ch in model_slopes:
                         # Scale model slope (at 10ms reference) to current integration time
                         model_slope_at_current_int = model_slopes[ch] * (current / 10.0)
-                        
+
                         # Calculate signal error (how far from target)
                         signal_error = target - sig  # Positive = need more signal, negative = too much signal
                         signal_error_percent = (signal_error / target) * 100.0
-                        
+
                         # Calculate LED adjustment needed based on model sensitivity
                         # model_slope = counts per LED unit, so LED_delta = signal_error / slope
                         if abs(model_slope_at_current_int) > 0.1:  # Avoid division by near-zero
                             led_delta = signal_error / model_slope_at_current_int
-                            
+
                             # Safety limits: Don't change by more than 50 LED units per iteration
                             # and be more conservative when close to target (±10% = ±3 LED max)
                             if abs(signal_error_percent) < 10.0:  # Within ±10% of target
                                 led_delta = max(-3, min(3, led_delta))
                             else:
                                 led_delta = max(-50, min(50, led_delta))
-                            
+
                             new_int = int(max(10, min(255, led_intensities[ch] + led_delta)))
-                            
+
                             if logger:
                                 logger.info(
                                     f"{step_name} iter {i + 1}: MODEL-AWARE {ch.upper()} LED {led_intensities[ch]} → {new_int} "
@@ -649,7 +649,7 @@ def LEDnormalizationintensity(
                             lower, upper = (0.6, 1.6) if ch in furthest else (0.75, 1.35)
                         else:
                             lower, upper = (0.75, 1.30) if ch in furthest else (0.85, 1.15)
-                        
+
                         desired_ratio = target / sig if sig > 0 else 1.5
                         desired_ratio = max(lower, min(upper, desired_ratio))
                         new_int = int(max(10, min(255, led_intensities[ch] * desired_ratio)))
@@ -664,7 +664,7 @@ def LEDnormalizationintensity(
                         logger.info(
                             f"{step_name} iter {i + 1}: {ch.upper()} capped @ {new_int} (saturated previously @ {max_saturating_intensity[ch]})"
                         )
-                
+
                 # Lower bound: Do not go below intensity that previously undershot target
                 # This forces convergence by preventing oscillation below known-too-dim values
                 if ch in min_undershooting_intensity and new_int <= min_undershooting_intensity[ch]:
@@ -673,7 +673,7 @@ def LEDnormalizationintensity(
                         logger.info(
                             f"{step_name} iter {i + 1}: {ch.upper()} floored @ {new_int} (undershot previously @ {min_undershooting_intensity[ch]})"
                         )
-                
+
                 if new_int != led_intensities[ch]:
                     if logger and sat_per_ch.get(ch, 0) == 0:
                         # Only log normal adjustments (saturation recovery already logged)
@@ -694,7 +694,7 @@ def LEDnormalizationintensity(
             and signals[ch] < min_sig
             and signals[ch] >= (target * 0.50)  # Must be at least 50% of target
         }
-        
+
         # If no maxed channels but convergence is stalled (same signals 3+ iterations),
         # also consider integration time increase
         if not maxed_out_channels and i >= 3:
@@ -712,7 +712,7 @@ def LEDnormalizationintensity(
             # Only increase integration time ONCE per convergence run
             # Filter to channels we haven't boosted for yet
             new_maxed_channels = maxed_out_channels - time_boosted_for_channels
-            
+
             if new_maxed_channels:
                 # Calculate integration time increase needed for weakest maxed channel
                 weakest_ch = min(new_maxed_channels, key=lambda ch: signals[ch])
@@ -739,7 +739,7 @@ def LEDnormalizationintensity(
                     )
 
                 current = new_integration
-                
+
                 # Mark these channels as boosted
                 time_boosted_for_channels.update(new_maxed_channels)
 
@@ -771,13 +771,13 @@ def LEDnormalizationintensity(
     if signals:
         # Check if we're hardware-limited (integration time near max)
         near_max_integration = current >= (detector_params.max_integration_time * 0.75)
-        
+
         if near_max_integration:
             # Hardware-limited scenario: Accept 80%+ for all channels
             # (Can't increase integration time further, LED A maxed at 255)
             hardware_min = 0.80 * detector_max
             channels_above_hardware_min = [ch for ch in signals if signals[ch] >= hardware_min]
-            
+
             if len(channels_above_hardware_min) == len(signals):
                 if logger:
                     logger.warning(
@@ -790,12 +790,12 @@ def LEDnormalizationintensity(
                         pct = signals[ch] / detector_max * 100.0
                         logger.info(f"  {ch.upper()}: {signals[ch]:.0f} ({pct:.1f}%) LED={led_intensities[ch]}")
                 return current, signals, True
-        
+
         # Normal fallback: ±10% tolerance
         fallback_tolerance = 0.10
         fallback_min = target * (1.0 - fallback_tolerance)
         fallback_max = target * (1.0 + fallback_tolerance)
-        
+
         channels_in_fallback = [ch for ch in signals if fallback_min <= signals[ch] <= fallback_max]
         if len(channels_in_fallback) == len(signals):
             if logger:
@@ -809,7 +809,7 @@ def LEDnormalizationintensity(
                     pct = signals[ch] / detector_max * 100.0
                     logger.info(f"  {ch.upper()}: {signals[ch]:.0f} ({pct:.1f}%)")
             return current, signals, True
-    
+
     return current, signals, False
 
 

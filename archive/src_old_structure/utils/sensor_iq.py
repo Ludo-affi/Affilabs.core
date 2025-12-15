@@ -16,13 +16,13 @@ FWHM Correlation:
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+
 import numpy as np
 
 from utils.logger import logger
-
 
 # =============================================================================
 # DISPLAY CONSTANTS FOR UI INTEGRATION
@@ -30,42 +30,48 @@ from utils.logger import logger
 
 # Sensor IQ Level Icons (for UI display)
 SENSOR_IQ_ICONS = {
-    'excellent': "🌟",
-    'good': "✅",
-    'questionable': "⚠️",
-    'poor': "🔶",
-    'critical': "⛔"
+    "excellent": "🌟",
+    "good": "✅",
+    "questionable": "⚠️",
+    "poor": "🔶",
+    "critical": "⛔",
 }
 
 # Sensor IQ Level Colors (hex codes for UI styling)
 SENSOR_IQ_COLORS = {
-    'excellent': "#34C759",  # Green
-    'good': "#30D158",       # Light green
-    'questionable': "#FF9500",  # Orange
-    'poor': "#FF9F0A",       # Amber
-    'critical': "#FF3B30"    # Red
+    "excellent": "#34C759",  # Green
+    "good": "#30D158",  # Light green
+    "questionable": "#FF9500",  # Orange
+    "poor": "#FF9F0A",  # Amber
+    "critical": "#FF3B30",  # Red
 }
 
 # Zone boundaries display string (for static UI labels)
-ZONE_BOUNDARIES_DISPLAY = "Good: 590-690nm | Edge: 560-590, 690-720nm | Out: <560, >720nm"
+ZONE_BOUNDARIES_DISPLAY = (
+    "Good: 590-690nm | Edge: 560-590, 690-720nm | Out: <560, >720nm"
+)
 
 # FWHM thresholds display string (for static UI labels)
-FWHM_THRESHOLDS_DISPLAY = "Excellent: <30nm | Good: 30-60nm | Poor: 60-80nm | Critical: >80nm"
+FWHM_THRESHOLDS_DISPLAY = (
+    "Excellent: <30nm | Good: 30-60nm | Poor: 60-80nm | Critical: >80nm"
+)
 
 
 class SensorIQLevel(Enum):
     """Sensor Intelligence Quotient levels for SPR data quality."""
-    EXCELLENT = "excellent"      # 590-690nm + FWHM <30nm
-    GOOD = "good"               # 590-690nm + FWHM 30-60nm
+
+    EXCELLENT = "excellent"  # 590-690nm + FWHM <30nm
+    GOOD = "good"  # 590-690nm + FWHM 30-60nm
     QUESTIONABLE = "questionable"  # Edge zones or moderate FWHM
-    POOR = "poor"               # Out of bounds or high FWHM
-    CRITICAL = "critical"       # Severely out of bounds or FWHM >80nm
+    POOR = "poor"  # Out of bounds or high FWHM
+    CRITICAL = "critical"  # Severely out of bounds or FWHM >80nm
 
 
 class WavelengthZone(Enum):
     """SPR wavelength zones for quality assessment."""
-    GOOD = "good"               # 590-690 nm - Expected operating range
-    QUESTIONABLE_LOW = "questionable_low"   # 560-590 nm - Lower edge
+
+    GOOD = "good"  # 590-690 nm - Expected operating range
+    QUESTIONABLE_LOW = "questionable_low"  # 560-590 nm - Lower edge
     QUESTIONABLE_HIGH = "questionable_high"  # 690-720 nm - Upper edge
     OUT_OF_BOUNDS_LOW = "out_of_bounds_low"  # <560 nm - Below valid range
     OUT_OF_BOUNDS_HIGH = "out_of_bounds_high"  # >720 nm - Above valid range
@@ -74,13 +80,14 @@ class WavelengthZone(Enum):
 @dataclass
 class SensorIQMetrics:
     """Container for sensor IQ quality metrics."""
+
     wavelength: float
-    fwhm: Optional[float]
+    fwhm: float | None
     zone: WavelengthZone
     iq_level: SensorIQLevel
     quality_score: float  # 0.0-1.0
-    warning_message: Optional[str]
-    recommendation: Optional[str]
+    warning_message: str | None
+    recommendation: str | None
 
 
 class SensorIQClassifier:
@@ -88,17 +95,17 @@ class SensorIQClassifier:
 
     # Wavelength zone boundaries (nm)
     ZONE_BOUNDARIES = {
-        'out_of_bounds_low': (0, 560),
-        'questionable_low': (560, 590),
-        'good': (590, 690),
-        'questionable_high': (690, 720),
-        'out_of_bounds_high': (720, 1000)
+        "out_of_bounds_low": (0, 560),
+        "questionable_low": (560, 590),
+        "good": (590, 690),
+        "questionable_high": (690, 720),
+        "out_of_bounds_high": (720, 1000),
     }
 
     # FWHM quality thresholds (nm)
-    FWHM_EXCELLENT = 30.0   # <30nm = Excellent sensor coupling
-    FWHM_GOOD = 60.0        # 30-60nm = Good coupling
-    FWHM_POOR = 80.0        # 60-80nm = Poor coupling (warning)
+    FWHM_EXCELLENT = 30.0  # <30nm = Excellent sensor coupling
+    FWHM_GOOD = 60.0  # 30-60nm = Good coupling
+    FWHM_POOR = 80.0  # 60-80nm = Poor coupling (warning)
     # >80nm = Critical coupling issues
 
     def __init__(self):
@@ -113,19 +120,19 @@ class SensorIQClassifier:
 
         Returns:
             WavelengthZone classification
-        """
-        if wavelength < self.ZONE_BOUNDARIES['out_of_bounds_low'][1]:
-            return WavelengthZone.OUT_OF_BOUNDS_LOW
-        elif wavelength < self.ZONE_BOUNDARIES['questionable_low'][1]:
-            return WavelengthZone.QUESTIONABLE_LOW
-        elif wavelength < self.ZONE_BOUNDARIES['good'][1]:
-            return WavelengthZone.GOOD
-        elif wavelength < self.ZONE_BOUNDARIES['questionable_high'][1]:
-            return WavelengthZone.QUESTIONABLE_HIGH
-        else:
-            return WavelengthZone.OUT_OF_BOUNDS_HIGH
 
-    def classify_fwhm_quality(self, fwhm: Optional[float]) -> tuple[str, float]:
+        """
+        if wavelength < self.ZONE_BOUNDARIES["out_of_bounds_low"][1]:
+            return WavelengthZone.OUT_OF_BOUNDS_LOW
+        if wavelength < self.ZONE_BOUNDARIES["questionable_low"][1]:
+            return WavelengthZone.QUESTIONABLE_LOW
+        if wavelength < self.ZONE_BOUNDARIES["good"][1]:
+            return WavelengthZone.GOOD
+        if wavelength < self.ZONE_BOUNDARIES["questionable_high"][1]:
+            return WavelengthZone.QUESTIONABLE_HIGH
+        return WavelengthZone.OUT_OF_BOUNDS_HIGH
+
+    def classify_fwhm_quality(self, fwhm: float | None) -> tuple[str, float]:
         """Classify FWHM into quality category.
 
         Args:
@@ -135,32 +142,42 @@ class SensorIQClassifier:
             Tuple of (quality_category, quality_score)
             - quality_category: 'excellent', 'good', 'poor', 'critical', or 'unknown'
             - quality_score: 0.0-1.0
+
         """
         if fwhm is None:
-            return 'unknown', 0.5
+            return "unknown", 0.5
 
         if fwhm < self.FWHM_EXCELLENT:
             # Excellent: Sharp, well-defined peak
             score = 1.0 - (fwhm / self.FWHM_EXCELLENT) * 0.1  # 0.9-1.0
-            return 'excellent', max(0.9, score)
-        elif fwhm < self.FWHM_GOOD:
+            return "excellent", max(0.9, score)
+        if fwhm < self.FWHM_GOOD:
             # Good: Normal operating range
-            score = 0.9 - ((fwhm - self.FWHM_EXCELLENT) / (self.FWHM_GOOD - self.FWHM_EXCELLENT)) * 0.3
-            return 'good', max(0.6, score)
-        elif fwhm < self.FWHM_POOR:
+            score = (
+                0.9
+                - (
+                    (fwhm - self.FWHM_EXCELLENT)
+                    / (self.FWHM_GOOD - self.FWHM_EXCELLENT)
+                )
+                * 0.3
+            )
+            return "good", max(0.6, score)
+        if fwhm < self.FWHM_POOR:
             # Poor: Degraded coupling, monitor closely
-            score = 0.6 - ((fwhm - self.FWHM_GOOD) / (self.FWHM_POOR - self.FWHM_GOOD)) * 0.3
-            return 'poor', max(0.3, score)
-        else:
-            # Critical: Severe coupling issues
-            score = max(0.1, 0.3 - (fwhm - self.FWHM_POOR) / 100.0)
-            return 'critical', score
+            score = (
+                0.6
+                - ((fwhm - self.FWHM_GOOD) / (self.FWHM_POOR - self.FWHM_GOOD)) * 0.3
+            )
+            return "poor", max(0.3, score)
+        # Critical: Severe coupling issues
+        score = max(0.1, 0.3 - (fwhm - self.FWHM_POOR) / 100.0)
+        return "critical", score
 
     def compute_sensor_iq(
         self,
         wavelength: float,
-        fwhm: Optional[float] = None,
-        channel: Optional[str] = None
+        fwhm: float | None = None,
+        channel: str | None = None,
     ) -> SensorIQMetrics:
         """Compute comprehensive sensor IQ metrics.
 
@@ -171,6 +188,7 @@ class SensorIQClassifier:
 
         Returns:
             SensorIQMetrics with complete quality assessment
+
         """
         # Classify wavelength zone
         zone = self.classify_wavelength_zone(wavelength)
@@ -180,19 +198,25 @@ class SensorIQClassifier:
 
         # Combine wavelength zone and FWHM to determine overall IQ level
         iq_level, quality_score, warning, recommendation = self._determine_iq_level(
-            zone, wavelength, fwhm_category, fwhm_score, fwhm
+            zone,
+            wavelength,
+            fwhm_category,
+            fwhm_score,
+            fwhm,
         )
 
         # Track history for trend analysis
         if channel:
             if channel not in self._history:
                 self._history[channel] = []
-            self._history[channel].append({
-                'wavelength': wavelength,
-                'fwhm': fwhm,
-                'iq_level': iq_level,
-                'quality_score': quality_score
-            })
+            self._history[channel].append(
+                {
+                    "wavelength": wavelength,
+                    "fwhm": fwhm,
+                    "iq_level": iq_level,
+                    "quality_score": quality_score,
+                },
+            )
             # Keep only last 100 measurements
             if len(self._history[channel]) > 100:
                 self._history[channel].pop(0)
@@ -204,7 +228,7 @@ class SensorIQClassifier:
             iq_level=iq_level,
             quality_score=quality_score,
             warning_message=warning,
-            recommendation=recommendation
+            recommendation=recommendation,
         )
 
     def _determine_iq_level(
@@ -213,18 +237,22 @@ class SensorIQClassifier:
         wavelength: float,
         fwhm_category: str,
         fwhm_score: float,
-        fwhm: Optional[float]
-    ) -> tuple[SensorIQLevel, float, Optional[str], Optional[str]]:
+        fwhm: float | None,
+    ) -> tuple[SensorIQLevel, float, str | None, str | None]:
         """Determine overall IQ level from zone and FWHM classifications.
 
         Returns:
             Tuple of (iq_level, quality_score, warning_message, recommendation)
+
         """
         warning = None
         recommendation = None
 
         # CRITICAL: Out of bounds zones
-        if zone in [WavelengthZone.OUT_OF_BOUNDS_LOW, WavelengthZone.OUT_OF_BOUNDS_HIGH]:
+        if zone in [
+            WavelengthZone.OUT_OF_BOUNDS_LOW,
+            WavelengthZone.OUT_OF_BOUNDS_HIGH,
+        ]:
             iq_level = SensorIQLevel.CRITICAL
             quality_score = 0.1
 
@@ -239,24 +267,31 @@ class SensorIQClassifier:
 
         # GOOD ZONE: 590-690nm
         if zone == WavelengthZone.GOOD:
-            if fwhm_category == 'excellent':
+            if fwhm_category == "excellent":
                 iq_level = SensorIQLevel.EXCELLENT
-                quality_score = min(1.0, fwhm_score * 1.1)  # Bonus for excellent in good zone
-            elif fwhm_category == 'good':
+                quality_score = min(
+                    1.0,
+                    fwhm_score * 1.1,
+                )  # Bonus for excellent in good zone
+            elif fwhm_category == "good":
                 iq_level = SensorIQLevel.GOOD
                 quality_score = fwhm_score
-            elif fwhm_category == 'poor':
+            elif fwhm_category == "poor":
                 iq_level = SensorIQLevel.QUESTIONABLE
                 quality_score = fwhm_score
                 if fwhm is not None:
                     warning = f"⚠️  FWHM {fwhm:.1f}nm is high - Monitor sensor coupling"
-                    recommendation = "Check for air bubbles, verify water contact quality"
-            elif fwhm_category == 'critical':  # critical FWHM
+                    recommendation = (
+                        "Check for air bubbles, verify water contact quality"
+                    )
+            elif fwhm_category == "critical":  # critical FWHM
                 iq_level = SensorIQLevel.POOR
                 quality_score = fwhm_score
                 if fwhm is not None:
                     warning = f"⚠️  FWHM {fwhm:.1f}nm is very high - Sensor degradation suspected"
-                    recommendation = "Clean sensor surface, check for contamination or damage"
+                    recommendation = (
+                        "Clean sensor surface, check for contamination or damage"
+                    )
             else:  # unknown (no FWHM data)
                 iq_level = SensorIQLevel.GOOD
                 quality_score = 0.7  # Moderate score without FWHM confirmation
@@ -266,7 +301,7 @@ class SensorIQClassifier:
         # QUESTIONABLE ZONES: 560-590nm or 690-720nm
         if zone in [WavelengthZone.QUESTIONABLE_LOW, WavelengthZone.QUESTIONABLE_HIGH]:
             # Wavelength in edge zone - downgrade quality
-            if fwhm_category in ['excellent', 'good']:
+            if fwhm_category in ["excellent", "good"]:
                 iq_level = SensorIQLevel.QUESTIONABLE
                 quality_score = fwhm_score * 0.8  # 20% penalty for edge zone
                 warning = f"⚠️  Wavelength {wavelength:.1f}nm in edge zone"
@@ -285,7 +320,7 @@ class SensorIQClassifier:
         # Fallback (should not reach here)
         return SensorIQLevel.QUESTIONABLE, 0.5, None, None
 
-    def get_channel_trend(self, channel: str, window: int = 10) -> Optional[dict]:
+    def get_channel_trend(self, channel: str, window: int = 10) -> dict | None:
         """Analyze recent IQ trend for a channel.
 
         Args:
@@ -294,34 +329,39 @@ class SensorIQClassifier:
 
         Returns:
             Dictionary with trend statistics, or None if insufficient data
+
         """
         if channel not in self._history or len(self._history[channel]) < 2:
             return None
 
         recent = self._history[channel][-window:]
 
-        wavelengths = [m['wavelength'] for m in recent]
-        fwhms = [m['fwhm'] for m in recent if m['fwhm'] is not None]
-        scores = [m['quality_score'] for m in recent]
+        wavelengths = [m["wavelength"] for m in recent]
+        fwhms = [m["fwhm"] for m in recent if m["fwhm"] is not None]
+        scores = [m["quality_score"] for m in recent]
 
         trend = {
-            'wavelength_mean': np.mean(wavelengths),
-            'wavelength_std': np.std(wavelengths),
-            'wavelength_drift': wavelengths[-1] - wavelengths[0] if len(wavelengths) > 1 else 0,
-            'quality_score_mean': np.mean(scores),
-            'quality_score_trend': 'improving' if scores[-1] > scores[0] else 'degrading',
-            'measurements': len(recent)
+            "wavelength_mean": np.mean(wavelengths),
+            "wavelength_std": np.std(wavelengths),
+            "wavelength_drift": wavelengths[-1] - wavelengths[0]
+            if len(wavelengths) > 1
+            else 0,
+            "quality_score_mean": np.mean(scores),
+            "quality_score_trend": "improving"
+            if scores[-1] > scores[0]
+            else "degrading",
+            "measurements": len(recent),
         }
 
         if fwhms:
-            trend['fwhm_mean'] = np.mean(fwhms)
-            trend['fwhm_std'] = np.std(fwhms)
+            trend["fwhm_mean"] = np.mean(fwhms)
+            trend["fwhm_std"] = np.std(fwhms)
 
         return trend
 
 
 # Global singleton instance
-_global_classifier: Optional[SensorIQClassifier] = None
+_global_classifier: SensorIQClassifier | None = None
 
 
 def get_sensor_iq_classifier() -> SensorIQClassifier:
@@ -334,8 +374,8 @@ def get_sensor_iq_classifier() -> SensorIQClassifier:
 
 def classify_spr_quality(
     wavelength: float,
-    fwhm: Optional[float] = None,
-    channel: Optional[str] = None
+    fwhm: float | None = None,
+    channel: str | None = None,
 ) -> SensorIQMetrics:
     """Convenience function to classify SPR data quality.
 
@@ -346,6 +386,7 @@ def classify_spr_quality(
 
     Returns:
         SensorIQMetrics with complete quality assessment
+
     """
     classifier = get_sensor_iq_classifier()
     return classifier.compute_sensor_iq(wavelength, fwhm, channel)
@@ -357,6 +398,7 @@ def log_sensor_iq(metrics: SensorIQMetrics, channel: str):
     Args:
         metrics: SensorIQMetrics to log
         channel: Channel identifier
+
     """
     prefix = f"[Ch {channel.upper()}] Sensor IQ"
 
@@ -370,10 +412,16 @@ def log_sensor_iq(metrics: SensorIQMetrics, channel: str):
         if metrics.warning_message:
             logger.warning(f"   {metrics.warning_message}")
     elif metrics.iq_level == SensorIQLevel.QUESTIONABLE:
-        logger.info(f"{prefix} QUESTIONABLE: λ={metrics.wavelength:.1f}nm (Zone: {metrics.zone.value})")
+        logger.info(
+            f"{prefix} QUESTIONABLE: λ={metrics.wavelength:.1f}nm (Zone: {metrics.zone.value})",
+        )
         if metrics.warning_message:
             logger.info(f"   {metrics.warning_message}")
     elif metrics.iq_level == SensorIQLevel.EXCELLENT:
-        logger.debug(f"{prefix} EXCELLENT: λ={metrics.wavelength:.1f}nm, FWHM={metrics.fwhm:.1f}nm, Score={metrics.quality_score:.2f}")
+        logger.debug(
+            f"{prefix} EXCELLENT: λ={metrics.wavelength:.1f}nm, FWHM={metrics.fwhm:.1f}nm, Score={metrics.quality_score:.2f}",
+        )
     else:  # GOOD
-        logger.debug(f"{prefix} GOOD: λ={metrics.wavelength:.1f}nm, Score={metrics.quality_score:.2f}")
+        logger.debug(
+            f"{prefix} GOOD: λ={metrics.wavelength:.1f}nm, Score={metrics.quality_score:.2f}",
+        )

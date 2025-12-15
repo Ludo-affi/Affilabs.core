@@ -1,0 +1,133 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+        files: ^(affilabs/|docs/|README\.md|pyproject\.toml|pdm\.toml|importlinter\.ini|pyrightconfig\.json|\.github/workflows/)
+        exclude: ^(archive/|archive_root_files/|firmware_archive/|build_artifacts/|generated-files/|calibration_results/|data_results/|OpticalSystem_QC/|led_calibration_official/|logs/)
+      - id: trailing-whitespace
+        files: ^(affilabs/|docs/|README\.md|pyproject\.toml|pdm\.toml|importlinter\.ini|pyrightconfig\.json|\.github/workflows/)
+        exclude: ^(archive/|archive_root_files/|firmware_archive/|build_artifacts/|generated-files/|calibration_results/|data_results/|OpticalSystem_QC/|led_calibration_official/|logs/)
+      - id: mixed-line-ending
+        files: ^(affilabs/|docs/|README\.md|pyproject\.toml|pdm\.toml|importlinter\.ini|pyrightconfig\.json|\.github/workflows/)
+        exclude: ^(archive/|archive_root_files/|firmware_archive/|build_artifacts/|generated-files/|calibration_results/|data_results/|OpticalSystem_QC/|led_calibration_official/|logs/)
+      - id: check-yaml
+        exclude: ^(archive/|archive_root_files/|firmware_archive/|build_artifacts/|generated-files/)
+      - id: check-json
+        files: ^(config/|settings/|affilabs/.*\.json$|\.github/)
+        exclude: ^(archive/|archive_root_files/|firmware_archive/|build_artifacts/|generated-files/|calibration_results/|data_results/|OpticalSystem_QC/|led_calibration_official/|logs/|\.vscode/)
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        files: ^(affilabs/|docs/|README\.md|pyproject\.toml|pdm\.toml|importlinter\.ini|pyrightconfig\.json|\.github/)
+        exclude: ^(archive/|archive_root_files/|firmware_archive/|build/|build_artifacts/|generated-files/|calibration_results/|data_results/|OpticalSystem_QC/|led_calibration_official/|logs/|dist/)
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        files: ^affilabs/(core|managers|services|hardware|domain)/
+        exclude: |
+          ^affilabs[\\/](ui|widgets|viewmodels|presenters)[\\/]|^archive[\\/]|^archive_root_files[\\/]|^firmware_archive[\\/]
+        args: ["--fix"]
+      - id: ruff-format
+        files: ^affilabs/(core|managers|services|hardware|domain)/
+        exclude: |
+          ^affilabs[\\/](ui|widgets)[\\/]|^affilabs[\\/]utils[\\/]led_calibration_nov20_working\.py|^affilabs[\\/]utils[\\/]servo_smooth_move\.py|^affilabs[\\/]utils[\\/]servo_speed_presets\.py|^affilabs[\\/]utils[\\/]led_methods_OLD_BACKUP\.py|^archive[\\/]|^archive_root_files[\\/]|^firmware_archive[\\/]
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.407
+    hooks:
+      - id: pyright
+        additional_dependencies: []
+        pass_filenames: false
+        args: ["--project", "pyrightconfig.json"]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      - id: bandit
+        name: bandit (core/services/hardware)
+        files: ^affilabs/(core|services|hardware)/
+        exclude: |
+          ^affilabs[\/]ui[\/]|^affilabs[\/]widgets[\/]|^archive[\/]|^archive_root_files[\/]|^firmware_archive[\/]
+        args:
+          - -q
+          - -r
+          - --severity-level
+          - high
+          - --confidence-level
+          - high
+          - affilabs/core
+          - affilabs/services
+          - affilabs/hardware
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        # Expand to core code + all markdown; keep noisy areas skipped
+        files: ^(affilabs/(core|managers|services|hardware|domain)/|.*\.md$)
+        exclude: ^docs/archive/|^archive/|^archive_root_files/|^firmware_archive/
+        args:
+          - "--ignore-words-list=hte,htey,hteir,teh,fo,ALS,als,datas"
+          - "--skip=*.svg,*.png,*.ico,*.dll,*.exe,*.zip,*.ui,build_artifacts/*,dist/*,archive/*,archive_root_files/*,firmware_archive/*,ui/*,widgets/*,main/*,scripts/*,utils/*,tests/*,.venv/*,.venv312/*,__pycache__/*,generated-files/*,affilabs/ui/*,affilabs/ui/*_rc.py"
+
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter
+        entry: lint-imports --config importlinter.ini
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      # Optional analysis hooks (manual stage): run via
+      #   pre-commit run vulture --all-files
+      - id: vulture
+        name: vulture (report-only)
+        language: python
+        additional_dependencies: [vulture==2.11]
+        entry: vulture
+        args:
+          - --min-confidence
+          - "90"
+          - affilabs/core
+          - affilabs/services
+          - affilabs/hardware
+        pass_filenames: false
+        stages: [manual]
+
+      - id: xenon
+        name: xenon (complexity gate; manual)
+        language: python
+        additional_dependencies: [xenon==0.9.1]
+        entry: xenon
+        args:
+          - --max-absolute
+          - B
+          - --max-modules
+          - B
+          - --max-average
+          - B
+          - affilabs/core
+          - affilabs/services
+          - affilabs/hardware
+        pass_filenames: false
+        stages: [manual]
+
+      - id: radon-cc
+        name: radon cc (report; manual)
+        language: python
+        additional_dependencies: [radon==6.0.1]
+        entry: radon
+        args:
+          - cc
+          - -n
+          - B
+          - -s
+          - affilabs/core
+          - affilabs/services
+          - affilabs/hardware
+        pass_filenames: false
+        stages: [manual]

@@ -1,12 +1,14 @@
 """Test with debug output to see parsing"""
-import serial
+
 import time
 
-print("="*70)
-print("PARSING DEBUG TEST")
-print("="*70)
+import serial
 
-ser = serial.Serial('COM5', 115200, timeout=10)
+print("=" * 70)
+print("PARSING DEBUG TEST")
+print("=" * 70)
+
+ser = serial.Serial("COM5", 115200, timeout=10)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -15,13 +17,13 @@ print("\n🔧 Enabling debug mode...")
 ser.write(b"d\n")
 time.sleep(0.5)
 while ser.in_waiting > 0:
-    line = ser.readline().decode('utf-8', errors='ignore').strip()
+    line = ser.readline().decode("utf-8", errors="ignore").strip()
     if line:
         print(f"  {line}")
 
 # Send the test command
 print("\n📤 Sending: rankbatch:100,150,200,250,1000,100,10")
-print("="*70)
+print("=" * 70)
 
 ser.write(b"rankbatch:100,150,200,250,1000,100,10\n")
 start = time.time()
@@ -30,13 +32,13 @@ cycles_seen = 0
 
 while time.time() - start < 60:
     if ser.in_waiting > 0:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
 
         if line:
             print(f"  {line}")
 
             if line.startswith("Parsed:"):
-                print(f"\n🔍 DEBUG OUTPUT FOUND!")
+                print("\n🔍 DEBUG OUTPUT FOUND!")
                 print(f"  {line}\n")
 
             elif line.startswith("CYCLE:"):
@@ -48,12 +50,12 @@ while time.time() - start < 60:
 
             elif line == "BATCH_END":
                 elapsed = time.time() - start
-                print(f"\n✅ BATCH_END")
+                print("\n✅ BATCH_END")
                 print(f"⏱️  Time: {elapsed:.1f}s")
                 print(f"📊 Cycles: {cycles_seen}")
 
                 if cycles_seen == 10:
-                    print(f"\n✅✅✅ SUCCESS! Fixed! Got 10 cycles as expected!")
+                    print("\n✅✅✅ SUCCESS! Fixed! Got 10 cycles as expected!")
                 else:
                     print(f"\n⚠️  Got {cycles_seen} cycles (expected 10)")
 

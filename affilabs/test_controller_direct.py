@@ -1,13 +1,14 @@
 """Test controller connection directly."""
+
 import sys
-sys.path.insert(0, r'c:\Users\ludol\ezControl-AI\Affilabs.core beta')
 
-from affilabs.utils.controller import PicoP4SPR, ArduinoController
-from affilabs.utils.logger import logger
+sys.path.insert(0, r"c:\Users\ludol\ezControl-AI\Affilabs.core beta")
 
-print("="*60)
+from affilabs.utils.controller import ArduinoController, PicoP4SPR
+
+print("=" * 60)
 print("TESTING CONTROLLER CONNECTION")
-print("="*60)
+print("=" * 60)
 
 # Try Pico
 print("\n1. Testing PicoP4SPR...")
@@ -25,4 +26,4 @@ if arduino.open():
 else:
     print("[ERROR] Arduino NOT FOUND")
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)

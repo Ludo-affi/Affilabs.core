@@ -12,7 +12,6 @@ This wraps utilities from led_methods and local ROI/acquisition helpers.
 import contextlib
 import os
 import time
-from typing import Optional
 
 from affilabs.utils.led_methods import (
     DetectorParams,
@@ -26,15 +25,15 @@ from affilabs.utils.led_methods import (
 def _normalize_led_predictions(
     model_predicted_leds: dict[str, int],
     ch_list: list[str],
-    logger
+    logger,
 ) -> dict[str, int]:
     """Normalize model predictions so weakest channel = 255.
-    
+
     CRITICAL: Weakest channel (highest LED value) must operate at maximum
     intensity (255) to maximize signal. Stronger channels scale proportionally.
     """
     max_predicted_led = max(model_predicted_leds.values())
-    
+
     if max_predicted_led < 255:
         scale_factor = 255.0 / max_predicted_led
         normalized = {
@@ -46,26 +45,32 @@ def _normalize_led_predictions(
             logger.info(f"[CONV]    Raw predictions: {model_predicted_leds}")
             logger.info(f"[CONV]    Normalized (×{scale_factor:.3f}): {normalized}")
         return normalized
-    else:
-        # Already normalized
-        normalized = {ch: model_predicted_leds[ch] for ch in ch_list}
-        if logger:
-            logger.info("[CONV] 🎯 Model predictions already normalized")
-            logger.info(f"[CONV]    LEDs: {normalized}")
-        return normalized
+    # Already normalized
+    normalized = {ch: model_predicted_leds[ch] for ch in ch_list}
+    if logger:
+        logger.info("[CONV] 🎯 Model predictions already normalized")
+        logger.info(f"[CONV]    LEDs: {normalized}")
+    return normalized
 
 
 def _build_final_results(
-    usb, ctrl, ch_list: list[str], initial_integration_ms: float,
-    acquire_raw_spectrum_fn, roi_signal_fn, wave_min_index: int, wave_max_index: int,
-    use_batch_command: bool, logger
-) -> Optional[dict[str, int]]:
+    usb,
+    ctrl,
+    ch_list: list[str],
+    initial_integration_ms: float,
+    acquire_raw_spectrum_fn,
+    roi_signal_fn,
+    wave_min_index: int,
+    wave_max_index: int,
+    use_batch_command: bool,
+    logger,
+) -> dict[str, int] | None:
     """Legacy Step 3A: Rank channels by measuring at fixed LED/time.
-    
+
     Returns normalized LED intensities (weakest=255) or None on failure.
     """
     test_led = 51  # 20% LED for ranking measurement
-    
+
     try:
         usb.set_integration(initial_integration_ms)
         time.sleep(0.010)
@@ -73,83 +78,125 @@ def _build_final_results(
         if logger:
             logger.exception(f"[CONV] set_integration failed: {e}")
         return None
-    
+
     channel_measurements: dict[str, tuple[float, float]] = {}
     weakest_mean = None
-    
+
     for ch in ch_list:
         spec = acquire_raw_spectrum_fn(
-            usb=usb, ctrl=ctrl, channel=ch, led_intensity=test_led,
-            integration_time_ms=initial_integration_ms, num_scans=1,
-            pre_led_delay_ms=45.0, post_led_delay_ms=5.0,
+            usb=usb,
+            ctrl=ctrl,
+            channel=ch,
+            led_intensity=test_led,
+            integration_time_ms=initial_integration_ms,
+            num_scans=1,
+            pre_led_delay_ms=45.0,
+            post_led_delay_ms=5.0,
             use_batch_command=use_batch_command,
         )
         if spec is None:
             if logger:
                 logger.error(f"[CONV] rank {ch.upper()} failed @LED={test_led}")
             continue
-            
-        mean_val = roi_signal_fn(spec, wave_min_index, wave_max_index, method="median", top_n=50)
+
+        mean_val = roi_signal_fn(
+            spec,
+            wave_min_index,
+            wave_max_index,
+            method="median",
+            top_n=50,
+        )
         channel_measurements[ch] = (mean_val, mean_val)
-        
+
         if weakest_mean is None or mean_val < weakest_mean:
             weakest_mean = mean_val
-        
+
         if logger:
             logger.info(f"[CONV] rank {ch.upper()} mean={mean_val:.0f}")
-    
+
     if not channel_measurements or weakest_mean is None:
         if logger:
             logger.error("[CONV] ranking failed - no valid measurements")
         return None
-    
+
     # Normalize: weakest channel gets LED=255, others scale proportionally
-    from affilabs.utils.led_methods import LEDnormalizationintensity
     normalized = LEDnormalizationintensity(
-        channel_measurements, weakest_mean, min_led=10, max_led=255
+        channel_measurements,
+        weakest_mean,
+        min_led=10,
+        max_led=255,
     )
-    
+
     if logger:
         logger.info(f"[CONV] Normalized LEDs: {normalized}")
-    
+
     return normalized
 
 
 def _run_preflight_verification(
-    usb, ctrl, ch_list: list[str], normalized_leds: dict[str, int],
-    initial_integration_ms: float, acquire_raw_spectrum_fn, roi_signal_fn,
-    wave_min_index: int, wave_max_index: int, detector_params: DetectorParams,
-    use_batch_command: bool, logger
+    usb,
+    ctrl,
+    ch_list: list[str],
+    normalized_leds: dict[str, int],
+    initial_integration_ms: float,
+    acquire_raw_spectrum_fn,
+    roi_signal_fn,
+    wave_min_index: int,
+    wave_max_index: int,
+    detector_params: DetectorParams,
+    use_batch_command: bool,
+    logger,
 ) -> None:
     """Optional preflight: measure each channel at normalized LED to verify setup."""
     try:
         usb.set_integration(initial_integration_ms)
         time.sleep(0.010)
         if logger:
-            logger.info(f"[CONV] preflight @normalized_leds T={initial_integration_ms:.1f}ms")
-        
+            logger.info(
+                f"[CONV] preflight @normalized_leds T={initial_integration_ms:.1f}ms",
+            )
+
         for ch in ch_list:
             try:
                 spec = acquire_raw_spectrum_fn(
-                    usb=usb, ctrl=ctrl, channel=ch,
+                    usb=usb,
+                    ctrl=ctrl,
+                    channel=ch,
                     led_intensity=normalized_leds.get(ch, 255),
-                    integration_time_ms=initial_integration_ms, num_scans=1,
-                    pre_led_delay_ms=45.0, post_led_delay_ms=5.0,
+                    integration_time_ms=initial_integration_ms,
+                    num_scans=1,
+                    pre_led_delay_ms=45.0,
+                    post_led_delay_ms=5.0,
                     use_batch_command=use_batch_command,
                 )
                 if spec is None:
                     if logger:
                         logger.error(f"[CONV] preflight {ch.upper()} read None")
                     continue
-                
-                sig = roi_signal_fn(spec, wave_min_index, wave_max_index, method="median", top_n=50)
-                sat = count_saturated_pixels(spec, wave_min_index, wave_max_index, detector_params.saturation_threshold)
-                
+
+                sig = roi_signal_fn(
+                    spec,
+                    wave_min_index,
+                    wave_max_index,
+                    method="median",
+                    top_n=50,
+                )
+                sat = count_saturated_pixels(
+                    spec,
+                    wave_min_index,
+                    wave_max_index,
+                    detector_params.saturation_threshold,
+                )
+
                 if logger:
-                    pct = (sig / detector_params.max_counts * 100.0) if detector_params.max_counts else 0.0
+                    pct = (
+                        (sig / detector_params.max_counts * 100.0)
+                        if detector_params.max_counts
+                        else 0.0
+                    )
                     logger.info(
                         f"[CONV] preflight {ch.upper()} top50={sig:.0f} ({pct:.1f}%) "
-                        f"{'SAT' if sat > 0 else 'OK'} LED={normalized_leds.get(ch, 255)}"
+                        f"{'SAT' if sat > 0 else 'OK'} LED={normalized_leds.get(ch, 255)}",
                     )
             except Exception:
                 if logger:
@@ -160,9 +207,11 @@ def _run_preflight_verification(
 
 
 def _build_final_results(
-    ch_list: list[str], ch_signals: dict[str, float], 
-    normalized_leds: dict[str, int], shared_int: float,
-    detector_params: DetectorParams
+    ch_list: list[str],
+    ch_signals: dict[str, float],
+    normalized_leds: dict[str, int],
+    shared_int: float,
+    detector_params: DetectorParams,
 ) -> dict[str, dict[str, float]]:
     """Build final per-channel results dict."""
     results = {}
@@ -172,39 +221,62 @@ def _build_final_results(
             "final_led": int(normalized_leds.get(ch, 255)),
             "final_integration_ms": float(shared_int),
             "final_top50_counts": float(sig),
-            "final_percentage": float((sig / detector_params.max_counts * 100.0) if detector_params.max_counts else 0.0),
+            "final_percentage": float(
+                (sig / detector_params.max_counts * 100.0)
+                if detector_params.max_counts
+                else 0.0,
+            ),
         }
     return results
 
 
 def _check_final_saturation(
-    usb, ctrl, ch_list: list[str], normalized_leds: dict[str, int], shared_int: float,
-    acquire_raw_spectrum_fn, wave_min_index: int, wave_max_index: int,
-    detector_params: DetectorParams, use_batch_command: bool, logger
+    usb,
+    ctrl,
+    ch_list: list[str],
+    normalized_leds: dict[str, int],
+    shared_int: float,
+    acquire_raw_spectrum_fn,
+    wave_min_index: int,
+    wave_max_index: int,
+    detector_params: DetectorParams,
+    use_batch_command: bool,
+    logger,
 ) -> tuple[dict[str, int], int]:
     """Final saturation check at converged settings.
-    
+
     Returns: (sat_per_channel, sat_total)
     """
     sat_summary = {}
     try:
         for ch in ch_list:
             spec = acquire_raw_spectrum_fn(
-                usb=usb, ctrl=ctrl, channel=ch,
+                usb=usb,
+                ctrl=ctrl,
+                channel=ch,
                 led_intensity=int(normalized_leds.get(ch, 255)),
-                integration_time_ms=float(shared_int), num_scans=1,
-                pre_led_delay_ms=45.0, post_led_delay_ms=5.0,
+                integration_time_ms=float(shared_int),
+                num_scans=1,
+                pre_led_delay_ms=45.0,
+                post_led_delay_ms=5.0,
                 use_batch_command=use_batch_command,
             )
             if spec is None:
                 continue
-            
-            sat_px = count_saturated_pixels(spec, wave_min_index, wave_max_index, detector_params.saturation_threshold)
+
+            sat_px = count_saturated_pixels(
+                spec,
+                wave_min_index,
+                wave_max_index,
+                detector_params.saturation_threshold,
+            )
             sat_summary[ch] = int(sat_px)
-        
+
         sat_total = sum(sat_summary.values())
         if logger:
-            logger.info(f"[CONV] final_saturation total={sat_total} per_channel={sat_summary}")
+            logger.info(
+                f"[CONV] final_saturation total={sat_total} per_channel={sat_summary}",
+            )
         return sat_summary, sat_total
     except Exception:
         return {}, 0
@@ -221,15 +293,16 @@ def run_convergence(
     wave_max_index: int,
     strategy: str = "intensity",  # "intensity" or "time"
     initial_integration_ms: float = 70.0,
-    model_predicted_leds: Optional[dict[str, int]] = None,  # NEW: Model predictions
-    model_slopes: Optional[dict[str, float]] = None,  # NEW: Model calibration slopes (S-pol, valid for P-pol too)
+    model_predicted_leds: dict[str, int] | None = None,  # NEW: Model predictions
+    model_slopes: dict[str, float]
+    | None = None,  # NEW: Model calibration slopes (S-pol, valid for P-pol too)
     polarization: str = "S",  # NEW: Polarization state for model
     target_percent: float = 0.40,
     tolerance_percent: float = 0.05,
     tighten_final: bool = False,
     use_batch_command: bool = True,  # ALWAYS use batch commands for LED control (more reliable)
     logger=None,
-) -> tuple[Optional[float], dict[str, dict[str, float]], bool]:
+) -> tuple[float | None, dict[str, dict[str, float]], bool]:
     """Run LED calibration convergence using selected strategy.
 
     Args:
@@ -423,7 +496,7 @@ def run_convergence(
         if logger:
             logger.error("[CONV] ❌ No model predictions provided - cannot proceed")
         return initial_integration_ms, {}, False
-    
+
     normalized_leds = _normalize_led_predictions(model_predicted_leds, ch_list, logger)
 
     # === CONVERGENCE: Adjust LEDs/time to reach target signal without saturation ===
@@ -433,9 +506,11 @@ def run_convergence(
             logger.info("[CONV] Calling LEDconverge (shared-time strategy)")
             if model_slopes:
                 logger.info(f"[CONV]   Model slopes: {model_slopes}")
-        
+
         shared_int, ch_signals, ok = LEDconverge(
-            usb=usb, ctrl=ctrl, ch_list=ch_list,
+            usb=usb,
+            ctrl=ctrl,
+            ch_list=ch_list,
             led_intensities=normalized_leds,
             acquire_raw_spectrum_fn=acquire_raw_spectrum_fn,
             roi_signal_fn=roi_signal_fn,
@@ -458,31 +533,55 @@ def run_convergence(
         return initial_integration_ms, {}, False
 
     # === RESULTS: Build final summary and check saturation ===
-    results = _build_final_results(ch_list, ch_signals, normalized_leds, shared_int, detector_params)
-    sat_summary, sat_total = _check_final_saturation(
-        usb, ctrl, ch_list, normalized_leds, shared_int,
-        acquire_raw_spectrum_fn, wave_min_index, wave_max_index,
-        detector_params, use_batch_command, logger
+    results = _build_final_results(
+        ch_list,
+        ch_signals,
+        normalized_leds,
+        shared_int,
+        detector_params,
     )
-    
+    sat_summary, sat_total = _check_final_saturation(
+        usb,
+        ctrl,
+        ch_list,
+        normalized_leds,
+        shared_int,
+        acquire_raw_spectrum_fn,
+        wave_min_index,
+        wave_max_index,
+        detector_params,
+        use_batch_command,
+        logger,
+    )
+
     # SUCCESS CRITERIA: Zero saturation (top priority) + signals in tolerance
     # Production quality: ZERO saturated pixels allowed
     # Target reduced to 88% to ensure headroom for LED variations
     ok_final = (sat_total == 0) and ok
-    
+
     if logger:
-        logger.info(f"[CONV] SUCCESS: convergence={'OK' if ok else 'FAIL'}, saturation={sat_total} pixels")
-        logger.info(f"[CONV] FINAL RESULT: {'PASS' if ok_final else 'FAIL'} (0 saturated pixels required, {sat_total} detected)")
+        logger.info(
+            f"[CONV] SUCCESS: convergence={'OK' if ok else 'FAIL'}, saturation={sat_total} pixels",
+        )
+        logger.info(
+            f"[CONV] FINAL RESULT: {'PASS' if ok_final else 'FAIL'} (0 saturated pixels required, {sat_total} detected)",
+        )
         logger.info(f"[CONV] shared_int={shared_int:.2f}ms results={results}")
-        
+
         # Structured summary for parsing
         try:
-            flat = {ch: {k: round(v, 2) if isinstance(v, float) else v for k, v in results[ch].items()} for ch in results}
+            flat = {
+                ch: {
+                    k: round(v, 2) if isinstance(v, float) else v
+                    for k, v in results[ch].items()
+                }
+                for ch in results
+            }
             logger.info(
                 f"[CONV] SUMMARY {{'strategy':'intensity','shared_int_ms':{shared_int:.2f},'ok':{ok_final},"
-                f"'sat_total':{sat_total},'sat_summary':{sat_summary},'channels':{flat}}}"
+                f"'sat_total':{sat_total},'sat_summary':{sat_summary},'channels':{flat}}}",
             )
         except Exception:
             pass
-    
+
     return shared_int, results, ok_final

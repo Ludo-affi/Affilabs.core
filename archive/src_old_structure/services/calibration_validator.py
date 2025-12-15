@@ -4,10 +4,10 @@ Pure business logic for validating calibration data quality.
 NO Qt dependencies - fully testable.
 """
 
-import numpy as np
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +15,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ValidationResult:
     """Result of a validation check."""
+
     passed: bool
     message: str
     severity: str  # 'info', 'warning', 'error'
-    value: Optional[float] = None
-    threshold: Optional[float] = None
+    value: float | None = None
+    threshold: float | None = None
 
 
 class CalibrationValidator:
@@ -38,7 +39,7 @@ class CalibrationValidator:
         min_signal: float = 5000.0,
         max_counts: int = 65535,
         saturation_threshold: float = 0.95,
-        min_snr: float = 10.0
+        min_snr: float = 10.0,
     ):
         """Initialize calibration validator.
 
@@ -47,6 +48,7 @@ class CalibrationValidator:
             max_counts: Maximum detector counts (saturation level)
             saturation_threshold: Saturation threshold (fraction of max_counts)
             min_snr: Minimum acceptable SNR
+
         """
         self.min_signal = min_signal
         self.max_counts = max_counts
@@ -57,8 +59,8 @@ class CalibrationValidator:
     def validate_spectrum(
         self,
         spectrum: np.ndarray,
-        channel: str = 'unknown'
-    ) -> List[ValidationResult]:
+        channel: str = "unknown",
+    ) -> list[ValidationResult]:
         """Validate a single spectrum.
 
         Args:
@@ -67,25 +69,30 @@ class CalibrationValidator:
 
         Returns:
             List of validation results
+
         """
         results = []
 
         # Check if spectrum is empty
         if len(spectrum) == 0:
-            results.append(ValidationResult(
-                passed=False,
-                message=f"Channel {channel}: Empty spectrum",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message=f"Channel {channel}: Empty spectrum",
+                    severity="error",
+                ),
+            )
             return results
 
         # Check for non-finite values
         if not np.isfinite(spectrum).all():
-            results.append(ValidationResult(
-                passed=False,
-                message=f"Channel {channel}: Contains NaN or Inf values",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message=f"Channel {channel}: Contains NaN or Inf values",
+                    severity="error",
+                ),
+            )
             return results
 
         # Check signal strength
@@ -101,23 +108,25 @@ class CalibrationValidator:
 
         # Check for all zeros
         if np.count_nonzero(spectrum) == 0:
-            results.append(ValidationResult(
-                passed=False,
-                message=f"Channel {channel}: All zeros (no signal)",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message=f"Channel {channel}: All zeros (no signal)",
+                    severity="error",
+                ),
+            )
 
         return results
 
     def validate_calibration_set(
         self,
-        s_pol_ref: Dict[str, np.ndarray],
+        s_pol_ref: dict[str, np.ndarray],
         wavelengths: np.ndarray,
-        p_mode_intensities: Dict[str, int],
-        s_mode_intensities: Dict[str, int],
+        p_mode_intensities: dict[str, int],
+        s_mode_intensities: dict[str, int],
         integration_time_s: float,
-        integration_time_p: float
-    ) -> Tuple[bool, List[ValidationResult]]:
+        integration_time_p: float,
+    ) -> tuple[bool, list[ValidationResult]]:
         """Validate complete calibration dataset.
 
         Args:
@@ -130,53 +139,64 @@ class CalibrationValidator:
 
         Returns:
             Tuple of (all_passed, list of validation results)
+
         """
         results = []
 
         # Validate channel consistency
-        expected_channels = {'a', 'b', 'c', 'd'}
+        expected_channels = {"a", "b", "c", "d"}
         ref_channels = set(s_pol_ref.keys())
         p_led_channels = set(p_mode_intensities.keys())
         s_led_channels = set(s_mode_intensities.keys())
 
         if ref_channels != expected_channels:
-            results.append(ValidationResult(
-                passed=False,
-                message=f"Missing reference channels: {expected_channels - ref_channels}",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message=f"Missing reference channels: {expected_channels - ref_channels}",
+                    severity="error",
+                ),
+            )
 
         if p_led_channels != expected_channels:
-            results.append(ValidationResult(
-                passed=False,
-                message=f"Missing P-mode LED values: {expected_channels - p_led_channels}",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message=f"Missing P-mode LED values: {expected_channels - p_led_channels}",
+                    severity="error",
+                ),
+            )
 
         if s_led_channels != expected_channels:
-            results.append(ValidationResult(
-                passed=False,
-                message=f"Missing S-mode LED values: {expected_channels - s_led_channels}",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message=f"Missing S-mode LED values: {expected_channels - s_led_channels}",
+                    severity="error",
+                ),
+            )
 
         # Validate wavelengths
         if len(wavelengths) == 0:
-            results.append(ValidationResult(
-                passed=False,
-                message="Empty wavelength array",
-                severity='error'
-            ))
+            results.append(
+                ValidationResult(
+                    passed=False,
+                    message="Empty wavelength array",
+                    severity="error",
+                ),
+            )
 
         # Validate each spectrum
         for channel, spectrum in s_pol_ref.items():
             # Check length consistency
             if len(spectrum) != len(wavelengths):
-                results.append(ValidationResult(
-                    passed=False,
-                    message=f"Channel {channel}: Length mismatch ({len(spectrum)} vs {len(wavelengths)} wavelengths)",
-                    severity='error'
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=False,
+                        message=f"Channel {channel}: Length mismatch ({len(spectrum)} vs {len(wavelengths)} wavelengths)",
+                        severity="error",
+                    ),
+                )
 
             # Validate spectrum quality
             results.extend(self.validate_spectrum(spectrum, channel))
@@ -184,47 +204,60 @@ class CalibrationValidator:
         # Validate LED intensities
         for channel in expected_channels:
             if channel in p_mode_intensities:
-                results.append(self._check_led_intensity(
-                    p_mode_intensities[channel], channel, 'P-mode'
-                ))
+                results.append(
+                    self._check_led_intensity(
+                        p_mode_intensities[channel],
+                        channel,
+                        "P-mode",
+                    ),
+                )
             if channel in s_mode_intensities:
-                results.append(self._check_led_intensity(
-                    s_mode_intensities[channel], channel, 'S-mode'
-                ))
+                results.append(
+                    self._check_led_intensity(
+                        s_mode_intensities[channel],
+                        channel,
+                        "S-mode",
+                    ),
+                )
 
         # Validate integration times
-        results.extend(self._check_integration_times(integration_time_s, integration_time_p))
+        results.extend(
+            self._check_integration_times(integration_time_s, integration_time_p),
+        )
 
         # Overall pass/fail
-        all_passed = all(r.passed or r.severity == 'warning' for r in results)
+        all_passed = all(r.passed or r.severity == "warning" for r in results)
 
         return all_passed, results
 
-    def _check_signal_strength(self, mean_signal: float, channel: str) -> ValidationResult:
+    def _check_signal_strength(
+        self,
+        mean_signal: float,
+        channel: str,
+    ) -> ValidationResult:
         """Check if signal strength is adequate."""
         if mean_signal < self.min_signal:
             return ValidationResult(
                 passed=False,
                 message=f"Channel {channel}: Signal too low ({mean_signal:.0f} < {self.min_signal:.0f} counts)",
-                severity='error',
+                severity="error",
                 value=mean_signal,
-                threshold=self.min_signal
+                threshold=self.min_signal,
             )
-        elif mean_signal < self.min_signal * 1.5:
+        if mean_signal < self.min_signal * 1.5:
             return ValidationResult(
                 passed=True,
                 message=f"Channel {channel}: Signal marginal ({mean_signal:.0f} counts)",
-                severity='warning',
+                severity="warning",
                 value=mean_signal,
-                threshold=self.min_signal
+                threshold=self.min_signal,
             )
-        else:
-            return ValidationResult(
-                passed=True,
-                message=f"Channel {channel}: Signal strength good ({mean_signal:.0f} counts)",
-                severity='info',
-                value=mean_signal
-            )
+        return ValidationResult(
+            passed=True,
+            message=f"Channel {channel}: Signal strength good ({mean_signal:.0f} counts)",
+            severity="info",
+            value=mean_signal,
+        )
 
     def _check_saturation(self, spectrum: np.ndarray, channel: str) -> ValidationResult:
         """Check for saturation."""
@@ -235,25 +268,24 @@ class CalibrationValidator:
             return ValidationResult(
                 passed=False,
                 message=f"Channel {channel}: Saturated ({saturation_percent:.1f}% of pixels)",
-                severity='error',
+                severity="error",
                 value=saturation_percent,
-                threshold=5.0
+                threshold=5.0,
             )
-        elif saturation_percent > 1.0:
+        if saturation_percent > 1.0:
             return ValidationResult(
                 passed=True,
                 message=f"Channel {channel}: Slight saturation ({saturation_percent:.1f}% of pixels)",
-                severity='warning',
+                severity="warning",
                 value=saturation_percent,
-                threshold=1.0
+                threshold=1.0,
             )
-        else:
-            return ValidationResult(
-                passed=True,
-                message=f"Channel {channel}: No saturation",
-                severity='info',
-                value=saturation_percent
-            )
+        return ValidationResult(
+            passed=True,
+            message=f"Channel {channel}: No saturation",
+            severity="info",
+            value=saturation_percent,
+        )
 
     def _check_snr(self, snr: float, channel: str) -> ValidationResult:
         """Check signal-to-noise ratio."""
@@ -261,63 +293,66 @@ class CalibrationValidator:
             return ValidationResult(
                 passed=False,
                 message=f"Channel {channel}: SNR too low ({snr:.1f} < {self.min_snr:.1f})",
-                severity='error',
+                severity="error",
                 value=snr,
-                threshold=self.min_snr
+                threshold=self.min_snr,
             )
-        elif snr < self.min_snr * 2:
+        if snr < self.min_snr * 2:
             return ValidationResult(
                 passed=True,
                 message=f"Channel {channel}: SNR marginal ({snr:.1f})",
-                severity='warning',
+                severity="warning",
                 value=snr,
-                threshold=self.min_snr
+                threshold=self.min_snr,
             )
-        else:
-            return ValidationResult(
-                passed=True,
-                message=f"Channel {channel}: SNR good ({snr:.1f})",
-                severity='info',
-                value=snr
-            )
+        return ValidationResult(
+            passed=True,
+            message=f"Channel {channel}: SNR good ({snr:.1f})",
+            severity="info",
+            value=snr,
+        )
 
-    def _check_led_intensity(self, intensity: int, channel: str, mode: str) -> ValidationResult:
+    def _check_led_intensity(
+        self,
+        intensity: int,
+        channel: str,
+        mode: str,
+    ) -> ValidationResult:
         """Check LED intensity validity."""
         if not (0 <= intensity <= 255):
             return ValidationResult(
                 passed=False,
                 message=f"Channel {channel} {mode}: Invalid LED intensity ({intensity})",
-                severity='error',
+                severity="error",
                 value=float(intensity),
-                threshold=255.0
+                threshold=255.0,
             )
-        elif intensity == 0:
+        if intensity == 0:
             return ValidationResult(
                 passed=False,
                 message=f"Channel {channel} {mode}: LED off",
-                severity='error',
-                value=float(intensity)
+                severity="error",
+                value=float(intensity),
             )
-        elif intensity < 20:
+        if intensity < 20:
             return ValidationResult(
                 passed=True,
                 message=f"Channel {channel} {mode}: LED very dim ({intensity}/255)",
-                severity='warning',
-                value=float(intensity)
+                severity="warning",
+                value=float(intensity),
             )
-        else:
-            return ValidationResult(
-                passed=True,
-                message=f"Channel {channel} {mode}: LED intensity OK ({intensity}/255)",
-                severity='info',
-                value=float(intensity)
-            )
+        return ValidationResult(
+            passed=True,
+            message=f"Channel {channel} {mode}: LED intensity OK ({intensity}/255)",
+            severity="info",
+            value=float(intensity),
+        )
 
     def _check_integration_times(
         self,
         integration_time_s: float,
-        integration_time_p: float
-    ) -> List[ValidationResult]:
+        integration_time_p: float,
+    ) -> list[ValidationResult]:
         """Check integration time validity."""
         results = []
 
@@ -325,29 +360,38 @@ class CalibrationValidator:
         min_time = 3.0
         max_time = 10000.0
 
-        for time, mode in [(integration_time_s, 'S-mode'), (integration_time_p, 'P-mode')]:
+        for time, mode in [
+            (integration_time_s, "S-mode"),
+            (integration_time_p, "P-mode"),
+        ]:
             if not (min_time <= time <= max_time):
-                results.append(ValidationResult(
-                    passed=False,
-                    message=f"{mode}: Integration time out of range ({time:.1f}ms)",
-                    severity='error',
-                    value=time,
-                    threshold=max_time
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=False,
+                        message=f"{mode}: Integration time out of range ({time:.1f}ms)",
+                        severity="error",
+                        value=time,
+                        threshold=max_time,
+                    ),
+                )
             elif time < 10.0:
-                results.append(ValidationResult(
-                    passed=True,
-                    message=f"{mode}: Integration time very short ({time:.1f}ms)",
-                    severity='warning',
-                    value=time
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=True,
+                        message=f"{mode}: Integration time very short ({time:.1f}ms)",
+                        severity="warning",
+                        value=time,
+                    ),
+                )
             else:
-                results.append(ValidationResult(
-                    passed=True,
-                    message=f"{mode}: Integration time OK ({time:.1f}ms)",
-                    severity='info',
-                    value=time
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=True,
+                        message=f"{mode}: Integration time OK ({time:.1f}ms)",
+                        severity="info",
+                        value=time,
+                    ),
+                )
 
         return results
 
@@ -360,11 +404,11 @@ class CalibrationValidator:
         std = np.std(spectrum)
 
         if std == 0:
-            return float('inf')
+            return float("inf")
 
         return float(mean / std)
 
-    def format_validation_report(self, results: List[ValidationResult]) -> str:
+    def format_validation_report(self, results: list[ValidationResult]) -> str:
         """Format validation results as a text report.
 
         Args:
@@ -372,6 +416,7 @@ class CalibrationValidator:
 
         Returns:
             Formatted text report
+
         """
         report_lines = []
         report_lines.append("=" * 80)
@@ -379,9 +424,9 @@ class CalibrationValidator:
         report_lines.append("=" * 80)
 
         # Group by severity
-        errors = [r for r in results if r.severity == 'error']
-        warnings = [r for r in results if r.severity == 'warning']
-        info = [r for r in results if r.severity == 'info']
+        errors = [r for r in results if r.severity == "error"]
+        warnings = [r for r in results if r.severity == "warning"]
+        info = [r for r in results if r.severity == "info"]
 
         if errors:
             report_lines.append("\n❌ ERRORS:")
@@ -403,7 +448,9 @@ class CalibrationValidator:
         passed = len(errors) == 0
         status = "✅ PASSED" if passed else "❌ FAILED"
         report_lines.append(f"VALIDATION: {status}")
-        report_lines.append(f"  Errors: {len(errors)}, Warnings: {len(warnings)}, Info: {len(info)}")
+        report_lines.append(
+            f"  Errors: {len(errors)}, Warnings: {len(warnings)}, Info: {len(info)}",
+        )
         report_lines.append("=" * 80)
 
         return "\n".join(report_lines)

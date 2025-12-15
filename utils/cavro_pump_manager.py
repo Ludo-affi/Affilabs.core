@@ -456,7 +456,7 @@ class CavroPumpManager(QObject):
         # Validate position
         if not 0 <= position_steps <= STEPS_PER_STROKE:
             logger.error(
-                f"Invalid position: {position_steps} (must be 0-{STEPS_PER_STROKE})"
+                f"Invalid position: {position_steps} (must be 0-{STEPS_PER_STROKE})",
             )
             return False
 
@@ -677,7 +677,8 @@ class CavroPumpManager(QObject):
             )
             pump_state.is_running = True
             self.pump_state_changed.emit(
-                address, f"Running at {rate_ml_per_min} ml/min"
+                address,
+                f"Running at {rate_ml_per_min} ml/min",
             )
             logger.info(f"Pump {address:#x} flow started: {rate_ml_per_min} ml/min")
 
@@ -736,7 +737,7 @@ class CavroPumpManager(QObject):
         if result:
             self.pumps[address].flow_rate_ml_per_min = rate_ml_per_min
             logger.debug(
-                f"Pump {address:#x} flow rate changed to {rate_ml_per_min} ml/min"
+                f"Pump {address:#x} flow rate changed to {rate_ml_per_min} ml/min",
             )
 
         return result is not None
@@ -821,7 +822,7 @@ class CavroPumpManager(QObject):
                             else "UNKNOWN"
                         )
                         logger.warning(
-                            f"Pump {address:#x} error: {error_name} ({error_code:#x})"
+                            f"Pump {address:#x} error: {error_name} ({error_code:#x})",
                         )
                         self.error_occurred.emit(address, error_name)
                 return error_code
@@ -1108,7 +1109,8 @@ class CavroPumpManager(QObject):
                 # Fast flush burst
                 fast_rate = FAST_FLUSH_RATE / 60.0
                 self._send_command(
-                    PumpAddress.BROADCAST, f"V{fast_rate:.3f},1R".encode()
+                    PumpAddress.BROADCAST,
+                    f"V{fast_rate:.3f},1R".encode(),
                 )
                 await asyncio.sleep(FAST_FLUSH_DURATION)
 

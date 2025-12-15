@@ -1,5 +1,4 @@
-"""
-Peak Consensus Algorithm for SPR Peak Detection
+"""Peak Consensus Algorithm for SPR Peak Detection
 
 Combines multiple complementary peak-finding methods to reduce noise and bias.
 Uses continuous methods (centroid + parabolic) to avoid binary/stepped signals.
@@ -12,9 +11,9 @@ Key Principle: Each method has different sensitivities to peak characteristics:
 Avoids discrete methods (polynomial derivative) that cause stepped/binary signals.
 """
 
-import numpy as np
-from typing import Tuple, Dict
 import logging
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,7 @@ def find_peak_parabolic(
 
     Returns:
         Peak wavelength in nm (sub-pixel via parabolic fit)
+
     """
     try:
         # Extract search region
@@ -51,28 +51,35 @@ def find_peak_parabolic(
 
         # Parabolic interpolation (if not at edge)
         if 0 < min_idx < len(spec_region) - 1:
-            x = wl_region[min_idx-1:min_idx+2]
-            y = spec_region[min_idx-1:min_idx+2]
+            x = wl_region[min_idx - 1 : min_idx + 2]
+            y = spec_region[min_idx - 1 : min_idx + 2]
 
             # Analytical parabolic vertex: y = Ax² + Bx + C, minimum at x = -B/(2A)
             denom = (x[0] - x[1]) * (x[0] - x[2]) * (x[1] - x[2])
             if abs(denom) < 1e-10:
                 return wl_region[min_idx]  # Degenerate case
 
-            A = (x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])) / denom
-            B = (x[2]**2 * (y[0] - y[1]) + x[1]**2 * (y[2] - y[0]) + x[0]**2 * (y[1] - y[2])) / denom
+            A = (
+                x[2] * (y[1] - y[0]) + x[1] * (y[0] - y[2]) + x[0] * (y[2] - y[1])
+            ) / denom
+            B = (
+                x[2] ** 2 * (y[0] - y[1])
+                + x[1] ** 2 * (y[2] - y[0])
+                + x[0] ** 2 * (y[1] - y[2])
+            ) / denom
 
             peak_wl = -B / (2 * A) if A > 0 else wl_region[min_idx]
 
             # Sanity check: result should be near minimum
             if abs(peak_wl - wl_region[min_idx]) > 2.0:  # More than 2nm away
-                logger.debug(f"Parabolic fit suspicious, using discrete min: {peak_wl:.3f} vs {wl_region[min_idx]:.3f}")
+                logger.debug(
+                    f"Parabolic fit suspicious, using discrete min: {peak_wl:.3f} vs {wl_region[min_idx]:.3f}",
+                )
                 return wl_region[min_idx]
 
             return float(peak_wl)
-        else:
-            # Edge case: use discrete minimum
-            return wl_region[min_idx]
+        # Edge case: use discrete minimum
+        return wl_region[min_idx]
 
     except Exception as e:
         logger.error(f"Parabolic method failed: {e}")
@@ -84,7 +91,7 @@ def find_peak_centroid_adaptive(
     spectrum: np.ndarray,
     wavelengths: np.ndarray,
     search_range: tuple[float, float] = (600, 720),
-) -> Tuple[float, Dict]:
+) -> tuple[float, dict]:
     """Find SPR peak using adaptive centroid with variable threshold.
 
     Adapts threshold based on peak characteristics to maintain consistent
@@ -98,6 +105,7 @@ def find_peak_centroid_adaptive(
     Returns:
         peak_wavelength: Centroid position (nm)
         diagnostics: Dict with threshold, n_points, etc.
+
     """
     try:
         # Extract search region
@@ -107,7 +115,9 @@ def find_peak_centroid_adaptive(
 
         if len(wl_region) < 3:
             logger.warning(f"Adaptive centroid: Insufficient points: {len(wl_region)}")
-            return (wl_region[np.argmin(spec_region)] if len(wl_region) > 0 else np.nan), {}
+            return (
+                wl_region[np.argmin(spec_region)] if len(wl_region) > 0 else np.nan
+            ), {}
 
         # Invert spectrum: SPR dip → peak
         inverted = 100.0 - spec_region
@@ -154,7 +164,7 @@ def find_peak_centroid_adaptive(
 
         logger.debug(
             f"Adaptive centroid: λ={centroid:.3f}nm, "
-            f"threshold={threshold:.2f}, n_points={diagnostics['n_points']}"
+            f"threshold={threshold:.2f}, n_points={diagnostics['n_points']}",
         )
 
         return float(centroid), diagnostics
@@ -169,8 +179,8 @@ def find_peak_consensus(
     spectrum: np.ndarray,
     wavelengths: np.ndarray,
     search_range: tuple[float, float] = (600, 720),
-    method: str = 'weighted_average',
-) -> Tuple[float, Dict]:
+    method: str = "weighted_average",
+) -> tuple[float, dict]:
     """Find SPR peak using consensus of multiple methods.
 
     Combines centroid (adaptive) + parabolic methods to reduce systematic bias.
@@ -190,16 +200,21 @@ def find_peak_consensus(
     Returns:
         consensus_peak: Combined peak position (nm)
         diagnostics: Dict with individual results + agreement metrics
+
     """
     try:
         # Method 1: Adaptive centroid
         peak_centroid, centroid_diag = find_peak_centroid_adaptive(
-            spectrum, wavelengths, search_range
+            spectrum,
+            wavelengths,
+            search_range,
         )
 
         # Method 2: Parabolic interpolation
         peak_parabolic = find_peak_parabolic(
-            spectrum, wavelengths, search_range
+            spectrum,
+            wavelengths,
+            search_range,
         )
 
         # Check for NaN results
@@ -207,31 +222,34 @@ def find_peak_consensus(
             logger.warning("Consensus: One method returned NaN, using fallback")
             if not np.isnan(peak_centroid):
                 return peak_centroid, {"method": "centroid_fallback"}
-            elif not np.isnan(peak_parabolic):
+            if not np.isnan(peak_parabolic):
                 return peak_parabolic, {"method": "parabolic_fallback"}
-            else:
-                # Both failed, use simple minimum
-                mask = (wavelengths >= search_range[0]) & (wavelengths <= search_range[1])
-                return wavelengths[mask][np.argmin(spectrum[mask])], {"method": "argmin_fallback"}
+            # Both failed, use simple minimum
+            mask = (wavelengths >= search_range[0]) & (wavelengths <= search_range[1])
+            return wavelengths[mask][np.argmin(spectrum[mask])], {
+                "method": "argmin_fallback",
+            }
 
         # Calculate agreement
         agreement = abs(peak_centroid - peak_parabolic)
 
         # Consensus calculation
-        if method == 'weighted_average':
+        if method == "weighted_average":
             # Centroid gets more weight (more robust for broad peaks)
             consensus_peak = 0.6 * peak_centroid + 0.4 * peak_parabolic
 
-        elif method == 'median':
+        elif method == "median":
             # Median of two values (robust but less precise)
             consensus_peak = np.median([peak_centroid, peak_parabolic])
 
-        elif method == 'centroid_only':
+        elif method == "centroid_only":
             # Fallback to centroid only (ignore parabolic)
             consensus_peak = peak_centroid
 
         else:
-            logger.warning(f"Unknown consensus method: {method}, using weighted_average")
+            logger.warning(
+                f"Unknown consensus method: {method}, using weighted_average",
+            )
             consensus_peak = 0.6 * peak_centroid + 0.4 * peak_parabolic
 
         # Diagnostics
@@ -248,7 +266,7 @@ def find_peak_consensus(
         logger.debug(
             f"Consensus: λ={consensus_peak:.3f}nm "
             f"(centroid={peak_centroid:.3f}, parabolic={peak_parabolic:.3f}, "
-            f"Δ={agreement:.3f}nm)"
+            f"Δ={agreement:.3f}nm)",
         )
 
         return float(consensus_peak), diagnostics
@@ -257,4 +275,7 @@ def find_peak_consensus(
         logger.error(f"Consensus method failed: {e}")
         # Final fallback: simple minimum
         mask = (wavelengths >= search_range[0]) & (wavelengths <= search_range[1])
-        return wavelengths[mask][np.argmin(spectrum[mask])], {"error": str(e), "fallback": True}
+        return wavelengths[mask][np.argmin(spectrum[mask])], {
+            "error": str(e),
+            "fallback": True,
+        }

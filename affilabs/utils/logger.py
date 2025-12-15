@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 from logging import Formatter
+
 from settings import ROOT_DIR
 
 # Save logfile in generated-files directory
@@ -79,10 +80,16 @@ if ENABLE_EMOJI_STRIP:
                 self._closed = True
 
     sys.stdout = SafeWriter(
-        sys.stdout.buffer, encoding="utf-8", errors="ignore", line_buffering=True,
+        sys.stdout.buffer,
+        encoding="utf-8",
+        errors="ignore",
+        line_buffering=True,
     )
     sys.stderr = SafeWriter(
-        sys.stderr.buffer, encoding="utf-8", errors="ignore", line_buffering=True,
+        sys.stderr.buffer,
+        encoding="utf-8",
+        errors="ignore",
+        line_buffering=True,
     )
 
 

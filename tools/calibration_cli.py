@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Headless Calibration CLI
+"""Headless Calibration CLI
 
 Runs the 6-step calibration without the Qt UI.
 Useful to reproduce crashes (e.g., during S↔P movements) and capture logs.
@@ -15,18 +14,18 @@ Options:
   --log              Write detailed log to logs/calibration_cli_YYYYmmdd_HHMMSS.log
 """
 
+import argparse
+import logging
 import os
 import sys
 import time
-import argparse
-import logging
 from datetime import datetime
 
 
 def _setup_paths():
     # Ensure `src` is importable when running the script directly
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    src_path = os.path.join(repo_root, 'src')
+    src_path = os.path.join(repo_root, "src")
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
     return repo_root
@@ -43,12 +42,14 @@ def _setup_logging(enable_file: bool, verbose: bool) -> logging.Logger:
 
     # Add file handler if requested
     if enable_file:
-        os.makedirs('logs', exist_ok=True)
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filepath = os.path.join('logs', f'calibration_cli_{ts}.log')
-        fh = logging.FileHandler(filepath, encoding='utf-8')
+        os.makedirs("logs", exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join("logs", f"calibration_cli_{ts}.log")
+        fh = logging.FileHandler(filepath, encoding="utf-8")
         fh.setLevel(logging.DEBUG if verbose else logging.INFO)
-        fh.setFormatter(logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s'))
+        fh.setFormatter(
+            logging.Formatter("%(asctime)s :: %(levelname)s :: %(message)s"),
+        )
         logger.addHandler(fh)
         logger.info(f"[CLI] File logging → {filepath}")
     return logger
@@ -95,6 +96,7 @@ def _progress(msg: str, pct: int = 0):
     # Simple console-friendly progress callback
     try:
         from utils.logger import logger
+
         logger.info(f"[CAL] {msg} ({pct}%)")
     except Exception:
         print(f"[CAL] {msg} ({pct}%)")
@@ -104,20 +106,33 @@ def main(argv=None):
     _ = _setup_paths()
 
     ap = argparse.ArgumentParser(description="Run LED calibration headlessly (no UI)")
-    ap.add_argument('--skip-afterglow', action='store_true', help='Skip afterglow steps if supported')
-    ap.add_argument('--iterations', type=int, default=None, help='Override convergence max iterations (if supported)')
-    ap.add_argument('--verbose', action='store_true', help='Enable extra debug logs')
-    ap.add_argument('--log', action='store_true', help='Write detailed log to logs/ folder')
+    ap.add_argument(
+        "--skip-afterglow",
+        action="store_true",
+        help="Skip afterglow steps if supported",
+    )
+    ap.add_argument(
+        "--iterations",
+        type=int,
+        default=None,
+        help="Override convergence max iterations (if supported)",
+    )
+    ap.add_argument("--verbose", action="store_true", help="Enable extra debug logs")
+    ap.add_argument(
+        "--log",
+        action="store_true",
+        help="Write detailed log to logs/ folder",
+    )
     args = ap.parse_args(argv)
 
     logger = _setup_logging(enable_file=args.log, verbose=args.verbose)
 
     # Ensure Qt doesn’t interfere
-    os.environ.setdefault('QT_LOGGING_RULES', 'qt.*=false;*.debug=false')
-    os.environ.setdefault('QT_FATAL_WARNINGS', '0')
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.*=false;*.debug=false")
+    os.environ.setdefault("QT_FATAL_WARNINGS", "0")
 
     # Headless marker for any shared code paths
-    os.environ['CALIBRATION_HEADLESS'] = '1'
+    os.environ["CALIBRATION_HEADLESS"] = "1"
 
     # Connect hardware
     hm = _connect_hardware(logger)
@@ -125,7 +140,8 @@ def main(argv=None):
 
     # Light device configuration
     from utils.device_configuration import DeviceConfiguration
-    device_serial = getattr(usb, 'serial_number', None)
+
+    device_serial = getattr(usb, "serial_number", None)
     device_config = DeviceConfiguration(device_serial=device_serial)
     pre_led_delay_ms = device_config.get_pre_led_delay_ms()
     post_led_delay_ms = device_config.get_post_led_delay_ms()
@@ -153,29 +169,33 @@ def main(argv=None):
         logger.exception("Calibration routine crashed")
         sys.exit(2)
 
-    if not cal_result or not getattr(cal_result, 'success', False):
-        err = getattr(cal_result, 'error', None) or getattr(cal_result, 'error_message', None) or 'Calibration failed'
+    if not cal_result or not getattr(cal_result, "success", False):
+        err = (
+            getattr(cal_result, "error", None)
+            or getattr(cal_result, "error_message", None)
+            or "Calibration failed"
+        )
         logger.error(f"❌ Calibration failed: {err}")
         sys.exit(1)
 
     try:
-        if hasattr(cal_result, 'validate') and not cal_result.validate():
+        if hasattr(cal_result, "validate") and not cal_result.validate():
             logger.error("❌ Calibration data validation failed")
             sys.exit(3)
     except Exception as e:
         logger.warning(f"Validation raised: {e}")
 
     # Minimal summary output
-    chans = cal_result.get_channels() if hasattr(cal_result, 'get_channels') else []
+    chans = cal_result.get_channels() if hasattr(cal_result, "get_channels") else []
     logger.info("✅ Calibration SUCCESS")
     logger.info(f"   Channels: {chans}")
-    if hasattr(cal_result, 'shared_integration_ms'):
+    if hasattr(cal_result, "shared_integration_ms"):
         logger.info(f"   Shared integration: {cal_result.shared_integration_ms} ms")
-    if hasattr(cal_result, 'leds_calibrated'):
+    if hasattr(cal_result, "leds_calibrated"):
         logger.info(f"   LED intensities: {cal_result.leds_calibrated}")
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

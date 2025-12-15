@@ -1,5 +1,4 @@
-"""
-Visual Guide: Channel Selection & Flagging Workflow
+"""Visual Guide: Channel Selection & Flagging Workflow
 
 This demonstrates the complete user interaction flow for selecting channels
 and adding/removing flags on the Cycle of Interest graph.

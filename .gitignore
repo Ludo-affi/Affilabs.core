@@ -40,7 +40,9 @@ tools/**/__pycache__/
 tests/**/__pycache__/
 **/Affilabs.core beta/__pycache__/
 
-# Build artifacts (but allow build/*.spec files)
+# Build artifacts (recursive)
+# Ignore all nested build outputs but keep top-level spec/docs
+build/**
 build/*.exe
 build/*.app
 build/*.dmg
@@ -49,6 +51,7 @@ dist/
 *.egg-info/
 .installed.cfg
 *.egg
+build_artifacts/
 
 # Allow build spec files
 !build/*.spec

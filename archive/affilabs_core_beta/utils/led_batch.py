@@ -6,63 +6,68 @@ This makes it easy to optimize LED operations when multiple parameters need to b
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
 from utils.hal.interfaces import LEDCommand, LEDController
 from utils.logger import logger
 
 
 class LEDBatchBuilder:
     """Builder pattern for constructing batch LED commands"""
-    
+
     def __init__(self):
-        self._commands: List[LEDCommand] = []
-    
-    def set_mode(self, mode: str) -> 'LEDBatchBuilder':
+        self._commands: list[LEDCommand] = []
+
+    def set_mode(self, mode: str) -> LEDBatchBuilder:
         """Add mode change command to batch
-        
+
         Args:
             mode: 's' for S-polarized, 'p' for P-polarized
+
         """
-        self._commands.append(LEDCommand('mode', mode=mode))
+        self._commands.append(LEDCommand("mode", mode=mode))
         return self
-    
-    def set_intensity(self, channel: str, intensity: int) -> 'LEDBatchBuilder':
+
+    def set_intensity(self, channel: str, intensity: int) -> LEDBatchBuilder:
         """Add intensity change command to batch
-        
+
         Args:
             channel: 'a', 'b', 'c', or 'd'
             intensity: 0-255
+
         """
-        self._commands.append(LEDCommand('intensity', channel=channel, intensity=intensity))
+        self._commands.append(
+            LEDCommand("intensity", channel=channel, intensity=intensity),
+        )
         return self
-    
-    def turn_on(self, channel: str) -> 'LEDBatchBuilder':
+
+    def turn_on(self, channel: str) -> LEDBatchBuilder:
         """Add turn on command to batch
-        
+
         Args:
             channel: 'a', 'b', 'c', or 'd'
+
         """
-        self._commands.append(LEDCommand('on', channel=channel))
+        self._commands.append(LEDCommand("on", channel=channel))
         return self
-    
-    def turn_off_all(self) -> 'LEDBatchBuilder':
+
+    def turn_off_all(self) -> LEDBatchBuilder:
         """Add turn off all channels command to batch"""
-        self._commands.append(LEDCommand('off'))
+        self._commands.append(LEDCommand("off"))
         return self
-    
+
     def execute(self, led_controller: LEDController) -> bool:
         """Execute all batched commands
-        
+
         Args:
             led_controller: LED controller HAL instance
-            
+
         Returns:
             True if batch execution successful
+
         """
         if not self._commands:
             logger.warning("No commands in batch to execute")
             return True
-        
+
         try:
             result = led_controller.execute_batch(self._commands)
             self._commands.clear()  # Clear after execution
@@ -71,48 +76,57 @@ class LEDBatchBuilder:
             logger.error(f"Batch execution failed: {e}")
             self._commands.clear()
             return False
-    
-    def clear(self) -> 'LEDBatchBuilder':
+
+    def clear(self) -> LEDBatchBuilder:
         """Clear all pending commands"""
         self._commands.clear()
         return self
-    
+
     @property
-    def commands(self) -> List[LEDCommand]:
+    def commands(self) -> list[LEDCommand]:
         """Get current list of commands"""
         return self._commands.copy()
 
 
-def create_calibration_batch(mode: str, intensities: Dict[str, int]) -> List[LEDCommand]:
+def create_calibration_batch(
+    mode: str,
+    intensities: dict[str, int],
+) -> list[LEDCommand]:
     """Create a batch for calibration setup (mode + all intensities)
-    
+
     Args:
         mode: 's' or 'p'
         intensities: Dict mapping channel -> intensity (e.g., {'a': 180, 'b': 200, 'c': 150, 'd': 100})
-    
+
     Returns:
         List of LED commands
+
     """
-    commands = [LEDCommand('mode', mode=mode)]
+    commands = [LEDCommand("mode", mode=mode)]
     for ch, intensity in intensities.items():
-        commands.append(LEDCommand('intensity', channel=ch, intensity=intensity))
+        commands.append(LEDCommand("intensity", channel=ch, intensity=intensity))
     return commands
 
 
-def create_measurement_batch(mode: str, channel: str, intensity: int) -> List[LEDCommand]:
+def create_measurement_batch(
+    mode: str,
+    channel: str,
+    intensity: int,
+) -> list[LEDCommand]:
     """Create a batch for single channel measurement (mode + intensity)
-    
+
     Args:
         mode: 's' or 'p'
         channel: 'a', 'b', 'c', or 'd'
         intensity: 0-255
-    
+
     Returns:
         List of LED commands
+
     """
     return [
-        LEDCommand('mode', mode=mode),
-        LEDCommand('intensity', channel=channel, intensity=intensity)
+        LEDCommand("mode", mode=mode),
+        LEDCommand("intensity", channel=channel, intensity=intensity),
     ]
 
 

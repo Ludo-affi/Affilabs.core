@@ -20,7 +20,7 @@
     "max_intensity_counts": 65535,
     "saturation_counts": 65535,
     "min_integration_time_ms": 1.0,
-    "max_integration_time_ms": 200.0,
+    "max_integration_time_ms": 60.0,
     "recommended_integration_time_ms": 10.0,
     "integration_step_ms": 2.5
   },

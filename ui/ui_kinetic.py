@@ -72,7 +72,7 @@ class Ui_Kinetic:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.flush1 = QPushButton(self.CH1)
         self.flush1.setObjectName("flush1")
@@ -91,7 +91,7 @@ class Ui_Kinetic:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.run_rate_ch1 = QComboBox(self.CH1)
         self.run_rate_ch1.addItem("")
@@ -206,7 +206,7 @@ class Ui_Kinetic:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.flush2 = QPushButton(self.CH2)
         self.flush2.setObjectName("flush2")
@@ -225,7 +225,7 @@ class Ui_Kinetic:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
         self.label_16 = QLabel(self.CH2)
         self.label_16.setObjectName("label_16")
@@ -329,45 +329,51 @@ class Ui_Kinetic:
     def retranslateUi(self, Kinetic):
         Kinetic.setWindowTitle(QCoreApplication.translate("Kinetic", "Form", None))
         self.CH1.setTitle(
-            QCoreApplication.translate("Kinetic", "Kinetic Channel 1", None)
+            QCoreApplication.translate("Kinetic", "Kinetic Channel 1", None),
         )
         self.run1.setText(QCoreApplication.translate("Kinetic", "Run", None))
         self.flush1.setText(QCoreApplication.translate("Kinetic", "Flush", None))
         self.run_rate_ch1.setItemText(
-            0, QCoreApplication.translate("Kinetic", "25", None)
+            0,
+            QCoreApplication.translate("Kinetic", "25", None),
         )
         self.run_rate_ch1.setItemText(
-            1, QCoreApplication.translate("Kinetic", "50", None)
+            1,
+            QCoreApplication.translate("Kinetic", "50", None),
         )
         self.run_rate_ch1.setItemText(
-            2, QCoreApplication.translate("Kinetic", "100", None)
+            2,
+            QCoreApplication.translate("Kinetic", "100", None),
         )
         self.run_rate_ch1.setItemText(
-            3, QCoreApplication.translate("Kinetic", "200", None)
+            3,
+            QCoreApplication.translate("Kinetic", "200", None),
         )
 
         self.label.setText("")
         self.status1.setText(QCoreApplication.translate("Kinetic", "<status>", None))
         self.label_15.setText(QCoreApplication.translate("Kinetic", "Status:", None))
         self.label_17.setText(
-            QCoreApplication.translate("Kinetic", "Sample Injection Time:", None)
+            QCoreApplication.translate("Kinetic", "Sample Injection Time:", None),
         )
         self.inject_time_ch1.setText("")
         self.label_18.setText(
             QCoreApplication.translate(
-                "Kinetic", "<html><head/><body><p>s</p></body></html>", None
-            )
+                "Kinetic",
+                "<html><head/><body><p>s</p></body></html>",
+                None,
+            ),
         )
         self.sync_1.setText(
-            QCoreApplication.translate("Kinetic", "Sync\nChannels", None)
+            QCoreApplication.translate("Kinetic", "Sync\nChannels", None),
         )
         self.pump_flow_ch1.setTitle(
-            QCoreApplication.translate("Kinetic", "Buffer Flow ", None)
+            QCoreApplication.translate("Kinetic", "Buffer Flow ", None),
         )
         self.spr_ch1.setText(QCoreApplication.translate("Kinetic", "Channel B", None))
         self.waste_ch1.setText(QCoreApplication.translate("Kinetic", "Channel A", None))
         self.sample_flow_ch1.setTitle(
-            QCoreApplication.translate("Kinetic", "Sample Loop", None)
+            QCoreApplication.translate("Kinetic", "Sample Loop", None),
         )
         self.inject_ch1.setText(QCoreApplication.translate("Kinetic", "Inject", None))
         self.load_ch1.setText(QCoreApplication.translate("Kinetic", "Load", None))
@@ -378,44 +384,50 @@ class Ui_Kinetic:
         self.temp1.setText(QCoreApplication.translate("Kinetic", "##.#", None))
         self.label_11.setText("")
         self.CH2.setTitle(
-            QCoreApplication.translate("Kinetic", "Kinetic Channel 2", None)
+            QCoreApplication.translate("Kinetic", "Kinetic Channel 2", None),
         )
         self.run2.setText(QCoreApplication.translate("Kinetic", "Run", None))
         self.flush2.setText(QCoreApplication.translate("Kinetic", "Flush", None))
         self.label_16.setText(QCoreApplication.translate("Kinetic", "Status:", None))
         self.status2.setText(QCoreApplication.translate("Kinetic", "<status>", None))
         self.label_19.setText(
-            QCoreApplication.translate("Kinetic", "Sample Injection Time:", None)
+            QCoreApplication.translate("Kinetic", "Sample Injection Time:", None),
         )
         self.inject_time_ch2.setText("")
         self.label_20.setText(
             QCoreApplication.translate(
-                "Kinetic", "<html><head/><body><p>s</p></body></html>", None
-            )
+                "Kinetic",
+                "<html><head/><body><p>s</p></body></html>",
+                None,
+            ),
         )
         self.run_rate_ch2.setItemText(
-            0, QCoreApplication.translate("Kinetic", "25", None)
+            0,
+            QCoreApplication.translate("Kinetic", "25", None),
         )
         self.run_rate_ch2.setItemText(
-            1, QCoreApplication.translate("Kinetic", "50", None)
+            1,
+            QCoreApplication.translate("Kinetic", "50", None),
         )
         self.run_rate_ch2.setItemText(
-            2, QCoreApplication.translate("Kinetic", "100", None)
+            2,
+            QCoreApplication.translate("Kinetic", "100", None),
         )
         self.run_rate_ch2.setItemText(
-            3, QCoreApplication.translate("Kinetic", "200", None)
+            3,
+            QCoreApplication.translate("Kinetic", "200", None),
         )
 
         self.sync_2.setText(
-            QCoreApplication.translate("Kinetic", "Sync\nChannels", None)
+            QCoreApplication.translate("Kinetic", "Sync\nChannels", None),
         )
         self.pump_flow_ch2.setTitle(
-            QCoreApplication.translate("Kinetic", "Buffer Flow", None)
+            QCoreApplication.translate("Kinetic", "Buffer Flow", None),
         )
         self.spr_ch2.setText(QCoreApplication.translate("Kinetic", "Channel D", None))
         self.waste_ch2.setText(QCoreApplication.translate("Kinetic", "Channel C", None))
         self.sample_flow_ch2.setTitle(
-            QCoreApplication.translate("Kinetic", "Sample Loop", None)
+            QCoreApplication.translate("Kinetic", "Sample Loop", None),
         )
         self.inject_ch2.setText(QCoreApplication.translate("Kinetic", "Inject", None))
         self.load_ch2.setText(QCoreApplication.translate("Kinetic", "Load", None))

@@ -8,8 +8,8 @@ SIMPLE TEST:
 Run this and OBSERVE the physical LEDs.
 """
 
-import time
 import sys
+import time
 from pathlib import Path
 
 src_path = Path(__file__).parent / "src"
@@ -17,10 +17,11 @@ sys.path.insert(0, str(src_path))
 
 from utils.controller import PicoP4SPR
 
+
 def main():
-    print("="*60)
+    print("=" * 60)
     print("QUICK LED QUERY SIDE EFFECT TEST")
-    print("="*60)
+    print("=" * 60)
 
     ctrl = PicoP4SPR()
     if not ctrl.open():
@@ -52,11 +53,11 @@ def main():
 
     time.sleep(2.0)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     result = input("Did LED A turn ON after query? (y/n): ").strip().lower()
-    print("="*60)
+    print("=" * 60)
 
-    if result == 'y':
+    if result == "y":
         print("\n❌ BUG CONFIRMED:")
         print("   Query command (ia) activates LED")
         print("   Workaround is CORRECT - keep queries disabled")
@@ -70,7 +71,8 @@ def main():
     ctrl.close()
     print("\n✅ Test complete")
 
-    return 0 if result == 'n' else 1
+    return 0 if result == "n" else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

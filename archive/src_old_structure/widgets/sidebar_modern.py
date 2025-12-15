@@ -1,15 +1,17 @@
 """Modern sidebar widget - EXACT copy from ui_prototype.py"""
 
-import sys
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QParallelAnimationGroup
+from PySide6.QtCore import QRegularExpression, Qt
+from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTabWidget, QLabel, QFrame, QToolButton, QScrollArea, QGraphicsDropShadowEffect,
-    QSlider, QSpinBox, QSplitter, QCheckBox, QComboBox, QLineEdit, QRadioButton, QButtonGroup,
-    QTextEdit, QTableWidget, QHeaderView, QTableWidgetItem
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtGui import QIcon, QColor, QFont, QTextCharFormat, QSyntaxHighlighter, QTextDocument
-from PySide6.QtCore import QRegularExpression
 
 
 class CollapsibleSection(QWidget):
@@ -47,7 +49,7 @@ class CollapsibleSection(QWidget):
             "QPushButton:checked {"
             "  background: rgba(0, 0, 0, 0.06);"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
         self.header_btn.clicked.connect(self.toggle)
         main_layout.addWidget(self.header_btn)
@@ -101,7 +103,11 @@ class ChannelTagHighlighter(QSyntaxHighlighter):
         iterator = conc_pattern.globalMatch(text)
         while iterator.hasNext():
             match = iterator.next()
-            self.setFormat(match.capturedStart(), match.capturedLength(), self.conc_format)
+            self.setFormat(
+                match.capturedStart(),
+                match.capturedLength(),
+                self.conc_format,
+            )
 
         # Highlight [A], [B], [C], [D], [ALL] tags without concentration (blue)
         tag_pattern = QRegularExpression(r"\[(A|B|C|D|ALL)\]")
@@ -124,7 +130,7 @@ class ModernSidebar(QWidget):
 
     def _setup_ui(self):
         """Setup the sidebar UI - EXACT COPY from prototype"""
-        if getattr(self, '_ui_setup_done', False):
+        if getattr(self, "_ui_setup_done", False):
             return
         self._ui_setup_done = True
         self.setStyleSheet("background: #F5F5F7;")
@@ -172,7 +178,7 @@ class ModernSidebar(QWidget):
                 "}"
                 "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
                 "  height: 0px;"
-                "}"
+                "}",
             )
 
             tab_content = QWidget()
@@ -190,7 +196,7 @@ class ModernSidebar(QWidget):
                 "background: transparent;"
                 "line-height: 1.2;"
                 "letter-spacing: -0.3px;"
-                "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;",
             )
             tab_layout.addWidget(title)
 
@@ -213,7 +219,7 @@ class ModernSidebar(QWidget):
                     "color: #86868B;"
                     "background: transparent;"
                     "margin-top: 20px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 tab_layout.addWidget(placeholder)
 
@@ -253,7 +259,7 @@ class ModernSidebar(QWidget):
             "QTabBar::tab:hover:!selected {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
         main_layout.addWidget(self.tab_widget, 1)
         main_layout.setSpacing(0)
@@ -271,7 +277,7 @@ class ModernSidebar(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(hw_section)
         tab_layout.addSpacing(8)
@@ -279,10 +285,7 @@ class ModernSidebar(QWidget):
         # Card container for hardware section
         hw_card = QFrame()
         hw_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         hw_card_layout = QVBoxLayout(hw_card)
         hw_card_layout.setContentsMargins(12, 12, 12, 12)
@@ -297,7 +300,7 @@ class ModernSidebar(QWidget):
                 "color: #34C759;"
                 "background: transparent;"
                 "padding: 4px 0px;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             device_label.setVisible(False)
             hw_card_layout.addWidget(device_label)
@@ -311,7 +314,7 @@ class ModernSidebar(QWidget):
             "background: transparent;"
             "padding: 8px 0px;"
             "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         hw_card_layout.addWidget(self.hw_no_devices)
         hw_card_layout.addSpacing(4)
@@ -338,7 +341,7 @@ class ModernSidebar(QWidget):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         hw_card_layout.addWidget(self.scan_btn)
         tab_layout.addWidget(hw_card)
@@ -353,7 +356,7 @@ class ModernSidebar(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(subunit_section)
         tab_layout.addSpacing(8)
@@ -361,10 +364,7 @@ class ModernSidebar(QWidget):
         # Card container for subunits
         subunit_card = QFrame()
         subunit_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         subunit_card_layout = QVBoxLayout(subunit_card)
         subunit_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -387,7 +387,7 @@ class ModernSidebar(QWidget):
                 "font-size: 14px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             subunit_row.addWidget(status_indicator)
 
@@ -398,7 +398,7 @@ class ModernSidebar(QWidget):
                 "color: #1D1D1F;"
                 "background: transparent;"
                 "font-weight: 500;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             subunit_row.addWidget(name_label)
             subunit_row.addStretch()
@@ -409,14 +409,14 @@ class ModernSidebar(QWidget):
                 "font-size: 12px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             subunit_row.addWidget(status_label)
 
             # Store references
             self.subunit_status[subunit_name] = {
-                'indicator': status_indicator,
-                'status_label': status_label
+                "indicator": status_indicator,
+                "status_label": status_label,
             }
 
             # Add to card layout
@@ -431,7 +431,7 @@ class ModernSidebar(QWidget):
                 separator.setStyleSheet(
                     "background: rgba(0, 0, 0, 0.06);"
                     "max-height: 1px;"
-                    "margin: 4px 0px;"
+                    "margin: 4px 0px;",
                 )
                 subunit_card_layout.addWidget(separator)
 
@@ -447,7 +447,7 @@ class ModernSidebar(QWidget):
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(mode_section)
         tab_layout.addSpacing(8)
@@ -455,10 +455,7 @@ class ModernSidebar(QWidget):
         # Card container for operation modes
         mode_card = QFrame()
         mode_card.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.03);"
-            "  border-radius: 8px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
         )
         mode_card_layout = QVBoxLayout(mode_card)
         mode_card_layout.setContentsMargins(12, 10, 12, 10)
@@ -481,7 +478,7 @@ class ModernSidebar(QWidget):
                 "font-size: 14px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             mode_row.addWidget(mode_indicator)
 
@@ -492,7 +489,7 @@ class ModernSidebar(QWidget):
                 "color: #86868B;"
                 "background: transparent;"
                 "font-weight: 500;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             mode_row.addWidget(mode_label)
             mode_row.addStretch()
@@ -503,15 +500,15 @@ class ModernSidebar(QWidget):
                 "font-size: 12px;"
                 "color: #86868B;"
                 "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
             mode_row.addWidget(status_label)
 
             # Store references
             self.operation_modes[mode_name] = {
-                'indicator': mode_indicator,
-                'label': mode_label,
-                'status_label': status_label
+                "indicator": mode_indicator,
+                "label": mode_label,
+                "status_label": status_label,
             }
 
             mode_card_layout.addLayout(mode_row)
@@ -527,7 +524,7 @@ class ModernSidebar(QWidget):
             "color: #1D1D1F;"
             "background: transparent;"
             "margin-top: 8px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(maint_section)
         tab_layout.addSpacing(8)
@@ -550,19 +547,21 @@ class ModernSidebar(QWidget):
             "background: transparent;"
             "margin-top: 12px;"
             "margin-bottom: 8px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(calib_label)
 
         # Description
-        calib_desc = QLabel("Run LED intensity calibration to measure S-pol and P-pol reference spectra:")
+        calib_desc = QLabel(
+            "Run LED intensity calibration to measure S-pol and P-pol reference spectra:",
+        )
         calib_desc.setWordWrap(True)
         calib_desc.setStyleSheet(
             "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "margin-bottom: 12px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(calib_desc)
 
@@ -594,7 +593,7 @@ class ModernSidebar(QWidget):
             "• Measures S-pol reference spectra (high transmission)\n"
             "• Measures P-pol reference spectra (low transmission)\n"
             "• Optimizes LED intensities for all channels\n"
-            "• Takes ~30-60 seconds"
+            "• Takes ~30-60 seconds",
         )
         self.simple_led_calibration_btn.setStyleSheet(button_style)
         tab_layout.addWidget(self.simple_led_calibration_btn)
@@ -606,7 +605,7 @@ class ModernSidebar(QWidget):
             "• Measures S-pol reference spectra\n"
             "• Measures P-pol reference spectra\n"
             "• Optimizes LED intensities\n"
-            "• Takes ~30-60 seconds"
+            "• Takes ~30-60 seconds",
         )
         self.full_calibration_btn.setStyleSheet(button_style)
         tab_layout.addWidget(self.full_calibration_btn)
@@ -618,7 +617,7 @@ class ModernSidebar(QWidget):
             "• Measures S-pol reference spectra\n"
             "• Measures P-pol reference spectra\n"
             "• Optimizes LED intensities\n"
-            "• Takes ~30-60 seconds"
+            "• Takes ~30-60 seconds",
         )
         self.oem_led_calibration_btn.setStyleSheet(button_style)
         tab_layout.addWidget(self.oem_led_calibration_btn)
@@ -635,19 +634,21 @@ class ModernSidebar(QWidget):
             "background: transparent;"
             "margin-top: 12px;"
             "margin-bottom: 8px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(polar_label)
 
         # Description
-        polar_desc = QLabel("Calibrate servo polarizer positions (run once during setup):")
+        polar_desc = QLabel(
+            "Calibrate servo polarizer positions (run once during setup):",
+        )
         polar_desc.setWordWrap(True)
         polar_desc.setStyleSheet(
             "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "margin-bottom: 12px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         tab_layout.addWidget(polar_desc)
 
@@ -658,7 +659,7 @@ class ModernSidebar(QWidget):
             "• Scans servo angles to find peak transmission\n"
             "• Validates 90° phase relationship\n"
             "• Saves positions to device config\n"
-            "• Takes ~1-2 minutes (run once during setup)"
+            "• Takes ~1-2 minutes (run once during setup)",
         )
         self.polarizer_calibration_btn.setStyleSheet(
             "QPushButton {"
@@ -677,7 +678,7 @@ class ModernSidebar(QWidget):
             "}"
             "QPushButton:pressed {"
             "  background: #E67E00;"
-            "}"
+            "}",
         )
         tab_layout.addWidget(self.polarizer_calibration_btn)
 
@@ -697,17 +698,19 @@ class ModernSidebar(QWidget):
     def _ensure_legacy_widgets(self):
         """Create and inject legacy Device and Kinetic widgets if missing."""
         # Device widget under 'Device Status' tab
-        if not hasattr(self, 'device_widget') or self.device_widget is None:
+        if not hasattr(self, "device_widget") or self.device_widget is None:
             try:
                 from widgets.device import Device
+
                 self.device_widget = Device()
                 self._append_widget_to_tab("Device Status", self.device_widget)
             except Exception as e:
                 print(f"[Sidebar] Failed to create Device widget: {e}")
         # Kinetic widget under 'Graphic Control' tab
-        if not hasattr(self, 'kinetic_widget') or self.kinetic_widget is None:
+        if not hasattr(self, "kinetic_widget") or self.kinetic_widget is None:
             try:
                 from widgets.kinetics import Kinetic
+
                 self.kinetic_widget = Kinetic()
                 self._append_widget_to_tab("Graphic Control", self.kinetic_widget)
             except Exception as e:

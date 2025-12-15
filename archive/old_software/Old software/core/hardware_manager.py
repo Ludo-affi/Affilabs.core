@@ -9,17 +9,20 @@ This class manages:
 All operations run in background threads to avoid blocking the UI.
 """
 
-from PySide6.QtCore import QObject, Signal, QThread
-from utils.logger import logger
-from typing import Optional
 import threading
+
+from PySide6.QtCore import QObject, Signal
+
+from utils.logger import logger
 
 
 class HardwareManager(QObject):
     """Manages all hardware devices with non-blocking initialization."""
 
     # Signals for hardware status updates
-    hardware_connected = Signal(dict)  # {ctrl_type, knx_type, pump_connected, spectrometer, sensor_ready, optics_ready, fluidics_ready}
+    hardware_connected = Signal(
+        dict,
+    )  # {ctrl_type, knx_type, pump_connected, spectrometer, sensor_ready, optics_ready, fluidics_ready}
     hardware_disconnected = Signal()
     connection_progress = Signal(str)  # Status messages during connection
     error_occurred = Signal(str)  # Error messages
@@ -34,9 +37,9 @@ class HardwareManager(QObject):
 
         # Hardware device references
         self.ctrl = None  # SPR controller
-        self.knx = None   # Kinetic controller
+        self.knx = None  # Kinetic controller
         self.pump = None  # Pump
-        self.usb = None   # Spectrometer
+        self.usb = None  # Spectrometer
 
         # Connection state
         self._connecting = False
@@ -49,15 +52,27 @@ class HardwareManager(QObject):
         # Calibration results tracking
         self._ch_error_list = []  # List of failed channels
         self._calibration_passed = False
-        self._afterglow_calibration_done = False  # Track if afterglow calibration completed
+        self._afterglow_calibration_done = (
+            False  # Track if afterglow calibration completed
+        )
 
         # FWHM tracking for sensor verification
-        self._channel_fwhm = {'a': None, 'b': None, 'c': None, 'd': None}  # type: dict[str, Optional[float]]
+        self._channel_fwhm = {"a": None, "b": None, "c": None, "d": None}  # type: dict[str, Optional[float]]
         self._fwhm_threshold = 60.0  # nm - FWHM_GOOD threshold
 
         # Optics intensity monitoring for leak detection
-        self._channel_intensity_history = {'a': [], 'b': [], 'c': [], 'd': []}  # (timestamp, intensity)
-        self._channel_max_intensity = {'a': 0, 'b': 0, 'c': 0, 'd': 0}  # Peak intensity seen
+        self._channel_intensity_history = {
+            "a": [],
+            "b": [],
+            "c": [],
+            "d": [],
+        }  # (timestamp, intensity)
+        self._channel_max_intensity = {
+            "a": 0,
+            "b": 0,
+            "c": 0,
+            "d": 0,
+        }  # Peak intensity seen
         self._optics_leak_detected = False
         self._maintenance_required = []  # Channels requiring LED PCB replacement
 
@@ -71,16 +86,18 @@ class HardwareManager(QObject):
 
         # Check if hardware is already connected
         if any([self.ctrl, self.knx, self.pump, self.usb]):
-            logger.info("Hardware already connected - reporting current status without re-scanning")
+            logger.info(
+                "Hardware already connected - reporting current status without re-scanning",
+            )
             # Just report current status without disconnecting
             status = {
-                'ctrl_type': self._get_controller_type(),
-                'knx_type': self._get_kinetic_type(),
-                'pump_connected': self.pump is not None,
-                'spectrometer': self.usb is not None,
-                'sensor_ready': self._sensor_verified,
-                'optics_ready': self._optics_verified,
-                'fluidics_ready': self.pump is not None
+                "ctrl_type": self._get_controller_type(),
+                "knx_type": self._get_kinetic_type(),
+                "pump_connected": self.pump is not None,
+                "spectrometer": self.usb is not None,
+                "sensor_ready": self._sensor_verified,
+                "optics_ready": self._optics_verified,
+                "fluidics_ready": self.pump is not None,
             }
             self.hardware_connected.emit(status)
             return
@@ -91,7 +108,7 @@ class HardwareManager(QObject):
         # Run connection in background thread
         self._connection_thread = threading.Thread(
             target=self._connection_worker,
-            daemon=True
+            daemon=True,
         )
         self._connection_thread.start()
 
@@ -124,13 +141,14 @@ class HardwareManager(QObject):
 
             # Emit final status
             status = {
-                'ctrl_type': ctrl_type,
-                'knx_type': self._get_kinetic_type(),
-                'pump_connected': self.pump is not None,
-                'spectrometer': self.usb is not None,
-                'sensor_ready': False,  # Will be set to True after calibration
-                'optics_ready': False,  # Will be set to True after calibration
-                'fluidics_ready': self.pump is not None  # Fluidics ready if pump connected
+                "ctrl_type": ctrl_type,
+                "knx_type": self._get_kinetic_type(),
+                "pump_connected": self.pump is not None,
+                "spectrometer": self.usb is not None,
+                "sensor_ready": False,  # Will be set to True after calibration
+                "optics_ready": False,  # Will be set to True after calibration
+                "fluidics_ready": self.pump
+                is not None,  # Fluidics ready if pump connected
             }
 
             if any([self.ctrl, self.knx, self.pump, self.usb]):
@@ -150,8 +168,8 @@ class HardwareManager(QObject):
     def _connect_spectrometer(self):
         """Attempt to connect to spectrometer."""
         try:
-            from utils.detector_factory import create_detector
             from utils.common import get_config
+            from utils.detector_factory import create_detector
 
             config = get_config()
             if config is None:
@@ -173,6 +191,7 @@ class HardwareManager(QObject):
         try:
             # Try Arduino-based controllers
             from utils.controller import ArduinoController
+
             arduino = ArduinoController()
             if arduino.open():
                 logger.info("Arduino P4SPR controller connected")
@@ -181,6 +200,7 @@ class HardwareManager(QObject):
 
             # Try Pico-based controllers
             from utils.controller import PicoP4SPR
+
             pico_p4spr = PicoP4SPR()
             if pico_p4spr.open():
                 logger.info("Pico P4SPR controller connected")
@@ -188,6 +208,7 @@ class HardwareManager(QObject):
                 return
 
             from utils.controller import PicoEZSPR
+
             pico_ezspr = PicoEZSPR()
             if pico_ezspr.open():
                 logger.info("Pico EZSPR controller connected")
@@ -205,6 +226,7 @@ class HardwareManager(QObject):
         """Attempt to connect to kinetic controller."""
         try:
             from utils.controller import KineticController
+
             knx2 = KineticController()
             if knx2.open():
                 logger.info(f"KNX2 controller connected: {knx2.get_info()}")
@@ -212,6 +234,7 @@ class HardwareManager(QObject):
                 return
 
             from utils.controller import PicoKNX2
+
             pico_knx2 = PicoKNX2()
             if pico_knx2.open():
                 logger.info(f"Pico KNX2 controller connected: {pico_knx2.version}")
@@ -228,7 +251,7 @@ class HardwareManager(QObject):
     def _connect_pump(self):
         """Attempt to connect to pump."""
         try:
-            from pump_controller import PumpController, FTDIError
+            from pump_controller import PumpController
 
             self.pump = PumpController.from_first_available()
             if self.pump:
@@ -244,28 +267,28 @@ class HardwareManager(QObject):
     def _get_controller_type(self) -> str:
         """Get the type of connected controller."""
         if self.ctrl is None:
-            return ''
+            return ""
 
-        name = getattr(self.ctrl, 'name', '')
-        if name == 'p4spr':
-            return 'P4SPR'
-        elif name in ['pico_p4spr', 'pico_ezspr']:
+        name = getattr(self.ctrl, "name", "")
+        if name == "p4spr":
+            return "P4SPR"
+        if name in ["pico_p4spr", "pico_ezspr"]:
             # If PicoP4SPR is connected without kinetic controller, display as P4SPR
-            if hasattr(self.knx, 'name') and self.knx.name == 'EZSPR':
-                return 'EZSPR'
+            if hasattr(self.knx, "name") and self.knx.name == "EZSPR":
+                return "EZSPR"
             # PicoP4SPR alone = P4SPR device
-            return 'P4SPR'
-        return ''
+            return "P4SPR"
+        return ""
 
     def _get_kinetic_type(self) -> str:
         """Get the type of connected kinetic controller."""
         if self.knx is None:
-            return ''
+            return ""
 
-        name = getattr(self.knx, 'name', '')
-        if 'KNX' in name.upper():
-            return 'KNX2'
-        return ''
+        name = getattr(self.knx, "name", "")
+        if "KNX" in name.upper():
+            return "KNX2"
+        return ""
 
     def _verify_sensor_and_optics(self):
         """Verify sensor and optics quality for P4SPR devices.
@@ -290,6 +313,7 @@ class HardwareManager(QObject):
 
             # Acquire a test spectrum
             import time
+
             time.sleep(0.1)  # Let integration time settle
             intensities = self.usb.read_intensity()
 
@@ -299,17 +323,24 @@ class HardwareManager(QObject):
 
             # Check intensity range
             import numpy as np
+
             mean_intensity = np.mean(intensities)
             max_intensity = np.max(intensities)
 
-            logger.info(f"Sensor test - Mean intensity: {mean_intensity:.1f}, Max: {max_intensity:.1f}")
+            logger.info(
+                f"Sensor test - Mean intensity: {mean_intensity:.1f}, Max: {max_intensity:.1f}",
+            )
 
             if mean_intensity < self.SENSOR_MIN_INTENSITY:
-                logger.warning(f"Sensor signal too low: {mean_intensity:.1f} < {self.SENSOR_MIN_INTENSITY}")
+                logger.warning(
+                    f"Sensor signal too low: {mean_intensity:.1f} < {self.SENSOR_MIN_INTENSITY}",
+                )
                 # Still mark as verified but log warning - sensor works but signal is weak
                 self._sensor_verified = True
             elif max_intensity > self.SENSOR_MAX_INTENSITY:
-                logger.warning(f"Sensor signal saturating: {max_intensity:.1f} > {self.SENSOR_MAX_INTENSITY}")
+                logger.warning(
+                    f"Sensor signal saturating: {max_intensity:.1f} > {self.SENSOR_MAX_INTENSITY}",
+                )
                 self._sensor_verified = True
             else:
                 logger.info("✅ Sensor verification passed")
@@ -330,7 +361,9 @@ class HardwareManager(QObject):
                     logger.info("✅ Optics verification passed")
                     self._optics_verified = True
                 else:
-                    logger.warning(f"Optics quality low: SNR {snr:.2f} < {self.OPTICS_MIN_QUALITY}")
+                    logger.warning(
+                        f"Optics quality low: SNR {snr:.2f} < {self.OPTICS_MIN_QUALITY}",
+                    )
                     # Still mark as verified - optics work but quality is suboptimal
                     self._optics_verified = True
             else:
@@ -342,7 +375,11 @@ class HardwareManager(QObject):
             self._sensor_verified = self.usb is not None
             self._optics_verified = self.usb is not None
 
-    def update_calibration_status(self, ch_error_list: list[str], calibration_type: str = 'full'):
+    def update_calibration_status(
+        self,
+        ch_error_list: list[str],
+        calibration_type: str = "full",
+    ):
         """Update sensor and optics readiness based on calibration results.
 
         Args:
@@ -353,11 +390,12 @@ class HardwareManager(QObject):
         1. Afterglow calibration has been performed
         2. LED calibration passes (no failed channels)
         3. No active leak detected (intensity monitoring)
+
         """
         self._ch_error_list = ch_error_list.copy()
 
         # Track calibration type completion
-        if calibration_type in ['full', 'afterglow']:
+        if calibration_type in ["full", "afterglow"]:
             self._afterglow_calibration_done = True
             logger.info("✅ Afterglow calibration completed")
 
@@ -377,10 +415,12 @@ class HardwareManager(QObject):
         # 3. Hardware connected
         # 4. No active leak detected
         # Note: Sensor readiness is tracked separately via FWHM measurements
-        if (self._afterglow_calibration_done and
-            self._calibration_passed and
-            self.usb is not None and
-            not self._optics_leak_detected):
+        if (
+            self._afterglow_calibration_done
+            and self._calibration_passed
+            and self.usb is not None
+            and not self._optics_leak_detected
+        ):
             self._optics_verified = True
             logger.info("✅ Optics verification: All conditions met - OPTICS READY")
         else:
@@ -395,19 +435,21 @@ class HardwareManager(QObject):
             if self._optics_leak_detected:
                 reasons.append("optical leak detected")
             if len(self._maintenance_required) > 0:
-                reasons.append(f"maintenance required for channels {self._maintenance_required}")
+                reasons.append(
+                    f"maintenance required for channels {self._maintenance_required}",
+                )
 
             logger.warning(f"⚠️ Optics NOT ready: {', '.join(reasons)}")
 
         # Emit updated status to UI
         status = {
-            'ctrl_type': self._get_controller_type(),
-            'knx_type': self._get_kinetic_type(),
-            'pump_connected': self.pump is not None,
-            'spectrometer': self.usb is not None,
-            'sensor_ready': self._sensor_verified,
-            'optics_ready': self._optics_verified,
-            'fluidics_ready': self.pump is not None
+            "ctrl_type": self._get_controller_type(),
+            "knx_type": self._get_kinetic_type(),
+            "pump_connected": self.pump is not None,
+            "spectrometer": self.usb is not None,
+            "sensor_ready": self._sensor_verified,
+            "optics_ready": self._optics_verified,
+            "fluidics_ready": self.pump is not None,
         }
         self.hardware_connected.emit(status)
 
@@ -422,12 +464,13 @@ class HardwareManager(QObject):
             channel: Channel name ('a', 'b', 'c', 'd')
             intensity: Current raw intensity reading
             timestamp: Time of measurement
-        """
-        import time
 
+        """
         # Update peak intensity
-        if intensity > self._channel_max_intensity[channel]:
-            self._channel_max_intensity[channel] = intensity
+        self._channel_max_intensity[channel] = max(
+            intensity,
+            self._channel_max_intensity[channel],
+        )
 
         # Add to history with timestamp
         self._channel_intensity_history[channel].append((timestamp, intensity))
@@ -435,18 +478,25 @@ class HardwareManager(QObject):
         # Keep only last 5 seconds of data
         cutoff_time = timestamp - 5.0
         self._channel_intensity_history[channel] = [
-            (t, i) for t, i in self._channel_intensity_history[channel] if t >= cutoff_time
+            (t, i)
+            for t, i in self._channel_intensity_history[channel]
+            if t >= cutoff_time
         ]
 
         # Check for sudden intensity drop (leak detection)
         # Only check if we have calibrated and have enough history
-        if (self._calibration_passed and
-            len(self._channel_intensity_history[channel]) > 10 and
-            self._channel_max_intensity[channel] > 1000):  # Only check if we've seen good signal
-
+        if (
+            self._calibration_passed
+            and len(self._channel_intensity_history[channel]) > 10
+            and self._channel_max_intensity[channel] > 1000
+        ):  # Only check if we've seen good signal
             # Get intensity from 3 seconds ago
             three_seconds_ago = timestamp - 3.0
-            old_intensities = [i for t, i in self._channel_intensity_history[channel] if t <= three_seconds_ago]
+            old_intensities = [
+                i
+                for t, i in self._channel_intensity_history[channel]
+                if t <= three_seconds_ago
+            ]
 
             if len(old_intensities) > 0:
                 avg_old_intensity = sum(old_intensities) / len(old_intensities)
@@ -458,15 +508,16 @@ class HardwareManager(QObject):
                 # Leak detected if:
                 # 1. Current intensity is below 10% of max detector counts
                 # 2. Previous intensity was significantly higher (drop > 50%)
-                if (intensity < leak_threshold and
-                    avg_old_intensity > leak_threshold * 2 and
-                    not self._optics_leak_detected):
-
+                if (
+                    intensity < leak_threshold
+                    and avg_old_intensity > leak_threshold * 2
+                    and not self._optics_leak_detected
+                ):
                     self._optics_leak_detected = True
                     logger.error(
                         f"🔴 OPTICAL LEAK DETECTED in channel {channel.upper()}: "
                         f"Intensity dropped from {avg_old_intensity:.0f} to {intensity:.0f} "
-                        f"(threshold: {leak_threshold:.0f} counts)"
+                        f"(threshold: {leak_threshold:.0f} counts)",
                     )
 
                     # Update optics status to NOT READY
@@ -475,13 +526,13 @@ class HardwareManager(QObject):
 
                     # Emit status update
                     status = {
-                        'ctrl_type': self._get_controller_type(),
-                        'knx_type': self._get_kinetic_type(),
-                        'pump_connected': self.pump is not None,
-                        'spectrometer': self.usb is not None,
-                        'sensor_ready': self._sensor_verified,
-                        'optics_ready': self._optics_verified,
-                        'fluidics_ready': self.pump is not None
+                        "ctrl_type": self._get_controller_type(),
+                        "knx_type": self._get_kinetic_type(),
+                        "pump_connected": self.pump is not None,
+                        "spectrometer": self.usb is not None,
+                        "sensor_ready": self._sensor_verified,
+                        "optics_ready": self._optics_verified,
+                        "fluidics_ready": self.pump is not None,
                     }
                     self.hardware_connected.emit(status)
 
@@ -491,20 +542,22 @@ class HardwareManager(QObject):
                     # Emit error
                     self.hardware_error.emit(
                         f"Optical leak detected in channel {channel.upper()}. "
-                        f"Check for loose connections or damaged optical components."
+                        f"Check for loose connections or damaged optical components.",
                     )
 
     def reset_leak_detection(self):
         """Reset leak detection state after user has fixed the issue."""
         self._optics_leak_detected = False
-        self._channel_intensity_history = {'a': [], 'b': [], 'c': [], 'd': []}
-        self._channel_max_intensity = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+        self._channel_intensity_history = {"a": [], "b": [], "c": [], "d": []}
+        self._channel_max_intensity = {"a": 0, "b": 0, "c": 0, "d": 0}
         logger.info("🔄 Leak detection reset - monitoring restarted")
 
         # Re-evaluate optics status (sensor status is independent, set by FWHM)
-        if (self._afterglow_calibration_done and
-            self._calibration_passed and
-            self.usb is not None):
+        if (
+            self._afterglow_calibration_done
+            and self._calibration_passed
+            and self.usb is not None
+        ):
             self._optics_verified = True
             logger.info("✅ Optics status restored to READY")
             self._emit_hardware_status()
@@ -520,6 +573,7 @@ class HardwareManager(QObject):
         - At least one channel has valid FWHM data
         - At least one channel has FWHM < 60 nm (good quality)
         - If no FWHM data exists, sensor is NOT ready (no chip/leak/issue)
+
         """
         self._channel_fwhm[channel] = fwhm
 
@@ -527,40 +581,49 @@ class HardwareManager(QObject):
         previous_sensor_verified = self._sensor_verified
 
         # Get all channels with valid FWHM measurements
-        measured_channels = {ch: val for ch, val in self._channel_fwhm.items() if val is not None}
+        measured_channels = {
+            ch: val for ch, val in self._channel_fwhm.items() if val is not None
+        }
 
         # Check if any measured channel is good quality
-        good_channels = [ch for ch, val in measured_channels.items() if val < self._fwhm_threshold]
+        good_channels = [
+            ch for ch, val in measured_channels.items() if val < self._fwhm_threshold
+        ]
 
         if len(good_channels) > 0:
             # At least one channel has good FWHM
             if not previous_sensor_verified:
-                logger.info(f"✅ Sensor verification: FWHM passed - channels {good_channels} < {self._fwhm_threshold} nm")
+                logger.info(
+                    f"✅ Sensor verification: FWHM passed - channels {good_channels} < {self._fwhm_threshold} nm",
+                )
             self._sensor_verified = True
+        # Either no measurements or all measurements are bad
+        elif len(measured_channels) == 0:
+            # No FWHM data at all - sensor NOT ready
+            if previous_sensor_verified:
+                logger.warning(
+                    "❌ Sensor NOT ready: No FWHM data available (no chip/leak/connection issue)",
+                )
+            self._sensor_verified = False
         else:
-            # Either no measurements or all measurements are bad
-            if len(measured_channels) == 0:
-                # No FWHM data at all - sensor NOT ready
-                if previous_sensor_verified:
-                    logger.warning("❌ Sensor NOT ready: No FWHM data available (no chip/leak/connection issue)")
-                self._sensor_verified = False
-            else:
-                # Have measurements but all are poor quality
-                fwhm_str = {ch: f"{val:.1f}" for ch, val in measured_channels.items()}
-                if previous_sensor_verified:
-                    logger.warning(f"❌ Sensor NOT ready: All FWHM values exceed threshold - {fwhm_str} nm (threshold: {self._fwhm_threshold} nm)")
-                self._sensor_verified = False
+            # Have measurements but all are poor quality
+            fwhm_str = {ch: f"{val:.1f}" for ch, val in measured_channels.items()}
+            if previous_sensor_verified:
+                logger.warning(
+                    f"❌ Sensor NOT ready: All FWHM values exceed threshold - {fwhm_str} nm (threshold: {self._fwhm_threshold} nm)",
+                )
+            self._sensor_verified = False
 
         # Emit hardware status update if sensor state changed
         if previous_sensor_verified != self._sensor_verified:
             status = {
-                'ctrl_type': self._get_controller_type(),
-                'knx_type': self._get_kinetic_type(),
-                'pump_connected': self.pump is not None,
-                'spectrometer': self.usb is not None,
-                'sensor_ready': self._sensor_verified,
-                'optics_ready': self._optics_verified,
-                'fluidics_ready': self.pump is not None
+                "ctrl_type": self._get_controller_type(),
+                "knx_type": self._get_kinetic_type(),
+                "pump_connected": self.pump is not None,
+                "spectrometer": self.usb is not None,
+                "sensor_ready": self._sensor_verified,
+                "optics_ready": self._optics_verified,
+                "fluidics_ready": self.pump is not None,
             }
             self.hardware_connected.emit(status)
             self._emit_hardware_status()
@@ -575,25 +638,27 @@ class HardwareManager(QObject):
 
         If intensity drops near dark noise for extended period (>5s), optics is not ready.
         This should be called from main_simplified.py with buffered intensity tracking.
+
         """
         # This is a placeholder - actual implementation will be in main_simplified.py
         # which will track intensity over time with a 5-second sliding window
-        pass
 
     def _emit_hardware_status(self):
         """Emit current hardware status with updated verification flags."""
         status = {
-            'ctrl_type': self._get_ctrl_type(),
-            'knx_type': self._get_kinetic_type(),
-            'pump_connected': self.pump is not None,
-            'spectrometer': 'USB4000' if self.usb else None,
-            'sensor_ready': self._sensor_verified,
-            'optics_ready': self._optics_verified,
-            'fluidics_ready': self.pump is not None
+            "ctrl_type": self._get_ctrl_type(),
+            "knx_type": self._get_kinetic_type(),
+            "pump_connected": self.pump is not None,
+            "spectrometer": "USB4000" if self.usb else None,
+            "sensor_ready": self._sensor_verified,
+            "optics_ready": self._optics_verified,
+            "fluidics_ready": self.pump is not None,
         }
 
         self.hardware_connected.emit(status)
-        logger.info(f"Hardware status update: sensor_ready={self._sensor_verified}, optics_ready={self._optics_verified}")
+        logger.info(
+            f"Hardware status update: sensor_ready={self._sensor_verified}, optics_ready={self._optics_verified}",
+        )
 
     def disconnect_all(self):
         """Disconnect all hardware devices."""

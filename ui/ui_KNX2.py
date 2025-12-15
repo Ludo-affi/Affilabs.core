@@ -42,7 +42,7 @@ class Ui_KNX2:
             "	border: 2px solid rgba(46, 48, 227, 150);\n"
             "	border-radius: 3px;\n"
             "\n"
-            "}"
+            "}",
         )
         self.verticalLayout = QVBoxLayout(KNX2)
         self.verticalLayout.setObjectName("verticalLayout")
@@ -76,7 +76,7 @@ class Ui_KNX2:
             "	border: 2px solid rgba(46, 48, 227, 150);\n"
             "	border-radius: 3px;\n"
             "\n"
-            "}"
+            "}",
         )
         self.disconnect_btn = QPushButton(self.KnxBox)
         self.disconnect_btn.setObjectName("disconnect_btn")
@@ -85,7 +85,7 @@ class Ui_KNX2:
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(
-            self.disconnect_btn.sizePolicy().hasHeightForWidth()
+            self.disconnect_btn.sizePolicy().hasHeightForWidth(),
         )
         self.disconnect_btn.setSizePolicy(sizePolicy1)
         self.disconnect_btn.setMinimumSize(QSize(30, 30))
@@ -106,7 +106,7 @@ class Ui_KNX2:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 12px;\n"
-            "}"
+            "}",
         )
         icon = QIcon()
         icon.addFile(":/img/img/disconnect.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -120,7 +120,7 @@ class Ui_KNX2:
         self.shutdown_btn.setObjectName("shutdown_btn")
         self.shutdown_btn.setGeometry(QRect(50, 25, 30, 30))
         sizePolicy1.setHeightForWidth(
-            self.shutdown_btn.sizePolicy().hasHeightForWidth()
+            self.shutdown_btn.sizePolicy().hasHeightForWidth(),
         )
         self.shutdown_btn.setSizePolicy(sizePolicy1)
         self.shutdown_btn.setMinimumSize(QSize(30, 30))
@@ -139,7 +139,7 @@ class Ui_KNX2:
             "	background: white;\n"
             "	border: 1px raised;\n"
             "	border-radius: 12px;\n"
-            "}"
+            "}",
         )
         icon1 = QIcon()
         icon1.addFile(":/img/img/power.png", QSize(), QIcon.Normal, QIcon.Off)
@@ -190,13 +190,13 @@ class Ui_KNX2:
         self.KnxBox.setTitle(QCoreApplication.translate("KNX2", "Kinetics", None))
         # if QT_CONFIG(tooltip)
         self.disconnect_btn.setToolTip(
-            QCoreApplication.translate("KNX2", "Disconnect KNX2", None)
+            QCoreApplication.translate("KNX2", "Disconnect KNX2", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.disconnect_btn.setText("")
         # if QT_CONFIG(tooltip)
         self.shutdown_btn.setToolTip(
-            QCoreApplication.translate("KNX2", "Power Off KNX2", None)
+            QCoreApplication.translate("KNX2", "Power Off KNX2", None),
         )
         # endif // QT_CONFIG(tooltip)
         self.shutdown_btn.setText("")
@@ -204,8 +204,10 @@ class Ui_KNX2:
         self.label_7.setText("")
         self.label_8.setText(
             QCoreApplication.translate(
-                "KNX2", "<html><head/><body><p>Temperature:</p></body></html>", None
-            )
+                "KNX2",
+                "<html><head/><body><p>Temperature:</p></body></html>",
+                None,
+            ),
         )
 
     # retranslateUi

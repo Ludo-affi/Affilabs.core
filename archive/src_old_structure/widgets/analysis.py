@@ -429,27 +429,27 @@ class AnalysisWindow(QWidget):
                         table_data[i]["Note"] = f"{seg.note}"
                         for ch in CH_LIST:
                             table_data[i][f"Conc_{ch.upper()}"] = f"{seg.conc[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_Shift_{ch.upper()}"
-                            ] = f"{seg.assoc_shift[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_Start_{ch.upper()}"
-                            ] = f"{seg.assoc_start[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_End_{ch.upper()}"
-                            ] = f"{seg.assoc_end[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Shift_{ch.upper()}"
-                            ] = f"{seg.dissoc_shift[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Start_{ch.upper()}"
-                            ] = f"{seg.dissoc_start[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_End_{ch.upper()}"
-                            ] = f"{seg.dissoc_end[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Shift_{ch.upper()}"
-                            ] = f"{seg.dissoc_shift[ch]:.3f}"
+                            table_data[i][f"Assoc_Shift_{ch.upper()}"] = (
+                                f"{seg.assoc_shift[ch]:.3f}"
+                            )
+                            table_data[i][f"Assoc_Start_{ch.upper()}"] = (
+                                f"{seg.assoc_start[ch]:.3f}"
+                            )
+                            table_data[i][f"Assoc_End_{ch.upper()}"] = (
+                                f"{seg.assoc_end[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Shift_{ch.upper()}"] = (
+                                f"{seg.dissoc_shift[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Start_{ch.upper()}"] = (
+                                f"{seg.dissoc_start[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_End_{ch.upper()}"] = (
+                                f"{seg.dissoc_end[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Shift_{ch.upper()}"] = (
+                                f"{seg.dissoc_shift[ch]:.3f}"
+                            )
                     writer = csv.DictWriter(
                         txtfile,
                         dialect="excel-tab",
@@ -682,9 +682,9 @@ class AnalysisWindow(QWidget):
                                 curve_target[fieldnames[ind]] = "Curve target"
                                 curve_target[fieldnames[ind + 1]] = "N/A"
                                 curve_desc[fieldnames[ind]] = "Curve description"
-                                curve_desc[
-                                    fieldnames[ind + 1]
-                                ] = f" Seg {seg.name} Ch {ch}"
+                                curve_desc[fieldnames[ind + 1]] = (
+                                    f" Seg {seg.name} Ch {ch}"
+                                )
                                 curve_xy[fieldnames[ind]] = "X"
                                 curve_xy[fieldnames[ind + 1]] = "Y"
                             writer.writerow(curve_num)
@@ -701,8 +701,7 @@ class AnalysisWindow(QWidget):
                             ):
                                 end_time = 1000000
                                 for seg in self.auto_segments:
-                                    if seg.seg_x[ch][-1] < end_time:
-                                        end_time = seg.seg_x[ch][-1]
+                                    end_time = min(seg.seg_x[ch][-1], end_time)
                                 temp_data = []
                                 for seg in self.auto_segments:
                                     x = []
@@ -716,8 +715,7 @@ class AnalysisWindow(QWidget):
                                     temp_data.append({"x": x, "y": y})
                                 max_length = 0
                                 for i in range(len(temp_data)):
-                                    if len(temp_data[i]["x"]) > max_length:
-                                        max_length = len(temp_data[i]["x"])
+                                    max_length = max(len(temp_data[i]["x"]), max_length)
                                 for i in range(len(temp_data)):
                                     for j in range(max_length):
                                         if (j + 1) > len(temp_data[i]["x"]):
@@ -1168,10 +1166,14 @@ class AnalysisSegment:
                                     self.assoc_start[ch] = self.data_x[ch][i]
                                     if self.assoc_end[ch] < self.assoc_start[ch]:
                                         self.assoc_end[ch] = self.data_x[ch][i + 1]
-                                    if self.dissoc_start[ch] < self.assoc_end[ch]:
-                                        self.dissoc_start[ch] = self.assoc_end[ch]
-                                    if self.dissoc_end[ch] < self.dissoc_start[ch]:
-                                        self.dissoc_end[ch] = self.dissoc_start[ch]
+                                    self.dissoc_start[ch] = max(
+                                        self.dissoc_start[ch],
+                                        self.assoc_end[ch],
+                                    )
+                                    self.dissoc_end[ch] = max(
+                                        self.dissoc_end[ch],
+                                        self.dissoc_start[ch],
+                                    )
                             j = i + 1
                             while j < len(self.data_x[ch]):
                                 if (

@@ -55,9 +55,9 @@ GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 100, 0
 # Colorblind-friendly palette (Okabe-Ito)
 # Designed to be distinguishable for all types of colorblindness
 GRAPH_COLORS_COLORBLIND = {
-    "a": (1, 115, 178),    # Blue
-    "b": (222, 143, 5),    # Orange
-    "c": (2, 158, 115),    # Green
+    "a": (1, 115, 178),  # Blue
+    "b": (222, 143, 5),  # Orange
+    "c": (2, 158, 115),  # Green
     "d": (204, 120, 188),  # Magenta
 }
 
@@ -91,16 +91,28 @@ POL_WAVELENGTH = 620  # index for auto polarization
 DARK_NOISE_SCANS = 30  # number of scans to average in dark noise measurement
 REF_SCANS = 20  # number of scans to average in reference measurement
 CYCLE_TIME = 1.3  # cycle time for all 4 channels
-LED_DELAY = 0.050  # led-stabilization delay (50ms - default, adjustable in Advanced Settings)
-USE_DYNAMIC_LED_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
-LED_DELAY_TARGET_RESIDUAL = 2.0  # percent residual allowed when computing dynamic LED delay
-LED_POST_DELAY = 0.005  # additional dark time after LED off before switching channel (s)
-USE_DYNAMIC_POST_DELAY = False  # DISABLED: afterglow correction now uses model subtraction instead
+LED_DELAY = (
+    0.050  # led-stabilization delay (50ms - default, adjustable in Advanced Settings)
+)
+USE_DYNAMIC_LED_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
+LED_DELAY_TARGET_RESIDUAL = (
+    2.0  # percent residual allowed when computing dynamic LED delay
+)
+LED_POST_DELAY = (
+    0.005  # additional dark time after LED off before switching channel (s)
+)
+USE_DYNAMIC_POST_DELAY = (
+    False  # DISABLED: afterglow correction now uses model subtraction instead
+)
 S_LED_INT = 255  # max s-polarized led intensity
 S_LED_MIN = 20  # minimum intensity for checking saturation
 P_LED_MAX = 255  # max p-polarized led intensity
 P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
-S_COUNT_MAX = 49152  # target signal level: 75% of 16-bit detector max (65535) - optimized for SPR
+S_COUNT_MAX = (
+    49152  # target signal level: 75% of 16-bit detector max (65535) - optimized for SPR
+)
 P_COUNT_THRESHOLD = 300  # minimum p-polarized count for successful calibration
 MIN_INTEGRATION = 10  # minimum detector integration time in milliseconds - start low and increase as needed
 INTEGRATION_STEP = 5  # integration time step in milliseconds
@@ -136,17 +148,18 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 if not os.path.exists(CONFIG_FILE):
     import tempfile
     from pathlib import Path
+
     config_path = Path(CONFIG_FILE)
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Atomic write using temp file
     try:
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
+            mode="w",
+            encoding="utf-8",
             dir=config_path.parent,
             delete=False,
-            suffix='.tmp'
+            suffix=".tmp",
         ) as tmp_file:
             json.dump(DEFAULT_CONFIG, tmp_file, indent=2)
             tmp_path = Path(tmp_file.name)

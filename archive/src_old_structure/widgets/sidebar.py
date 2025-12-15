@@ -1,20 +1,19 @@
 """Modern Sidebar - Modular tab-based design with lazy loading and event bus integration."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QTabWidget, QVBoxLayout, QWidget, QScrollArea, QFrame
-)
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QFrame, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 from widgets.tabs import (
     DeviceStatusTab,
-    GraphicControlTab,
-    StaticTab,
-    FlowTab,
     ExportTab,
+    FlowTab,
+    GraphicControlTab,
     SettingsTab,
+    StaticTab,
 )
 
 if TYPE_CHECKING:
@@ -22,8 +21,7 @@ if TYPE_CHECKING:
 
 
 class ModernSidebar(QWidget):
-    """
-    Modern sidebar with vertical tabs and scrollable content areas.
+    """Modern sidebar with vertical tabs and scrollable content areas.
 
     Features:
     - Modular tab architecture with dedicated tab classes
@@ -35,7 +33,11 @@ class ModernSidebar(QWidget):
     # Signals
     tab_changed = Signal(int, str)  # index, tab_name
 
-    def __init__(self, event_bus: "EventBus | None" = None, parent: "QWidget | None" = None):
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        parent: QWidget | None = None,
+    ):
         super().__init__(parent)
         self.event_bus = event_bus
 
@@ -93,7 +95,7 @@ class ModernSidebar(QWidget):
             "QTabBar::tab:hover:!selected {"
             "  background: rgba(0, 0, 0, 0.03);"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
 
         # Create tabs using dedicated tab classes
@@ -108,7 +110,11 @@ class ModernSidebar(QWidget):
         """Create all tab instances with scroll areas."""
         # Device Status - Always loaded (critical info)
         self.device_status_tab = DeviceStatusTab(event_bus=self.event_bus)
-        self._add_tab_with_scroll(self.device_status_tab, "Device Status", "Hardware connection and device information")
+        self._add_tab_with_scroll(
+            self.device_status_tab,
+            "Device Status",
+            "Hardware connection and device information",
+        )
         self._connect_tab_to_event_bus(self.device_status_tab, "Device Status")
 
         # Legacy property
@@ -116,27 +122,47 @@ class ModernSidebar(QWidget):
 
         # Graphic Control - Lazy loaded (heavy plotting)
         self.graphic_control_tab = GraphicControlTab(event_bus=self.event_bus)
-        self._add_tab_with_scroll(self.graphic_control_tab, "Graphic Control", "Real-time visualization controls")
+        self._add_tab_with_scroll(
+            self.graphic_control_tab,
+            "Graphic Control",
+            "Real-time visualization controls",
+        )
         self._connect_tab_to_event_bus(self.graphic_control_tab, "Graphic Control")
 
         # Static - Lazy loaded
         self.static_tab = StaticTab(event_bus=self.event_bus)
-        self._add_tab_with_scroll(self.static_tab, "Static", "Static measurement controls")
+        self._add_tab_with_scroll(
+            self.static_tab,
+            "Static",
+            "Static measurement controls",
+        )
         self._connect_tab_to_event_bus(self.static_tab, "Static")
 
         # Flow - Lazy loaded
         self.flow_tab = FlowTab(event_bus=self.event_bus)
-        self._add_tab_with_scroll(self.flow_tab, "Flow", "Flow measurement and kinetic controls")
+        self._add_tab_with_scroll(
+            self.flow_tab,
+            "Flow",
+            "Flow measurement and kinetic controls",
+        )
         self._connect_tab_to_event_bus(self.flow_tab, "Flow")
 
         # Export - Lazy loaded
         self.export_tab = ExportTab(event_bus=self.event_bus)
-        self._add_tab_with_scroll(self.export_tab, "Export", "Data export and file management")
+        self._add_tab_with_scroll(
+            self.export_tab,
+            "Export",
+            "Data export and file management",
+        )
         self._connect_tab_to_event_bus(self.export_tab, "Export")
 
         # Settings - Lazy loaded
         self.settings_tab = SettingsTab(event_bus=self.event_bus)
-        self._add_tab_with_scroll(self.settings_tab, "Settings", "Application configuration")
+        self._add_tab_with_scroll(
+            self.settings_tab,
+            "Settings",
+            "Application configuration",
+        )
         self._connect_tab_to_event_bus(self.settings_tab, "Settings")
 
     def _connect_tab_to_event_bus(self, tab, tab_name: str):
@@ -145,7 +171,9 @@ class ModernSidebar(QWidget):
             return
 
         # Connect tab signals to event bus
-        tab.content_loaded.connect(lambda: self.event_bus.tab_content_loaded.emit(tab_name))
+        tab.content_loaded.connect(
+            lambda: self.event_bus.tab_content_loaded.emit(tab_name),
+        )
         tab.content_shown.connect(lambda: self.event_bus.tab_shown.emit(tab_name))
         tab.content_hidden.connect(lambda: self.event_bus.tab_hidden.emit(tab_name))
 
@@ -174,7 +202,7 @@ class ModernSidebar(QWidget):
             "}"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
             "  height: 0px;"
-            "}"
+            "}",
         )
 
         scroll_area.setWidget(tab_widget)
@@ -192,7 +220,12 @@ class ModernSidebar(QWidget):
 
     # ===== Backwards Compatibility API =====
 
-    def set_widgets(self, cycle_controls_widget=None, static_cycle_controls=None, flow_cycle_controls=None):
+    def set_widgets(
+        self,
+        cycle_controls_widget=None,
+        static_cycle_controls=None,
+        flow_cycle_controls=None,
+    ):
         """Legacy method - set up widgets for backwards compatibility."""
         # Install cycle controls if provided
         if cycle_controls_widget is not None:
@@ -226,5 +259,3 @@ class ModernSidebar(QWidget):
 # Legacy class alias for backwards compatibility
 class Sidebar(ModernSidebar):
     """Legacy class name - redirects to ModernSidebar."""
-    ...
-

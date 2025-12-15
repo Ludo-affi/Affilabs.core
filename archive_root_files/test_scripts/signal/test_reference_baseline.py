@@ -1,30 +1,31 @@
-"""
-Test script to validate reference baseline processing method.
+"""Test script to validate reference baseline processing method.
 
 This script demonstrates that the reference baseline method produces IDENTICAL
 results to the current production code, confirming it as the gold standard for
 low peak-to-peak variation.
 """
 
-import numpy as np
 import sys
 from pathlib import Path
 
+import numpy as np
+
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from scipy.signal import savgol_filter
 
 from utils.reference_baseline_processing import (
-    process_spectrum_reference,
-    calculate_fourier_weights_reference,
     REFERENCE_PARAMETERS,
-    validate_reference_parameters
+    calculate_fourier_weights_reference,
+    process_spectrum_reference,
+    validate_reference_parameters,
 )
 from utils.spr_signal_processing import (
+    calculate_fourier_weights,
     calculate_transmission,
     find_resonance_wavelength_fourier,
-    calculate_fourier_weights
 )
-from scipy.signal import savgol_filter
 
 
 def generate_synthetic_spr_spectrum(
@@ -33,7 +34,7 @@ def generate_synthetic_spr_spectrum(
     peak_width: float = 15.0,
     baseline: float = 50.0,
     amplitude: float = 30.0,
-    noise_level: float = 0.5
+    noise_level: float = 0.5,
 ) -> np.ndarray:
     """Generate synthetic SPR transmission spectrum for testing.
 
@@ -47,10 +48,11 @@ def generate_synthetic_spr_spectrum(
 
     Returns:
         np.ndarray: Synthetic transmission spectrum with Gaussian dip + noise
+
     """
     # Gaussian dip
     spectrum = baseline - amplitude * np.exp(
-        -((wavelengths - resonance_wavelength) ** 2) / (2 * (peak_width / 2.355) ** 2)
+        -((wavelengths - resonance_wavelength) ** 2) / (2 * (peak_width / 2.355) ** 2),
     )
 
     # Add realistic noise
@@ -66,7 +68,6 @@ def generate_synthetic_spr_spectrum(
 
 def test_reference_matches_production():
     """Test that reference baseline produces IDENTICAL results to production code."""
-
     print("=" * 80)
     print("REFERENCE BASELINE VALIDATION TEST")
     print("=" * 80)
@@ -75,9 +76,9 @@ def test_reference_matches_production():
     # Validate reference parameters
     print("1. Validating reference parameters...")
     validation = validate_reference_parameters()
-    if validation['warnings']:
+    if validation["warnings"]:
         print("   ⚠️  WARNINGS:")
-        for warning in validation['warnings']:
+        for warning in validation["warnings"]:
             print(f"      - {warning}")
     else:
         print("   ✅ All parameters valid")
@@ -95,7 +96,7 @@ def test_reference_matches_production():
         peak_width=15.0,
         baseline=30000,
         amplitude=10000,
-        noise_level=150
+        noise_level=150,
     )
 
     # Simulate reference (S-mode)
@@ -121,9 +122,13 @@ def test_reference_matches_production():
     fourier_weights_prod = calculate_fourier_weights(len(wavelengths))
 
     weights_match = np.allclose(fourier_weights_ref, fourier_weights_prod)
-    print(f"   Reference vs Production weights match: {'✅ YES' if weights_match else '❌ NO'}")
+    print(
+        f"   Reference vs Production weights match: {'✅ YES' if weights_match else '❌ NO'}",
+    )
     if weights_match:
-        print(f"   Max difference: {np.max(np.abs(fourier_weights_ref - fourier_weights_prod)):.2e}")
+        print(
+            f"   Max difference: {np.max(np.abs(fourier_weights_ref - fourier_weights_prod)):.2e}",
+        )
     print()
 
     # Process using REFERENCE method
@@ -136,12 +141,14 @@ def test_reference_matches_production():
         dark_noise=dark_noise,
         p_led_intensity=p_led,
         s_led_intensity=s_led,
-        window_size=REFERENCE_PARAMETERS['fourier_window'],
-        sg_window=REFERENCE_PARAMETERS['sg_window'],
-        sg_polyorder=REFERENCE_PARAMETERS['sg_polyorder']
+        window_size=REFERENCE_PARAMETERS["fourier_window"],
+        sg_window=REFERENCE_PARAMETERS["sg_window"],
+        sg_polyorder=REFERENCE_PARAMETERS["sg_polyorder"],
     )
     print(f"   ✅ Resonance wavelength: {result_ref['resonance_wavelength']:.3f} nm")
-    print(f"   Transmission range: {np.min(result_ref['transmission']):.1f}% - {np.max(result_ref['transmission']):.1f}%")
+    print(
+        f"   Transmission range: {np.min(result_ref['transmission']):.1f}% - {np.max(result_ref['transmission']):.1f}%",
+    )
     print()
 
     # Process using PRODUCTION method (step-by-step)
@@ -155,11 +162,15 @@ def test_reference_matches_production():
         intensity_corrected,
         s_reference,
         p_led_intensity=p_led,
-        s_led_intensity=s_led
+        s_led_intensity=s_led,
     )
 
     # Step 3: Baseline correction (manual implementation)
-    baseline = np.linspace(transmission_prod[0], transmission_prod[-1], len(transmission_prod))
+    baseline = np.linspace(
+        transmission_prod[0],
+        transmission_prod[-1],
+        len(transmission_prod),
+    )
     transmission_prod = transmission_prod - baseline + np.mean(transmission_prod)
 
     # Step 4: Savitzky-Golay filter
@@ -171,20 +182,28 @@ def test_reference_matches_production():
         wavelengths,
         fourier_weights_prod,
         window_size=165,
-        apply_sg_filter=False  # Already filtered
+        apply_sg_filter=False,  # Already filtered
     )
     print(f"   ✅ Resonance wavelength: {resonance_prod:.3f} nm")
-    print(f"   Transmission range: {np.min(transmission_prod):.1f}% - {np.max(transmission_prod):.1f}%")
+    print(
+        f"   Transmission range: {np.min(transmission_prod):.1f}% - {np.max(transmission_prod):.1f}%",
+    )
     print()
 
     # Compare results
     print("6. Comparing REFERENCE vs PRODUCTION results...")
-    transmission_match = np.allclose(result_ref['transmission'], transmission_prod, rtol=1e-10)
-    resonance_diff = abs(result_ref['resonance_wavelength'] - resonance_prod)
+    transmission_match = np.allclose(
+        result_ref["transmission"],
+        transmission_prod,
+        rtol=1e-10,
+    )
+    resonance_diff = abs(result_ref["resonance_wavelength"] - resonance_prod)
 
-    print(f"   Transmission spectra match: {'✅ YES' if transmission_match else '❌ NO'}")
+    print(
+        f"   Transmission spectra match: {'✅ YES' if transmission_match else '❌ NO'}",
+    )
     if transmission_match:
-        max_diff = np.max(np.abs(result_ref['transmission'] - transmission_prod))
+        max_diff = np.max(np.abs(result_ref["transmission"] - transmission_prod))
         print(f"   Max transmission difference: {max_diff:.2e}%")
 
     print(f"   Resonance wavelength difference: {resonance_diff:.6f} nm")
@@ -193,7 +212,7 @@ def test_reference_matches_production():
     print()
 
     # Calculate error from true resonance
-    ref_error = abs(result_ref['resonance_wavelength'] - true_resonance)
+    ref_error = abs(result_ref["resonance_wavelength"] - true_resonance)
     prod_error = abs(resonance_prod - true_resonance)
 
     print(f"7. Accuracy vs true resonance ({true_resonance:.3f} nm)...")
@@ -226,7 +245,6 @@ def test_reference_matches_production():
 
 def test_peak_to_peak_variation():
     """Test peak-to-peak variation using reference method."""
-
     print("=" * 80)
     print("PEAK-TO-PEAK VARIATION TEST (REFERENCE METHOD)")
     print("=" * 80)
@@ -259,7 +277,7 @@ def test_peak_to_peak_variation():
             peak_width=15.0,
             baseline=30000,
             amplitude=10000,
-            noise_level=150  # Realistic detector noise
+            noise_level=150,  # Realistic detector noise
         )
 
         # Process with reference method
@@ -273,10 +291,10 @@ def test_peak_to_peak_variation():
             s_led_intensity=s_led,
             window_size=165,
             sg_window=21,
-            sg_polyorder=3
+            sg_polyorder=3,
         )
 
-        resonance_values.append(result['resonance_wavelength'])
+        resonance_values.append(result["resonance_wavelength"])
 
     # Calculate statistics
     resonance_values = np.array(resonance_values)
@@ -317,7 +335,7 @@ def test_peak_to_peak_variation():
             peak_width=15.0,
             baseline=30000,
             amplitude=10000,
-            noise_level=150
+            noise_level=150,
         )
 
         result = process_spectrum_reference(
@@ -330,10 +348,10 @@ def test_peak_to_peak_variation():
             s_led_intensity=s_led,
             window_size=1500,  # OPTIMIZED
             sg_window=21,
-            sg_polyorder=3
+            sg_polyorder=3,
         )
 
-        resonance_values_opt.append(result['resonance_wavelength'])
+        resonance_values_opt.append(result["resonance_wavelength"])
 
     resonance_values_opt = np.array(resonance_values_opt)
     mean_opt = np.mean(resonance_values_opt)
@@ -352,7 +370,7 @@ def test_peak_to_peak_variation():
     print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run validation test
     success = test_reference_matches_production()
 

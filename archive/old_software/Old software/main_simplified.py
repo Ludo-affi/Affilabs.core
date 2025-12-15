@@ -6,34 +6,35 @@ This is a clean rewrite that:
 3. Uses standard app.exec() instead of asyncio complexity
 """
 
-import sys
 import atexit
-from pathlib import Path
+import sys
 import threading
+from pathlib import Path
 
 # Add Old software to path
 old_software = Path(__file__).parent
 sys.path.insert(0, str(old_software))
 
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer
 from LL_UI_v1_0 import MainWindowPrototype
-from core.hardware_manager import HardwareManager
+from PySide6.QtWidgets import QApplication
+
+from config import (
+    DEFAULT_FILTER_ENABLED,
+    DEFAULT_FILTER_METHOD,
+    DEFAULT_FILTER_STRENGTH,
+    LEAK_DETECTION_WINDOW,
+    LEAK_THRESHOLD_RATIO,
+    WAVELENGTH_TO_RU_CONVERSION,
+)
 from core.data_acquisition_manager import DataAcquisitionManager
-from core.recording_manager import RecordingManager
-from core.kinetic_manager import KineticManager
 from core.data_buffer_manager import DataBufferManager
+from core.hardware_manager import HardwareManager
+from core.kinetic_manager import KineticManager
+from core.recording_manager import RecordingManager
+from settings import SW_VERSION
 from utils.logger import logger
 from utils.session_quality_monitor import SessionQualityMonitor
 from utils.spr_signal_processing import calculate_transmission
-from settings import SW_VERSION
-from config import (
-    LEAK_DETECTION_WINDOW, LEAK_THRESHOLD_RATIO, WAVELENGTH_TO_RU_CONVERSION,
-    DEFAULT_FILTER_ENABLED, DEFAULT_FILTER_STRENGTH, DEFAULT_FILTER_METHOD,
-    KALMAN_MEASUREMENT_NOISE, KALMAN_PROCESS_NOISE,
-    OPTICS_LEAK_DETECTION_TIME, OPTICS_LEAK_THRESHOLD,
-    OPTICS_MAX_DETECTOR_COUNTS, OPTICS_MAINTENANCE_INTENSITY_THRESHOLD
-)
 
 # Import TIME_ZONE from settings
 try:
@@ -41,13 +42,14 @@ try:
 except ImportError:
     # Fallback if TIME_ZONE not available
     import datetime
+
     try:
         TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
     except AttributeError:
-        from datetime import timezone
-        TIME_ZONE = datetime.datetime.now(timezone.utc).astimezone().tzinfo
+        TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 import datetime as dt
+
 import numpy as np
 
 
@@ -85,7 +87,7 @@ class Application(QApplication):
         logger.info("Creating session quality monitor...")
         self.quality_monitor = SessionQualityMonitor(
             device_serial="unknown",  # Will be updated when hardware connects
-            session_id=None  # Auto-generated
+            session_id=None,  # Auto-generated
         )
 
         # Create main window (using prototype UI)
@@ -96,7 +98,7 @@ class Application(QApplication):
         self.main_window.app = self
 
         # Track selected axis for manual/auto scaling (default X)
-        self._selected_axis = 'x'
+        self._selected_axis = "x"
 
         # Track reference channel for subtraction (None, 'a', 'b', 'c', 'd')
         self._reference_channel = None
@@ -132,25 +134,28 @@ class Application(QApplication):
 
         # DO NOT auto-connect hardware - user must press Power button
         # This allows user to start in offline mode for post-processing
-        logger.info("💡 Ready - waiting for user to press Power button to connect hardware...")
+        logger.info(
+            "💡 Ready - waiting for user to press Power button to connect hardware...",
+        )
 
         # Connect cursor movements to update cycle graph
         self.main_window.full_timeline_graph.start_cursor.sigPositionChanged.connect(
-            self._update_cycle_of_interest_graph
+            self._update_cycle_of_interest_graph,
         )
         self.main_window.full_timeline_graph.stop_cursor.sigPositionChanged.connect(
-            self._update_cycle_of_interest_graph
+            self._update_cycle_of_interest_graph,
         )
 
         # Connect mouse events for channel selection and flagging
         self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
-            self._on_graph_clicked
+            self._on_graph_clicked,
         )
 
     def _apply_theme(self):
         """Apply modern UI theme."""
         try:
             from widgets.modern_theme import apply_modern_theme
+
             apply_modern_theme(self)
         except ImportError:
             pass  # Theme not available, use default styling
@@ -190,8 +195,12 @@ class Application(QApplication):
         self.main_window.grid_check.toggled.connect(self._on_grid_toggled)
         self.main_window.auto_radio.toggled.connect(self._on_autoscale_toggled)
         self.main_window.manual_radio.toggled.connect(self._on_manual_scale_toggled)
-        self.main_window.min_input.editingFinished.connect(self._on_manual_range_changed)
-        self.main_window.max_input.editingFinished.connect(self._on_manual_range_changed)
+        self.main_window.min_input.editingFinished.connect(
+            self._on_manual_range_changed,
+        )
+        self.main_window.max_input.editingFinished.connect(
+            self._on_manual_range_changed,
+        )
         self.main_window.x_axis_btn.toggled.connect(self._on_axis_selected)
         self.main_window.y_axis_btn.toggled.connect(self._on_axis_selected)
 
@@ -199,13 +208,21 @@ class Application(QApplication):
         self.main_window.colorblind_check.toggled.connect(self._on_colorblind_toggled)
 
         # Reference channel selection
-        self.main_window.ref_combo.currentTextChanged.connect(self._on_reference_changed)
+        self.main_window.ref_combo.currentTextChanged.connect(
+            self._on_reference_changed,
+        )
 
         # Data filtering controls
         self.main_window.filter_enable.toggled.connect(self._on_filter_toggled)
-        self.main_window.filter_slider.valueChanged.connect(self._on_filter_strength_changed)
-        self.main_window.median_filter_radio.toggled.connect(self._on_filter_method_changed)
-        self.main_window.kalman_filter_radio.toggled.connect(self._on_filter_method_changed)
+        self.main_window.filter_slider.valueChanged.connect(
+            self._on_filter_strength_changed,
+        )
+        self.main_window.median_filter_radio.toggled.connect(
+            self._on_filter_method_changed,
+        )
+        self.main_window.kalman_filter_radio.toggled.connect(
+            self._on_filter_method_changed,
+        )
         self.main_window.sg_filter_radio.toggled.connect(self._on_filter_method_changed)
 
         # Settings controls
@@ -215,17 +232,25 @@ class Application(QApplication):
         self.main_window.nm_btn.toggled.connect(self._on_unit_changed)
 
         # Calibration buttons
-        self.main_window.simple_led_calibration_btn.clicked.connect(self._on_simple_led_calibration)
+        self.main_window.simple_led_calibration_btn.clicked.connect(
+            self._on_simple_led_calibration,
+        )
         self.main_window.full_calibration_btn.clicked.connect(self._on_full_calibration)
-        self.main_window.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
+        self.main_window.oem_led_calibration_btn.clicked.connect(
+            self._on_oem_led_calibration,
+        )
 
         # Power button
         self.main_window.power_on_requested.connect(self._on_power_on_requested)
         self.main_window.power_off_requested.connect(self._on_power_off_requested)
 
         # Recording button
-        self.main_window.recording_start_requested.connect(self._on_recording_start_requested)
-        self.main_window.recording_stop_requested.connect(self._on_recording_stop_requested)
+        self.main_window.recording_start_requested.connect(
+            self._on_recording_start_requested,
+        )
+        self.main_window.recording_stop_requested.connect(
+            self._on_recording_stop_requested,
+        )
 
         # UI → Manager connections (prototype UI has different structure)
         # TODO: Wire up prototype UI controls to managers
@@ -253,12 +278,14 @@ class Application(QApplication):
         self._update_device_status_ui(status)
 
         # Start calibration if controller and spectrometer are connected
-        if status.get('ctrl_type') and status.get('spectrometer'):
+        if status.get("ctrl_type") and status.get("spectrometer"):
             logger.info("🎯 Starting automatic calibration...")
             # Trigger calibration through data acquisition manager
             self.data_mgr.start_calibration()
-        elif status.get('spectrometer'):
-            logger.info("✅ Spectrometer detected - starting data acquisition without calibration...")
+        elif status.get("spectrometer"):
+            logger.info(
+                "✅ Spectrometer detected - starting data acquisition without calibration...",
+            )
             self.data_mgr.start_acquisition()
         else:
             logger.warning("⚠️ No spectrometer detected - data acquisition not started")
@@ -278,6 +305,7 @@ class Application(QApplication):
         """Hardware error occurred."""
         logger.error(f"Hardware error: {error}")
         from widgets.message import show_message
+
         show_message(error, "Hardware Error")
 
         # If error occurs during connection, reset power button
@@ -289,12 +317,10 @@ class Application(QApplication):
 
     def _on_spectrum_acquired(self, data: dict):
         """New spectrum data acquired and update graphs."""
-        import numpy as np
-
-        channel = data['channel']  # 'a', 'b', 'c', 'd'
-        wavelength = data['wavelength']  # nm
-        intensity = data.get('intensity', 0)  # Raw intensity
-        timestamp = data['timestamp']
+        channel = data["channel"]  # 'a', 'b', 'c', 'd'
+        wavelength = data["wavelength"]  # nm
+        intensity = data.get("intensity", 0)  # Raw intensity
+        timestamp = data["timestamp"]
 
         # Initialize experiment start time on first data point
         if self.experiment_start_time is None:
@@ -320,7 +346,7 @@ class Application(QApplication):
         time_span = self.buffer_mgr.get_intensity_timespan(channel)
         if time_span and time_span >= LEAK_DETECTION_WINDOW:
             # Get dark noise from data acquisition manager
-            dark_noise = getattr(self.data_mgr, 'dark_noise', None)
+            dark_noise = getattr(self.data_mgr, "dark_noise", None)
             if dark_noise is not None:
                 # Calculate average intensity over window
                 avg_intensity = self.buffer_mgr.get_intensity_average(channel)
@@ -328,37 +354,49 @@ class Application(QApplication):
                 # Check if intensity is too low (near dark noise)
                 dark_threshold = np.mean(dark_noise) * LEAK_THRESHOLD_RATIO
                 if avg_intensity < dark_threshold:
-                    logger.warning(f"⚠️ Possible optical leak detected in channel {channel.upper()}: "
-                                 f"avg intensity {avg_intensity:.0f} < threshold {dark_threshold:.0f}")
+                    logger.warning(
+                        f"⚠️ Possible optical leak detected in channel {channel.upper()}: "
+                        f"avg intensity {avg_intensity:.0f} < threshold {dark_threshold:.0f}",
+                    )
 
         # === TRANSMISSION SPECTRUM AND FWHM TRACKING ===
         # Calculate transmission if we have reference spectrum and full spectrum data
-        if (hasattr(self.data_mgr, 'ref_spectrum') and self.data_mgr.ref_spectrum is not None and
-            hasattr(self.data_mgr, 'wave_data') and self.data_mgr.wave_data is not None):
+        if (
+            hasattr(self.data_mgr, "ref_spectrum")
+            and self.data_mgr.ref_spectrum is not None
+            and hasattr(self.data_mgr, "wave_data")
+            and self.data_mgr.wave_data is not None
+        ):
             try:
                 # Get full spectrum data from acquisition
-                spectrum_intensity = data.get('full_spectrum', None)
+                spectrum_intensity = data.get("full_spectrum")
 
                 if spectrum_intensity is not None and len(spectrum_intensity) > 0:
                     # Calculate transmission spectrum (in %)
-                    transmission = calculate_transmission(spectrum_intensity, self.data_mgr.ref_spectrum)
+                    transmission = calculate_transmission(
+                        spectrum_intensity,
+                        self.data_mgr.ref_spectrum,
+                    )
 
                     # Update transmission plot
-                    if self.main_window.live_data_enabled and hasattr(self.main_window, 'transmission_curves'):
-                        channel_idx = {'a': 0, 'b': 1, 'c': 2, 'd': 3}[channel]
+                    if self.main_window.live_data_enabled and hasattr(
+                        self.main_window,
+                        "transmission_curves",
+                    ):
+                        channel_idx = {"a": 0, "b": 1, "c": 2, "d": 3}[channel]
                         wavelengths = self.data_mgr.wave_data
 
                         # Update transmission curve for this channel
                         self.main_window.transmission_curves[channel_idx].setData(
                             wavelengths,
-                            transmission
+                            transmission,
                         )
 
                         # Also update raw data plot
-                        if hasattr(self.main_window, 'raw_data_curves'):
+                        if hasattr(self.main_window, "raw_data_curves"):
                             self.main_window.raw_data_curves[channel_idx].setData(
                                 wavelengths,
-                                spectrum_intensity
+                                spectrum_intensity,
                             )
 
                     # Update quality monitor with transmission data for FWHM tracking
@@ -366,23 +404,28 @@ class Application(QApplication):
                         channel,
                         transmission,
                         self.data_mgr.wave_data,
-                        wavelength  # Peak wavelength from peak finding
+                        wavelength,  # Peak wavelength from peak finding
                     )
 
                     # Get FWHM from quality monitor
                     metrics = self.quality_monitor.channel_data[channel]
                     if metrics.current_fwhm is not None:
                         # Update hardware manager with FWHM
-                        self.hardware_mgr.update_fwhm_status(channel, metrics.current_fwhm)
+                        self.hardware_mgr.update_fwhm_status(
+                            channel,
+                            metrics.current_fwhm,
+                        )
             except Exception as e:
-                logger.debug(f"Transmission/FWHM calculation error for channel {channel}: {e}")
+                logger.debug(
+                    f"Transmission/FWHM calculation error for channel {channel}: {e}",
+                )
 
         # Append to timeline data buffers
         self.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength)
 
         # Update full timeline graph (top graph) - only if live data is enabled
         if self.main_window.live_data_enabled:
-            channel_idx = {'a': 0, 'b': 1, 'c': 2, 'd': 3}[channel]
+            channel_idx = {"a": 0, "b": 1, "c": 2, "d": 3}[channel]
             curve = self.main_window.full_timeline_graph.curves[channel_idx]
 
             # Apply smoothing if enabled
@@ -391,37 +434,41 @@ class Application(QApplication):
                 display_wavelength = self._apply_smoothing(
                     display_wavelength,
                     self._filter_strength,
-                    self._filter_method
+                    self._filter_method,
                 )
 
             curve.setData(
                 self.buffer_mgr.timeline_data[channel].time,
-                display_wavelength
+                display_wavelength,
             )
 
             # Auto-follow latest data with stop cursor (like old software)
             # Only move cursor if not currently being dragged by user
-            if (hasattr(self.main_window.full_timeline_graph, 'stop_cursor') and
-                self.main_window.full_timeline_graph.stop_cursor is not None):
+            if (
+                hasattr(self.main_window.full_timeline_graph, "stop_cursor")
+                and self.main_window.full_timeline_graph.stop_cursor is not None
+            ):
                 stop_cursor = self.main_window.full_timeline_graph.stop_cursor
 
                 # Check moving attribute exists (defensive against initialization timing)
-                is_moving = getattr(stop_cursor, 'moving', False)
+                is_moving = getattr(stop_cursor, "moving", False)
 
                 if not is_moving:
                     # Move stop cursor to follow latest time point
                     stop_cursor.setValue(elapsed_time)
                     # Update label if it exists
-                    if hasattr(stop_cursor, 'label') and stop_cursor.label:
-                        stop_cursor.label.setFormat(f'Stop: {elapsed_time:.1f}s')
+                    if hasattr(stop_cursor, "label") and stop_cursor.label:
+                        stop_cursor.label.setFormat(f"Stop: {elapsed_time:.1f}s")
 
         # Record data point if recording is active
         if self.recording_mgr.is_recording:
             # Build data point with all channels (use latest value for each)
             data_point = {}
-            for ch in ['a', 'b', 'c', 'd']:
+            for ch in ["a", "b", "c", "d"]:
                 latest_value = self.buffer_mgr.get_latest_value(ch)
-                data_point[f'channel_{ch}'] = latest_value if latest_value is not None else ''
+                data_point[f"channel_{ch}"] = (
+                    latest_value if latest_value is not None else ""
+                )
 
             self.recording_mgr.record_data_point(data_point)
 
@@ -430,16 +477,16 @@ class Application(QApplication):
 
     def _update_cycle_of_interest_graph(self):
         """Update the cycle of interest graph based on cursor positions."""
-        import numpy as np
-
         # Get cursor positions from full timeline graph
         start_time = self.main_window.full_timeline_graph.start_cursor.value()
         stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
 
         # Extract data within cursor range for each channel
-        for ch_letter, ch_idx in [('a', 0), ('b', 1), ('c', 2), ('d', 3)]:
+        for ch_letter, ch_idx in [("a", 0), ("b", 1), ("c", 2), ("d", 3)]:
             cycle_time, cycle_wavelength = self.buffer_mgr.extract_cycle_region(
-                ch_letter, start_time, stop_time
+                ch_letter,
+                start_time,
+                stop_time,
             )
 
             if len(cycle_time) == 0:
@@ -455,13 +502,18 @@ class Application(QApplication):
             delta_spr = (cycle_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
 
             # Store in buffer manager
-            self.buffer_mgr.update_cycle_data(ch_letter, cycle_time, cycle_wavelength, delta_spr)
+            self.buffer_mgr.update_cycle_data(
+                ch_letter,
+                cycle_time,
+                cycle_wavelength,
+                delta_spr,
+            )
 
         # Apply reference subtraction if enabled
         self._apply_reference_subtraction()
 
         # Update graph curves with potentially subtracted data
-        for ch_letter, ch_idx in [('a', 0), ('b', 1), ('c', 2), ('d', 3)]:
+        for ch_letter, ch_idx in [("a", 0), ("b", 1), ("c", 2), ("d", 3)]:
             cycle_time = self.buffer_mgr.cycle_data[ch_letter].time
             delta_spr = self.buffer_mgr.cycle_data[ch_letter].spr
 
@@ -480,14 +532,12 @@ class Application(QApplication):
         if self.main_window.cycle_of_interest_graph.delta_display is None:
             return
 
-        import numpy as np
-
         # Get Stop cursor position from full timeline graph
         stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
 
         # Get Δ SPR value at Stop cursor position for each channel
         delta_values = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             time_data = self.buffer_mgr.cycle_data[ch].time
             spr_data = self.buffer_mgr.cycle_data[ch].spr
 
@@ -501,7 +551,7 @@ class Application(QApplication):
         # Update label
         self.main_window.cycle_of_interest_graph.delta_display.setText(
             f"Δ SPR: Ch A: {delta_values['a']:.1f} RU  |  Ch B: {delta_values['b']:.1f} RU  |  "
-            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU"
+            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU",
         )
 
     def _on_calibration_started(self):
@@ -509,8 +559,8 @@ class Application(QApplication):
         logger.info("Calibration started...")
 
         # Show calibration progress dialog
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
         from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QDialog, QLabel, QProgressBar, QVBoxLayout
 
         self._calibration_dialog = QDialog(self.main_window)
         self._calibration_dialog.setWindowTitle("Calibration in Progress")
@@ -552,7 +602,9 @@ class Application(QApplication):
         layout.addWidget(self._calibration_progress_bar)
 
         # Info label
-        info_label = QLabel("Please wait while the system calibrates LEDs and measures dark noise.\nThis may take 30-60 seconds.")
+        info_label = QLabel(
+            "Please wait while the system calibrates LEDs and measures dark noise.\nThis may take 30-60 seconds.",
+        )
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("font-size: 9pt; color: #86868B;")
         info_label.setWordWrap(True)
@@ -565,13 +617,19 @@ class Application(QApplication):
 
     def _on_calibration_complete(self, calibration_data: dict):
         """Calibration completed successfully."""
-        ch_error_list = calibration_data.get('ch_error_list', [])
-        calibration_type = calibration_data.get('calibration_type', 'full')  # 'full', 'afterglow', 'led'
+        ch_error_list = calibration_data.get("ch_error_list", [])
+        calibration_type = calibration_data.get(
+            "calibration_type",
+            "full",
+        )  # 'full', 'afterglow', 'led'
 
         logger.info(f"✅ Calibration complete ({calibration_type}): {calibration_data}")
 
         # Check if afterglow correction was loaded
-        if hasattr(self.data_mgr, 'afterglow_enabled') and self.data_mgr.afterglow_enabled:
+        if (
+            hasattr(self.data_mgr, "afterglow_enabled")
+            and self.data_mgr.afterglow_enabled
+        ):
             logger.info("✅ Afterglow correction is ACTIVE")
 
         # Update hardware manager with calibration results for optics verification
@@ -579,7 +637,9 @@ class Application(QApplication):
 
         # Check if maintenance is required (weak LED intensity)
         if len(ch_error_list) > 0:
-            logger.warning(f"⚠️ Calibration completed with errors in channels: {ch_error_list}")
+            logger.warning(
+                f"⚠️ Calibration completed with errors in channels: {ch_error_list}",
+            )
 
             # Check if this is due to weak intensity (maintenance required)
             maintenance_required = []
@@ -594,6 +654,7 @@ class Application(QApplication):
 
             # Show appropriate message to user
             from widgets.message import show_message
+
             ch_str = ", ".join([ch.upper() for ch in ch_error_list])
 
             if len(maintenance_required) > 0:
@@ -602,33 +663,34 @@ class Application(QApplication):
                     f"Calibration failed for channels: {ch_str}\n\n"
                     f"Channels {maint_str} show weak LED intensity and may require LED PCB replacement.\n"
                     f"This is a maintenance issue. Please contact technical support.",
-                    "Maintenance Required"
+                    "Maintenance Required",
                 )
             else:
                 show_message(
                     f"Calibration completed but the following channels failed: {ch_str}\n\n"
                     "The optics may require cleaning or adjustment. Some channels may not be functional.",
-                    "Calibration Warning"
+                    "Calibration Warning",
                 )
         else:
             logger.info("✅ All channels calibrated successfully - optics ready")
 
             # Update dialog to show success message instead of closing immediately
-            if self._calibration_dialog and hasattr(self, '_calibration_status_label'):
+            if self._calibration_dialog and hasattr(self, "_calibration_status_label"):
                 # Update title and status
                 self._calibration_dialog.setWindowTitle("✅ Calibration Complete")
                 self._calibration_status_label.setText(
                     "All channels are ready!\n\n"
-                    "The dialog will close automatically in 3 seconds."
+                    "The dialog will close automatically in 3 seconds.",
                 )
 
                 # Stop the indeterminate progress bar
-                if hasattr(self, '_calibration_progress_bar'):
+                if hasattr(self, "_calibration_progress_bar"):
                     self._calibration_progress_bar.setMaximum(100)
                     self._calibration_progress_bar.setValue(100)
 
                 # Auto-close dialog after 3 seconds
                 from PySide6.QtCore import QTimer
+
                 QTimer.singleShot(3000, self._close_calibration_dialog)
                 logger.info("📋 Calibration dialog will auto-close in 3 seconds")
             else:
@@ -661,6 +723,7 @@ class Application(QApplication):
             self._calibration_dialog = None
 
         from widgets.message import show_message
+
         show_message(error, "Calibration Error")
 
     def _on_calibration_progress(self, message: str):
@@ -668,7 +731,7 @@ class Application(QApplication):
         logger.info(f"Calibration: {message}")
 
         # Update calibration dialog status if it exists
-        if self._calibration_dialog and hasattr(self, '_calibration_status_label'):
+        if self._calibration_dialog and hasattr(self, "_calibration_status_label"):
             self._calibration_status_label.setText(message)
 
     def _on_acquisition_error(self, error: str):
@@ -676,7 +739,10 @@ class Application(QApplication):
         logger.error(f"Acquisition error: {error}")
 
         # If error indicates hardware failure, stop acquisition and show warning
-        if "Hardware communication lost" in error or "stopping acquisition" in error.lower():
+        if (
+            "Hardware communication lost" in error
+            or "stopping acquisition" in error.lower()
+        ):
             logger.warning("⚠️ Hardware error detected - stopping acquisition")
 
             # Update UI to show disconnected state
@@ -684,9 +750,10 @@ class Application(QApplication):
 
             # Show user-friendly message
             from widgets.message import show_message
+
             show_message(
                 "Hardware communication lost. Please power off and reconnect the device.",
-                "Hardware Error"
+                "Hardware Error",
             )
 
     # === Recording Callbacks ===
@@ -715,6 +782,7 @@ class Application(QApplication):
         """Recording error occurred."""
         logger.error(f"Recording error: {error}")
         from widgets.message import show_message
+
         show_message(error, "Recording Error")
 
     def _on_event_logged(self, event: str):
@@ -732,20 +800,23 @@ class Application(QApplication):
         """Pump error occurred."""
         logger.error(f"Pump error: {error}")
         from widgets.message import show_message
+
         show_message(error, "Pump Error")
 
     def _on_pump_state_changed(self, state: dict):
         """Pump state changed."""
-        channel = state.get('channel')
-        running = state.get('running')
-        flow_rate = state.get('flow_rate')
-        logger.info(f"Pump {channel}: {'running' if running else 'stopped'} @ {flow_rate} μL/min")
+        channel = state.get("channel")
+        running = state.get("running")
+        flow_rate = state.get("flow_rate")
+        logger.info(
+            f"Pump {channel}: {'running' if running else 'stopped'} @ {flow_rate} μL/min",
+        )
         # TODO: Update UI pump status
 
     def _on_valve_switched(self, valve_info: dict):
         """Valve position changed."""
-        channel = valve_info.get('channel')
-        position = valve_info.get('position')
+        channel = valve_info.get("channel")
+        position = valve_info.get("position")
         logger.info(f"Valve {channel} switched to {position}")
         # TODO: Update UI valve status
 
@@ -787,7 +858,10 @@ class Application(QApplication):
                 logger.info("Disconnecting hardware...")
                 try:
                     # Close controller
-                    if hasattr(self.hardware_mgr, 'controller') and self.hardware_mgr.controller:
+                    if (
+                        hasattr(self.hardware_mgr, "controller")
+                        and self.hardware_mgr.controller
+                    ):
                         try:
                             self.hardware_mgr.controller.stop()
                             self.hardware_mgr.controller.close()
@@ -795,14 +869,20 @@ class Application(QApplication):
                             logger.error(f"Error closing controller: {e}")
 
                     # Close spectrometer
-                    if hasattr(self.hardware_mgr, 'spectrometer') and self.hardware_mgr.spectrometer:
+                    if (
+                        hasattr(self.hardware_mgr, "spectrometer")
+                        and self.hardware_mgr.spectrometer
+                    ):
                         try:
                             self.hardware_mgr.spectrometer.close()
                         except Exception as e:
                             logger.error(f"Error closing spectrometer: {e}")
 
                     # Close kinetics controller
-                    if hasattr(self.kinetic_mgr, 'kinetics_controller') and self.kinetic_mgr.kinetics_controller:
+                    if (
+                        hasattr(self.kinetic_mgr, "kinetics_controller")
+                        and self.kinetic_mgr.kinetics_controller
+                    ):
                         try:
                             self.kinetic_mgr.kinetics_controller.close()
                         except Exception as e:
@@ -822,24 +902,30 @@ class Application(QApplication):
 
     def _emergency_cleanup(self):
         """Emergency cleanup for unexpected exits (called by atexit)."""
-        if hasattr(self, 'closing') and self.closing:
+        if hasattr(self, "closing") and self.closing:
             return  # Normal close already happened
 
         logger.warning("⚠️ Emergency cleanup triggered - forcing resource release")
 
         # Force close all hardware connections without waiting
         try:
-            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+            if hasattr(self, "hardware_mgr") and self.hardware_mgr:
                 # Close controller
                 try:
-                    if hasattr(self.hardware_mgr, 'controller') and self.hardware_mgr.controller:
+                    if (
+                        hasattr(self.hardware_mgr, "controller")
+                        and self.hardware_mgr.controller
+                    ):
                         self.hardware_mgr.controller.close()
                 except Exception as e:
                     logger.error(f"Emergency cleanup - controller close failed: {e}")
 
                 # Close spectrometer
                 try:
-                    if hasattr(self.hardware_mgr, 'spectrometer') and self.hardware_mgr.spectrometer:
+                    if (
+                        hasattr(self.hardware_mgr, "spectrometer")
+                        and self.hardware_mgr.spectrometer
+                    ):
                         self.hardware_mgr.spectrometer.close()
                 except Exception as e:
                     logger.error(f"Emergency cleanup - spectrometer close failed: {e}")
@@ -848,8 +934,11 @@ class Application(QApplication):
 
         # Close kinetics
         try:
-            if hasattr(self, 'kinetic_mgr') and self.kinetic_mgr:
-                if hasattr(self.kinetic_mgr, 'kinetics_controller') and self.kinetic_mgr.kinetics_controller:
+            if hasattr(self, "kinetic_mgr") and self.kinetic_mgr:
+                if (
+                    hasattr(self.kinetic_mgr, "kinetics_controller")
+                    and self.kinetic_mgr.kinetics_controller
+                ):
                     self.kinetic_mgr.kinetics_controller.close()
         except Exception as e:
             logger.error(f"Emergency cleanup - kinetics close failed: {e}")
@@ -859,8 +948,10 @@ class Application(QApplication):
     def __del__(self):
         """Destructor to ensure resources are cleaned up."""
         try:
-            if not hasattr(self, 'closing') or not self.closing:
-                logger.warning("⚠️ __del__ called without proper close - forcing cleanup")
+            if not hasattr(self, "closing") or not self.closing:
+                logger.warning(
+                    "⚠️ __del__ called without proper close - forcing cleanup",
+                )
                 self._emergency_cleanup()
         except Exception:
             pass  # Destructor should never raise
@@ -880,10 +971,10 @@ class Application(QApplication):
         logger.info(f"Autoscale enabled for {self._selected_axis.upper()}-axis")
 
         # Enable autoscale for selected axis
-        if self._selected_axis == 'x':
-            self.main_window.cycle_of_interest_graph.enableAutoRange(axis='x')
+        if self._selected_axis == "x":
+            self.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
         else:
-            self.main_window.cycle_of_interest_graph.enableAutoRange(axis='y')
+            self.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
 
     def _on_manual_scale_toggled(self, checked: bool):
         """Manual radio button toggled."""
@@ -920,13 +1011,23 @@ class Application(QApplication):
                 logger.warning(f"Invalid range: min ({min_val}) >= max ({max_val})")
                 return
 
-            logger.info(f"Setting {self._selected_axis.upper()}-axis range: [{min_val}, {max_val}]")
+            logger.info(
+                f"Setting {self._selected_axis.upper()}-axis range: [{min_val}, {max_val}]",
+            )
 
             # Apply range to selected axis
-            if self._selected_axis == 'x':
-                self.main_window.cycle_of_interest_graph.setXRange(min_val, max_val, padding=0)
+            if self._selected_axis == "x":
+                self.main_window.cycle_of_interest_graph.setXRange(
+                    min_val,
+                    max_val,
+                    padding=0,
+                )
             else:
-                self.main_window.cycle_of_interest_graph.setYRange(min_val, max_val, padding=0)
+                self.main_window.cycle_of_interest_graph.setYRange(
+                    min_val,
+                    max_val,
+                    padding=0,
+                )
 
         except ValueError as e:
             logger.warning(f"Invalid manual range input: {e}")
@@ -938,10 +1039,10 @@ class Application(QApplication):
 
         # Determine which axis is now selected
         if self.main_window.x_axis_btn.isChecked():
-            self._selected_axis = 'x'
+            self._selected_axis = "x"
             logger.info("X-axis selected for scaling controls")
         else:
-            self._selected_axis = 'y'
+            self._selected_axis = "y"
             logger.info("Y-axis selected for scaling controls")
 
         # Re-apply current mode to new axis
@@ -973,15 +1074,15 @@ class Application(QApplication):
             return
 
         if self.main_window.median_filter_radio.isChecked():
-            self._filter_method = 'median'
+            self._filter_method = "median"
             logger.info("Filter method: Filter 1 (Median)")
         elif self.main_window.kalman_filter_radio.isChecked():
-            self._filter_method = 'kalman'
+            self._filter_method = "kalman"
             logger.info("Filter method: Filter 2 (Kalman)")
             # Initialize Kalman filters for each channel
             self._init_kalman_filters()
         else:
-            self._filter_method = 'savgol'
+            self._filter_method = "savgol"
             logger.info("Filter method: Filter 3 (Savitzky-Golay)")
 
         # Redraw if filtering is enabled
@@ -990,11 +1091,11 @@ class Application(QApplication):
 
     def _init_kalman_filters(self):
         """Initialize Kalman filter instances for each channel."""
-        import sys
         import os
+        import sys
 
         # Add utils to path
-        utils_path = os.path.join(os.path.dirname(__file__), '..')
+        utils_path = os.path.join(os.path.dirname(__file__), "..")
         if utils_path not in sys.path:
             sys.path.insert(0, utils_path)
 
@@ -1006,19 +1107,25 @@ class Application(QApplication):
         # Strength 1: R=0.5, Q=0.01 (heavy filtering)
         # Strength 5: R=0.1, Q=0.05 (moderate)
         # Strength 10: R=0.01, Q=0.1 (light filtering)
-        measurement_noise = 0.5 / self._filter_strength  # Higher strength = trust data more
-        process_noise = 0.01 * self._filter_strength  # Higher strength = allow more change
+        measurement_noise = (
+            0.5 / self._filter_strength
+        )  # Higher strength = trust data more
+        process_noise = (
+            0.01 * self._filter_strength
+        )  # Higher strength = allow more change
 
         self._kalman_filters = {}
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             self._kalman_filters[ch] = KalmanFilter(
                 process_noise=process_noise,
-                measurement_noise=measurement_noise
+                measurement_noise=measurement_noise,
             )
 
-        logger.info(f"Kalman filters initialized (R={measurement_noise:.3f}, Q={process_noise:.3f})")
+        logger.info(
+            f"Kalman filters initialized (R={measurement_noise:.3f}, Q={process_noise:.3f})",
+        )
 
-    def _apply_smoothing(self, data, strength: int, method: str = 'median'):
+    def _apply_smoothing(self, data, strength: int, method: str = "median"):
         """Apply smoothing filter to data.
 
         Args:
@@ -1028,17 +1135,17 @@ class Application(QApplication):
 
         Returns:
             Smoothed data array
-        """
-        import numpy as np
 
+        """
         if len(data) < 3:
             return data
 
-        if method == 'kalman':
+        if method == "kalman":
             # Use Kalman filter from backend
-            import sys
             import os
-            utils_path = os.path.join(os.path.dirname(__file__), '..')
+            import sys
+
+            utils_path = os.path.join(os.path.dirname(__file__), "..")
             if utils_path not in sys.path:
                 sys.path.insert(0, utils_path)
 
@@ -1050,11 +1157,11 @@ class Application(QApplication):
 
             kalman = KalmanFilter(
                 process_noise=process_noise,
-                measurement_noise=measurement_noise
+                measurement_noise=measurement_noise,
             )
             return kalman.filter_array(data)
 
-        elif method == 'savgol':
+        if method == "savgol":
             # Use Savitzky-Golay filter
             from scipy.signal import savgol_filter
 
@@ -1075,10 +1182,12 @@ class Application(QApplication):
             polyorder = min(2, window_size - 1)
 
             try:
-                smoothed = savgol_filter(data, window_size, polyorder, mode='nearest')
+                smoothed = savgol_filter(data, window_size, polyorder, mode="nearest")
                 return smoothed
             except Exception as e:
-                logger.warning(f"Savitzky-Golay filter failed: {e}, using original data")
+                logger.warning(
+                    f"Savitzky-Golay filter failed: {e}, using original data",
+                )
                 return data
 
         else:  # median filter
@@ -1109,7 +1218,7 @@ class Application(QApplication):
 
     def _redraw_timeline_graph(self):
         """Redraw the full timeline graph with current filter settings."""
-        for ch_letter, ch_idx in [('a', 0), ('b', 1), ('c', 2), ('d', 3)]:
+        for ch_letter, ch_idx in [("a", 0), ("b", 1), ("c", 2), ("d", 3)]:
             time_data = self.buffer_mgr.timeline_data[ch_letter].time
             wavelength_data = self.buffer_mgr.timeline_data[ch_letter].wavelength
 
@@ -1119,7 +1228,10 @@ class Application(QApplication):
             # Apply smoothing if enabled
             display_data = wavelength_data
             if self._filter_enabled:
-                display_data = self._apply_smoothing(wavelength_data, self._filter_strength)
+                display_data = self._apply_smoothing(
+                    wavelength_data,
+                    self._filter_strength,
+                )
 
             # Update curve
             curve = self.main_window.full_timeline_graph.curves[ch_idx]
@@ -1132,14 +1244,14 @@ class Application(QApplication):
         # Map selection to channel letter
         channel_map = {
             "None": None,
-            "Channel A": 'a',
-            "Channel B": 'b',
-            "Channel C": 'c',
-            "Channel D": 'd'
+            "Channel A": "a",
+            "Channel B": "b",
+            "Channel C": "c",
+            "Channel D": "d",
         }
 
         old_ref = self._reference_channel
-        self._reference_channel = channel_map.get(text, None)
+        self._reference_channel = channel_map.get(text)
 
         if self._reference_channel:
             logger.info(f"Reference channel set to: {self._reference_channel.upper()}")
@@ -1148,15 +1260,19 @@ class Application(QApplication):
 
         # Reset old reference channel styling
         if old_ref is not None:
-            ch_idx = {'a': 0, 'b': 1, 'c': 2, 'd': 3}[old_ref]
+            ch_idx = {"a": 0, "b": 1, "c": 2, "d": 3}[old_ref]
             self._reset_channel_style(ch_idx)
 
         # Apply new reference channel styling
         if self._reference_channel is not None:
-            ch_idx = {'a': 0, 'b': 1, 'c': 2, 'd': 3}[self._reference_channel]
+            ch_idx = {"a": 0, "b": 1, "c": 2, "d": 3}[self._reference_channel]
             # Purple color with transparency and dashed line
             self.main_window.cycle_of_interest_graph.curves[ch_idx].setPen(
-                pg.mkPen(color=(153, 102, 255, 150), width=2, style=pg.QtCore.Qt.PenStyle.DashLine)
+                pg.mkPen(
+                    color=(153, 102, 255, 150),
+                    width=2,
+                    style=pg.QtCore.Qt.PenStyle.DashLine,
+                ),
             )
 
         # Recompute cycle data with new reference
@@ -1167,8 +1283,6 @@ class Application(QApplication):
         if self._reference_channel is None:
             return
 
-        import numpy as np
-
         ref_time = self.buffer_mgr.cycle_data[self._reference_channel].time
         ref_spr = self.buffer_mgr.cycle_data[self._reference_channel].spr
 
@@ -1176,7 +1290,7 @@ class Application(QApplication):
             return
 
         # Subtract reference from all other channels
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             if ch == self._reference_channel:
                 continue  # Don't subtract reference from itself
 
@@ -1195,12 +1309,13 @@ class Application(QApplication):
 
     def _reset_channel_style(self, ch_idx: int):
         """Reset channel curve to standard or colorblind style."""
-        import pyqtgraph as pg
-        import sys
         import os
+        import sys
+
+        import pyqtgraph as pg
 
         # Add settings to path if not already there
-        settings_path = os.path.join(os.path.dirname(__file__), '..')
+        settings_path = os.path.join(os.path.dirname(__file__), "..")
         if settings_path not in sys.path:
             sys.path.insert(0, settings_path)
 
@@ -1209,17 +1324,17 @@ class Application(QApplication):
         # Determine if colorblind mode is active
         if self.main_window.colorblind_check.isChecked():
             colors = settings.GRAPH_COLORS_COLORBLIND
-            ch_letter = ['a', 'b', 'c', 'd'][ch_idx]
+            ch_letter = ["a", "b", "c", "d"][ch_idx]
             rgb = colors[ch_letter]
             color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
         else:
             # Standard colors
-            color_list = ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
+            color_list = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
             color = color_list[ch_idx]
 
         # Reset to solid line with full opacity
         self.main_window.cycle_of_interest_graph.curves[ch_idx].setPen(
-            pg.mkPen(color=color, width=2)
+            pg.mkPen(color=color, width=2),
         )
 
     def _on_graph_clicked(self, event):
@@ -1228,13 +1343,16 @@ class Application(QApplication):
         Left click: Select channel closest to cursor
         Right click: Add flag/annotation at cursor position for selected channel
         """
-        import pyqtgraph as pg
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QInputDialog
 
         # Get click position in data coordinates
         pos = event.scenePos()
-        mouse_point = self.main_window.cycle_of_interest_graph.getPlotItem().vb.mapSceneToView(pos)
+        mouse_point = (
+            self.main_window.cycle_of_interest_graph.getPlotItem().vb.mapSceneToView(
+                pos,
+            )
+        )
         click_time = mouse_point.x()
         click_value = mouse_point.y()
 
@@ -1245,7 +1363,9 @@ class Application(QApplication):
         elif event.button() == Qt.MouseButton.RightButton:
             # Right click: Add flag for selected channel
             if self._selected_channel is None:
-                logger.warning("No channel selected. Left-click a channel first to select it.")
+                logger.warning(
+                    "No channel selected. Left-click a channel first to select it.",
+                )
                 return
 
             # Prompt user for flag type
@@ -1255,7 +1375,7 @@ class Application(QApplication):
                 f"Select flag type for Channel {chr(65 + self._selected_channel)} at {click_time:.2f}s:",
                 ["Inject", "Wash", "Spike"],
                 0,
-                False
+                False,
             )
 
             if ok:
@@ -1263,10 +1383,8 @@ class Application(QApplication):
 
     def _select_nearest_channel(self, click_time: float, click_value: float):
         """Select the channel whose curve is nearest to the click position."""
-        import numpy as np
-
         # Find nearest channel by checking distance to each curve
-        min_distance = float('inf')
+        min_distance = float("inf")
         nearest_channel = None
 
         for ch_idx in range(4):
@@ -1297,12 +1415,12 @@ class Application(QApplication):
             # Update visual feedback (make selected channel thicker)
             if old_channel is not None:
                 old_curve = self.main_window.cycle_of_interest_graph.curves[old_channel]
-                old_pen = old_curve.opts['pen']
+                old_pen = old_curve.opts["pen"]
                 old_pen.setWidth(2)  # Normal width
                 old_curve.setPen(old_pen)
 
             new_curve = self.main_window.cycle_of_interest_graph.curves[nearest_channel]
-            new_pen = new_curve.opts['pen']
+            new_pen = new_curve.opts["pen"]
             new_pen.setWidth(4)  # Thicker for selected
             new_curve.setPen(new_pen)
 
@@ -1311,35 +1429,35 @@ class Application(QApplication):
     def _add_flag(self, channel: int, time: float, annotation: str):
         """Add a flag marker to the graph and save to table."""
         import pyqtgraph as pg
-        from PySide6.QtWidgets import QTableWidgetItem
 
         # Store flag data
         flag_entry = {
-            'channel': channel,
-            'time': time,
-            'annotation': annotation
+            "channel": channel,
+            "time": time,
+            "annotation": annotation,
         }
         self._flag_data.append(flag_entry)
 
         # Get channel color
         curve = self.main_window.cycle_of_interest_graph.curves[channel]
-        color = curve.opts['pen'].color()
+        color = curve.opts["pen"].color()
 
         # Create flag marker (vertical line with symbol)
         flag_line = pg.InfiniteLine(
             pos=time,
             angle=90,
             pen=pg.mkPen(color=color, width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
-            movable=False
+            movable=False,
         )
 
         # Add flag symbol at top
         flag_symbol = pg.ScatterPlotItem(
-            [time], [self.main_window.cycle_of_interest_graph.getPlotItem().viewRange()[1][1]],
-            symbol='t',  # Triangle down (flag shape)
+            [time],
+            [self.main_window.cycle_of_interest_graph.getPlotItem().viewRange()[1][1]],
+            symbol="t",  # Triangle down (flag shape)
             size=15,
             brush=pg.mkBrush(color),
-            pen=pg.mkPen(color=color, width=2)
+            pen=pg.mkPen(color=color, width=2),
         )
 
         # Add to graph
@@ -1347,16 +1465,20 @@ class Application(QApplication):
         self.main_window.cycle_of_interest_graph.addItem(flag_symbol)
 
         # Store references
-        self.main_window.cycle_of_interest_graph.flag_markers.append({
-            'line': flag_line,
-            'symbol': flag_symbol,
-            'data': flag_entry
-        })
+        self.main_window.cycle_of_interest_graph.flag_markers.append(
+            {
+                "line": flag_line,
+                "symbol": flag_symbol,
+                "data": flag_entry,
+            },
+        )
 
         # Update cycle data table
         self._update_cycle_data_table()
 
-        logger.info(f"Added flag for Channel {chr(65 + channel)} at {time:.2f}s: '{annotation}'")
+        logger.info(
+            f"Added flag for Channel {chr(65 + channel)} at {time:.2f}s: '{annotation}'",
+        )
 
     def _update_cycle_data_table(self):
         """Update the Flags column in cycle data table with flag information."""
@@ -1364,10 +1486,12 @@ class Application(QApplication):
 
         # Build flag summary string for each row (currently just showing all flags)
         # In a real implementation, this would map flags to specific cycles
-        flag_summary = "\n".join([
-            f"Ch {chr(65 + f['channel'])} @ {f['time']:.1f}s: {f['annotation']}"
-            for f in self._flag_data
-        ])
+        flag_summary = "\n".join(
+            [
+                f"Ch {chr(65 + f['channel'])} @ {f['time']:.1f}s: {f['annotation']}"
+                for f in self._flag_data
+            ],
+        )
 
         # Update first row's Flags column with all flags
         # (In production, you'd map each flag to its corresponding cycle row)
@@ -1379,10 +1503,12 @@ class Application(QApplication):
         """Toggle between S and P polarizer positions."""
         if self.hardware_mgr and self.hardware_mgr.ctrl:
             # Determine current position and toggle
-            current_pos = getattr(self.hardware_mgr, '_current_polarizer', 's')
-            new_pos = 'p' if current_pos == 's' else 's'
+            current_pos = getattr(self.hardware_mgr, "_current_polarizer", "s")
+            new_pos = "p" if current_pos == "s" else "s"
 
-            logger.info(f"Toggling polarizer from {current_pos.upper()} to {new_pos.upper()}")
+            logger.info(
+                f"Toggling polarizer from {current_pos.upper()} to {new_pos.upper()}",
+            )
 
             # Set polarizer position
             self.hardware_mgr.ctrl.set_mode(mode=new_pos)
@@ -1404,21 +1530,25 @@ class Application(QApplication):
             led_d = int(self.main_window.channel_d_input.text() or "0")
 
             # Validate ranges (0-255)
-            if not all(0 <= val <= 255 for val in [s_pos, p_pos, led_a, led_b, led_c, led_d]):
+            if not all(
+                0 <= val <= 255 for val in [s_pos, p_pos, led_a, led_b, led_c, led_d]
+            ):
                 logger.error("All values must be between 0-255")
                 return
 
             if self.hardware_mgr and self.hardware_mgr.ctrl:
-                logger.info(f"Applying settings: S={s_pos}, P={p_pos}, LEDs=[{led_a},{led_b},{led_c},{led_d}]")
+                logger.info(
+                    f"Applying settings: S={s_pos}, P={p_pos}, LEDs=[{led_a},{led_b},{led_c},{led_d}]",
+                )
 
                 # Set polarizer positions (using servo_set method)
                 self.hardware_mgr.ctrl.servo_set(s=s_pos, p=p_pos)
 
                 # Set LED intensities
-                self.hardware_mgr.ctrl.set_intensity('a', led_a)
-                self.hardware_mgr.ctrl.set_intensity('b', led_b)
-                self.hardware_mgr.ctrl.set_intensity('c', led_c)
-                self.hardware_mgr.ctrl.set_intensity('d', led_d)
+                self.hardware_mgr.ctrl.set_intensity("a", led_a)
+                self.hardware_mgr.ctrl.set_intensity("b", led_b)
+                self.hardware_mgr.ctrl.set_intensity("c", led_c)
+                self.hardware_mgr.ctrl.set_intensity("d", led_d)
 
                 # Flash to EEPROM
                 logger.info("💾 Flashing settings to EEPROM...")
@@ -1439,17 +1569,27 @@ class Application(QApplication):
             return
 
         if self.main_window.ru_btn.isChecked():
-            unit = 'RU'
+            unit = "RU"
         else:
-            unit = 'nm'
+            unit = "nm"
 
         logger.info(f"Display unit changed to: {unit}")
 
         # Update graph labels
-        if unit == 'RU':
-            self.main_window.cycle_of_interest_graph.setLabel('left', 'Δ SPR (RU)', color='#86868B', size='11pt')
+        if unit == "RU":
+            self.main_window.cycle_of_interest_graph.setLabel(
+                "left",
+                "Δ SPR (RU)",
+                color="#86868B",
+                size="11pt",
+            )
         else:
-            self.main_window.cycle_of_interest_graph.setLabel('left', 'λ (nm)', color='#86868B', size='11pt')
+            self.main_window.cycle_of_interest_graph.setLabel(
+                "left",
+                "λ (nm)",
+                color="#86868B",
+                size="11pt",
+            )
 
         # TODO: Trigger data conversion and redraw
         # The conversion factor is approximately: 1 RU ≈ 0.1 nm
@@ -1457,11 +1597,11 @@ class Application(QApplication):
 
     def _on_colorblind_toggled(self, checked: bool):
         """Colorblind-friendly palette toggled."""
-        import sys
         import os
+        import sys
 
         # Add settings to path if not already there
-        settings_path = os.path.join(os.path.dirname(__file__), '..')
+        settings_path = os.path.join(os.path.dirname(__file__), "..")
         if settings_path not in sys.path:
             sys.path.insert(0, settings_path)
 
@@ -1480,20 +1620,21 @@ class Application(QApplication):
         else:
             logger.info("Switching to standard palette")
             # Standard colors: Black, Red, Blue, Green
-            color_list = ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
+            color_list = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
 
         # Update all graph curves on both timeline and cycle graphs
         for i, color in enumerate(color_list):
             import pyqtgraph as pg
+
             # Update full timeline graph
             if i < len(self.main_window.full_timeline_graph.curves):
                 self.main_window.full_timeline_graph.curves[i].setPen(
-                    pg.mkPen(color=color, width=2)
+                    pg.mkPen(color=color, width=2),
                 )
             # Update cycle of interest graph
             if i < len(self.main_window.cycle_of_interest_graph.curves):
                 self.main_window.cycle_of_interest_graph.curves[i].setPen(
-                    pg.mkPen(color=color, width=2)
+                    pg.mkPen(color=color, width=2),
                 )
 
         logger.info("✅ Graph colors updated successfully")
@@ -1502,12 +1643,12 @@ class Application(QApplication):
         """Start simple LED intensity calibration (no auto-align)."""
         logger.info("🔧 Starting Simple LED Calibration...")
         # This is the basic calibrate() function
-        if hasattr(self.hardware_mgr, 'main_app') and self.hardware_mgr.main_app:
+        if hasattr(self.hardware_mgr, "main_app") and self.hardware_mgr.main_app:
             # Disable auto-polarization for simple calibration
             self.hardware_mgr.main_app.auto_polarize = False
             self.hardware_mgr.main_app._c_stop.clear()
             self.hardware_mgr.main_app.calibration_thread = threading.Thread(
-                target=self.hardware_mgr.main_app.calibrate
+                target=self.hardware_mgr.main_app.calibrate,
             )
             self.hardware_mgr.main_app.calibration_thread.start()
         else:
@@ -1517,12 +1658,12 @@ class Application(QApplication):
         """Start full calibration with auto-align and polarizer calibration."""
         logger.info("🔧 Starting Full Calibration (with auto-align)...")
         # This is calibrate() with auto_polarize enabled
-        if hasattr(self.hardware_mgr, 'main_app') and self.hardware_mgr.main_app:
+        if hasattr(self.hardware_mgr, "main_app") and self.hardware_mgr.main_app:
             # Enable auto-polarization for full calibration
             self.hardware_mgr.main_app.auto_polarize = True
             self.hardware_mgr.main_app._c_stop.clear()
             self.hardware_mgr.main_app.calibration_thread = threading.Thread(
-                target=self.hardware_mgr.main_app.calibrate
+                target=self.hardware_mgr.main_app.calibrate,
             )
             self.hardware_mgr.main_app.calibration_thread.start()
         else:
@@ -1532,14 +1673,14 @@ class Application(QApplication):
         """Start OEM LED calibration with full afterglow measurement."""
         logger.info("🔧 Starting OEM LED Calibration (with afterglow)...")
         # This runs full calibration + afterglow measurement
-        if hasattr(self.hardware_mgr, 'main_app') and self.hardware_mgr.main_app:
+        if hasattr(self.hardware_mgr, "main_app") and self.hardware_mgr.main_app:
             # Enable auto-polarization
             self.hardware_mgr.main_app.auto_polarize = True
             self.hardware_mgr.main_app._c_stop.clear()
 
             # Start calibration thread
             self.hardware_mgr.main_app.calibration_thread = threading.Thread(
-                target=self.hardware_mgr.main_app.calibrate
+                target=self.hardware_mgr.main_app.calibrate,
             )
             self.hardware_mgr.main_app.calibration_thread.start()
 
@@ -1601,13 +1742,16 @@ class Application(QApplication):
             # Update UI to disconnected state
             self.main_window.set_power_state("disconnected")
 
-            logger.info("✅ Graceful shutdown complete - software ready for offline post-processing")
+            logger.info(
+                "✅ Graceful shutdown complete - software ready for offline post-processing",
+            )
 
         except Exception as e:
             logger.error(f"Error during power off: {e}")
             # Still update UI even if errors occurred
             self.main_window.set_power_state("disconnected")
             from widgets.message import show_message
+
             show_message(f"Power off completed with errors: {e}", "Warning")
 
     def _on_recording_start_requested(self):
@@ -1615,11 +1759,12 @@ class Application(QApplication):
         logger.info("📝 Recording start requested...")
 
         # Show file dialog to select recording location
-        from PySide6.QtWidgets import QFileDialog
-        from pathlib import Path
-
         # Get default filename with timestamp
         import datetime as dt
+        from pathlib import Path
+
+        from PySide6.QtWidgets import QFileDialog
+
         timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_filename = f"AffiLabs_data_{timestamp}.csv"
 
@@ -1628,7 +1773,7 @@ class Application(QApplication):
             self.main_window,
             "Save Recording As",
             default_filename,
-            "CSV Files (*.csv);;All Files (*.*)"
+            "CSV Files (*.csv);;All Files (*.*)",
         )
 
         if file_path:
@@ -1661,6 +1806,7 @@ class Application(QApplication):
 
         Args:
             status: Hardware status dict from HardwareManager
+
         """
         logger.info("Updating Device Status UI...")
 
@@ -1669,21 +1815,31 @@ class Application(QApplication):
 
         # Log hardware summary
         logger.info(f"  Controller: {status.get('ctrl_type', 'None')}")
-        logger.info(f"  Spectrometer: {'Connected' if status.get('spectrometer') else 'Not connected'}")
+        logger.info(
+            f"  Spectrometer: {'Connected' if status.get('spectrometer') else 'Not connected'}",
+        )
         logger.info(f"  Kinetic: {status.get('knx_type', 'None')}")
-        logger.info(f"  Pump: {'Connected' if status.get('pump_connected') else 'Not connected'}")
-        logger.info(f"  Sensor: {'Ready' if status.get('sensor_ready') else 'Not ready'}")
-        logger.info(f"  Optics: {'Ready' if status.get('optics_ready') else 'Not ready'}")
-        logger.info(f"  Fluidics: {'Ready' if status.get('fluidics_ready') else 'Not ready'}")
+        logger.info(
+            f"  Pump: {'Connected' if status.get('pump_connected') else 'Not connected'}",
+        )
+        logger.info(
+            f"  Sensor: {'Ready' if status.get('sensor_ready') else 'Not ready'}",
+        )
+        logger.info(
+            f"  Optics: {'Ready' if status.get('optics_ready') else 'Not ready'}",
+        )
+        logger.info(
+            f"  Fluidics: {'Ready' if status.get('fluidics_ready') else 'Not ready'}",
+        )
 
 
 def main():
     """Launch the application with modern UI."""
     dtnow = dt.datetime.now(TIME_ZONE)
-    logger.info("="*70)
+    logger.info("=" * 70)
     logger.info("AffiLabs.core - Surface Plasmon Resonance Analysis")
     logger.info(f"{SW_VERSION} | {dtnow.strftime('%Y-%m-%d %H:%M')}")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     # Create and run application
     app = Application(sys.argv)

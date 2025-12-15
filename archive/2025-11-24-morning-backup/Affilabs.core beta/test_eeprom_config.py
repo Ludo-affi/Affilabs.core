@@ -1,5 +1,4 @@
-"""
-Test EEPROM Device Configuration System (Simulation Mode)
+"""Test EEPROM Device Configuration System (Simulation Mode)
 
 This script tests the EEPROM backup/restore workflow WITHOUT requiring
 firmware updates. It simulates EEPROM operations to verify the logic.
@@ -18,7 +17,6 @@ Usage:
 import json
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -50,15 +48,21 @@ class MockController:
 
     def write_config_to_eeprom(self, config):
         """Simulate EEPROM write."""
-        import struct
-
         try:
             # Validate config data (same as real implementation)
             required_keys = [
-                'led_pcb_model', 'controller_type', 'fiber_diameter_um',
-                'polarizer_type', 'servo_s_position', 'servo_p_position',
-                'led_intensity_a', 'led_intensity_b', 'led_intensity_c', 'led_intensity_d',
-                'integration_time_ms', 'num_scans'
+                "led_pcb_model",
+                "controller_type",
+                "fiber_diameter_um",
+                "polarizer_type",
+                "servo_s_position",
+                "servo_p_position",
+                "led_intensity_a",
+                "led_intensity_b",
+                "led_intensity_c",
+                "led_intensity_d",
+                "integration_time_ms",
+                "num_scans",
             ]
 
             for key in required_keys:
@@ -74,7 +78,9 @@ class MockController:
             logger.info(f"   LED Model: {config['led_pcb_model']}")
             logger.info(f"   Fiber: {config['fiber_diameter_um']}µm")
             logger.info(f"   Polarizer: {config['polarizer_type']}")
-            logger.info(f"   Servo S/P: {config['servo_s_position']}/{config['servo_p_position']}")
+            logger.info(
+                f"   Servo S/P: {config['servo_s_position']}/{config['servo_p_position']}",
+            )
 
             return True
 
@@ -85,20 +91,19 @@ class MockController:
 
 def test_eeprom_workflow():
     """Test complete EEPROM backup/restore workflow."""
-
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("EEPROM Device Configuration Test (Simulation Mode)")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     # Test configuration
     test_serial = "TEST_DEVICE_001"
-    config_dir = Path(__file__).parent / 'config' / 'devices' / test_serial
-    config_path = config_dir / 'device_config.json'
+    config_dir = Path(__file__).parent / "config" / "devices" / test_serial
+    config_path = config_dir / "device_config.json"
 
     # Clean up any existing test config
     if config_path.exists():
         config_path.unlink()
-        print(f"✓ Cleaned up existing test config\n")
+        print("✓ Cleaned up existing test config\n")
 
     # Create mock controller
     controller = MockController()
@@ -110,21 +115,21 @@ def test_eeprom_workflow():
 
     device_config = DeviceConfiguration(
         device_serial=test_serial,
-        controller=controller
+        controller=controller,
     )
 
     # Set some custom values
-    device_config.config['hardware']['led_pcb_model'] = 'osram_warm_white'
-    device_config.config['hardware']['optical_fiber_diameter_um'] = 100
-    device_config.config['hardware']['polarizer_type'] = 'round'
-    device_config.config['hardware']['servo_s_position'] = 15
-    device_config.config['hardware']['servo_p_position'] = 95
-    device_config.config['calibration']['led_intensity_a'] = 150
-    device_config.config['calibration']['led_intensity_b'] = 160
-    device_config.config['calibration']['led_intensity_c'] = 140
-    device_config.config['calibration']['led_intensity_d'] = 155
-    device_config.config['calibration']['integration_time_ms'] = 120
-    device_config.config['calibration']['num_scans'] = 5
+    device_config.config["hardware"]["led_pcb_model"] = "osram_warm_white"
+    device_config.config["hardware"]["optical_fiber_diameter_um"] = 100
+    device_config.config["hardware"]["polarizer_type"] = "round"
+    device_config.config["hardware"]["servo_s_position"] = 15
+    device_config.config["hardware"]["servo_p_position"] = 95
+    device_config.config["calibration"]["led_intensity_a"] = 150
+    device_config.config["calibration"]["led_intensity_b"] = 160
+    device_config.config["calibration"]["led_intensity_c"] = 140
+    device_config.config["calibration"]["led_intensity_d"] = 155
+    device_config.config["calibration"]["integration_time_ms"] = 120
+    device_config.config["calibration"]["num_scans"] = 5
 
     device_config.save()
 
@@ -147,7 +152,7 @@ def test_eeprom_workflow():
         return False
 
     # Verify EEPROM contents
-    print(f"\n✓ EEPROM now contains:")
+    print("\n✓ EEPROM now contains:")
     print(f"  Valid: {controller.is_config_valid_in_eeprom()}")
     print(f"  LED Model: {controller.eeprom_storage['led_pcb_model']}")
     print(f"  Fiber: {controller.eeprom_storage['fiber_diameter_um']}µm")
@@ -169,15 +174,19 @@ def test_eeprom_workflow():
     # Create new DeviceConfiguration instance (simulates fresh start)
     restored_config = DeviceConfiguration(
         device_serial=test_serial,
-        controller=controller
+        controller=controller,
     )
 
-    print(f"✓ Configuration restored")
+    print("✓ Configuration restored")
     print(f"  Source: {'EEPROM' if restored_config.loaded_from_eeprom else 'JSON'}")
     print(f"  LED Model: {restored_config.config['hardware']['led_pcb_model']}")
-    print(f"  Fiber: {restored_config.config['hardware']['optical_fiber_diameter_um']}µm")
+    print(
+        f"  Fiber: {restored_config.config['hardware']['optical_fiber_diameter_um']}µm",
+    )
     print(f"  Polarizer: {restored_config.config['hardware']['polarizer_type']}")
-    print(f"  Servo S/P: {restored_config.config['hardware']['servo_s_position']}/{restored_config.config['hardware']['servo_p_position']}")
+    print(
+        f"  Servo S/P: {restored_config.config['hardware']['servo_s_position']}/{restored_config.config['hardware']['servo_p_position']}",
+    )
 
     # Test 5: Verify JSON was recreated
     print("\n" + "=" * 70)
@@ -186,11 +195,11 @@ def test_eeprom_workflow():
 
     if config_path.exists():
         print(f"✓ JSON file automatically recreated: {config_path}")
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             json_data = json.load(f)
         print(f"  JSON contains {len(json_data)} sections")
     else:
-        print(f"✗ JSON file was NOT recreated")
+        print("✗ JSON file was NOT recreated")
         return False
 
     # Test 6: Verify data integrity
@@ -198,18 +207,18 @@ def test_eeprom_workflow():
     print("TEST 6: Verify Data Integrity")
     print("=" * 70)
 
-    original_led_model = 'osram_warm_white'
+    original_led_model = "osram_warm_white"
     original_fiber = 100
     original_servo_s = 15
 
-    restored_led_model = restored_config.config['hardware']['led_pcb_model']
-    restored_fiber = restored_config.config['hardware']['optical_fiber_diameter_um']
-    restored_servo_s = restored_config.config['hardware']['servo_s_position']
+    restored_led_model = restored_config.config["hardware"]["led_pcb_model"]
+    restored_fiber = restored_config.config["hardware"]["optical_fiber_diameter_um"]
+    restored_servo_s = restored_config.config["hardware"]["servo_s_position"]
 
     checks = [
-        ('LED Model', original_led_model, restored_led_model),
-        ('Fiber Diameter', original_fiber, restored_fiber),
-        ('Servo S Position', original_servo_s, restored_servo_s)
+        ("LED Model", original_led_model, restored_led_model),
+        ("Fiber Diameter", original_fiber, restored_fiber),
+        ("Servo S Position", original_servo_s, restored_servo_s),
     ]
 
     all_passed = True
@@ -235,10 +244,10 @@ def test_eeprom_workflow():
 
     default_config = DeviceConfiguration(
         device_serial=test_serial,
-        controller=empty_controller
+        controller=empty_controller,
     )
 
-    print(f"✓ Fallback to defaults worked")
+    print("✓ Fallback to defaults worked")
     print(f"  Source: {'EEPROM' if default_config.loaded_from_eeprom else 'Defaults'}")
     print(f"  LED Model: {default_config.config['hardware']['led_pcb_model']}")
 
@@ -283,5 +292,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Test failed with exception: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

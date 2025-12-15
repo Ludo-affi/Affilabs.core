@@ -266,4 +266,3 @@ POLARIZER_ERROR_MESSAGE = """
 2. Config with `polarizer` section → Should load
 3. Config with neither → Should fail with clear error
 4. Config with both → Should prefer `oem_calibration`
-

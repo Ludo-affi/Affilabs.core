@@ -1,8 +1,8 @@
-﻿import serial.tools.list_ports
+import serial.tools.list_ports
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("COM PORT SCAN")
-print("="*60)
+print("=" * 60)
 
 ports = list(serial.tools.list_ports.comports())
 

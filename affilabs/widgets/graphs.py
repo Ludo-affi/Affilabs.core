@@ -1,26 +1,40 @@
-import PySide6
-import pyqtgraph
-import numpy as np
-from PySide6.QtCore import Signal, Qt, QRectF
-from PySide6.QtGui import QBrush, QColor, QPen
-from PySide6.QtWidgets import QGraphicsRectItem, QCheckBox, QWidget, QHBoxLayout, QPushButton, QGraphicsProxyWidget, QSizePolicy
-from pyqtgraph import GraphicsLayoutWidget, setConfigOptions, mkPen, InfiniteLine, LinearRegionItem
 from copy import deepcopy
+
+import numpy as np
+from pyqtgraph import (
+    GraphicsLayoutWidget,
+    InfiniteLine,
+    LinearRegionItem,
+    mkPen,
+    setConfigOptions,
+)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QGraphicsProxyWidget,
+    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
+    QWidget,
+)
+
 import settings
-from settings import CH_LIST, UNIT_LIST, STATIC_PLOT, DEV
 from affilabs.utils.logger import logger
+from settings import CH_LIST, STATIC_PLOT, UNIT_LIST
 
 # Configure PyQtGraph for maximum performance
 setConfigOptions(
     antialias=True,  # Smooth lines
     useNumba=False,  # Disable numba (can cause issues with batched updates)
     exitCleanup=True,  # Clean shutdown
-    enableExperimental=False  # Stable features only
+    enableExperimental=False,  # Stable features only
 )
 
 # Import modern theme colors
 try:
-    from styles import get_graph_colors, style_plot_widget, create_channel_pens
+    from styles import create_channel_pens, get_graph_colors, style_plot_widget
+
     MODERN_COLORS = get_graph_colors()
     MODERN_THEME = True
 except ImportError:
@@ -29,8 +43,7 @@ except ImportError:
 
 
 class SensorgramGraph(GraphicsLayoutWidget):
-    """
-    Master/Overview graph for full experiment timeline (Live Sensorgram).
+    """Master/Overview graph for full experiment timeline (Live Sensorgram).
 
     **Navigation Philosophy:**
     - The LIVE SENSORGRAM is the NAVIGATION SPACE (full experiment overview)
@@ -59,6 +72,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
     - Live data continues updating, cursor auto-follow disabled during cycle
     - Historical data can be heavily downsampled since it's for navigation only
     """
+
     segment_signal = Signal(float, float, bool)
     shift_values_signal = Signal(dict)  # Signal to emit shift values to display box
 
@@ -70,17 +84,19 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.subsample_target = 150
         self.subsampling = False
         self.block_updates = False
-        self.unit = 'nm'
+        self.unit = "nm"
         self.unit_factor = UNIT_LIST[self.unit]
         self.updating = False
         self.live_range = 50
         self.static_index = 0
         self.wait_for_reset = False
-        self.fixed_window_active = False  # Flag to prevent auto-range when window is fixed
+        self.fixed_window_active = (
+            False  # Flag to prevent auto-range when window is fixed
+        )
 
         # Smart downsampling: track cycle boundaries for selective downsampling
         self.cycle_start_time = None  # When current cycle started
-        self.cycle_end_time = None    # When current cycle ended (if completed)
+        self.cycle_end_time = None  # When current cycle ended (if completed)
 
         setConfigOptions(antialias=True)
 
@@ -88,13 +104,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
         if show_title:
             self.plot = self.addPlot(title=title_string)
             # Style title
-            self.plot.titleLabel.setText(title_string, color=(30, 30, 30), size='11pt')
+            self.plot.titleLabel.setText(title_string, color=(30, 30, 30), size="11pt")
         else:
             self.plot = self.addPlot()
         self.plot.showGrid(x=False, y=False)
         self.plot.setAxisItems()
-        self.plot.setLabel('left', text=f'λ ({self.unit})')  # Lambda symbol
-        self.plot.setLabel('bottom', text='Time (s)')
+        self.plot.setLabel("left", text=f"λ ({self.unit})")  # Lambda symbol
+        self.plot.setLabel("bottom", text="Time (s)")
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.enableAutoRange()
@@ -111,13 +127,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
         vb.setMouseEnabled(x=True, y=True)
 
         # Reduce Y-axis tick density for cleaner compact view
-        self.plot.getAxis('left').setStyle(maxTickLevel=1)  # Show fewer tick levels
+        self.plot.getAxis("left").setStyle(maxTickLevel=1)  # Show fewer tick levels
 
         # Ensure bottom axis has space for label - explicit sizing for visibility
-        bottom_axis = self.plot.getAxis('bottom')
-        left_axis = self.plot.getAxis('left')
+        bottom_axis = self.plot.getAxis("bottom")
+        left_axis = self.plot.getAxis("left")
         bottom_axis.setHeight(45)  # Increased space for 'Time (s)' label visibility
-        left_axis.setWidth(55)     # Space for Y-axis label
+        left_axis.setWidth(55)  # Space for Y-axis label
 
         # Ensure label is visible
         bottom_axis.label.show()
@@ -136,17 +152,17 @@ class SensorgramGraph(GraphicsLayoutWidget):
             # - skipFiniteCheck: Faster rendering (data already validated)
             self.plots[ch] = self.plot.plot(
                 pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
-                connect='finite',
+                connect="finite",
                 clipToView=True,
                 autoDownsample=True,
-                skipFiniteCheck=True
+                skipFiniteCheck=True,
             )
             self.static[ch] = self.plot.plot(
                 pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
-                connect='finite',
+                connect="finite",
                 clipToView=True,
                 autoDownsample=True,
-                skipFiniteCheck=True
+                skipFiniteCheck=True,
             )
         self.latest_time = 0
 
@@ -154,21 +170,23 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
         # Cursor styling: thicker lines for easier interaction
         # Main pen: 3px width for better visibility and click target
-        cursor_pen = mkPen('#333333', width=3)
+        cursor_pen = mkPen("#333333", width=3)
         cursor_label_opts = {
-            'position': 0.95,
-            'color': (51, 51, 51),
-            'movable': False,
-            'fill': (255, 255, 255, 220),
-            'anchor': (1.0, 0.5),
-            'rotateAxis': (0, 1),
+            "position": 0.95,
+            "color": (51, 51, 51),
+            "movable": False,
+            "fill": (255, 255, 255, 220),
+            "anchor": (1.0, 0.5),
+            "rotateAxis": (0, 1),
         }
 
         start_label_opts = cursor_label_opts.copy()
-        start_label_opts.update({
-            'position': 0.04,
-            'anchor': (0.5, 1.25),
-        })
+        start_label_opts.update(
+            {
+                "position": 0.04,
+                "anchor": (0.5, 1.25),
+            },
+        )
 
         # Set vertical cursors: left and right with thicker styling for easier selection
         # The live sensorgram is the navigation space - cursors define the cycle of interest region
@@ -177,20 +195,22 @@ class SensorgramGraph(GraphicsLayoutWidget):
             angle=90,
             pen=cursor_pen,
             movable=True,
-            label='Start 0.00s',
-            labelOpts=start_label_opts)
+            label="Start 0.00s",
+            labelOpts=start_label_opts,
+        )
 
         self.right_cursor = InfiniteLine(
             pos=0,
             angle=90,
             pen=cursor_pen,
             movable=True,
-            label='Stop 0.00s',
-            labelOpts=cursor_label_opts.copy())
+            label="Stop 0.00s",
+            labelOpts=cursor_label_opts.copy(),
+        )
 
         # Set cursor hover color: even thicker on hover (5px) for clear visual feedback
-        self.left_cursor.setHoverPen(mkPen('#666666', width=5))
-        self.right_cursor.setHoverPen(mkPen('#666666', width=5))
+        self.left_cursor.setHoverPen(mkPen("#666666", width=5))
+        self.right_cursor.setHoverPen(mkPen("#666666", width=5))
 
         self.left_cursor.label.setAngle(-90)
         self.right_cursor.label.setAngle(-90)
@@ -226,7 +246,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         Returns list in channel order: [a, b, c, d]
         Maps to internal self.plots dictionary.
         """
-        return [self.plots['a'], self.plots['b'], self.plots['c'], self.plots['d']]
+        return [self.plots["a"], self.plots["b"], self.plots["c"], self.plots["d"]]
 
     @property
     def start_cursor(self):
@@ -279,7 +299,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
     def _position_clear_button(self):
         """Position the Clear button at the top-left of the graph."""
-        if hasattr(self, 'clear_button_proxy'):
+        if hasattr(self, "clear_button_proxy"):
             # Get the plot area coordinates
             plot_rect = self.plot.sceneBoundingRect()
 
@@ -292,17 +312,20 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def update_colors(self):
         """Update plot colors when colorblind mode is toggled."""
         for ch in CH_LIST:
-            self.plots[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
-            if hasattr(self, 'static') and ch in self.static:
-                self.static[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+            self.plots[ch].setPen(
+                mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
+            )
+            if hasattr(self, "static") and ch in self.static:
+                self.static[ch].setPen(
+                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
+                )
 
     def movable_cursors(self, state):
         self.left_cursor.setMovable(state)
         self.right_cursor.setMovable(state)
 
     def check_subsample(self, n):
-        """
-        Smart downsampling strategy:
+        """Smart downsampling strategy:
         - Historical data (before cycle): aggressive downsampling
         - Cycle of interest region: gentle downsampling to preserve detail
         - Future/live data: minimal downsampling
@@ -332,8 +355,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         return self.updating
 
     def update(self, lambda_values, lambda_times):
-        """
-        Update sensorgram with smart downsampling strategy:
+        """Update sensorgram with smart downsampling strategy:
         - Historical data (old cycles): aggressive downsampling for navigation
         - Current cycle region: gentle downsampling to preserve detail
         - Live/recent data: minimal downsampling for real-time monitoring
@@ -348,15 +370,19 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 y_data = deepcopy(lambda_values[ch])
                 x_data = deepcopy(lambda_times[ch])
 
-                if ch == 'a':
+                if ch == "a":
                     self.check_subsample(len(y_data))
 
                     # Static plot optimization for long datasets
                     if STATIC_PLOT:
-                        if (min(len(lambda_values['a']),
-                                len(lambda_values['b']),
-                                len(lambda_values['c']),
-                                len(lambda_values['d']))) > (self.static_index + self.live_range + 5):
+                        if (
+                            min(
+                                len(lambda_values["a"]),
+                                len(lambda_values["b"]),
+                                len(lambda_values["c"]),
+                                len(lambda_values["d"]),
+                            )
+                        ) > (self.static_index + self.live_range + 5):
                             self.static_index += self.live_range
                             static_data = True
 
@@ -365,12 +391,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
                     # Aggressive downsampling for historical data (navigational view only)
                     # Historical = everything before the live window
                     n = max(int(len(y_data) / 2500), 1)
-                    static_x_data = x_data[0:(self.static_index + 1):n]
-                    static_y_data = y_data[0:(self.static_index + 1):n]
+                    static_x_data = x_data[0 : (self.static_index + 1) : n]
+                    static_y_data = y_data[0 : (self.static_index + 1) : n]
 
                 # Live data window (recent/current cycle)
-                x_data = x_data[self.static_index:]
-                y_data = y_data[self.static_index:]
+                x_data = x_data[self.static_index :]
+                y_data = y_data[self.static_index :]
 
                 if len(y_data) == len(x_data):
                     # Plot live data with minimal downsampling
@@ -379,7 +405,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
                     if static_data and (static_y_data is not None):
                         # Plot heavily downsampled historical data
                         self.static[ch].setData(y=static_y_data, x=static_x_data)
-                        logger.debug(f"static sensorgram data plotted (downsampled 1/{n})")
+                        logger.debug(
+                            f"static sensorgram data plotted (downsampled 1/{n})",
+                        )
 
                     self.time_data[ch] = lambda_times[ch]
                     self.lambda_data[ch] = lambda_values[ch]
@@ -388,15 +416,19 @@ class SensorgramGraph(GraphicsLayoutWidget):
                         if lambda_times[ch][-1] > self.latest_time:
                             self.latest_time = lambda_times[ch][-1] + 0.01
                 else:
-                    logger.debug(f"sensorgram data not plottable, y = {y_data}, x = {x_data}")
+                    logger.debug(
+                        f"sensorgram data not plottable, y = {y_data}, x = {x_data}",
+                    )
 
             # Auto-follow the latest data when live mode is enabled AND fixed window is not active
             if self.live and not self.wait_for_reset and not self.fixed_window_active:
                 self.set_right(self.latest_time, update=True)
             elif self.fixed_window_active:
                 # Log that we're in fixed window mode - data still updates but cursor doesn't move
-                if not hasattr(self, '_logged_fixed_window'):
-                    logger.info(f"📊 Fixed window active - live data updating but cursor locked")
+                if not hasattr(self, "_logged_fixed_window"):
+                    logger.info(
+                        "📊 Fixed window active - live data updating but cursor locked",
+                    )
                     self._logged_fixed_window = True
 
             self.wait_for_reset = False
@@ -416,28 +448,26 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.set_right(self.right_cursor.value())
 
     def left_cursor_sig_dragged(self):
-        n_pts = len(self.time_data['d']) if 'd' in self.time_data else 0
-        if n_pts < 300:
+        n_pts = len(self.time_data["d"]) if "d" in self.time_data else 0
+        if n_pts < 300 or abs(self.left_cursor.value() - self.left_cursor_pos) > (
+            n_pts * 0.005
+        ):
             self.set_left(self.left_cursor.value())
-        else:
-            if abs(self.left_cursor.value() - self.left_cursor_pos) > (n_pts * 0.005):
-                self.set_left(self.left_cursor.value())
 
     def right_cursor_sig_dragged(self):
-        n_pts = len(self.time_data['d']) if 'd' in self.time_data else 0
-        if n_pts < 300:
+        n_pts = len(self.time_data["d"]) if "d" in self.time_data else 0
+        if n_pts < 300 or abs(self.right_cursor.value() - self.right_cursor_pos) > (
+            n_pts * 0.005
+        ):
             self.set_right(self.right_cursor.value())
-        else:
-            if abs(self.right_cursor.value() - self.right_cursor_pos) > (n_pts * 0.005):
-                self.set_right(self.right_cursor.value())
 
     def center_cursors(self):
         l_pos = 0
         r_pos = 1
         if len(self.time_data) == 4:
-            if len(self.time_data['d']) > 4:
-                l_pos = self.time_data['d'][1]
-                r_pos = self.time_data['d'][-2]
+            if len(self.time_data["d"]) > 4:
+                l_pos = self.time_data["d"][1]
+                r_pos = self.time_data["d"][-2]
         self.set_left(l_pos)
         self.set_right(r_pos)
 
@@ -462,20 +492,28 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Update label with time value - single line format
         self.left_cursor.label.setText(f"Start {l_pos:.2f}s")
         if emit:
-            self.segment_signal.emit(self.left_cursor_pos, self.right_cursor_pos, update)
+            self.segment_signal.emit(
+                self.left_cursor_pos,
+                self.right_cursor_pos,
+                update,
+            )
 
     def set_right(self, r_pos, update=False, emit=True):
         if r_pos < self.left_cursor_pos:
             r_pos = self.left_cursor_pos + 1
         if update and self.block_updates:
-            logger.debug(f"update_blocked")
+            logger.debug("update_blocked")
         else:
             self.right_cursor_pos = r_pos
             self.right_cursor.setPos(r_pos)
             # Update label with time value - single line format
             self.right_cursor.label.setText(f"Stop {r_pos:.2f}s")
             if emit:
-                self.segment_signal.emit(self.left_cursor_pos, self.right_cursor_pos, update)
+                self.segment_signal.emit(
+                    self.left_cursor_pos,
+                    self.right_cursor_pos,
+                    update,
+                )
 
     def set_live(self, state):
         self.live = state
@@ -489,15 +527,14 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.lambda_data = {}
         self.unit_factor = UNIT_LIST[self.unit]
         self.latest_time = 0
-        self.plot.setLabel('left', text=f'λ ({self.unit})')  # Lambda symbol
+        self.plot.setLabel("left", text=f"λ ({self.unit})")  # Lambda symbol
 
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.static[ch].setVisible(bool(flag))
 
     def show_cycle_time_region(self, cycle_time_minutes):
-        """
-        Show cycle time markers - either as vertical lines or a shaded bar.
+        """Show cycle time markers - either as vertical lines or a shaded bar.
         Also tracks cycle boundaries for smart downsampling.
         """
         if cycle_time_minutes is None or cycle_time_minutes <= 0:
@@ -515,8 +552,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.cycle_start_time = start_time
         self.cycle_end_time = end_time
 
-        logger.debug(f"Cycle markers ({settings.CYCLE_MARKER_STYLE}): [{start_time:.1f}, {end_time:.1f}]s")
-        logger.debug(f"📊 Cycle region tracked for smart downsampling: preserve detail in [{start_time:.1f}, {end_time:.1f}]s")
+        logger.debug(
+            f"Cycle markers ({settings.CYCLE_MARKER_STYLE}): [{start_time:.1f}, {end_time:.1f}]s",
+        )
+        logger.debug(
+            f"📊 Cycle region tracked for smart downsampling: preserve detail in [{start_time:.1f}, {end_time:.1f}]s",
+        )
 
         if settings.CYCLE_MARKER_STYLE == "lines":
             self._create_line_markers(start_time, end_time)
@@ -530,19 +571,29 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.cycle_start_line = InfiniteLine(
             pos=start_time,
             angle=90,
-            pen=mkPen('g', width=4, style=Qt.SolidLine),
+            pen=mkPen("g", width=4, style=Qt.SolidLine),
             movable=False,
-            label='Cycle Start',
-            labelOpts={'position': 0.95, 'color': (0, 255, 0), 'movable': False, 'fill': (0, 0, 0, 100)}
+            label="Cycle Start",
+            labelOpts={
+                "position": 0.95,
+                "color": (0, 255, 0),
+                "movable": False,
+                "fill": (0, 0, 0, 100),
+            },
         )
 
         self.cycle_end_line = InfiniteLine(
             pos=end_time,
             angle=90,
-            pen=mkPen('r', width=4, style=Qt.SolidLine),
+            pen=mkPen("r", width=4, style=Qt.SolidLine),
             movable=False,
-            label='Cycle End',
-            labelOpts={'position': 0.95, 'color': (255, 0, 0), 'movable': False, 'fill': (0, 0, 0, 100)}
+            label="Cycle End",
+            labelOpts={
+                "position": 0.95,
+                "color": (255, 0, 0),
+                "movable": False,
+                "fill": (0, 0, 0, 100),
+            },
         )
 
         self.cycle_start_line.setZValue(100)
@@ -556,14 +607,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
     def _create_shaded_region(self, start_time: float, end_time: float) -> None:
         """Create shaded region for cycle window."""
-        from PySide6.QtGui import QBrush, QColor
-
         self.cycle_time_region = LinearRegionItem(
             values=[start_time, end_time],
-            orientation='vertical',
+            orientation="vertical",
             brush=QBrush(QColor(100, 100, 255, 70)),
             movable=False,
-            pen=None
+            pen=None,
         )
         self.cycle_time_region.setZValue(-10)
         self.cycle_time_region.setVisible(True)
@@ -572,14 +621,13 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.plot.getViewBox().update()
 
     def hide_cycle_time_region(self):
-        """
-        Hide all cycle time markers.
+        """Hide all cycle time markers.
         Clears cycle boundary tracking for downsampling.
         """
         markers = [
-            (self.cycle_time_region, 'cycle_time_region'),
-            (self.cycle_start_line, 'cycle_start_line'),
-            (self.cycle_end_line, 'cycle_end_line')
+            (self.cycle_time_region, "cycle_time_region"),
+            (self.cycle_start_line, "cycle_start_line"),
+            (self.cycle_end_line, "cycle_end_line"),
         ]
 
         for marker, attr_name in markers:
@@ -611,8 +659,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
 
 class SegmentGraph(GraphicsLayoutWidget):
-    """
-    Detail/Cycle of Interest graph - shows zoomed view of selected data.
+    """Detail/Cycle of Interest graph - shows zoomed view of selected data.
 
     Purpose:
     - Shows data between yellow/red cursors from sensorgram (detail view)
@@ -635,11 +682,12 @@ class SegmentGraph(GraphicsLayoutWidget):
     - Fixed window during cycles, auto-range otherwise
     - Gentle downsampling to preserve detail in cycle of interest
     """
+
     average_channel_flag = False
     average_channel_ids = []
     # Gentle downsampling for cycle of interest (preserves more detail than sensorgram)
     subsample_threshold = 1001  # Higher threshold before downsampling kicks in
-    subsample_target = 500      # Keep more data points when downsampling
+    subsample_target = 500  # Keep more data points when downsampling
     subsampling = False
     updating = False
     fixed_window_active = False
@@ -654,9 +702,16 @@ class SegmentGraph(GraphicsLayoutWidget):
         Returns list in channel order: [a, b, c, d]
         Maps to internal self.plots dictionary.
         """
-        return [self.plots['a'], self.plots['b'], self.plots['c'], self.plots['d']]
+        return [self.plots["a"], self.plots["b"], self.plots["c"], self.plots["d"]]
 
-    def __init__(self, title_string, unit_string, show_title=False, parent=None, has_cursors=False):
+    def __init__(
+        self,
+        title_string,
+        unit_string,
+        show_title=False,
+        parent=None,
+        has_cursors=False,
+    ):
         super(SegmentGraph, self).__init__(parent=parent)
         setConfigOptions(antialias=True)
         self.unit = unit_string
@@ -665,10 +720,10 @@ class SegmentGraph(GraphicsLayoutWidget):
         if show_title:
             self.plot = self.addPlot(title=title_string)
             # Style title
-            self.plot.titleLabel.setText(title_string, color=(30, 30, 30), size='11pt')
+            self.plot.titleLabel.setText(title_string, color=(30, 30, 30), size="11pt")
         else:
             self.plot = self.addPlot()
-        self.plot.setDownsampling(ds=False, mode='subsample')
+        self.plot.setDownsampling(ds=False, mode="subsample")
         self.plot.showGrid(x=False, y=False)
         self.plot.setLabel("left", f"Δ SPR ({unit_string})")
         self.plot.setLabel("bottom", "Time (s)")
@@ -686,10 +741,10 @@ class SegmentGraph(GraphicsLayoutWidget):
         vb.setMouseEnabled(x=True, y=True)
 
         # Ensure axes have space for labels - explicit sizing for visibility
-        bottom_axis = self.plot.getAxis('bottom')
-        left_axis = self.plot.getAxis('left')
+        bottom_axis = self.plot.getAxis("bottom")
+        left_axis = self.plot.getAxis("left")
         bottom_axis.setHeight(45)  # Increased space for 'Time (s)' label visibility
-        left_axis.setWidth(55)     # Space for Y-axis label
+        left_axis.setWidth(55)  # Space for Y-axis label
 
         # Ensure label is visible
         bottom_axis.label.show()
@@ -703,21 +758,30 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.plot.setYRange(-5, 10, padding=0)
 
         self.wait_to_update = False
-        self.dissoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
+        self.dissoc_cursors = {ch: {"Start": None, "End": None} for ch in CH_LIST}
         self.dissoc_cursor_en = False
-        self.assoc_cursors = {ch: {'Start': None, 'End': None} for ch in CH_LIST}
+        self.assoc_cursors = {ch: {"Start": None, "End": None} for ch in CH_LIST}
         self.assoc_cursor_en = False
 
         # Add crosshair cursor for precise measurements and zoom selection
         self.crosshair_enabled = True
-        self.vLine = InfiniteLine(angle=90, movable=False, pen=mkPen('y', width=1, style=Qt.PenStyle.DashLine))
-        self.hLine = InfiniteLine(angle=0, movable=False, pen=mkPen('y', width=1, style=Qt.PenStyle.DashLine))
+        self.vLine = InfiniteLine(
+            angle=90,
+            movable=False,
+            pen=mkPen("y", width=1, style=Qt.PenStyle.DashLine),
+        )
+        self.hLine = InfiniteLine(
+            angle=0,
+            movable=False,
+            pen=mkPen("y", width=1, style=Qt.PenStyle.DashLine),
+        )
         self.plot.addItem(self.vLine, ignoreBounds=True)
         self.plot.addItem(self.hLine, ignoreBounds=True)
 
         # Add text label for cursor coordinates
         from pyqtgraph import TextItem
-        self.cursorLabel = TextItem(anchor=(0, 1), color='y')
+
+        self.cursorLabel = TextItem(anchor=(0, 1), color="y")
         self.plot.addItem(self.cursorLabel)
 
         # Connect mouse movement to update crosshair
@@ -736,27 +800,32 @@ class SegmentGraph(GraphicsLayoutWidget):
             # - skipFiniteCheck: Faster rendering (data already validated)
             self.plots[ch] = self.plot.plot(
                 pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
-                connect='finite',
+                connect="finite",
                 clipToView=True,
                 autoDownsample=True,
-                skipFiniteCheck=True
+                skipFiniteCheck=True,
             )
             if has_cursors:
-                for cursor in ['Start', 'End']:
+                for cursor in ["Start", "End"]:
                     for cursor_dict in [self.dissoc_cursors, self.assoc_cursors]:
                         cursor_dict[ch][cursor] = InfiniteLine(
                             pos=0,
                             name=ch,
                             label=f"{cursor}",
-                            labelOpts={'rotateAxis': (1, 0)},
+                            labelOpts={"rotateAxis": (1, 0)},
                             angle=90,
                             pen=mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3),
-                            movable=True)
-                        cursor_dict[ch][cursor].setHoverPen('y')
+                            movable=True,
+                        )
+                        cursor_dict[ch][cursor].setHoverPen("y")
                         self.plot.addItem(cursor_dict[ch][cursor])
                         cursor_dict[ch][cursor].setVisible(False)
-                    self.dissoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.dissoc_update)
-                    self.assoc_cursors[ch][cursor].sigPositionChangeFinished.connect(self.assoc_update)
+                    self.dissoc_cursors[ch][cursor].sigPositionChangeFinished.connect(
+                        self.dissoc_update,
+                    )
+                    self.assoc_cursors[ch][cursor].sigPositionChangeFinished.connect(
+                        self.assoc_update,
+                    )
 
         # Create custom legend widget with checkboxes if title is shown
         self.legend_checkboxes = {}
@@ -773,6 +842,7 @@ class SegmentGraph(GraphicsLayoutWidget):
 
         # Add title label (styled to match the plot title)
         from PySide6.QtWidgets import QLabel
+
         title_label = QLabel(title_string)
         title_label.setStyleSheet("""
             QLabel {
@@ -817,18 +887,26 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.legend_checkboxes[ch] = checkbox
 
             # Connect to display_channel_changed method
-            checkbox.stateChanged.connect(lambda state, channel=ch: self.display_channel_changed(channel, state == Qt.CheckState.Checked.value))
+            checkbox.stateChanged.connect(
+                lambda state, channel=ch: self.display_channel_changed(
+                    channel,
+                    state == Qt.CheckState.Checked.value,
+                ),
+            )
 
             legend_layout.addWidget(checkbox)
 
         # Make widget background transparent
         legend_widget.setStyleSheet("background: transparent;")
-        legend_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        legend_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         legend_widget.setMaximumHeight(40)
 
         # Replace the title label with our custom legend widget
         # Hide the default title
-        if hasattr(self.plot, 'titleLabel'):
+        if hasattr(self.plot, "titleLabel"):
             self.plot.titleLabel.setVisible(False)
 
         # Add the legend widget as a graphics proxy to the plot
@@ -844,7 +922,7 @@ class SegmentGraph(GraphicsLayoutWidget):
 
     def _position_legend(self):
         """Position the legend widget at the top of the graph."""
-        if hasattr(self, 'legend_proxy'):
+        if hasattr(self, "legend_proxy"):
             # Get the view box coordinates
             vb = self.plot.getViewBox()
             plot_rect = self.plot.sceneBoundingRect()
@@ -860,7 +938,9 @@ class SegmentGraph(GraphicsLayoutWidget):
         try:
             for ch in CH_LIST:
                 # Update line colors for each channel
-                self.plots[ch].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2))
+                self.plots[ch].setPen(
+                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
+                )
 
                 # Update checkbox colors in legend
                 if ch in self.legend_checkboxes:
@@ -885,11 +965,21 @@ class SegmentGraph(GraphicsLayoutWidget):
                     """)
 
                 # Update dissociation/association cursor colors if present
-                for cursor in ['Start', 'End']:
-                    if ch in self.dissoc_cursors and self.dissoc_cursors[ch][cursor] is not None:
-                        self.dissoc_cursors[ch][cursor].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3))
-                    if ch in self.assoc_cursors and self.assoc_cursors[ch][cursor] is not None:
-                        self.assoc_cursors[ch][cursor].setPen(mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3))
+                for cursor in ["Start", "End"]:
+                    if (
+                        ch in self.dissoc_cursors
+                        and self.dissoc_cursors[ch][cursor] is not None
+                    ):
+                        self.dissoc_cursors[ch][cursor].setPen(
+                            mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3),
+                        )
+                    if (
+                        ch in self.assoc_cursors
+                        and self.assoc_cursors[ch][cursor] is not None
+                    ):
+                        self.assoc_cursors[ch][cursor].setPen(
+                            mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=3),
+                        )
         except Exception as e:
             logger.debug(f"Error updating SegmentGraph colors: {e}")
 
@@ -897,39 +987,45 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.dissoc_cursor_en = bool(en)
         for ch in CH_LIST:
             if self.plots[ch].isVisible():
-                for cursor in ['Start', 'End']:
+                for cursor in ["Start", "End"]:
                     self.dissoc_cursors[ch][cursor].setVisible(bool(en))
 
     def en_assoc_cursors(self, en):
         self.assoc_cursor_en = bool(en)
         for ch in CH_LIST:
             if self.plots[ch].isVisible():
-                for cursor in ['Start', 'End']:
+                for cursor in ["Start", "End"]:
                     self.assoc_cursors[ch][cursor].setVisible(bool(en))
 
     def dissoc_update(self, sender):
         if not self.wait_to_update:
             ch = sender.name()
-            self.dissoc_cursor_sig.emit(ch, self.dissoc_cursors[ch]['Start'].value(),
-                                        self.dissoc_cursors[ch]['End'].value())
+            self.dissoc_cursor_sig.emit(
+                ch,
+                self.dissoc_cursors[ch]["Start"].value(),
+                self.dissoc_cursors[ch]["End"].value(),
+            )
 
     def assoc_update(self, sender):
         if not self.wait_to_update:
             ch = sender.name()
-            self.assoc_cursor_sig.emit(ch, self.assoc_cursors[ch]['Start'].value(),
-                                       self.assoc_cursors[ch]['End'].value())
+            self.assoc_cursor_sig.emit(
+                ch,
+                self.assoc_cursors[ch]["Start"].value(),
+                self.assoc_cursors[ch]["End"].value(),
+            )
 
     def move_dissoc_cursors(self, ch, start, end):
         self.wait_to_update = True
-        self.dissoc_cursors[ch]['Start'].setPos(start)
+        self.dissoc_cursors[ch]["Start"].setPos(start)
         self.wait_to_update = False
-        self.dissoc_cursors[ch]['End'].setPos(end)
+        self.dissoc_cursors[ch]["End"].setPos(end)
 
     def move_assoc_cursors(self, ch, start, end):
         self.wait_to_update = True
-        self.assoc_cursors[ch]['Start'].setPos(start)
+        self.assoc_cursors[ch]["Start"].setPos(start)
         self.wait_to_update = False
-        self.assoc_cursors[ch]['End'].setPos(end)
+        self.assoc_cursors[ch]["End"].setPos(end)
 
     def _update_crosshair(self, evt):
         """Update crosshair position and label when mouse moves."""
@@ -948,7 +1044,7 @@ class SegmentGraph(GraphicsLayoutWidget):
                 self.hLine.setPos(y)
 
                 # Update label with coordinates
-                self.cursorLabel.setText(f'Time: {x:.2f}s\nΔSPR: {y:.2f} {self.unit}')
+                self.cursorLabel.setText(f"Time: {x:.2f}s\nΔSPR: {y:.2f} {self.unit}")
                 self.cursorLabel.setPos(x, y)
 
                 # Show crosshair
@@ -972,7 +1068,7 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.cursorLabel.setVisible(False)
 
     def set_plot_pen(self, ch, pen_colour):
-        self.plots[ch].setPen(mkPen(color=pen_colour, width=2), connect='finite')
+        self.plots[ch].setPen(mkPen(color=pen_colour, width=2), connect="finite")
 
     def update_display(self, seg, use_data=False):
         self.updating = True
@@ -985,15 +1081,15 @@ class SegmentGraph(GraphicsLayoutWidget):
                 y_data = seg.seg_y
             for ch in CH_LIST:
                 if ch == seg.ref_ch:
-                    self.set_plot_pen(ch, 'purple')
+                    self.set_plot_pen(ch, "purple")
                 else:
                     self.set_plot_pen(ch, settings.ACTIVE_GRAPH_COLORS[ch])
             if x_data is not None and y_data is not None:
                 # Track min/max for visible channels to apply padding
-                y_min = float('inf')
-                y_max = float('-inf')
-                x_min = float('inf')
-                x_max = float('-inf')
+                y_min = float("inf")
+                y_max = float("-inf")
+                x_min = float("inf")
+                x_max = float("-inf")
                 has_visible_data = False
 
                 for ch in CH_LIST:
@@ -1024,7 +1120,7 @@ class SegmentGraph(GraphicsLayoutWidget):
                     padded_y_max = y_max + y_padding_top
 
                     # X-axis: use cycle_time if available (with 10% padding), otherwise rolling 10-second window
-                    if hasattr(seg, 'cycle_time') and seg.cycle_time is not None:
+                    if hasattr(seg, "cycle_time") and seg.cycle_time is not None:
                         # Cycle has a defined time: show cycle_time + 10%
                         target_time = seg.cycle_time * 60  # Convert minutes to seconds
                         padded_x_min = x_min
@@ -1044,9 +1140,11 @@ class SegmentGraph(GraphicsLayoutWidget):
                     # Set the ranges with padding disabled to avoid auto-scaling
                     # BUT only if fixed window is not active (from cycle start)
                     if not self.fixed_window_active:
-                        self.plot.setRange(xRange=(padded_x_min, padded_x_max),
-                                          yRange=(padded_y_min, padded_y_max),
-                                          padding=0)
+                        self.plot.setRange(
+                            xRange=(padded_x_min, padded_x_max),
+                            yRange=(padded_y_min, padded_y_max),
+                            padding=0,
+                        )
                     else:
                         # Fixed window active - only update Y range, keep X as-is
                         self.plot.setYRange(padded_y_min, padded_y_max, padding=0)
@@ -1062,7 +1160,11 @@ class SegmentGraph(GraphicsLayoutWidget):
 
     def auto_range(self):
         yrange = self.plot.viewRange()[1]
-        self.plot.setRange(yRange=(yrange[0], yrange[1]), update=True, disableAutoRange=False)
+        self.plot.setRange(
+            yRange=(yrange[0], yrange[1]),
+            update=True,
+            disableAutoRange=False,
+        )
 
     def _enforce_min_range(self):
         """Enforce minimum Y-axis range of 10 RU."""
@@ -1091,15 +1193,14 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.legend_checkboxes[ch].blockSignals(False)
 
         if self.dissoc_cursor_en:
-            self.dissoc_cursors[ch]['Start'].setVisible(bool(flag))
-            self.dissoc_cursors[ch]['End'].setVisible(bool(flag))
+            self.dissoc_cursors[ch]["Start"].setVisible(bool(flag))
+            self.dissoc_cursors[ch]["End"].setVisible(bool(flag))
         if self.assoc_cursor_en:
-            self.assoc_cursors[ch]['Start'].setVisible(bool(flag))
-            self.assoc_cursors[ch]['End'].setVisible(bool(flag))
+            self.assoc_cursors[ch]["Start"].setVisible(bool(flag))
+            self.assoc_cursors[ch]["End"].setVisible(bool(flag))
 
     def check_subsample(self, n):
-        """
-        Gentle downsampling for Cycle of Interest graph.
+        """Gentle downsampling for Cycle of Interest graph.
         Preserves more detail than the overview sensorgram since this is
         the detailed analysis view.
         """
@@ -1109,7 +1210,9 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.plot.setDownsampling(ds=factor)
             self.subsampling = True
             self.subsample_threshold += self.subsample_target
-            logger.debug(f"Cycle of Interest downsample factor: {factor} (n={n}, preserving detail)")
+            logger.debug(
+                f"Cycle of Interest downsample factor: {factor} (n={n}, preserving detail)",
+            )
 
         if self.subsampling:
             if n < (2 * self.subsample_target):
@@ -1123,7 +1226,7 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.plots[ch].clear()
         if unit is None:
             unit = self.unit
-        self.plot.setLabel('left', text=f'Δ SPR ({unit})')
+        self.plot.setLabel("left", text=f"Δ SPR ({unit})")
 
         # Clear shift annotation
         self._clear_shift_annotation()
@@ -1138,7 +1241,7 @@ class SegmentGraph(GraphicsLayoutWidget):
         """Display shift values in annotation box on graph."""
         try:
             # Get shift values from the segment object (stored in seg.shift dict)
-            if not hasattr(seg, 'shift'):
+            if not hasattr(seg, "shift"):
                 return
 
             # Build text for visible channels only
@@ -1150,13 +1253,15 @@ class SegmentGraph(GraphicsLayoutWidget):
                     # Handle different color formats
                     if isinstance(color, str):
                         color_str = color
-                    elif hasattr(color, 'name'):
+                    elif hasattr(color, "name"):
                         color_str = color.name()
                     elif isinstance(color, (tuple, list)) and len(color) == 3:
-                        color_str = f'rgb({color[0]}, {color[1]}, {color[2]})'
+                        color_str = f"rgb({color[0]}, {color[1]}, {color[2]})"
                     else:
-                        color_str = 'black'
-                    text_lines.append(f'<span style="color: {color_str}">Ch {ch.upper()}: {shift_val:.2f} {self.unit}</span>')
+                        color_str = "black"
+                    text_lines.append(
+                        f'<span style="color: {color_str}">Ch {ch.upper()}: {shift_val:.2f} {self.unit}</span>',
+                    )
 
             if text_lines:
                 # Create or update annotation box
@@ -1167,7 +1272,11 @@ class SegmentGraph(GraphicsLayoutWidget):
                     self.plot.addItem(self.shift_annotation)
 
                 # Set HTML text with colored channel labels
-                html_text = '<div style="background-color: rgba(255, 255, 255, 200); padding: 8px; border: 1px solid rgb(100, 100, 100); border-radius: 4px;">' + '<br>'.join(text_lines) + '</div>'
+                html_text = (
+                    '<div style="background-color: rgba(255, 255, 255, 200); padding: 8px; border: 1px solid rgb(100, 100, 100); border-radius: 4px;">'
+                    + "<br>".join(text_lines)
+                    + "</div>"
+                )
                 self.shift_annotation.setHtml(html_text)
 
                 # Position in upper-left corner of graph
@@ -1180,7 +1289,11 @@ class SegmentGraph(GraphicsLayoutWidget):
                 self._clear_shift_annotation()
 
             # Also emit signal for external display
-            shift_data = {ch: seg.shift.get(ch, 0.0) for ch in CH_LIST if self.plots[ch].isVisible()}
+            shift_data = {
+                ch: seg.shift.get(ch, 0.0)
+                for ch in CH_LIST
+                if self.plots[ch].isVisible()
+            }
             if shift_data:
                 self.shift_values_signal.emit(shift_data)
 

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any
 
 # ============================================================================
 # ADD PARENT DIRECTORY TO PATH FOR DIRECT EXECUTION
 # ============================================================================
 # When running main.py directly (not through run_app.py), we need to add
 # the parent directory to sys.path so imports work correctly
-if __name__ == '__main__':
+if __name__ == "__main__":
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
@@ -23,8 +22,10 @@ if sys.version_info < (3, 12):
     print("\n" + "=" * 80)
     print("❌ CRITICAL ERROR: WRONG PYTHON VERSION")
     print("=" * 80)
-    print(f"   Current Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-    print(f"   Required: 3.12+")
+    print(
+        f"   Current Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+    )
+    print("   Required: 3.12+")
     print()
     print("   You are using Python 3.9 or earlier, which is NOT compatible!")
     print()
@@ -43,18 +44,21 @@ if sys.version_info < (3, 12):
     # Try to show GUI error if possible
     try:
         from PySide6.QtWidgets import QApplication, QMessageBox
+
         app = QApplication(sys.argv)
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Python Version Error")
-        msg.setText(f"Wrong Python Version: {sys.version_info.major}.{sys.version_info.minor}")
+        msg.setText(
+            f"Wrong Python Version: {sys.version_info.major}.{sys.version_info.minor}",
+        )
         msg.setInformativeText(
             f"This application requires Python 3.12+\n\n"
             f"Current: {sys.executable}\n\n"
             f"Please use:\n"
             f"• run_app_312.bat\n"
             f"• run_app_312.ps1\n\n"
-            f"Or activate .venv312 first"
+            f"Or activate .venv312 first",
         )
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec()
@@ -63,27 +67,27 @@ if sys.version_info < (3, 12):
 
     sys.exit(1)
 
-from PySide6.QtCore import Slot, QTimer, Signal
+from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
+from affilabs.affilabs_core_ui import AffilabsMainWindow as MainWindow
+from affilabs.widgets.message import show_message
 from settings import (
-    SW_VERSION,
     ENABLE_SESSION_QUALITY_MONITORING,
     FWHM_EXCELLENT_THRESHOLD_NM,
     FWHM_GOOD_THRESHOLD_NM,
-    QC_WAVELENGTH_MIN_NM,
-    QC_WAVELENGTH_MAX_NM,
     QC_DEGRADATION_ALERT_THRESHOLD,
     QC_MAX_SESSION_HISTORY,
+    QC_WAVELENGTH_MAX_NM,
+    QC_WAVELENGTH_MIN_NM,
+    SW_VERSION,
 )
-from utils.device_configuration import DeviceConfiguration
 from utils.logger import logger
-from widgets.mainwindow import MainWindow
-from widgets.message import show_message
 
 # Session quality monitoring (disabled by default)
 if ENABLE_SESSION_QUALITY_MONITORING:
     from utils.session_quality_monitor import SessionQualityMonitor
+
     logger.info("✅ Session quality monitoring ENABLED")
 else:
     logger.info("⚠️  Session quality monitoring DISABLED (feature flag off)")
@@ -91,11 +95,12 @@ else:
 # Environment variable to choose between state machine and threading
 # DISABLED BY DEFAULT: State machine causes GUI freezes due to blocking hardware I/O
 # Set USE_STATE_MACHINE=true environment variable to enable if needed
-USE_STATE_MACHINE = os.getenv('USE_STATE_MACHINE', 'true').lower() == 'true'
+USE_STATE_MACHINE = os.getenv("USE_STATE_MACHINE", "true").lower() == "true"
 
 if USE_STATE_MACHINE:
     logger.info("Using State Machine Architecture")
     from utils.spr_state_machine import SPRStateMachine
+
 
 class AffiniteApp(QApplication):
     """Simplified main application using state machine architecture."""
@@ -108,7 +113,7 @@ class AffiniteApp(QApplication):
         super().__init__(sys.argv)
 
         # Suppress Qt internal connection warnings (harmless)
-        os.environ['QT_LOGGING_RULES'] = '*.debug=false;qt.qpa.*=false'
+        os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
 
         # Display Python version banner
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -126,14 +131,18 @@ class AffiniteApp(QApplication):
         # Load device configuration (optical fiber diameter, LED model, etc.)
         try:
             from utils.device_configuration import get_device_config
+
             self.device_config = get_device_config()
             fiber_diameter = self.device_config.get_optical_fiber_diameter()
             led_model = self.device_config.get_led_pcb_model()
-            logger.info(f"✅ Device config loaded: {fiber_diameter}µm fiber, {led_model} LED")
+            logger.info(
+                f"✅ Device config loaded: {fiber_diameter}µm fiber, {led_model} LED",
+            )
         except Exception as e:
             logger.error(f"❌ Failed to load device config: {e}")
             # Use default configuration as fallback
             from utils.device_configuration import get_device_config
+
             self.device_config = get_device_config()
             logger.info("✅ Using default device configuration")
 
@@ -149,52 +158,77 @@ class AffiniteApp(QApplication):
         # Session quality monitoring (initialized after device connection)
         self.quality_monitor = None
         if ENABLE_SESSION_QUALITY_MONITORING:
-            logger.info("✅ Session quality monitoring will be initialized after device connection")
+            logger.info(
+                "✅ Session quality monitoring will be initialized after device connection",
+            )
 
-        # Initialize main window
-        self.main_window = MainWindow(self)
+        # Initialize main window (Affilabs production UI)
+        self.main_window = MainWindow()
 
         # Connect device widget signals
-        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'device_widget'):
-            self.main_window.sidebar.device_widget.connect_dev_sig.connect(self.connect_dev)
-            self.main_window.sidebar.device_widget.quick_cal_sig.connect(self.start_calibration)
+        if hasattr(self.main_window, "sidebar") and hasattr(
+            self.main_window.sidebar,
+            "device_widget",
+        ):
+            self.main_window.sidebar.device_widget.connect_dev_sig.connect(
+                self.connect_dev,
+            )
+            self.main_window.sidebar.device_widget.quick_cal_sig.connect(
+                self.start_calibration,
+            )
             logger.debug("Connected device widget signals")
 
         # Connect spectroscopy tab signals
-        if hasattr(self.main_window, 'spectroscopy'):
+        if hasattr(self.main_window, "spectroscopy"):
             self.main_window.spectroscopy.polarizer_sig.connect(self.set_polarizer)
             self.main_window.spectroscopy.single_led_sig.connect(self.single_led)
             logger.debug("Connected spectroscopy signals (polarizer, single LED)")
 
         # Connect SPR Settings tab signals (reference channel, units, filtering)
-        if hasattr(self.main_window, 'sensorgram') and hasattr(self.main_window.sensorgram, 'reference_channel_dlg'):
+        if hasattr(self.main_window, "sensorgram") and hasattr(
+            self.main_window.sensorgram,
+            "reference_channel_dlg",
+        ):
             # Reference channel and units are already connected via datawindow.py
             # Connect live filtering signal
             try:
-                self.main_window.sensorgram.reference_channel_dlg.live_filt_sig.connect(self._on_live_filter_changed)
+                self.main_window.sensorgram.reference_channel_dlg.live_filt_sig.connect(
+                    self._on_live_filter_changed,
+                )
                 logger.debug("Connected live filtering signal")
             except Exception as e:
                 logger.warning(f"Could not connect live filter signal: {e}")
 
             # Connect peak model signal
             try:
-                self.main_window.sensorgram.reference_channel_dlg.peak_model_sig.connect(self._on_peak_model_changed)
+                self.main_window.sensorgram.reference_channel_dlg.peak_model_sig.connect(
+                    self._on_peak_model_changed,
+                )
                 logger.debug("Connected peak tracking model signal")
             except Exception as e:
                 logger.warning(f"Could not connect peak model signal: {e}")
 
-        if hasattr(self.main_window, 'data_processing') and hasattr(self.main_window.data_processing, 'reference_channel_dlg'):
+        if hasattr(self.main_window, "data_processing") and hasattr(
+            self.main_window.data_processing,
+            "reference_channel_dlg",
+        ):
             # Connect processed data filtering signal
             try:
-                self.main_window.data_processing.reference_channel_dlg.proc_filt_sig.connect(self._on_proc_filter_changed)
+                self.main_window.data_processing.reference_channel_dlg.proc_filt_sig.connect(
+                    self._on_proc_filter_changed,
+                )
                 logger.debug("Connected processed data filtering signal")
             except Exception as e:
                 logger.warning(f"Could not connect proc filter signal: {e}")
 
             # Connect peak model signal (same handler for both tabs)
             try:
-                self.main_window.data_processing.reference_channel_dlg.peak_model_sig.connect(self._on_peak_model_changed)
-                logger.debug("Connected peak tracking model signal (processed data tab)")
+                self.main_window.data_processing.reference_channel_dlg.peak_model_sig.connect(
+                    self._on_peak_model_changed,
+                )
+                logger.debug(
+                    "Connected peak tracking model signal (processed data tab)",
+                )
             except Exception as e:
                 logger.warning(f"Could not connect peak model signal: {e}")
 
@@ -279,7 +313,9 @@ class AffiniteApp(QApplication):
             logger.warning("Threading architecture not yet implemented in hybrid mode")
             self.architecture = "Threading (not implemented)"
 
-        logger.info(f"========== Starting Affinite Instruments Application ({self.architecture}) ==========")
+        logger.info(
+            f"========== Starting Affinite Instruments Application ({self.architecture}) ==========",
+        )
         logger.info(f"Version {SW_VERSION}")
 
         # Show main window
@@ -291,21 +327,26 @@ class AffiniteApp(QApplication):
         if not USE_STATE_MACHINE:
             # Use QTimer to attempt connection after UI is ready
             from PySide6.QtCore import QTimer
+
             QTimer.singleShot(500, self._auto_connect_hardware)
 
     def _setup_state_machine_connections(self) -> None:
         """Connect state machine signals to UI updates."""
-        if not hasattr(self, 'state_machine'):
+        if not hasattr(self, "state_machine"):
             return
 
         self.state_machine.state_changed.connect(self._on_state_changed)
         self.state_machine.hardware_status.connect(self._on_hardware_status)
         self.state_machine.calibration_progress.connect(self._on_calibration_progress)
         self.state_machine.calibration_completed.connect(self._on_calibration_completed)
-        self.state_machine.data_acquisition_started.connect(self._on_data_acquisition_started)
+        self.state_machine.data_acquisition_started.connect(
+            self._on_data_acquisition_started,
+        )
         self.state_machine.error_occurred.connect(self._on_error_occurred)
         # On any error, immediately trigger emergency stop to ensure LEDs are off
-        self.state_machine.error_occurred.connect(lambda _msg: self.state_machine.emergency_stop())
+        self.state_machine.error_occurred.connect(
+            lambda _msg: self.state_machine.emergency_stop(),
+        )
 
     @Slot(str)
     def _on_state_changed(self, state: str) -> None:
@@ -313,7 +354,7 @@ class AffiniteApp(QApplication):
         logger.info(f"Application state: {state}")
 
         # Update UI based on state - check if components exist
-        if hasattr(self.main_window, 'status_bar') and self.main_window.status_bar:
+        if hasattr(self.main_window, "status_bar") and self.main_window.status_bar:
             self.main_window.status_bar.showMessage(f"System State: {state.upper()}")
 
         # Update connection indicators
@@ -325,10 +366,12 @@ class AffiniteApp(QApplication):
     @Slot(bool, bool)
     def _on_hardware_status(self, ctrl_connected: bool, usb_connected: bool) -> None:
         """Handle hardware connection status updates."""
-        logger.info(f"Hardware status - Controller: {ctrl_connected}, Spectrometer: {usb_connected}")
+        logger.info(
+            f"Hardware status - Controller: {ctrl_connected}, Spectrometer: {usb_connected}",
+        )
 
         # Update device widgets if they exist
-        if hasattr(self.main_window, 'device_widget'):
+        if hasattr(self.main_window, "device_widget"):
             # Update device widget status
             pass
 
@@ -351,7 +394,10 @@ class AffiniteApp(QApplication):
         logger.info(f"Calibration progress: Step {step} - {description}")
 
         # Update progress bar if it exists
-        if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'calibration_progress'):
+        if hasattr(self.main_window, "ui") and hasattr(
+            self.main_window.ui,
+            "calibration_progress",
+        ):
             progress_bar = self.main_window.ui.calibration_progress
             # Make progress bar visible during calibration
             progress_bar.setVisible(True)
@@ -371,7 +417,10 @@ class AffiniteApp(QApplication):
             show_message("Calibration completed successfully!", msg_type="Information")
 
             # Update UI to show calibrated state
-            if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'calibration_progress'):
+            if hasattr(self.main_window, "ui") and hasattr(
+                self.main_window.ui,
+                "calibration_progress",
+            ):
                 progress_bar = self.main_window.ui.calibration_progress
                 progress_bar.setValue(100)
                 progress_bar.setFormat("Calibration Complete!")
@@ -382,7 +431,10 @@ class AffiniteApp(QApplication):
             show_message(f"Calibration failed: {error_message}", msg_type="Critical")
 
             # Hide progress bar on failure
-            if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'calibration_progress'):
+            if hasattr(self.main_window, "ui") and hasattr(
+                self.main_window.ui,
+                "calibration_progress",
+            ):
                 self.main_window.ui.calibration_progress.setVisible(False)
 
     @Slot()
@@ -392,8 +444,10 @@ class AffiniteApp(QApplication):
         show_message("Real-time measurements started!", msg_type="Information")
 
         # Update UI to show measuring state via status label
-        if hasattr(self.main_window, 'ui') and hasattr(self.main_window.ui, 'status'):
-            self.main_window.ui.status.setText("MEASURING - Real-time data acquisition active")
+        if hasattr(self.main_window, "ui") and hasattr(self.main_window.ui, "status"):
+            self.main_window.ui.status.setText(
+                "MEASURING - Real-time data acquisition active",
+            )
 
     @Slot(str)
     def _on_error_occurred(self, error_message: str) -> None:
@@ -403,7 +457,7 @@ class AffiniteApp(QApplication):
 
     def _update_connection_display(self, connected: bool) -> None:
         """Update connection display in UI."""
-        if hasattr(self.main_window, 'connection_indicator'):
+        if hasattr(self.main_window, "connection_indicator"):
             # Update connection indicator
             pass
 
@@ -420,7 +474,10 @@ class AffiniteApp(QApplication):
 
             # Try controller
             try:
-                self.ctrl = HALFactory.create_controller(device_type="PicoP4SPR", auto_detect=True)
+                self.ctrl = HALFactory.create_controller(
+                    device_type="PicoP4SPR",
+                    auto_detect=True,
+                )
                 logger.info("✅ Auto-detected controller")
             except Exception as e:
                 logger.info(f"Controller not found: {e}")
@@ -433,9 +490,12 @@ class AffiniteApp(QApplication):
 
                 # Initialize device-specific configuration
                 from utils.device_integration import initialize_device_on_connection
+
                 device_dir = initialize_device_on_connection(self.usb)
                 if device_dir:
-                    logger.info(f"✅ Device-specific config initialized: {device_dir.name}")
+                    logger.info(
+                        f"✅ Device-specific config initialized: {device_dir.name}",
+                    )
 
             except Exception as e:
                 logger.info(f"Spectrometer not found: {e}")
@@ -445,7 +505,9 @@ class AffiniteApp(QApplication):
             if self.ctrl and self.usb:
                 logger.info("🎯 Hardware found! Starting automatic workflow...")
                 self._update_device_config()
-                self.main_window.ui.status.setText("Hardware connected - Starting calibration...")
+                self.main_window.ui.status.setText(
+                    "Hardware connected - Starting calibration...",
+                )
                 # Update device label to SPR when controller present
                 try:
                     self.main_window.ui.device.setText("SPR")
@@ -453,8 +515,12 @@ class AffiniteApp(QApplication):
                     pass
                 self.start_calibration()
             else:
-                logger.info("No hardware found on startup - waiting for manual connection")
-                self.main_window.ui.status.setText("No hardware detected - Click 'Add SPR Device' to connect")
+                logger.info(
+                    "No hardware found on startup - waiting for manual connection",
+                )
+                self.main_window.ui.status.setText(
+                    "No hardware detected - Click 'Add SPR Device' to connect",
+                )
                 try:
                     # Show SPEC if only spectrometer is detected
                     if self.usb and not self.ctrl:
@@ -466,7 +532,9 @@ class AffiniteApp(QApplication):
 
         except Exception as e:
             logger.error(f"Auto-connect error: {e}")
-            self.main_window.ui.status.setText("Auto-connect failed - Click 'Add SPR Device' to try again")
+            self.main_window.ui.status.setText(
+                "Auto-connect failed - Click 'Add SPR Device' to try again",
+            )
 
     # ========================================
     # BACKWARD COMPATIBILITY METHODS
@@ -502,9 +570,11 @@ class AffiniteApp(QApplication):
                         logger.info("Attempting to connect PicoP4SPR controller...")
                         self.ctrl = HALFactory.create_controller(
                             device_type="PicoP4SPR",
-                            auto_detect=True
+                            auto_detect=True,
                         )
-                        logger.info(f"✅ Controller connected: {self.ctrl.get_device_info()}")
+                        logger.info(
+                            f"✅ Controller connected: {self.ctrl.get_device_info()}",
+                        )
                     except Exception as e:
                         logger.error(f"Controller connection failed: {e}")
                         self.ctrl = None
@@ -514,31 +584,44 @@ class AffiniteApp(QApplication):
                     try:
                         logger.info("Attempting to connect USB4000 spectrometer...")
                         self.usb = HALFactory.create_spectrometer(auto_detect=True)
-                        logger.info(f"✅ Spectrometer connected")
+                        logger.info("✅ Spectrometer connected")
 
                         # Initialize device-specific configuration
-                        from utils.device_integration import initialize_device_on_connection
+                        from utils.device_integration import (
+                            initialize_device_on_connection,
+                        )
+
                         device_dir = initialize_device_on_connection(self.usb)
                         if device_dir:
-                            logger.info(f"✅ Device-specific config initialized: {device_dir.name}")
+                            logger.info(
+                                f"✅ Device-specific config initialized: {device_dir.name}",
+                            )
 
                     except Exception as e:
                         logger.error(f"Spectrometer connection failed: {e}")
                         self.usb = None
 
                 # Update UI
-                logger.info(f"Hardware connection status - ctrl: {self.ctrl is not None}, usb: {self.usb is not None}")
+                logger.info(
+                    f"Hardware connection status - ctrl: {self.ctrl is not None}, usb: {self.usb is not None}",
+                )
                 if self.ctrl or self.usb:
                     logger.info("Updating device configuration...")
                     self._update_device_config()
                     logger.info("Device configuration updated")
 
                     # Initialize session quality monitor if enabled
-                    if ENABLE_SESSION_QUALITY_MONITORING and self.quality_monitor is None:
+                    if (
+                        ENABLE_SESSION_QUALITY_MONITORING
+                        and self.quality_monitor is None
+                    ):
                         try:
                             # Get device directory for session history storage
                             from utils.device_integration import get_device_directory
-                            device_dir = get_device_directory(self.usb) if self.usb else None
+
+                            device_dir = (
+                                get_device_directory(self.usb) if self.usb else None
+                            )
 
                             if device_dir:
                                 self.quality_monitor = SessionQualityMonitor(
@@ -550,14 +633,24 @@ class AffiniteApp(QApplication):
                                     degradation_alert_threshold=QC_DEGRADATION_ALERT_THRESHOLD,
                                     max_session_history=QC_MAX_SESSION_HISTORY,
                                 )
-                                logger.info(f"✅ Session quality monitor initialized: {device_dir.name}")
+                                logger.info(
+                                    f"✅ Session quality monitor initialized: {device_dir.name}",
+                                )
                             else:
-                                logger.warning("⚠️  Could not initialize quality monitor: no device directory")
+                                logger.warning(
+                                    "⚠️  Could not initialize quality monitor: no device directory",
+                                )
                         except Exception as e:
-                            logger.error(f"❌ Failed to initialize quality monitor: {e}")
+                            logger.error(
+                                f"❌ Failed to initialize quality monitor: {e}",
+                            )
 
-                    self.main_window.ui.status.setText("Hardware connected - Starting calibration...")
-                    logger.info(f"🔌 Hardware connected - Controller: {self.ctrl is not None}, Spectrometer: {self.usb is not None}")
+                    self.main_window.ui.status.setText(
+                        "Hardware connected - Starting calibration...",
+                    )
+                    logger.info(
+                        f"🔌 Hardware connected - Controller: {self.ctrl is not None}, Spectrometer: {self.usb is not None}",
+                    )
 
                     # Auto-start calibration after connection
                     logger.info("🎯 Auto-starting calibration...")
@@ -568,18 +661,21 @@ class AffiniteApp(QApplication):
 
             except Exception as e:
                 logger.exception(f"Error during hardware connection: {e}")
-                self.main_window.ui.status.setText(f"Connection error: {str(e)}")
+                self.main_window.ui.status.setText(f"Connection error: {e!s}")
 
     def _update_device_config(self) -> None:
         """Update device configuration display."""
         ctrl_type = ""
         if self.ctrl is not None:
-            if hasattr(self.ctrl, 'device_name'):
+            if hasattr(self.ctrl, "device_name"):
                 ctrl_type = "PicoP4SPR"
-                logger.info(f"✅ Setting device widget to show PicoP4SPR")
+                logger.info("✅ Setting device widget to show PicoP4SPR")
 
         # Update device widget
-        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'device_widget'):
+        if hasattr(self.main_window, "sidebar") and hasattr(
+            self.main_window.sidebar,
+            "device_widget",
+        ):
             logger.info(f"Calling device_widget.setup with ctrl_type='{ctrl_type}'")
             self.main_window.sidebar.device_widget.setup(ctrl_type, "", None)
             logger.info("Device widget setup completed")
@@ -598,7 +694,9 @@ class AffiniteApp(QApplication):
             # Manual calibration - run in background thread
             if self.ctrl is None or self.usb is None:
                 logger.error("Cannot calibrate - hardware not connected")
-                self.main_window.ui.status.setText("Cannot calibrate - connect hardware first")
+                self.main_window.ui.status.setText(
+                    "Cannot calibrate - connect hardware first",
+                )
                 return
 
             logger.info("Starting manual calibration...")
@@ -606,11 +704,12 @@ class AffiniteApp(QApplication):
 
             try:
                 # Use SPRCalibrator with HAL hardware
-                from utils.spr_calibrator import SPRCalibrator, CalibrationState
                 from PySide6.QtCore import QThread
 
+                from utils.spr_calibrator import CalibrationState, SPRCalibrator
+
                 # Create shared calibration state
-                if not hasattr(self, 'calib_state'):
+                if not hasattr(self, "calib_state"):
                     self.calib_state = CalibrationState()
                     logger.info("Created shared CalibrationState")
 
@@ -618,16 +717,24 @@ class AffiniteApp(QApplication):
                 logger.info("Creating SPRCalibrator...")
 
                 # Use device_config (single source of truth)
-                if hasattr(self, 'device_config') and self.device_config:
-                    device_config_dict = self.device_config.to_dict() if hasattr(self.device_config, 'to_dict') else {}
-                    logger.info(f"✅ Using device_config (single source of truth)")
+                if hasattr(self, "device_config") and self.device_config:
+                    device_config_dict = (
+                        self.device_config.to_dict()
+                        if hasattr(self.device_config, "to_dict")
+                        else {}
+                    )
+                    logger.info("✅ Using device_config (single source of truth)")
 
                     # Debug: Check if OEM calibration is present
-                    if 'oem_calibration' in device_config_dict:
-                        oem = device_config_dict['oem_calibration']
-                        logger.info(f"✅ OEM calibration found: S={oem.get('polarizer_s_position')}, P={oem.get('polarizer_p_position')}")
+                    if "oem_calibration" in device_config_dict:
+                        oem = device_config_dict["oem_calibration"]
+                        logger.info(
+                            f"✅ OEM calibration found: S={oem.get('polarizer_s_position')}, P={oem.get('polarizer_p_position')}",
+                        )
                     else:
-                        logger.warning("⚠️ No 'oem_calibration' section in device_config")
+                        logger.warning(
+                            "⚠️ No 'oem_calibration' section in device_config",
+                        )
                 else:
                     logger.error("❌ No device_config found - this should not happen!")
                     self.main_window.ui.status.setText("Error: No device configuration")
@@ -638,11 +745,13 @@ class AffiniteApp(QApplication):
                     usb=self.usb,  # type: ignore
                     device_type="PicoP4SPR",
                     calib_state=self.calib_state,
-                    device_config=device_config_dict
+                    device_config=device_config_dict,
                 )
 
                 # Run calibration in background thread
-                logger.info("✅ Running calibration in background thread (GUI stays responsive)")
+                logger.info(
+                    "✅ Running calibration in background thread (GUI stays responsive)",
+                )
 
                 class CalibrationWorker(QThread):
                     def __init__(self, calibrator):
@@ -661,11 +770,13 @@ class AffiniteApp(QApplication):
                     if self.calib_worker.success:
                         logger.info("✅ Calibration completed successfully!")
                         self.calibrated = True
-                        self.main_window.ui.status.setText("Calibration complete - Ready to measure")
+                        self.main_window.ui.status.setText(
+                            "Calibration complete - Ready to measure",
+                        )
 
                         # Show popup stating calibration is done and starting measurements
-                        from PySide6.QtWidgets import QMessageBox
                         from PySide6.QtCore import QTimer
+                        from PySide6.QtWidgets import QMessageBox
 
                         def show_start_measurement_dialog():
                             msg = QMessageBox(self.main_window)
@@ -675,13 +786,23 @@ class AffiniteApp(QApplication):
                             msg.setStandardButtons(QMessageBox.Ok)
                             msg.exec()
 
-                            logger.info("🚀 Starting live measurements after calibration")
+                            logger.info(
+                                "🚀 Starting live measurements after calibration",
+                            )
                             # TODO: Start live measurements
                             # For now, just update status
-                            self.main_window.ui.status.setText("Starting live measurements...")
-                            logger.info("Live measurement start not yet implemented in manual mode")
-                            logger.info("Please use the state machine mode (USE_STATE_MACHINE=true) for full functionality")
-                            self.main_window.ui.status.setText("Ready to measure - Full acquisition requires state machine mode")
+                            self.main_window.ui.status.setText(
+                                "Starting live measurements...",
+                            )
+                            logger.info(
+                                "Live measurement start not yet implemented in manual mode",
+                            )
+                            logger.info(
+                                "Please use the state machine mode (USE_STATE_MACHINE=true) for full functionality",
+                            )
+                            self.main_window.ui.status.setText(
+                                "Ready to measure - Full acquisition requires state machine mode",
+                            )
 
                         # Delay popup slightly so calibration logs finish
                         QTimer.singleShot(500, show_start_measurement_dialog)
@@ -695,7 +816,7 @@ class AffiniteApp(QApplication):
 
             except Exception as e:
                 logger.exception(f"Calibration error: {e}")
-                self.main_window.ui.status.setText(f"Calibration error: {str(e)}")
+                self.main_window.ui.status.setText(f"Calibration error: {e!s}")
 
     def get_system_status(self) -> str:
         """Get current system status."""
@@ -722,20 +843,21 @@ class AffiniteApp(QApplication):
 
         Args:
             pos: Position string ('s' or 'p')
+
         """
         logger.info(f"Polarizer position requested: {pos}")
 
-        if USE_STATE_MACHINE and hasattr(self, 'state_machine'):
+        if USE_STATE_MACHINE and hasattr(self, "state_machine"):
             # Use state machine to set polarizer
             self.state_machine.set_polarizer_mode(pos)
         elif self.ctrl is not None:
             # Direct hardware control (legacy mode)
             try:
-                if 's' in pos.lower():
-                    self.ctrl.set_mode(mode='s')
+                if "s" in pos.lower():
+                    self.ctrl.set_mode(mode="s")
                     logger.info("Polarizer set to S-mode")
                 else:
-                    self.ctrl.set_mode(mode='p')
+                    self.ctrl.set_mode(mode="p")
                     logger.info("Polarizer set to P-mode")
             except Exception as e:
                 logger.error(f"Failed to set polarizer: {e}")
@@ -747,19 +869,20 @@ class AffiniteApp(QApplication):
 
         Args:
             led_setting: LED channel ('a', 'b', 'c', 'd', 'x' for off, 'auto' for normal mode)
+
         """
         logger.info(f"Single LED mode requested: {led_setting}")
 
-        if USE_STATE_MACHINE and hasattr(self, 'state_machine'):
+        if USE_STATE_MACHINE and hasattr(self, "state_machine"):
             # Use state machine to control LEDs
             if led_setting == "auto":
-                self.state_machine.set_single_led_mode(False, 'x')
+                self.state_machine.set_single_led_mode(False, "x")
                 logger.info("Single LED mode: OFF (auto mode)")
-            elif led_setting in ['a', 'b', 'c', 'd']:
+            elif led_setting in ["a", "b", "c", "d"]:
                 self.state_machine.set_single_led_mode(True, led_setting)
                 logger.info(f"Single LED mode: Channel {led_setting.upper()}")
             else:  # 'x' or other
-                self.state_machine.set_single_led_mode(True, 'x')
+                self.state_machine.set_single_led_mode(True, "x")
                 logger.info("Single LED mode: All LEDs OFF")
         else:
             # Legacy direct control
@@ -776,6 +899,7 @@ class AffiniteApp(QApplication):
         # Check if LED health monitoring is due (every 100 operating hours)
         try:
             from utils.led_health_monitor import check_and_run_health_monitor
+
             health_check_ran = check_and_run_health_monitor()
             if health_check_ran:
                 logger.info("✅ LED health check completed during shutdown")
@@ -791,7 +915,7 @@ class AffiniteApp(QApplication):
             logger.info("🚨 Emergency cleanup started...")
 
             # 1. Emergency LED shutdown via state machine
-            if hasattr(self, 'state_machine'):
+            if hasattr(self, "state_machine"):
                 try:
                     self.state_machine.emergency_stop()
                 except Exception as e:
@@ -805,31 +929,31 @@ class AffiniteApp(QApplication):
 
             # 3. Properly close hardware connections to release COM ports
             try:
-                if hasattr(self, 'ctrl') and self.ctrl:
-                    if hasattr(self.ctrl, 'disconnect'):
+                if hasattr(self, "ctrl") and self.ctrl:
+                    if hasattr(self.ctrl, "disconnect"):
                         self.ctrl.disconnect()
                         logger.info("Controller disconnected")
-                    elif hasattr(self.ctrl, '_ser') and self.ctrl._ser:
+                    elif hasattr(self.ctrl, "_ser") and self.ctrl._ser:
                         if self.ctrl._ser.is_open:
                             self.ctrl._ser.close()
                             logger.info("Controller serial port closed")
 
-                if hasattr(self, 'usb') and self.usb:
-                    if hasattr(self.usb, 'disconnect'):
+                if hasattr(self, "usb") and self.usb:
+                    if hasattr(self.usb, "disconnect"):
                         self.usb.disconnect()
                         logger.info("Spectrometer disconnected")
             except Exception as e:
                 logger.warning(f"Hardware disconnect failed: {e}")
 
             # 4. Stop state machine
-            if hasattr(self, 'state_machine'):
+            if hasattr(self, "state_machine"):
                 try:
                     self.state_machine.stop()
                 except Exception as e:
                     logger.error(f"State machine stop failed: {e}")
 
             # 5. Close main window
-            if hasattr(self, 'main_window'):
+            if hasattr(self, "main_window"):
                 try:
                     self.main_window.close()
                 except Exception as e:
@@ -842,8 +966,9 @@ class AffiniteApp(QApplication):
 
     def _direct_hardware_emergency_shutdown(self) -> None:
         """Direct hardware emergency shutdown bypassing all abstractions."""
-        import serial
         import time
+
+        import serial
 
         try:
             logger.info("🔥 Direct hardware emergency shutdown...")
@@ -852,32 +977,49 @@ class AffiniteApp(QApplication):
             shutdown_success = False
 
             # Check state machine controller
-            if hasattr(self, 'state_machine') and hasattr(self.state_machine, 'ctrl'):
+            if hasattr(self, "state_machine") and hasattr(self.state_machine, "ctrl"):
                 try:
                     ctrl = self.state_machine.ctrl
-                    if ctrl and hasattr(ctrl, '_ser') and ctrl._ser and ctrl._ser.is_open:
-                        logger.info("Using existing serial connection (state machine) for emergency shutdown")
-                        ctrl._ser.write(b'lx\n')  # LED off command
+                    if (
+                        ctrl
+                        and hasattr(ctrl, "_ser")
+                        and ctrl._ser
+                        and ctrl._ser.is_open
+                    ):
+                        logger.info(
+                            "Using existing serial connection (state machine) for emergency shutdown",
+                        )
+                        ctrl._ser.write(b"lx\n")  # LED off command
                         time.sleep(0.05)
-                        ctrl._ser.write(b'i0\n')  # Intensity zero
+                        ctrl._ser.write(b"i0\n")  # Intensity zero
                         time.sleep(0.05)
-                        logger.info("✅ Emergency shutdown via state machine connection")
+                        logger.info(
+                            "✅ Emergency shutdown via state machine connection",
+                        )
                         shutdown_success = True
                 except Exception as e:
                     logger.debug(f"State machine emergency shutdown failed: {e}")
 
             # Check direct controller (non-state-machine mode)
-            if not shutdown_success and hasattr(self, 'ctrl') and self.ctrl:
+            if not shutdown_success and hasattr(self, "ctrl") and self.ctrl:
                 try:
-                    if hasattr(self.ctrl, '_ser') and self.ctrl._ser and self.ctrl._ser.is_open:
-                        logger.info("Using existing serial connection (direct ctrl) for emergency shutdown")
-                        self.ctrl._ser.write(b'lx\n')  # LED off command
+                    if (
+                        hasattr(self.ctrl, "_ser")
+                        and self.ctrl._ser
+                        and self.ctrl._ser.is_open
+                    ):
+                        logger.info(
+                            "Using existing serial connection (direct ctrl) for emergency shutdown",
+                        )
+                        self.ctrl._ser.write(b"lx\n")  # LED off command
                         time.sleep(0.05)
-                        self.ctrl._ser.write(b'i0\n')  # Intensity zero
+                        self.ctrl._ser.write(b"i0\n")  # Intensity zero
                         time.sleep(0.05)
-                        logger.info("✅ Emergency shutdown via direct controller connection")
+                        logger.info(
+                            "✅ Emergency shutdown via direct controller connection",
+                        )
                         shutdown_success = True
-                    elif hasattr(self.ctrl, 'all_off'):
+                    elif hasattr(self.ctrl, "all_off"):
                         # Use HAL method
                         self.ctrl.all_off()
                         logger.info("✅ Emergency shutdown via HAL all_off()")
@@ -890,9 +1032,9 @@ class AffiniteApp(QApplication):
                 try:
                     with serial.Serial("COM4", 115200, timeout=0.5) as ser:
                         time.sleep(0.05)
-                        ser.write(b'lx\n')  # LED off command
+                        ser.write(b"lx\n")  # LED off command
                         time.sleep(0.05)
-                        ser.write(b'i0\n')  # Intensity zero
+                        ser.write(b"i0\n")  # Intensity zero
                         time.sleep(0.05)
                         logger.info("✅ Emergency shutdown via direct COM4")
                         shutdown_success = True
@@ -903,7 +1045,9 @@ class AffiniteApp(QApplication):
                     logger.debug(f"Direct COM4 access skipped: {e}")
 
             if not shutdown_success:
-                logger.info("ℹ️ Emergency shutdown note: No active hardware connection found")
+                logger.info(
+                    "ℹ️ Emergency shutdown note: No active hardware connection found",
+                )
 
         except Exception as e:
             logger.error(f"Direct hardware shutdown failed: {e}")
@@ -915,9 +1059,12 @@ class AffiniteApp(QApplication):
             # Update settings module if available
             try:
                 from settings import settings as app_settings
+
                 app_settings.FILTERING_ON = enabled
                 app_settings.MED_FILT_WIN = window_size
-                logger.debug(f"Updated settings: FILTERING_ON={enabled}, MED_FILT_WIN={window_size}")
+                logger.debug(
+                    f"Updated settings: FILTERING_ON={enabled}, MED_FILT_WIN={window_size}",
+                )
             except Exception as e:
                 logger.warning(f"Could not update settings module: {e}")
 
@@ -929,13 +1076,18 @@ class AffiniteApp(QApplication):
     def _on_proc_filter_changed(self, enabled: bool, window_size: int) -> None:
         """Handle processed data filtering setting changes from SPR Settings tab."""
         try:
-            logger.info(f"Processed data filter changed: enabled={enabled}, window={window_size}")
+            logger.info(
+                f"Processed data filter changed: enabled={enabled}, window={window_size}",
+            )
             # Update settings module if available
             try:
                 from settings import settings as app_settings
+
                 app_settings.FILTERING_ON = enabled
                 app_settings.MED_FILT_WIN = window_size
-                logger.debug(f"Updated settings for processed data: FILTERING_ON={enabled}, MED_FILT_WIN={window_size}")
+                logger.debug(
+                    f"Updated settings for processed data: FILTERING_ON={enabled}, MED_FILT_WIN={window_size}",
+                )
             except Exception as e:
                 logger.warning(f"Could not update settings module: {e}")
 
@@ -948,15 +1100,17 @@ class AffiniteApp(QApplication):
 
         Args:
             model: "old" for numerical derivative, "centroid" for physics-aware
+
         """
         try:
             logger.info(f"Peak tracking model changed to: {model}")
             # Update settings module (already done in channelmenu, but verify)
             try:
                 from settings import settings as app_settings
+
                 if model == "old":
                     app_settings.WIDTH_BIAS_CORRECTION_ENABLED = False
-                    app_settings.PEAK_TRACKING_METHOD = 'numerical_derivative'
+                    app_settings.PEAK_TRACKING_METHOD = "numerical_derivative"
                     logger.info("✅ Using OLD peak tracker (numerical derivative)")
                 elif model == "centroid":
                     app_settings.WIDTH_BIAS_CORRECTION_ENABLED = True
@@ -966,11 +1120,17 @@ class AffiniteApp(QApplication):
                 logger.warning(f"Could not update settings module: {e}")
 
             # Update data processor if it exists and has the setting
-            if hasattr(self, 'state_machine') and self.state_machine and hasattr(self.state_machine, 'data_processor'):
+            if (
+                hasattr(self, "state_machine")
+                and self.state_machine
+                and hasattr(self.state_machine, "data_processor")
+            ):
                 try:
                     # The data processor uses settings.WIDTH_BIAS_CORRECTION_ENABLED
                     # internally, so just log the change
-                    logger.debug(f"Data processor will use {model} peak tracking on next measurement")
+                    logger.debug(
+                        f"Data processor will use {model} peak tracking on next measurement",
+                    )
                 except Exception as e:
                     logger.debug(f"Data processor note: {e}")
         except Exception as e:
@@ -993,9 +1153,9 @@ def main() -> None:
 
         # Try to use the app's cleanup if available
         try:
-            if 'app' in locals() or 'app' in globals():
-                app_instance = locals().get('app') or globals().get('app')
-                if app_instance and hasattr(app_instance, '_emergency_cleanup'):
+            if "app" in locals() or "app" in globals():
+                app_instance = locals().get("app") or globals().get("app")
+                if app_instance and hasattr(app_instance, "_emergency_cleanup"):
                     app_instance._emergency_cleanup()
                     print("✅ App emergency cleanup completed")
         except Exception as e:
@@ -1003,13 +1163,15 @@ def main() -> None:
 
         # Direct LED shutdown as fallback
         try:
-            import serial
             import time
+
+            import serial
+
             with serial.Serial("COM4", 115200, timeout=0.5) as ser:
                 time.sleep(0.05)
-                ser.write(b'lx\n')
+                ser.write(b"lx\n")
                 time.sleep(0.05)
-                ser.write(b'i0\n')
+                ser.write(b"i0\n")
                 time.sleep(0.05)
                 print("✅ Emergency LED shutdown completed")
         except PermissionError:
@@ -1024,9 +1186,9 @@ def main() -> None:
 
     # Install signal handlers for various termination scenarios
     try:
-        signal.signal(signal.SIGINT, signal_emergency_shutdown)   # Ctrl+C
+        signal.signal(signal.SIGINT, signal_emergency_shutdown)  # Ctrl+C
         signal.signal(signal.SIGTERM, signal_emergency_shutdown)  # Termination request
-        if hasattr(signal, 'SIGBREAK'):  # Windows specific
+        if hasattr(signal, "SIGBREAK"):  # Windows specific
             signal.signal(signal.SIGBREAK, signal_emergency_shutdown)  # Ctrl+Break
         logger.info("✅ Emergency shutdown signal handlers installed")
     except Exception as e:
@@ -1051,13 +1213,15 @@ def main() -> None:
         logger.exception(f"Fatal application error: {e}")
         # Emergency LED shutdown on crash
         try:
-            import serial
             import time
+
+            import serial
+
             with serial.Serial("COM4", 115200, timeout=1) as ser:
                 time.sleep(0.1)
-                ser.write(b'lx\n')
+                ser.write(b"lx\n")
                 time.sleep(0.1)
-                ser.write(b'i0\n')
+                ser.write(b"i0\n")
                 time.sleep(0.1)
                 logger.info("Emergency LED shutdown on crash completed")
         except Exception as led_error:

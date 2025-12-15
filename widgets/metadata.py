@@ -8,20 +8,20 @@ import csv
 import re
 from collections.abc import Collection, Sequence
 from datetime import datetime
-from typing import Optional
 
 # Python version compatibility
 try:
     from datetime import UTC  # Python 3.11+
 except ImportError:
-    from datetime import timezone
-    UTC = timezone.utc  # Python < 3.11
+    UTC = UTC  # Python < 3.11
 
 try:
     from typing import NamedTuple, Self  # Python 3.11+
 except ImportError:
-    from typing import NamedTuple
-    from typing_extensions import Self  # Python < 3.11
+    from typing import (
+        NamedTuple,
+        Self,  # Python < 3.11
+    )
 
 
 from PySide6.QtCore import QSize, Qt, Slot
@@ -62,7 +62,7 @@ class ConcentrationEntry(NamedTuple):
             return ""
 
         # Chceks for a valid time, which is optional
-        time: Optional[float]
+        time: float | None
         try:
             time = float(self.time.text())
         except ValueError:
@@ -116,7 +116,7 @@ class Concentrations(QWidget):
 
     def __init__(
         self: Self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         f: Qt.WindowType = Qt.WindowType.Widget,
     ) -> None:
         """Widget to allow user to enter a list of concentrations."""
@@ -336,7 +336,7 @@ class CurveTable(QWidget):
     def __init__(
         self: Self,
         channels: list[str],
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         f: Qt.WindowType = Qt.WindowType.Widget,
     ) -> None:
         """Widget to allow user to enter metadata for each curve."""
@@ -485,7 +485,7 @@ class Metadata(QWidget):
     def __init__(
         self: Self,
         channels: list[str],
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         f: Qt.WindowType = Qt.WindowType.Widget,
     ) -> None:
         """Let user enter metadata.
@@ -682,7 +682,7 @@ class MetadataPrompt(QDialog):
     def __init__(
         self: Self,
         metadata: Metadata,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         f: Qt.WindowType = Qt.WindowType.Widget,
     ) -> None:
         """Dialog window to prompt the user to enter the desired metadata."""

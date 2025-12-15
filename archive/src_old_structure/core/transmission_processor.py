@@ -13,7 +13,7 @@ Architecture: Layer 2 (Core Business Logic)
 """
 
 import numpy as np
-from typing import Optional
+
 from utils.logger import logger
 
 
@@ -51,13 +51,13 @@ class TransmissionProcessor:
         s_pol_ref: np.ndarray,
         led_intensity_s: int = 200,
         led_intensity_p: int = 255,
-        wavelengths: Optional[np.ndarray] = None,
+        wavelengths: np.ndarray | None = None,
         apply_sg_filter: bool = True,
-        baseline_method: str = 'percentile',
+        baseline_method: str = "percentile",
         baseline_percentile: float = 95.0,
         baseline_polynomial_degree: int = 2,
-        off_spr_wavelength_range: Optional[tuple] = None,
-        verbose: bool = False
+        off_spr_wavelength_range: tuple | None = None,
+        verbose: bool = False,
     ) -> np.ndarray:
         """Process ONE channel with transmission calculation pipeline.
 
@@ -90,12 +90,15 @@ class TransmissionProcessor:
             3. Apply baseline correction (method-dependent)
             4. Clip to 0-100% range
             5. Apply Savitzky-Golay filter (optional)
+
         """
         if verbose:
             logger.info("=" * 80)
             logger.info("TransmissionProcessor: Clean P-pol → Transmission")
             logger.info("=" * 80)
-            logger.info(f"   P-pol clean: mean={np.mean(p_pol_clean):.0f}, max={np.max(p_pol_clean):.0f}")
+            logger.info(
+                f"   P-pol clean: mean={np.mean(p_pol_clean):.0f}, max={np.max(p_pol_clean):.0f}",
+            )
 
         # Step 1: Calculate transmission (P / S)
         # Step 1: Calculate transmission (P / S)
@@ -103,29 +106,35 @@ class TransmissionProcessor:
         raw_transmission = (p_pol_clean / s_pol_safe) * 100.0
 
         if verbose:
-            logger.info(f"Step 1: Raw transmission (P/S): mean={np.mean(raw_transmission):.1f}%")
+            logger.info(
+                f"Step 1: Raw transmission (P/S): mean={np.mean(raw_transmission):.1f}%",
+            )
 
         # Step 2: LED boost correction (P_LED / S_LED)
         led_boost_factor = max(led_intensity_p, 1) / max(led_intensity_s, 1)
         transmission = raw_transmission / led_boost_factor
 
         if verbose:
-            logger.info(f"Step 2: LED boost correction")
-            logger.info(f"   LED boost: S={led_intensity_s}, P={led_intensity_p}, factor={led_boost_factor:.3f}")
-            logger.info(f"   Transmission after LED correction: mean={np.mean(transmission):.1f}%")
+            logger.info("Step 2: LED boost correction")
+            logger.info(
+                f"   LED boost: S={led_intensity_s}, P={led_intensity_p}, factor={led_boost_factor:.3f}",
+            )
+            logger.info(
+                f"   Transmission after LED correction: mean={np.mean(transmission):.1f}%",
+            )
 
         # Step 3: Baseline correction (method-dependent)
-        if baseline_method == 'percentile':
+        if baseline_method == "percentile":
             # Method 1: Simple percentile (robust, fast)
             baseline = np.percentile(transmission, baseline_percentile)
             transmission = transmission - baseline + 100.0
 
             if verbose:
-                logger.info(f"Step 3: Baseline correction (percentile method)")
+                logger.info("Step 3: Baseline correction (percentile method)")
                 logger.info(f"   {baseline_percentile}th percentile: {baseline:.2f}%")
-                logger.info(f"   Re-centered to 100% baseline")
+                logger.info("   Re-centered to 100% baseline")
 
-        elif baseline_method == 'polynomial':
+        elif baseline_method == "polynomial":
             # Method 2: Polynomial fit to remove LED spectral profile skew
             x = np.linspace(0, 1, len(transmission))
             coeffs = np.polyfit(x, transmission, baseline_polynomial_degree)
@@ -138,11 +147,11 @@ class TransmissionProcessor:
             transmission = (transmission / baseline) * 100.0
 
             if verbose:
-                logger.info(f"Step 3: Baseline correction (polynomial method)")
+                logger.info("Step 3: Baseline correction (polynomial method)")
                 logger.info(f"   Polynomial degree: {baseline_polynomial_degree}")
-                logger.info(f"   Flattened LED spectral profile")
+                logger.info("   Flattened LED spectral profile")
 
-        elif baseline_method == 'off_spr':
+        elif baseline_method == "off_spr":
             # Method 3: Physics-based off-SPR region baseline
             if wavelengths is not None:
                 if off_spr_wavelength_range is None:
@@ -156,24 +165,28 @@ class TransmissionProcessor:
                     transmission = transmission - baseline + 100.0
 
                     if verbose:
-                        logger.info(f"Step 3: Baseline correction (off-SPR region method)")
+                        logger.info(
+                            "Step 3: Baseline correction (off-SPR region method)",
+                        )
                         logger.info(f"   Off-SPR region: {min_wl}-{max_wl}nm")
                         logger.info(f"   Baseline: {baseline:.2f}%")
-                        logger.info(f"   Re-centered to 100% baseline")
-                else:
-                    if verbose:
-                        logger.warning(f"Step 3: Off-SPR region {min_wl}-{max_wl}nm not available")
-                        logger.info(f"   Skipping baseline correction")
-            else:
-                if verbose:
-                    logger.warning(f"Step 3: Wavelengths not provided for off-SPR baseline")
-                    logger.info(f"   Skipping baseline correction")
+                        logger.info("   Re-centered to 100% baseline")
+                elif verbose:
+                    logger.warning(
+                        f"Step 3: Off-SPR region {min_wl}-{max_wl}nm not available",
+                    )
+                    logger.info("   Skipping baseline correction")
+            elif verbose:
+                logger.warning("Step 3: Wavelengths not provided for off-SPR baseline")
+                logger.info("   Skipping baseline correction")
 
-        elif baseline_method == 'none':
+        elif baseline_method == "none":
             if verbose:
-                logger.info(f"Step 3: Baseline correction disabled")
+                logger.info("Step 3: Baseline correction disabled")
         else:
-            logger.warning(f"Unknown baseline method '{baseline_method}', skipping correction")
+            logger.warning(
+                f"Unknown baseline method '{baseline_method}', skipping correction",
+            )
 
         # Step 4: No clipping - allow full dynamic range of transmission data
         # Transmission can exceed 100% (S/P formula produces values >100%)
@@ -182,17 +195,20 @@ class TransmissionProcessor:
         # Step 5: Savitzky-Golay filter (optional)
         if apply_sg_filter and len(transmission) >= 11:
             from scipy.signal import savgol_filter
+
             transmission = savgol_filter(transmission, window_length=11, polyorder=3)
             if verbose:
-                logger.info(f"Step 4: Applied Savitzky-Golay filter (window=11, poly=3)")
+                logger.info("Step 4: Applied Savitzky-Golay filter (window=11, poly=3)")
 
         # Log final result
         if verbose and wavelengths is not None:
             min_transmission = np.min(transmission)
             min_idx = np.argmin(transmission)
             min_wavelength = wavelengths[min_idx]
-            logger.info(f"\n✅ Final transmission spectrum:")
-            logger.info(f"   SPR dip: {min_transmission:.1f}% at {min_wavelength:.1f}nm")
+            logger.info("\n✅ Final transmission spectrum:")
+            logger.info(
+                f"   SPR dip: {min_transmission:.1f}% at {min_wavelength:.1f}nm",
+            )
             logger.info(f"   Mean: {np.mean(transmission):.1f}%")
             logger.info("=" * 80)
 
@@ -203,7 +219,7 @@ class TransmissionProcessor:
         transmission: np.ndarray,
         wavelengths: np.ndarray,
         spr_region: tuple = (640, 680),
-        off_spr_regions: list = None
+        off_spr_regions: list = None,
     ) -> dict:
         """Diagnose cause of spectral tilt in transmission spectrum.
 
@@ -233,18 +249,19 @@ class TransmissionProcessor:
                 'off_spr_right': float,     # Mean transmission at right off-SPR
                 'spr_mean': float           # Mean transmission in SPR region
             }
+
         """
         if off_spr_regions is None:
             off_spr_regions = [(560.0, 570.0), (750.0, 770.0)]
 
         result = {
-            'off_spr_tilt_deg': 0.0,
-            'spr_tilt_deg': 0.0,
-            'tilt_type': 'none',
-            'correction_recommended': False,
-            'off_spr_left': None,
-            'off_spr_right': None,
-            'spr_mean': None
+            "off_spr_tilt_deg": 0.0,
+            "spr_tilt_deg": 0.0,
+            "tilt_type": "none",
+            "correction_recommended": False,
+            "off_spr_left": None,
+            "off_spr_right": None,
+            "spr_mean": None,
         }
 
         # Analyze off-SPR regions for optical artifacts
@@ -261,43 +278,45 @@ class TransmissionProcessor:
 
         # Calculate off-SPR tilt (optical artifact indicator)
         if len(off_spr_means) >= 2:
-            result['off_spr_left'] = off_spr_means[0]
-            result['off_spr_right'] = off_spr_means[-1]
+            result["off_spr_left"] = off_spr_means[0]
+            result["off_spr_right"] = off_spr_means[-1]
 
             # Tilt in transmission % per 100nm
             wl_diff_nm = off_spr_wavelengths[-1] - off_spr_wavelengths[0]
             trans_diff = off_spr_means[-1] - off_spr_means[0]
-            result['off_spr_tilt_deg'] = (trans_diff / wl_diff_nm) * 100.0 if wl_diff_nm > 0 else 0.0
+            result["off_spr_tilt_deg"] = (
+                (trans_diff / wl_diff_nm) * 100.0 if wl_diff_nm > 0 else 0.0
+            )
 
         # Analyze SPR region tilt
         spr_mask = (wavelengths >= spr_region[0]) & (wavelengths <= spr_region[1])
         if np.any(spr_mask):
             spr_trans = transmission[spr_mask]
             spr_wl = wavelengths[spr_mask]
-            result['spr_mean'] = np.mean(spr_trans)
+            result["spr_mean"] = np.mean(spr_trans)
 
             # Fit linear tilt in SPR region
             if len(spr_wl) > 1:
                 coeffs = np.polyfit(spr_wl, spr_trans, 1)
-                result['spr_tilt_deg'] = coeffs[0] * 100.0  # slope × 100nm
+                result["spr_tilt_deg"] = coeffs[0] * 100.0  # slope × 100nm
 
         # Classify tilt type
-        off_spr_tilt_abs = abs(result['off_spr_tilt_deg'])
-        spr_tilt_abs = abs(result['spr_tilt_deg'])
+        off_spr_tilt_abs = abs(result["off_spr_tilt_deg"])
+        spr_tilt_abs = abs(result["spr_tilt_deg"])
 
         if off_spr_tilt_abs > 5.0:  # >5% per 100nm in off-SPR
             if spr_tilt_abs > off_spr_tilt_abs * 1.5:
-                result['tilt_type'] = 'mixed'  # Both optical + SPR
-                result['correction_recommended'] = True  # Correct optical part
+                result["tilt_type"] = "mixed"  # Both optical + SPR
+                result["correction_recommended"] = True  # Correct optical part
             else:
-                result['tilt_type'] = 'optical_artifact'  # Purely optical
-                result['correction_recommended'] = True
+                result["tilt_type"] = "optical_artifact"  # Purely optical
+                result["correction_recommended"] = True
         elif spr_tilt_abs > 5.0:  # SPR region tilted but off-SPR flat
-            result['tilt_type'] = 'spr_physics'  # Natural SPR wavelength dependence
-            result['correction_recommended'] = False  # DON'T correct physics!
+            result["tilt_type"] = "spr_physics"  # Natural SPR wavelength dependence
+            result["correction_recommended"] = False  # DON'T correct physics!
         else:
-            result['tilt_type'] = 'none'  # Minimal tilt
-            result['correction_recommended'] = False
+            result["tilt_type"] = "none"  # Minimal tilt
+            result["correction_recommended"] = False
 
         return result
 
@@ -309,7 +328,7 @@ class TransmissionProcessor:
         p_spectrum: np.ndarray = None,
         s_spectrum: np.ndarray = None,
         detector_max_counts: float = 65535,
-        saturation_threshold: float = 62259
+        saturation_threshold: float = 62259,
     ) -> dict:
         """Calculate comprehensive QC metrics from transmission spectrum.
 
@@ -347,56 +366,67 @@ class TransmissionProcessor:
                 's_max_counts': float,      # S-pol max counts
                 'p_max_counts': float       # P-pol max counts
             }
+
         """
         qc = {
-            'fwhm': None,
-            'dip_detected': False,
-            'transmission_min': None,
-            'dip_wavelength': None,
-            'dip_depth': None,
-            'ratio': None,
-            'orientation_correct': None,
-            'status': '⚠️ INDETERMINATE',
-            'fwhm_quality': 'unknown',
-            'warnings': [],
-            's_saturated': False,
-            'p_saturated': False,
-            's_max_counts': None,
-            'p_max_counts': None
+            "fwhm": None,
+            "dip_detected": False,
+            "transmission_min": None,
+            "dip_wavelength": None,
+            "dip_depth": None,
+            "ratio": None,
+            "orientation_correct": None,
+            "status": "⚠️ INDETERMINATE",
+            "fwhm_quality": "unknown",
+            "warnings": [],
+            "s_saturated": False,
+            "p_saturated": False,
+            "s_max_counts": None,
+            "p_max_counts": None,
         }
 
         try:
             # 0. Saturation Checks (if spectra provided)
             if s_spectrum is not None:
                 s_max = float(np.max(s_spectrum))
-                qc['s_max_counts'] = s_max
-                qc['s_saturated'] = s_max >= saturation_threshold
+                qc["s_max_counts"] = s_max
+                qc["s_saturated"] = s_max >= saturation_threshold
 
-                if qc['s_saturated']:
-                    qc['warnings'].append(f"S-pol SATURATED: {s_max:.0f} counts >= {saturation_threshold:.0f}")
-                    logger.warning(f"Ch {channel.upper()}: S-pol saturation detected ({s_max:.0f} counts)")
+                if qc["s_saturated"]:
+                    qc["warnings"].append(
+                        f"S-pol SATURATED: {s_max:.0f} counts >= {saturation_threshold:.0f}",
+                    )
+                    logger.warning(
+                        f"Ch {channel.upper()}: S-pol saturation detected ({s_max:.0f} counts)",
+                    )
 
             if p_spectrum is not None:
                 p_max = float(np.max(p_spectrum))
-                qc['p_max_counts'] = p_max
-                qc['p_saturated'] = p_max >= saturation_threshold
+                qc["p_max_counts"] = p_max
+                qc["p_saturated"] = p_max >= saturation_threshold
 
-                if qc['p_saturated']:
-                    qc['warnings'].append(f"P-pol SATURATED: {p_max:.0f} counts >= {saturation_threshold:.0f}")
-                    logger.warning(f"Ch {channel.upper()}: P-pol saturation detected ({p_max:.0f} counts)")
+                if qc["p_saturated"]:
+                    qc["warnings"].append(
+                        f"P-pol SATURATED: {p_max:.0f} counts >= {saturation_threshold:.0f}",
+                    )
+                    logger.warning(
+                        f"Ch {channel.upper()}: P-pol saturation detected ({p_max:.0f} counts)",
+                    )
             # 1. SPR Dip Detection
             min_transmission = np.min(transmission_spectrum)
             min_idx = np.argmin(transmission_spectrum)
             spr_wavelength = wavelengths[min_idx]
             dip_depth = 100.0 - min_transmission
 
-            qc['transmission_min'] = float(min_transmission)
-            qc['dip_wavelength'] = float(spr_wavelength)
-            qc['dip_depth'] = float(dip_depth)
-            qc['dip_detected'] = dip_depth > 5.0
+            qc["transmission_min"] = float(min_transmission)
+            qc["dip_wavelength"] = float(spr_wavelength)
+            qc["dip_depth"] = float(dip_depth)
+            qc["dip_detected"] = dip_depth > 5.0
 
-            if not qc['dip_detected']:
-                qc['warnings'].append(f"Weak SPR dip ({dip_depth:.1f}%) - check sensor hydration")
+            if not qc["dip_detected"]:
+                qc["warnings"].append(
+                    f"Weak SPR dip ({dip_depth:.1f}%) - check sensor hydration",
+                )
 
             # 2. FWHM Calculation
             half_max = (100.0 + min_transmission) / 2.0
@@ -406,26 +436,32 @@ class TransmissionProcessor:
             if len(fwhm_indices) > 1:
                 fwhm_wavelengths = wavelengths[fwhm_indices]
                 fwhm = fwhm_wavelengths[-1] - fwhm_wavelengths[0]
-                qc['fwhm'] = float(fwhm)
+                qc["fwhm"] = float(fwhm)
 
                 # FWHM Quality Assessment
                 if fwhm < 30:
-                    qc['fwhm_quality'] = 'excellent'
+                    qc["fwhm_quality"] = "excellent"
                 elif fwhm < 50:
-                    qc['fwhm_quality'] = 'good'
+                    qc["fwhm_quality"] = "good"
                 elif fwhm < 60:
-                    qc['fwhm_quality'] = 'acceptable'
-                    qc['warnings'].append(f"Broad FWHM ({fwhm:.1f}nm) - acceptable but not optimal")
+                    qc["fwhm_quality"] = "acceptable"
+                    qc["warnings"].append(
+                        f"Broad FWHM ({fwhm:.1f}nm) - acceptable but not optimal",
+                    )
                 else:
-                    qc['fwhm_quality'] = 'poor'
-                    qc['warnings'].append(f"Wide FWHM ({fwhm:.1f}nm) - poor sensor contact or degradation")
+                    qc["fwhm_quality"] = "poor"
+                    qc["warnings"].append(
+                        f"Wide FWHM ({fwhm:.1f}nm) - poor sensor contact or degradation",
+                    )
             else:
-                qc['warnings'].append("Cannot calculate FWHM - no clear SPR dip")
+                qc["warnings"].append("Cannot calculate FWHM - no clear SPR dip")
 
             # 3. P/S Ratio Calculation (if spectra provided)
             if p_spectrum is not None and s_spectrum is not None:
                 # Calculate mean P/S ratio in SPR region
-                roi_mask = (wavelengths >= spr_wavelength - 20) & (wavelengths <= spr_wavelength + 20)
+                roi_mask = (wavelengths >= spr_wavelength - 20) & (
+                    wavelengths <= spr_wavelength + 20
+                )
                 if np.any(roi_mask):
                     p_roi = p_spectrum[roi_mask]
                     s_roi = s_spectrum[roi_mask]
@@ -433,52 +469,62 @@ class TransmissionProcessor:
                     p_roi_mean = np.mean(p_roi)
 
                     if s_roi_mean > 0:
-                        qc['ratio'] = float(p_roi_mean / s_roi_mean)
+                        qc["ratio"] = float(p_roi_mean / s_roi_mean)
 
                         # Validate P/S ratio for orientation check
                         # Expected: 0.1-0.95 for correct orientation (P < S due to SPR absorption)
-                        if qc['ratio'] > 1.15:
-                            qc['orientation_correct'] = False
-                            qc['warnings'].append(f"P/S ratio ({qc['ratio']:.2f}) > 1.15 - polarizer may be inverted")
-                        elif 0.95 < qc['ratio'] <= 1.15:
-                            qc['orientation_correct'] = None  # Indeterminate
-                            qc['warnings'].append(f"P/S ratio ({qc['ratio']:.2f}) borderline - cannot confirm orientation")
-                        elif 0.10 <= qc['ratio'] <= 0.95:
-                            qc['orientation_correct'] = True
+                        if qc["ratio"] > 1.15:
+                            qc["orientation_correct"] = False
+                            qc["warnings"].append(
+                                f"P/S ratio ({qc['ratio']:.2f}) > 1.15 - polarizer may be inverted",
+                            )
+                        elif 0.95 < qc["ratio"] <= 1.15:
+                            qc["orientation_correct"] = None  # Indeterminate
+                            qc["warnings"].append(
+                                f"P/S ratio ({qc['ratio']:.2f}) borderline - cannot confirm orientation",
+                            )
+                        elif 0.10 <= qc["ratio"] <= 0.95:
+                            qc["orientation_correct"] = True
                         else:
-                            qc['orientation_correct'] = None
-                            qc['warnings'].append(f"P/S ratio ({qc['ratio']:.2f}) < 0.10 - unusual, verify sensor")
+                            qc["orientation_correct"] = None
+                            qc["warnings"].append(
+                                f"P/S ratio ({qc['ratio']:.2f}) < 0.10 - unusual, verify sensor",
+                            )
 
             # 4. Overall Status Assessment
             passed = (
-                qc['dip_detected'] and
-                qc['fwhm'] is not None and
-                qc['fwhm'] < 60.0 and
-                (qc['orientation_correct'] is True or qc['orientation_correct'] is None) and
-                not qc['s_saturated'] and
-                not qc['p_saturated']
+                qc["dip_detected"]
+                and qc["fwhm"] is not None
+                and qc["fwhm"] < 60.0
+                and (
+                    qc["orientation_correct"] is True
+                    or qc["orientation_correct"] is None
+                )
+                and not qc["s_saturated"]
+                and not qc["p_saturated"]
             )
 
             failed = (
-                not qc['dip_detected'] or
-                (qc['fwhm'] is not None and qc['fwhm'] >= 80.0) or
-                qc['orientation_correct'] is False or
-                qc['s_saturated'] or
-                qc['p_saturated']
+                not qc["dip_detected"]
+                or (qc["fwhm"] is not None and qc["fwhm"] >= 80.0)
+                or qc["orientation_correct"] is False
+                or qc["s_saturated"]
+                or qc["p_saturated"]
             )
 
             if passed:
-                qc['status'] = '✅ PASS'
+                qc["status"] = "✅ PASS"
             elif failed:
-                qc['status'] = '❌ FAIL'
+                qc["status"] = "❌ FAIL"
             else:
-                qc['status'] = '⚠️ WARNING'
+                qc["status"] = "⚠️ WARNING"
 
-            logger.debug(f"Ch {channel.upper()} QC: {qc['status']} | FWHM={qc['fwhm']:.1f}nm | Dip={qc['dip_depth']:.1f}% @ {qc['dip_wavelength']:.1f}nm")
+            logger.debug(
+                f"Ch {channel.upper()} QC: {qc['status']} | FWHM={qc['fwhm']:.1f}nm | Dip={qc['dip_depth']:.1f}% @ {qc['dip_wavelength']:.1f}nm",
+            )
 
         except Exception as e:
             logger.error(f"QC calculation failed for channel {channel}: {e}")
-            qc['warnings'].append(f"QC calculation error: {str(e)}")
+            qc["warnings"].append(f"QC calculation error: {e!s}")
 
         return qc
-

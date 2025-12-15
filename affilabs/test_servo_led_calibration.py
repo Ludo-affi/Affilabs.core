@@ -12,13 +12,12 @@ Test scenarios:
 """
 
 import sys
-import time
-import numpy as np
-from typing import Optional
 from unittest.mock import patch
 
+import numpy as np
+
 # Add parent directory to path
-sys.path.insert(0, r'c:\Users\ludol\ezControl-AI\Affilabs.core beta')
+sys.path.insert(0, r"c:\Users\ludol\ezControl-AI\Affilabs.core beta")
 
 from affilabs.utils.logger import logger
 
@@ -26,12 +25,12 @@ from affilabs.utils.logger import logger
 # Mock time.sleep to speed up tests
 def fast_sleep(duration):
     """Fast sleep for testing - just pass through."""
-    pass
 
 
 # ============================================================================
 # Mock Classes for Testing
 # ============================================================================
+
 
 class MockSpectrometer:
     """Mock spectrometer for testing."""
@@ -94,7 +93,7 @@ class MockController:
 
     def set_intensity(self, ch: str, raw_val: int):
         """Set LED intensity."""
-        setattr(self, f'_{ch}_intensity', raw_val)
+        setattr(self, f"_{ch}_intensity", raw_val)
         logger.debug(f"LED {ch.upper()} intensity set to {raw_val}")
 
         # Update mock spectrometer's current intensity
@@ -103,32 +102,35 @@ class MockController:
 
     def get_intensity(self, ch: str) -> int:
         """Get current LED intensity."""
-        return getattr(self, f'_{ch}_intensity', 128)
+        return getattr(self, f"_{ch}_intensity", 128)
 
 
 # ============================================================================
 # Import Function Under Test
 # ============================================================================
 
-from affilabs.utils.servo_calibration import _calibrate_leds_for_servo, SERVO_CAL_TARGET_PERCENT
-
+from affilabs.utils.servo_calibration import (
+    SERVO_CAL_TARGET_PERCENT,
+    _calibrate_leds_for_servo,
+)
 
 # ============================================================================
 # Test Functions
 # ============================================================================
 
+
 def test_normal_operation():
     """Test 1: Normal LED calibration with default target."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 1: Normal Operation (30% target)")
-    print("="*80)
+    print("=" * 80)
 
     spec = MockSpectrometer(max_counts=62000)
     ctrl = MockController()
     ctrl.set_mock_spectrometer(spec)
 
     # Mock time.sleep to speed up test
-    with patch('time.sleep', fast_sleep):
+    with patch("time.sleep", fast_sleep):
         result = _calibrate_leds_for_servo(spec, ctrl, target_percent=0.30)
 
     # Verify results
@@ -137,11 +139,15 @@ def test_normal_operation():
         print(f"  Channel {ch.upper()}: {intensity}")
 
     # Check that all channels were calibrated
-    assert all(ch in result for ch in ['a', 'b', 'c', 'd']), "Missing channels in result"
+    assert all(
+        ch in result for ch in ["a", "b", "c", "d"]
+    ), "Missing channels in result"
 
     # Check that intensities are reasonable (should be relatively low for 30% target)
     for ch, intensity in result.items():
-        assert 0 <= intensity <= 255, f"Channel {ch} intensity out of range: {intensity}"
+        assert (
+            0 <= intensity <= 255
+        ), f"Channel {ch} intensity out of range: {intensity}"
 
     print("\n[OK] TEST 1 PASSED: All channels calibrated successfully")
     return True
@@ -149,14 +155,14 @@ def test_normal_operation():
 
 def test_different_targets():
     """Test 2: Different target percentages."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 2: Different Target Percentages")
-    print("="*80)
+    print("=" * 80)
 
     targets = [0.20, 0.30, 0.40, 0.50]
 
     # Mock time.sleep to speed up test
-    with patch('time.sleep', fast_sleep):
+    with patch("time.sleep", fast_sleep):
         for target in targets:
             print(f"\nTesting {target*100:.0f}% target...")
             spec = MockSpectrometer(max_counts=62000)
@@ -178,9 +184,9 @@ def test_different_targets():
 
 def test_saturation_handling():
     """Test 3: Saturation detection and recovery."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 3: Saturation Handling")
-    print("="*80)
+    print("=" * 80)
 
     spec = MockSpectrometer(max_counts=62000)
     ctrl = MockController()
@@ -192,7 +198,7 @@ def test_saturation_handling():
     print("\nSimulating saturation on first channel...")
 
     # Mock time.sleep to speed up test
-    with patch('time.sleep', fast_sleep):
+    with patch("time.sleep", fast_sleep):
         result = _calibrate_leds_for_servo(spec, ctrl, target_percent=0.30)
 
     print(f"\nResults after saturation: {result}")
@@ -206,9 +212,9 @@ def test_saturation_handling():
 
 def test_fallback_behavior():
     """Test 4: Fallback to defaults on error."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 4: Fallback Behavior on Error")
-    print("="*80)
+    print("=" * 80)
 
     # Create mock that will fail
     class FailingSpectrometer(MockSpectrometer):
@@ -224,7 +230,7 @@ def test_fallback_behavior():
     print(f"\nFallback results: {result}")
 
     # Should return default values (32 for all channels)
-    expected = {'a': 32, 'b': 32, 'c': 32, 'd': 32}
+    expected = {"a": 32, "b": 32, "c": 32, "d": 32}
     assert result == expected, f"Expected fallback {expected}, got {result}"
 
     print("\n[OK] TEST 4 PASSED: Fallback to defaults on error")
@@ -233,9 +239,9 @@ def test_fallback_behavior():
 
 def test_target_count_calculation():
     """Test 5: Verify target count calculation."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 5: Target Count Calculation")
-    print("="*80)
+    print("=" * 80)
 
     test_cases = [
         (62000, 0.20, 12400),
@@ -246,9 +252,12 @@ def test_target_count_calculation():
 
     for max_counts, target_percent, expected_counts in test_cases:
         calculated = max_counts * target_percent
-        print(f"Max: {max_counts}, Target: {target_percent*100:.0f}% → {calculated:.1f} counts")
-        assert abs(calculated - expected_counts) < 1, \
-            f"Expected {expected_counts}, got {calculated}"
+        print(
+            f"Max: {max_counts}, Target: {target_percent*100:.0f}% → {calculated:.1f} counts",
+        )
+        assert (
+            abs(calculated - expected_counts) < 1
+        ), f"Expected {expected_counts}, got {calculated}"
 
     print("\n[OK] TEST 5 PASSED: Target calculations correct")
     return True
@@ -256,9 +265,9 @@ def test_target_count_calculation():
 
 def test_realistic_scenario():
     """Test 6: Realistic scenario with actual detector specs."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 6: Realistic Scenario (Flame-T detector)")
-    print("="*80)
+    print("=" * 80)
 
     # Simulate Flame-T detector
     spec = MockSpectrometer(max_counts=62000)
@@ -269,9 +278,9 @@ def test_realistic_scenario():
     target_percent = SERVO_CAL_TARGET_PERCENT  # Should be 0.30
     target_counts = 62000 * target_percent
 
-    print(f"\nFlame-T Max Counts: 62000")
+    print("\nFlame-T Max Counts: 62000")
     print(f"Servo Cal Target: {target_percent*100:.0f}% = {target_counts:.0f} counts")
-    print(f"Saturation Threshold: 95% = 58900 counts")
+    print("Saturation Threshold: 95% = 58900 counts")
     print(f"Safety Margin: {58900 - target_counts:.0f} counts")
 
     result = _calibrate_leds_for_servo(spec, ctrl, target_percent=target_percent)
@@ -285,16 +294,18 @@ def test_realistic_scenario():
     safety_margin = 58900 - target_counts
     assert safety_margin > 30000, f"Safety margin too small: {safety_margin:.0f} counts"
 
-    print(f"\n[OK] TEST 6 PASSED: Realistic scenario validated")
-    print(f"   Safety margin: {safety_margin:.0f} counts ({safety_margin/620:.0f}% of full scale)")
+    print("\n[OK] TEST 6 PASSED: Realistic scenario validated")
+    print(
+        f"   Safety margin: {safety_margin:.0f} counts ({safety_margin/620:.0f}% of full scale)",
+    )
     return True
 
 
 def test_integration_with_servo_workflow():
     """Test 7: Integration context (simulated servo workflow)."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST 7: Integration with Servo Workflow")
-    print("="*80)
+    print("=" * 80)
 
     spec = MockSpectrometer(max_counts=62000)
     ctrl = MockController()
@@ -329,12 +340,13 @@ def test_integration_with_servo_workflow():
 # Main Test Runner
 # ============================================================================
 
+
 def run_all_tests():
     """Run all test scenarios."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("SERVO LED CALIBRATION TEST SUITE")
-    print("="*80)
-    print(f"Testing: _calibrate_leds_for_servo()")
+    print("=" * 80)
+    print("Testing: _calibrate_leds_for_servo()")
     print(f"Default target: {SERVO_CAL_TARGET_PERCENT*100:.0f}% of detector max")
 
     tests = [
@@ -356,13 +368,14 @@ def run_all_tests():
             print(f"\n[ERROR] TEST FAILED: {name}")
             print(f"   Error: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, "FAIL"))
 
     # Summary
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST SUMMARY")
-    print("="*80)
+    print("=" * 80)
 
     for name, status in results:
         symbol = "[OK]" if status == "PASS" else "[ERROR]"
@@ -372,19 +385,19 @@ def run_all_tests():
     total = len(results)
 
     print(f"\nTotal: {passed}/{total} tests passed")
-    print("="*80)
+    print("=" * 80)
 
     if passed == total:
         print("\n🎉 ALL TESTS PASSED!")
         return True
-    else:
-        print(f"\n[WARN]  {total - passed} test(s) failed")
-        return False
+    print(f"\n[WARN]  {total - passed} test(s) failed")
+    return False
 
 
 if __name__ == "__main__":
     # Configure logger for test output
     import logging
+
     logger.setLevel(logging.INFO)
 
     success = run_all_tests()

@@ -1,14 +1,14 @@
-"""
-POWER CYCLE TEST - Check LED state at boot
-"""
-import serial
+"""POWER CYCLE TEST - Check LED state at boot"""
+
 import time
 
-port = 'COM4'
+import serial
 
-print("\n" + "="*70)
+port = "COM4"
+
+print("\n" + "=" * 70)
 print("POWER CYCLE TEST")
-print("="*70)
+print("=" * 70)
 print("\n⚠️  INSTRUCTIONS:")
 print("1. UNPLUG the USB cable from the Pico NOW")
 print("2. Wait 3 seconds")
@@ -26,7 +26,7 @@ try:
     print("   Are ALL LEDs OFF after power-on?")
     result = input("   (y/n): ").strip().lower()
 
-    if result == 'y':
+    if result == "y":
         print("\n✅ GOOD: LEDs are OFF at boot (hardware is OK)")
         print("   The problem is only with firmware commands")
     else:
@@ -46,7 +46,7 @@ try:
     print("\n👁️  Are ALL LEDs OFF now?")
     result2 = input("   (y/n): ").strip().lower()
 
-    if result2 == 'y':
+    if result2 == "y":
         print("\n✅ lx command works when LEDs are already OFF")
         print("   Problem only occurs AFTER turning LEDs ON")
     else:
@@ -58,4 +58,4 @@ try:
 except Exception as e:
     print(f"\n❌ Error: {e}")
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)

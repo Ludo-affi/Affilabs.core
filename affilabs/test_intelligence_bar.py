@@ -6,17 +6,11 @@ SystemIntelligence backend and updates dynamically based on system diagnostics.
 Run this to verify the connection works.
 """
 
-from core.system_intelligence import (
-    get_system_intelligence,
-    SystemState,
-    IssueCategory,
-    IssueSeverity,
-    SystemIssue
-)
+from core.system_intelligence import get_system_intelligence
+
 
 def test_intelligence_bar_states():
     """Test Intelligence Bar updates with different system states."""
-
     print("=" * 70)
     print("INTELLIGENCE BAR CONNECTION TEST")
     print("=" * 70)
@@ -29,15 +23,15 @@ def test_intelligence_bar_states():
     state, issues = si.diagnose_system()
     print(f"   System State: {state.value}")
     print(f"   Active Issues: {len(issues)}")
-    print(f"   UI Display: '✓ Good' → 'System Ready'")
+    print("   UI Display: '✓ Good' → 'System Ready'")
 
     # Test 2: Warning state - simulate low SNR
     print("\n2⃣ Testing WARNING state (simulated low SNR):")
     si.update_signal_quality(
-        channel='a',
+        channel="a",
         snr=8.0,  # Below 10.0 threshold
         peak_wavelength=1550.0,
-        transmission_quality=0.8
+        transmission_quality=0.8,
     )
     state, issues = si.diagnose_system()
     print(f"   System State: {state.value}")
@@ -49,9 +43,9 @@ def test_intelligence_bar_states():
     # Test 3: Error state - simulate LED degradation
     print("\n3⃣ Testing ERROR state (simulated LED degradation):")
     si.update_led_health(
-        channel='b',
+        channel="b",
         intensity=500,  # 35% below target
-        target=800
+        target=800,
     )
     state, issues = si.diagnose_system()
     print(f"   System State: {state.value}")
@@ -77,6 +71,7 @@ def test_intelligence_bar_states():
     print("     • ERROR: '[ERROR] Error' (red) → Issue title")
     print("     • DEGRADED: '[WARN] Degraded' (orange) → Issue title")
     print("=" * 70)
+
 
 if __name__ == "__main__":
     test_intelligence_bar_states()

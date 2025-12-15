@@ -74,7 +74,9 @@ class ExcelExportStrategy(ExportStrategy):
                 if "processed" in ch_data and not ch_data["processed"].empty:
                     sheet_name = f"Channel_{ch.upper()}_Processed"
                     ch_data["processed"].to_excel(
-                        writer, sheet_name=sheet_name, index=False,
+                        writer,
+                        sheet_name=sheet_name,
+                        index=False,
                     )
 
             # Add metadata sheet if requested

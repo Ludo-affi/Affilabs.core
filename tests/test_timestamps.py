@@ -1,10 +1,13 @@
 """Quick test to verify timestamps are now correct per channel."""
+
 import sys
-sys.path.insert(0, r'c:\Users\ludol\ezControl-AI\Old software')
+
+sys.path.insert(0, r"c:\Users\ludol\ezControl-AI\Old software")
 
 import time
-from utils.channel_manager import ChannelManager
+
 from settings import CH_LIST
+from utils.channel_manager import ChannelManager
 
 print("Testing per-channel timestamp tracking...\n")
 
@@ -36,8 +39,8 @@ for cycle in range(3):
 print("Verification:")
 data = mgr.get_sensorgram_data()
 for ch in CH_LIST:
-    times = data[ch]['times']
-    values = data[ch]['values']
+    times = data[ch]["times"]
+    values = data[ch]["values"]
     print(f"Channel {ch}: {len(times)} points")
     for i in range(len(times)):
         print(f"  [{i}] time={times[i]:.6f}, value={values[i]:.3f}")

@@ -39,7 +39,7 @@ class Ui_Device:
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(
-            self.controller_frame.sizePolicy().hasHeightForWidth()
+            self.controller_frame.sizePolicy().hasHeightForWidth(),
         )
         self.controller_frame.setSizePolicy(sizePolicy)
         self.controller_frame.setMinimumSize(QSize(0, 100))
@@ -50,7 +50,10 @@ class Ui_Device:
         self.horizontalLayout.setObjectName("horizontalLayout")
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
         self.horizontalSpacer = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
@@ -71,13 +74,16 @@ class Ui_Device:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout.addWidget(self.add_ctrl)
 
         self.horizontalSpacer_2 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout.addItem(self.horizontalSpacer_2)
@@ -87,7 +93,7 @@ class Ui_Device:
         self.kinetic_frame = QFrame(Device)
         self.kinetic_frame.setObjectName("kinetic_frame")
         sizePolicy.setHeightForWidth(
-            self.kinetic_frame.sizePolicy().hasHeightForWidth()
+            self.kinetic_frame.sizePolicy().hasHeightForWidth(),
         )
         self.kinetic_frame.setSizePolicy(sizePolicy)
         self.kinetic_frame.setMinimumSize(QSize(0, 100))
@@ -98,7 +104,10 @@ class Ui_Device:
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.horizontalLayout_2.setContentsMargins(0, 0, 0, 0)
         self.horizontalSpacer_3 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_3)
@@ -119,13 +128,16 @@ class Ui_Device:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_2.addWidget(self.add_knx)
 
         self.horizontalSpacer_4 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_4)
@@ -141,7 +153,10 @@ class Ui_Device:
         self.horizontalLayout_3.setObjectName("horizontalLayout_3")
         self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
         self.horizontalSpacer_5 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_5)
@@ -162,13 +177,16 @@ class Ui_Device:
             "	background: rgb(253, 253, 253);\n"
             "	border: 1px raised;\n"
             "	border-radius: 5px;\n"
-            "}"
+            "}",
         )
 
         self.horizontalLayout_3.addWidget(self.add_pump)
 
         self.horizontalSpacer_6 = QSpacerItem(
-            40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum
+            40,
+            20,
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
         )
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_6)
@@ -184,13 +202,13 @@ class Ui_Device:
     def retranslateUi(self, Device):
         Device.setWindowTitle(QCoreApplication.translate("Device", "Form", None))
         self.add_ctrl.setText(
-            QCoreApplication.translate("Device", "Add SPR Device", None)
+            QCoreApplication.translate("Device", "Add SPR Device", None),
         )
         self.add_knx.setText(
-            QCoreApplication.translate("Device", "Add Kinetic Device", None)
+            QCoreApplication.translate("Device", "Add Kinetic Device", None),
         )
         self.add_pump.setText(
-            QCoreApplication.translate("Device", "Add Pump Device", None)
+            QCoreApplication.translate("Device", "Add Pump Device", None),
         )
 
     # retranslateUi

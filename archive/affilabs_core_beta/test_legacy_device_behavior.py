@@ -8,15 +8,14 @@ Usage:
     python test_legacy_device_behavior.py
 """
 
-import sys
-from pathlib import Path
 import json
 import logging
+from pathlib import Path
 
 # Setup logging to capture what users would see
 logging.basicConfig(
     level=logging.INFO,  # Default level users see
-    format='%(levelname)s :: %(message)s'
+    format="%(levelname)s :: %(message)s",
 )
 
 print("=" * 80)
@@ -26,10 +25,10 @@ print()
 print("This simulates connecting to a device WITHOUT optical calibration.")
 print()
 
+
 # Simulate data acquisition manager loading afterglow
 def simulate_afterglow_loading(device_serial: str):
     """Simulate the _load_afterglow_correction() behavior."""
-
     print(f"Simulating connection to device: {device_serial}")
     print()
 
@@ -43,25 +42,26 @@ def simulate_afterglow_loading(device_serial: str):
 
         # Check if valid
         try:
-            with open(optical_cal_path, 'r') as f:
+            with open(optical_cal_path) as f:
                 data = json.load(f)
 
-            channels = list(data.get('channel_data', {}).keys())
+            channels = list(data.get("channel_data", {}).keys())
             print(f"   Channels: {channels}")
 
             if len(channels) == 4:
                 print("   ✅ All 4 channels present")
                 logging.info(f"✅ Optical correction loaded: {optical_cal_path.name}")
                 return True
-            else:
-                missing = [ch for ch in ['a', 'b', 'c', 'd'] if ch not in channels]
-                print(f"   ⚠️  Missing channels: {missing}")
-                logging.info(f"Optical correction not available: Missing channels {missing}")
-                return False
+            missing = [ch for ch in ["a", "b", "c", "d"] if ch not in channels]
+            print(f"   ⚠️  Missing channels: {missing}")
+            logging.info(
+                f"Optical correction not available: Missing channels {missing}",
+            )
+            return False
 
         except json.JSONDecodeError as e:
             print(f"   ❌ Invalid JSON: {e}")
-            logging.info(f"Optical correction not available: Invalid JSON")
+            logging.info("Optical correction not available: Invalid JSON")
             return False
 
         except Exception as e:
@@ -73,7 +73,9 @@ def simulate_afterglow_loading(device_serial: str):
         print("❌ File does NOT exist (NORMAL for legacy devices)")
         # This is logged at DEBUG level - not shown by default
         # logging.debug("No optical calibration file found (normal for legacy devices)")
-        print("   [Would log at DEBUG level: 'No optical calibration file found (normal for legacy devices)']")
+        print(
+            "   [Would log at DEBUG level: 'No optical calibration file found (normal for legacy devices)']",
+        )
         print("   [DEBUG messages are hidden at default INFO log level]")
         return False
 

@@ -1,5 +1,4 @@
-"""
-Centroid window sweep analysis.
+"""Centroid window sweep analysis.
 
 Compares the stability of the nm-based centroid method vs window size.
 Keeps the transmission building identical (OptimalProcessor pipeline), and
@@ -20,26 +19,24 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
 
-import numpy as np
 import matplotlib.pyplot as plt
-
-from settings.settings import (
-    MIN_WAVELENGTH,
-    MAX_WAVELENGTH,
-    SPR_PEAK_EXPECTED_MIN,
-    SPR_PEAK_EXPECTED_MAX,
-)
-from utils.usb4000_oceandirect import USB4000OceanDirect
+import numpy as np
 from collect_training_data import OptimalProcessor
 
+from settings.settings import (
+    MAX_WAVELENGTH,
+    MIN_WAVELENGTH,
+    SPR_PEAK_EXPECTED_MAX,
+    SPR_PEAK_EXPECTED_MIN,
+)
+from utils.usb4000_oceandirect import USB4000OceanDirect
 
 DATA_ROOT = Path("training_data")
 DEFAULT_STATE = "used_current"
 
 
-def find_latest_dataset(state: str, channel: str) -> Tuple[Path, Path]:
+def find_latest_dataset(state: str, channel: str) -> tuple[Path, Path]:
     state_dir = DATA_ROOT / state
     if not state_dir.exists():
         raise FileNotFoundError(f"No directory found: {state_dir}")
@@ -61,14 +58,16 @@ def find_latest_dataset(state: str, channel: str) -> Tuple[Path, Path]:
 def load_wavelengths_masked() -> np.ndarray:
     spec = USB4000OceanDirect()
     if not spec.connect():
-        raise RuntimeError("Failed to connect to USB4000 spectrometer to fetch wavelengths")
+        raise RuntimeError(
+            "Failed to connect to USB4000 spectrometer to fetch wavelengths",
+        )
     wl = np.array(spec.get_wavelengths())
     spec.disconnect()
     mask = (wl >= MIN_WAVELENGTH) & (wl <= MAX_WAVELENGTH)
     return wl[mask]
 
 
-def summarize_metrics(x: np.ndarray) -> Dict[str, float]:
+def summarize_metrics(x: np.ndarray) -> dict[str, float]:
     return {
         "p2p": float(np.ptp(x)),
         "std": float(np.std(x)),
@@ -85,9 +84,9 @@ def find_centroid_nm_with_window(
     search_max_nm: float,
     window_nm: float,
     detrend: bool = False,
-    left_half_nm: Optional[float] = None,
-    right_half_nm: Optional[float] = None,
-    right_decay_gamma: Optional[float] = None,
+    left_half_nm: float | None = None,
+    right_half_nm: float | None = None,
+    right_decay_gamma: float | None = None,
 ) -> float:
     """Find centroid within a window around the minimum, with optional local detrend.
 
@@ -150,9 +149,9 @@ def find_centroid_nm_with_window(
 
 def plot_results(
     t: np.ndarray,
-    methods: List[str],
-    series: Dict[str, np.ndarray],
-    metrics: Dict[str, Dict[str, float]],
+    methods: list[str],
+    series: dict[str, np.ndarray],
+    metrics: dict[str, dict[str, float]],
     state: str,
     channel: str,
 ) -> Path:
@@ -162,7 +161,7 @@ def plot_results(
     fig = plt.figure(figsize=(16, 9))
     ax1 = plt.subplot(2, 1, 1)
 
-    cmap = plt.get_cmap('tab10')
+    cmap = plt.get_cmap("tab10")
     for idx, m in enumerate(methods):
         ax1.plot(t, series[m], label=m, color=cmap(idx % 10))
 
@@ -182,33 +181,73 @@ def plot_results(
     bars2 = ax2.bar(labels, p2p_vals, color=[cmap(i % 10) for i in range(len(labels))])
     ax2.set_title("Peak-to-Peak (nm)")
     ax2.set_ylabel("nm")
-    ax2.grid(axis='y', alpha=0.3)
-    for b, v in zip(bars2, p2p_vals):
-        ax2.text(b.get_x() + b.get_width()/2, b.get_height(), f"{v:.2f}", ha='center', va='bottom', fontsize=9)
+    ax2.grid(axis="y", alpha=0.3)
+    for b, v in zip(bars2, p2p_vals, strict=False):
+        ax2.text(
+            b.get_x() + b.get_width() / 2,
+            b.get_height(),
+            f"{v:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     bars3 = ax3.bar(labels, std_vals, color=[cmap(i % 10) for i in range(len(labels))])
     ax3.set_title("Standard Deviation (nm)")
     ax3.set_ylabel("nm")
-    ax3.grid(axis='y', alpha=0.3)
-    for b, v in zip(bars3, std_vals):
-        ax3.text(b.get_x() + b.get_width()/2, b.get_height(), f"{v:.2f}", ha='center', va='bottom', fontsize=9)
+    ax3.grid(axis="y", alpha=0.3)
+    for b, v in zip(bars3, std_vals, strict=False):
+        ax3.text(
+            b.get_x() + b.get_width() / 2,
+            b.get_height(),
+            f"{v:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     plt.tight_layout()
     outfile = outdir / f"centroid_window_comparison_{state}_{channel}.png"
-    plt.savefig(outfile, dpi=150, bbox_inches='tight')
+    plt.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return outfile
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare centroid window widths in nm and point-equivalents, with optional local detrend")
-    parser.add_argument('--state', default=DEFAULT_STATE, help='Sensor state subfolder under training_data/')
-    parser.add_argument('--channel', default='A', help='Channel letter (A-D)')
-    parser.add_argument('--include-points', action='store_true', help='Include point-based windows (±50/±100/±250) converted to nm')
-    parser.add_argument('--include-detrend', action='store_true', help='Also compute a detrended centroid for each window size')
-    parser.add_argument('--include-asymmetric', action='store_true', help='Include asymmetric window variants and right-side decay tapers')
-    parser.add_argument('--baseline-label', default='nm_8', help="Label to use as mean baseline for optional bias correction (e.g., 'nm_8')")
-    parser.add_argument('--include-biascorr', action='store_true', help='Add bias-corrected variants aligned to the baseline label mean')
+    parser = argparse.ArgumentParser(
+        description="Compare centroid window widths in nm and point-equivalents, with optional local detrend",
+    )
+    parser.add_argument(
+        "--state",
+        default=DEFAULT_STATE,
+        help="Sensor state subfolder under training_data/",
+    )
+    parser.add_argument("--channel", default="A", help="Channel letter (A-D)")
+    parser.add_argument(
+        "--include-points",
+        action="store_true",
+        help="Include point-based windows (±50/±100/±250) converted to nm",
+    )
+    parser.add_argument(
+        "--include-detrend",
+        action="store_true",
+        help="Also compute a detrended centroid for each window size",
+    )
+    parser.add_argument(
+        "--include-asymmetric",
+        action="store_true",
+        help="Include asymmetric window variants and right-side decay tapers",
+    )
+    parser.add_argument(
+        "--baseline-label",
+        default="nm_8",
+        help="Label to use as mean baseline for optional bias correction (e.g., 'nm_8')",
+    )
+    parser.add_argument(
+        "--include-biascorr",
+        action="store_true",
+        help="Add bias-corrected variants aligned to the baseline label mean",
+    )
     args = parser.parse_args()
 
     channel = args.channel.upper()
@@ -235,12 +274,15 @@ def main() -> None:
     trans_series = np.zeros_like(p_spectra, dtype=np.float64)
     for i in range(n):
         trans_series[i] = OptimalProcessor.process_transmission(
-            s_spectra[i], p_spectra[i], s_dark, p_dark
+            s_spectra[i],
+            p_spectra[i],
+            s_dark,
+            p_dark,
         )
 
     # Define nm window variants (total width)
     nm_windows = [2.0, 4.0, 6.0, 8.0, 10.0, 20.0, 40.0, 60.0, 80.0, 100.0, 120.0, 150.0]
-    variants: Dict[str, float] = {f"nm_{int(w)}": w for w in nm_windows}
+    variants: dict[str, float] = {f"nm_{int(w)}": w for w in nm_windows}
 
     # Optionally add point-based windows converted to nm
     if args.include_points:
@@ -251,15 +293,20 @@ def main() -> None:
             label = f"pts_{pts}_({wnm:.1f}nm)"
             variants[label] = wnm
 
-    results_series: Dict[str, np.ndarray] = {}
-    results_metrics: Dict[str, Dict[str, float]] = {}
+    results_series: dict[str, np.ndarray] = {}
+    results_metrics: dict[str, dict[str, float]] = {}
 
     for label, window_nm in variants.items():
         # Baseline centroid
         positions = np.zeros(n, dtype=np.float64)
         for i in range(n):
             positions[i] = find_centroid_nm_with_window(
-                trans_series[i], wl, smin, smax, float(window_nm), detrend=False
+                trans_series[i],
+                wl,
+                smin,
+                smax,
+                float(window_nm),
+                detrend=False,
             )
         results_series[label] = positions
         results_metrics[label] = summarize_metrics(positions)
@@ -270,7 +317,12 @@ def main() -> None:
             positions_d = np.zeros(n, dtype=np.float64)
             for i in range(n):
                 positions_d[i] = find_centroid_nm_with_window(
-                    trans_series[i], wl, smin, smax, float(window_nm), detrend=True
+                    trans_series[i],
+                    wl,
+                    smin,
+                    smax,
+                    float(window_nm),
+                    detrend=True,
                 )
             results_series[dlabel] = positions_d
             results_metrics[dlabel] = summarize_metrics(positions_d)
@@ -291,15 +343,29 @@ def main() -> None:
                 if lnm is not None and rnm is not None:
                     # Asymmetric fixed half-widths around min (total window varies)
                     positions[i] = find_centroid_nm_with_window(
-                        trans_series[i], wl, smin, smax, window_nm=max(lnm + rnm, 1.0),
-                        detrend=False, left_half_nm=lnm, right_half_nm=rnm, right_decay_gamma=None
+                        trans_series[i],
+                        wl,
+                        smin,
+                        smax,
+                        window_nm=max(lnm + rnm, 1.0),
+                        detrend=False,
+                        left_half_nm=lnm,
+                        right_half_nm=rnm,
+                        right_decay_gamma=None,
                     )
                 else:
                     # Symmetric 100 nm (or 60 nm) total window with right-side decay
-                    total = 100.0 if '100' in name else 60.0
+                    total = 100.0 if "100" in name else 60.0
                     positions[i] = find_centroid_nm_with_window(
-                        trans_series[i], wl, smin, smax, window_nm=total,
-                        detrend=False, left_half_nm=None, right_half_nm=None, right_decay_gamma=gamma
+                        trans_series[i],
+                        wl,
+                        smin,
+                        smax,
+                        window_nm=total,
+                        detrend=False,
+                        left_half_nm=None,
+                        right_half_nm=None,
+                        right_decay_gamma=gamma,
                     )
             results_series[name] = positions
             results_metrics[name] = summarize_metrics(positions)
@@ -308,7 +374,7 @@ def main() -> None:
     if args.include_biascorr and args.baseline_label in results_series:
         base = results_series[args.baseline_label]
         base_mean = float(np.mean(base))
-        to_add: Dict[str, np.ndarray] = {}
+        to_add: dict[str, np.ndarray] = {}
         for lbl, arr in results_series.items():
             if lbl == args.baseline_label:
                 continue
@@ -325,10 +391,19 @@ def main() -> None:
     ordered = list(results_series.keys())
     print("Windows:", ", ".join(ordered))
     for m in ordered:
-        print(f"- {m:18s} P-P: {results_metrics[m]['p2p']:.3f} nm   STD: {results_metrics[m]['std']:.3f} nm   mean: {results_metrics[m]['mean']:.2f} nm")
+        print(
+            f"- {m:18s} P-P: {results_metrics[m]['p2p']:.3f} nm   STD: {results_metrics[m]['std']:.3f} nm   mean: {results_metrics[m]['mean']:.2f} nm",
+        )
 
     # Plot
-    outpath = plot_results(timestamps, ordered, results_series, results_metrics, args.state, channel)
+    outpath = plot_results(
+        timestamps,
+        ordered,
+        results_series,
+        results_metrics,
+        args.state,
+        channel,
+    )
     print(f"\nSaved comparison plot: {outpath}")
 
 

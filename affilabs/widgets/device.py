@@ -1,14 +1,13 @@
-from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Signal, Slot
+from PySide6.QtWidgets import QWidget
 
-from ui.ui_EZSPR import Ui_EZSPRForm
-from ui.ui_KNX2 import Ui_KNX2
-from ui.ui_P4SPR import Ui_P4SPR
-from ui.ui_Affipump import Ui_Affipump
-from ui.ui_device import Ui_Device
+from affilabs.ui.ui_Affipump import Ui_Affipump
+from affilabs.ui.ui_device import Ui_Device
+from affilabs.ui.ui_EZSPR import Ui_EZSPRForm
+from affilabs.ui.ui_KNX2 import Ui_KNX2
 from affilabs.utils.logger import logger
-from widgets.message import show_message
-from widgets.device_status import DeviceStatusWidget
+from affilabs.widgets.device_status import DeviceStatusWidget
+from affilabs.widgets.message import show_message
 from settings import DEV
 
 
@@ -62,19 +61,19 @@ class Device(QWidget):
         if self.pump_widget is not None:
             self.pump_widget.hide()
         # Set up controller
-        if ctrl_type == '':
+        if ctrl_type == "":
             pass  # No controller connected
-        elif ctrl_type in ['P4SPR', 'PicoP4SPR']:
+        elif ctrl_type in ["P4SPR", "PicoP4SPR"]:
             self.p4spr = True
             self.ctrl_widget = P4SPRWidget(self.ui.controller_frame)
             # Keep temperature hidden until a valid reading arrives
             self.ctrl_widget.ui.temp_display.setVisible(False)
-            if ctrl_type == 'PicoP4SPR' and DEV:
+            if ctrl_type == "PicoP4SPR" and DEV:
                 self.sensor_read_sig.emit()
             self.ctrl_widget.calibrate_btn.connect(self.call_calibrate)
             self.ctrl_widget.disconnect_btn.connect(self.call_disconnect)
-        elif ctrl_type in ['EZSPR', 'PicoEZSPR']:
-            if ctrl_type == 'PicoEZSPR':
+        elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
+            if ctrl_type == "PicoEZSPR":
                 self.ctrl_pico = True
             if self.ctrl_widget is not None:
                 self.ctrl_widget.hide()
@@ -88,16 +87,16 @@ class Device(QWidget):
             logger.debug(f"controller {ctrl_type} not supported")
 
         # Set up kinetic
-        if knx_type == '':
+        if knx_type == "":
             pass  # No kinetic controller connected
-        elif knx_type in ['KNX', 'KNX2', 'PicoKNX2']:
-            if knx_type == 'PicoKNX2':
+        elif knx_type in ["KNX", "KNX2", "PicoKNX2"]:
+            if knx_type == "PicoKNX2":
                 self.knx_pico = True
             self.knx_widget = KNX2Widget(self.ui.kinetic_frame, self.knx_pico)
             self.knx_widget.disconnect_btn.connect(self.call_disconnect)
             self.knx_widget.shutdown_btn.connect(self.initiate_shutdown)
-            if knx_type == 'KNX':
-                self.knx_widget.ui.KnxBox.setTitle('KNX')
+            if knx_type == "KNX":
+                self.knx_widget.ui.KnxBox.setTitle("KNX")
             if not DEV:
                 self.knx_widget.ui.temp_display.hide()
 
@@ -132,7 +131,7 @@ class Device(QWidget):
         self.shutdown_sig.emit(device_type)
 
     def cartridge_motion(self, command):
-        if command == 'up':
+        if command == "up":
             if not self.up:
                 self.up = True
                 self.crt_sig.emit(command)
@@ -142,7 +141,7 @@ class Device(QWidget):
 
     def update_temp(self, temp_str, temp_type):
         try:
-            if temp_type == 'ctrl':
+            if temp_type == "ctrl":
                 self.ctrl_widget.update_temp(temp_str)
             else:
                 self.knx_widget.update_temp(temp_str)
@@ -192,7 +191,7 @@ class P4SPRWidget(ControlWidgetBase):
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('controller')
+        self.disconnect_btn.emit("controller")
 
     def quick_calibration(self):
         self.calibrate_btn.emit()
@@ -215,9 +214,6 @@ class P4SPRWidget(ControlWidgetBase):
             self.ui.temp1.setText(temp_str)
         except Exception:
             self.ui.temp_display.hide()
-
-
-
 
     def update_temp(self, temp):
         try:
@@ -251,7 +247,7 @@ class KNX2Widget(ControlWidgetBase):
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('kinetic')
+        self.disconnect_btn.emit("kinetic")
 
     def quick_calibration(self):
         self.calibrate_btn.emit()
@@ -278,9 +274,12 @@ class KNX2Widget(ControlWidgetBase):
         self.setEnabled(False)
         if show_message(msg_type="Warning", msg="Power off KNX2?", yes_no=True):
             if not self.pico:
-                show_message(msg_type="Warning", msg="Warning: DO NOT UNPLUG\n "
-                                                     "Wait until power button light is OFF to unplug the device")
-            self.shutdown_btn.emit('kinetic')
+                show_message(
+                    msg_type="Warning",
+                    msg="Warning: DO NOT UNPLUG\n "
+                    "Wait until power button light is OFF to unplug the device",
+                )
+            self.shutdown_btn.emit("kinetic")
         else:
             self.setEnabled(True)
 
@@ -300,7 +299,7 @@ class EZSPRWidget(ControlWidgetBase):
 
     def disconnect_device(self):
         self.setEnabled(False)
-        self.disconnect_btn.emit('both')
+        self.disconnect_btn.emit("both")
 
     def update_temp(self, temp):
         try:
@@ -327,9 +326,11 @@ class EZSPRWidget(ControlWidgetBase):
         self.setEnabled(False)
         if show_message(msg_type="Warning", msg="Power off EZSPR?", yes_no=True):
             if not self.pico:
-                show_message(msg_type="Warning", msg="Warning: DO NOT UNPLUG\n "
-                                                     "Wait until power button light is OFF to unplug the device")
-            self.shutdown_btn.emit('both')
+                show_message(
+                    msg_type="Warning",
+                    msg="Warning: DO NOT UNPLUG\n "
+                    "Wait until power button light is OFF to unplug the device",
+                )
+            self.shutdown_btn.emit("both")
         else:
             self.setEnabled(True)
-

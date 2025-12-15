@@ -1,5 +1,4 @@
-"""
-Quick test of the collection workflow - validates all components work
+"""Quick test of the collection workflow - validates all components work
 without running the full 40-minute collection.
 
 Tests:
@@ -10,37 +9,40 @@ Tests:
 5. Timing validation (should be ~4 Hz, not 1.6 Hz)
 """
 
+import logging
 import sys
 import time
 from pathlib import Path
+
 import numpy as np
-import logging
 
 # Add paths
 sys.path.insert(0, str(Path(__file__).parent))
 
+from seabreeze.spectrometers import list_devices
+
 from utils.hal.pico_p4spr_hal import PicoP4SPRHAL
 from utils.usb4000_oceandirect import USB4000OceanDirect
-from seabreeze.spectrometers import list_devices
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s :: %(levelname)s :: %(message)s'
+    format="%(asctime)s :: %(levelname)s :: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+
 def test_hardware_connection():
     """Test 1: Hardware initialization"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 1: HARDWARE CONNECTION")
-    print("="*70)
+    print("=" * 70)
 
     # Controller
     ctrl = PicoP4SPRHAL()
     if not ctrl.connect():
         print("❌ FAILED: Could not connect to controller")
         return None, None
-    print(f"✅ Controller connected: PicoP4SPR")
+    print("✅ Controller connected: PicoP4SPR")
 
     # Spectrometer
     devices = list_devices()
@@ -55,17 +57,18 @@ def test_hardware_connection():
         ctrl.disconnect()
         return None, None
 
-    print(f"✅ Spectrometer connected: USB4000")
+    print("✅ Spectrometer connected: USB4000")
 
     return ctrl, usb
 
+
 def test_polarizer_movement(ctrl):
     """Test 2: Polarizer switching"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 2: POLARIZER MOVEMENT")
-    print("="*70)
+    print("=" * 70)
 
-    if not hasattr(ctrl, 'set_mode'):
+    if not hasattr(ctrl, "set_mode"):
         print("❌ FAILED: Controller does not have set_mode() method")
         return False
 
@@ -73,18 +76,18 @@ def test_polarizer_movement(ctrl):
     print("\n  Testing S-mode...")
     result = ctrl.set_mode("s")
     if result:
-        print(f"  ✅ S-mode command succeeded")
+        print("  ✅ S-mode command succeeded")
     else:
-        print(f"  ⚠️  S-mode command returned False")
+        print("  ⚠️  S-mode command returned False")
     time.sleep(0.5)
 
     # Test P-mode
     print("\n  Testing P-mode...")
     result = ctrl.set_mode("p")
     if result:
-        print(f"  ✅ P-mode command succeeded")
+        print("  ✅ P-mode command succeeded")
     else:
-        print(f"  ⚠️  P-mode command returned False")
+        print("  ⚠️  P-mode command returned False")
     time.sleep(0.5)
 
     # Return to S-mode
@@ -94,11 +97,12 @@ def test_polarizer_movement(ctrl):
     print("\n✅ Polarizer switching working")
     return True
 
+
 def test_spectrum_collection(ctrl, usb):
     """Test 3: Spectrum collection in both modes"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 3: SPECTRUM COLLECTION")
-    print("="*70)
+    print("=" * 70)
 
     # Set integration time
     usb.set_integration_time(0.1)  # 100ms = 0.1 seconds
@@ -123,7 +127,9 @@ def test_spectrum_collection(ctrl, usb):
 
     max_s = np.max(spectrum_s)
     mean_s = np.mean(spectrum_s)
-    print(f"  ✅ S-mode spectrum: {len(spectrum_s)} pixels, max={max_s:.0f}, mean={mean_s:.0f} counts")
+    print(
+        f"  ✅ S-mode spectrum: {len(spectrum_s)} pixels, max={max_s:.0f}, mean={mean_s:.0f} counts",
+    )
     print(f"     Acquisition time: {elapsed*1000:.1f}ms")
 
     # Test P-mode
@@ -146,7 +152,9 @@ def test_spectrum_collection(ctrl, usb):
 
     max_p = np.max(spectrum_p)
     mean_p = np.mean(spectrum_p)
-    print(f"  ✅ P-mode spectrum: {len(spectrum_p)} pixels, max={max_p:.0f}, mean={mean_p:.0f} counts")
+    print(
+        f"  ✅ P-mode spectrum: {len(spectrum_p)} pixels, max={max_p:.0f}, mean={mean_p:.0f} counts",
+    )
     print(f"     Acquisition time: {elapsed*1000:.1f}ms")
 
     # Verify mode difference
@@ -157,18 +165,21 @@ def test_spectrum_collection(ctrl, usb):
     if max_p >= 65535 and max_s < 35000:
         print(f"  ✅ CORRECT: P-mode saturated ({max_p:.0f}), S-mode low ({max_s:.0f})")
     elif max_s >= 65535 and max_p < 35000:
-        print(f"  ⚠️  REVERSED: S-mode saturated ({max_s:.0f}), P-mode low ({max_p:.0f})")
-        print(f"     Polarizer commands may be backwards!")
+        print(
+            f"  ⚠️  REVERSED: S-mode saturated ({max_s:.0f}), P-mode low ({max_p:.0f})",
+        )
+        print("     Polarizer commands may be backwards!")
     else:
         print(f"  ⚠️  UNCLEAR: S={max_s:.0f}, P={max_p:.0f} - check polarizer positions")
 
     return True
 
+
 def test_timing(ctrl, usb):
     """Test 4: Acquisition timing (should be ~4 Hz)"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 4: ACQUISITION TIMING")
-    print("="*70)
+    print("=" * 70)
 
     print("\n  Collecting 10 spectra to measure timing...")
     print("  (Polarizer set ONCE, then 10 rapid acquisitions)")
@@ -206,7 +217,7 @@ def test_timing(ctrl, usb):
     print(f"\n  Expected rate (with LED + overhead): {expected_rate:.1f} Hz")
 
     if expected_rate >= 3.5:
-        print(f"  ✅ GOOD: Can achieve ~4 Hz target")
+        print("  ✅ GOOD: Can achieve ~4 Hz target")
     elif expected_rate >= 2.0:
         print(f"  ⚠️  SLOW: Only ~{expected_rate:.1f} Hz (target is 4 Hz)")
     else:
@@ -214,11 +225,12 @@ def test_timing(ctrl, usb):
 
     return expected_rate >= 3.5
 
+
 def test_mini_collection(ctrl, usb):
     """Test 5: Mini collection (10 spectra in S-mode)"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST 5: MINI TIME-SERIES COLLECTION")
-    print("="*70)
+    print("=" * 70)
 
     print("\n  Collecting 10 spectra over ~2.5 seconds (4 Hz)...")
 
@@ -264,22 +276,23 @@ def test_mini_collection(ctrl, usb):
     print(f"  Actual rate: {actual_rate:.2f} Hz (target: 4.00 Hz)")
 
     if actual_rate >= 3.8 and actual_rate <= 4.2:
-        print(f"  ✅ EXCELLENT: Right on target!")
+        print("  ✅ EXCELLENT: Right on target!")
     elif actual_rate >= 3.5:
-        print(f"  ✅ GOOD: Close to target")
+        print("  ✅ GOOD: Close to target")
     else:
         print(f"  ⚠️  OFF TARGET: {actual_rate:.2f} Hz vs 4.00 Hz target")
 
     return actual_rate >= 3.5
 
+
 def main():
-    print("="*70)
+    print("=" * 70)
     print("COLLECTION WORKFLOW TEST")
-    print("="*70)
+    print("=" * 70)
     print("\nThis test validates all components work correctly")
     print("before running the full 40-minute collection.")
     print("\nEstimated time: ~30 seconds")
-    print("="*70)
+    print("=" * 70)
 
     ctrl = None
     usb = None
@@ -310,24 +323,25 @@ def main():
             print("\n⚠️  WARNING: Collection rate below target")
 
         # Summary
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("TEST SUMMARY")
-        print("="*70)
+        print("=" * 70)
         print("\n✅ ALL TESTS PASSED!")
         print("\nYou are ready to run the full collection:")
-        print("  .\\collect_full_device_dataset.bat \"demo P4SPR 2.0\" \"used\"")
+        print('  .\\collect_full_device_dataset.bat "demo P4SPR 2.0" "used"')
         print("\nExpected results:")
         print("  • S-mode: Low signal (no sensor resonance)")
         print("  • P-mode: High signal, likely saturated (sensor resonance)")
         print("  • Rate: ~4 Hz (250ms per spectrum)")
         print("  • Duration: ~40 minutes total (fast mode)")
-        print("="*70)
+        print("=" * 70)
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Test interrupted by user")
     except Exception as e:
         print(f"\n\n❌ TEST FAILED with exception: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         # Cleanup
@@ -345,6 +359,7 @@ def main():
                 print("✅ Spectrometer disconnected")
             except:
                 pass
+
 
 if __name__ == "__main__":
     main()

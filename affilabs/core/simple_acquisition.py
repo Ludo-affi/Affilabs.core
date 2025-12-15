@@ -85,7 +85,9 @@ class SimpleAcquisitionManager(QObject):
         self._acquiring = True
         self._stop_flag.clear()
         self._worker_thread = threading.Thread(
-            target=self._worker, daemon=True, name="SimpleAcqWorker",
+            target=self._worker,
+            daemon=True,
+            name="SimpleAcqWorker",
         )
         self._worker_thread.start()
 

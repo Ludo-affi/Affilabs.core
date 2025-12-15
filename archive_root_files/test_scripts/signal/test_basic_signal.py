@@ -1,5 +1,4 @@
-"""
-Basic signal test - Verify detector sees LED light at 20% intensity.
+"""Basic signal test - Verify detector sees LED light at 20% intensity.
 
 Tests the most fundamental acquisition:
 - Flash each LED at 20% (51/255)
@@ -14,22 +13,25 @@ This validates:
 4. Light is reaching the detector
 """
 
-import sys
 import os
+import sys
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 import time
+
 import numpy as np
-from utils.usb4000_wrapper import USB4000
+
 from utils.controller import PicoP4SPR
+from utils.usb4000_wrapper import USB4000
 
 # Configuration
 LED_INTENSITY = 51  # 20% of 255
 INTEGRATION_TIME_MS = 70
 LED_DELAY_MS = 45  # Time for LED to stabilize
-CHANNELS = ['a', 'b', 'c', 'd']
+CHANNELS = ["a", "b", "c", "d"]
+
 
 def main():
     print("=" * 80)
@@ -83,7 +85,7 @@ def main():
         time.sleep(LED_DELAY_MS / 1000.0)
 
         # Read spectrum
-        print(f"  Reading spectrum...")
+        print("  Reading spectrum...")
         spectrum = usb.read_intensity()
 
         # Turn off LED
@@ -91,7 +93,7 @@ def main():
         time.sleep(0.05)
 
         if spectrum is None:
-            print(f"  ❌ FAILED: No spectrum data!")
+            print("  ❌ FAILED: No spectrum data!")
             continue
 
         # Analyze signal
@@ -100,7 +102,7 @@ def main():
         mean_val = np.mean(spectrum)
         std_val = np.std(spectrum)
 
-        print(f"  ✅ SUCCESS:")
+        print("  ✅ SUCCESS:")
         print(f"     Pixels: {len(spectrum)}")
         print(f"     Min:    {min_val:8.1f} counts")
         print(f"     Max:    {max_val:8.1f} counts")
@@ -137,7 +139,7 @@ def main():
         dark_mean = np.mean(dark)
         dark_std = np.std(dark)
 
-        print(f"Dark Noise:")
+        print("Dark Noise:")
         print(f"  Min:    {dark_min:8.1f} counts")
         print(f"  Max:    {dark_max:8.1f} counts")
         print(f"  Mean:   {dark_mean:8.1f} counts")
@@ -160,6 +162,7 @@ def main():
     ctrl.turn_off_channels()
     usb.close()
     ctrl.close()
+
 
 if __name__ == "__main__":
     main()

@@ -1,29 +1,57 @@
 """Acquire S and P polarization spectra and analyze transmission with centroid method."""
-import argparse
-import time
-import numpy as np
-from pathlib import Path
-from datetime import datetime
 
+import argparse
+import logging
+import time
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
+from settings.settings import ROOT_DIR
 from utils.controller import PicoP4SPR
-from utils.usb4000_oceandirect import USB4000OceanDirect
 from utils.device_configuration import DeviceConfiguration
 from utils.spr_calibrator import SPRCalibrator
-from settings.settings import CH_LIST, ROOT_DIR
+from utils.usb4000_oceandirect import USB4000OceanDirect
 
-import logging
 logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="S/P transmission spectrum acquisition and centroid analysis")
-    p.add_argument("--duration", type=float, default=60.0, help="Acquisition duration per polarization (seconds)")
+    p = argparse.ArgumentParser(
+        description="S/P transmission spectrum acquisition and centroid analysis",
+    )
+    p.add_argument(
+        "--duration",
+        type=float,
+        default=60.0,
+        help="Acquisition duration per polarization (seconds)",
+    )
     p.add_argument("--led", type=int, default=255, help="LED intensity (0-255)")
-    p.add_argument("--led-on-delay-ms", type=float, default=100, help="LED turn-on delay in ms")
-    p.add_argument("--led-off-delay-ms", type=float, default=5, help="LED turn-off delay in ms")
-    p.add_argument("--integration-per-ch", type=str, default="a:53,b:79,c:18,d:18",
-                   help="Per-channel integration times (e.g., a:53,b:79,c:18,d:18)")
-    p.add_argument("--channels", type=str, default="a,b,c,d", help="Channels to measure")
+    p.add_argument(
+        "--led-on-delay-ms",
+        type=float,
+        default=100,
+        help="LED turn-on delay in ms",
+    )
+    p.add_argument(
+        "--led-off-delay-ms",
+        type=float,
+        default=5,
+        help="LED turn-off delay in ms",
+    )
+    p.add_argument(
+        "--integration-per-ch",
+        type=str,
+        default="a:53,b:79,c:18,d:18",
+        help="Per-channel integration times (e.g., a:53,b:79,c:18,d:18)",
+    )
+    p.add_argument(
+        "--channels",
+        type=str,
+        default="a,b,c,d",
+        help="Channels to measure",
+    )
     return p.parse_args()
 
 
@@ -35,19 +63,19 @@ def main() -> int:
 
     # Parse per-channel integration times
     integration_time_ms_by_ch = {}
-    for pair in args.integration_per_ch.split(','):
-        ch, ms = pair.split(':')
+    for pair in args.integration_per_ch.split(","):
+        ch, ms = pair.split(":")
         integration_time_ms_by_ch[ch.strip().lower()] = float(ms.strip())
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("S/P TRANSMISSION SPECTRUM ACQUISITION")
-    print("="*80)
+    print("=" * 80)
     print(f"Duration per polarization: {args.duration}s")
     print(f"LED intensity: {args.led}")
     print(f"LED delays: {args.led_on_delay_ms}ms on / {args.led_off_delay_ms}ms off")
     print(f"Per-channel integration: {integration_time_ms_by_ch}")
     print(f"Channels: {ch_list}")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Connect hardware
     ctrl = PicoP4SPR()
@@ -70,7 +98,9 @@ def main() -> int:
         device_config = {
             "device_type": "UNKNOWN",
             "baseline": {},
-            "wavelengths": device_config.get("wavelengths", []) if device_config else []
+            "wavelengths": device_config.get("wavelengths", [])
+            if device_config
+            else [],
         }
     device_type = device_config.get("device_type", "UNKNOWN")
 
@@ -86,6 +116,7 @@ def main() -> int:
         calibrator.device_type = device_type
         calibrator.device_config = device_config
         from utils.spr_state import SPRState
+
         calibrator.state = SPRState()
         calibrator.progress_callback = None
         calibrator.stop_flag = None
@@ -102,9 +133,9 @@ def main() -> int:
     # ========================================================================
     # STEP 1: Move to S polarization and acquire
     # ========================================================================
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STEP 1: S-POLARIZATION ACQUISITION")
-    print("="*80)
+    print("=" * 80)
 
     print("Moving polarizer to S position...")
     ctrl.set_mode(mode="s")
@@ -113,8 +144,16 @@ def main() -> int:
     # Verify position
     try:
         pos = ctrl.servo_get()
-        s_pos = pos.get("s", b"000").decode(errors="ignore") if isinstance(pos.get("s"), (bytes, bytearray)) else str(pos.get("s"))
-        p_pos = pos.get("p", b"000").decode(errors="ignore") if isinstance(pos.get("p"), (bytes, bytearray)) else str(pos.get("p"))
+        s_pos = (
+            pos.get("s", b"000").decode(errors="ignore")
+            if isinstance(pos.get("s"), (bytes, bytearray))
+            else str(pos.get("s"))
+        )
+        p_pos = (
+            pos.get("p", b"000").decode(errors="ignore")
+            if isinstance(pos.get("p"), (bytes, bytearray))
+            else str(pos.get("p"))
+        )
         print(f"✓ Polarizer positions: S={s_pos}, P={p_pos}")
     except Exception as e:
         print(f"⚠️ Could not verify polarizer position: {e}")
@@ -138,9 +177,9 @@ def main() -> int:
     # ========================================================================
     # STEP 2: Move to P polarization and acquire
     # ========================================================================
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STEP 2: P-POLARIZATION ACQUISITION")
-    print("="*80)
+    print("=" * 80)
 
     print("Moving polarizer to P position...")
     ctrl.set_mode(mode="p")
@@ -149,8 +188,16 @@ def main() -> int:
     # Verify position
     try:
         pos = ctrl.servo_get()
-        s_pos = pos.get("s", b"000").decode(errors="ignore") if isinstance(pos.get("s"), (bytes, bytearray)) else str(pos.get("s"))
-        p_pos = pos.get("p", b"000").decode(errors="ignore") if isinstance(pos.get("p"), (bytes, bytearray)) else str(pos.get("p"))
+        s_pos = (
+            pos.get("s", b"000").decode(errors="ignore")
+            if isinstance(pos.get("s"), (bytes, bytearray))
+            else str(pos.get("s"))
+        )
+        p_pos = (
+            pos.get("p", b"000").decode(errors="ignore")
+            if isinstance(pos.get("p"), (bytes, bytearray))
+            else str(pos.get("p"))
+        )
         print(f"✓ Polarizer positions: S={s_pos}, P={p_pos}")
     except Exception as e:
         print(f"⚠️ Could not verify polarizer position: {e}")
@@ -174,15 +221,19 @@ def main() -> int:
     # ========================================================================
     # STEP 3: Load and process data
     # ========================================================================
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STEP 3: LOADING DATA AND CALCULATING TRANSMISSION")
-    print("="*80)
+    print("=" * 80)
 
     # Find the most recent NPZ files (S and P data)
     import glob
+
     calib_dir = Path(ROOT_DIR) / "calibration_data"
-    npz_files = sorted(glob.glob(str(calib_dir / "s_roi_stability_*_spectra.npz")),
-                       key=lambda p: Path(p).stat().st_mtime, reverse=True)
+    npz_files = sorted(
+        glob.glob(str(calib_dir / "s_roi_stability_*_spectra.npz")),
+        key=lambda p: Path(p).stat().st_mtime,
+        reverse=True,
+    )
 
     if len(npz_files) < 2:
         print(f"❌ Need 2 NPZ files (S and P), found {len(npz_files)}")
@@ -199,28 +250,30 @@ def main() -> int:
 
     # Extract spectra organized by channel
     # Format: times, channels, spectra arrays
-    s_times = s_data['times']
-    s_channels = s_data['channels'].astype(str)
-    s_spectra = s_data['spectra']
+    s_times = s_data["times"]
+    s_channels = s_data["channels"].astype(str)
+    s_spectra = s_data["spectra"]
 
-    p_times = p_data['times']
-    p_channels = p_data['channels'].astype(str)
-    p_spectra = p_data['spectra']
+    p_times = p_data["times"]
+    p_channels = p_data["channels"].astype(str)
+    p_spectra = p_data["spectra"]
 
     wavelengths = calibrator.state.wavelengths
     dark_noise = calibrator.state.dark_noise
 
     print(f"S-pol: {len(s_times)} measurements")
     print(f"P-pol: {len(p_times)} measurements")
-    print(f"Wavelengths: {len(wavelengths)} pixels ({wavelengths[0]:.1f}-{wavelengths[-1]:.1f} nm)")
+    print(
+        f"Wavelengths: {len(wavelengths)} pixels ({wavelengths[0]:.1f}-{wavelengths[-1]:.1f} nm)",
+    )
     print(f"Dark noise: {dark_noise[0]:.1f} - {dark_noise[-1]:.1f} counts")
 
     # ========================================================================
     # STEP 4: Calculate transmission spectra and analyze with centroid
     # ========================================================================
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STEP 4: TRANSMISSION ANALYSIS WITH CENTROID METHOD")
-    print("="*80)
+    print("=" * 80)
 
     # Save transmission data
     output_file = calib_dir / f"transmission_analysis_{timestamp}.npz"
@@ -237,7 +290,7 @@ def main() -> int:
         wavelengths=wavelengths,
         dark_noise=dark_noise,
         integration_times_str=str(integration_time_ms_by_ch),
-        led_value=args.led
+        led_value=args.led,
     )
 
     print("\n✅ ACQUISITION COMPLETE!")

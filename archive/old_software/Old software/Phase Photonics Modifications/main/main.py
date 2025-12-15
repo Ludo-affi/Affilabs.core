@@ -7,7 +7,6 @@
 
 import asyncio
 import csv
-import ctypes
 import datetime as dt
 import faulthandler
 import gc
@@ -73,7 +72,6 @@ from utils.controller import (
     QSPRController,
 )
 from utils.logger import logger
-from utils.SpectrometerAPI import SENSOR_FRAME_T
 from utils.usb4000 import USB4000
 from widgets.datawindow import Segment
 from widgets.mainwindow import MainWindow
@@ -322,7 +320,9 @@ class AffiniteApp(QMainWindow):
         self.main_window.sensorgram.ui.regen_button.clicked.connect(
             self.handle_regen_button,
         )
-        self.main_window.sensorgram.ui.flush_button.clicked.connect(self.handle_flush_button)
+        self.main_window.sensorgram.ui.flush_button.clicked.connect(
+            self.handle_flush_button,
+        )
         self.main_window.sensorgram.ui.flow_rate.editingFinished.connect(
             self.change_flow_rate,
         )
@@ -588,10 +588,7 @@ class AffiniteApp(QMainWindow):
             try:
                 self.pump.send_command(0x41, b"T")
                 cmd = (
-                    "IS12A181490"
-                    "OS15A0"
-                    "IS12A181490"
-                    f"OV{self.flow_rate:.3f},1A0R"
+                    "IS12A181490OS15A0IS12A181490" f"OV{self.flow_rate:.3f},1A0R"
                 ).encode()
                 self.pump.send_command(0x41, cmd)
                 self.main_window.sensorgram.start_progress_bar(29_000)
@@ -1477,9 +1474,8 @@ class AffiniteApp(QMainWindow):
 
                         offset = self.wave_min_index * 2
                         num = self.wave_max_index - self.wave_min_index
-                        
 
-                        # Sum of total delta times. 
+                        # Sum of total delta times.
                         sDT = 0.0
 
                         for _scan in range(self.num_scans):
@@ -1488,17 +1484,19 @@ class AffiniteApp(QMainWindow):
                             pixel_data = self.usb.read_intensity(data_type=np.uint16)
                             dt = time.time() - t0
 
-                            # Adding the time differences. 
+                            # Adding the time differences.
                             sDT += dt
 
-                            # The pixel data is already a uint16_t numpy array.. 
-                            # So framebuffer(..) is not required. 
-                            int_data_sum += pixel_data[offset:offset + num]
-                            
-                        # Showing an auto-closing message box with average frame rate achieved. 
-                        show_message(msg_type="Information", 
-                                     msg=f"Average frame rate for {self.num_scans} scans: {float(self.num_scans)/sDT}", auto_close_time=2)
-                        
+                            # The pixel data is already a uint16_t numpy array..
+                            # So framebuffer(..) is not required.
+                            int_data_sum += pixel_data[offset : offset + num]
+
+                        # Showing an auto-closing message box with average frame rate achieved.
+                        show_message(
+                            msg_type="Information",
+                            msg=f"Average frame rate for {self.num_scans} scans: {float(self.num_scans)/sDT}",
+                            auto_close_time=2,
+                        )
 
                         if int_data_sum is not None:
                             self.int_data[ch] = (
@@ -1695,10 +1693,8 @@ class AffiniteApp(QMainWindow):
             max_raw_len = 0
             max_filt_len = 0
             for ch in CH_LIST:
-                if len(self.lambda_times[ch]) > max_raw_len:
-                    max_raw_len = len(self.lambda_times[ch])
-                if len(self.buffered_times[ch]) > max_filt_len:
-                    max_filt_len = len(self.buffered_times[ch])
+                max_raw_len = max(len(self.lambda_times[ch]), max_raw_len)
+                max_filt_len = max(len(self.buffered_times[ch]), max_filt_len)
             for ch in CH_LIST:
                 if len(self.lambda_times[ch]) < max_raw_len:
                     self.lambda_values[ch] = np.append(self.lambda_values[ch], np.nan)
@@ -1778,7 +1774,7 @@ class AffiniteApp(QMainWindow):
                 # Edges of peaks at 5% from max, essentially full width 95% max
                 # This is to find the middle of the range the P4Pro let light through
                 edges = peak_widths(max_intensities, peaks, 0.05, prominences)[2:4]
-                edges = np.array(edges)[:,i]
+                edges = np.array(edges)[:, i]
                 # Midpoint of peaks by averaging and converting from indexes to angles
                 # S is most prominent peak, P is second most prominent
                 p_pos, s_pos = (min_angle + angle_step * edges.mean(0)).astype(int)

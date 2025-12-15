@@ -1,5 +1,4 @@
-"""
-Training Data Manager for SPR Instrument Characterization
+"""Training Data Manager for SPR Instrument Characterization
 
 Manages hierarchical training data structure:
 - Device level: Each instrument instance (unique LED/fiber/detector set)
@@ -73,10 +72,10 @@ Usage:
 
 import json
 import shutil
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Optional, Any
 import subprocess
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 
 class TrainingDataManager:
@@ -84,29 +83,29 @@ class TrainingDataManager:
 
     # Standard sensor quality categories
     SENSOR_QUALITIES = [
-        "excellent",      # Reference quality, fresh, perfect storage
-        "good",          # Normal quality, proper storage
-        "acceptable",    # Older but functional
-        "poor",          # Degraded, storage issues, nearing end-of-life
-        "defective"      # Known defects, contamination, for failure mode analysis
+        "excellent",  # Reference quality, fresh, perfect storage
+        "good",  # Normal quality, proper storage
+        "acceptable",  # Older but functional
+        "poor",  # Degraded, storage issues, nearing end-of-life
+        "defective",  # Known defects, contamination, for failure mode analysis
     ]
 
     # S-signal categories (instrument characterization)
     S_SIGNAL_CATEGORIES = [
-        "baseline",      # Standard measurements for instrument reference
-        "thermal",       # Warm-up and thermal stability studies
-        "stability",     # Long-term drift characterization
-        "led_testing",   # LED delay optimization, spectral analysis
-        "noise_floor"    # Dark measurements, detector noise
+        "baseline",  # Standard measurements for instrument reference
+        "thermal",  # Warm-up and thermal stability studies
+        "stability",  # Long-term drift characterization
+        "led_testing",  # LED delay optimization, spectral analysis
+        "noise_floor",  # Dark measurements, detector noise
     ]
 
-    def __init__(self, device_id: str, base_path: Optional[Path] = None):
-        """
-        Initialize training data manager for a specific device.
+    def __init__(self, device_id: str, base_path: Path | None = None):
+        """Initialize training data manager for a specific device.
 
         Args:
             device_id: Unique identifier for this instrument (e.g., "device_001", "lab_A_unit_1")
             base_path: Root directory for training data (default: ./training_data)
+
         """
         self.device_id = device_id
         self.base_path = base_path or Path("training_data")
@@ -149,44 +148,46 @@ class TrainingDataManager:
                 "led_serial": "UNKNOWN",
                 "fiber_type": "UNKNOWN",
                 "detector_model": "UNKNOWN",
-                "detector_serial": "UNKNOWN"
+                "detector_serial": "UNKNOWN",
             },
             "installation": {
                 "date": datetime.now().isoformat(),
                 "location": "UNKNOWN",
-                "operator": "UNKNOWN"
+                "operator": "UNKNOWN",
             },
             "calibration": {
                 "last_calibration": None,
-                "calibration_interval_days": 90
+                "calibration_interval_days": 90,
             },
-            "notes": []
+            "notes": [],
         }
 
-        with open(self.device_path / "device_info.json", 'w') as f:
+        with open(self.device_path / "device_info.json", "w") as f:
             json.dump(device_info, f, indent=2)
 
         print(f"✓ Created device info for {self.device_id}")
-        print(f"  → Update hardware details in: {self.device_path / 'device_info.json'}")
+        print(
+            f"  → Update hardware details in: {self.device_path / 'device_info.json'}",
+        )
 
     def update_device_info(self, **kwargs):
         """Update device information."""
         device_info_path = self.device_path / "device_info.json"
-        with open(device_info_path, 'r') as f:
+        with open(device_info_path) as f:
             device_info = json.load(f)
 
         # Update nested fields
         for key, value in kwargs.items():
-            if '.' in key:
-                section, field = key.split('.', 1)
+            if "." in key:
+                section, field = key.split(".", 1)
                 if section in device_info:
                     device_info[section][field] = value
             else:
                 device_info[key] = value
 
-        device_info['last_modified'] = datetime.now().isoformat()
+        device_info["last_modified"] = datetime.now().isoformat()
 
-        with open(device_info_path, 'w') as f:
+        with open(device_info_path, "w") as f:
             json.dump(device_info, f, indent=2)
 
     def save_s_signal(
@@ -194,11 +195,10 @@ class TrainingDataManager:
         detector: str,
         category: str,
         csv_path: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        auto_analyze: bool = True
+        metadata: dict[str, Any] | None = None,
+        auto_analyze: bool = True,
     ) -> Path:
-        """
-        Save S-signal measurement (pure instrument characterization).
+        """Save S-signal measurement (pure instrument characterization).
 
         Args:
             detector: Channel ID ("A", "B", "C", or "D")
@@ -209,16 +209,25 @@ class TrainingDataManager:
 
         Returns:
             Path to saved measurement directory
+
         """
         if category not in self.S_SIGNAL_CATEGORIES:
-            raise ValueError(f"Invalid S-signal category: {category}. Must be one of {self.S_SIGNAL_CATEGORIES}")
+            raise ValueError(
+                f"Invalid S-signal category: {category}. Must be one of {self.S_SIGNAL_CATEGORIES}",
+            )
 
         # Generate measurement ID
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         measurement_id = f"s_signal_{timestamp}"
 
         # Create measurement directory
-        save_dir = self.device_path / f"detector_{detector}" / "s_signal" / category / measurement_id
+        save_dir = (
+            self.device_path
+            / f"detector_{detector}"
+            / "s_signal"
+            / category
+            / measurement_id
+        )
         save_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy CSV file
@@ -234,10 +243,10 @@ class TrainingDataManager:
             "signal_type": "S",
             "category": category,
             "csv_file": "measurement.csv",
-            **(metadata or {})
+            **(metadata or {}),
         }
 
-        with open(save_dir / "metadata.json", 'w') as f:
+        with open(save_dir / "metadata.json", "w") as f:
             json.dump(full_metadata, f, indent=2)
 
         # Run spectral quality analyzer
@@ -255,11 +264,10 @@ class TrainingDataManager:
         sensor_quality: str,
         chip_batch: str,
         csv_path: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        auto_analyze: bool = True
+        metadata: dict[str, Any] | None = None,
+        auto_analyze: bool = True,
     ) -> Path:
-        """
-        Save P-signal measurement (with sensor chip).
+        """Save P-signal measurement (with sensor chip).
 
         Args:
             detector: Channel ID ("A", "B", "C", or "D")
@@ -271,17 +279,26 @@ class TrainingDataManager:
 
         Returns:
             Path to saved measurement directory
+
         """
         if sensor_quality not in self.SENSOR_QUALITIES:
-            raise ValueError(f"Invalid sensor quality: {sensor_quality}. Must be one of {self.SENSOR_QUALITIES}")
+            raise ValueError(
+                f"Invalid sensor quality: {sensor_quality}. Must be one of {self.SENSOR_QUALITIES}",
+            )
 
         # Generate measurement ID
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         measurement_id = f"p_signal_{timestamp}"
 
         # Create measurement directory (organized by chip batch)
-        save_dir = (self.device_path / f"detector_{detector}" / "p_signal" /
-                   sensor_quality / chip_batch / measurement_id)
+        save_dir = (
+            self.device_path
+            / f"detector_{detector}"
+            / "p_signal"
+            / sensor_quality
+            / chip_batch
+            / measurement_id
+        )
         save_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy CSV file
@@ -299,17 +316,19 @@ class TrainingDataManager:
             "chip_batch": chip_batch,
             "csv_file": "measurement.csv",
             "medium_ri": metadata.get("ri_medium", 1.3333) if metadata else 1.3333,
-            **(metadata or {})
+            **(metadata or {}),
         }
 
-        with open(save_dir / "metadata.json", 'w') as f:
+        with open(save_dir / "metadata.json", "w") as f:
             json.dump(full_metadata, f, indent=2)
 
         # Run spectral quality analyzer
         if auto_analyze:
             self._run_analyzer(csv_dest, save_dir / "analysis.json")
 
-        print(f"✓ Saved P-signal: {detector}/{sensor_quality}/{chip_batch}/{measurement_id}")
+        print(
+            f"✓ Saved P-signal: {detector}/{sensor_quality}/{chip_batch}/{measurement_id}",
+        )
         print(f"  → {save_dir}")
 
         return save_dir
@@ -324,7 +343,8 @@ class TrainingDataManager:
                     str(analyzer_script),
                     "analyze",
                     str(csv_path),
-                    "-o", str(output_path)
+                    "-o",
+                    str(output_path),
                 ]
                 subprocess.run(cmd, capture_output=True, check=True)
                 print(f"  ✓ Analysis saved: {output_path.name}")
@@ -334,10 +354,9 @@ class TrainingDataManager:
     def get_s_signal_data(
         self,
         detector: str,
-        category: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Query S-signal measurements.
+        category: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query S-signal measurements.
 
         Args:
             detector: Channel ID
@@ -345,6 +364,7 @@ class TrainingDataManager:
 
         Returns:
             List of measurement metadata dictionaries
+
         """
         results = []
         s_signal_path = self.device_path / f"detector_{detector}" / "s_signal"
@@ -360,21 +380,20 @@ class TrainingDataManager:
                 if meas_dir.is_dir():
                     metadata_file = meas_dir / "metadata.json"
                     if metadata_file.exists():
-                        with open(metadata_file, 'r') as f:
+                        with open(metadata_file) as f:
                             metadata = json.load(f)
-                            metadata['measurement_path'] = str(meas_dir)
+                            metadata["measurement_path"] = str(meas_dir)
                             results.append(metadata)
 
-        return sorted(results, key=lambda x: x['timestamp'], reverse=True)
+        return sorted(results, key=lambda x: x["timestamp"], reverse=True)
 
     def get_p_signal_data(
         self,
         detector: str,
-        quality: Optional[str] = None,
-        chip_batch: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Query P-signal measurements.
+        quality: str | None = None,
+        chip_batch: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query P-signal measurements.
 
         Args:
             detector: Channel ID
@@ -383,6 +402,7 @@ class TrainingDataManager:
 
         Returns:
             List of measurement metadata dictionaries
+
         """
         results = []
         p_signal_path = self.device_path / f"detector_{detector}" / "p_signal"
@@ -408,14 +428,14 @@ class TrainingDataManager:
                     if meas_dir.is_dir():
                         metadata_file = meas_dir / "metadata.json"
                         if metadata_file.exists():
-                            with open(metadata_file, 'r') as f:
+                            with open(metadata_file) as f:
                                 metadata = json.load(f)
-                                metadata['measurement_path'] = str(meas_dir)
+                                metadata["measurement_path"] = str(meas_dir)
                                 results.append(metadata)
 
-        return sorted(results, key=lambda x: x['timestamp'], reverse=True)
+        return sorted(results, key=lambda x: x["timestamp"], reverse=True)
 
-    def get_device_statistics(self) -> Dict[str, Any]:
+    def get_device_statistics(self) -> dict[str, Any]:
         """Get statistics about collected training data."""
         stats = {
             "device_id": self.device_id,
@@ -424,7 +444,7 @@ class TrainingDataManager:
             "by_signal_type": {"S": 0, "P": 0},
             "by_sensor_quality": {q: 0 for q in self.SENSOR_QUALITIES},
             "by_s_category": {c: 0 for c in self.S_SIGNAL_CATEGORIES},
-            "date_range": {"earliest": None, "latest": None}
+            "date_range": {"earliest": None, "latest": None},
         }
 
         for detector in ["A", "B", "C", "D"]:
@@ -434,7 +454,7 @@ class TrainingDataManager:
             stats["by_detector"][detector] = {
                 "s_signal": len(s_data),
                 "p_signal": len(p_data),
-                "total": len(s_data) + len(p_data)
+                "total": len(s_data) + len(p_data),
             }
 
             stats["by_signal_type"]["S"] += len(s_data)
@@ -454,9 +474,15 @@ class TrainingDataManager:
             for meas in s_data + p_data:
                 timestamp = meas.get("timestamp")
                 if timestamp:
-                    if stats["date_range"]["earliest"] is None or timestamp < stats["date_range"]["earliest"]:
+                    if (
+                        stats["date_range"]["earliest"] is None
+                        or timestamp < stats["date_range"]["earliest"]
+                    ):
                         stats["date_range"]["earliest"] = timestamp
-                    if stats["date_range"]["latest"] is None or timestamp > stats["date_range"]["latest"]:
+                    if (
+                        stats["date_range"]["latest"] is None
+                        or timestamp > stats["date_range"]["latest"]
+                    ):
                         stats["date_range"]["latest"] = timestamp
 
         return stats
@@ -464,21 +490,21 @@ class TrainingDataManager:
     def export_training_dataset(
         self,
         output_file: str,
-        detector: Optional[str] = None,
-        signal_type: Optional[str] = None
+        detector: str | None = None,
+        signal_type: str | None = None,
     ):
-        """
-        Export training data as consolidated JSON for model training.
+        """Export training data as consolidated JSON for model training.
 
         Args:
             output_file: Path to output JSON file
             detector: Optional detector filter
             signal_type: Optional signal type filter ("S" or "P")
+
         """
         dataset = {
             "device_id": self.device_id,
             "export_date": datetime.now().isoformat(),
-            "measurements": []
+            "measurements": [],
         }
 
         detectors = [detector] if detector else ["A", "B", "C", "D"]
@@ -488,28 +514,30 @@ class TrainingDataManager:
                 s_measurements = self.get_s_signal_data(det)
                 for meas in s_measurements:
                     # Load analysis if exists
-                    meas_path = Path(meas['measurement_path'])
+                    meas_path = Path(meas["measurement_path"])
                     analysis_file = meas_path / "analysis.json"
                     if analysis_file.exists():
-                        with open(analysis_file, 'r') as f:
-                            meas['analysis'] = json.load(f)
+                        with open(analysis_file) as f:
+                            meas["analysis"] = json.load(f)
                     dataset["measurements"].append(meas)
 
             if signal_type in [None, "P"]:
                 p_measurements = self.get_p_signal_data(det)
                 for meas in p_measurements:
                     # Load analysis if exists
-                    meas_path = Path(meas['measurement_path'])
+                    meas_path = Path(meas["measurement_path"])
                     analysis_file = meas_path / "analysis.json"
                     if analysis_file.exists():
-                        with open(analysis_file, 'r') as f:
-                            meas['analysis'] = json.load(f)
+                        with open(analysis_file) as f:
+                            meas["analysis"] = json.load(f)
                     dataset["measurements"].append(meas)
 
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(dataset, f, indent=2)
 
-        print(f"✓ Exported {len(dataset['measurements'])} measurements to {output_file}")
+        print(
+            f"✓ Exported {len(dataset['measurements'])} measurements to {output_file}",
+        )
 
 
 def main():
@@ -527,8 +555,11 @@ def main():
     # Save S-signal
     save_s = subparsers.add_parser("save-s", help="Save S-signal measurement")
     save_s.add_argument("--detector", required=True, choices=["A", "B", "C", "D"])
-    save_s.add_argument("--category", required=True,
-                        choices=TrainingDataManager.S_SIGNAL_CATEGORIES)
+    save_s.add_argument(
+        "--category",
+        required=True,
+        choices=TrainingDataManager.S_SIGNAL_CATEGORIES,
+    )
     save_s.add_argument("--csv", required=True, help="Path to CSV file")
     save_s.add_argument("--warmup", type=float, help="Warm-up time (minutes)")
     save_s.add_argument("--temp", type=float, help="Ambient temperature (°C)")
@@ -536,8 +567,11 @@ def main():
     # Save P-signal
     save_p = subparsers.add_parser("save-p", help="Save P-signal measurement")
     save_p.add_argument("--detector", required=True, choices=["A", "B", "C", "D"])
-    save_p.add_argument("--quality", required=True,
-                        choices=TrainingDataManager.SENSOR_QUALITIES)
+    save_p.add_argument(
+        "--quality",
+        required=True,
+        choices=TrainingDataManager.SENSOR_QUALITIES,
+    )
     save_p.add_argument("--batch", required=True, help="Chip batch ID")
     save_p.add_argument("--csv", required=True, help="Path to CSV file")
     save_p.add_argument("--chip-age", type=int, help="Chip age (days)")
@@ -580,12 +614,12 @@ def main():
             detector=args.detector,
             category=args.category,
             csv_path=args.csv,
-            metadata=metadata
+            metadata=metadata,
         )
 
     elif args.command == "save-p":
         metadata = {
-            "ri_medium": args.ri
+            "ri_medium": args.ri,
         }
         if args.chip_age:
             metadata["chip_age_days"] = args.chip_age
@@ -595,7 +629,7 @@ def main():
             sensor_quality=args.quality,
             chip_batch=args.batch,
             csv_path=args.csv,
-            metadata=metadata
+            metadata=metadata,
         )
 
     elif args.command == "query":
@@ -604,15 +638,18 @@ def main():
         elif args.signal == "P":
             results = tdm.get_p_signal_data(
                 detector=args.detector,
-                quality=args.quality
+                quality=args.quality,
             )
         else:
-            results = (tdm.get_s_signal_data(detector=args.detector) +
-                      tdm.get_p_signal_data(detector=args.detector))
+            results = tdm.get_s_signal_data(
+                detector=args.detector,
+            ) + tdm.get_p_signal_data(detector=args.detector)
 
         print(f"\n📊 Found {len(results)} measurements:")
         for r in results[:10]:  # Show first 10
-            print(f"  • {r['measurement_id']} | {r['signal_type']}-signal | {r['timestamp']}")
+            print(
+                f"  • {r['measurement_id']} | {r['signal_type']}-signal | {r['timestamp']}",
+            )
 
         if len(results) > 10:
             print(f"  ... and {len(results) - 10} more")
@@ -621,11 +658,13 @@ def main():
         stats = tdm.get_device_statistics()
         print(f"\n📊 Training Data Statistics for {stats['device_id']}")
         print(f"   Total measurements: {stats['total_measurements']}")
-        print(f"\n   By Detector:")
-        for det, counts in stats['by_detector'].items():
-            print(f"     {det}: {counts['total']} (S={counts['s_signal']}, P={counts['p_signal']})")
-        print(f"\n   By Sensor Quality:")
-        for qual, count in stats['by_sensor_quality'].items():
+        print("\n   By Detector:")
+        for det, counts in stats["by_detector"].items():
+            print(
+                f"     {det}: {counts['total']} (S={counts['s_signal']}, P={counts['p_signal']})",
+            )
+        print("\n   By Sensor Quality:")
+        for qual, count in stats["by_sensor_quality"].items():
             if count > 0:
                 print(f"     {qual}: {count}")
 
@@ -633,7 +672,7 @@ def main():
         tdm.export_training_dataset(
             output_file=args.output,
             detector=args.detector,
-            signal_type=args.signal
+            signal_type=args.signal,
         )
 
 

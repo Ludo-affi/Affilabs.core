@@ -306,7 +306,9 @@ class DeviceManager:
         return self.device_config
 
     def update_calibration_status(
-        self, calibration_type: str, status: bool = True,
+        self,
+        calibration_type: str,
+        status: bool = True,
     ) -> None:
         """Update calibration status in device config.
 

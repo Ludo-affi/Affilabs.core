@@ -1,5 +1,4 @@
-"""
-FINAL COMPARISON SUMMARY
+"""FINAL COMPARISON SUMMARY
 ========================
 
 Target: 4 RU peak-to-peak baseline noise (1 nm = 355 RU)

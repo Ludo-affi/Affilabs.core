@@ -15,12 +15,10 @@ Last Updated: October 18, 2025 (Added Kalman filtering)
 
 from __future__ import annotations
 
-from typing import Optional
 import numpy as np
 import pandas as pd
 from numpy import ndarray
 from scipy.fft import dst, idct
-from scipy.stats import linregress
 
 from utils.logger import logger
 
@@ -41,6 +39,7 @@ class KalmanFilter:
         R: Measurement noise covariance (trust in data)
         P: Estimation error covariance (updated each step)
         x: Current state estimate
+
     """
 
     def __init__(self, process_noise: float = 0.01, measurement_noise: float = 0.1):
@@ -49,6 +48,7 @@ class KalmanFilter:
         Args:
             process_noise: Process noise covariance Q (how much system changes)
             measurement_noise: Measurement noise covariance R (sensor noise level)
+
         """
         self.Q = process_noise  # Process noise
         self.R = measurement_noise  # Measurement noise
@@ -68,6 +68,7 @@ class KalmanFilter:
 
         Returns:
             Filtered estimate
+
         """
         if self.x is None:
             # Initialize with first measurement
@@ -93,6 +94,7 @@ class KalmanFilter:
 
         Returns:
             Filtered data array
+
         """
         self.reset()
         filtered = np.zeros_like(data)
@@ -140,15 +142,17 @@ class SPRDataProcessor:
         self.temporal_smoother = None
         try:
             from settings.settings import ENHANCED_PEAK_TRACKING
+
             if ENHANCED_PEAK_TRACKING:
-                from utils.enhanced_peak_tracking import TemporalPeakSmoother
                 from settings.settings import (
+                    KALMAN_MEASUREMENT_NOISE,
+                    KALMAN_PROCESS_NOISE,
                     TEMPORAL_SMOOTHING_ENABLED,
                     TEMPORAL_SMOOTHING_METHOD,
                     TEMPORAL_WINDOW_SIZE,
-                    KALMAN_MEASUREMENT_NOISE,
-                    KALMAN_PROCESS_NOISE,
                 )
+                from utils.enhanced_peak_tracking import TemporalPeakSmoother
+
                 if TEMPORAL_SMOOTHING_ENABLED:
                     self.temporal_smoother = TemporalPeakSmoother(
                         method=TEMPORAL_SMOOTHING_METHOD,
@@ -156,7 +160,9 @@ class SPRDataProcessor:
                         measurement_noise=KALMAN_MEASUREMENT_NOISE,
                         process_noise=KALMAN_PROCESS_NOISE,
                     )
-                    logger.info(f"✅ Enhanced peak tracking initialized with {TEMPORAL_SMOOTHING_METHOD} smoother")
+                    logger.info(
+                        f"✅ Enhanced peak tracking initialized with {TEMPORAL_SMOOTHING_METHOD} smoother",
+                    )
         except Exception as e:
             logger.debug(f"Enhanced peak tracking not initialized: {e}")
 
@@ -164,16 +170,18 @@ class SPRDataProcessor:
         self.consensus_tracker = None
         try:
             from settings.settings import PEAK_TRACKING_METHOD
-            if PEAK_TRACKING_METHOD == 'consensus':
-                from utils.consensus_peak_tracker import ConsensusTracker
+
+            if PEAK_TRACKING_METHOD == "consensus":
                 from settings.settings import (
-                    CONSENSUS_SAVGOL_WINDOW,
-                    CONSENSUS_SAVGOL_POLYORDER,
-                    CONSENSUS_TARGET_PIXELS,
                     CONSENSUS_HISTORY_SIZE,
                     CONSENSUS_OUTLIER_THRESHOLD,
+                    CONSENSUS_SAVGOL_POLYORDER,
+                    CONSENSUS_SAVGOL_WINDOW,
                     CONSENSUS_SEARCH_RANGE,
+                    CONSENSUS_TARGET_PIXELS,
                 )
+                from utils.consensus_peak_tracker import ConsensusTracker
+
                 self.consensus_tracker = ConsensusTracker(
                     savgol_window=CONSENSUS_SAVGOL_WINDOW,
                     savgol_polyorder=CONSENSUS_SAVGOL_POLYORDER,
@@ -182,8 +190,10 @@ class SPRDataProcessor:
                     outlier_threshold_mad=CONSENSUS_OUTLIER_THRESHOLD,
                     search_range=CONSENSUS_SEARCH_RANGE,
                 )
-                logger.info(f"✅ Consensus peak tracker initialized (Phase 1)")
-                logger.info(f"   Spectral smoothing: {CONSENSUS_SAVGOL_WINDOW}-pixel window")
+                logger.info("✅ Consensus peak tracker initialized (Phase 1)")
+                logger.info(
+                    f"   Spectral smoothing: {CONSENSUS_SAVGOL_WINDOW}-pixel window",
+                )
                 logger.info(f"   Target pixels: {CONSENSUS_TARGET_PIXELS}")
                 logger.info(f"   Outlier threshold: {CONSENSUS_OUTLIER_THRESHOLD}× MAD")
         except Exception as e:
@@ -200,7 +210,11 @@ class SPRDataProcessor:
     # TRANSMISSION CALCULATION
     # ========================================================================
 
-    def _apply_dynamic_sg_filter(self, spectrum: np.ndarray, target_smoothness: Optional[float] = None) -> tuple[np.ndarray, int, int]:
+    def _apply_dynamic_sg_filter(
+        self,
+        spectrum: np.ndarray,
+        target_smoothness: float | None = None,
+    ) -> tuple[np.ndarray, int, int]:
         """Apply Savitzky-Golay filter with dynamically optimized parameters.
 
         Finds optimal window size and polynomial order to achieve target smoothness level.
@@ -217,6 +231,7 @@ class SPRDataProcessor:
         Note:
             This implements the same dynamic SG filtering used in centroid analysis,
             ensuring consistent spectral quality across all processing steps.
+
         """
         from scipy.signal import savgol_filter
 
@@ -236,7 +251,12 @@ class SPRDataProcessor:
                     if polyorder >= window:
                         continue
                     try:
-                        smoothed = savgol_filter(spectrum, window, polyorder, mode='nearest')
+                        smoothed = savgol_filter(
+                            spectrum,
+                            window,
+                            polyorder,
+                            mode="nearest",
+                        )
                         second_deriv = np.diff(smoothed, n=2)
                         smoothness = np.std(second_deriv)
                         smoothness_values.append(smoothness)
@@ -254,7 +274,7 @@ class SPRDataProcessor:
         polyorders = [2, 3, 4]
 
         best_params = (11, 3)  # Default fallback
-        best_diff = float('inf')
+        best_diff = float("inf")
 
         for window in window_lengths:
             for polyorder in polyorders:
@@ -262,7 +282,12 @@ class SPRDataProcessor:
                     continue
 
                 try:
-                    smoothed = savgol_filter(spectrum, window, polyorder, mode='nearest')
+                    smoothed = savgol_filter(
+                        spectrum,
+                        window,
+                        polyorder,
+                        mode="nearest",
+                    )
                     second_deriv = np.diff(smoothed, n=2)
                     smoothness = np.std(second_deriv)
 
@@ -276,18 +301,23 @@ class SPRDataProcessor:
         # Apply optimal filter
         optimal_window, optimal_polyorder = best_params
         try:
-            smoothed_spectrum = savgol_filter(spectrum, optimal_window, optimal_polyorder, mode='nearest')
+            smoothed_spectrum = savgol_filter(
+                spectrum,
+                optimal_window,
+                optimal_polyorder,
+                mode="nearest",
+            )
             return smoothed_spectrum, optimal_window, optimal_polyorder
         except:
             # Return original if filtering fails
-            logger.warning(f"Dynamic SG filter failed, returning unfiltered spectrum")
+            logger.warning("Dynamic SG filter failed, returning unfiltered spectrum")
             return spectrum, 0, 0
 
     def calculate_transmission(
         self,
         p_pol_intensity: np.ndarray,
         s_ref_intensity: np.ndarray,
-        dark_noise: Optional[ndarray] = None,
+        dark_noise: ndarray | None = None,
         denoise: bool = True,
     ) -> np.ndarray:
         """Calculate transmission spectrum: (P-pol / S-ref) × 100%.
@@ -318,25 +348,41 @@ class SPRDataProcessor:
 
             # Resize s_ref if needed
             if len(s_ref_intensity) != target_size:
-                logger.warning(f"S-ref size mismatch: {len(s_ref_intensity)} vs {target_size}. Resizing...")
+                logger.warning(
+                    f"S-ref size mismatch: {len(s_ref_intensity)} vs {target_size}. Resizing...",
+                )
                 from scipy.interpolate import interp1d
+
                 x_old = np.linspace(0, 1, len(s_ref_intensity))
                 x_new = np.linspace(0, 1, target_size)
-                interpolator = interp1d(x_old, s_ref_intensity, kind='linear', fill_value='extrapolate')
+                interpolator = interp1d(
+                    x_old,
+                    s_ref_intensity,
+                    kind="linear",
+                    fill_value="extrapolate",
+                )
                 s_ref_intensity = interpolator(x_new)
 
             # Universal dark noise correction with resampling
             if dark_noise is not None:
                 # Ensure dark noise matches data size through universal resampling
-                p_pol_corrected = self._apply_universal_dark_correction(p_pol_intensity, dark_noise)
-                s_ref_corrected = self._apply_universal_dark_correction(s_ref_intensity, dark_noise)
+                p_pol_corrected = self._apply_universal_dark_correction(
+                    p_pol_intensity,
+                    dark_noise,
+                )
+                s_ref_corrected = self._apply_universal_dark_correction(
+                    s_ref_intensity,
+                    dark_noise,
+                )
             else:
                 p_pol_corrected = p_pol_intensity
                 s_ref_corrected = s_ref_intensity
 
             # Final size check - all must match
             if len(p_pol_corrected) != len(s_ref_corrected):
-                logger.error(f"Size mismatch after correction: P={len(p_pol_corrected)} vs S={len(s_ref_corrected)}")
+                logger.error(
+                    f"Size mismatch after correction: P={len(p_pol_corrected)} vs S={len(s_ref_corrected)}",
+                )
                 # Force same size by trimming or padding
                 min_size = min(len(p_pol_corrected), len(s_ref_corrected))
                 p_pol_corrected = p_pol_corrected[:min_size]
@@ -362,9 +408,10 @@ class SPRDataProcessor:
                 from settings.settings import (
                     DENOISE_TRANSMITTANCE,
                     KALMAN_FILTER_ENABLED,
-                    KALMAN_PROCESS_NOISE,
                     KALMAN_MEASUREMENT_NOISE,
+                    KALMAN_PROCESS_NOISE,
                 )
+
                 # Optional dynamic SG controls (backward compatible if missing)
                 try:
                     from settings.settings import (
@@ -375,16 +422,22 @@ class SPRDataProcessor:
                     DYNAMIC_SG_ENABLED = True
                     DYNAMIC_SG_TARGET_SMOOTHNESS = None
 
-                if DENOISE_TRANSMITTANCE and len(transmission) > 11 and DYNAMIC_SG_ENABLED:
+                if (
+                    DENOISE_TRANSMITTANCE
+                    and len(transmission) > 11
+                    and DYNAMIC_SG_ENABLED
+                ):
                     # ✨ Use dynamic SG filter for uniform smoothness across channels
                     # If a global target smoothness is provided, use it; otherwise auto-calibrate per spectrum
-                    transmission, sg_window, sg_polyorder = self._apply_dynamic_sg_filter(
-                        transmission,
-                        target_smoothness=DYNAMIC_SG_TARGET_SMOOTHNESS,
+                    transmission, sg_window, sg_polyorder = (
+                        self._apply_dynamic_sg_filter(
+                            transmission,
+                            target_smoothness=DYNAMIC_SG_TARGET_SMOOTHNESS,
+                        )
                     )
                     logger.debug(
                         f"Dynamic SG filter applied: window={sg_window}, polyorder={sg_polyorder}, "
-                        f"target={DYNAMIC_SG_TARGET_SMOOTHNESS if DYNAMIC_SG_TARGET_SMOOTHNESS is not None else 'auto'}"
+                        f"target={DYNAMIC_SG_TARGET_SMOOTHNESS if DYNAMIC_SG_TARGET_SMOOTHNESS is not None else 'auto'}",
                     )
 
                 # Apply Kalman filtering if enabled (adds ~0.5ms, provides 2-3× better SNR)
@@ -393,7 +446,7 @@ class SPRDataProcessor:
                     # Create Kalman filter instance with configured noise parameters
                     kalman = KalmanFilter(
                         process_noise=KALMAN_PROCESS_NOISE,
-                        measurement_noise=KALMAN_MEASUREMENT_NOISE
+                        measurement_noise=KALMAN_MEASUREMENT_NOISE,
                     )
                     transmission = kalman.filter_array(transmission)
 
@@ -403,7 +456,11 @@ class SPRDataProcessor:
             logger.exception(f"Error calculating transmission: {e}")
             return np.full_like(p_pol_intensity, np.nan, dtype=np.float64)
 
-    def _apply_universal_dark_correction(self, signal: np.ndarray, dark_noise: np.ndarray) -> np.ndarray:
+    def _apply_universal_dark_correction(
+        self,
+        signal: np.ndarray,
+        dark_noise: np.ndarray,
+    ) -> np.ndarray:
         """Apply dark noise correction with universal resampling - no cropping.
 
         Args:
@@ -412,6 +469,7 @@ class SPRDataProcessor:
 
         Returns:
             Dark noise corrected signal
+
         """
         try:
             if dark_noise.shape == signal.shape:
@@ -432,16 +490,24 @@ class SPRDataProcessor:
                 except ValueError:
                     # If reshape fails, use zeros
                     dark_correction = np.zeros_like(signal)
-                    logger.warning("Using zero dark correction due to shape incompatibility")
+                    logger.warning(
+                        "Using zero dark correction due to shape incompatibility",
+                    )
             else:
                 # Different sizes - use linear interpolation to resample
                 try:
                     from scipy.interpolate import interp1d
+
                     # Create interpolation function
                     source_indices = np.linspace(0, 1, source_size)
                     target_indices = np.linspace(0, 1, target_size)
-                    interpolator = interp1d(source_indices, dark_noise,
-                                          kind='linear', bounds_error=False, fill_value='extrapolate')
+                    interpolator = interp1d(
+                        source_indices,
+                        dark_noise,
+                        kind="linear",
+                        bounds_error=False,
+                        fill_value="extrapolate",
+                    )
                     dark_correction = interpolator(target_indices)
                 except ImportError:
                     # Fallback to simple resampling if scipy not available
@@ -453,7 +519,9 @@ class SPRDataProcessor:
             return signal - dark_correction
 
         except Exception as e:
-            logger.warning(f"Error in universal dark correction: {e}. Using original signal.")
+            logger.warning(
+                f"Error in universal dark correction: {e}. Using original signal.",
+            )
             return signal
 
     # ========================================================================
@@ -477,7 +545,7 @@ class SPRDataProcessor:
         try:
             if len(spectrum) < 3:
                 logger.warning(
-                    f"Spectrum too short for Fourier smoothing: {len(spectrum)} points"
+                    f"Spectrum too short for Fourier smoothing: {len(spectrum)} points",
                 )
                 return spectrum
 
@@ -500,9 +568,15 @@ class SPRDataProcessor:
                 if len(self.fourier_weights) != len(dst_result):
                     # Resize fourier_weights to match current spectrum size
                     from scipy.interpolate import interp1d
+
                     x_old = np.linspace(0, 1, len(self.fourier_weights))
                     x_new = np.linspace(0, 1, len(dst_result))
-                    interpolator = interp1d(x_old, self.fourier_weights, kind='linear', fill_value='extrapolate')
+                    interpolator = interp1d(
+                        x_old,
+                        self.fourier_weights,
+                        kind="linear",
+                        fill_value="extrapolate",
+                    )
                     fourier_weights_adjusted = interpolator(x_new)
                     fourier_coeff[1:-1] = fourier_weights_adjusted * dst_result
                 else:
@@ -539,7 +613,7 @@ class SPRDataProcessor:
             wave_data = self.wave_data
             if len(wave_data) != len(spectrum):
                 # Trim wave_data to match spectrum size
-                wave_data = wave_data[:len(spectrum)]
+                wave_data = wave_data[: len(spectrum)]
 
             # Simple numerical derivative using central differences
             # numpy.gradient automatically handles edges with forward/backward differences
@@ -555,7 +629,11 @@ class SPRDataProcessor:
     # ZERO-CROSSING DETECTION
     # ========================================================================
 
-    def _estimate_centroid_with_optional_width_bias(self, spectrum: np.ndarray, apply_width_bias: bool = True) -> float:
+    def _estimate_centroid_with_optional_width_bias(
+        self,
+        spectrum: np.ndarray,
+        apply_width_bias: bool = True,
+    ) -> float:
         """Estimate peak using centroid with optional width-bias correction.
 
         - Finds a discrete minimum in the expected wavelength range (if enabled)
@@ -567,11 +645,11 @@ class SPRDataProcessor:
         try:
             from settings.settings import (
                 ADAPTIVE_PEAK_DETECTION,
-                SPR_PEAK_EXPECTED_MIN,
-                SPR_PEAK_EXPECTED_MAX,
                 CENTROID_WINDOW_NM,
-                RIGHT_DECAY_GAMMA,
                 EDGE_DEPTH_FRACTION,
+                RIGHT_DECAY_GAMMA,
+                SPR_PEAK_EXPECTED_MAX,
+                SPR_PEAK_EXPECTED_MIN,
                 WIDTH_BIAS_K,
             )
 
@@ -582,8 +660,12 @@ class SPRDataProcessor:
             # Initial minimum search (optionally constrained)
             if ADAPTIVE_PEAK_DETECTION:
                 try:
-                    min_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MIN, side='left'))
-                    max_idx = int(np.searchsorted(wl, SPR_PEAK_EXPECTED_MAX, side='right'))
+                    min_idx = int(
+                        np.searchsorted(wl, SPR_PEAK_EXPECTED_MIN, side="left"),
+                    )
+                    max_idx = int(
+                        np.searchsorted(wl, SPR_PEAK_EXPECTED_MAX, side="right"),
+                    )
                     min_idx = max(0, min_idx)
                     max_idx = min(len(wl), max_idx)
                 except Exception:
@@ -627,24 +709,31 @@ class SPRDataProcessor:
             # Left crossing near i0
             left_idx = i0
             for j in range(i0 - 1, 0, -1):
-                if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
+                if (spectrum[j] - level) * (spectrum[j + 1] - level) <= 0:
                     left_idx = j
                     break
-            if left_idx < i0 and spectrum[left_idx+1] != spectrum[left_idx]:
-                t = (level - spectrum[left_idx]) / (spectrum[left_idx+1] - spectrum[left_idx])
-                left50 = float(wl[left_idx] + t * (wl[left_idx+1] - wl[left_idx]))
+            if left_idx < i0 and spectrum[left_idx + 1] != spectrum[left_idx]:
+                t = (level - spectrum[left_idx]) / (
+                    spectrum[left_idx + 1] - spectrum[left_idx]
+                )
+                left50 = float(wl[left_idx] + t * (wl[left_idx + 1] - wl[left_idx]))
             else:
                 left50 = float(wl[i0])
 
             # Right crossing near i0
             right_idx = i0
             for j in range(i0, len(spectrum) - 1):
-                if (spectrum[j] - level) * (spectrum[j+1] - level) <= 0:
+                if (spectrum[j] - level) * (spectrum[j + 1] - level) <= 0:
                     right_idx = j
                     break
-            if right_idx < len(spectrum) - 1 and spectrum[right_idx+1] != spectrum[right_idx]:
-                t = (level - spectrum[right_idx]) / (spectrum[right_idx+1] - spectrum[right_idx])
-                right50 = float(wl[right_idx] + t * (wl[right_idx+1] - wl[right_idx]))
+            if (
+                right_idx < len(spectrum) - 1
+                and spectrum[right_idx + 1] != spectrum[right_idx]
+            ):
+                t = (level - spectrum[right_idx]) / (
+                    spectrum[right_idx + 1] - spectrum[right_idx]
+                )
+                right50 = float(wl[right_idx] + t * (wl[right_idx + 1] - wl[right_idx]))
             else:
                 right50 = float(wl[i0])
 
@@ -662,7 +751,7 @@ class SPRDataProcessor:
         self,
         spectrum: np.ndarray,
         window: int = 165,  # Kept for backward compatibility
-        channel: str = 'unknown',  # Channel identifier for consensus tracker
+        channel: str = "unknown",  # Channel identifier for consensus tracker
     ) -> float:
         """Find SPR resonance wavelength by locating minimum transmission.
 
@@ -686,47 +775,53 @@ class SPRDataProcessor:
         """
         try:
             # 🔍 DEBUG: Log spectrum and wavelength data status
-            if not hasattr(self, 'wave_data') or self.wave_data is None:
-                logger.warning(f"❌ RESONANCE FITTING FAILED: wave_data not initialized!")
+            if not hasattr(self, "wave_data") or self.wave_data is None:
+                logger.warning(
+                    "❌ RESONANCE FITTING FAILED: wave_data not initialized!",
+                )
                 return np.nan
 
             if spectrum is None or len(spectrum) == 0:
-                logger.warning(f"❌ RESONANCE FITTING FAILED: spectrum is None or empty!")
+                logger.warning(
+                    "❌ RESONANCE FITTING FAILED: spectrum is None or empty!",
+                )
                 return np.nan
 
             if len(spectrum) != len(self.wave_data):
                 logger.warning(
                     f"❌ RESONANCE FITTING FAILED: Spectrum/wavelength size mismatch! "
-                    f"spectrum={len(spectrum)}, wave_data={len(self.wave_data)}"
+                    f"spectrum={len(spectrum)}, wave_data={len(self.wave_data)}",
                 )
                 return np.nan
 
             # Import settings
             from settings.settings import (
                 ADAPTIVE_PEAK_DETECTION,
-                SPR_PEAK_EXPECTED_MIN,
-                SPR_PEAK_EXPECTED_MAX,
                 ENHANCED_PEAK_TRACKING,
                 PEAK_TRACKING_METHOD,
+                SPR_PEAK_EXPECTED_MAX,
+                SPR_PEAK_EXPECTED_MIN,
                 WIDTH_BIAS_CORRECTION_ENABLED,
-                WIDTH_BIAS_K,
-                CENTROID_WINDOW_NM,
-                RIGHT_DECAY_GAMMA,
-                EDGE_DEPTH_FRACTION,
             )
 
             # Optional: width-bias-corrected centroid (fast) — return early if enabled
             if WIDTH_BIAS_CORRECTION_ENABLED:
-                mu = self._estimate_centroid_with_optional_width_bias(spectrum, apply_width_bias=True)
+                mu = self._estimate_centroid_with_optional_width_bias(
+                    spectrum,
+                    apply_width_bias=True,
+                )
                 if not np.isnan(mu):
                     return float(mu)
-                else:
-                    logger.debug("Width-bias centroid failed; falling back to configured method")
+                logger.debug(
+                    "Width-bias centroid failed; falling back to configured method",
+                )
 
             # Try numerical derivative method (original from old software)
-            if PEAK_TRACKING_METHOD == 'numerical_derivative':
+            if PEAK_TRACKING_METHOD == "numerical_derivative":
                 try:
-                    from utils.numerical_derivative_peak import find_peak_numerical_derivative
+                    from utils.numerical_derivative_peak import (
+                        find_peak_numerical_derivative,
+                    )
 
                     # ✨ CRITICAL: Use raw transmission spectrum (0-100%) exactly like old software
                     # NO normalization - old software worked directly on transmission %
@@ -739,25 +834,30 @@ class SPRDataProcessor:
 
                     if not np.isnan(peak_wavelength):
                         return float(peak_wavelength)
-                    else:
-                        logger.warning("Numerical derivative method returned NaN, using fallback")
+                    logger.warning(
+                        "Numerical derivative method returned NaN, using fallback",
+                    )
 
                 except Exception as e:
-                    logger.warning(f"Numerical derivative method failed: {e}, using fallback")
+                    logger.warning(
+                        f"Numerical derivative method failed: {e}, using fallback",
+                    )
 
             # CENTROID method with optional width-bias correction
-            if PEAK_TRACKING_METHOD == 'centroid':
+            if PEAK_TRACKING_METHOD == "centroid":
                 mu = self._estimate_centroid_with_optional_width_bias(
                     spectrum,
                     apply_width_bias=WIDTH_BIAS_CORRECTION_ENABLED,
                 )
                 if not np.isnan(mu):
                     return float(mu)
-                else:
-                    logger.warning("Centroid method returned NaN, using fallback")
+                logger.warning("Centroid method returned NaN, using fallback")
 
             # Try consensus method first if enabled (Phase 1 - v0.2.0)
-            if PEAK_TRACKING_METHOD == 'consensus' and self.consensus_tracker is not None:
+            if (
+                PEAK_TRACKING_METHOD == "consensus"
+                and self.consensus_tracker is not None
+            ):
                 try:
                     # Normalize spectrum to 0-1 range for consensus tracker
                     spec_min = np.min(spectrum)
@@ -771,38 +871,47 @@ class SPRDataProcessor:
                     result = self.consensus_tracker.find_peak(
                         wavelengths=self.wave_data,
                         spectrum=spec_normalized,
-                        channel=channel
+                        channel=channel,
                     )
 
-                    consensus_peak = result['peak_nm']
+                    consensus_peak = result["peak_nm"]
 
                     if not np.isnan(consensus_peak):
                         # Format parabolic result (may be None)
-                        parabolic_str = f"{result['parabolic_nm']:.3f}" if result['parabolic_nm'] is not None else 'N/A'
+                        parabolic_str = (
+                            f"{result['parabolic_nm']:.3f}"
+                            if result["parabolic_nm"] is not None
+                            else "N/A"
+                        )
 
                         logger.debug(
                             f"Consensus Ch {channel}: λ={consensus_peak:.3f}nm "
                             f"(centroid={result['centroid_nm']:.3f}, "
                             f"parabolic={parabolic_str}, "
                             f"conf={result['confidence']:.2f}, "
-                            f"outlier={result['is_outlier']})"
+                            f"outlier={result['is_outlier']})",
                         )
                         return float(consensus_peak)
-                    else:
-                        logger.warning(f"Consensus Ch {channel}: method returned NaN, using fallback")
+                    logger.warning(
+                        f"Consensus Ch {channel}: method returned NaN, using fallback",
+                    )
 
                 except Exception as e:
-                    logger.warning(f"Consensus Ch {channel}: peak tracking failed: {e}, using fallback")
+                    logger.warning(
+                        f"Consensus Ch {channel}: peak tracking failed: {e}, using fallback",
+                    )
 
             # Try enhanced pipeline if enabled
             elif ENHANCED_PEAK_TRACKING:
                 try:
-                    from utils.enhanced_peak_tracking import find_resonance_wavelength_enhanced
                     from settings.settings import (
                         FFT_CUTOFF_FREQUENCY,
+                        PEAK_TRACKING_METHOD,
                         POLYNOMIAL_DEGREE,
                         POLYNOMIAL_FIT_RANGE,
-                        PEAK_TRACKING_METHOD,
+                    )
+                    from utils.enhanced_peak_tracking import (
+                        find_resonance_wavelength_enhanced,
                     )
 
                     # Call with selected method (centroid/enhanced/parabolic)
@@ -820,20 +929,22 @@ class SPRDataProcessor:
                     if not np.isnan(enhanced_result):
                         logger.debug(
                             f"{diagnostics.get('method', 'unknown').capitalize()} peak tracking: "
-                            f"{enhanced_result:.3f} nm (perf: {diagnostics.get('performance', 'N/A')})"
+                            f"{enhanced_result:.3f} nm (perf: {diagnostics.get('performance', 'N/A')})",
                         )
                         return float(enhanced_result)
-                    else:
-                        logger.debug(f"{PEAK_TRACKING_METHOD} method returned NaN, using fallback")
+                    logger.debug(
+                        f"{PEAK_TRACKING_METHOD} method returned NaN, using fallback",
+                    )
 
                 except Exception as e:
-                    logger.warning(f"Peak tracking error ({PEAK_TRACKING_METHOD}): {e}, using fallback")
+                    logger.warning(
+                        f"Peak tracking error ({PEAK_TRACKING_METHOD}): {e}, using fallback",
+                    )
 
             # Fallback to direct minimum method
             from settings.settings import (
-                ADAPTIVE_PEAK_DETECTION,
-                SPR_PEAK_EXPECTED_MIN,
                 SPR_PEAK_EXPECTED_MAX,
+                SPR_PEAK_EXPECTED_MIN,
             )
 
             # Determine search range
@@ -842,8 +953,12 @@ class SPRDataProcessor:
 
             if ADAPTIVE_PEAK_DETECTION:
                 # Find indices corresponding to expected wavelength range
-                expected_min_idx = int(np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MIN))
-                expected_max_idx = int(np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MAX))
+                expected_min_idx = int(
+                    np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MIN),
+                )
+                expected_max_idx = int(
+                    np.searchsorted(self.wave_data, SPR_PEAK_EXPECTED_MAX),
+                )
 
                 # Validate indices
                 if 0 <= expected_min_idx < expected_max_idx <= len(spectrum):
@@ -852,12 +967,12 @@ class SPRDataProcessor:
                     logger.debug(
                         f"Adaptive peak detection: searching wavelength range "
                         f"{self.wave_data[search_start]:.1f}-{self.wave_data[search_end-1]:.1f} nm "
-                        f"(indices {search_start}-{search_end})"
+                        f"(indices {search_start}-{search_end})",
                     )
                 else:
                     logger.warning(
                         f"Adaptive peak range invalid: indices {expected_min_idx}-{expected_max_idx}. "
-                        f"Searching full spectrum."
+                        f"Searching full spectrum.",
                     )
 
             # Extract search region
@@ -865,8 +980,12 @@ class SPRDataProcessor:
             search_wavelengths = self.wave_data[search_start:search_end]
 
             if len(search_spectrum) < 3:
-                logger.warning(f"❌ RESONANCE FITTING FAILED: Search region too small: {len(search_spectrum)} points (need ≥3)")
-                logger.warning(f"   search_start={search_start}, search_end={search_end}, total_spectrum_len={len(spectrum)}")
+                logger.warning(
+                    f"❌ RESONANCE FITTING FAILED: Search region too small: {len(search_spectrum)} points (need ≥3)",
+                )
+                logger.warning(
+                    f"   search_start={search_start}, search_end={search_end}, total_spectrum_len={len(spectrum)}",
+                )
                 return np.nan
 
             # Find minimum transmission in search region
@@ -877,8 +996,8 @@ class SPRDataProcessor:
             if 0 < min_idx < len(search_spectrum) - 1:
                 try:
                     # Extract 3 points: [idx-1, idx, idx+1]
-                    y = search_spectrum[min_idx-1:min_idx+2]
-                    x = search_wavelengths[min_idx-1:min_idx+2]
+                    y = search_spectrum[min_idx - 1 : min_idx + 2]
+                    x = search_wavelengths[min_idx - 1 : min_idx + 2]
 
                     # Fit parabola: y = ax² + bx + c
                     # Minimum occurs at: x_min = -b/(2a)
@@ -895,16 +1014,19 @@ class SPRDataProcessor:
                         discrete_min_wavelength = search_wavelengths[min_idx]
                         if abs(resonance_wavelength - discrete_min_wavelength) < 5.0:
                             # Final validation: within wavelength bounds
-                            if self.wave_data[0] <= resonance_wavelength <= self.wave_data[-1]:
+                            if (
+                                self.wave_data[0]
+                                <= resonance_wavelength
+                                <= self.wave_data[-1]
+                            ):
                                 return resonance_wavelength
-                            else:
-                                logger.debug(
-                                    f"Parabolic fit out of wavelength bounds: {resonance_wavelength:.2f} nm"
-                                )
+                            logger.debug(
+                                f"Parabolic fit out of wavelength bounds: {resonance_wavelength:.2f} nm",
+                            )
                         else:
                             logger.debug(
                                 f"Parabolic fit too far from discrete minimum: "
-                                f"{resonance_wavelength:.2f} vs {discrete_min_wavelength:.2f} nm"
+                                f"{resonance_wavelength:.2f} vs {discrete_min_wavelength:.2f} nm",
                             )
                 except Exception as e:
                     logger.debug(f"Parabolic interpolation failed: {e}")
@@ -915,12 +1037,11 @@ class SPRDataProcessor:
             # Validate result is within reasonable range
             if self.wave_data[0] <= resonance_wavelength <= self.wave_data[-1]:
                 return resonance_wavelength
-            else:
-                logger.warning(
-                    f"❌ RESONANCE FITTING FAILED: Wavelength out of bounds: {resonance_wavelength:.2f} nm "
-                    f"(valid range: {self.wave_data[0]:.2f}-{self.wave_data[-1]:.2f} nm)"
-                )
-                return np.nan
+            logger.warning(
+                f"❌ RESONANCE FITTING FAILED: Wavelength out of bounds: {resonance_wavelength:.2f} nm "
+                f"(valid range: {self.wave_data[0]:.2f}-{self.wave_data[-1]:.2f} nm)",
+            )
+            return np.nan
 
         except Exception as e:
             logger.exception(f"Error finding resonance wavelength: {e}")
@@ -934,7 +1055,7 @@ class SPRDataProcessor:
         self,
         data: np.ndarray,
         buffer_index: int,
-    window: Optional[int] = None,
+        window: int | None = None,
     ) -> float:
         """Apply causal (backward-looking) median filter at specific index.
 
@@ -992,7 +1113,7 @@ class SPRDataProcessor:
     def apply_centered_median_filter(
         self,
         data: np.ndarray,
-    window: Optional[int] = None,
+        window: int | None = None,
     ) -> np.ndarray:
         """Apply centered (symmetric) median filter to entire array.
 
@@ -1018,7 +1139,7 @@ class SPRDataProcessor:
             filtered = series.rolling(
                 window=window,
                 center=True,
-                min_periods=1
+                min_periods=1,
             ).median()
 
             return filtered.to_numpy()
@@ -1080,7 +1201,7 @@ class SPRDataProcessor:
     def apply_advanced_filter(
         self,
         data: np.ndarray,
-    window: Optional[int] = None,
+        window: int | None = None,
         outlier_detection: bool = True,
         lookback: int = 20,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -1134,7 +1255,7 @@ class SPRDataProcessor:
         self.med_filt_win = self._ensure_odd(new_window)
         logger.debug(f"Updated median filter window to {self.med_filt_win}")
 
-    def get_filter_delay(self, window: Optional[int] = None) -> float:
+    def get_filter_delay(self, window: int | None = None) -> float:
         """Calculate filter delay in number of samples.
 
         Args:

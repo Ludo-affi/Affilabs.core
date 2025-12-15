@@ -9,11 +9,18 @@ Shows:
 """
 
 import numpy as np
+import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QGridLayout, QFrame
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
 )
-import pyqtgraph as pg
+
 from utils.logger import logger
 
 
@@ -34,6 +41,7 @@ class CalibrationQCDialog(QDialog):
                 - wavelengths: array of wavelength values
                 - integration_time: float (ms)
                 - led_intensities: dict of {channel: intensity}
+
         """
         super().__init__(parent)
         self.calibration_data = calibration_data or {}
@@ -104,12 +112,18 @@ class CalibrationQCDialog(QDialog):
 
         # Row 2: Dark and Afterglow
         dark_graph = self._create_graph("3. Final Dark Scan", "dark")
-        afterglow_graph = self._create_graph("4. Afterglow Simulation Curves", "afterglow")
+        afterglow_graph = self._create_graph(
+            "4. Afterglow Simulation Curves",
+            "afterglow",
+        )
         graphs_layout.addWidget(dark_graph, 1, 0)
         graphs_layout.addWidget(afterglow_graph, 1, 1)
 
         # Row 3: Transmission (spans both columns)
-        transmission_graph = self._create_graph("5. Transmission Spectra", "transmission")
+        transmission_graph = self._create_graph(
+            "5. Transmission Spectra",
+            "transmission",
+        )
         graphs_layout.addWidget(transmission_graph, 2, 0, 1, 2)  # Span 2 columns
 
         layout.addWidget(graphs_container)
@@ -128,10 +142,15 @@ class CalibrationQCDialog(QDialog):
         """Create summary information section."""
         data = self.calibration_data
 
-        integration_time = data.get('integration_time', 0)
-        led_intensities = data.get('led_intensities', {})
+        integration_time = data.get("integration_time", 0)
+        led_intensities = data.get("led_intensities", {})
 
-        led_str = ", ".join([f"Ch {ch.upper()}: {led_intensities.get(ch, 0)}" for ch in ['a', 'b', 'c', 'd']])
+        led_str = ", ".join(
+            [
+                f"Ch {ch.upper()}: {led_intensities.get(ch, 0)}"
+                for ch in ["a", "b", "c", "d"]
+            ],
+        )
 
         summary_text = (
             f"<b>Integration Time:</b> {integration_time:.2f} ms  |  "
@@ -159,6 +178,7 @@ class CalibrationQCDialog(QDialog):
 
         Returns:
             QFrame containing the graph
+
         """
         container = QFrame()
         container.setFrameShape(QFrame.Shape.StyledPanel)
@@ -186,18 +206,18 @@ class CalibrationQCDialog(QDialog):
 
         # Create plot widget
         plot_widget = pg.PlotWidget()
-        plot_widget.setBackground('w')
+        plot_widget.setBackground("w")
         plot_widget.showGrid(x=True, y=True, alpha=0.3)
 
         # Configure axes
-        plot_widget.setLabel('bottom', 'Wavelength', units='nm')
+        plot_widget.setLabel("bottom", "Wavelength", units="nm")
 
-        if data_type == 'transmission':
-            plot_widget.setLabel('left', 'Transmission', units='%')
-        elif data_type == 'afterglow':
-            plot_widget.setLabel('left', 'Afterglow Correction', units='counts')
+        if data_type == "transmission":
+            plot_widget.setLabel("left", "Transmission", units="%")
+        elif data_type == "afterglow":
+            plot_widget.setLabel("left", "Afterglow Correction", units="counts")
         else:
-            plot_widget.setLabel('left', 'Intensity', units='counts')
+            plot_widget.setLabel("left", "Intensity", units="counts")
 
         # Plot data
         self._plot_data(plot_widget, data_type)
@@ -212,52 +232,60 @@ class CalibrationQCDialog(QDialog):
         Args:
             plot_widget: PyQtGraph PlotWidget
             data_type: Type of data to plot
+
         """
         data = self.calibration_data
-        wavelengths = data.get('wavelengths', None)
+        wavelengths = data.get("wavelengths", None)
 
         if wavelengths is None:
             wavelengths = np.linspace(560, 720, 3648)  # Default wavelength array
-            logger.warning(f"No wavelengths in QC data, using default range")
+            logger.warning("No wavelengths in QC data, using default range")
 
         # Channel colors (matching existing UI)
         colors = {
-            'a': (255, 0, 0, 200),      # Red
-            'b': (0, 255, 0, 200),      # Green
-            'c': (0, 0, 255, 200),      # Blue
-            'd': (255, 165, 0, 200)     # Orange
+            "a": (255, 0, 0, 200),  # Red
+            "b": (0, 255, 0, 200),  # Green
+            "c": (0, 0, 255, 200),  # Blue
+            "d": (255, 165, 0, 200),  # Orange
         }
 
         # Get data based on type
         data_dict = {}
-        if data_type == 's_pol':
-            data_dict = data.get('s_pol_spectra', {})
-        elif data_type == 'p_pol':
-            data_dict = data.get('p_pol_spectra', {})
-        elif data_type == 'dark':
-            data_dict = data.get('dark_scan', {})
-        elif data_type == 'afterglow':
-            data_dict = data.get('afterglow_curves', {})
-        elif data_type == 'transmission':
-            data_dict = data.get('transmission_spectra', {})
+        if data_type == "s_pol":
+            data_dict = data.get("s_pol_spectra", {})
+        elif data_type == "p_pol":
+            data_dict = data.get("p_pol_spectra", {})
+        elif data_type == "dark":
+            data_dict = data.get("dark_scan", {})
+        elif data_type == "afterglow":
+            data_dict = data.get("afterglow_curves", {})
+        elif data_type == "transmission":
+            data_dict = data.get("transmission_spectra", {})
 
         # Plot each channel
-        for channel in ['a', 'b', 'c', 'd']:
+        for channel in ["a", "b", "c", "d"]:
             if channel in data_dict:
                 spectrum = data_dict[channel]
                 if spectrum is not None and len(spectrum) > 0:
                     # Handle wavelength array length mismatch
                     if len(wavelengths) != len(spectrum):
-                        wavelengths_plot = np.linspace(wavelengths[0], wavelengths[-1], len(spectrum))
+                        wavelengths_plot = np.linspace(
+                            wavelengths[0],
+                            wavelengths[-1],
+                            len(spectrum),
+                        )
                     else:
                         wavelengths_plot = wavelengths
 
-                    pen = pg.mkPen(color=colors.get(channel, (128, 128, 128, 200)), width=2)
+                    pen = pg.mkPen(
+                        color=colors.get(channel, (128, 128, 128, 200)),
+                        width=2,
+                    )
                     plot_widget.plot(
                         wavelengths_plot,
                         spectrum,
                         pen=pen,
-                        name=f"Channel {channel.upper()}"
+                        name=f"Channel {channel.upper()}",
                     )
 
         # Add legend
@@ -273,6 +301,7 @@ class CalibrationQCDialog(QDialog):
 
         Returns:
             Dialog result (QDialog.Accepted or QDialog.Rejected)
+
         """
         dialog = CalibrationQCDialog(parent=parent, calibration_data=calibration_data)
 

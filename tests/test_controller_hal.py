@@ -13,7 +13,13 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent / "Old software"))
 
-from utils.controller import PicoP4SPR, PicoEZSPR, QSPRController, ArduinoController, KineticController
+from utils.controller import (
+    ArduinoController,
+    KineticController,
+    PicoEZSPR,
+    PicoP4SPR,
+    QSPRController,
+)
 from utils.hal.controller_hal import create_controller_hal
 
 
@@ -178,6 +184,7 @@ def main():
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

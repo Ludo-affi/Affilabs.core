@@ -4,15 +4,15 @@ Wraps servo calibration functionality behind the IServo interface.
 Delegates to existing servo_calibration.py module.
 """
 
-from typing import Optional, Dict
 import time
+
 from .device_interface import (
-    IServo,
-    IController,
-    ISpectrometer,
+    DeviceError,
     DeviceInfo,
+    IController,
+    IServo,
+    ISpectrometer,
     ServoCapabilities,
-    DeviceError
 )
 
 
@@ -25,10 +25,10 @@ class ServoAdapter(IServo):
 
     def __init__(self):
         """Initialize servo adapter."""
-        self._controller: Optional[IController] = None
+        self._controller: IController | None = None
         self._connected = False
-        self._s_position: Optional[int] = None
-        self._p_position: Optional[int] = None
+        self._s_position: int | None = None
+        self._p_position: int | None = None
 
     # ========================================================================
     # LIFECYCLE
@@ -39,6 +39,7 @@ class ServoAdapter(IServo):
 
         Args:
             controller: Controller instance managing the servo
+
         """
         if not controller.is_connected():
             raise DeviceError("Controller must be connected before servo")
@@ -58,11 +59,7 @@ class ServoAdapter(IServo):
 
     def is_connected(self) -> bool:
         """Check if servo is connected."""
-        return (
-            self._connected and
-            self._controller is not None and
-            self._controller.is_connected()
-        )
+        return self._connected and self._controller is not None and self._controller.is_connected()
 
     def get_info(self) -> DeviceInfo:
         """Get device identification."""
@@ -72,7 +69,7 @@ class ServoAdapter(IServo):
             serial_number=None,
             firmware_version=None,
             hardware_version=None,
-            port=None
+            port=None,
         )
 
     def get_capabilities(self) -> ServoCapabilities:
@@ -82,7 +79,7 @@ class ServoAdapter(IServo):
         if self._controller:
             config = self._controller.read_config_from_eeprom()
             if config:
-                polarizer_type = config.get('polarizer_type')
+                polarizer_type = config.get("polarizer_type")
 
         return ServoCapabilities(
             min_position=5,
@@ -95,7 +92,7 @@ class ServoAdapter(IServo):
             supports_calibration=True,
             supports_reconnect=True,
             supports_firmware_update=False,
-            requires_calibration=True
+            requires_calibration=True,
         )
 
     # ========================================================================
@@ -106,8 +103,8 @@ class ServoAdapter(IServo):
         self,
         spectrometer: ISpectrometer,
         controller: IController,
-        **kwargs
-    ) -> Dict[str, int]:
+        **kwargs,
+    ) -> dict[str, int]:
         """Calibrate servo positions for S and P polarization.
 
         Args:
@@ -120,16 +117,18 @@ class ServoAdapter(IServo):
 
         Returns:
             {'s_position': 0-255, 'p_position': 0-255}
+
         """
         # Import servo calibration function
         from affilabs.utils.servo_calibration import calibrate_servo_positions_6step
-        from affilabs.utils.controller import ControllerBase
-        from affilabs.utils.usb4000_wrapper import USB4000
 
         # Extract kwargs
-        led_intensities = kwargs.get('led_intensities', {'a': 180, 'b': 180, 'c': 180, 'd': 180})
-        integration_time = kwargs.get('integration_time_ms', 100.0)
-        num_scans = kwargs.get('num_scans', 3)
+        led_intensities = kwargs.get(
+            "led_intensities",
+            {"a": 180, "b": 180, "c": 180, "d": 180},
+        )
+        integration_time = kwargs.get("integration_time_ms", 100.0)
+        num_scans = kwargs.get("num_scans", 3)
 
         # Unwrap controller and spectrometer from adapters
         # This is necessary because servo_calibration.py expects raw controller/spectrometer
@@ -137,7 +136,9 @@ class ServoAdapter(IServo):
         raw_spectrometer = self._unwrap_spectrometer(spectrometer)
 
         if not raw_controller or not raw_spectrometer:
-            raise DeviceError("Failed to unwrap controller/spectrometer for calibration")
+            raise DeviceError(
+                "Failed to unwrap controller/spectrometer for calibration",
+            )
 
         try:
             # Run calibration
@@ -146,36 +147,38 @@ class ServoAdapter(IServo):
                 usb=raw_spectrometer,
                 led_intensities=led_intensities,
                 integration_time_ms=integration_time,
-                num_scans=num_scans
+                num_scans=num_scans,
             )
 
-            if not result['success']:
-                raise DeviceError(f"Servo calibration failed: {result.get('error', 'Unknown error')}")
+            if not result["success"]:
+                raise DeviceError(
+                    f"Servo calibration failed: {result.get('error', 'Unknown error')}",
+                )
 
             # Extract S and P positions
-            s_position = result['s_position']
-            p_position = result['p_position']
+            s_position = result["s_position"]
+            p_position = result["p_position"]
 
             # Store positions
             self._s_position = s_position
             self._p_position = p_position
 
             return {
-                's_position': s_position,
-                'p_position': p_position
+                "s_position": s_position,
+                "p_position": p_position,
             }
 
         except Exception as e:
             raise DeviceError(f"Servo calibration failed: {e}")
 
-    def get_calibrated_positions(self) -> Optional[Dict[str, int]]:
+    def get_calibrated_positions(self) -> dict[str, int] | None:
         """Get previously calibrated S/P positions."""
         if self._s_position is None or self._p_position is None:
             return None
 
         return {
-            's_position': self._s_position,
-            'p_position': self._p_position
+            "s_position": self._s_position,
+            "p_position": self._p_position,
         }
 
     def set_calibrated_positions(self, s_position: int, p_position: int) -> None:
@@ -198,6 +201,7 @@ class ServoAdapter(IServo):
         Args:
             position: Target position (0-255 PWM units)
             wait: If True, wait for settling time
+
         """
         if not self.is_connected():
             raise DeviceError("Servo not connected")
@@ -220,16 +224,17 @@ class ServoAdapter(IServo):
         Args:
             mode: 's' or 'p'
             wait: If True, wait for settling time
+
         """
-        if mode not in ['s', 'p']:
+        if mode not in ["s", "p"]:
             raise ValueError(f"Mode must be 's' or 'p', got '{mode}'")
 
-        if mode == 's' and self._s_position is None:
+        if mode == "s" and self._s_position is None:
             raise DeviceError("S position not calibrated")
-        if mode == 'p' and self._p_position is None:
+        if mode == "p" and self._p_position is None:
             raise DeviceError("P position not calibrated")
 
-        position = self._s_position if mode == 's' else self._p_position
+        position = self._s_position if mode == "s" else self._p_position
         return self.move_to_position(position, wait=wait)
 
     # ========================================================================
@@ -244,8 +249,8 @@ class ServoAdapter(IServo):
         try:
             config = self._controller.read_config_from_eeprom()
             if config:
-                self._s_position = config.get('servo_s_position')
-                self._p_position = config.get('servo_p_position')
+                self._s_position = config.get("servo_s_position")
+                self._p_position = config.get("servo_p_position")
         except Exception:
             pass  # EEPROM read failed, positions remain None
 
@@ -259,7 +264,10 @@ class ServoAdapter(IServo):
 
     def _unwrap_spectrometer(self, spectrometer: ISpectrometer):
         """Extract raw spectrometer from adapter."""
-        from affilabs.hardware.spectrometer_adapter import USB4000Adapter, PhasePhotonicsAdapter
+        from affilabs.hardware.spectrometer_adapter import (
+            PhasePhotonicsAdapter,
+            USB4000Adapter,
+        )
 
         if isinstance(spectrometer, (USB4000Adapter, PhasePhotonicsAdapter)):
             return spectrometer._spectrometer
@@ -270,6 +278,7 @@ class ServoAdapter(IServo):
 # FACTORY FUNCTION
 # ============================================================================
 
+
 def create_servo_adapter(controller: IController) -> ServoAdapter:
     """Factory function to create servo adapter.
 
@@ -278,9 +287,8 @@ def create_servo_adapter(controller: IController) -> ServoAdapter:
 
     Returns:
         ServoAdapter connected to controller
+
     """
     servo = ServoAdapter()
     servo.connect(controller)
     return servo
-
-

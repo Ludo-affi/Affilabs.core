@@ -222,4 +222,3 @@ Then no scaling needed in state machine - just use the right value.
 🔍 **Waiting for debug output from running application...**
 
 Expected completion: After calibration finishes and transitions to live mode.
-

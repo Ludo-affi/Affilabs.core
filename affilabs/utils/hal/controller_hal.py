@@ -9,8 +9,8 @@ Use create_controller_hal() factory function to wrap existing controller instanc
 
 from __future__ import annotations
 
-from typing import Protocol, Optional, Dict, Any, Tuple
 import logging
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if command succeeded
+
         """
         ...
 
@@ -43,6 +44,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if command succeeded
+
         """
         ...
 
@@ -55,10 +57,17 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if command succeeded
+
         """
         ...
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         """Set all LED intensities in a single batch command (if supported).
 
         Falls back to sequential commands for controllers without batch support.
@@ -71,6 +80,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if all commands succeeded
+
         """
         ...
 
@@ -83,14 +93,16 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if command succeeded (False if polarizer not supported)
+
         """
         ...
 
-    def get_polarizer_position(self) -> Dict[str, Any]:
+    def get_polarizer_position(self) -> dict[str, Any]:
         """Get current polarizer position.
 
         Returns:
             Dictionary with 's' and 'p' positions, or empty dict if not supported
+
         """
         ...
 
@@ -100,6 +112,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             Device type: 'PicoP4SPR', 'PicoEZSPR', 'Arduino', 'Kinetic'
+
         """
         ...
 
@@ -108,6 +121,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             Version string (e.g., 'V1.4') or empty string if not available
+
         """
         ...
 
@@ -116,6 +130,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             Temperature in °C, or -1 if not supported
+
         """
         ...
 
@@ -146,15 +161,20 @@ class ControllerHAL(Protocol):
         ...
 
     # Pump Control (EZSPR-specific)
-    def get_pump_corrections(self) -> Optional[Tuple[float, float]]:
+    def get_pump_corrections(self) -> tuple[float, float] | None:
         """Get pump correction factors (EZSPR only).
 
         Returns:
             Tuple of (pump1_correction, pump2_correction) or None if not supported
+
         """
         ...
 
-    def set_pump_corrections(self, pump_1_correction: float, pump_2_correction: float) -> bool:
+    def set_pump_corrections(
+        self,
+        pump_1_correction: float,
+        pump_2_correction: float,
+    ) -> bool:
         """Set pump correction factors (EZSPR only).
 
         Args:
@@ -163,6 +183,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if command succeeded (False if not supported)
+
         """
         ...
 
@@ -172,6 +193,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if connection established
+
         """
         ...
 
@@ -184,6 +206,7 @@ class ControllerHAL(Protocol):
 
         Returns:
             True if device is connected and operational
+
         """
         ...
 
@@ -197,6 +220,7 @@ class PicoP4SPRAdapter:
         Args:
             controller: PicoP4SPR instance from affilabs.utils.controller
             device_config: Optional DeviceConfiguration for servo position management
+
         """
         self._ctrl = controller
         self._device_type = "PicoP4SPR"
@@ -211,6 +235,7 @@ class PicoP4SPRAdapter:
 
         Returns:
             bool: True if sync succeeded, False if config unavailable or command failed
+
         """
         if self._device_config is None:
             logger.warning("Cannot sync servo positions - no device_config provided")
@@ -219,8 +244,8 @@ class PicoP4SPRAdapter:
         try:
             # Get positions from config (in degrees, 0-180)
             positions = self._device_config.get_servo_positions()
-            s_deg = positions.get('s', 10)  # Default S position: 10°
-            p_deg = positions.get('p', 100)  # Default P position: 100°
+            s_deg = positions.get("s", 10)  # Default S position: 10°
+            p_deg = positions.get("p", 100)  # Default P position: 100°
 
             logger.info(f"Syncing servo positions from config: S={s_deg}°, P={p_deg}°")
 
@@ -239,15 +264,20 @@ class PicoP4SPRAdapter:
 
             self._ctrl._ser.write(cmd.encode())
             import time
+
             time.sleep(0.05)
 
             # Read acknowledgment
             response = self._ctrl._ser.readline().strip()
-            if response != b'1':
-                logger.warning(f"Servo position sync may have failed (response: {response!r})")
+            if response != b"1":
+                logger.warning(
+                    f"Servo position sync may have failed (response: {response!r})",
+                )
                 return False
 
-            logger.info(f"Servo positions synced successfully: S={s_deg}° ({s_pwm}), P={p_deg}° ({p_pwm})")
+            logger.info(
+                f"Servo positions synced successfully: S={s_deg}° ({s_pwm}), P={p_deg}° ({p_pwm})",
+            )
             return True
 
         except Exception as e:
@@ -264,7 +294,13 @@ class PicoP4SPRAdapter:
     def set_intensity(self, ch: str, raw_val: int) -> bool:
         return self._ctrl.set_intensity(ch, raw_val) or False
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         # PicoP4SPR supports batch command
         return self._ctrl.set_batch_intensities(a=a, b=b, c=c, d=d)
 
@@ -272,7 +308,7 @@ class PicoP4SPRAdapter:
     def set_mode(self, mode: str) -> bool:
         return self._ctrl.set_mode(mode) or False
 
-    def get_polarizer_position(self) -> Dict[str, Any]:
+    def get_polarizer_position(self) -> dict[str, Any]:
         """Get polarizer positions from device_config (NOT EEPROM).
 
         ========================================================================
@@ -287,7 +323,9 @@ class PicoP4SPRAdapter:
         try:
             # Return positions from device_config (passed via constructor)
             # For now, return empty dict - caller should use device_config directly
-            logger.warning("get_polarizer_position() called - use device_config.get_servo_positions() instead")
+            logger.warning(
+                "get_polarizer_position() called - use device_config.get_servo_positions() instead",
+            )
             return {}
         except Exception as e:
             logger.error(f"get_polarizer_position error: {e}")
@@ -298,12 +336,12 @@ class PicoP4SPRAdapter:
         return self._device_type
 
     def get_firmware_version(self) -> str:
-        return getattr(self._ctrl, 'version', '')
+        return getattr(self._ctrl, "version", "")
 
     def get_temperature(self) -> float:
         try:
             return self._ctrl.get_temp()
-        except:
+        except Exception:
             return -1.0
 
     # Capability queries
@@ -328,10 +366,14 @@ class PicoP4SPRAdapter:
         return 4
 
     # Pump Control (not supported)
-    def get_pump_corrections(self) -> Optional[Tuple[float, float]]:
+    def get_pump_corrections(self) -> tuple[float, float] | None:
         return None
 
-    def set_pump_corrections(self, pump_1_correction: float, pump_2_correction: float) -> bool:
+    def set_pump_corrections(
+        self,
+        pump_1_correction: float,
+        pump_2_correction: float,
+    ) -> bool:
         return False
 
     # Connection Management
@@ -353,6 +395,7 @@ class PicoEZSPRAdapter:
 
         Args:
             controller: PicoEZSPR instance from affilabs.utils.controller
+
         """
         self._ctrl = controller
         self._device_type = "PicoEZSPR"
@@ -367,24 +410,30 @@ class PicoEZSPRAdapter:
     def set_intensity(self, ch: str, raw_val: int) -> bool:
         return self._ctrl.set_intensity(ch, raw_val) or False
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         # EZSPR doesn't have batch command - fall back to sequential
         success = True
         if a > 0:
-            success &= self.set_intensity('a', a)
+            success &= self.set_intensity("a", a)
         if b > 0:
-            success &= self.set_intensity('b', b)
+            success &= self.set_intensity("b", b)
         if c > 0:
-            success &= self.set_intensity('c', c)
+            success &= self.set_intensity("c", c)
         if d > 0:
-            success &= self.set_intensity('d', d)
+            success &= self.set_intensity("d", d)
         return success
 
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
         return False  # EZSPR does not have polarizer
 
-    def get_polarizer_position(self) -> Dict[str, Any]:
+    def get_polarizer_position(self) -> dict[str, Any]:
         return {}  # No polarizer support
 
     # Device Info & Capabilities
@@ -392,7 +441,7 @@ class PicoEZSPRAdapter:
         return self._device_type
 
     def get_firmware_version(self) -> str:
-        return getattr(self._ctrl, 'version', '')
+        return getattr(self._ctrl, "version", "")
 
     def get_temperature(self) -> float:
         return -1.0  # EZSPR doesn't have temp sensor
@@ -419,10 +468,14 @@ class PicoEZSPRAdapter:
         return 4
 
     # Pump Control
-    def get_pump_corrections(self) -> Optional[Tuple[float, float]]:
+    def get_pump_corrections(self) -> tuple[float, float] | None:
         return self._ctrl.get_pump_corrections()
 
-    def set_pump_corrections(self, pump_1_correction: float, pump_2_correction: float) -> bool:
+    def set_pump_corrections(
+        self,
+        pump_1_correction: float,
+        pump_2_correction: float,
+    ) -> bool:
         return self._ctrl.set_pump_corrections(pump_1_correction, pump_2_correction)
 
     # Connection Management
@@ -444,6 +497,7 @@ class ArduinoAdapter:
 
         Args:
             controller: ArduinoController instance from affilabs.utils.controller
+
         """
         self._ctrl = controller
         self._device_type = "Arduino"
@@ -459,14 +513,20 @@ class ArduinoAdapter:
         # Arduino has basic LED control but intensity may not be supported
         return False
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         return False
 
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
         return False
 
-    def get_polarizer_position(self) -> Dict[str, Any]:
+    def get_polarizer_position(self) -> dict[str, Any]:
         return {}
 
     # Device Info & Capabilities
@@ -474,7 +534,7 @@ class ArduinoAdapter:
         return self._device_type
 
     def get_firmware_version(self) -> str:
-        return ''
+        return ""
 
     def get_temperature(self) -> float:
         return -1.0
@@ -501,10 +561,14 @@ class ArduinoAdapter:
         return 4
 
     # Pump Control (not supported)
-    def get_pump_corrections(self) -> Optional[Tuple[float, float]]:
+    def get_pump_corrections(self) -> tuple[float, float] | None:
         return None
 
-    def set_pump_corrections(self, pump_1_correction: float, pump_2_correction: float) -> bool:
+    def set_pump_corrections(
+        self,
+        pump_1_correction: float,
+        pump_2_correction: float,
+    ) -> bool:
         return False
 
     # Connection Management
@@ -526,6 +590,7 @@ class KineticAdapter:
 
         Args:
             controller: KineticController instance from affilabs.utils.controller
+
         """
         self._ctrl = controller
         self._device_type = "Kinetic"
@@ -540,24 +605,30 @@ class KineticAdapter:
     def set_intensity(self, ch: str, raw_val: int) -> bool:
         return self._ctrl.set_intensity(ch, raw_val) or False
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         # Kinetic doesn't have batch command
         success = True
         if a > 0:
-            success &= self.set_intensity('a', a)
+            success &= self.set_intensity("a", a)
         if b > 0:
-            success &= self.set_intensity('b', b)
+            success &= self.set_intensity("b", b)
         if c > 0:
-            success &= self.set_intensity('c', c)
+            success &= self.set_intensity("c", c)
         if d > 0:
-            success &= self.set_intensity('d', d)
+            success &= self.set_intensity("d", d)
         return success
 
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
         return False
 
-    def get_polarizer_position(self) -> Dict[str, Any]:
+    def get_polarizer_position(self) -> dict[str, Any]:
         return {}
 
     # Device Info & Capabilities
@@ -565,7 +636,7 @@ class KineticAdapter:
         return self._device_type
 
     def get_firmware_version(self) -> str:
-        return ''
+        return ""
 
     def get_temperature(self) -> float:
         return -1.0
@@ -592,10 +663,14 @@ class KineticAdapter:
         return 4
 
     # Pump Control (not supported)
-    def get_pump_corrections(self) -> Optional[Tuple[float, float]]:
+    def get_pump_corrections(self) -> tuple[float, float] | None:
         return None
 
-    def set_pump_corrections(self, pump_1_correction: float, pump_2_correction: float) -> bool:
+    def set_pump_corrections(
+        self,
+        pump_1_correction: float,
+        pump_2_correction: float,
+    ) -> bool:
         return False
 
     # Connection Management
@@ -649,22 +724,25 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
         # Use batch commands if available
         if hal.supports_batch_leds:
             hal.set_batch_intensities(a=255, b=128, c=64, d=0)
+
     """
-    controller_name = controller.name if hasattr(controller, 'name') else type(controller).__name__
+    controller_name = (
+        controller.name if hasattr(controller, "name") else type(controller).__name__
+    )
 
     # Map controller name to adapter class
     adapter_map = {
-        'pico_p4spr': PicoP4SPRAdapter,
-        'PicoP4SPR': PicoP4SPRAdapter,
-        'pico_ezspr': PicoEZSPRAdapter,
-        'PicoEZSPR': PicoEZSPRAdapter,
-        'p4spr': ArduinoAdapter,  # Arduino uses 'p4spr' as name
-        'ArduinoController': ArduinoAdapter,
-        'kinetic': KineticAdapter,
-        'KineticController': KineticAdapter,
-        'KNX2': KineticAdapter,  # KineticController uses 'KNX2' as name
-        'EZSPR': PicoEZSPRAdapter,  # Legacy EZSPR name
-        'KNX': KineticAdapter,  # Legacy KNX name
+        "pico_p4spr": PicoP4SPRAdapter,
+        "PicoP4SPR": PicoP4SPRAdapter,
+        "pico_ezspr": PicoEZSPRAdapter,
+        "PicoEZSPR": PicoEZSPRAdapter,
+        "p4spr": ArduinoAdapter,  # Arduino uses 'p4spr' as name
+        "ArduinoController": ArduinoAdapter,
+        "kinetic": KineticAdapter,
+        "KineticController": KineticAdapter,
+        "KNX2": KineticAdapter,  # KineticController uses 'KNX2' as name
+        "EZSPR": PicoEZSPRAdapter,  # Legacy EZSPR name
+        "KNX": KineticAdapter,  # Legacy KNX name
     }
 
     adapter_class = adapter_map.get(controller_name)
@@ -674,5 +752,4 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
     # PicoP4SPR adapter accepts device_config parameter
     if adapter_class == PicoP4SPRAdapter:
         return adapter_class(controller, device_config=device_config)
-    else:
-        return adapter_class(controller)
+    return adapter_class(controller)

@@ -18,11 +18,20 @@ try:
     from typing import Literal, Optional, Self, TypedDict, Union  # Python 3.11+
 except ImportError:
     try:
-        from typing import Literal, Optional, TypedDict, Union  # Python 3.8-3.10
-        from typing_extensions import Self  # Backport for < 3.11
+        from typing import (  # Python 3.8-3.10
+            Literal,
+            Optional,
+            Self,  # Backport for < 3.11
+            TypedDict,
+            Union,
+        )
     except ImportError:
-        from typing import Literal  # Python < 3.8
-        from typing_extensions import TypedDict, Self
+        from typing import (
+            Literal,  # Python < 3.8
+            Self,
+        )
+
+        from typing_extensions import TypedDict
 
 import numpy as np
 import pandas as pd
@@ -39,6 +48,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
 try:
     from scipy.signal import medfilt
 except ImportError:
@@ -46,10 +56,12 @@ except ImportError:
     def medfilt(data, kernel_size=None):
         """Simple median filter fallback using numpy."""
         import numpy as np
+
         if kernel_size is None:
             kernel_size = 5
         # Simple rolling median approximation
-        return np.convolve(data, np.ones(kernel_size)/kernel_size, mode='same')
+        return np.convolve(data, np.ones(kernel_size) / kernel_size, mode="same")
+
 
 from settings import CH_LIST, CYCLE_TIME, MED_FILT_WIN, SW_VERSION, UNIT_LIST
 from ui.ui_processing import Ui_Processing
@@ -63,11 +75,17 @@ from widgets.metadata import Metadata, MetadataPrompt
 # Python version compatibility for UTC
 try:
     from datetime import UTC  # Python 3.11+
+
     TIME_ZONE = datetime.datetime.now(UTC).astimezone().tzinfo
 except ImportError:
     # Python < 3.11
-    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
-COLUMNS_TO_TOGGLE = frozenset(range(2, 8))
+    TIME_ZONE = datetime.datetime.now(UTC).astimezone().tzinfo
+
+# CYCLES TERMINOLOGY: Columns that can be toggled in the cycle data table
+# NOTE: Shift columns (3-6) are ALWAYS visible - they're the primary shift display
+COLUMNS_TO_TOGGLE = frozenset(
+    [2, 7],
+)  # Start/End time (2, hidden) and Ref channel (7, hidden)
 
 # Cycle window and padding constants
 CYCLE_WINDOW_PADDING_FACTOR = 1.1  # Add 10% to cycle time for fixed window
@@ -101,14 +119,14 @@ class DataDict(TypedDict, total=False):
 class Segment:
     """A segment of the raw data."""
 
-    error: Optional[str]
+    error: str | None
 
     def __init__(self: Self, seg_id: int, seg_start: float, seg_end: float) -> None:
         """Create a segment."""
         self.seg_id = seg_id
         self.start = seg_start
         self.end = seg_end
-        self.ref_ch: Optional[str] = None
+        self.ref_ch: str | None = None
         self.unit = "RU"
         self.start_index = {"a": 0, "b": 0, "c": 0, "d": 0}
         self.end_index = {"a": 0, "b": 0, "c": 0, "d": 0}
@@ -141,7 +159,7 @@ class Segment:
         self: Self,
         sens_data: DataDict,
         unit: str,
-    seg_ref_ch: Optional[str],
+        seg_ref_ch: str | None,
     ) -> None:
         """Pull segment data from the full sensorgram."""
         self.unit = unit
@@ -231,7 +249,7 @@ class Segment:
 class DataWindow(QWidget):
     """Data processing widget."""
 
-    ui: Union[Ui_Processing, Ui_Sensorgram]
+    ui: Ui_Processing | Ui_Sensorgram
 
     export_error_signal = Signal()
     reset_graphs_sig = Signal()
@@ -247,8 +265,8 @@ class DataWindow(QWidget):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, on=True)
         self.data_source = data_source
-        self.reference_channel_id: Optional[str] = None
-        self.return_ref: Optional[str] = None
+        self.reference_channel_id: str | None = None
+        self.return_ref: str | None = None
         self.full_segment_view: SensorgramGraph
         self.SOI_view: SegmentGraph
         self.exp_clock_raw = 0.0
@@ -260,6 +278,7 @@ class DataWindow(QWidget):
         # First N seconds of live data are collected but not displayed
         # This allows temporal filters, Kalman filters, and peak tracking to reach steady state
         from settings import LIVE_MODE_DISPLAY_DELAY_SECONDS
+
         self.display_delay_seconds = LIVE_MODE_DISPLAY_DELAY_SECONDS
         self.display_enabled = False  # Will be enabled after delay
         self.live_start_time = None  # Set when first data arrives
@@ -290,11 +309,11 @@ class DataWindow(QWidget):
         )
 
         # segment data
-        self.current_segment: Optional[Segment] = None
+        self.current_segment: Segment | None = None
         self.live_segment_start: list[float] | None = None
         self.saved_segments: list[Segment] = []
-        self.deleted_segment: Optional[Segment] = None
-        self.segment_edit: Optional[int] = None
+        self.deleted_segment: Segment | None = None
+        self.segment_edit: int | None = None
         self.viewing = False
         self.seg_count = 0
         self.saving = False
@@ -395,8 +414,11 @@ class DataWindow(QWidget):
         if self.data_source == "dynamic" and isinstance(self.ui, Ui_Sensorgram):
             self.ui.live_btn.setChecked(True)
             self.ui.live_btn.clicked.connect(self.toggle_view)
+            # Hide export button in ChannelMenu - consolidate exports to sidebar only
+            self.reference_channel_dlg.ui.export_data.setVisible(False)
+            # Keep connection for potential future use
             self.reference_channel_dlg.ui.export_data.clicked.connect(
-                self.export_trigger
+                self.export_trigger,
             )
 
         elif isinstance(self.ui, Ui_Processing):
@@ -467,6 +489,41 @@ class DataWindow(QWidget):
             self.progress_bar_timer.setInterval(PROGRESS_BAR_UPDATE_TIME)
             self.progress_bar_timer.timeout.connect(self.increment_progress_bar)
 
+            # =====================================================
+            # UI CLEANUP - CYCLES terminology and simplification
+            # =====================================================
+
+            # 1. HIDE Live View checkbox - functionality disabled for now, will address later
+            self.ui.live_btn.setVisible(False)
+
+            # 2. DISABLE cursor time input fields - only allow dragging cursors on graph
+            self.ui.left_cursor_time.setEnabled(False)
+            self.ui.right_cursor_time.setEnabled(False)
+            self.ui.left_cursor_time.setVisible(False)
+            self.ui.right_cursor_time.setVisible(False)
+            # Hide associated labels
+            if hasattr(self.ui, "label_6"):
+                self.ui.label_6.setVisible(False)  # Yellow cursor color indicator
+            if hasattr(self.ui, "label_7"):
+                self.ui.label_7.setVisible(False)  # Red cursor color indicator
+            if hasattr(self.ui, "label_10"):
+                self.ui.label_10.setVisible(
+                    False,
+                )  # "s" (seconds) label for left cursor
+            if hasattr(self.ui, "label_9"):
+                self.ui.label_9.setVisible(
+                    False,
+                )  # "s" (seconds) label for right cursor
+            if hasattr(self.ui, "label_14"):
+                self.ui.label_14.setVisible(False)  # "Start Cursor:" label
+            if hasattr(self.ui, "label_16"):
+                self.ui.label_16.setVisible(False)  # "End Cursor:" label
+
+            # 3. HIDE shift display panel (groupBox_3) - only show in table columns
+            #    This removes the redundant Shift A/B/C/D display on the right panel
+            if hasattr(self.ui, "groupBox_3"):
+                self.ui.groupBox_3.setVisible(False)
+
     @Slot()
     def increment_progress_bar(self: Self) -> None:
         """Increment the progress bar by 100 and check if it's reached the maximum."""
@@ -521,8 +578,13 @@ class DataWindow(QWidget):
 
     def update_table_style(self: Self) -> None:
         """Update the style of the cycle table."""
+        # CYCLES TERMINOLOGY: This is the cycle data table
+        # Shift columns (3-6) should ALWAYS be visible as the main shift display
         for column in COLUMNS_TO_TOGGLE:
             self.ui.data_table.setColumnHidden(column, self.hide_columns)
+        # Ensure shift columns are always visible
+        for shift_col in [3, 4, 5, 6]:  # Shift A, B, C, D columns
+            self.ui.data_table.setColumnHidden(shift_col, False)
         if self.hide_columns:
             self.circles[0].setBrush(ON_BRUSH)
             self.circles[1].setBrush(OFF_BRUSH)
@@ -572,21 +634,28 @@ class DataWindow(QWidget):
         """Update plot data."""
         try:
             # Debug: Check if app_data is actually a SignalEmitter object
-            if hasattr(app_data, 'emit'):
-                logger.error(f"❌ Received SignalEmitter object instead of data: {type(app_data)}")
+            if hasattr(app_data, "emit"):
+                logger.error(
+                    f"❌ Received SignalEmitter object instead of data: {type(app_data)}",
+                )
                 return  # Skip processing SignalEmitter objects
 
             # Enhanced logging to debug data flow
             if app_data is not None and isinstance(app_data, dict):
                 has_data = False
-                for ch in ['a', 'b', 'c', 'd']:
-                    if ch in app_data.get("lambda_values", {}) and len(app_data["lambda_values"][ch]) > 0:
+                for ch in ["a", "b", "c", "d"]:
+                    if (
+                        ch in app_data.get("lambda_values", {})
+                        and len(app_data["lambda_values"][ch]) > 0
+                    ):
                         has_data = True
                         break
                 if has_data:
-                    logger.debug(f"✅ Received valid data - lambda_values['a']: {len(app_data['lambda_values']['a'])} points")
+                    logger.debug(
+                        f"✅ Received valid data - lambda_values['a']: {len(app_data['lambda_values']['a'])} points",
+                    )
                 else:
-                    logger.warning(f"⚠️ Received empty data structure")
+                    logger.warning("⚠️ Received empty data structure")
             else:
                 logger.error(f"❌ Received invalid data type: {type(app_data)}")
                 return
@@ -596,11 +665,17 @@ class DataWindow(QWidget):
                 # Track start time from first data arrival
                 if self.live_start_time is None and "start" in app_data:
                     self.live_start_time = app_data["start"]
-                    logger.info(f"")
-                    logger.info(f"🕐 LIVE MODE DISPLAY DELAY: {self.display_delay_seconds}s")
-                    logger.info(f"   Data collection started, display delayed for multi-point processing stabilization")
-                    logger.info(f"   Temporal filters, Kalman filters, and peak tracking need time to converge")
-                    logger.info(f"")
+                    logger.info("")
+                    logger.info(
+                        f"🕐 LIVE MODE DISPLAY DELAY: {self.display_delay_seconds}s",
+                    )
+                    logger.info(
+                        "   Data collection started, display delayed for multi-point processing stabilization",
+                    )
+                    logger.info(
+                        "   Temporal filters, Kalman filters, and peak tracking need time to converge",
+                    )
+                    logger.info("")
 
                 # Calculate elapsed time since live start
                 elapsed_time = 0.0
@@ -608,13 +683,18 @@ class DataWindow(QWidget):
                     elapsed_time = time.time() - self.live_start_time
 
                 # Enable display after delay period
-                if not self.display_enabled and elapsed_time >= self.display_delay_seconds:
+                if (
+                    not self.display_enabled
+                    and elapsed_time >= self.display_delay_seconds
+                ):
                     self.display_enabled = True
-                    logger.info(f"")
-                    logger.info(f"✅ DISPLAY ENABLED - {self.display_delay_seconds}s stabilization period complete")
-                    logger.info(f"   Multi-point processing algorithms have converged")
-                    logger.info(f"   Sensorgram display is now active")
-                    logger.info(f"")
+                    logger.info("")
+                    logger.info(
+                        f"✅ DISPLAY ENABLED - {self.display_delay_seconds}s stabilization period complete",
+                    )
+                    logger.info("   Multi-point processing algorithms have converged")
+                    logger.info("   Sensorgram display is now active")
+                    logger.info("")
 
                 # Skip display updates during delay period (but still collect data)
                 if not self.display_enabled:
@@ -632,10 +712,10 @@ class DataWindow(QWidget):
                         )
                     # Show remaining delay time in status
                     remaining = max(0, self.display_delay_seconds - elapsed_time)
-                    if hasattr(self, 'ui') and hasattr(self.ui, 'status'):
+                    if hasattr(self, "ui") and hasattr(self.ui, "status"):
                         self.ui.status.setText(
                             f"Stabilizing... Display in {remaining:.0f}s "
-                            f"(multi-point processing converging)"
+                            f"(multi-point processing converging)",
                         )
                     return  # Don't update plots yet
 
@@ -656,17 +736,24 @@ class DataWindow(QWidget):
                     # Log per-channel data counts and visibility before plotting
                     try:
                         counts = {ch: len(y_data.get(ch, [])) for ch in CH_LIST}
-                        vis = {ch: self.full_segment_view.plots[ch].isVisible() for ch in CH_LIST}
+                        vis = {
+                            ch: self.full_segment_view.plots[ch].isVisible()
+                            for ch in CH_LIST
+                        }
                         # Also log y-value ranges to check if channel d is out of range
                         ranges = {}
                         for ch in CH_LIST:
                             ch_data = y_data.get(ch, [])
                             if len(ch_data) > 0:
-                                ranges[ch] = f"[{np.min(ch_data):.1f}, {np.max(ch_data):.1f}]"
+                                ranges[ch] = (
+                                    f"[{np.min(ch_data):.1f}, {np.max(ch_data):.1f}]"
+                                )
                             else:
                                 ranges[ch] = "[]"
                     except Exception as e:
-                        logger.debug(f"Could not read plot visibility or data counts: {e}")
+                        logger.debug(
+                            f"Could not read plot visibility or data counts: {e}",
+                        )
                     self.full_segment_view.update(y_data, x_data)
                 else:
                     logger.debug("busy updating")
@@ -751,11 +838,20 @@ class DataWindow(QWidget):
                 if self.current_segment.error is None:
                     # Log SOI data counts and visibility before updating SOI view
                     try:
-                        seg_counts = {ch: len(self.current_segment.seg_y.get(ch, [])) for ch in CH_LIST}
-                        soi_vis = {ch: self.SOI_view.plots[ch].isVisible() for ch in CH_LIST}
-                        logger.warning(f"📉 SOI update: seg_counts={seg_counts}, soi_visibility={soi_vis}")
+                        seg_counts = {
+                            ch: len(self.current_segment.seg_y.get(ch, []))
+                            for ch in CH_LIST
+                        }
+                        soi_vis = {
+                            ch: self.SOI_view.plots[ch].isVisible() for ch in CH_LIST
+                        }
+                        logger.warning(
+                            f"📉 SOI update: seg_counts={seg_counts}, soi_visibility={soi_vis}",
+                        )
                     except Exception:
-                        logger.debug("Could not read SOI plot visibility or segment counts")
+                        logger.debug(
+                            "Could not read SOI plot visibility or segment counts",
+                        )
                     self.SOI_view.update_display(self.current_segment)
                 else:
                     logger.debug(f"{self.current_segment.error}")
@@ -898,14 +994,8 @@ class DataWindow(QWidget):
 
     def update_displayed_values(self: Self) -> None:
         """Update displayed values."""
-        if not self.ui.left_cursor_time.hasFocus():
-            self.ui.left_cursor_time.setText(
-                f"{self.full_segment_view.left_cursor_pos:.2f}",
-            )
-        if not self.ui.right_cursor_time.hasFocus():
-            self.ui.right_cursor_time.setText(
-                f"{self.full_segment_view.right_cursor_pos:.2f}",
-            )
+        # Cursor time input fields are now hidden - skip text updates
+        # Users drag cursors directly on the navigation graph
 
         start = 0.0
         end = 0.0
@@ -1150,7 +1240,7 @@ class DataWindow(QWidget):
                 self.SOI_view.update_display(self.current_segment)
                 self.update_displayed_values()
 
-    def set_reference(self: Self, ch: Optional[str]) -> None:
+    def set_reference(self: Self, ch: str | None) -> None:
         """Set the reference channel."""
         if ch == "a":
             self.reference_channel_dlg.ui.channelA.setChecked(True)
@@ -1170,7 +1260,8 @@ class DataWindow(QWidget):
         # Add the graph widget into the placeholder using a cleaned layout (remove spacers)
         layout_fs = self._ensure_clean_container(self.ui.full_segment)
         self.full_segment_view.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding,
         )
         layout_fs.addWidget(self.full_segment_view, 1)
 
@@ -1251,9 +1342,9 @@ class DataWindow(QWidget):
         self.full_segment_view.set_live(self.live_mode)
 
     def cursors_text_edit(self: Self, *, state: bool) -> None:
-        """Set text edit cursors."""
-        self.ui.left_cursor_time.setEnabled(state)
-        self.ui.right_cursor_time.setEnabled(state)
+        """Set text edit cursors - DISABLED: cursor time inputs are hidden."""
+        # Cursor time input fields are now hidden - users only drag cursors on graph
+        # Keeping method for compatibility but fields remain disabled/hidden
 
     def update_note(self: Self) -> None:
         """Update notes."""
@@ -1265,7 +1356,7 @@ class DataWindow(QWidget):
             self.current_segment.note = self.ui.current_note.text()
             self.ui.current_note.clearFocus()
 
-    def reload_segments(self: Self, time_shift: Optional[float] = None) -> None:
+    def reload_segments(self: Self, time_shift: float | None = None) -> None:
         """Reload segments."""
         logger.debug("reloading segments")
         self.reloading = True
@@ -1385,7 +1476,7 @@ class DataWindow(QWidget):
                     self.current_segment.end,
                 )
 
-    def set_row_properties(self: Self, edit_row: Optional[int] = None) -> None:
+    def set_row_properties(self: Self, edit_row: int | None = None) -> None:
         """Set row properties."""
         if isinstance(edit_row, int):
             for row in range(self.ui.data_table.rowCount()):
@@ -1441,7 +1532,9 @@ class DataWindow(QWidget):
                 proceed = False
 
             if proceed:
-                self.data = sens_data  # sens_data is already a dict from sensorgram_data()
+                self.data = (
+                    sens_data  # sens_data is already a dict from sensorgram_data()
+                )
                 # Clear all segments - safer than iterating over changing list
                 while self.saved_segments:
                     self.delete_row(first_available=True)
@@ -1729,7 +1822,7 @@ class DataWindow(QWidget):
         self: Self,
         *,
         preset: bool = False,
-        preset_dir: Union[str, Path] = "",
+        preset_dir: str | Path = "",
     ) -> None:
         """Export raw data."""
         try:
@@ -1778,7 +1871,7 @@ class DataWindow(QWidget):
                         if len(l_time_data[ch]) >= 3:
                             logger.warning(
                                 f"  Ch{ch.upper()}: First 3 timestamps = "
-                                f"{l_time_data[ch][0]:.3f}, {l_time_data[ch][1]:.3f}, {l_time_data[ch][2]:.3f}s"
+                                f"{l_time_data[ch][0]:.3f}, {l_time_data[ch][1]:.3f}, {l_time_data[ch][2]:.3f}s",
                             )
                     logger.warning("=" * 80)
 
@@ -1802,15 +1895,21 @@ class DataWindow(QWidget):
                     # Prepare data dictionary
                     data_dict = {}
                     for i, ch in enumerate(CH_LIST):
-                        data_dict[f"X_RawData{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                        data_dict[f"X_RawData{ch.upper()}"] = np.round(
+                            l_time_data[ch][:row_count],
+                            4,
+                        )
                         # Convert wavelength to shift (nm) using reference
                         values = l_val_data[ch][:row_count]
-                        data_dict[f"Y_RawData{ch.upper()}"] = np.round((values - references[i]) * 355, 4)
+                        data_dict[f"Y_RawData{ch.upper()}"] = np.round(
+                            (values - references[i]) * 355,
+                            4,
+                        )
 
                     # Create DataFrame and write to CSV
                     df = pd.DataFrame(data_dict)
                     df.replace({np.nan: None}, inplace=True)
-                    df.to_csv(txtfile, sep='\t', index=False, header=False)
+                    df.to_csv(txtfile, sep="\t", index=False, header=False)
 
             if self.data["filt"]:
                 full_file = f"{preset_dir} Filtered Data.txt"
@@ -1841,7 +1940,9 @@ class DataWindow(QWidget):
                         )
                         writer.writeheader()
 
-                        l_val_data = self.data["filtered_lambda_values"]  # Read-only for export
+                        l_val_data = self.data[
+                            "filtered_lambda_values"
+                        ]  # Read-only for export
                         l_time_data = self.data["buffered_lambda_times"]
 
                         row_count = min(len(l_time_data[ch]) for ch in CH_LIST)
@@ -1849,13 +1950,19 @@ class DataWindow(QWidget):
                         # Build DataFrame for vectorized CSV writing
                         data_dict = {}
                         for ch in CH_LIST:
-                            data_dict[f"X_Data{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
-                            data_dict[f"Y_Data{ch.upper()}"] = np.round(l_val_data[ch][:row_count], 4)
+                            data_dict[f"X_Data{ch.upper()}"] = np.round(
+                                l_time_data[ch][:row_count],
+                                4,
+                            )
+                            data_dict[f"Y_Data{ch.upper()}"] = np.round(
+                                l_val_data[ch][:row_count],
+                                4,
+                            )
 
                         # Create DataFrame and write to CSV
                         df = pd.DataFrame(data_dict)
                         df.replace({np.nan: None}, inplace=True)
-                        df.to_csv(txtfile, sep='\t', index=False, header=False)
+                        df.to_csv(txtfile, sep="\t", index=False, header=False)
             if error:
                 self.export_error_signal.emit()
             elif not preset:
@@ -1874,7 +1981,7 @@ class DataWindow(QWidget):
         self: Self,
         *,
         preset: bool = False,
-    preset_dir: Optional[str] = None,
+        preset_dir: str | None = None,
     ) -> None:
         """Export table data."""
         try:
@@ -2153,8 +2260,11 @@ class DataWindow(QWidget):
 
         Args:
             cycle_time_minutes: Duration of the cycle in minutes
+
         """
-        logger.info(f"Cycle started: {self.current_segment.cycle_type}, {cycle_time_minutes} min")
+        logger.info(
+            f"Cycle started: {self.current_segment.cycle_type}, {cycle_time_minutes} min",
+        )
 
         if cycle_time_minutes is None or cycle_time_minutes <= 0:
             return
@@ -2176,11 +2286,11 @@ class DataWindow(QWidget):
 
         # Apply fixed X range to sensorgram
         self.full_segment_view.plot.setXRange(start_time, end_time, padding=0)
-        self.full_segment_view.plot.enableAutoRange(axis='x', enable=False)
+        self.full_segment_view.plot.enableAutoRange(axis="x", enable=False)
 
         # Apply fixed X range to SOI (always 0 to window_seconds)
         self.SOI_view.plot.setXRange(0, window_seconds, padding=0)
-        self.SOI_view.plot.enableAutoRange(axis='x', enable=False)
+        self.SOI_view.plot.enableAutoRange(axis="x", enable=False)
 
         logger.info(f"Fixed window applied: {window_seconds:.0f}s")
 
@@ -2194,18 +2304,19 @@ class DataWindow(QWidget):
         Args:
             plot: The plot object to apply padding to
             graph_name: Name for logging purposes
+
         """
         try:
             y_min, y_max = plot.viewRange()[1]
             plot.setYRange(
                 y_min - CYCLE_Y_PADDING_BOTTOM,
                 y_max + CYCLE_Y_PADDING_TOP,
-                padding=0
+                padding=0,
             )
-            plot.enableAutoRange(axis='y', enable=False)
+            plot.enableAutoRange(axis="y", enable=False)
         except Exception as e:
             logger.debug(f"{graph_name} Y range not set (no data yet): {e}")
-            plot.enableAutoRange(axis='y', enable=False)
+            plot.enableAutoRange(axis="y", enable=False)
 
     def save_data(self: Self, rec_dir: str) -> None:
         """Save data."""

@@ -1,10 +1,10 @@
-"""
-Test what command the device actually receives
-"""
-import serial
+"""Test what command the device actually receives"""
+
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+import serial
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(0.1)
 
 # Clear buffer
@@ -21,7 +21,7 @@ print()
 ser.write(command)
 time.sleep(0.5)
 
-response = ser.read_all().decode('utf-8', errors='ignore')
+response = ser.read_all().decode("utf-8", errors="ignore")
 print("Response:")
 print(response)
 

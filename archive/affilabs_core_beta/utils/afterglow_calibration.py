@@ -42,14 +42,13 @@ The resulting dict matches the structure consumed by
 
 from __future__ import annotations
 
-import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from scipy.optimize import curve_fit
+
 from utils.logger import logger
 
 
@@ -61,7 +60,12 @@ class AfterglowFit:
     r_squared: float
 
 
-def _exp_decay(t_ms: np.ndarray, baseline: float, amplitude: float, tau_ms: float) -> np.ndarray:
+def _exp_decay(
+    t_ms: np.ndarray,
+    baseline: float,
+    amplitude: float,
+    tau_ms: float,
+) -> np.ndarray:
     return baseline + amplitude * np.exp(-t_ms / max(tau_ms, 1e-6))
 
 
@@ -69,7 +73,7 @@ def _validate_fit_result(
     ch: str,
     int_ms: float,
     fit: AfterglowFit,
-    sample_count: int
+    sample_count: int,
 ) -> None:
     """Validate afterglow fit result - BLOCKING on critical errors.
 
@@ -87,6 +91,7 @@ def _validate_fit_result(
 
     Raises:
         ValueError: If fit quality unacceptable or data invalid (BLOCKING errors)
+
     """
     # CRITICAL: Fit quality - poor fit indicates bad data or wrong model
     if fit.r_squared < 0.85:
@@ -97,7 +102,7 @@ def _validate_fit_result(
             f"   • LED not turning off completely\n"
             f"   • High detector noise\n"
             f"   • Insufficient turn-off delay\n"
-            f"   • External light contamination"
+            f"   • External light contamination",
         )
 
     # CRITICAL: Baseline near zero - validates dark subtraction worked
@@ -107,7 +112,7 @@ def _validate_fit_result(
             f"Ch {ch} @ {int_ms}ms: High baseline ({fit.baseline:.0f} counts, expected near 0)\n"
             f"   Dark noise subtraction may have failed\n"
             f"   This indicates calibration data is invalid\n"
-            f"   Check: Was dark noise measured correctly at start?"
+            f"   Check: Was dark noise measured correctly at start?",
         )
 
     # CRITICAL: Tau physically reasonable for LED phosphors
@@ -118,7 +123,7 @@ def _validate_fit_result(
             f"   Possible causes:\n"
             f"   • Wrong LED type configured in device config\n"
             f"   • LED timing/control error\n"
-            f"   • Firmware bug in LED driver"
+            f"   • Firmware bug in LED driver",
         )
 
     # WARNING: Amplitude very high - LED may not be turning off
@@ -129,7 +134,7 @@ def _validate_fit_result(
             f"   Check:\n"
             f"   • LED intensity set to 0 before turn-off?\n"
             f"   • Sufficient turn-off delay (50ms)?\n"
-            f"   • LED driver hardware functioning correctly?"
+            f"   • LED driver hardware functioning correctly?",
         )
 
     # WARNING: Amplitude very low - correction may be ineffective
@@ -137,19 +142,21 @@ def _validate_fit_result(
         logger.warning(
             f"⚠️ Ch {ch} @ {int_ms}ms: Very low afterglow amplitude ({fit.amplitude:.0f} counts)\n"
             f"   Afterglow correction may be ineffective (below noise floor ~3-5 counts)\n"
-            f"   At 50ms delay: residual ~{fit.amplitude * 0.082:.1f} counts (may not be measurable)"
+            f"   At 50ms delay: residual ~{fit.amplitude * 0.082:.1f} counts (may not be measurable)",
         )
 
 
 def _fit_decay(t_ms: np.ndarray, y: np.ndarray) -> AfterglowFit:
     # Robust initial guesses
     y0 = float(y[0])
-    y_end = float(np.nanmean(y[-max(3, len(y)//10):]))
+    y_end = float(np.nanmean(y[-max(3, len(y) // 10) :]))
     amp0 = max(y0 - y_end, 1.0)
     tau0 = 20.0  # ms, typical
 
-    bounds = ([y_end - abs(0.25 * amp0), 0.0, 1.0],  # baseline, amplitude, tau
-              [y_end + abs(0.25 * amp0), 1e9, 500.0])
+    bounds = (
+        [y_end - abs(0.25 * amp0), 0.0, 1.0],  # baseline, amplitude, tau
+        [y_end + abs(0.25 * amp0), 1e9, 500.0],
+    )
     try:
         popt, _pcov = curve_fit(
             _exp_decay,
@@ -164,7 +171,12 @@ def _fit_decay(t_ms: np.ndarray, y: np.ndarray) -> AfterglowFit:
         ss_res = float(np.nansum((y - y_hat) ** 2))
         ss_tot = float(np.nansum((y - np.nanmean(y)) ** 2)) or 1.0
         r2 = 1.0 - ss_res / ss_tot
-        return AfterglowFit(tau_ms=tau_ms, amplitude=amplitude, baseline=baseline, r_squared=r2)
+        return AfterglowFit(
+            tau_ms=tau_ms,
+            amplitude=amplitude,
+            baseline=baseline,
+            r_squared=r2,
+        )
     except Exception:
         # Fallback: simple estimates
         return AfterglowFit(tau_ms=tau0, amplitude=amp0, baseline=y_end, r_squared=0.0)
@@ -200,8 +212,10 @@ def run_afterglow_calibration(
 
     Returns:
         Dict with metadata and channel_data suitable for AfterglowCorrection.
+
     """
     if get_intensity is None:
+
         def get_intensity():
             return usb.read_intensity()
 
@@ -212,10 +226,15 @@ def run_afterglow_calibration(
             "pre_on_duration_s": pre_on_duration_s,
             "acquisition_duration_ms": acquisition_duration_ms,
             "integration_grid_ms": integration_grid_ms,
-            "led_intensities_s_mode": led_intensities if led_intensities else {},  # Save S-mode LED intensities for LED calibration reuse
+            "led_intensities_s_mode": led_intensities
+            if led_intensities
+            else {},  # Save S-mode LED intensities for LED calibration reuse
             "polarization_mode": "s",  # Afterglow measured in S-mode
         },
-        "channel_data": {ch: {"integration_time_data": [], "led_spectral_info": {}} for ch in channels},
+        "channel_data": {
+            ch: {"integration_time_data": [], "led_spectral_info": {}}
+            for ch in channels
+        },
     }
 
     # Use S-mode for afterglow calibration (baseline intensity)
@@ -245,17 +264,23 @@ def run_afterglow_calibration(
             dark_readings.append(float(np.nanmean(roi)))
 
     dark_noise = float(np.nanmean(dark_readings)) if dark_readings else 0.0
-    logger.info(f"   Dark noise baseline: {dark_noise:.1f} counts (will be subtracted from all measurements)")
+    logger.info(
+        f"   Dark noise baseline: {dark_noise:.1f} counts (will be subtracted from all measurements)",
+    )
 
     duration_s = acquisition_duration_ms / 1000.0
     total_measurements = len(integration_grid_ms) * len(channels)
     current_measurement = 0
 
-    logger.info(f"📊 Starting afterglow measurement: {len(integration_grid_ms)} integration times × {len(channels)} channels = {total_measurements} measurements")
+    logger.info(
+        f"📊 Starting afterglow measurement: {len(integration_grid_ms)} integration times × {len(channels)} channels = {total_measurements} measurements",
+    )
     total_measurements = len(integration_grid_ms) * len(channels)
     current_measurement = 0
 
-    logger.info(f"📊 Starting afterglow measurement: {len(integration_grid_ms)} integration times × {len(channels)} channels = {total_measurements} measurements")
+    logger.info(
+        f"📊 Starting afterglow measurement: {len(integration_grid_ms)} integration times × {len(channels)} channels = {total_measurements} measurements",
+    )
 
     for int_ms in integration_grid_ms:
         logger.info(f"⏱️  Integration time: {int_ms}ms")
@@ -263,11 +288,15 @@ def run_afterglow_calibration(
         time.sleep(settle_delay_s)
         for ch in channels:
             current_measurement += 1
-            logger.info(f"📈 [{current_measurement}/{total_measurements}] Channel {ch.upper()} @ {int_ms}ms...")
+            logger.info(
+                f"📈 [{current_measurement}/{total_measurements}] Channel {ch.upper()} @ {int_ms}ms...",
+            )
             try:
                 # Ensure all LEDs are completely off before starting
                 ctrl.turn_off_channels()
-                time.sleep(0.10)  # Wait for any residual phosphor decay from previous measurements
+                time.sleep(
+                    0.10,
+                )  # Wait for any residual phosphor decay from previous measurements
 
                 # Pre-on to charge phosphor using S-mode baseline intensities
                 if led_intensities and ch in led_intensities:
@@ -276,7 +305,9 @@ def run_afterglow_calibration(
                     logger.debug(f"   Using calibrated S-mode LED intensity: {led_val}")
                 else:
                     ctrl.set_intensity(ch=ch, raw_val=255)
-                    logger.debug(f"   Using maximum LED intensity: 255 (no calibration available)")
+                    logger.debug(
+                        "   Using maximum LED intensity: 255 (no calibration available)",
+                    )
                 time.sleep(pre_on_duration_s)
 
                 # CAPTURE LED SPECTRAL CHARACTERISTICS (for aging analysis)
@@ -293,7 +324,9 @@ def run_afterglow_calibration(
                             "peak_roi_index": peak_idx,
                             "peak_intensity": peak_intensity,
                             "integration_time_ms": float(int_ms),
-                            "led_intensity": led_val if led_intensities and ch in led_intensities else 255
+                            "led_intensity": led_val
+                            if led_intensities and ch in led_intensities
+                            else 255,
                         }
 
                 # Turn LED off (set intensity=0, then turn off channel)
@@ -321,7 +354,9 @@ def run_afterglow_calibration(
                     y_pts.append(y_val)
                     sample_count += 1
 
-                logger.debug(f"   Collected {sample_count} decay samples over {acquisition_duration_ms}ms")
+                logger.debug(
+                    f"   Collected {sample_count} decay samples over {acquisition_duration_ms}ms",
+                )
 
                 # Convert and clean
                 t_arr = np.asarray(t_pts, dtype=float)
@@ -339,20 +374,26 @@ def run_afterglow_calibration(
                 # QUALITY CONTROL: Validate fit before saving (BLOCKING on errors)
                 _validate_fit_result(ch, int_ms, fit, sample_count)
 
-                logger.info(f"   ✅ τ={fit.tau_ms:.1f}ms, amplitude={fit.amplitude:.1f}, R²={fit.r_squared:.3f}")
+                logger.info(
+                    f"   ✅ τ={fit.tau_ms:.1f}ms, amplitude={fit.amplitude:.1f}, R²={fit.r_squared:.3f}",
+                )
 
-                out["channel_data"][ch]["integration_time_data"].append({
-                    "integration_time_ms": float(int_ms),
-                    "tau_ms": float(fit.tau_ms),
-                    "amplitude": float(fit.amplitude),
-                    "baseline": float(fit.baseline),
-                    "r_squared": float(fit.r_squared),
-                })
+                out["channel_data"][ch]["integration_time_data"].append(
+                    {
+                        "integration_time_ms": float(int_ms),
+                        "tau_ms": float(fit.tau_ms),
+                        "amplitude": float(fit.amplitude),
+                        "baseline": float(fit.baseline),
+                        "r_squared": float(fit.r_squared),
+                    },
+                )
 
                 time.sleep(settle_delay_s)
             except Exception as e:
                 # Log error and continue with other channels/points
-                logger.error(f"❌ Afterglow calibration failed for channel '{ch}' at {int_ms}ms: {e}")
+                logger.error(
+                    f"❌ Afterglow calibration failed for channel '{ch}' at {int_ms}ms: {e}",
+                )
                 time.sleep(0.05)
                 continue
 
@@ -363,13 +404,15 @@ def run_afterglow_calibration(
             missing_channels.append(ch)
 
     if missing_channels:
-        logger.error(f"❌ CRITICAL: Afterglow calibration incomplete!")
+        logger.error("❌ CRITICAL: Afterglow calibration incomplete!")
         logger.error(f"   Missing data for channels: {missing_channels}")
         logger.error(f"   Expected: {channels}")
-        logger.error(f"   Calibrated: {[ch for ch in channels if ch not in missing_channels]}")
+        logger.error(
+            f"   Calibrated: {[ch for ch in channels if ch not in missing_channels]}",
+        )
         raise RuntimeError(
             f"Afterglow calibration failed: missing data for channels {missing_channels}. "
-            f"All 4 channels must be calibrated for proper afterglow correction."
+            f"All 4 channels must be calibrated for proper afterglow correction.",
         )
 
     # QUALITY CONTROL: Cross-channel consistency check (NON-BLOCKING)
@@ -402,101 +445,135 @@ def _analyze_led_aging(current_data: dict, usb) -> dict:
 
     Returns:
         Dict with aging assessment and user-facing warning (if any)
+
     """
     try:
         # Try to load previous calibration for comparison
-        from utils.device_integration import get_device_optical_calibration_path
         import json
-        from pathlib import Path
+
+        from utils.device_integration import get_device_optical_calibration_path
 
         prev_cal_path = get_device_optical_calibration_path()
         if not prev_cal_path or not prev_cal_path.exists():
-            logger.info("📊 LED Aging Analysis: No previous calibration found (first run)")
-            return
+            logger.info(
+                "📊 LED Aging Analysis: No previous calibration found (first run)",
+            )
+            return None
 
         # Load previous calibration
-        with open(prev_cal_path, 'r') as f:
+        with open(prev_cal_path) as f:
             prev_data = json.load(f)
 
-        prev_date = prev_data.get('metadata', {}).get('created', 'unknown')
-        logger.info(f"📊 LED Aging Analysis: Comparing with previous calibration from {prev_date}")
+        prev_date = prev_data.get("metadata", {}).get("created", "unknown")
+        logger.info(
+            f"📊 LED Aging Analysis: Comparing with previous calibration from {prev_date}",
+        )
 
         # Calculate aging metrics per channel
-        channels = list(current_data['channel_data'].keys())
+        channels = list(current_data["channel_data"].keys())
         aging_summary = []
 
         for ch in channels:
-            current_ch = current_data['channel_data'][ch]['integration_time_data']
-            prev_ch = prev_data['channel_data'].get(ch, {}).get('integration_time_data', [])
+            current_ch = current_data["channel_data"][ch]["integration_time_data"]
+            prev_ch = (
+                prev_data["channel_data"].get(ch, {}).get("integration_time_data", [])
+            )
 
             if not current_ch or not prev_ch:
                 continue
 
             # Calculate mean values across integration times
-            curr_tau = float(np.mean([dp['tau_ms'] for dp in current_ch]))
-            prev_tau = float(np.mean([dp['tau_ms'] for dp in prev_ch]))
+            curr_tau = float(np.mean([dp["tau_ms"] for dp in current_ch]))
+            prev_tau = float(np.mean([dp["tau_ms"] for dp in prev_ch]))
 
-            curr_amp = float(np.mean([dp['amplitude'] for dp in current_ch]))
-            prev_amp = float(np.mean([dp['amplitude'] for dp in prev_ch]))
+            curr_amp = float(np.mean([dp["amplitude"] for dp in current_ch]))
+            prev_amp = float(np.mean([dp["amplitude"] for dp in prev_ch]))
 
-            curr_baseline = float(np.mean([dp.get('baseline', 0) for dp in current_ch]))
-            prev_baseline = float(np.mean([dp.get('baseline', 0) for dp in prev_ch]))
+            curr_baseline = float(np.mean([dp.get("baseline", 0) for dp in current_ch]))
+            prev_baseline = float(np.mean([dp.get("baseline", 0) for dp in prev_ch]))
 
             # SPECTRAL SHIFT ANALYSIS (LED color change - early aging indicator)
-            curr_spectral = current_data['channel_data'][ch].get('led_spectral_info', {})
-            prev_spectral = prev_data['channel_data'].get(ch, {}).get('led_spectral_info', {})
+            curr_spectral = current_data["channel_data"][ch].get(
+                "led_spectral_info",
+                {},
+            )
+            prev_spectral = (
+                prev_data["channel_data"].get(ch, {}).get("led_spectral_info", {})
+            )
 
             peak_shift = 0
             intensity_loss_pct = 0
             if curr_spectral and prev_spectral:
-                curr_peak_idx = curr_spectral.get('peak_roi_index', 0)
-                prev_peak_idx = prev_spectral.get('peak_roi_index', 0)
+                curr_peak_idx = curr_spectral.get("peak_roi_index", 0)
+                prev_peak_idx = prev_spectral.get("peak_roi_index", 0)
                 peak_shift = curr_peak_idx - prev_peak_idx  # ROI index shift
 
-                curr_peak_int = curr_spectral.get('peak_intensity', 0)
-                prev_peak_int = prev_spectral.get('peak_intensity', 0)
+                curr_peak_int = curr_spectral.get("peak_intensity", 0)
+                prev_peak_int = prev_spectral.get("peak_intensity", 0)
                 if prev_peak_int > 0:
-                    intensity_loss_pct = ((curr_peak_int - prev_peak_int) / prev_peak_int * 100)
+                    intensity_loss_pct = (
+                        (curr_peak_int - prev_peak_int) / prev_peak_int * 100
+                    )
 
             # Calculate aging indicators
             tau_drift = ((curr_tau - prev_tau) / prev_tau * 100) if prev_tau > 0 else 0
-            amp_increase = ((curr_amp - prev_amp) / prev_amp * 100) if prev_amp > 0 else 0
+            amp_increase = (
+                ((curr_amp - prev_amp) / prev_amp * 100) if prev_amp > 0 else 0
+            )
             baseline_drift = curr_baseline - prev_baseline
 
-            aging_summary.append({
-                'channel': ch,
-                'tau_drift_pct': tau_drift,
-                'amp_increase_pct': amp_increase,
-                'baseline_drift': baseline_drift,
-                'peak_shift_idx': peak_shift,
-                'intensity_loss_pct': intensity_loss_pct,
-                'curr_tau': curr_tau,
-                'prev_tau': prev_tau,
-                'curr_amp': curr_amp,
-                'prev_amp': prev_amp
-            })
+            aging_summary.append(
+                {
+                    "channel": ch,
+                    "tau_drift_pct": tau_drift,
+                    "amp_increase_pct": amp_increase,
+                    "baseline_drift": baseline_drift,
+                    "peak_shift_idx": peak_shift,
+                    "intensity_loss_pct": intensity_loss_pct,
+                    "curr_tau": curr_tau,
+                    "prev_tau": prev_tau,
+                    "curr_amp": curr_amp,
+                    "prev_amp": prev_amp,
+                },
+            )
 
             # Log per-channel aging status
-            status = _assess_channel_aging(tau_drift, amp_increase, baseline_drift, abs(peak_shift), intensity_loss_pct)
+            status = _assess_channel_aging(
+                tau_drift,
+                amp_increase,
+                baseline_drift,
+                abs(peak_shift),
+                intensity_loss_pct,
+            )
             logger.info(f"   Ch {ch.upper()}: {status}")
-            logger.info(f"      τ: {prev_tau:.1f}ms → {curr_tau:.1f}ms ({tau_drift:+.1f}%)")
-            logger.info(f"      Amplitude: {prev_amp:.0f} → {curr_amp:.0f} ({amp_increase:+.1f}%)")
+            logger.info(
+                f"      τ: {prev_tau:.1f}ms → {curr_tau:.1f}ms ({tau_drift:+.1f}%)",
+            )
+            logger.info(
+                f"      Amplitude: {prev_amp:.0f} → {curr_amp:.0f} ({amp_increase:+.1f}%)",
+            )
             if abs(peak_shift) > 3:  # Significant spectral shift
-                logger.info(f"      Spectral peak: shifted by {peak_shift:+d} indices (color change detected)")
+                logger.info(
+                    f"      Spectral peak: shifted by {peak_shift:+d} indices (color change detected)",
+                )
             if abs(intensity_loss_pct) > 10:
-                logger.info(f"      Peak intensity: {intensity_loss_pct:+.1f}% (LED brightness loss)")
+                logger.info(
+                    f"      Peak intensity: {intensity_loss_pct:+.1f}% (LED brightness loss)",
+                )
             if abs(baseline_drift) > 50:
-                logger.info(f"      Baseline: {prev_baseline:.0f} → {curr_baseline:.0f} ({baseline_drift:+.0f})")
+                logger.info(
+                    f"      Baseline: {prev_baseline:.0f} → {curr_baseline:.0f} ({baseline_drift:+.0f})",
+                )
 
         # Overall aging assessment (with user-facing recommendation)
         if aging_summary:
             return _assess_pcb_health(aging_summary)
 
-        return {'status': 'good', 'user_message': None}
+        return {"status": "good", "user_message": None}
 
     except Exception as e:
         logger.debug(f"LED aging analysis skipped: {e}")
-        return {'status': 'unknown', 'user_message': None}
+        return {"status": "unknown", "user_message": None}
 
 
 def _assess_channel_aging(
@@ -504,27 +581,27 @@ def _assess_channel_aging(
     amp_increase_pct: float,
     baseline_drift: float,
     peak_shift_idx: float = 0,
-    intensity_loss_pct: float = 0
+    intensity_loss_pct: float = 0,
 ) -> str:
     """Assess single channel aging status.
 
     Returns:
         Status string with emoji indicator
+
     """
     # SPECTRAL SHIFT: Early warning sign (often appears before amplitude increase)
     # Peak shift > 5 indices (~10-15nm for typical spectrometer) indicates phosphor degradation
     if abs(peak_shift_idx) > 10 or intensity_loss_pct < -30:
         return "🔴 SIGNIFICANT AGING DETECTED (spectral shift/intensity loss)"
-    elif abs(peak_shift_idx) > 5 or intensity_loss_pct < -15:
+    if abs(peak_shift_idx) > 5 or intensity_loss_pct < -15:
         return "⚠️ Moderate aging (spectral changes detected)"
 
     # Check for critical aging indicators (original metrics)
     if abs(tau_drift_pct) > 20 or amp_increase_pct > 100 or abs(baseline_drift) > 500:
         return "🔴 SIGNIFICANT AGING DETECTED"
-    elif abs(tau_drift_pct) > 10 or amp_increase_pct > 50 or abs(baseline_drift) > 200:
+    if abs(tau_drift_pct) > 10 or amp_increase_pct > 50 or abs(baseline_drift) > 200:
         return "⚠️ Moderate aging (monitor closely)"
-    else:
-        return "✅ Normal wear"
+    return "✅ Normal wear"
 
 
 def _assess_pcb_health(aging_summary: list) -> dict:
@@ -535,35 +612,54 @@ def _assess_pcb_health(aging_summary: list) -> dict:
 
     Returns:
         Dict with 'status' (good/warning/critical) and 'user_message' (user-facing warning text)
+
     """
     # Calculate cross-channel tau divergence
-    taus = [ch['curr_tau'] for ch in aging_summary]
+    taus = [ch["curr_tau"] for ch in aging_summary]
     tau_std = float(np.std(taus))
     tau_mean = float(np.mean(taus))
 
     # Calculate mean aging rates
-    mean_tau_drift = float(np.mean([ch['tau_drift_pct'] for ch in aging_summary]))
-    mean_amp_increase = float(np.mean([ch['amp_increase_pct'] for ch in aging_summary]))
+    mean_tau_drift = float(np.mean([ch["tau_drift_pct"] for ch in aging_summary]))
+    mean_amp_increase = float(np.mean([ch["amp_increase_pct"] for ch in aging_summary]))
 
     # Count channels with significant aging
-    critical_channels = sum(1 for ch in aging_summary
-                           if abs(ch['tau_drift_pct']) > 20
-                           or ch['amp_increase_pct'] > 100
-                           or abs(ch.get('peak_shift_idx', 0)) > 10
-                           or ch.get('intensity_loss_pct', 0) < -30)
+    critical_channels = sum(
+        1
+        for ch in aging_summary
+        if abs(ch["tau_drift_pct"]) > 20
+        or ch["amp_increase_pct"] > 100
+        or abs(ch.get("peak_shift_idx", 0)) > 10
+        or ch.get("intensity_loss_pct", 0) < -30
+    )
 
-    warning_channels = sum(1 for ch in aging_summary
-                          if (abs(ch['tau_drift_pct']) > 10 and abs(ch['tau_drift_pct']) <= 20)
-                          or (ch['amp_increase_pct'] > 50 and ch['amp_increase_pct'] <= 100)
-                          or (abs(ch.get('peak_shift_idx', 0)) > 5 and abs(ch.get('peak_shift_idx', 0)) <= 10)
-                          or (ch.get('intensity_loss_pct', 0) < -15 and ch.get('intensity_loss_pct', 0) >= -30))
+    warning_channels = sum(
+        1
+        for ch in aging_summary
+        if (abs(ch["tau_drift_pct"]) > 10 and abs(ch["tau_drift_pct"]) <= 20)
+        or (ch["amp_increase_pct"] > 50 and ch["amp_increase_pct"] <= 100)
+        or (
+            abs(ch.get("peak_shift_idx", 0)) > 5
+            and abs(ch.get("peak_shift_idx", 0)) <= 10
+        )
+        or (
+            ch.get("intensity_loss_pct", 0) < -15
+            and ch.get("intensity_loss_pct", 0) >= -30
+        )
+    )
 
     # Check for spectral shifts (early warning)
-    mean_peak_shift = float(np.mean([abs(ch.get('peak_shift_idx', 0)) for ch in aging_summary]))
-    mean_intensity_loss = float(np.mean([ch.get('intensity_loss_pct', 0) for ch in aging_summary]))
+    mean_peak_shift = float(
+        np.mean([abs(ch.get("peak_shift_idx", 0)) for ch in aging_summary]),
+    )
+    mean_intensity_loss = float(
+        np.mean([ch.get("intensity_loss_pct", 0) for ch in aging_summary]),
+    )
 
-    logger.info(f"\n🔧 LED PCB HEALTH ASSESSMENT:")
-    logger.info(f"   Cross-channel consistency: σ={tau_std:.1f}ms (mean τ={tau_mean:.1f}ms)")
+    logger.info("\n🔧 LED PCB HEALTH ASSESSMENT:")
+    logger.info(
+        f"   Cross-channel consistency: σ={tau_std:.1f}ms (mean τ={tau_mean:.1f}ms)",
+    )
     logger.info(f"   Average τ drift: {mean_tau_drift:+.1f}%")
     logger.info(f"   Average amplitude increase: {mean_amp_increase:+.1f}%")
     if mean_peak_shift > 0:
@@ -572,19 +668,22 @@ def _assess_pcb_health(aging_summary: list) -> dict:
         logger.info(f"   Average LED intensity change: {mean_intensity_loss:+.1f}%")
 
     # Determine status and user-facing message
-    status = 'good'
+    status = "good"
     user_message = None
 
     # CRITICAL: Multiple failures or severe spectral shift
-    if (critical_channels >= 2
+    if (
+        critical_channels >= 2
         or tau_std > 5.0
         or mean_amp_increase > 100
         or mean_peak_shift > 10
-        or mean_intensity_loss < -30):
-
-        status = 'critical'
-        logger.warning(f"   🔴 RECOMMENDATION: LED PCB replacement REQUIRED")
-        logger.warning(f"   Reason: {'Multiple channels' if critical_channels >= 2 else 'Significant'} showing critical aging")
+        or mean_intensity_loss < -30
+    ):
+        status = "critical"
+        logger.warning("   🔴 RECOMMENDATION: LED PCB replacement REQUIRED")
+        logger.warning(
+            f"   Reason: {'Multiple channels' if critical_channels >= 2 else 'Significant'} showing critical aging",
+        )
         logger.warning(f"   {critical_channels} channels with critical aging detected")
 
         # USER-FACING MESSAGE
@@ -608,37 +707,40 @@ def _assess_pcb_health(aging_summary: list) -> dict:
         )
 
     # WARNING: Single failure or moderate aging
-    elif (critical_channels == 1
-          or warning_channels >= 2
-          or tau_std > 3.0
-          or mean_amp_increase > 50
-          or mean_peak_shift > 5
-          or mean_intensity_loss < -15):
-
-        status = 'warning'
-        logger.warning(f"   ⚠️ RECOMMENDATION: Monitor LED PCB closely")
-        logger.warning(f"   Schedule replacement if performance degrades further")
-        logger.warning(f"   {critical_channels} critical + {warning_channels} warning channels detected")
+    elif (
+        critical_channels == 1
+        or warning_channels >= 2
+        or tau_std > 3.0
+        or mean_amp_increase > 50
+        or mean_peak_shift > 5
+        or mean_intensity_loss < -15
+    ):
+        status = "warning"
+        logger.warning("   ⚠️ RECOMMENDATION: Monitor LED PCB closely")
+        logger.warning("   Schedule replacement if performance degrades further")
+        logger.warning(
+            f"   {critical_channels} critical + {warning_channels} warning channels detected",
+        )
 
         # USER-FACING MESSAGE (less urgent)
         user_message = (
-            f"ℹ️ Light Source Aging Detected\n\n"
-            f"Your instrument's LEDs are showing signs of wear:\n"
-            f"• Moderate aging indicators present\n"
-            f"• Measurements still within acceptable range\n\n"
-            f"Recommendation: Schedule preventive maintenance within 3-6 months.\n"
-            f"Continue monitoring - you'll be notified if urgent action needed."
+            "ℹ️ Light Source Aging Detected\n\n"
+            "Your instrument's LEDs are showing signs of wear:\n"
+            "• Moderate aging indicators present\n"
+            "• Measurements still within acceptable range\n\n"
+            "Recommendation: Schedule preventive maintenance within 3-6 months.\n"
+            "Continue monitoring - you'll be notified if urgent action needed."
         )
 
     # GOOD: Minimal aging
     else:
-        logger.info(f"   ✅ LED PCB HEALTH: Good")
+        logger.info("   ✅ LED PCB HEALTH: Good")
 
     return {
-        'status': status,
-        'user_message': user_message,
-        'critical_channels': critical_channels,
-        'warning_channels': warning_channels
+        "status": status,
+        "user_message": user_message,
+        "critical_channels": critical_channels,
+        "warning_channels": warning_channels,
     }
 
 
@@ -651,6 +753,7 @@ def _check_channel_consistency(channel_data: dict, channels: list[str]) -> None:
     Args:
         channel_data: Calibration data per channel
         channels: List of channel IDs
+
     """
     # Calculate average τ for each channel (across integration times)
     channel_taus = {}
@@ -667,7 +770,7 @@ def _check_channel_consistency(channel_data: dict, channels: list[str]) -> None:
     tau_mean = float(np.mean(tau_values))
     tau_std = float(np.std(tau_values))
 
-    logger.info(f"📊 Channel τ consistency check:")
+    logger.info("📊 Channel τ consistency check:")
     logger.info(f"   Mean τ: {tau_mean:.1f}ms (σ={tau_std:.1f}ms)")
 
     for ch, tau in channel_taus.items():
@@ -678,7 +781,7 @@ def _check_channel_consistency(channel_data: dict, channels: list[str]) -> None:
                 f"      Possible causes:\n"
                 f"      • Different LED type or batch\n"
                 f"      • LED aging/degradation\n"
-                f"      • Channel-specific optical path differences"
+                f"      • Channel-specific optical path differences",
             )
         else:
             logger.info(f"   ✅ Ch {ch.upper()}: τ={tau:.1f}ms (Δ={deviation:.1f}ms)")

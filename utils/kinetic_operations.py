@@ -44,7 +44,10 @@ class KineticOperations:
         self.update_valve_display = update_valve_display
 
     async def regenerate(
-        self, *, contact_time_s: float, flow_rate_ml_min: float
+        self,
+        *,
+        contact_time_s: float,
+        flow_rate_ml_min: float,
     ) -> None:
         """Run regeneration sequence using pump manager."""
         if not self.pump_manager:
@@ -200,7 +203,11 @@ class KineticOperations:
             return False
 
     def handle_speed_change(
-        self, ch: str, new_rate: int, pump_states: dict, synced: bool
+        self,
+        ch: str,
+        new_rate: int,
+        pump_states: dict,
+        synced: bool,
     ) -> dict:
         """Handle pump speed changes from UI spinbox."""
         try:
@@ -215,7 +222,10 @@ class KineticOperations:
             return pump_states
 
     def handle_valve_control(
-        self, valve_id: int, state: int, valve_states: dict
+        self,
+        valve_id: int,
+        state: int,
+        valve_states: dict,
     ) -> dict:
         """Handle valve control operations."""
         try:
@@ -224,7 +234,8 @@ class KineticOperations:
                 valve_states[f"valve_{valve_id}"] = "Open" if state else "Closed"
                 logger.debug(f"Valve {valve_id} set to {'open' if state else 'closed'}")
                 self.update_valve_display(
-                    valve_states, False
+                    valve_states,
+                    False,
                 )  # Valves not typically synced
             return valve_states
         except Exception as e:

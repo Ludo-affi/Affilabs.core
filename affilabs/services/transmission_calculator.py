@@ -4,9 +4,9 @@ Pure business logic for calculating transmission spectra.
 NO Qt dependencies - fully testable.
 """
 
-import numpy as np
-from typing import Optional, Tuple
 import logging
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class TransmissionCalculator:
 
         Args:
             apply_led_correction: Whether to apply LED intensity correction
+
         """
         self.apply_led_correction = apply_led_correction
 
@@ -32,8 +33,8 @@ class TransmissionCalculator:
         self,
         p_spectrum: np.ndarray,
         s_reference: np.ndarray,
-        p_led_intensity: Optional[int] = None,
-        s_led_intensity: Optional[int] = None
+        p_led_intensity: int | None = None,
+        s_led_intensity: int | None = None,
     ) -> np.ndarray:
         """Alias for calculate() to maintain compatibility with SpectrumViewModel.
 
@@ -46,8 +47,8 @@ class TransmissionCalculator:
         self,
         p_spectrum: np.ndarray,
         s_reference: np.ndarray,
-        p_led_intensity: Optional[int] = None,
-        s_led_intensity: Optional[int] = None
+        p_led_intensity: int | None = None,
+        s_led_intensity: int | None = None,
     ) -> np.ndarray:
         """Calculate transmission spectrum.
 
@@ -62,21 +63,31 @@ class TransmissionCalculator:
 
         Raises:
             ValueError: If arrays have different lengths or contain invalid data
+
         """
         # Validate inputs
         self._validate_inputs(p_spectrum, s_reference, p_led_intensity, s_led_intensity)
 
         # Calculate raw transmission (element-wise division)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            transmission = np.divide(p_spectrum, s_reference,
-                                   out=np.zeros_like(p_spectrum, dtype=float),
-                                   where=s_reference != 0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            transmission = np.divide(
+                p_spectrum,
+                s_reference,
+                out=np.zeros_like(p_spectrum, dtype=float),
+                where=s_reference != 0,
+            )
 
         # Apply LED intensity correction if requested and available
-        if self.apply_led_correction and p_led_intensity is not None and s_led_intensity is not None:
+        if (
+            self.apply_led_correction
+            and p_led_intensity is not None
+            and s_led_intensity is not None
+        ):
             led_correction = s_led_intensity / p_led_intensity
             transmission *= led_correction
-            logger.debug(f"Applied LED correction factor: {led_correction:.3f} (S={s_led_intensity}, P={p_led_intensity})")
+            logger.debug(
+                f"Applied LED correction factor: {led_correction:.3f} (S={s_led_intensity}, P={p_led_intensity})",
+            )
 
         # Convert to percentage
         transmission *= 100.0
@@ -90,8 +101,8 @@ class TransmissionCalculator:
         self,
         p_spectra: np.ndarray,
         s_references: np.ndarray,
-        p_led_intensities: Optional[np.ndarray] = None,
-        s_led_intensities: Optional[np.ndarray] = None
+        p_led_intensities: np.ndarray | None = None,
+        s_led_intensities: np.ndarray | None = None,
     ) -> np.ndarray:
         """Calculate transmission for multiple spectra (batch processing).
 
@@ -103,18 +114,28 @@ class TransmissionCalculator:
 
         Returns:
             Array of transmission spectra (N x wavelengths)
+
         """
         if p_spectra.shape != s_references.shape:
-            raise ValueError(f"Shape mismatch: {p_spectra.shape} vs {s_references.shape}")
+            raise ValueError(
+                f"Shape mismatch: {p_spectra.shape} vs {s_references.shape}",
+            )
 
         # Vectorized calculation
-        with np.errstate(divide='ignore', invalid='ignore'):
-            transmission = np.divide(p_spectra, s_references,
-                                   out=np.zeros_like(p_spectra, dtype=float),
-                                   where=s_references != 0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            transmission = np.divide(
+                p_spectra,
+                s_references,
+                out=np.zeros_like(p_spectra, dtype=float),
+                where=s_references != 0,
+            )
 
         # Apply LED correction if available
-        if self.apply_led_correction and p_led_intensities is not None and s_led_intensities is not None:
+        if (
+            self.apply_led_correction
+            and p_led_intensities is not None
+            and s_led_intensities is not None
+        ):
             led_correction = s_led_intensities / p_led_intensities
             # Broadcast correction factor across wavelengths
             transmission *= led_correction[:, np.newaxis]
@@ -130,8 +151,8 @@ class TransmissionCalculator:
         p_spectrum: np.ndarray,
         s_reference: np.ndarray,
         noise_floor: float = 100.0,
-        **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        **kwargs,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Calculate transmission and identify low-signal regions.
 
         Args:
@@ -143,6 +164,7 @@ class TransmissionCalculator:
         Returns:
             Tuple of (transmission, valid_mask) where valid_mask indicates
             regions above noise floor
+
         """
         transmission = self.calculate(p_spectrum, s_reference, **kwargs)
 
@@ -155,17 +177,18 @@ class TransmissionCalculator:
         self,
         p_spectrum: np.ndarray,
         s_reference: np.ndarray,
-        p_led_intensity: Optional[int],
-        s_led_intensity: Optional[int]
+        p_led_intensity: int | None,
+        s_led_intensity: int | None,
     ) -> None:
         """Validate calculation inputs.
 
         Raises:
             ValueError: If inputs are invalid
+
         """
         if len(p_spectrum) != len(s_reference):
             raise ValueError(
-                f"Spectrum length mismatch: P={len(p_spectrum)}, S={len(s_reference)}"
+                f"Spectrum length mismatch: P={len(p_spectrum)}, S={len(s_reference)}",
             )
 
         if len(p_spectrum) == 0:
@@ -201,12 +224,13 @@ class TransmissionCalculator:
 
         Returns:
             Dictionary with statistics (min, max, mean, std, median)
+
         """
         return {
-            'min': float(np.min(transmission)),
-            'max': float(np.max(transmission)),
-            'mean': float(np.mean(transmission)),
-            'std': float(np.std(transmission)),
-            'median': float(np.median(transmission)),
-            'range': float(np.max(transmission) - np.min(transmission))
+            "min": float(np.min(transmission)),
+            "max": float(np.max(transmission)),
+            "mean": float(np.mean(transmission)),
+            "std": float(np.std(transmission)),
+            "median": float(np.median(transmission)),
+            "range": float(np.max(transmission) - np.min(transmission)),
         }

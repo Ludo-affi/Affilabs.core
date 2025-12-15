@@ -1,5 +1,4 @@
-"""
-Demo: Dynamic Savitzky–Golay filter equalizes spectral noise across channels.
+"""Demo: Dynamic Savitzky–Golay filter equalizes spectral noise across channels.
 
 Generates synthetic SPR-like transmission spectra with different noise levels
 and applies the dynamic SG filter used in utils.spr_data_processor to achieve
@@ -8,21 +7,25 @@ similar smoothness (std of second derivative) across all channels.
 Run (PowerShell):
     python -u tools/analysis/demo_dynamic_sg.py
 """
+
 from __future__ import annotations
 
-import numpy as np
 from dataclasses import dataclass
-from typing import Tuple, List
+
+import numpy as np
 
 try:
     from scipy.signal import savgol_filter
 except ImportError:
     raise SystemExit("scipy is required for this demo (pip install scipy)")
 
-import os, sys
+import os
+import sys
+
 # Add project root to sys.path for imports when running as a script
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from utils.spr_data_processor import SPRDataProcessor
+
 
 @dataclass
 class SyntheticChannel:
@@ -30,7 +33,11 @@ class SyntheticChannel:
     spectrum: np.ndarray
 
 
-def make_spr_like_spectrum(n: int = 1024, noise_sigma: float = 0.5, seed: int | None = None) -> np.ndarray:
+def make_spr_like_spectrum(
+    n: int = 1024,
+    noise_sigma: float = 0.5,
+    seed: int | None = None,
+) -> np.ndarray:
     rng = np.random.default_rng(seed)
 
     # Build a simple SPR-like dip: 100 - A * exp(-(x-x0)^2 / (2*sigma^2)) + baseline slope
@@ -48,14 +55,14 @@ def make_spr_like_spectrum(n: int = 1024, noise_sigma: float = 0.5, seed: int | 
 
 def second_deriv_std(y: np.ndarray) -> float:
     if len(y) < 5:
-        return float('nan')
+        return float("nan")
     d2 = np.diff(y, n=2)
     return float(np.std(d2))
 
 
 def main() -> None:
     # Synthetic channels with different noise levels
-    channels: List[SyntheticChannel] = [
+    channels: list[SyntheticChannel] = [
         SyntheticChannel("A", make_spr_like_spectrum(1024, noise_sigma=0.4, seed=1)),
         SyntheticChannel("B", make_spr_like_spectrum(1024, noise_sigma=0.8, seed=2)),
         SyntheticChannel("C", make_spr_like_spectrum(1024, noise_sigma=1.2, seed=3)),
@@ -72,18 +79,28 @@ def main() -> None:
     print("\n=== Dynamic SG (auto-target median) ===")
     for ch in channels:
         pre = second_deriv_std(ch.spectrum)
-        smoothed, w, p = proc._apply_dynamic_sg_filter(ch.spectrum, target_smoothness=None)
+        smoothed, w, p = proc._apply_dynamic_sg_filter(
+            ch.spectrum,
+            target_smoothness=None,
+        )
         post = second_deriv_std(smoothed)
-        print(f"Ch {ch.name}: pre σ(d²)={pre:8.5f}  →  post σ(d²)={post:8.5f}  (w={w}, p={p})")
+        print(
+            f"Ch {ch.name}: pre σ(d²)={pre:8.5f}  →  post σ(d²)={post:8.5f}  (w={w}, p={p})",
+        )
 
     # Fixed global target: pick the median of pre-channel smoothness to unify
     target = np.median([second_deriv_std(ch.spectrum) for ch in channels])
     print(f"\n=== Dynamic SG (fixed global target = {target:.5f}) ===")
     for ch in channels:
         pre = second_deriv_std(ch.spectrum)
-        smoothed, w, p = proc._apply_dynamic_sg_filter(ch.spectrum, target_smoothness=float(target))
+        smoothed, w, p = proc._apply_dynamic_sg_filter(
+            ch.spectrum,
+            target_smoothness=float(target),
+        )
         post = second_deriv_std(smoothed)
-        print(f"Ch {ch.name}: pre σ(d²)={pre:8.5f}  →  post σ(d²)={post:8.5f}  (w={w}, p={p})")
+        print(
+            f"Ch {ch.name}: pre σ(d²)={pre:8.5f}  →  post σ(d²)={post:8.5f}  (w={w}, p={p})",
+        )
 
 
 if __name__ == "__main__":

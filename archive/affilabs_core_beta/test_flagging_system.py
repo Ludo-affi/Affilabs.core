@@ -1,5 +1,4 @@
-"""
-Test script for channel-specific flagging system
+"""Test script for channel-specific flagging system
 
 This script validates:
 1. Channel selection stores correct state for flagging
@@ -10,7 +9,7 @@ This script validates:
 """
 
 import sys
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 
 
 def test_channel_selection_for_flagging():
@@ -30,7 +29,7 @@ def test_channel_selection_for_flagging():
     window.selected_channel_letter = channel_letter
 
     assert window.selected_channel_for_flagging == 1, "Channel index should be 1"
-    assert window.selected_channel_letter == 'B', "Channel letter should be 'B'"
+    assert window.selected_channel_letter == "B", "Channel letter should be 'B'"
 
     print(f"✓ Channel {channel_letter} (index {channel_idx}) selected for flagging")
 
@@ -45,17 +44,17 @@ def test_flag_storage_structure():
     plot_widget.flag_markers = []
 
     # Add a flag to Channel B (index 1)
-    flag_data = (25.3, 1234.5, 'Test flag')
+    flag_data = (25.3, 1234.5, "Test flag")
     plot_widget.channel_flags[1].append(flag_data)
 
     # Add flag marker
     flag_marker = {
-        'channel': 1,
-        'x': 25.3,
-        'y': 1234.5,
-        'note': 'Test flag',
-        'line': Mock(),
-        'text': Mock()
+        "channel": 1,
+        "x": 25.3,
+        "y": 1234.5,
+        "note": "Test flag",
+        "line": Mock(),
+        "text": Mock(),
     }
     plot_widget.flag_markers.append(flag_marker)
 
@@ -63,11 +62,13 @@ def test_flag_storage_structure():
     assert len(plot_widget.channel_flags[1]) == 1, "Channel B should have 1 flag"
     assert plot_widget.channel_flags[1][0] == flag_data, "Flag data should match"
     assert len(plot_widget.flag_markers) == 1, "Should have 1 flag marker"
-    assert plot_widget.flag_markers[0]['channel'] == 1, "Flag marker channel should be 1"
+    assert (
+        plot_widget.flag_markers[0]["channel"] == 1
+    ), "Flag marker channel should be 1"
 
     print("✓ Flag storage structure correct")
     print(f"  - channel_flags[1]: {plot_widget.channel_flags[1]}")
-    print(f"  - flag_markers: 1 marker for channel 1")
+    print("  - flag_markers: 1 marker for channel 1")
 
 
 def test_channel_specific_flags():
@@ -78,10 +79,10 @@ def test_channel_specific_flags():
     plot_widget.channel_flags = {0: [], 1: [], 2: [], 3: []}
 
     # Add flags to different channels
-    plot_widget.channel_flags[0].append((10.0, 1000.0, 'Ch A flag'))
-    plot_widget.channel_flags[1].append((20.0, 1100.0, 'Ch B flag 1'))
-    plot_widget.channel_flags[1].append((30.0, 1200.0, 'Ch B flag 2'))
-    plot_widget.channel_flags[3].append((40.0, 900.0, 'Ch D flag'))
+    plot_widget.channel_flags[0].append((10.0, 1000.0, "Ch A flag"))
+    plot_widget.channel_flags[1].append((20.0, 1100.0, "Ch B flag 1"))
+    plot_widget.channel_flags[1].append((30.0, 1200.0, "Ch B flag 2"))
+    plot_widget.channel_flags[3].append((40.0, 900.0, "Ch D flag"))
 
     # Verify channel separation
     assert len(plot_widget.channel_flags[0]) == 1, "Channel A should have 1 flag"
@@ -102,9 +103,9 @@ def test_flag_removal_logic():
 
     # Create flags at different positions
     flags = [
-        (10.0, 1000.0, 'Flag 1'),
-        (25.0, 1100.0, 'Flag 2'),
-        (40.0, 1200.0, 'Flag 3'),
+        (10.0, 1000.0, "Flag 1"),
+        (25.0, 1100.0, "Flag 2"),
+        (40.0, 1200.0, "Flag 3"),
     ]
 
     # Test removal near x=25.0 with tolerance=5.0
@@ -113,14 +114,12 @@ def test_flag_removal_logic():
 
     # Find flags to remove
     flags_to_remove = [
-        (x, y, note) for x, y, note in flags
-        if abs(x - x_pos) <= tolerance
+        (x, y, note) for x, y, note in flags if abs(x - x_pos) <= tolerance
     ]
 
     # Keep flags outside tolerance
     remaining_flags = [
-        (x, y, note) for x, y, note in flags
-        if abs(x - x_pos) > tolerance
+        (x, y, note) for x, y, note in flags if abs(x - x_pos) > tolerance
     ]
 
     assert len(flags_to_remove) == 1, "Should find 1 flag to remove"
@@ -138,10 +137,10 @@ def test_flag_count_summary():
     print("\n=== Test 5: Flag Count Summary ===")
 
     channel_flags = {
-        0: [(10.0, 1000.0, '')],  # 1 flag
-        1: [(20.0, 1100.0, ''), (30.0, 1200.0, '')],  # 2 flags
+        0: [(10.0, 1000.0, "")],  # 1 flag
+        1: [(20.0, 1100.0, ""), (30.0, 1200.0, "")],  # 2 flags
         2: [],  # 0 flags
-        3: [(40.0, 900.0, '')]  # 1 flag
+        3: [(40.0, 900.0, "")],  # 1 flag
     }
 
     # Generate summary
@@ -156,7 +155,9 @@ def test_flag_count_summary():
     flag_summary = ", ".join([f"Ch{ch}: {count}" for ch, count in flag_counts.items()])
 
     expected = "ChA: 1, ChB: 2, ChD: 1"
-    assert flag_summary == expected, f"Summary should be '{expected}', got '{flag_summary}'"
+    assert (
+        flag_summary == expected
+    ), f"Summary should be '{expected}', got '{flag_summary}'"
 
     print("✓ Flag count summary correct")
     print(f"  - Summary: {flag_summary}")
@@ -189,16 +190,17 @@ def test_coordinate_mapping():
     print("\n=== Test 7: Channel Index Mapping ===")
 
     mapping = {
-        0: 'A',
-        1: 'B',
-        2: 'C',
-        3: 'D'
+        0: "A",
+        1: "B",
+        2: "C",
+        3: "D",
     }
 
     for idx, expected_letter in mapping.items():
         actual_letter = chr(65 + idx)
-        assert actual_letter == expected_letter, \
-            f"Index {idx} should map to '{expected_letter}', got '{actual_letter}'"
+        assert (
+            actual_letter == expected_letter
+        ), f"Index {idx} should map to '{expected_letter}', got '{actual_letter}'"
         print(f"✓ Index {idx} → Channel {actual_letter}")
 
 
@@ -222,7 +224,9 @@ def run_all_tests():
         print("=" * 60)
         print("\nImplementation Summary:")
         print("1. Channel selection stores channel_idx and channel_letter for flagging")
-        print("2. Flags stored in channel_flags dict (per channel) and flag_markers list")
+        print(
+            "2. Flags stored in channel_flags dict (per channel) and flag_markers list",
+        )
         print("3. Flag markers have channel, x, y, note, line, and text attributes")
         print("4. Flags are channel-specific (separated by channel index)")
         print("5. Flag removal uses tolerance-based position matching (default 5.0)")

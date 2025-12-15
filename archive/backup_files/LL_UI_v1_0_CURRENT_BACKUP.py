@@ -2,38 +2,65 @@
 
 import sys
 from pathlib import Path
-from typing import Optional
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QParallelAnimationGroup, Signal, QEvent
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTabWidget, QLabel, QFrame, QToolButton, QScrollArea, QGraphicsDropShadowEffect,
-    QSlider, QSpinBox, QSplitter, QMenu, QMessageBox, QCheckBox, QDialog, QLineEdit, QComboBox,
-    QRadioButton, QButtonGroup, QFormLayout, QDialogButtonBox, QTextEdit, QGroupBox, QGridLayout, QProgressBar
+
+from PySide6.QtCore import (
+    Qt,
+    QTimer,
+    Signal,
 )
-from PySide6.QtGui import QIcon, QColor, QFont, QAction, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSpinBox,
+    QSplitter,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Add Old software to path for imports
 old_software = Path(__file__).parent
 sys.path.insert(0, str(old_software))
 
-from utils.logger import logger
-from datetime import datetime
-from ui_styles import (
-    Colors, Fonts, Dimensions,
-    label_style, section_header_style, title_style, card_style,
-    primary_button_style, secondary_button_style, segmented_button_style,
-    checkbox_style, radio_button_style,
-    slider_style, scrollbar_style, separator_style, divider_style,
-    status_indicator_style, collapsible_header_style,
-    line_edit_style, combo_box_style, group_box_style, text_edit_log_style, spinbox_style
-)
-from diagnostics_dialog import DiagnosticsDialog
-from sections import CollapsibleSection
-from sidebar import SidebarPrototype
-from plot_helpers import create_time_plot, add_channel_curves, create_spectroscopy_plot
+
 from diagnostics_dialog import DiagnosticsDialog
 from inspector import ElementInspector
+from plot_helpers import add_channel_curves, create_time_plot
+from sidebar import SidebarPrototype
+from ui_styles import (
+    Colors,
+    Fonts,
+    combo_box_style,
+    divider_style,
+    group_box_style,
+    label_style,
+    line_edit_style,
+    segmented_button_style,
+    spinbox_style,
+    title_style,
+)
 
+from utils.logger import logger
 
 
 class StartupCalibProgressDialog(QDialog):
@@ -43,7 +70,13 @@ class StartupCalibProgressDialog(QDialog):
     retry_clicked = Signal()  # Signal emitted when Retry button is clicked
     continue_anyway_clicked = Signal()  # Signal emitted when Continue Anyway is clicked
 
-    def __init__(self, parent=None, title="Processing", message="Please wait...", show_start_button=False):
+    def __init__(
+        self,
+        parent=None,
+        title="Processing",
+        message="Please wait...",
+        show_start_button=False,
+    ):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
@@ -72,12 +105,16 @@ class StartupCalibProgressDialog(QDialog):
             self.parent_window.installEventFilter(self)
 
         # Remove window close button and make it frameless for modern look
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
 
         # Style with border
         self.setStyleSheet(
             "QDialog { background: #FFFFFF; border: 2px solid #007AFF; border-radius: 12px; }"
-            + label_style(13, Colors.PRIMARY_TEXT)
+            + label_style(13, Colors.PRIMARY_TEXT),
         )
 
         # Main layout
@@ -101,13 +138,15 @@ class StartupCalibProgressDialog(QDialog):
         self.progress_bar.setStyleSheet(
             f"QProgressBar {{ background: {Colors.OVERLAY_LIGHT_6}; border-radius: 4px; "
             "border: 1px solid #D1D1D6; color: #FFFFFF; font-size: 12px; font-weight: 700; text-align: center; }}"
-            "QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007AFF, stop:1 #00C7BE); border-radius: 4px; }"
+            "QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007AFF, stop:1 #00C7BE); border-radius: 4px; }",
         )
         main_layout.addWidget(self.progress_bar)
 
         # Status message
         self.status_label = QLabel(message)
-        self.status_label.setStyleSheet(label_style(14, Colors.SECONDARY_TEXT) + "padding: 0px;")
+        self.status_label.setStyleSheet(
+            label_style(14, Colors.SECONDARY_TEXT) + "padding: 0px;",
+        )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumHeight(70)
@@ -238,6 +277,7 @@ class StartupCalibProgressDialog(QDialog):
         Args:
             value: Current progress value
             maximum: Maximum progress value (default 100)
+
         """
         if not self._is_closing and self.isVisible():
             try:
@@ -269,6 +309,7 @@ class StartupCalibProgressDialog(QDialog):
             error_message: Error description to show
             retry_count: Current retry attempt
             max_retries: Maximum retry attempts allowed
+
         """
         if self._is_closing or not self.isVisible():
             return
@@ -282,7 +323,7 @@ class StartupCalibProgressDialog(QDialog):
             self.title_label.setStyleSheet(
                 "font-size: 18px;"
                 "font-weight: 700;"
-                "color: #FF3B30;"  # Red color for error
+                "color: #FF3B30;",  # Red color for error
             )
 
             retries_left = max_retries - retry_count
@@ -308,7 +349,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #0051D5;"
-                    "}"
+                    "}",
                 )
                 self.retry_button.clicked.connect(self._on_retry_clicked)
                 self.button_layout.insertWidget(1, self.retry_button)
@@ -327,7 +368,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #FF8000;"
-                    "}"
+                    "}",
                 )
                 self.continue_button.clicked.connect(self._on_continue_clicked)
                 self.button_layout.insertWidget(2, self.continue_button)
@@ -343,6 +384,7 @@ class StartupCalibProgressDialog(QDialog):
 
         Args:
             error_message: Error description to show
+
         """
         if self._is_closing or not self.isVisible():
             return
@@ -352,7 +394,9 @@ class StartupCalibProgressDialog(QDialog):
 
             # Update title and status
             self.title_label.setText("🛑 Calibration Failed")
-            self.status_label.setText(f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.")
+            self.status_label.setText(
+                f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.",
+            )
 
             # Hide Start and Retry buttons
             if self.start_button:
@@ -375,7 +419,7 @@ class StartupCalibProgressDialog(QDialog):
                     "}"
                     "QPushButton:hover {"
                     "  background: #FF8000;"
-                    "}"
+                    "}",
                 )
                 self.continue_button.clicked.connect(self._on_continue_clicked)
                 self.button_layout.insertWidget(1, self.continue_button)
@@ -396,9 +440,7 @@ class StartupCalibProgressDialog(QDialog):
 
             # Reset title color
             self.title_label.setStyleSheet(
-                "font-size: 18px;"
-                "font-weight: 700;"
-                "color: #1D1D1F;"
+                "font-size: 18px;font-weight: 700;color: #1D1D1F;",
             )
 
             # Hide error buttons
@@ -427,7 +469,7 @@ class StartupCalibProgressDialog(QDialog):
 class DeviceConfigDialog(QDialog):
     """Dialog to collect missing device configuration information."""
 
-    def __init__(self, parent=None, device_serial=None, controller_type=''):
+    def __init__(self, parent=None, device_serial=None, controller_type=""):
         super().__init__(parent)
         self.setWindowTitle("Device Configuration Required")
         self.setFixedWidth(500)
@@ -444,7 +486,7 @@ class DeviceConfigDialog(QDialog):
             "QLabel {"
             "  color: #1D1D1F;"
             "  font-size: 13px;"
-            "}"
+            "}",
         )
 
         layout = QVBoxLayout(self)
@@ -457,7 +499,9 @@ class DeviceConfigDialog(QDialog):
         layout.addWidget(title)
 
         # Description
-        desc = QLabel(f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>")
+        desc = QLabel(
+            f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>",
+        )
         desc.setTextFormat(Qt.TextFormat.RichText)  # Enable HTML formatting
         desc.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT))
         desc.setWordWrap(True)
@@ -476,17 +520,17 @@ class DeviceConfigDialog(QDialog):
 
         # LED Model (LCW or OWW)
         self.led_model_combo = QComboBox()
-        self.led_model_combo.addItems(['LCW', 'OWW'])
+        self.led_model_combo.addItems(["LCW", "OWW"])
         self.led_model_combo.setStyleSheet(combo_style)
         form.addRow("LED Model:", self.led_model_combo)
 
         # Controller Options (hardware types excluding pumps)
         self.controller_combo = QComboBox()
-        self.controller_combo.addItems(['Arduino', 'PicoP4SPR', 'PicoEZSPR'])
+        self.controller_combo.addItems(["Arduino", "PicoP4SPR", "PicoEZSPR"])
         self.controller_combo.setStyleSheet(combo_style)
 
         # Pre-select based on detected controller type
-        if self.controller_type in ['Arduino', 'PicoP4SPR', 'PicoEZSPR']:
+        if self.controller_type in ["Arduino", "PicoP4SPR", "PicoEZSPR"]:
             index = self.controller_combo.findText(self.controller_type)
             if index >= 0:
                 self.controller_combo.setCurrentIndex(index)
@@ -497,13 +541,13 @@ class DeviceConfigDialog(QDialog):
 
         # Fiber Diameter (A=100, B=200)
         self.fiber_diameter_combo = QComboBox()
-        self.fiber_diameter_combo.addItems(['A (100 µm)', 'B (200 µm)'])
+        self.fiber_diameter_combo.addItems(["A (100 µm)", "B (200 µm)"])
         self.fiber_diameter_combo.setStyleSheet(combo_style)
         form.addRow("Fiber Diameter:", self.fiber_diameter_combo)
 
         # Polarizer Type (barrel or circle, default circle for Arduino/PicoP4SPR)
         self.polarizer_type_combo = QComboBox()
-        self.polarizer_type_combo.addItems(['circle', 'barrel'])
+        self.polarizer_type_combo.addItems(["circle", "barrel"])
         self.polarizer_type_combo.setStyleSheet(combo_style)
 
         # Set default based on controller
@@ -514,7 +558,9 @@ class DeviceConfigDialog(QDialog):
         # Device ID (detector serial number)
         self.device_id_input = QLineEdit()
         self.device_id_input.setPlaceholderText("Enter detector serial number")
-        self.device_id_input.setText(device_serial or "")  # Pre-fill with detected serial
+        self.device_id_input.setText(
+            device_serial or "",
+        )  # Pre-fill with detected serial
         self.device_id_input.setStyleSheet(input_style)
         form.addRow("Device ID:", self.device_id_input)
 
@@ -537,7 +583,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QPushButton:hover {"
             "  background: #E5E5E7;"
-            "}"
+            "}",
         )
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
@@ -555,7 +601,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QPushButton:hover {"
             "  background: #0051D5;"
-            "}"
+            "}",
         )
         save_btn.clicked.connect(self.accept)
         button_layout.addWidget(save_btn)
@@ -577,24 +623,24 @@ class DeviceConfigDialog(QDialog):
 
     def _update_polarizer_default(self):
         """Set polarizer default based on controller type."""
-        if self.controller_type in ['Arduino', 'PicoP4SPR']:
-            self.polarizer_type_combo.setCurrentText('circle')
-        elif self.controller_type == 'PicoEZSPR':
-            self.polarizer_type_combo.setCurrentText('barrel')
+        if self.controller_type in ["Arduino", "PicoP4SPR"]:
+            self.polarizer_type_combo.setCurrentText("circle")
+        elif self.controller_type == "PicoEZSPR":
+            self.polarizer_type_combo.setCurrentText("barrel")
 
     def get_config_data(self):
         """Get the configuration data from the form."""
         # Map LED model abbreviations to full names
         led_model_map = {
-            'LCW': 'luminus_cool_white',
-            'OWW': 'osram_warm_white'
+            "LCW": "luminus_cool_white",
+            "OWW": "osram_warm_white",
         }
 
         # Extract fiber diameter from selection (e.g., "A (100 µm)" -> 100)
         fiber_text = self.fiber_diameter_combo.currentText()
-        if 'A' in fiber_text:
+        if "A" in fiber_text:
             fiber_diameter = 100
-        elif 'B' in fiber_text:
+        elif "B" in fiber_text:
             fiber_diameter = 200
         else:
             fiber_diameter = 200  # Default
@@ -603,21 +649,24 @@ class DeviceConfigDialog(QDialog):
         controller_type = self.controller_combo.currentText()
 
         # Determine controller model name from type
-        controller_model = 'Raspberry Pi Pico P4SPR'  # Default
-        if controller_type == 'Arduino':
-            controller_model = 'Arduino P4SPR'
-        elif controller_type == 'PicoP4SPR':
-            controller_model = 'Raspberry Pi Pico P4SPR'
-        elif controller_type == 'PicoEZSPR':
-            controller_model = 'Raspberry Pi Pico EZSPR'
+        controller_model = "Raspberry Pi Pico P4SPR"  # Default
+        if controller_type == "Arduino":
+            controller_model = "Arduino P4SPR"
+        elif controller_type == "PicoP4SPR":
+            controller_model = "Raspberry Pi Pico P4SPR"
+        elif controller_type == "PicoEZSPR":
+            controller_model = "Raspberry Pi Pico EZSPR"
 
         return {
-            'led_pcb_model': led_model_map.get(self.led_model_combo.currentText(), 'luminus_cool_white'),
-            'optical_fiber_diameter_um': fiber_diameter,
-            'polarizer_type': self.polarizer_type_combo.currentText(),
-            'device_id': self.device_id_input.text().strip() or None,
-            'controller_model': controller_model,
-            'controller_type': controller_type,
+            "led_pcb_model": led_model_map.get(
+                self.led_model_combo.currentText(),
+                "luminus_cool_white",
+            ),
+            "optical_fiber_diameter_um": fiber_diameter,
+            "polarizer_type": self.polarizer_type_combo.currentText(),
+            "device_id": self.device_id_input.text().strip() or None,
+            "controller_model": controller_model,
+            "controller_type": controller_type,
         }
 
 
@@ -639,7 +688,7 @@ class AdvancedSettingsDialog(QDialog):
             "QLabel {"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
 
         # Main layout
@@ -730,10 +779,12 @@ class AdvancedSettingsDialog(QDialog):
         pipeline_label = QLabel("Data Pipeline:")
         pipeline_label.setStyleSheet("font-weight: 600; font-size: 13px;")
         self.pipeline_combo = QComboBox()
-        self.pipeline_combo.addItems([
-            "Pipeline 1 (Fourier Weighted)",
-            "Pipeline 2 (Adaptive Multi-Feature)"
-        ])
+        self.pipeline_combo.addItems(
+            [
+                "Pipeline 1 (Fourier Weighted)",
+                "Pipeline 2 (Adaptive Multi-Feature)",
+            ],
+        )
         self.pipeline_combo.setFixedWidth(300)
         self.pipeline_combo.setStyleSheet(
             "QComboBox {"
@@ -753,7 +804,7 @@ class AdvancedSettingsDialog(QDialog):
             "  border-right: 4px solid transparent;"
             "  border-top: 5px solid #86868B;"
             "  margin-right: 8px;"
-            "}"
+            "}",
         )
         form.addRow(pipeline_label, self.pipeline_combo)
 
@@ -786,7 +837,7 @@ class AdvancedSettingsDialog(QDialog):
             "  background: #1D1D1F;"
             "  border: 3px solid white;"
             "  outline: 1px solid #1D1D1F;"
-            "}"
+            "}",
         )
         self.filter_method_group.addButton(self.filter1_radio, 0)
         filter_layout.addWidget(self.filter1_radio)
@@ -849,7 +900,9 @@ class AdvancedSettingsDialog(QDialog):
         main_layout.addStretch()
 
         # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+        )
         dialog_button_style = (
             "QPushButton { padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 80px; }"
             f"QPushButton[text='OK'] {{ background: {Colors.PRIMARY_TEXT}; color: white; border: none; }}"
@@ -873,6 +926,7 @@ class AdvancedSettingsDialog(QDialog):
         try:
             # Check if DEV mode is enabled
             from settings import DEV
+
             dev_mode = DEV
         except ImportError:
             dev_mode = False
@@ -910,7 +964,7 @@ class AdvancedSettingsDialog(QDialog):
             "}"
             "QTabBar::tab:hover:!selected {"
             "  background: #E8E8EA;"
-            "}"
+            "}",
         )
 
         # Move existing content to "Settings" tab
@@ -934,7 +988,7 @@ class AdvancedSettingsDialog(QDialog):
             "font-size: 18px;"
             "font-weight: 700;"
             "color: #1D1D1F;"
-            "margin-bottom: 12px;"
+            "margin-bottom: 12px;",
         )
         diag_layout.addWidget(diag_title)
 
@@ -971,7 +1025,9 @@ class AdvancedSettingsDialog(QDialog):
             label = QLabel(label_text)
             label.setStyleSheet("font-size: 12px; color: #86868B;")
             value = QLabel("N/A")
-            value.setStyleSheet("font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;")
+            value.setStyleSheet(
+                "font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;",
+            )
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             setattr(self, attr_name, value)
             cal_layout.addWidget(label, row, 0, Qt.AlignmentFlag.AlignRight)
@@ -1000,7 +1056,9 @@ class AdvancedSettingsDialog(QDialog):
             label = QLabel(label_text)
             label.setStyleSheet("font-size: 12px; color: #86868B;")
             value = QLabel("N/A")
-            value.setStyleSheet("font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;")
+            value.setStyleSheet(
+                "font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;",
+            )
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             setattr(self, attr_name, value)
             sref_layout.addWidget(label, row, 0, Qt.AlignmentFlag.AlignRight)
@@ -1029,7 +1087,9 @@ class AdvancedSettingsDialog(QDialog):
             label = QLabel(label_text)
             label.setStyleSheet("font-size: 12px; color: #86868B;")
             value = QLabel("N/A")
-            value.setStyleSheet("font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;")
+            value.setStyleSheet(
+                "font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;",
+            )
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             setattr(self, attr_name, value)
             fwhm_layout.addWidget(label, row, 0, Qt.AlignmentFlag.AlignRight)
@@ -1058,7 +1118,9 @@ class AdvancedSettingsDialog(QDialog):
             label = QLabel(label_text)
             label.setStyleSheet("font-size: 12px; color: #86868B;")
             value = QLabel("N/A")
-            value.setStyleSheet("font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;")
+            value.setStyleSheet(
+                "font-size: 12px; color: #1D1D1F; font-family: 'Consolas', 'Courier New', monospace;",
+            )
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             setattr(self, attr_name, value)
             status_layout.addWidget(label, row, 0, Qt.AlignmentFlag.AlignRight)
@@ -1083,10 +1145,12 @@ class AdvancedSettingsDialog(QDialog):
             "  font-family: 'Consolas', 'Courier New', monospace;"
             "  font-size: 11px;"
             "  color: #1D1D1F;"
-            "}"
+            "}",
         )
         self.diag_log_output.setMaximumHeight(300)
-        self.diag_log_output.setPlainText("Log output will appear here when available...")
+        self.diag_log_output.setPlainText(
+            "Log output will appear here when available...",
+        )
 
         log_layout.addWidget(self.diag_log_output)
         log_group.setLayout(log_layout)
@@ -1123,7 +1187,7 @@ class AdvancedSettingsDialog(QDialog):
                 "}"
                 "QPushButton:hover {"
                 "  background: #E8E8EA;"
-                "}"
+                "}",
             )
             diag_btn.clicked.connect(self._show_diagnostics)
             button_box.addButton(diag_btn, QDialogButtonBox.ButtonRole.ActionRole)
@@ -1134,16 +1198,25 @@ class AdvancedSettingsDialog(QDialog):
         diag_dialog.load_diagnostics_data(self.parent())
         diag_dialog.exec()
 
-    def load_device_info(self, serial="Not detected", afterglow_cal=False, cal_date=None):
+    def load_device_info(
+        self,
+        serial="Not detected",
+        afterglow_cal=False,
+        cal_date=None,
+    ):
         """Load device information into the dialog."""
         self.serial_value.setText(serial if serial else "Not detected")
 
         if afterglow_cal:
             self.afterglow_value.setText("✓ Calibrated")
-            self.afterglow_value.setStyleSheet("font-size: 13px; color: #34C759; font-weight: 600;")
+            self.afterglow_value.setStyleSheet(
+                "font-size: 13px; color: #34C759; font-weight: 600;",
+            )
         else:
             self.afterglow_value.setText("Not calibrated")
-            self.afterglow_value.setStyleSheet("font-size: 13px; color: #FF9500; font-weight: 600;")
+            self.afterglow_value.setStyleSheet(
+                "font-size: 13px; color: #FF9500; font-weight: 600;",
+            )
 
         if cal_date:
             if isinstance(cal_date, str):
@@ -1152,8 +1225,6 @@ class AdvancedSettingsDialog(QDialog):
                 self.cal_date_value.setText(cal_date.strftime("%Y-%m-%d %H:%M"))
         else:
             self.cal_date_value.setText("N/A")
-
-
 
 
 class MainWindowPrototype(QMainWindow):
@@ -1227,7 +1298,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: rgba(0, 0, 0, 0.15);"
-            "}"
+            "}",
         )
 
         self.sidebar = SidebarPrototype()
@@ -1287,7 +1358,9 @@ class MainWindowPrototype(QMainWindow):
         self.oem_led_calibration_btn = self.sidebar.oem_led_calibration_btn
 
         right_widget = QWidget()
-        right_widget.setMinimumWidth(300)  # Allow main content to compress so sidebar can expand more
+        right_widget.setMinimumWidth(
+            300,
+        )  # Allow main content to compress so sidebar can expand more
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
@@ -1296,6 +1369,7 @@ class MainWindowPrototype(QMainWindow):
 
         # Stacked widget to hold different content pages
         from PySide6.QtWidgets import QStackedWidget
+
         self.content_stack = QStackedWidget()
 
         # Create content for each tab
@@ -1358,7 +1432,7 @@ class MainWindowPrototype(QMainWindow):
                 "  background: rgba(46, 48, 227, 1.0);"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
 
             # Connect to switch page
@@ -1372,7 +1446,7 @@ class MainWindowPrototype(QMainWindow):
         timer_label = QLabel("00:00:00")
         timer_label.setStyleSheet(
             label_style(12, color=Colors.ERROR, weight=600, font_family=Fonts.MONOSPACE)
-            + "background: rgba(255, 59, 48, 0.1);border:none;border-radius:4px;padding:4px 8px;"
+            + "background: rgba(255, 59, 48, 0.1);border:none;border-radius:4px;padding:4px 8px;",
         )
         timer_label.setVisible(False)  # Hidden until recording starts
         nav_layout.addWidget(timer_label)
@@ -1393,7 +1467,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #86868B;"
             "  font-size: 16px;"
             "  background: transparent;"
-            "}"
+            "}",
         )
         indicator_layout.addWidget(self.rec_status_dot)
 
@@ -1401,10 +1475,7 @@ class MainWindowPrototype(QMainWindow):
         indicator_layout.addStretch()
 
         self.recording_indicator.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.04);"
-            "  border-radius: 6px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.04);  border-radius: 6px;}",
         )
         # Hide recording indicator box (keep for internal use but don't display)
         self.recording_indicator.setVisible(False)
@@ -1443,7 +1514,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: rgba(46, 48, 227, 0.1);"
             "  color: rgba(46, 48, 227, 0.3);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
-            "}"
+            "}",
         )
         self.pause_btn.clicked.connect(self._toggle_pause)
         nav_layout.addWidget(self.pause_btn)
@@ -1482,7 +1553,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: rgba(46, 48, 227, 0.1);"
             "  color: rgba(46, 48, 227, 0.3);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
-            "}"
+            "}",
         )
         self.record_btn.clicked.connect(self._toggle_recording)
         nav_layout.addWidget(self.record_btn)
@@ -1493,9 +1564,14 @@ class MainWindowPrototype(QMainWindow):
         self.power_btn = QPushButton("⏻")
         self.power_btn.setCheckable(True)
         self.power_btn.setFixedSize(40, 40)
-        self.power_btn.setProperty("powerState", "disconnected")  # Track state: disconnected, searching, connected
+        self.power_btn.setProperty(
+            "powerState",
+            "disconnected",
+        )  # Track state: disconnected, searching, connected
         self._update_power_button_style()
-        self.power_btn.setToolTip("Power On Device (Ctrl+P)\nGray = Disconnected | Yellow = Searching | Green = Connected")
+        self.power_btn.setToolTip(
+            "Power On Device (Ctrl+P)\nGray = Disconnected | Yellow = Searching | Green = Connected",
+        )
         self.power_btn.clicked.connect(self._handle_power_toggle)
         nav_layout.addWidget(self.power_btn)
 
@@ -1506,7 +1582,10 @@ class MainWindowPrototype(QMainWindow):
         logo_pixmap = QPixmap("ui/img/affinite-no-background.png")
         if not logo_pixmap.isNull():
             # Scale logo to larger size while maintaining aspect ratio
-            scaled_logo = logo_pixmap.scaledToHeight(40, Qt.TransformationMode.SmoothTransformation)
+            scaled_logo = logo_pixmap.scaledToHeight(
+                40,
+                Qt.TransformationMode.SmoothTransformation,
+            )
             logo_label.setPixmap(scaled_logo)
         logo_label.setStyleSheet("background: transparent;")
         logo_label.setToolTip("Affinité Instruments")
@@ -1518,10 +1597,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern)."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -1534,6 +1610,7 @@ class MainWindowPrototype(QMainWindow):
 
         # Create QSplitter for resizable graph panels (30/70 split)
         from PySide6.QtWidgets import QSplitter
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(8)
         splitter.setChildrenCollapsible(False)
@@ -1542,22 +1619,33 @@ class MainWindowPrototype(QMainWindow):
         self.full_timeline_graph, top_graph = self._create_graph_container(
             "Live Sensorgram",
             height=200,
-            show_delta_spr=False
+            show_delta_spr=False,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
         self.cycle_of_interest_graph, bottom_graph = self._create_graph_container(
             "Cycle of Interest",
             height=400,
-            show_delta_spr=True
+            show_delta_spr=True,
         )
 
         # Connect cursor signals for region selection
-        if self.full_timeline_graph.start_cursor and self.full_timeline_graph.stop_cursor:
-            self.full_timeline_graph.start_cursor.sigDragged.connect(self._on_cursor_dragged)
-            self.full_timeline_graph.stop_cursor.sigDragged.connect(self._on_cursor_dragged)
-            self.full_timeline_graph.start_cursor.sigPositionChangeFinished.connect(self._on_cursor_moved)
-            self.full_timeline_graph.stop_cursor.sigPositionChangeFinished.connect(self._on_cursor_moved)
+        if (
+            self.full_timeline_graph.start_cursor
+            and self.full_timeline_graph.stop_cursor
+        ):
+            self.full_timeline_graph.start_cursor.sigDragged.connect(
+                self._on_cursor_dragged,
+            )
+            self.full_timeline_graph.stop_cursor.sigDragged.connect(
+                self._on_cursor_dragged,
+            )
+            self.full_timeline_graph.start_cursor.sigPositionChangeFinished.connect(
+                self._on_cursor_moved,
+            )
+            self.full_timeline_graph.stop_cursor.sigPositionChangeFinished.connect(
+                self._on_cursor_moved,
+            )
 
         splitter.addWidget(top_graph)
         splitter.addWidget(bottom_graph)
@@ -1583,7 +1671,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: #1D1D1F;"
-            "}"
+            "}",
         )
 
         content_layout.addWidget(splitter, 1)
@@ -1606,13 +1694,18 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  font-weight: 500;"
-            "}"
+            "}",
         )
         header_layout.addWidget(channels_label)
 
         # Channel toggles - consistent colors (Black, Red, Blue, Green)
         self.channel_toggles = {}
-        for ch, color in [("A", "#1D1D1F"), ("B", "#FF3B30"), ("C", "#007AFF"), ("D", "#34C759")]:
+        for ch, color in [
+            ("A", "#1D1D1F"),
+            ("B", "#FF3B30"),
+            ("C", "#007AFF"),
+            ("D", "#34C759"),
+        ]:
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)
@@ -1633,12 +1726,17 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
 
             # Store reference and connect to visibility toggle
             self.channel_toggles[ch] = ch_btn
-            ch_btn.toggled.connect(lambda checked, channel=ch: self._toggle_channel_visibility(channel, checked))
+            ch_btn.toggled.connect(
+                lambda checked, channel=ch: self._toggle_channel_visibility(
+                    channel,
+                    checked,
+                ),
+            )
 
             header_layout.addWidget(ch_btn)
 
@@ -1670,7 +1768,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QCheckBox::indicator:hover {"
             "  border-color: #007AFF;"
-            "}"
+            "}",
         )
         self.live_data_checkbox.toggled.connect(self._toggle_live_data)
         header_layout.addWidget(self.live_data_checkbox)
@@ -1687,10 +1785,10 @@ class MainWindowPrototype(QMainWindow):
 
     def _toggle_channel_visibility(self, channel, visible):
         """Toggle visibility of a channel on both graphs."""
-        channel_idx = {'A': 0, 'B': 1, 'C': 2, 'D': 3}[channel]
+        channel_idx = {"A": 0, "B": 1, "C": 2, "D": 3}[channel]
 
         # Update full timeline graph
-        if hasattr(self, 'full_timeline_graph'):
+        if hasattr(self, "full_timeline_graph"):
             curve = self.full_timeline_graph.curves[channel_idx]
             if visible:
                 curve.show()
@@ -1698,7 +1796,7 @@ class MainWindowPrototype(QMainWindow):
                 curve.hide()
 
         # Update cycle of interest graph
-        if hasattr(self, 'cycle_of_interest_graph'):
+        if hasattr(self, "cycle_of_interest_graph"):
             curve = self.cycle_of_interest_graph.curves[channel_idx]
             if visible:
                 curve.show()
@@ -1716,7 +1814,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         # Add shadow
         shadow = QGraphicsDropShadowEffect()
@@ -1741,7 +1839,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         title_row.addWidget(title_label)
 
@@ -1750,7 +1848,9 @@ class MainWindowPrototype(QMainWindow):
         # Delta SPR signal display (only for Cycle of Interest graph)
         delta_display = None
         if show_delta_spr:
-            delta_display = QLabel("Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm")
+            delta_display = QLabel(
+                "Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm",
+            )
             delta_display.setStyleSheet(
                 "QLabel {"
                 "  background: rgba(0, 0, 0, 0.04);"
@@ -1761,14 +1861,14 @@ class MainWindowPrototype(QMainWindow):
                 f"  color: {Colors.PRIMARY_TEXT};"
                 f"  font-family: {Fonts.MONOSPACE};"
                 "  font-weight: 500;"
-                "}"
+                "}",
             )
             title_row.addWidget(delta_display)
 
         layout.addLayout(title_row)
 
         # Create standardized time-series plot
-        left_label = 'Δ SPR (RU)' if show_delta_spr else 'λ (nm)'
+        left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
         plot_widget = create_time_plot(left_label)
 
         # Create plot curves for 4 channels with distinct colors
@@ -1790,16 +1890,16 @@ class MainWindowPrototype(QMainWindow):
             start_cursor = pg.InfiniteLine(
                 pos=0,
                 angle=90,
-                pen=pg.mkPen(color='#1D1D1F', width=2),
+                pen=pg.mkPen(color="#1D1D1F", width=2),
                 movable=True,
-                label='Start: {value:.1f}s',
+                label="Start: {value:.1f}s",
                 labelOpts={
-                    'position': 0.5,  # Center of graph
-                    'color': '#1D1D1F',
-                    'fill': '#FFFFFF',
-                    'movable': False,
-                    'rotateAxis': (1, 0)  # Rotate 180 degrees total (horizontal)
-                }
+                    "position": 0.5,  # Center of graph
+                    "color": "#1D1D1F",
+                    "fill": "#FFFFFF",
+                    "movable": False,
+                    "rotateAxis": (1, 0),  # Rotate 180 degrees total (horizontal)
+                },
             )
             plot_widget.addItem(start_cursor)
 
@@ -1807,16 +1907,16 @@ class MainWindowPrototype(QMainWindow):
             stop_cursor = pg.InfiniteLine(
                 pos=100,
                 angle=90,
-                pen=pg.mkPen(color='#1D1D1F', width=2),
+                pen=pg.mkPen(color="#1D1D1F", width=2),
                 movable=True,
-                label='Stop: {value:.1f}s',
+                label="Stop: {value:.1f}s",
                 labelOpts={
-                    'position': 0.5,  # Center of graph
-                    'color': '#1D1D1F',
-                    'fill': '#FFFFFF',
-                    'movable': False,
-                    'rotateAxis': (1, 0)  # Rotate 180 degrees total (horizontal)
-                }
+                    "position": 0.5,  # Center of graph
+                    "color": "#1D1D1F",
+                    "fill": "#FFFFFF",
+                    "movable": False,
+                    "rotateAxis": (1, 0),  # Rotate 180 degrees total (horizontal)
+                },
             )
             plot_widget.addItem(stop_cursor)
 
@@ -1826,11 +1926,18 @@ class MainWindowPrototype(QMainWindow):
         plot_widget.start_cursor = start_cursor
         plot_widget.stop_cursor = stop_cursor
         plot_widget.flag_markers = []  # Store flag marker items
-        plot_widget.channel_flags = {0: [], 1: [], 2: [], 3: []}  # Store flags per channel (index: list of (x, y, note))
+        plot_widget.channel_flags = {
+            0: [],
+            1: [],
+            2: [],
+            3: [],
+        }  # Store flags per channel (index: list of (x, y, note))
 
         # Connect plot click event for flagging (only for Live Sensorgram - top graph)
         if not show_delta_spr:  # Live Sensorgram
-            plot_widget.scene().sigMouseClicked.connect(lambda event: self._on_plot_clicked(event, plot_widget))
+            plot_widget.scene().sigMouseClicked.connect(
+                lambda event: self._on_plot_clicked(event, plot_widget),
+            )
 
         # Add zoom/reset functionality (default rectangle zoom for Cycle of Interest)
         plot_widget.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
@@ -1841,10 +1948,10 @@ class MainWindowPrototype(QMainWindow):
 
     def _toggle_channel_visibility(self, channel, visible):
         """Toggle visibility of a channel on both graphs."""
-        channel_idx = {'A': 0, 'B': 1, 'C': 2, 'D': 3}[channel]
+        channel_idx = {"A": 0, "B": 1, "C": 2, "D": 3}[channel]
 
         # Update full timeline graph
-        if hasattr(self, 'full_timeline_graph'):
+        if hasattr(self, "full_timeline_graph"):
             curve = self.full_timeline_graph.curves[channel_idx]
             if visible:
                 curve.show()
@@ -1852,7 +1959,7 @@ class MainWindowPrototype(QMainWindow):
                 curve.hide()
 
         # Update cycle of interest graph
-        if hasattr(self, 'cycle_of_interest_graph'):
+        if hasattr(self, "cycle_of_interest_graph"):
             curve = self.cycle_of_interest_graph.curves[channel_idx]
             if visible:
                 curve.show()
@@ -1861,7 +1968,7 @@ class MainWindowPrototype(QMainWindow):
 
     def _on_curve_clicked(self, channel_idx):
         """Handle click on a channel curve in Live Sensorgram to select it for flagging."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         # Get channel letter for toggle button
@@ -1881,7 +1988,7 @@ class MainWindowPrototype(QMainWindow):
                 curve.setPen(curve.original_pen)
 
         # Update channel toggle button to show selection (but don't change visibility)
-        if hasattr(self, 'channel_toggles') and channel_letter in self.channel_toggles:
+        if hasattr(self, "channel_toggles") and channel_letter in self.channel_toggles:
             # Visual feedback: briefly flash the button or update its appearance
             # For now, just ensure it's checked (visible)
             btn = self.channel_toggles[channel_letter]
@@ -1895,11 +2002,11 @@ class MainWindowPrototype(QMainWindow):
 
     def _enable_flagging_mode(self, channel_idx, channel_letter):
         """Enable flagging mode for the selected channel."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         # Store current flagging mode state
-        if not hasattr(self, 'flagging_enabled'):
+        if not hasattr(self, "flagging_enabled"):
             self.flagging_enabled = False
 
         # Inform user that they can now click on points to flag them
@@ -1914,7 +2021,7 @@ class MainWindowPrototype(QMainWindow):
             return
 
         # Check if a channel is selected for flagging
-        if not hasattr(self, 'selected_channel_for_flagging'):
+        if not hasattr(self, "selected_channel_for_flagging"):
             print("Please select a channel first by clicking on its curve")
             return
 
@@ -1926,6 +2033,7 @@ class MainWindowPrototype(QMainWindow):
 
         # Check for Ctrl modifier to remove flags
         from PySide6.QtCore import Qt
+
         modifiers = event.modifiers()
 
         if modifiers == Qt.KeyboardModifier.ControlModifier:
@@ -1939,7 +2047,7 @@ class MainWindowPrototype(QMainWindow):
 
     def _add_flag_to_point(self, channel_idx, x_pos, y_pos, note=""):
         """Add a flag marker at the specified position on the selected channel."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         import pyqtgraph as pg
@@ -1951,15 +2059,19 @@ class MainWindowPrototype(QMainWindow):
         flag_line = pg.InfiniteLine(
             pos=x_pos,
             angle=90,
-            pen=pg.mkPen(color='#FF3B30', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
-            movable=False
+            pen=pg.mkPen(
+                color="#FF3B30",
+                width=2,
+                style=pg.QtCore.Qt.PenStyle.DashLine,
+            ),
+            movable=False,
         )
 
         # Add text label at the top
         flag_text = pg.TextItem(
             text=f"🚩 Ch{channel_letter}",
-            color='#FF3B30',
-            anchor=(0.5, 1)  # Center, bottom
+            color="#FF3B30",
+            anchor=(0.5, 1),  # Center, bottom
         )
         flag_text.setPos(x_pos, y_pos)
 
@@ -1969,12 +2081,12 @@ class MainWindowPrototype(QMainWindow):
 
         # Store references
         flag_marker = {
-            'channel': channel_idx,
-            'x': x_pos,
-            'y': y_pos,
-            'note': note,
-            'line': flag_line,
-            'text': flag_text
+            "channel": channel_idx,
+            "x": x_pos,
+            "y": y_pos,
+            "note": note,
+            "line": flag_line,
+            "text": flag_text,
         }
 
         self.full_timeline_graph.flag_markers.append(flag_marker)
@@ -1987,7 +2099,7 @@ class MainWindowPrototype(QMainWindow):
 
     def _remove_flag_at_position(self, channel_idx, x_pos, tolerance=5.0):
         """Remove a flag marker near the specified x position on the selected channel."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         # Find and remove flags within tolerance
@@ -1995,10 +2107,13 @@ class MainWindowPrototype(QMainWindow):
         markers_to_remove = []
 
         for marker in self.full_timeline_graph.flag_markers:
-            if marker['channel'] == channel_idx and abs(marker['x'] - x_pos) <= tolerance:
+            if (
+                marker["channel"] == channel_idx
+                and abs(marker["x"] - x_pos) <= tolerance
+            ):
                 # Remove visual elements
-                self.full_timeline_graph.removeItem(marker['line'])
-                self.full_timeline_graph.removeItem(marker['text'])
+                self.full_timeline_graph.removeItem(marker["line"])
+                self.full_timeline_graph.removeItem(marker["text"])
                 markers_to_remove.append(marker)
                 removed_count += 1
 
@@ -2008,7 +2123,8 @@ class MainWindowPrototype(QMainWindow):
 
         # Update channel flags
         self.full_timeline_graph.channel_flags[channel_idx] = [
-            (x, y, note) for x, y, note in self.full_timeline_graph.channel_flags[channel_idx]
+            (x, y, note)
+            for x, y, note in self.full_timeline_graph.channel_flags[channel_idx]
             if abs(x - x_pos) > tolerance
         ]
 
@@ -2017,11 +2133,16 @@ class MainWindowPrototype(QMainWindow):
 
         if removed_count > 0:
             channel_letter = chr(65 + channel_idx)
-            print(f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}")
+            print(
+                f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}",
+            )
 
     def _update_flags_table(self):
         """Update the Flags column in the cycle data table with current flags."""
-        if not hasattr(self, 'cycle_data_table') or not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "cycle_data_table") or not hasattr(
+            self,
+            "full_timeline_graph",
+        ):
             return
 
         # Count flags per channel
@@ -2036,13 +2157,15 @@ class MainWindowPrototype(QMainWindow):
         # Note: This is a simplified version. In a full implementation, you'd have
         # one row per data segment/cycle and show flags for that specific segment
         if flag_counts:
-            flag_summary = ", ".join([f"Ch{ch}: {count}" for ch, count in flag_counts.items()])
+            flag_summary = ", ".join(
+                [f"Ch{ch}: {count}" for ch, count in flag_counts.items()],
+            )
             print(f"Flags summary: {flag_summary}")
             # In full implementation: update specific table cell in Flags column
 
     def _clear_all_flags(self, channel_idx=None):
         """Clear all flags, optionally for a specific channel only."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         markers_to_remove = []
@@ -2052,12 +2175,16 @@ class MainWindowPrototype(QMainWindow):
             markers_to_remove = self.full_timeline_graph.flag_markers.copy()
         else:
             # Clear flags for specific channel
-            markers_to_remove = [m for m in self.full_timeline_graph.flag_markers if m['channel'] == channel_idx]
+            markers_to_remove = [
+                m
+                for m in self.full_timeline_graph.flag_markers
+                if m["channel"] == channel_idx
+            ]
 
         # Remove visual elements
         for marker in markers_to_remove:
-            self.full_timeline_graph.removeItem(marker['line'])
-            self.full_timeline_graph.removeItem(marker['text'])
+            self.full_timeline_graph.removeItem(marker["line"])
+            self.full_timeline_graph.removeItem(marker["text"])
             self.full_timeline_graph.flag_markers.remove(marker)
 
         # Clear channel_flags
@@ -2078,7 +2205,7 @@ class MainWindowPrototype(QMainWindow):
 
     def _on_cursor_dragged(self):
         """Handle cursor dragging - update label format dynamically."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         start_cursor = self.full_timeline_graph.start_cursor
@@ -2094,12 +2221,12 @@ class MainWindowPrototype(QMainWindow):
                 start_pos, stop_pos = stop_pos, start_pos
 
             # Update label text dynamically
-            start_cursor.label.setFormat(f'Start: {start_pos:.1f}s')
-            stop_cursor.label.setFormat(f'Stop: {stop_pos:.1f}s')
+            start_cursor.label.setFormat(f"Start: {start_pos:.1f}s")
+            stop_cursor.label.setFormat(f"Stop: {stop_pos:.1f}s")
 
     def _on_cursor_moved(self):
         """Handle cursor movement finished - update selected region."""
-        if not hasattr(self, 'full_timeline_graph'):
+        if not hasattr(self, "full_timeline_graph"):
             return
 
         start_cursor = self.full_timeline_graph.start_cursor
@@ -2124,17 +2251,14 @@ class MainWindowPrototype(QMainWindow):
         # Special handling for different tabs
         if tab_name == "Edits":
             return self._create_edits_content()
-        elif tab_name == "Analyze":
+        if tab_name == "Analyze":
             return self._create_analyze_content()
-        elif tab_name == "Report":
+        if tab_name == "Report":
             return self._create_report_content()
 
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -2144,10 +2268,7 @@ class MainWindowPrototype(QMainWindow):
         # Empty state message
         empty_icon = QLabel("📑")
         empty_icon.setStyleSheet(
-            "QLabel {"
-            "  font-size: 64px;"
-            "  background: transparent;"
-            "}"
+            "QLabel {  font-size: 64px;  background: transparent;}",
         )
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_icon)
@@ -2161,7 +2282,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  margin-top: 16px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_title)
@@ -2174,7 +2295,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  margin-top: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_desc)
@@ -2185,10 +2306,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Edits tab content with cycle data table and graph editing tools."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -2209,10 +2327,7 @@ class MainWindowPrototype(QMainWindow):
         """Create left panel with cycle data table and editing tools."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -2226,7 +2341,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2248,7 +2363,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         table_header.addWidget(table_title)
         table_header.addStretch()
@@ -2269,7 +2384,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         table_header.addWidget(filter_btn)
 
@@ -2277,20 +2392,26 @@ class MainWindowPrototype(QMainWindow):
 
         # Master-Detail Pattern: Top table (Master) + Bottom detail panel
         # Temporarily simplified for debugging
-        from PySide6.QtWidgets import QTableWidget, QHeaderView
+        from PySide6.QtWidgets import QHeaderView, QTableWidget
 
         self.cycle_data_table = QTableWidget(10, 6)
-        self.cycle_data_table.setHorizontalHeaderLabels(["Type", "Start", "End", "Units", "Notes", "Flags"])
-        self.cycle_data_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.cycle_data_table.setHorizontalHeaderLabels(
+            ["Type", "Start", "End", "Units", "Notes", "Flags"],
+        )
+        self.cycle_data_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch,
+        )
         self.cycle_data_table.setColumnWidth(3, 80)  # Fixed width for Units column
-        self.cycle_data_table.verticalHeader().setVisible(True)  # Show row numbers as ID
+        self.cycle_data_table.verticalHeader().setVisible(
+            True,
+        )  # Show row numbers as ID
         self.cycle_data_table.setStyleSheet(
             "QTableWidget {"
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
             "  font-size: 12px;"
-            "}"
+            "}",
         )
 
         table_layout.addWidget(self.cycle_data_table, 1)
@@ -2304,7 +2425,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2325,7 +2446,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         tools_layout.addWidget(tools_title)
 
@@ -2359,7 +2480,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.12);"
-                "}"
+                "}",
             )
             tools_grid.addWidget(tool_btn)
 
@@ -2387,7 +2508,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         action_buttons.addWidget(apply_btn)
 
@@ -2406,7 +2527,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
-            "}"
+            "}",
         )
         action_buttons.addWidget(reset_btn)
 
@@ -2420,10 +2541,7 @@ class MainWindowPrototype(QMainWindow):
         """Create right panel with primary graph and thumbnail selectors."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -2437,7 +2555,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2459,13 +2577,18 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_header.addWidget(graph_title)
         graph_header.addStretch()
 
         # Channel toggles (compact)
-        for ch, color in [("A", "#1D1D1F"), ("B", "#FF3B30"), ("C", "#1D1D1F"), ("D", "#34C759")]:
+        for ch, color in [
+            ("A", "#1D1D1F"),
+            ("B", "#FF3B30"),
+            ("C", "#1D1D1F"),
+            ("D", "#34C759"),
+        ]:
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)
@@ -2483,7 +2606,7 @@ class MainWindowPrototype(QMainWindow):
                 "QPushButton:!checked {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: #86868B;"
-                "}"
+                "}",
             )
             graph_header.addWidget(ch_btn)
 
@@ -2496,13 +2619,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_canvas_layout = QVBoxLayout(graph_canvas)
         graph_placeholder = QLabel(
             "[Primary Graph Canvas]\n\n"
             "Selected cycle data displayed here\n"
-            "Interactive editing enabled"
+            "Interactive editing enabled",
         )
         graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         graph_placeholder.setStyleSheet(
@@ -2511,7 +2634,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_canvas_layout.addWidget(graph_placeholder)
 
@@ -2526,7 +2649,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2547,7 +2670,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         thumbnails_layout.addWidget(thumb_label)
 
@@ -2575,7 +2698,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 122, 255, 0.2);"
-                "}"
+                "}",
             )
             thumb_grid.addWidget(thumb)
 
@@ -2589,10 +2712,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Analyze tab content with processed data graph, statistics, and kinetic analysis."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -2613,10 +2733,7 @@ class MainWindowPrototype(QMainWindow):
         """Create left panel with processed data and statistics graphs."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -2630,7 +2747,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2652,7 +2769,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_header.addWidget(graph_title)
         graph_header.addStretch()
@@ -2682,7 +2799,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             graph_header.addWidget(view_btn)
 
@@ -2695,13 +2812,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         canvas_layout = QVBoxLayout(graph_canvas)
         canvas_placeholder = QLabel(
             "[Processed Data Graph]\n\n"
             "Fitted curves with model overlay\n"
-            "Interactive zoom and pan enabled"
+            "Interactive zoom and pan enabled",
         )
         canvas_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         canvas_placeholder.setStyleSheet(
@@ -2710,7 +2827,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         canvas_layout.addWidget(canvas_placeholder)
         main_graph_layout.addWidget(graph_canvas, 1)
@@ -2724,7 +2841,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2746,7 +2863,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         stats_header.addWidget(stats_title)
         stats_header.addStretch()
@@ -2763,7 +2880,7 @@ class MainWindowPrototype(QMainWindow):
             "  font-size: 12px;"
             "  font-weight: 600;"
             f"  font-family: {Fonts.MONOSPACE};"
-            "}"
+            "}",
         )
         stats_header.addWidget(r_squared)
 
@@ -2776,13 +2893,13 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         stats_canvas_layout = QVBoxLayout(stats_canvas)
         stats_placeholder = QLabel(
             "[Residuals / Chi-Square Plot]\n\n"
             "Statistical analysis visualization\n"
-            "Chi² = 1.23e-4, RMSE = 0.012"
+            "Chi² = 1.23e-4, RMSE = 0.012",
         )
         stats_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_placeholder.setStyleSheet(
@@ -2791,7 +2908,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #C7C7CC;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         stats_canvas_layout.addWidget(stats_placeholder)
         stats_layout.addWidget(stats_canvas, 1)
@@ -2804,10 +2921,7 @@ class MainWindowPrototype(QMainWindow):
         """Create right panel with model selection, data table, and export options."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -2821,7 +2935,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2842,21 +2956,24 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(model_title)
 
         # Model selection dropdown
         from PySide6.QtWidgets import QComboBox
+
         model_dropdown = QComboBox()
-        model_dropdown.addItems([
-            "Langmuir 1:1",
-            "Two-State Binding",
-            "Bivalent Analyte",
-            "Mass Transport Limited",
-            "Heterogeneous Ligand",
-            "Custom Model"
-        ])
+        model_dropdown.addItems(
+            [
+                "Langmuir 1:1",
+                "Two-State Binding",
+                "Bivalent Analyte",
+                "Mass Transport Limited",
+                "Heterogeneous Ligand",
+                "Custom Model",
+            ],
+        )
         model_dropdown.setFixedHeight(36)
         model_dropdown.setStyleSheet(
             "QComboBox {"
@@ -2879,7 +2996,7 @@ class MainWindowPrototype(QMainWindow):
             "QComboBox::down-arrow {"
             "  image: none;"
             "  border: none;"
-            "}"
+            "}",
         )
         model_layout.addWidget(model_dropdown)
 
@@ -2901,7 +3018,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #48484A;"
-            "}"
+            "}",
         )
         model_layout.addWidget(fit_btn)
 
@@ -2915,7 +3032,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  margin-top: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(params_label)
 
@@ -2923,7 +3040,7 @@ class MainWindowPrototype(QMainWindow):
             "ka: Association rate constant\n"
             "kd: Dissociation rate constant\n"
             "KD: Equilibrium constant\n"
-            "Rmax: Maximum response"
+            "Rmax: Maximum response",
         )
         params_info.setStyleSheet(
             "QLabel {"
@@ -2932,7 +3049,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  line-height: 1.6;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         model_layout.addWidget(params_info)
 
@@ -2945,7 +3062,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -2967,7 +3084,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         data_header.addWidget(data_title)
         data_header.addStretch()
@@ -2987,18 +3104,25 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         data_header.addWidget(copy_btn)
 
         data_layout.addLayout(data_header)
 
         # Data table
-        from PySide6.QtWidgets import QTableWidget, QHeaderView
+        from PySide6.QtWidgets import QHeaderView, QTableWidget
+
         data_table = QTableWidget(4, 2)
         data_table.setHorizontalHeaderLabels(["Parameter", "Value"])
-        data_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        data_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        data_table.horizontalHeader().setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        data_table.horizontalHeader().setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch,
+        )
         data_table.setStyleSheet(
             "QTableWidget {"
             "  background: #FFFFFF;"
@@ -3020,16 +3144,17 @@ class MainWindowPrototype(QMainWindow):
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
-            "}"
+            "}",
         )
 
         # Sample data
         from PySide6.QtWidgets import QTableWidgetItem
+
         results = [
             ("ka (M⁻¹s⁻¹)", "1.23e5 ± 0.04e5"),
             ("kd (s⁻¹)", "3.45e-4 ± 0.12e-4"),
             ("KD (M)", "2.80e-9 ± 0.15e-9"),
-            ("Δ SPR (nm)", "0.45 ± 0.02")
+            ("Δ SPR (nm)", "0.45 ± 0.02"),
         ]
 
         for row, (param, value) in enumerate(results):
@@ -3047,7 +3172,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3067,7 +3192,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         export_layout.addWidget(export_title)
 
@@ -3089,7 +3214,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
-            "}"
+            "}",
         )
         export_btns.addWidget(csv_btn)
 
@@ -3110,10 +3235,7 @@ class MainWindowPrototype(QMainWindow):
         """Create the Report tab content for generating PDF reports with graphs, tables, and notes."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -3134,10 +3256,7 @@ class MainWindowPrototype(QMainWindow):
         """Create left panel with report preview canvas."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3155,7 +3274,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         header.addWidget(report_title)
         header.addStretch()
@@ -3180,7 +3299,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: #CC2E25;"
-            "}"
+            "}",
         )
         header.addWidget(pdf_btn)
 
@@ -3193,7 +3312,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(12)
@@ -3209,10 +3328,7 @@ class MainWindowPrototype(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet(
-            "QScrollArea {"
-            "  border: none;"
-            "  background: transparent;"
-            "}"
+            "QScrollArea {  border: none;  background: transparent;}",
         )
 
         scroll_content = QWidget()
@@ -3231,7 +3347,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(title_edit)
 
@@ -3245,7 +3361,7 @@ class MainWindowPrototype(QMainWindow):
             "  padding: 4px 8px;"
             "  line-height: 1.6;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(info_label)
 
@@ -3257,7 +3373,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: rgba(0, 122, 255, 0.05);"
             "  border: 2px dashed rgba(0, 0, 0, 0.1);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         graph_label = QLabel("[Graph Element]\n\nClick to insert graph")
         graph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3268,7 +3384,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  border: none;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         graph_layout = QVBoxLayout(graph_placeholder)
         graph_layout.addWidget(graph_label)
@@ -3284,13 +3400,16 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(notes_label)
 
         from PySide6.QtWidgets import QTextEdit
+
         notes_edit = QTextEdit()
-        notes_edit.setPlaceholderText("Add experiment notes, observations, or conclusions...")
+        notes_edit.setPlaceholderText(
+            "Add experiment notes, observations, or conclusions...",
+        )
         notes_edit.setFixedHeight(120)
         notes_edit.setStyleSheet(
             "QTextEdit {"
@@ -3301,7 +3420,7 @@ class MainWindowPrototype(QMainWindow):
             "  font-size: 13px;"
             "  color: #1D1D1F;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         scroll_layout.addWidget(notes_edit)
 
@@ -3313,7 +3432,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: rgba(52, 199, 89, 0.05);"
             "  border: 2px dashed rgba(52, 199, 89, 0.3);"
             "  border-radius: 8px;"
-            "}"
+            "}",
         )
         table_label = QLabel("[Table Element]\n\nClick to insert data table")
         table_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3324,7 +3443,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: transparent;"
             "  border: none;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         table_layout = QVBoxLayout(table_placeholder)
         table_layout.addWidget(table_label)
@@ -3343,10 +3462,7 @@ class MainWindowPrototype(QMainWindow):
         """Create right panel with report tools and content library."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: transparent;  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3360,7 +3476,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3380,7 +3496,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         elements_layout.addWidget(elements_title)
 
@@ -3414,7 +3530,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(0, 0, 0, 0.12);"
-                "}"
+                "}",
             )
             elements_layout.addWidget(elem_btn)
 
@@ -3427,7 +3543,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3447,7 +3563,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(chart_title)
 
@@ -3474,7 +3590,7 @@ class MainWindowPrototype(QMainWindow):
                 "  background: #1D1D1F;"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
             chart_types.addWidget(type_btn)
 
@@ -3488,17 +3604,20 @@ class MainWindowPrototype(QMainWindow):
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(source_label)
 
         from PySide6.QtWidgets import QComboBox
+
         source_dropdown = QComboBox()
-        source_dropdown.addItems([
-            "Kinetic Results",
-            "Cycle Statistics",
-            "Custom Data"
-        ])
+        source_dropdown.addItems(
+            [
+                "Kinetic Results",
+                "Cycle Statistics",
+                "Custom Data",
+            ],
+        )
         source_dropdown.setFixedHeight(32)
         source_dropdown.setStyleSheet(
             "QComboBox {"
@@ -3509,7 +3628,7 @@ class MainWindowPrototype(QMainWindow):
             "  padding: 6px 10px;"
             "  font-size: 12px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(source_dropdown)
 
@@ -3528,7 +3647,7 @@ class MainWindowPrototype(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: #3A3A3C;"
-            "}"
+            "}",
         )
         chart_layout.addWidget(create_chart_btn)
 
@@ -3541,7 +3660,7 @@ class MainWindowPrototype(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -3561,7 +3680,7 @@ class MainWindowPrototype(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         library_layout.addWidget(library_title)
 
@@ -3589,7 +3708,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "}"
+                "}",
             )
             library_layout.addWidget(item_btn)
 
@@ -3626,7 +3745,7 @@ class MainWindowPrototype(QMainWindow):
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.5), stop:1 rgba(46, 48, 227, 0.6));"
                 "  border: 1px solid rgba(46, 48, 227, 0.3);"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Power On Device (Ctrl+P)\nGray = Disconnected")
         elif state == "searching":
@@ -3644,9 +3763,11 @@ class MainWindowPrototype(QMainWindow):
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E6B800, stop:1 #CCA300);"
                 "  border: 1px solid rgba(230, 184, 0, 0.3);"
-                "}"
+                "}",
             )
-            self.power_btn.setToolTip("Searching for Device...\nYellow = Device Not Found\nClick to cancel")
+            self.power_btn.setToolTip(
+                "Searching for Device...\nYellow = Device Not Found\nClick to cancel",
+            )
         elif state == "connected":
             # Green - Device powered and connected
             self.power_btn.setStyleSheet(
@@ -3662,9 +3783,11 @@ class MainWindowPrototype(QMainWindow):
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2EAF4F, stop:1 #289845);"
                 "  border: 1px solid rgba(46, 175, 79, 0.3);"
-                "}"
+                "}",
             )
-            self.power_btn.setToolTip("Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off")
+            self.power_btn.setToolTip(
+                "Power Off Device (Ctrl+P)\nGreen = Device Connected\nClick to power off",
+            )
 
     def _handle_power_toggle(self, checked):
         """Handle power button toggle - connects/disconnects hardware."""
@@ -3679,7 +3802,7 @@ class MainWindowPrototype(QMainWindow):
             self._update_power_button_style()
 
             # Emit signal to trigger hardware connection (handled by Application class)
-            if hasattr(self, 'power_on_requested'):
+            if hasattr(self, "power_on_requested"):
                 self.power_on_requested.emit()
 
         elif current_state == "searching":
@@ -3697,7 +3820,9 @@ class MainWindowPrototype(QMainWindow):
             warning.setIcon(QMessageBox.Icon.Warning)
             warning.setText("Are you sure you want to disconnect the device?")
             warning.setInformativeText("All hardware connections will be closed.")
-            warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+            warning.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
             warning.setDefaultButton(QMessageBox.StandardButton.Cancel)
 
             # Style the warning dialog
@@ -3730,7 +3855,7 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:default:hover {"
                 "  background: #E6342A;"
-                "}"
+                "}",
             )
 
             result = warning.exec()
@@ -3746,7 +3871,7 @@ class MainWindowPrototype(QMainWindow):
                 self._reset_subunit_status()
 
                 # Emit signal to disconnect hardware
-                if hasattr(self, 'power_off_requested'):
+                if hasattr(self, "power_off_requested"):
                     self.power_off_requested.emit()
             else:
                 # User cancelled, revert button state
@@ -3758,6 +3883,7 @@ class MainWindowPrototype(QMainWindow):
 
         Args:
             state: 'disconnected', 'searching', or 'connected'
+
         """
         self.power_btn.setProperty("powerState", state)
         self._update_power_button_style()
@@ -3801,22 +3927,22 @@ class MainWindowPrototype(QMainWindow):
         """Reset all subunit status indicators to 'Not Ready' state."""
         for subunit_name in ["Sensor", "Optics", "Fluidics"]:
             if subunit_name in self.sidebar.subunit_status:
-                indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-                status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+                indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+                status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
                 # Gray indicator and "Not Ready" text
                 indicator.setStyleSheet(
                     "font-size: 10px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
                     "color: #86868B;"  # Gray
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
         # Also disable all operation modes when disconnecting
@@ -3835,15 +3961,18 @@ class MainWindowPrototype(QMainWindow):
 
         # Emit signal to trigger actual hardware scan in Application
         # The Application class will handle the actual hardware manager scan
-        if hasattr(self, 'app') and self.app:
+        if hasattr(self, "app") and self.app:
             self.app.hardware_mgr.scan_and_connect()
         else:
             logger.warning("No application reference - cannot trigger hardware scan")
             # Reset button state after 1 second
-            QTimer.singleShot(1000, lambda: (
-                self.sidebar.scan_btn.setProperty("scanning", False),
-                self._update_scan_button_style()
-            ))
+            QTimer.singleShot(
+                1000,
+                lambda: (
+                    self.sidebar.scan_btn.setProperty("scanning", False),
+                    self._update_scan_button_style(),
+                ),
+            )
 
     def _on_hardware_scan_complete(self):
         """Called when hardware scan completes - reset scan button."""
@@ -3863,8 +3992,8 @@ class MainWindowPrototype(QMainWindow):
             is_ready = random.choice([True, False])
 
             if subunit_name in self.sidebar.subunit_status:
-                indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-                status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+                indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+                status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
                 if is_ready:
                     # Green indicator and "Ready" text
@@ -3872,14 +4001,14 @@ class MainWindowPrototype(QMainWindow):
                         "font-size: 10px;"
                         "color: #34C759;"  # Green
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     status_label.setText("Ready")
                     status_label.setStyleSheet(
                         "font-size: 13px;"
                         "color: #34C759;"  # Green
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                 else:
                     # Gray indicator and "Not Ready" text
@@ -3887,14 +4016,14 @@ class MainWindowPrototype(QMainWindow):
                         "font-size: 10px;"
                         "color: #86868B;"  # Gray
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
                     status_label.setText("Not Ready")
                     status_label.setStyleSheet(
                         "font-size: 13px;"
                         "color: #86868B;"  # Gray
                         "background: transparent;"
-                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                     )
 
     def update_hardware_status(self, status: dict):
@@ -3909,12 +4038,13 @@ class MainWindowPrototype(QMainWindow):
                 - sensor_ready: Boolean
                 - optics_ready: Boolean
                 - fluidics_ready: Boolean
+
         """
         # Build list of connected devices
         devices = []
 
-        ctrl_type = status.get('ctrl_type')
-        spectrometer = status.get('spectrometer')
+        ctrl_type = status.get("ctrl_type")
+        spectrometer = status.get("spectrometer")
 
         # Determine device name based on what's connected
         if ctrl_type and spectrometer:
@@ -3927,11 +4057,11 @@ class MainWindowPrototype(QMainWindow):
             # Only spectrometer = show as P4SPR device
             devices.append("Device: P4SPR")
 
-        if status.get('knx_type'):
+        if status.get("knx_type"):
             devices.append(f"Kinetic Controller: {status['knx_type']}")
 
         # Pump status: show "N/A" if not connected, "Connected" if connected
-        if status.get('pump_connected'):
+        if status.get("pump_connected"):
             devices.append("Pump: Connected")
         else:
             devices.append("Pump: N/A")
@@ -3955,36 +4085,44 @@ class MainWindowPrototype(QMainWindow):
 
     def _update_subunit_readiness_from_status(self, status: dict):
         """Update subunit readiness based on hardware verification results."""
-        logger.debug(f"🔍 _update_subunit_readiness_from_status called with: sensor_ready={status.get('sensor_ready')}, optics_ready={status.get('optics_ready')}, fluidics_ready={status.get('fluidics_ready')}")
+        logger.debug(
+            f"🔍 _update_subunit_readiness_from_status called with: sensor_ready={status.get('sensor_ready')}, optics_ready={status.get('optics_ready')}, fluidics_ready={status.get('fluidics_ready')}",
+        )
 
         # Sensor readiness
-        if 'sensor_ready' in status:
-            self._set_subunit_status('Sensor', status['sensor_ready'])
+        if "sensor_ready" in status:
+            self._set_subunit_status("Sensor", status["sensor_ready"])
 
         # Optics readiness
-        if 'optics_ready' in status:
-            optics_ready = status['optics_ready']
+        if "optics_ready" in status:
+            optics_ready = status["optics_ready"]
             optics_details = {
-                'failed_channels': status.get('optics_failed_channels', []),
-                'maintenance_channels': status.get('optics_maintenance_channels', [])
+                "failed_channels": status.get("optics_failed_channels", []),
+                "maintenance_channels": status.get("optics_maintenance_channels", []),
             }
-            self._set_subunit_status('Optics', optics_ready, details=optics_details)
+            self._set_subunit_status("Optics", optics_ready, details=optics_details)
 
         # Fluidics readiness
-        if 'fluidics_ready' in status:
-            self._set_subunit_status('Fluidics', status['fluidics_ready'])
+        if "fluidics_ready" in status:
+            self._set_subunit_status("Fluidics", status["fluidics_ready"])
 
-    def _set_subunit_status(self, subunit_name: str, is_ready: bool, details: dict = None):
+    def _set_subunit_status(
+        self,
+        subunit_name: str,
+        is_ready: bool,
+        details: dict = None,
+    ):
         """Set the status of a specific subunit.
 
         Args:
             subunit_name: Name of subunit (Sensor, Optics, Fluidics)
             is_ready: True if ready, False otherwise
             details: Optional dict with 'failed_channels' and 'maintenance_channels' for Optics
+
         """
         if subunit_name in self.sidebar.subunit_status:
-            indicator = self.sidebar.subunit_status[subunit_name]['indicator']
-            status_label = self.sidebar.subunit_status[subunit_name]['status_label']
+            indicator = self.sidebar.subunit_status[subunit_name]["indicator"]
+            status_label = self.sidebar.subunit_status[subunit_name]["status_label"]
 
             if is_ready:
                 # Green indicator and "Ready" text
@@ -3992,78 +4130,98 @@ class MainWindowPrototype(QMainWindow):
                     "font-size: 14px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Ready")
                 status_label.setStyleSheet(
                     "font-size: 12px;"
                     "color: #34C759;"  # Green
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 # Clear optics warning if it was active
-                if subunit_name == 'Optics' and hasattr(self, '_optics_warning_active'):
+                if subunit_name == "Optics" and hasattr(self, "_optics_warning_active"):
                     self._clear_optics_warning()
             else:
                 # Red indicator for Optics and Sensor, Gray for Fluidics
-                color = '#FF3B30' if subunit_name in ['Optics', 'Sensor'] else '#86868B'
+                color = "#FF3B30" if subunit_name in ["Optics", "Sensor"] else "#86868B"
                 indicator.setStyleSheet(
                     "font-size: 14px;"
                     f"color: {color};"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 12px;"
                     f"color: {color};"
                     "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 # Store optics status details for warning message
-                if subunit_name == 'Optics' and details:
+                if subunit_name == "Optics" and details:
                     self._optics_status_details = details
 
             from utils.logger import logger
+
             logger.info(f"{subunit_name}: {'Ready' if is_ready else 'Not Ready'}")
 
     def _set_optics_warning(self):
         """Apply light red background to live sensorgram when proceeding with unready optics."""
-        if hasattr(self, 'full_timeline_graph') and self.full_timeline_graph:
-            self.full_timeline_graph.setBackground('#FFE5E5')  # Light red
+        if hasattr(self, "full_timeline_graph") and self.full_timeline_graph:
+            self.full_timeline_graph.setBackground("#FFE5E5")  # Light red
             self._optics_warning_active = True
 
             # Log warning with details
             if self._optics_status_details:
-                failed = self._optics_status_details.get('failed_channels', [])
-                maintenance = self._optics_status_details.get('maintenance_channels', [])
+                failed = self._optics_status_details.get("failed_channels", [])
+                maintenance = self._optics_status_details.get(
+                    "maintenance_channels",
+                    [],
+                )
 
-                failed_str = ', '.join([ch.upper() for ch in failed]) if failed else 'none'
-                maint_str = ', '.join([ch.upper() for ch in maintenance]) if maintenance else 'none'
+                failed_str = (
+                    ", ".join([ch.upper() for ch in failed]) if failed else "none"
+                )
+                maint_str = (
+                    ", ".join([ch.upper() for ch in maintenance])
+                    if maintenance
+                    else "none"
+                )
 
                 from utils.logger import logger
-                logger.warning(f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]")
-                logger.warning("   Live sensorgram background set to light red - please resolve optics issues")
+
+                logger.warning(
+                    f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]",
+                )
+                logger.warning(
+                    "   Live sensorgram background set to light red - please resolve optics issues",
+                )
 
     def _clear_optics_warning(self):
         """Clear light red background from live sensorgram when optics become ready."""
-        if hasattr(self, 'full_timeline_graph') and self.full_timeline_graph and self._optics_warning_active:
-            self.full_timeline_graph.setBackground('#FFFFFF')  # White
+        if (
+            hasattr(self, "full_timeline_graph")
+            and self.full_timeline_graph
+            and self._optics_warning_active
+        ):
+            self.full_timeline_graph.setBackground("#FFFFFF")  # White
             self._optics_warning_active = False
             self._optics_status_details = None
 
             from utils.logger import logger
+
             logger.info("✅ Optics ready - sensorgram background restored to normal")
 
     def _update_operation_modes(self, status: dict):
         """Update available operation modes based on hardware type."""
-        ctrl_type = status.get('ctrl_type', '')
-        has_pump = status.get('pump_connected', False)
+        ctrl_type = status.get("ctrl_type", "")
+        has_pump = status.get("pump_connected", False)
 
         from utils.logger import logger
 
         # P4SPR static device - only Static mode
-        if ctrl_type in ['P4SPR', 'PicoP4SPR']:
+        if ctrl_type in ["P4SPR", "PicoP4SPR"]:
             logger.info("P4SPR device detected - Static mode available")
             # Static mode always available for P4SPR
             # Flow mode only if pump is connected
@@ -4073,7 +4231,7 @@ class MainWindowPrototype(QMainWindow):
                 logger.info("No pump - Flow mode disabled")
 
         # EZSPR or other devices
-        elif ctrl_type in ['EZSPR', 'PicoEZSPR']:
+        elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
             logger.info("EZSPR device detected - Static and Flow modes available")
 
     def _update_scan_button_style(self):
@@ -4096,7 +4254,7 @@ class MainWindowPrototype(QMainWindow):
                 "  margin-left: 12px;"
                 "  margin-top: 8px;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
+                "}",
             )
         else:
             # Normal state (blue/clickable)
@@ -4120,13 +4278,14 @@ class MainWindowPrototype(QMainWindow):
                 "}"
                 "QPushButton:pressed {"
                 "  background: #48484A;"
-                "}"
+                "}",
             )
 
     def _handle_debug_log_download(self):
         """Handle debug log download button click."""
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
         import datetime
+
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         # Generate filename with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4137,7 +4296,7 @@ class MainWindowPrototype(QMainWindow):
             self,
             "Save Debug Log",
             default_filename,
-            "Log Files (*.txt *.log);;All Files (*.*)"
+            "Log Files (*.txt *.log);;All Files (*.*)",
         )
 
         if file_path:
@@ -4203,7 +4362,7 @@ End of Debug Log
 """
 
                 # Write to file
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(debug_content)
 
                 # Show success message
@@ -4235,7 +4394,7 @@ End of Debug Log
                     "}"
                     "QPushButton:hover {"
                     "  background: #3A3A3C;"
-                    "}"
+                    "}",
                 )
                 msg.exec()
 
@@ -4247,7 +4406,7 @@ End of Debug Log
                 error_msg.setWindowTitle("Error")
                 error_msg.setIcon(QMessageBox.Icon.Critical)
                 error_msg.setText("Failed to save debug log")
-                error_msg.setInformativeText(f"Error: {str(e)}")
+                error_msg.setInformativeText(f"Error: {e!s}")
                 error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 error_msg.setStyleSheet(
                     "QMessageBox {"
@@ -4259,7 +4418,7 @@ End of Debug Log
                     "  border: none;"
                     "  border-radius: 6px;"
                     "  padding: 6px 16px;"
-                    "}"
+                    "}",
                 )
                 error_msg.exec()
 
@@ -4270,12 +4429,11 @@ End of Debug Log
         # Emit signal based on current recording state
         if not self.is_recording:
             # Request to start recording - emit signal
-            if hasattr(self, 'recording_start_requested'):
+            if hasattr(self, "recording_start_requested"):
                 self.recording_start_requested.emit()
-        else:
-            # Request to stop recording - emit signal
-            if hasattr(self, 'recording_stop_requested'):
-                self.recording_stop_requested.emit()
+        # Request to stop recording - emit signal
+        elif hasattr(self, "recording_stop_requested"):
+            self.recording_stop_requested.emit()
 
     def _toggle_pause(self):
         """Toggle pause state for live acquisition."""
@@ -4286,57 +4444,71 @@ End of Debug Log
             self.pause_btn.setToolTip("Resume Live Acquisition")
             logger.info("⏸ Live acquisition paused")
             # Emit signal to pause acquisition
-            if hasattr(self, 'acquisition_pause_requested'):
+            if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(True)
 
             # Add pause marker to live sensorgram (system-level flag, not channel-specific)
-            if hasattr(self, 'full_timeline_graph'):
+            if hasattr(self, "full_timeline_graph"):
                 import pyqtgraph as pg
                 from PySide6.QtCore import QTime
+
                 pause_time = QTime.currentTime().msecsSinceStartOfDay() / 1000.0
 
                 pause_line = pg.InfiniteLine(
                     pos=pause_time,
                     angle=90,
-                    pen=pg.mkPen(color='#FF9500', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                    pen=pg.mkPen(
+                        color="#FF9500",
+                        width=2,
+                        style=pg.QtCore.Qt.PenStyle.DashLine,
+                    ),
                     movable=False,
-                    label='⏸ Paused',
-                    labelOpts={'position': 0.95, 'color': '#FF9500'}
+                    label="⏸ Paused",
+                    labelOpts={"position": 0.95, "color": "#FF9500"},
                 )
                 self.full_timeline_graph.addItem(pause_line)
 
                 # Store reference to pause marker
-                if not hasattr(self, 'pause_markers'):
+                if not hasattr(self, "pause_markers"):
                     self.pause_markers = []
-                self.pause_markers.append({'time': pause_time, 'line': pause_line, 'type': 'pause'})
+                self.pause_markers.append(
+                    {"time": pause_time, "line": pause_line, "type": "pause"},
+                )
         else:
             # Resume acquisition
             self.pause_btn.setToolTip("Pause Live Acquisition")
             logger.info("▶️ Live acquisition resumed")
             # Emit signal to resume acquisition
-            if hasattr(self, 'acquisition_pause_requested'):
+            if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(False)
 
             # Add resume marker to live sensorgram
-            if hasattr(self, 'full_timeline_graph'):
+            if hasattr(self, "full_timeline_graph"):
                 import pyqtgraph as pg
                 from PySide6.QtCore import QTime
+
                 resume_time = QTime.currentTime().msecsSinceStartOfDay() / 1000.0
 
                 resume_line = pg.InfiniteLine(
                     pos=resume_time,
                     angle=90,
-                    pen=pg.mkPen(color='#34C759', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                    pen=pg.mkPen(
+                        color="#34C759",
+                        width=2,
+                        style=pg.QtCore.Qt.PenStyle.DashLine,
+                    ),
                     movable=False,
-                    label='▶️ Resumed',
-                    labelOpts={'position': 0.95, 'color': '#34C759'}
+                    label="▶️ Resumed",
+                    labelOpts={"position": 0.95, "color": "#34C759"},
                 )
                 self.full_timeline_graph.addItem(resume_line)
 
                 # Store reference to resume marker
-                if not hasattr(self, 'pause_markers'):
+                if not hasattr(self, "pause_markers"):
                     self.pause_markers = []
-                self.pause_markers.append({'time': resume_time, 'line': resume_line, 'type': 'resume'})
+                self.pause_markers.append(
+                    {"time": resume_time, "line": resume_line, "type": "resume"},
+                )
 
     def set_recording_state(self, is_recording: bool, filename: str = ""):
         """Update recording UI state from external controller.
@@ -4344,6 +4516,7 @@ End of Debug Log
         Args:
             is_recording: True if recording is active
             filename: Name of the recording file (if recording)
+
         """
         self.is_recording = is_recording
         self.record_btn.setChecked(is_recording)
@@ -4351,7 +4524,9 @@ End of Debug Log
         if is_recording:
             # Update button tooltip
             display_name = Path(filename).name if filename else "data.csv"
-            self.record_btn.setToolTip(f"Stop Recording\n(Recording to: {display_name})")
+            self.record_btn.setToolTip(
+                f"Stop Recording\n(Recording to: {display_name})",
+            )
 
             # Recording indicator still hidden, but update internally for compatibility
             self.rec_status_dot.setStyleSheet(
@@ -4359,7 +4534,7 @@ End of Debug Log
                 "  color: #FF3B30;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
             display_name = Path(filename).name if filename else "data.csv"
             self.rec_status_text.setText(f"Recording to: {display_name}")
@@ -4370,18 +4545,20 @@ End of Debug Log
                 "  background: transparent;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
             self.recording_indicator.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(255, 59, 48, 0.1);"
                 "  border: 1px solid rgba(255, 59, 48, 0.3);"
                 "  border-radius: 6px;"
-                "}"
+                "}",
             )
         else:
             # Update button tooltip back to viewing mode
-            self.record_btn.setToolTip("Start Recording\n(Currently viewing - not saved)")
+            self.record_btn.setToolTip(
+                "Start Recording\n(Currently viewing - not saved)",
+            )
 
             # Update recording indicator back to viewing mode (hidden but kept for compatibility)
             self.rec_status_dot.setStyleSheet(
@@ -4389,25 +4566,26 @@ End of Debug Log
                 "  color: #86868B;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
             self.recording_indicator.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(0, 0, 0, 0.04);"
                 "  border-radius: 6px;"
-                "}"
+                "}",
             )
 
-    def _init_device_config(self, device_serial: Optional[str] = None):
+    def _init_device_config(self, device_serial: str | None = None):
         """Initialize device configuration for maintenance tracking.
 
         Args:
             device_serial: Spectrometer serial number for device-specific configuration.
                           If None, uses default config (not device-specific).
+
         """
         try:
-            import os
             from utils.device_configuration import DeviceConfiguration
+
             self.device_config = DeviceConfiguration(device_serial=device_serial)
 
             # Initialize tracking variables
@@ -4419,15 +4597,19 @@ End of Debug Log
             if device_serial:
                 missing_fields = self._check_missing_config_fields()
                 if missing_fields:
-                    logger.info(f"⚠️ Missing device configuration fields: {', '.join(missing_fields)}")
-                    logger.info(f"   Prompting user to complete device configuration...")
+                    logger.info(
+                        f"⚠️ Missing device configuration fields: {', '.join(missing_fields)}",
+                    )
+                    logger.info("   Prompting user to complete device configuration...")
                     self._prompt_device_config(device_serial)
 
             # Update UI with current values
             self._update_maintenance_display()
 
             if device_serial:
-                logger.info(f"Device configuration initialized for S/N: {device_serial}")
+                logger.info(
+                    f"Device configuration initialized for S/N: {device_serial}",
+                )
             else:
                 logger.info("Device configuration initialized with default config")
         except Exception as e:
@@ -4439,25 +4621,26 @@ End of Debug Log
 
         Returns:
             List of missing field names, empty if all fields are present
+
         """
         if not self.device_config:
             return []
 
         missing = []
-        hw = self.device_config.config.get('hardware', {})
+        hw = self.device_config.config.get("hardware", {})
 
         # Check essential fields only (LED model, controller type, fiber diameter, polarizer)
-        if not hw.get('led_pcb_model'):
-            missing.append('LED Model')
+        if not hw.get("led_pcb_model"):
+            missing.append("LED Model")
 
-        if not hw.get('controller_type') and not hw.get('controller_model'):
-            missing.append('Controller')
+        if not hw.get("controller_type") and not hw.get("controller_model"):
+            missing.append("Controller")
 
-        if not hw.get('optical_fiber_diameter_um'):
-            missing.append('Fiber Diameter')
+        if not hw.get("optical_fiber_diameter_um"):
+            missing.append("Fiber Diameter")
 
-        if not hw.get('polarizer_type'):
-            missing.append('Polarizer')
+        if not hw.get("polarizer_type"):
+            missing.append("Polarizer")
 
         # Device ID is optional - don't require it
         return missing
@@ -4467,22 +4650,26 @@ End of Debug Log
 
         Returns:
             Controller type string: 'Arduino', 'PicoP4SPR', 'PicoEZSPR', or ''
+
         """
         # Import here to avoid issues if hardware not initialized
         try:
-            from core.hardware_manager import HardwareManager
             # Try to get from main_window's hardware manager if available
-            if hasattr(self, 'hardware_mgr') and self.hardware_mgr and self.hardware_mgr.ctrl:
-                ctrl_name = getattr(self.hardware_mgr.ctrl, 'name', '').lower()
-                if 'arduino' in ctrl_name or ctrl_name == 'p4spr':
-                    return 'Arduino'
-                elif 'pico_p4spr' in ctrl_name:
-                    return 'PicoP4SPR'
-                elif 'pico_ezspr' in ctrl_name:
-                    return 'PicoEZSPR'
+            if (
+                hasattr(self, "hardware_mgr")
+                and self.hardware_mgr
+                and self.hardware_mgr.ctrl
+            ):
+                ctrl_name = getattr(self.hardware_mgr.ctrl, "name", "").lower()
+                if "arduino" in ctrl_name or ctrl_name == "p4spr":
+                    return "Arduino"
+                if "pico_p4spr" in ctrl_name:
+                    return "PicoP4SPR"
+                if "pico_ezspr" in ctrl_name:
+                    return "PicoEZSPR"
         except Exception as e:
             logger.debug(f"Could not determine controller type: {e}")
-        return ''
+        return ""
 
     def _get_polarizer_type_for_controller(self, controller_type: str) -> str:
         """Determine polarizer type based on controller hardware rules.
@@ -4497,18 +4684,20 @@ End of Debug Log
 
         Returns:
             'round' or 'barrel'
+
         """
-        if controller_type in ['Arduino', 'PicoP4SPR']:
-            return 'round'  # Circular polarizer
-        elif controller_type == 'PicoEZSPR':
-            return 'barrel'  # 2 fixed windows (S and P)
-        return 'barrel'  # Default fallback
+        if controller_type in ["Arduino", "PicoP4SPR"]:
+            return "round"  # Circular polarizer
+        if controller_type == "PicoEZSPR":
+            return "barrel"  # 2 fixed windows (S and P)
+        return "barrel"  # Default fallback
 
     def _prompt_device_config(self, device_serial: str):
         """Show dialog to collect missing device configuration.
 
         Args:
             device_serial: Device serial number
+
         """
         try:
             # Detect controller type from hardware
@@ -4519,38 +4708,38 @@ End of Debug Log
 
             # Pre-fill with existing values from config if available
             if self.device_config:
-                hw = self.device_config.config.get('hardware', {})
-                device_info = self.device_config.config.get('device_info', {})
+                hw = self.device_config.config.get("hardware", {})
+                device_info = self.device_config.config.get("device_info", {})
 
                 # Set LED model (map from full name to abbreviation)
-                led_model = hw.get('led_pcb_model', 'luminus_cool_white')
-                if led_model == 'luminus_cool_white':
-                    dialog.led_model_combo.setCurrentText('LCW')
-                elif led_model == 'osram_warm_white':
-                    dialog.led_model_combo.setCurrentText('OWW')
+                led_model = hw.get("led_pcb_model", "luminus_cool_white")
+                if led_model == "luminus_cool_white":
+                    dialog.led_model_combo.setCurrentText("LCW")
+                elif led_model == "osram_warm_white":
+                    dialog.led_model_combo.setCurrentText("OWW")
 
                 # Set controller type
-                ctrl_type = hw.get('controller_type', controller_type)
+                ctrl_type = hw.get("controller_type", controller_type)
                 if ctrl_type:
                     index = dialog.controller_combo.findText(ctrl_type)
                     if index >= 0:
                         dialog.controller_combo.setCurrentIndex(index)
 
                 # Set fiber diameter (map from number to A/B option)
-                fiber_diameter = hw.get('optical_fiber_diameter_um', 200)
+                fiber_diameter = hw.get("optical_fiber_diameter_um", 200)
                 if fiber_diameter == 100:
-                    dialog.fiber_diameter_combo.setCurrentText('A (100 µm)')
+                    dialog.fiber_diameter_combo.setCurrentText("A (100 µm)")
                 else:
-                    dialog.fiber_diameter_combo.setCurrentText('B (200 µm)')
+                    dialog.fiber_diameter_combo.setCurrentText("B (200 µm)")
 
                 # Set polarizer type
-                polarizer_type = hw.get('polarizer_type', 'circle')
+                polarizer_type = hw.get("polarizer_type", "circle")
                 index = dialog.polarizer_type_combo.findText(polarizer_type)
                 if index >= 0:
                     dialog.polarizer_type_combo.setCurrentIndex(index)
 
                 # Set device ID (pre-fill with detector serial if not set)
-                device_id = device_info.get('device_id', device_serial)
+                device_id = device_info.get("device_id", device_serial)
                 if device_id:
                     dialog.device_id_input.setText(device_id)
 
@@ -4559,22 +4748,29 @@ End of Debug Log
                 config_data = dialog.get_config_data()
 
                 # Update device configuration
-                hw = self.device_config.config['hardware']
-                hw['led_pcb_model'] = config_data['led_pcb_model']
-                hw['optical_fiber_diameter_um'] = config_data['optical_fiber_diameter_um']
-                hw['polarizer_type'] = config_data['polarizer_type']
-                hw['controller_model'] = config_data.get('controller_model', 'Raspberry Pi Pico P4SPR')
-                hw['controller_type'] = config_data['controller_type']
+                hw = self.device_config.config["hardware"]
+                hw["led_pcb_model"] = config_data["led_pcb_model"]
+                hw["optical_fiber_diameter_um"] = config_data[
+                    "optical_fiber_diameter_um"
+                ]
+                hw["polarizer_type"] = config_data["polarizer_type"]
+                hw["controller_model"] = config_data.get(
+                    "controller_model",
+                    "Raspberry Pi Pico P4SPR",
+                )
+                hw["controller_type"] = config_data["controller_type"]
 
-                if config_data['device_id']:
-                    self.device_config.config['device_info']['device_id'] = config_data['device_id']
+                if config_data["device_id"]:
+                    self.device_config.config["device_info"]["device_id"] = config_data[
+                        "device_id"
+                    ]
 
                 # Update LED type code based on model
-                led_model = config_data['led_pcb_model']
-                if led_model == 'luminus_cool_white':
-                    hw['led_type_code'] = 'LCW'
-                elif led_model == 'osram_warm_white':
-                    hw['led_type_code'] = 'OWW'
+                led_model = config_data["led_pcb_model"]
+                if led_model == "luminus_cool_white":
+                    hw["led_type_code"] = "LCW"
+                elif led_model == "osram_warm_white":
+                    hw["led_type_code"] = "OWW"
 
                 # Save configuration
                 self.device_config.save()
@@ -4582,31 +4778,41 @@ End of Debug Log
                 # Log what was saved for verification
                 logger.info("✅ Device configuration updated and saved")
                 logger.info(f"  LED Model: {hw.get('led_pcb_model')}")
-                logger.info(f"  Controller: {hw.get('controller_type')} ({hw.get('controller_model')})")
-                logger.info(f"  Fiber Diameter: {hw.get('optical_fiber_diameter_um')} µm")
+                logger.info(
+                    f"  Controller: {hw.get('controller_type')} ({hw.get('controller_model')})",
+                )
+                logger.info(
+                    f"  Fiber Diameter: {hw.get('optical_fiber_diameter_um')} µm",
+                )
                 logger.info(f"  Polarizer: {hw.get('polarizer_type')}")
-                logger.info(f"  Device ID: {self.device_config.config['device_info'].get('device_id', 'Not set')}")
+                logger.info(
+                    f"  Device ID: {self.device_config.config['device_info'].get('device_id', 'Not set')}",
+                )
                 logger.info(f"  Config file: {self.device_config.config_path}")
 
                 # Verify it was actually saved by re-checking
                 missing_after_save = self._check_missing_config_fields()
                 if missing_after_save:
-                    logger.warning(f"⚠️ After saving, still missing fields: {missing_after_save}")
+                    logger.warning(
+                        f"⚠️ After saving, still missing fields: {missing_after_save}",
+                    )
                     from widgets.message import show_message
+
                     show_message(
                         f"Configuration saved but some fields are still missing: {', '.join(missing_after_save)}",
-                        "Configuration Warning"
+                        "Configuration Warning",
                     )
                 else:
                     logger.info("✅ All required fields are now present in config")
                     from widgets.message import show_message
+
                     show_message(
                         "Device configuration saved successfully!\\n\\n"
                         f"LED Model: {hw.get('led_pcb_model', 'N/A')}\\n"
                         f"Controller: {hw.get('controller_type', 'N/A')}\\n"
                         f"Fiber: {hw.get('optical_fiber_diameter_um', 'N/A')} µm\\n"
                         f"Polarizer: {hw.get('polarizer_type', 'N/A')}",
-                        "Configuration Saved"
+                        "Configuration Saved",
                     )
             else:
                 logger.warning("Device configuration dialog cancelled")
@@ -4619,14 +4825,14 @@ End of Debug Log
             return
 
         # Check if maintenance widgets exist yet (UI might not be fully initialized)
-        if not hasattr(self, 'hours_value'):
+        if not hasattr(self, "hours_value"):
             return
 
         try:
             import datetime
 
             # Update operation hours
-            led_hours = self.device_config.config['maintenance']['led_on_hours']
+            led_hours = self.device_config.config["maintenance"]["led_on_hours"]
             self.hours_value.setText(f"{led_hours:,.1f} hrs")
 
             # Update last operation date
@@ -4657,7 +4863,7 @@ End of Debug Log
                     "background: transparent;"
                     "font-weight: 700;"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
             else:
                 self.next_maintenance_value.setStyleSheet(
@@ -4666,7 +4872,7 @@ End of Debug Log
                     "background: transparent;"
                     "font-weight: 600;"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
         except Exception as e:
             logger.error(f"Failed to update maintenance display: {e}")
@@ -4677,6 +4883,7 @@ End of Debug Log
             return
 
         import datetime
+
         self.led_start_time = datetime.datetime.now()
         self.last_powered_on = self.led_start_time
 
@@ -4699,7 +4906,9 @@ End of Debug Log
             self.device_config.add_led_on_time(elapsed_hours)
             self.device_config.save()
 
-            logger.info(f"LED operation stopped. Added {elapsed_hours:.2f} hours to total")
+            logger.info(
+                f"LED operation stopped. Added {elapsed_hours:.2f} hours to total",
+            )
 
             # Reset start time
             self.led_start_time = None
@@ -4715,9 +4924,12 @@ End of Debug Log
             return
 
         import datetime
+
         self.last_powered_on = datetime.datetime.now()
 
-        logger.info(f"Device powered on at {self.last_powered_on.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(
+            f"Device powered on at {self.last_powered_on.strftime('%Y-%m-%d %H:%M:%S')}",
+        )
         self._update_maintenance_display()
 
     def open_full_cycle_table(self):
@@ -4731,8 +4943,11 @@ End of Debug Log
     def add_cycle_to_queue(self):
         """Add current cycle form values to the queue."""
         if len(self.cycle_queue) >= self.max_queue_size:
-            QMessageBox.warning(self, "Queue Full",
-                              f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.")
+            QMessageBox.warning(
+                self,
+                "Queue Full",
+                f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.",
+            )
             return
 
         # TODO: Extract values from cycle settings form widgets
@@ -4742,7 +4957,7 @@ End of Debug Log
             "start": "00:00:00",  # Get from start time input
             "end": "00:05:00",  # Get from end time input or calculate
             "notes": "Queue entry",  # Get from notes input
-            "state": "queued"  # Initial state
+            "state": "queued",  # Initial state
         }
 
         self.cycle_queue.append(cycle_data)
@@ -4776,8 +4991,8 @@ End of Debug Log
 
     def _update_queue_display(self):
         """Update the summary table to reflect current queue state."""
-        from PySide6.QtWidgets import QTableWidgetItem
         from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QTableWidgetItem
 
         # Clear table
         for row in range(5):
@@ -4847,5 +5062,3 @@ if __name__ == "__main__":
     window = MainWindowPrototype()
     window.show()
     sys.exit(app.exec())
-
-

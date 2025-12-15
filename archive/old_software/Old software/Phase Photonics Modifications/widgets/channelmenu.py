@@ -1,6 +1,5 @@
 """Menu for setting reference channel, data filtering, and units."""
 
-
 from typing import Literal, Self
 
 from PySide6.QtCore import Signal
@@ -94,12 +93,12 @@ class ChannelMenu(QWidget):
     def unit_change_ru(self: Self) -> None:
         """Change units to RU."""
         self.unit_to_ru_signal.emit()
-        self.ui.noRef.setChecked(True)  # noqa: FBT003
+        self.ui.noRef.setChecked(True)
 
     def unit_change_nm(self: Self) -> None:
         """Change units to nm."""
         self.unit_to_nm_signal.emit()
-        self.ui.noRef.setChecked(True)  # noqa: FBT003
+        self.ui.noRef.setChecked(True)
 
     def filtering_change(self: Self) -> None:
         """Change data filtering window."""
@@ -116,7 +115,7 @@ class ChannelMenu(QWidget):
 
     def filter_off(self: Self) -> None:
         """Trun off data filtering."""
-        self.ui.filt_off.setChecked(True)  # noqa: FBT003
+        self.ui.filt_off.setChecked(True)
 
     def show(self: Self) -> None:
         """Re-adds the metadata menu to this menu."""

@@ -11,36 +11,51 @@ Tests SegmentDataFrame operations including:
 import numpy as np
 import pandas as pd
 
+
 # Simplified SegmentDataFrame for standalone testing
 class SegmentDataFrame:
     """Manages cycle segments using pandas DataFrame."""
 
     def __init__(self):
         """Initialize empty segment DataFrame."""
-        self.df = pd.DataFrame(columns=[
-            'seg_id', 'name', 'start', 'end', 'ref_ch', 'unit',
-            'shift_a', 'shift_b', 'shift_c', 'shift_d',
-            'cycle_type', 'cycle_time', 'note', 'error', 'segment_obj'
-        ])
+        self.df = pd.DataFrame(
+            columns=[
+                "seg_id",
+                "name",
+                "start",
+                "end",
+                "ref_ch",
+                "unit",
+                "shift_a",
+                "shift_b",
+                "shift_c",
+                "shift_d",
+                "cycle_type",
+                "cycle_time",
+                "note",
+                "error",
+                "segment_obj",
+            ],
+        )
 
     def _segment_to_dict(self, segment):
         """Convert Segment object to dictionary for DataFrame row."""
         return {
-            'seg_id': segment.seg_id,
-            'name': segment.name,
-            'start': segment.start,
-            'end': segment.end,
-            'ref_ch': segment.ref_ch,
-            'unit': segment.unit,
-            'shift_a': segment.shift['a'],
-            'shift_b': segment.shift['b'],
-            'shift_c': segment.shift['c'],
-            'shift_d': segment.shift['d'],
-            'cycle_type': segment.cycle_type,
-            'cycle_time': segment.cycle_time,
-            'note': segment.note,
-            'error': segment.error,
-            'segment_obj': segment,
+            "seg_id": segment.seg_id,
+            "name": segment.name,
+            "start": segment.start,
+            "end": segment.end,
+            "ref_ch": segment.ref_ch,
+            "unit": segment.unit,
+            "shift_a": segment.shift["a"],
+            "shift_b": segment.shift["b"],
+            "shift_c": segment.shift["c"],
+            "shift_d": segment.shift["d"],
+            "cycle_type": segment.cycle_type,
+            "cycle_time": segment.cycle_time,
+            "note": segment.note,
+            "error": segment.error,
+            "segment_obj": segment,
         }
 
     def append(self, segment):
@@ -54,11 +69,14 @@ class SegmentDataFrame:
         if index >= len(self.df):
             self.df = pd.concat([self.df, new_row], ignore_index=True)
         else:
-            self.df = pd.concat([
-                self.df.iloc[:index],
-                new_row,
-                self.df.iloc[index:]
-            ], ignore_index=True)
+            self.df = pd.concat(
+                [
+                    self.df.iloc[:index],
+                    new_row,
+                    self.df.iloc[index:],
+                ],
+                ignore_index=True,
+            )
 
     def pop(self, index=-1):
         """Remove and return segment at index."""
@@ -66,7 +84,7 @@ class SegmentDataFrame:
             raise IndexError("pop from empty SegmentDataFrame")
         if index < 0:
             index = len(self.df) + index
-        segment = self.df.iloc[index]['segment_obj']
+        segment = self.df.iloc[index]["segment_obj"]
         self.df = self.df.drop(index).reset_index(drop=True)
         return segment
 
@@ -81,107 +99,108 @@ class SegmentDataFrame:
     def __getitem__(self, index):
         """Get segment(s) by index."""
         if isinstance(index, slice):
-            return [row['segment_obj'] for _, row in self.df.iloc[index].iterrows()]
-        else:
-            if index < 0:
-                index = len(self.df) + index
-            return self.df.iloc[index]['segment_obj']
+            return [row["segment_obj"] for _, row in self.df.iloc[index].iterrows()]
+        if index < 0:
+            index = len(self.df) + index
+        return self.df.iloc[index]["segment_obj"]
 
     def __iter__(self):
         """Iterate over segments."""
         for _, row in self.df.iterrows():
-            yield row['segment_obj']
+            yield row["segment_obj"]
 
     def get_by_cycle_type(self, cycle_type):
         """Get all segments of a specific cycle type."""
-        result = self.df[self.df['cycle_type'] == cycle_type]
-        return [row['segment_obj'] for _, row in result.iterrows()]
+        result = self.df[self.df["cycle_type"] == cycle_type]
+        return [row["segment_obj"] for _, row in result.iterrows()]
 
     def get_by_time_range(self, start, end):
         """Get segments that overlap with time range."""
-        result = self.df[
-            (self.df['start'] <= end) & (self.df['end'] >= start)
-        ]
-        return [row['segment_obj'] for _, row in result.iterrows()]
+        result = self.df[(self.df["start"] <= end) & (self.df["end"] >= start)]
+        return [row["segment_obj"] for _, row in result.iterrows()]
 
     def get_invalid_segments(self):
         """Get all segments with errors."""
-        result = self.df[self.df['error'].notna()]
-        return [(idx, row['segment_obj']) for idx, row in result.iterrows()]
+        result = self.df[self.df["error"].notna()]
+        return [(idx, row["segment_obj"]) for idx, row in result.iterrows()]
 
     def get_cycle_duration_stats(self):
         """Calculate duration statistics by cycle type."""
         df_copy = self.df.copy()
-        df_copy['duration'] = df_copy['end'] - df_copy['start']
-        return df_copy.groupby('cycle_type')['duration'].describe()
+        df_copy["duration"] = df_copy["end"] - df_copy["start"]
+        return df_copy.groupby("cycle_type")["duration"].describe()
 
     def get_cycle_type_counts(self):
         """Count number of cycles by type."""
-        return self.df['cycle_type'].value_counts()
+        return self.df["cycle_type"].value_counts()
 
     def get_average_shift_by_cycle_type(self):
         """Calculate average shift values by cycle type."""
-        return self.df.groupby('cycle_type')[
-            ['shift_a', 'shift_b', 'shift_c', 'shift_d']
+        return self.df.groupby("cycle_type")[
+            ["shift_a", "shift_b", "shift_c", "shift_d"]
         ].mean()
 
     def validate_all(self):
         """Validate all segments and return summary."""
         validation = {
-            'total': len(self.df),
-            'valid': len(self.df[self.df['error'].isna()]),
-            'invalid': len(self.df[self.df['error'].notna()]),
-            'time_order_issues': 0,
-            'missing_data': 0,
+            "total": len(self.df),
+            "valid": len(self.df[self.df["error"].isna()]),
+            "invalid": len(self.df[self.df["error"].notna()]),
+            "time_order_issues": 0,
+            "missing_data": 0,
         }
-        time_issues = self.df[self.df['start'] >= self.df['end']]
-        validation['time_order_issues'] = len(time_issues)
-        missing = self.df[self.df['cycle_type'].isna() | (self.df['cycle_type'] == '')]
-        validation['missing_data'] = len(missing)
+        time_issues = self.df[self.df["start"] >= self.df["end"]]
+        validation["time_order_issues"] = len(time_issues)
+        missing = self.df[self.df["cycle_type"].isna() | (self.df["cycle_type"] == "")]
+        validation["missing_data"] = len(missing)
         return validation
 
     def to_csv(self, filename, **kwargs):
         """Export segments to CSV file."""
-        export_df = pd.DataFrame({
-            'Name': self.df['name'],
-            'StartTime': self.df['start'].round(2),
-            'EndTime': self.df['end'].round(2),
-            'ShiftA': self.df['shift_a'].round(3),
-            'ShiftB': self.df['shift_b'].round(3),
-            'ShiftC': self.df['shift_c'].round(3),
-            'ShiftD': self.df['shift_d'].round(3),
-            'Reference': self.df['ref_ch'].fillna('None'),
-            'CycleType': self.df['cycle_type'],
-            'UserNote': self.df['note'],
-        })
-        if 'sep' not in kwargs:
-            kwargs['sep'] = '\t'
+        export_df = pd.DataFrame(
+            {
+                "Name": self.df["name"],
+                "StartTime": self.df["start"].round(2),
+                "EndTime": self.df["end"].round(2),
+                "ShiftA": self.df["shift_a"].round(3),
+                "ShiftB": self.df["shift_b"].round(3),
+                "ShiftC": self.df["shift_c"].round(3),
+                "ShiftD": self.df["shift_d"].round(3),
+                "Reference": self.df["ref_ch"].fillna("None"),
+                "CycleType": self.df["cycle_type"],
+                "UserNote": self.df["note"],
+            },
+        )
+        if "sep" not in kwargs:
+            kwargs["sep"] = "\t"
         export_df.to_csv(filename, index=False, **kwargs)
 
     @classmethod
     def from_csv(cls, filename, **kwargs):
         """Import segments from CSV file."""
-        if 'sep' not in kwargs:
-            kwargs['sep'] = '\t'
+        if "sep" not in kwargs:
+            kwargs["sep"] = "\t"
         import_df = pd.read_csv(filename, **kwargs)
         instance = cls()
-        instance.df = pd.DataFrame({
-            'seg_id': range(len(import_df)),
-            'name': import_df['Name'],
-            'start': import_df['StartTime'].astype(float),
-            'end': import_df['EndTime'].astype(float),
-            'ref_ch': import_df['Reference'].replace('None', None),
-            'unit': 'RU',
-            'shift_a': import_df['ShiftA'].astype(float),
-            'shift_b': import_df['ShiftB'].astype(float),
-            'shift_c': import_df['ShiftC'].astype(float),
-            'shift_d': import_df['ShiftD'].astype(float),
-            'cycle_type': import_df.get('CycleType', 'Auto-read'),
-            'cycle_time': None,
-            'note': import_df.get('UserNote', ''),
-            'error': None,
-            'segment_obj': None,
-        })
+        instance.df = pd.DataFrame(
+            {
+                "seg_id": range(len(import_df)),
+                "name": import_df["Name"],
+                "start": import_df["StartTime"].astype(float),
+                "end": import_df["EndTime"].astype(float),
+                "ref_ch": import_df["Reference"].replace("None", None),
+                "unit": "RU",
+                "shift_a": import_df["ShiftA"].astype(float),
+                "shift_b": import_df["ShiftB"].astype(float),
+                "shift_c": import_df["ShiftC"].astype(float),
+                "shift_d": import_df["ShiftD"].astype(float),
+                "cycle_type": import_df.get("CycleType", "Auto-read"),
+                "cycle_time": None,
+                "note": import_df.get("UserNote", ""),
+                "error": None,
+                "segment_obj": None,
+            },
+        )
         return instance
 
     def get_summary(self):
@@ -189,15 +208,19 @@ class SegmentDataFrame:
         summary = [
             f"Total Segments: {len(self.df)}",
             f"Cycle Types: {', '.join(self.df['cycle_type'].unique())}",
-            f"Time Range: {self.df['start'].min():.1f}s - {self.df['end'].max():.1f}s" if len(self.df) > 0 else "Time Range: N/A",
+            f"Time Range: {self.df['start'].min():.1f}s - {self.df['end'].max():.1f}s"
+            if len(self.df) > 0
+            else "Time Range: N/A",
             f"Valid: {len(self.df[self.df['error'].isna()])}",
             f"Invalid: {len(self.df[self.df['error'].notna()])}",
         ]
         return "\n".join(summary)
 
+
 # Mock Segment class for testing
 class MockSegment:
     """Mock Segment class for testing."""
+
     def __init__(self, seg_id, start, end):
         self.seg_id = seg_id
         self.name = f"Cycle{seg_id + 1}"
@@ -210,14 +233,25 @@ class MockSegment:
         self.cycle_time = None
         self.note = ""
         self.error = None
-        self.seg_x = {"a": np.array([]), "b": np.array([]), "c": np.array([]), "d": np.array([])}
-        self.seg_y = {"a": np.array([]), "b": np.array([]), "c": np.array([]), "d": np.array([])}
+        self.seg_x = {
+            "a": np.array([]),
+            "b": np.array([]),
+            "c": np.array([]),
+            "d": np.array([]),
+        }
+        self.seg_y = {
+            "a": np.array([]),
+            "b": np.array([]),
+            "c": np.array([]),
+            "d": np.array([]),
+        }
+
 
 def test_segment_dataframe():
     """Run comprehensive tests on SegmentDataFrame."""
-    print("="*70)
+    print("=" * 70)
     print("PANDAS CYCLE TABLE MANAGEMENT TEST")
-    print("="*70)
+    print("=" * 70)
 
     # Test 1: Initialization
     print("\n[Test 1] Initialization")
@@ -268,7 +302,9 @@ def test_segment_dataframe():
     print("\n[Test 5] Iteration")
     print("  Segments:")
     for i, seg in enumerate(segments):
-        print(f"    [{i}] {seg.name}: {seg.start:.1f}s - {seg.end:.1f}s ({seg.cycle_type})")
+        print(
+            f"    [{i}] {seg.name}: {seg.start:.1f}s - {seg.end:.1f}s ({seg.cycle_type})",
+        )
 
     # Test 6: Search by cycle type
     print("\n[Test 6] Search by Cycle Type")
@@ -309,10 +345,10 @@ def test_segment_dataframe():
     print(f"  ✓ Exported to {export_file}")
 
     # Verify file contents
-    with open(export_file, 'r') as f:
+    with open(export_file) as f:
         lines = f.readlines()
         print(f"  ✓ File has {len(lines)} lines (including header)")
-        print(f"  First 3 lines:")
+        print("  First 3 lines:")
         for line in lines[:3]:
             print(f"    {line.rstrip()}")
 
@@ -373,9 +409,9 @@ def test_segment_dataframe():
     # Test in operator (iteration)
     print(f"  Iteration works: {sum(1 for _ in segments)} segments")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("✅ ALL TESTS PASSED!")
-    print("="*70)
+    print("=" * 70)
     print("\nSummary:")
     print("  - List-like interface: ✓ Compatible")
     print("  - Append/Insert/Delete: ✓ Working")
@@ -387,6 +423,7 @@ def test_segment_dataframe():
     print("  - export_table(): 50+ lines -> 3 lines")
     print("  - import_table(): 60+ lines -> 25 lines (with validation)")
     print("  - New analytics methods: 0 lines -> accessible")
+
 
 if __name__ == "__main__":
     test_segment_dataframe()

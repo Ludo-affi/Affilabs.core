@@ -35,11 +35,11 @@ class PhasePhotonics:
         self._wavelengths = None
         self._integration_time = 0.1
         self.min_integration = 0.001  # Minimum integration time in seconds
-        self.max_integration = 5.0    # Maximum integration time in seconds
+        self.max_integration = 5.0  # Maximum integration time in seconds
 
         # Detector specifications (PhasePhotonics specific)
         self._max_counts = 65535  # 16-bit ADC (to be confirmed with actual device)
-        self._num_pixels = 1848   # PhasePhotonics SENSOR_DATA_LEN
+        self._num_pixels = 1848  # PhasePhotonics SENSOR_DATA_LEN
 
         logger.warning("⚠️ PhasePhotonics: Using PLACEHOLDER implementation")
         logger.warning("   Replace with actual PhasePhotonics driver when ready")
@@ -89,8 +89,11 @@ class PhasePhotonics:
 
         Reference: Phase Photonics Modifications/utils/usb4000.py lines 69-75
         Note: Original had sleep(0.3) but user confirmed it's not necessary
+
         """
-        logger.debug(f"PhasePhotonics.set_integration({integration_ms}ms) - PLACEHOLDER")
+        logger.debug(
+            f"PhasePhotonics.set_integration({integration_ms}ms) - PLACEHOLDER",
+        )
 
         # Validate integration time bounds
         integration_sec = integration_ms / 1000.0
@@ -118,9 +121,9 @@ class PhasePhotonics:
 
         Reference: Phase Photonics Modifications/utils/usb4000.py lines 77-96
         Note: SENSOR_DATA_LEN = 1848 for PhasePhotonics (vs 3700 for USB4000)
+
         """
         logger.debug("PhasePhotonics.read_wavelength() - PLACEHOLDER")
-        return None
 
     def read_spectrum(self):
         """Read raw spectrum data - PLACEHOLDER.
@@ -135,9 +138,9 @@ class PhasePhotonics:
 
         Reference: Phase Photonics Modifications/utils/SpectrometerAPI.py
         Note: Data length is 1848 pixels for PhasePhotonics
+
         """
         logger.debug("PhasePhotonics.read_spectrum() - PLACEHOLDER")
-        return None
 
     def read_intensity(self, data_type=None):
         """Read raw intensity array from detector - PLACEHOLDER.
@@ -179,15 +182,18 @@ class PhasePhotonics:
         - Call SpectrometerAPI.read_intensity(data_type=data_type)
         - Return raw pixel array (1848 elements)
         - Use pre-allocated buffer from SpectrometerAPI for efficiency
+
         """
-        logger.debug(f"PhasePhotonics.read_intensity(data_type={data_type}) - PLACEHOLDER")
-        return None
+        logger.debug(
+            f"PhasePhotonics.read_intensity(data_type={data_type}) - PLACEHOLDER",
+        )
 
     def wavelengths(self):
         """Get wavelength array (alternative method name for compatibility).
 
         Returns:
             numpy.ndarray: Wavelength array, or None if not available
+
         """
         if self._wavelengths is None:
             self._wavelengths = self.read_wavelength()
@@ -209,6 +215,7 @@ class PhasePhotonics:
 
         Returns:
             int: Maximum counts (e.g., 65535 for 16-bit)
+
         """
         return self._max_counts
 
@@ -218,6 +225,7 @@ class PhasePhotonics:
 
         Returns:
             int: Number of pixels (1848 for PhasePhotonics)
+
         """
         return self._num_pixels
 
@@ -227,6 +235,7 @@ class PhasePhotonics:
 
         Returns:
             int: Target counts for S-mode calibration
+
         """
         return int(0.75 * self._max_counts)
 

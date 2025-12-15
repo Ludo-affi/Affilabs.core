@@ -1,12 +1,14 @@
 """Test with valid timing ranges - Robust version with port handling"""
+
+import sys
+import time
+
 import serial
 import serial.tools.list_ports
-import time
-import sys
 
-print("="*60)
+print("=" * 60)
 print("VALID TIMING TEST - ROBUST")
-print("="*60)
+print("=" * 60)
 print("Configuration:")
 print("  LEDs: A=100, B=150, C=200, D=250")
 print("  Settle: 1000ms (1 second - max allowed)")
@@ -14,7 +16,7 @@ print("  Dark: 100ms (0.1 seconds - max allowed)")
 print("  Cycles: 10")
 print("  Expected: ~4.4 seconds per cycle")
 print("  Total expected: ~44 seconds")
-print("="*60)
+print("=" * 60)
 print()
 
 # Find available COM ports
@@ -29,7 +31,7 @@ if not ports:
     sys.exit(1)
 
 # Try to connect to the first available port
-target_port = 'COM5'
+target_port = "COM5"
 print(f"🔌 Attempting to connect to {target_port}...")
 
 # Try to open the port with retry
@@ -42,7 +44,7 @@ for attempt in range(max_retries):
     except serial.SerialException as e:
         print(f"⚠️  Attempt {attempt + 1}/{max_retries} failed: {e}")
         if attempt < max_retries - 1:
-            print(f"   Waiting 2 seconds before retry...")
+            print("   Waiting 2 seconds before retry...")
             time.sleep(2)
         else:
             print(f"❌ Could not open {target_port} after {max_retries} attempts")
@@ -65,12 +67,12 @@ start_time = time.time()
 cycle_count = 0
 
 print("📊 Progress:")
-print("-"*60)
+print("-" * 60)
 
 try:
     while time.time() - start_time < 120:  # 2 minute timeout
         if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
 
             if line:
                 if line.startswith("BATCH_START"):
@@ -99,13 +101,13 @@ try:
 
                 elif line == "BATCH_END":
                     elapsed = time.time() - start_time
-                    print(f"\n\n✅ BATCH_END")
+                    print("\n\n✅ BATCH_END")
                     print(f"⏱️  Total time: {elapsed:.1f}s")
                     print(f"📊 Cycles completed: {cycle_count}")
                     if cycle_count > 0:
                         print(f"⚡ Average per cycle: {elapsed/cycle_count:.1f}s")
                         expected_per_cycle = 4.4
-                        diff = (elapsed/cycle_count) - expected_per_cycle
+                        diff = (elapsed / cycle_count) - expected_per_cycle
                         print(f"📈 Difference from expected: {diff:+.1f}s per cycle")
                     break
 
@@ -118,6 +120,6 @@ except KeyboardInterrupt:
     print(f"📊 Cycles completed: {cycle_count}")
 
 finally:
-    print("-"*60)
+    print("-" * 60)
     ser.close()
     print("\n📡 Disconnected")

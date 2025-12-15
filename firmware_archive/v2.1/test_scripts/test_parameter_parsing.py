@@ -1,12 +1,14 @@
 """Test to verify what the firmware is actually parsing"""
-import serial
+
 import time
 
-print("="*70)
-print("PARAMETER PARSING VERIFICATION TEST")
-print("="*70)
+import serial
 
-ser = serial.Serial('COM5', 115200, timeout=5)
+print("=" * 70)
+print("PARAMETER PARSING VERIFICATION TEST")
+print("=" * 70)
+
+ser = serial.Serial("COM5", 115200, timeout=5)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -15,7 +17,7 @@ print("\n🔧 Enabling debug mode...")
 ser.write(b"d\n")
 time.sleep(0.5)
 while ser.in_waiting > 0:
-    line = ser.readline().decode('utf-8', errors='ignore').strip()
+    line = ser.readline().decode("utf-8", errors="ignore").strip()
     if line:
         print(f"  {line}")
 
@@ -31,7 +33,7 @@ for test_name, command, expected_cycles in test_cases:
     print(f"{test_name}")
     print(f"Command: {command.strip()}")
     print(f"Expected cycles: {expected_cycles}")
-    print("-"*70)
+    print("-" * 70)
 
     ser.reset_input_buffer()
     ser.write(command.encode())
@@ -44,12 +46,12 @@ for test_name, command, expected_cycles in test_cases:
 
     while time.time() - start < timeout:
         if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
 
             if line:
                 if line.startswith("BATCH_START"):
                     got_batch_start = True
-                    print(f"  ✅ BATCH_START received")
+                    print("  ✅ BATCH_START received")
                 elif line.startswith("CYCLE:"):
                     cycle_num = int(line.split(":")[1])
                     cycles_seen = max(cycles_seen, cycle_num)
@@ -70,22 +72,22 @@ for test_name, command, expected_cycles in test_cases:
     # Analysis
     print(f"\n  Result: {cycles_seen} cycles executed")
     if cycles_seen == expected_cycles:
-        print(f"  ✅ PASS")
+        print("  ✅ PASS")
     else:
         print(f"  ❌ FAIL - Expected {expected_cycles}, got {cycles_seen}")
         if cycles_seen == 1:
-            print(f"  ⚠️  Parsing likely failed, defaulted to 1 cycle")
+            print("  ⚠️  Parsing likely failed, defaulted to 1 cycle")
 
     if not got_batch_start:
-        print(f"  ⚠️  No BATCH_START received")
+        print("  ⚠️  No BATCH_START received")
     if not got_batch_end:
-        print(f"  ⚠️  No BATCH_END received")
+        print("  ⚠️  No BATCH_END received")
 
     time.sleep(1)
 
 print(f"\n{'='*70}")
 print("CONCLUSION")
-print("="*70)
+print("=" * 70)
 print("\nIf all tests show 1 cycle when expecting more:")
 print("  → The 7th parameter (CYCLES) is not being parsed correctly")
 print("  → Check: Buffer overflow, off-by-one error, or field counting bug")

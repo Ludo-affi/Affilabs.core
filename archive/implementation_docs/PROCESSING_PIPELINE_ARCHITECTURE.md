@@ -100,11 +100,11 @@ class MyCustomPipeline(ProcessingPipeline):
             author="Your Name",
             parameters={'param1': value1}
         )
-    
+
     def calculate_transmission(self, intensity, reference):
         # Your transmission calculation
         return transmission
-    
+
     def find_resonance_wavelength(self, transmission, wavelengths, **kwargs):
         # Your resonance finding algorithm
         return wavelength
@@ -296,13 +296,13 @@ Potential additions to the pipeline system:
 
 ## Benefits
 
-✅ **Flexibility**: Easy to add new processing methods  
-✅ **Comparison**: Switch pipelines to evaluate performance  
-✅ **Backward Compatible**: Existing code works unchanged  
-✅ **Maintainable**: Clean separation of concerns  
-✅ **Testable**: Each pipeline can be tested independently  
-✅ **Documented**: Metadata includes parameters and descriptions  
-✅ **UI Integration**: User-friendly pipeline selection  
+✅ **Flexibility**: Easy to add new processing methods
+✅ **Comparison**: Switch pipelines to evaluate performance
+✅ **Backward Compatible**: Existing code works unchanged
+✅ **Maintainable**: Clean separation of concerns
+✅ **Testable**: Each pipeline can be tested independently
+✅ **Documented**: Metadata includes parameters and descriptions
+✅ **UI Integration**: User-friendly pipeline selection
 
 ## Migration Path
 

@@ -78,7 +78,10 @@ except ImportError:
     def show_message(msg, msg_type="Info", yes_no=False):
         if yes_no:
             reply = QMessageBox.question(
-                None, msg_type, msg, QMessageBox.Yes | QMessageBox.No
+                None,
+                msg_type,
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
             )
             return reply == QMessageBox.Yes
         QMessageBox.information(None, msg_type, msg)
@@ -176,7 +179,8 @@ class CycleDetectionWorker(QThread):
 
             # Find significant positive changes (injections)
             threshold = self.detection_params.get(
-                "injection_threshold", np.std(derivative) * 2
+                "injection_threshold",
+                np.std(derivative) * 2,
             )
 
             # Find peaks in derivative
@@ -257,7 +261,7 @@ class CycleDetectionWorker(QThread):
                     total_time = len(signal_data)
                     assoc_end_idx = int(total_time * 0.4)  # 40% for association
                     dissoc_start_idx = int(
-                        total_time * 0.6
+                        total_time * 0.6,
                     )  # 60% for dissociation start
 
                 # Store phase information
@@ -312,7 +316,8 @@ class CycleDetectionWorker(QThread):
 
             # Assign concentrations based on pattern
             concentrations = self._generate_concentration_series(
-                pattern_type, len(responses)
+                pattern_type,
+                len(responses),
             )
 
             for i, cycle in enumerate(cycles):
@@ -619,7 +624,7 @@ class SmartProcessingDialog(QDialog):
                 "Dissoc. Shift",
                 "Duration (s)",
                 "Quality",
-            ]
+            ],
         )
         self.cycle_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table_layout.addWidget(self.cycle_table)
@@ -631,7 +636,7 @@ class SmartProcessingDialog(QDialog):
     def _create_status_bar(self, layout):
         """Create status bar at bottom."""
         self.status_label = QLabel(
-            "Ready - Import SPR data (supports wavelength/time format)"
+            "Ready - Import SPR data (supports wavelength/time format)",
         )
         self.status_label.setStyleSheet("border: 1px solid gray; padding: 5px;")
         layout.addWidget(self.status_label)
@@ -715,7 +720,7 @@ class SmartProcessingDialog(QDialog):
                 self._plot_raw_data()
                 self.process_btn.setEnabled(True)
                 self._update_status(
-                    f"Data imported successfully - {self._get_data_summary()}"
+                    f"Data imported successfully - {self._get_data_summary()}",
                 )
 
                 # Auto-start processing after successful import
@@ -793,7 +798,7 @@ class SmartProcessingDialog(QDialog):
                     self.raw_data[ch]["time"] = df[f"Time_{ch_upper}"].to_numpy()
                     self.raw_data[ch]["signal"] = df[f"Channel_{ch_upper}"].to_numpy()
 
-                return True                # If standard format failed, try header-based detection
+                return True  # If standard format failed, try header-based detection
                 file.seek(0)
                 return self._try_header_based_parsing(file, delimiter)
 
@@ -990,7 +995,7 @@ class SmartProcessingDialog(QDialog):
                         # Show first few lines for debugging
                         if len(data_lines) <= 3:
                             print(
-                                f"DEBUG: Data line {len(data_lines)}: {len(parts)} columns, first 5: {parts[:5]}"
+                                f"DEBUG: Data line {len(data_lines)}: {len(parts)} columns, first 5: {parts[:5]}",
                             )
 
                 except ValueError:
@@ -1025,7 +1030,7 @@ class SmartProcessingDialog(QDialog):
                         self.raw_data[ch]["time"] = df[time_col].dropna().to_numpy()
                         self.raw_data[ch]["signal"] = df[value_col].dropna().to_numpy()
                         print(
-                            f"DEBUG: Channel {ch}: {len(self.raw_data[ch]['time'])} points"
+                            f"DEBUG: Channel {ch}: {len(self.raw_data[ch]['time'])} points",
                         )
                     else:
                         self.raw_data[ch]["time"] = np.array([])
@@ -1048,7 +1053,7 @@ class SmartProcessingDialog(QDialog):
                         self.raw_data[ch]["time"] = times
                         self.raw_data[ch]["signal"] = df[i + 1].to_numpy()
                         print(
-                            f"DEBUG: Channel {ch}: {len(self.raw_data[ch]['time'])} points"
+                            f"DEBUG: Channel {ch}: {len(self.raw_data[ch]['time'])} points",
                         )
                     else:
                         self.raw_data[ch]["time"] = np.array([])
@@ -1139,7 +1144,9 @@ class SmartProcessingDialog(QDialog):
 
         # Start background processing
         self.detection_worker = CycleDetectionWorker(
-            time_data, signal_data, self.detection_params
+            time_data,
+            signal_data,
+            self.detection_params,
         )
 
         self.detection_worker.progress_updated.connect(self.progress_bar.setValue)
@@ -1191,7 +1198,9 @@ class SmartProcessingDialog(QDialog):
             ):
                 print(f"DEBUG: Plotting channel {ch} on cycles tab")
                 pen = mkPen(
-                    GRAPH_COLORS[ch], width=1, style=Qt.PenStyle.DashLine
+                    GRAPH_COLORS[ch],
+                    width=1,
+                    style=Qt.PenStyle.DashLine,
                 )  # Thinner, dashed for background
                 self.cycles_plot.plot(
                     self.raw_data[ch]["time"],
@@ -1402,7 +1411,9 @@ class SmartProcessingDialog(QDialog):
                 # Dissociation shift
                 dissoc_shift = cycle.get("dissoc_shift", 0)
                 self.cycle_table.setItem(
-                    row, 4, QTableWidgetItem(f"{dissoc_shift:.2f}")
+                    row,
+                    4,
+                    QTableWidgetItem(f"{dissoc_shift:.2f}"),
                 )
 
                 # Duration
@@ -1477,7 +1488,7 @@ class SmartProcessingDialog(QDialog):
                         "Dissoc_Shift",
                         "Duration",
                         "Quality",
-                    ]
+                    ],
                 )
 
                 # Write data
@@ -1506,7 +1517,7 @@ class SmartProcessingDialog(QDialog):
                                 cycle.get("dissoc_shift", 0),
                                 duration,
                                 self._calculate_cycle_quality(cycle),
-                            ]
+                            ],
                         )
 
             show_message(f"Cycles exported to {file_path}")

@@ -9,37 +9,52 @@ Builds the Graphic Control tab with:
 
 Extracted from sidebar.py to improve modularity.
 """
-from PySide6.QtCore import Qt
+
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QWidget,
-    QCheckBox, QSlider, QComboBox, QRadioButton, QLineEdit, QButtonGroup
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+    QWidget,
 )
-from ui_styles import (
-    Colors, Fonts, label_style, section_header_style, card_style, checkbox_style
+
+from affilabs.ui_styles import (
+    Colors,
+    Fonts,
+    card_style,
+    checkbox_style,
+    label_style,
+    section_header_style,
 )
 
 # Colorblind-safe palette (Tol bright scheme)
-COLORBLIND_PALETTE = ['#4477AA', '#EE6677', '#228833', '#CCBB44']
+COLORBLIND_PALETTE = ["#4477AA", "#EE6677", "#228833", "#CCBB44"]
 
 
 class GraphicControlTabBuilder:
     """Builds the Graphic Control tab content."""
 
     def __init__(self, sidebar):
-        """
-        Initialize builder.
+        """Initialize builder.
 
         Args:
             sidebar: Reference to parent AffilabsSidebar instance
+
         """
         self.sidebar = sidebar
 
     def build(self, tab_layout: QVBoxLayout):
-        """
-        Build Graphic Control tab with plots, axes, filters, and accessibility.
+        """Build Graphic Control tab with plots, axes, filters, and accessibility.
 
         Args:
             tab_layout: QVBoxLayout to add widgets to
+
         """
         self._build_data_filtering(tab_layout)
         self._build_reference_section(tab_layout)
@@ -51,7 +66,9 @@ class GraphicControlTabBuilder:
         """Build EMA live display filtering controls section."""
         filter_section = QLabel("DATA FILTERING")
         filter_section.setStyleSheet(section_header_style())
-        filter_section.setToolTip("Smooth live sensorgram display using EMA (Exponential Moving Average)")
+        filter_section.setToolTip(
+            "Smooth live sensorgram display using EMA (Exponential Moving Average)",
+        )
         tab_layout.addWidget(filter_section)
         tab_layout.addSpacing(8)
 
@@ -62,7 +79,9 @@ class GraphicControlTabBuilder:
         gc_layout.setSpacing(12)
 
         # Description
-        desc_label = QLabel("EMA filtering for live display (does not affect saved data):")
+        desc_label = QLabel(
+            "EMA filtering for live display (does not affect saved data):",
+        )
         desc_label.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT))
         desc_label.setWordWrap(True)
         gc_layout.addWidget(desc_label)
@@ -97,7 +116,7 @@ class GraphicControlTabBuilder:
         self.sidebar.filter_none_radio.setToolTip(
             "No filtering - Raw data display\n"
             "• Baseline noise: ~5.7 RU\n"
-            "• Use for: Maximum fidelity, debugging"
+            "• Use for: Maximum fidelity, debugging",
         )
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_none_radio, 0)
         gc_layout.addWidget(self.sidebar.filter_none_radio)
@@ -109,7 +128,7 @@ class GraphicControlTabBuilder:
             "Fast response filter - 15-20% noise reduction\n"
             "• Baseline noise: ~4.8 RU\n"
             "• Lag: 1-2 points\n"
-            "• Use for: Fast kinetics, quick response"
+            "• Use for: Fast kinetics, quick response",
         )
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_light_radio, 1)
         gc_layout.addWidget(self.sidebar.filter_light_radio)
@@ -121,7 +140,7 @@ class GraphicControlTabBuilder:
             "Smooth display filter - 36% noise reduction ⭐ RECOMMENDED\n"
             "• Baseline noise: ~3.6 RU\n"
             "• Lag: 4 points\n"
-            "• Use for: General use, professional appearance, baseline recordings"
+            "• Use for: General use, professional appearance, baseline recordings",
         )
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_smooth_radio, 2)
         gc_layout.addWidget(self.sidebar.filter_smooth_radio)
@@ -129,7 +148,7 @@ class GraphicControlTabBuilder:
         # Info note
         info_label = QLabel(
             "💡 EMA filtering is applied point-by-point to the live display only. "
-            "Saved data remains unfiltered. Applied after peak finding."
+            "Saved data remains unfiltered. Applied after peak finding.",
         )
         info_label.setStyleSheet(
             f"color: {Colors.SECONDARY_TEXT};"
@@ -137,7 +156,7 @@ class GraphicControlTabBuilder:
             f"font-style: italic;"
             f"padding: 8px;"
             f"background: {Colors.OVERLAY_LIGHT_4};"
-            f"border-radius: 4px;"
+            f"border-radius: 4px;",
         )
         info_label.setWordWrap(True)
         gc_layout.addWidget(info_label)
@@ -152,7 +171,9 @@ class GraphicControlTabBuilder:
         """PHASE 1: Build Live Cycle timeframe controls (parallel to cursors)."""
         section_label = QLabel("LIVE CYCLE WINDOW")
         section_label.setStyleSheet(section_header_style())
-        section_label.setToolTip("Configure Live Cycle display timeframe (Phase 1: Visual only)")
+        section_label.setToolTip(
+            "Configure Live Cycle display timeframe (Phase 1: Visual only)",
+        )
         tab_layout.addWidget(section_label)
         tab_layout.addSpacing(8)
 
@@ -168,7 +189,9 @@ class GraphicControlTabBuilder:
         timeframe_layout.addWidget(timeframe_label)
 
         self.sidebar.timeframe_combo = QComboBox()
-        self.sidebar.timeframe_combo.addItems(["2 minutes", "5 minutes", "15 minutes", "30 minutes", "60 minutes"])
+        self.sidebar.timeframe_combo.addItems(
+            ["2 minutes", "5 minutes", "15 minutes", "30 minutes", "60 minutes"],
+        )
         self.sidebar.timeframe_combo.setCurrentIndex(1)  # Default to 5 minutes
         self.sidebar.timeframe_combo.setStyleSheet(
             f"QComboBox {{"
@@ -181,7 +204,7 @@ class GraphicControlTabBuilder:
             f"}}"
             f"QComboBox:hover {{"
             f"  border: 1px solid rgba(0, 0, 0, 0.15);"
-            f"}}"
+            f"}}",
         )
         timeframe_layout.addWidget(self.sidebar.timeframe_combo)
 
@@ -212,7 +235,7 @@ class GraphicControlTabBuilder:
         self.sidebar.mode_moving_radio.setToolTip(
             "Scrolling window showing the most recent data\\n"
             "New points enter at 4/5 from left (80%)\\n"
-            "Like an oscilloscope or chart recorder"
+            "Like an oscilloscope or chart recorder",
         )
         self.sidebar.timeframe_mode_group.addButton(self.sidebar.mode_moving_radio, 0)
         timeframe_layout.addWidget(self.sidebar.mode_moving_radio)
@@ -223,7 +246,7 @@ class GraphicControlTabBuilder:
         self.sidebar.mode_fixed_radio.setToolTip(
             "Fixed window from t=0 to selected time\\n"
             "Perfect for watching a complete cycle\\n"
-            "Frame stays locked, data fills in"
+            "Frame stays locked, data fills in",
         )
         self.sidebar.timeframe_mode_group.addButton(self.sidebar.mode_fixed_radio, 1)
         timeframe_layout.addWidget(self.sidebar.mode_fixed_radio)
@@ -231,7 +254,7 @@ class GraphicControlTabBuilder:
         # Info note
         info_label = QLabel(
             "💡 Phase 1: Visual controls only. Cursor system still active.\\n"
-            "This will replace cursors in future phases."
+            "This will replace cursors in future phases.",
         )
         info_label.setStyleSheet(
             f"color: {Colors.SECONDARY_TEXT};"
@@ -239,7 +262,7 @@ class GraphicControlTabBuilder:
             f"font-style: italic;"
             f"padding: 8px;"
             f"background: {Colors.OVERLAY_LIGHT_4};"
-            f"border-radius: 4px;"
+            f"border-radius: 4px;",
         )
         info_label.setWordWrap(True)
         timeframe_layout.addWidget(info_label)
@@ -251,7 +274,9 @@ class GraphicControlTabBuilder:
         """Build reference channel selection section."""
         ref_section = QLabel("REFERENCE")
         ref_section.setStyleSheet(section_header_style())
-        ref_section.setToolTip("Subtract a reference channel from all others for baseline correction")
+        ref_section.setToolTip(
+            "Subtract a reference channel from all others for baseline correction",
+        )
         tab_layout.addWidget(ref_section)
         tab_layout.addSpacing(8)
 
@@ -268,14 +293,20 @@ class GraphicControlTabBuilder:
         ref_row = QHBoxLayout()
         ref_row.setSpacing(10)
         ref_label = QLabel("Reference:")
-        ref_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;")
+        ref_label.setStyleSheet(
+            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;",
+        )
         ref_row.addWidget(ref_label)
         ref_row.addStretch()
 
         self.sidebar.ref_combo = QComboBox()
-        self.sidebar.ref_combo.addItems(["None", "Channel A", "Channel B", "Channel C", "Channel D"])
+        self.sidebar.ref_combo.addItems(
+            ["None", "Channel A", "Channel B", "Channel C", "Channel D"],
+        )
         self.sidebar.ref_combo.setFixedWidth(120)
-        self.sidebar.ref_combo.setToolTip("Select channel to use as baseline reference (shown as dashed line)")
+        self.sidebar.ref_combo.setToolTip(
+            "Select channel to use as baseline reference (shown as dashed line)",
+        )
         self.sidebar.ref_combo.setStyleSheet(
             f"QComboBox {{"
             f"  background: white;"
@@ -300,18 +331,22 @@ class GraphicControlTabBuilder:
             f"  selection-color: white;"
             f"  outline: none;"
             f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
-            f"}}"
+            f"}}",
         )
         ref_row.addWidget(self.sidebar.ref_combo)
         ref_layout.addLayout(ref_row)
 
         ref_info = QLabel("Selected channel shown as faded dashed line")
-        ref_info.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;")
+        ref_info.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;",
+        )
         ref_layout.addWidget(ref_info)
 
         # Wire reference combo
         self.sidebar.ref_combo.currentIndexChanged.connect(
-            lambda idx: print(f"Reference changed to: {self.sidebar.ref_combo.currentText()}")
+            lambda idx: print(
+                f"Reference changed to: {self.sidebar.ref_combo.currentText()}",
+            ),
         )
 
         tab_layout.addWidget(ref_card)
@@ -326,7 +361,10 @@ class GraphicControlTabBuilder:
         tab_layout.addWidget(display_section)
 
         display_note = QLabel("Applied to cycle of interest")
-        display_note.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic; margin-top: 2px;")
+        display_note.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT)
+            + "font-style: italic; margin-top: 2px;",
+        )
         tab_layout.addWidget(display_note)
         tab_layout.addSpacing(8)
 
@@ -345,7 +383,9 @@ class GraphicControlTabBuilder:
         # Separator
         separator = QFrame()
         separator.setFixedHeight(1)
-        separator.setStyleSheet("background: rgba(0, 0, 0, 0.06); border: none; margin: 8px 0px;")
+        separator.setStyleSheet(
+            "background: rgba(0, 0, 0, 0.06); border: none; margin: 8px 0px;",
+        )
         display_card_layout.addWidget(separator)
 
         # Trace Style options
@@ -393,7 +433,7 @@ class GraphicControlTabBuilder:
             f"}}"
             f"QPushButton:hover:!checked {{"
             f"  background: {Colors.OVERLAY_LIGHT_6};"
-            f"}}"
+            f"}}",
         )
         self.sidebar.axis_button_group.addButton(self.sidebar.x_axis_btn, 0)
         axis_selector_row.addWidget(self.sidebar.x_axis_btn)
@@ -401,7 +441,9 @@ class GraphicControlTabBuilder:
         self.sidebar.y_axis_btn = QPushButton("Y-Axis")
         self.sidebar.y_axis_btn.setCheckable(True)
         self.sidebar.y_axis_btn.setFixedHeight(28)
-        self.sidebar.y_axis_btn.setToolTip("Configure vertical axis (signal intensity) scaling")
+        self.sidebar.y_axis_btn.setToolTip(
+            "Configure vertical axis (signal intensity) scaling",
+        )
         self.sidebar.y_axis_btn.setStyleSheet(
             f"QPushButton {{"
             f"  background: white;"
@@ -420,7 +462,7 @@ class GraphicControlTabBuilder:
             f"}}"
             f"QPushButton:hover:!checked {{"
             f"  background: {Colors.OVERLAY_LIGHT_6};"
-            f"}}"
+            f"}}",
         )
         self.sidebar.axis_button_group.addButton(self.sidebar.y_axis_btn, 1)
         axis_selector_row.addWidget(self.sidebar.y_axis_btn)
@@ -450,7 +492,7 @@ class GraphicControlTabBuilder:
             f"QCheckBox::indicator:checked {{"
             f"  background: {Colors.PRIMARY_TEXT};"
             f"  border: 1px solid {Colors.PRIMARY_TEXT};"
-            f"}}"
+            f"}}",
         )
         axis_selector_row.addWidget(self.sidebar.grid_check)
         axis_selector_row.addStretch()
@@ -465,7 +507,9 @@ class GraphicControlTabBuilder:
 
         self.sidebar.auto_radio = QRadioButton("Autoscale")
         self.sidebar.auto_radio.setChecked(True)
-        self.sidebar.auto_radio.setToolTip("Automatically adjust axis range to fit all data")
+        self.sidebar.auto_radio.setToolTip(
+            "Automatically adjust axis range to fit all data",
+        )
         self.sidebar.auto_radio.setStyleSheet(
             f"QRadioButton {{"
             f"  font-size: 13px;"
@@ -485,7 +529,7 @@ class GraphicControlTabBuilder:
             f"  background: {Colors.PRIMARY_TEXT};"
             f"  border: 4px solid white;"
             f"  outline: 1px solid {Colors.PRIMARY_TEXT};"
-            f"}}"
+            f"}}",
         )
         scale_radio_group.addButton(self.sidebar.auto_radio, 0)
         parent_layout.addWidget(self.sidebar.auto_radio)
@@ -497,7 +541,9 @@ class GraphicControlTabBuilder:
         manual_layout.setSpacing(6)
 
         self.sidebar.manual_radio = QRadioButton("Manual")
-        self.sidebar.manual_radio.setToolTip("Set fixed axis range for consistent scaling")
+        self.sidebar.manual_radio.setToolTip(
+            "Set fixed axis range for consistent scaling",
+        )
         self.sidebar.manual_radio.setStyleSheet(
             f"QRadioButton {{"
             f"  font-size: 13px;"
@@ -517,7 +563,7 @@ class GraphicControlTabBuilder:
             f"  background: {Colors.PRIMARY_TEXT};"
             f"  border: 4px solid white;"
             f"  outline: 1px solid {Colors.PRIMARY_TEXT};"
-            f"}}"
+            f"}}",
         )
         scale_radio_group.addButton(self.sidebar.manual_radio, 1)
         manual_layout.addWidget(self.sidebar.manual_radio)
@@ -552,7 +598,7 @@ class GraphicControlTabBuilder:
             f"QLineEdit:disabled {{"
             f"  background: {Colors.OVERLAY_LIGHT_3};"
             f"  color: {Colors.SECONDARY_TEXT};"
-            f"}}"
+            f"}}",
         )
         inputs_row.addWidget(self.sidebar.min_input)
 
@@ -581,7 +627,7 @@ class GraphicControlTabBuilder:
             f"QLineEdit:disabled {{"
             f"  background: {Colors.OVERLAY_LIGHT_3};"
             f"  color: {Colors.SECONDARY_TEXT};"
-            f"}}"
+            f"}}",
         )
         inputs_row.addWidget(self.sidebar.max_input)
         inputs_row.addStretch()
@@ -631,7 +677,7 @@ class GraphicControlTabBuilder:
             f"  selection-color: white;"
             f"  outline: none;"
             f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
-            f"}}"
+            f"}}",
         )
         options_row.addWidget(self.sidebar.channel_combo)
 
@@ -668,7 +714,7 @@ class GraphicControlTabBuilder:
             f"  selection-color: white;"
             f"  outline: none;"
             f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
-            f"}}"
+            f"}}",
         )
         options_row.addWidget(self.sidebar.marker_combo)
         options_row.addStretch()
@@ -690,21 +736,34 @@ class GraphicControlTabBuilder:
         accessibility_card_layout.setSpacing(8)
 
         # Colorblind-friendly palette toggle
-        self.sidebar.colorblind_check = QCheckBox("Enable colour-blind friendly palette")
+        self.sidebar.colorblind_check = QCheckBox(
+            "Enable colour-blind friendly palette",
+        )
         self.sidebar.colorblind_check.setStyleSheet(checkbox_style())
-        self.sidebar.colorblind_check.setToolTip("Use optimized colors for deuteranopia and protanopia (affects all channels)")
+        self.sidebar.colorblind_check.setToolTip(
+            "Use optimized colors for deuteranopia and protanopia (affects all channels)",
+        )
         accessibility_card_layout.addWidget(self.sidebar.colorblind_check)
 
         # Info text about colorblind palette
-        colorblind_info = QLabel("Uses optimized colors for deuteranopia and protanopia")
-        colorblind_info.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;")
+        colorblind_info = QLabel(
+            "Uses optimized colors for deuteranopia and protanopia",
+        )
+        colorblind_info.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;",
+        )
         accessibility_card_layout.addWidget(colorblind_info)
 
         # Colorblind palette toggle logic
         def _toggle_colorblind(checked: bool):
-            palette = COLORBLIND_PALETTE if checked else ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
+            palette = (
+                COLORBLIND_PALETTE
+                if checked
+                else ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
+            )
             # Note: Plot references removed - this would apply to main window plots
             print(f"Colorblind palette toggled: {checked}")
+
         self.sidebar.colorblind_check.toggled.connect(_toggle_colorblind)
 
         tab_layout.addWidget(accessibility_card)

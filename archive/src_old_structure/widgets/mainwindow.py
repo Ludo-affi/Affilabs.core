@@ -1,17 +1,27 @@
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QMainWindow, QWidget, QPushButton, QHBoxLayout, QSizePolicy, QLabel, QFrame, QVBoxLayout, QSplitter, QStackedWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from widgets.message import show_message
-from widgets.sidebar import ModernSidebar  # Updated to use refactored ModernSidebar with event bus
-from widgets.datawindow import DataWindow
+from utils.logger import logger
 from widgets.advanced import P4SPRAdvMenu
 from widgets.analysis import AnalysisWindow
+from widgets.datawindow import DataWindow
+from widgets.message import show_message
 from widgets.settings_menu import Settings
-from widgets.spectroscopy import Spectroscopy, SpecDebugWindow
+from widgets.sidebar import (
+    ModernSidebar,  # Updated to use refactored ModernSidebar with event bus
+)
 from widgets.sidebar_spectroscopy_panel import SidebarSpectroscopyPanel
-from settings import SW_VERSION, DEV, POP_OUT_SPEC
-from utils.logger import logger
 
 
 class MainWindow(QMainWindow):
@@ -31,7 +41,7 @@ class MainWindow(QMainWindow):
         self.event_bus = event_bus
         self.update_counter = 0
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
-        self.device_config = {'ctrl': '', 'knx': ''}
+        self.device_config = {"ctrl": "", "knx": ""}
         self.recording = False
         self.paused = False
         self.advanced_menu = None
@@ -67,7 +77,7 @@ class MainWindow(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: rgba(0, 0, 0, 0.15);"
-            "}"
+            "}",
         )
 
         logger.info("MainWindow._setup_ui: Creating sidebar")
@@ -85,6 +95,7 @@ class MainWindow(QMainWindow):
         logger.info("MainWindow._setup_ui: Creating settings panel")
         # Add settings panel to Settings tab
         from widgets.settings_panel import SettingsPanel
+
         self.settings_panel = SettingsPanel()
         settings_tab = self.sidebar.get_settings_tab()
         if settings_tab:
@@ -117,18 +128,24 @@ class MainWindow(QMainWindow):
 
         # Stacked widget for content pages (EXACT prototype structure)
         self.content_stack = QStackedWidget()
-        self.content_stack.setStyleSheet("QStackedWidget { background: #F8F9FA; border: none; }")
+        self.content_stack.setStyleSheet(
+            "QStackedWidget { background: #F8F9FA; border: none; }",
+        )
 
         # Page 0: Sensorgram
         sensorgram_page = self._create_sensorgram_content()
         self.content_stack.addWidget(sensorgram_page)
 
         # Page 1: Edits (placeholder)
-        edits_page = self._create_placeholder_page("Edits", "📝", "Data editing features coming soon")
+        edits_page = self._create_placeholder_page(
+            "Edits",
+            "📝",
+            "Data editing features coming soon",
+        )
         self.content_stack.addWidget(edits_page)
 
         # Page 2: Analyze (Data Processing)
-        self.data_processing = DataWindow('static')
+        self.data_processing = DataWindow("static")
         analyze_page = QWidget()
         analyze_layout = QVBoxLayout(analyze_page)
         analyze_layout.setContentsMargins(16, 16, 16, 16)
@@ -203,7 +220,7 @@ class MainWindow(QMainWindow):
                 "  background: rgba(46, 48, 227, 1.0);"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
 
             btn.clicked.connect(lambda checked, idx=page_index: self._switch_page(idx))
@@ -224,7 +241,7 @@ class MainWindow(QMainWindow):
             "  color: #86868B;"
             "  font-size: 16px;"
             "  background: transparent;"
-            "}"
+            "}",
         )
         indicator_layout.addWidget(self.rec_status_dot)
 
@@ -236,16 +253,13 @@ class MainWindow(QMainWindow):
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "  font-weight: 500;"
-            "}"
+            "}",
         )
         indicator_layout.addWidget(self.rec_status_text)
         indicator_layout.addStretch()
 
         self.recording_indicator.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.04);"
-            "  border-radius: 6px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.04);  border-radius: 6px;}",
         )
         nav_layout.addWidget(self.recording_indicator)
         nav_layout.addSpacing(8)
@@ -273,7 +287,7 @@ class MainWindow(QMainWindow):
             "}"
             "QPushButton:hover:checked {"
             "  background: #E6342A;"
-            "}"
+            "}",
         )
         self.rec_btn.setToolTip("Start/Stop Recording (Ctrl+R)")
         self.rec_btn.clicked.connect(self.record_trigger)
@@ -302,7 +316,7 @@ class MainWindow(QMainWindow):
             "}"
             "QPushButton:hover:checked {"
             "  background: #3A3A3C;"
-            "}"
+            "}",
         )
         self.pause_btn.setToolTip("Pause/Resume Live Acquisition")
         self.pause_btn.clicked.connect(self.toggle_pause)
@@ -326,9 +340,11 @@ class MainWindow(QMainWindow):
             "}"
             "QPushButton:pressed {"
             "  background: rgba(220, 38, 38, 0.3);"
-            "}"
+            "}",
         )
-        self.emergency_stop_btn.setToolTip("Emergency Stop - Immediately turn off all LEDs")
+        self.emergency_stop_btn.setToolTip(
+            "Emergency Stop - Immediately turn off all LEDs",
+        )
         self.emergency_stop_btn.clicked.connect(self._emergency_stop)
         nav_layout.addWidget(self.emergency_stop_btn)
 
@@ -338,7 +354,9 @@ class MainWindow(QMainWindow):
         self.power_btn.setFixedSize(40, 40)
         self.power_btn.setProperty("powerState", "disconnected")
         self._update_power_button_style()
-        self.power_btn.setToolTip("Power On Device\nGray = Disconnected | Yellow = Searching | Green = Connected")
+        self.power_btn.setToolTip(
+            "Power On Device\nGray = Disconnected | Yellow = Searching | Green = Connected",
+        )
         self.power_btn.clicked.connect(self.power_off_device)
         nav_layout.addWidget(self.power_btn)
 
@@ -355,7 +373,7 @@ class MainWindow(QMainWindow):
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "}"
+            "}",
         )
         self.adv_btn.setToolTip("Advanced Settings")
         self.adv_btn.clicked.connect(self.show_adv_settings)
@@ -366,21 +384,27 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """Connect UI signals"""
         # Connect settings panel button to sensorgram margin adjustment
-        if hasattr(self, 'settings_panel') and hasattr(self, 'sensorgram'):
+        if hasattr(self, "settings_panel") and hasattr(self, "sensorgram"):
             self.settings_panel.adjust_margins_requested.connect(
-                self.sensorgram.open_margin_adjust_dialog
+                self.sensorgram.open_margin_adjust_dialog,
             )
 
         # Spectroscopy signals
-        if hasattr(self, 'sidebar_spectroscopy'):
-            self.sidebar_spectroscopy.polarizer_sig.connect(self._forward_sidebar_polarizer)
-            self.sidebar_spectroscopy.single_led_sig.connect(self._forward_sidebar_led_mode)
+        if hasattr(self, "sidebar_spectroscopy"):
+            self.sidebar_spectroscopy.polarizer_sig.connect(
+                self._forward_sidebar_polarizer,
+            )
+            self.sidebar_spectroscopy.single_led_sig.connect(
+                self._forward_sidebar_led_mode,
+            )
 
         # Recording errors
-        if hasattr(self, 'sensorgram'):
+        if hasattr(self, "sensorgram"):
             self.sensorgram.export_error_signal.connect(self._on_record_error)
-        if hasattr(self.sidebar, 'kinetic_widget'):
-            self.sidebar.kinetic_widget.export_error_signal.connect(self._on_record_error)
+        if hasattr(self.sidebar, "kinetic_widget"):
+            self.sidebar.kinetic_widget.export_error_signal.connect(
+                self._on_record_error,
+            )
 
         # Install UI Inspector Console (Ctrl+Shift+I) - TEMPORARILY DISABLED
         # from widgets.ui_inspector_console import install_inspector_shortcut
@@ -399,10 +423,7 @@ class MainWindow(QMainWindow):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern) from Rev 1."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -411,6 +432,7 @@ class MainWindow(QMainWindow):
 
         # Graph header with channel controls (from Rev 1)
         from widgets.graph_components import GraphHeader
+
         self.graph_header = GraphHeader()
         content_layout.addWidget(self.graph_header)
 
@@ -423,14 +445,14 @@ class MainWindow(QMainWindow):
         top_graph = self._create_graph_container(
             "Full Experiment Timeline",
             height=200,
-            show_delta_spr=False
+            show_delta_spr=False,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
         bottom_graph = self._create_graph_container(
             "Cycle of Interest",
             height=400,
-            show_delta_spr=True
+            show_delta_spr=True,
         )
 
         splitter.addWidget(top_graph)
@@ -457,13 +479,13 @@ class MainWindow(QMainWindow):
             "}"
             "QSplitter::handle:pressed {"
             "  background: #1D1D1F;"
-            "}"
+            "}",
         )
 
         content_layout.addWidget(splitter, 1)
 
         # Connect to real sensorgram data
-        self.sensorgram = DataWindow('dynamic')
+        self.sensorgram = DataWindow("dynamic")
         controls_panel = self.sensorgram.take_sensorgram_controls_panel()
         if controls_panel is not None:
             self.sidebar.install_sensorgram_controls(controls_panel)
@@ -472,8 +494,8 @@ class MainWindow(QMainWindow):
 
     def _create_graph_container(self, title, height, show_delta_spr=False):
         """Create a graph container with title and controls (from Rev 1 prototype)."""
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
         from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
         container = QFrame()
         container.setMinimumHeight(height)
@@ -482,7 +504,7 @@ class MainWindow(QMainWindow):
             "  background: #FFFFFF;"
             "  border: none;"
             "  border-radius: 12px;"
-            "}"
+            "}",
         )
         # Add shadow
         shadow = QGraphicsDropShadowEffect()
@@ -507,7 +529,7 @@ class MainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         title_row.addWidget(title_label)
 
@@ -515,7 +537,9 @@ class MainWindow(QMainWindow):
 
         # Delta SPR signal display (only for Cycle of Interest graph)
         if show_delta_spr:
-            delta_display = QLabel("Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm")
+            delta_display = QLabel(
+                "Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm",
+            )
             delta_display.setStyleSheet(
                 "QLabel {"
                 "  background: rgba(0, 0, 0, 0.04);"
@@ -526,14 +550,16 @@ class MainWindow(QMainWindow):
                 "  font-weight: 500;"
                 "  color: #1D1D1F;"
                 "  font-family: 'SF Mono', 'Consolas', monospace;"
-                "}"
+                "}",
             )
             title_row.addWidget(delta_display)
 
         layout.addLayout(title_row)
 
         # Placeholder for graph widget (will be replaced with PyQtGraph)
-        graph_placeholder = QLabel("[Graph Placeholder - Connect to real sensorgram data]")
+        graph_placeholder = QLabel(
+            "[Graph Placeholder - Connect to real sensorgram data]",
+        )
         graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         graph_placeholder.setStyleSheet(
             "QLabel {"
@@ -545,7 +571,7 @@ class MainWindow(QMainWindow):
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         layout.addWidget(graph_placeholder, 1)
 
@@ -560,7 +586,7 @@ class MainWindow(QMainWindow):
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         axis_row.addWidget(y_label)
 
@@ -573,7 +599,7 @@ class MainWindow(QMainWindow):
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         axis_row.addWidget(x_label)
 
@@ -585,10 +611,7 @@ class MainWindow(QMainWindow):
         """Create a placeholder page for tabs not yet implemented."""
         page = QFrame()
         page.setStyleSheet(
-            "QFrame {"
-            "  background: #F8F9FA;"
-            "  border: none;"
-            "}"
+            "QFrame {  background: #F8F9FA;  border: none;}",
         )
 
         layout = QVBoxLayout(page)
@@ -598,10 +621,7 @@ class MainWindow(QMainWindow):
         # Icon
         icon_label = QLabel(icon)
         icon_label.setStyleSheet(
-            "QLabel {"
-            "  font-size: 64px;"
-            "  background: transparent;"
-            "}"
+            "QLabel {  font-size: 64px;  background: transparent;}",
         )
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon_label)
@@ -617,7 +637,7 @@ class MainWindow(QMainWindow):
             "  color: #1D1D1F;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
@@ -632,7 +652,7 @@ class MainWindow(QMainWindow):
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+            "}",
         )
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         message_label.setWordWrap(True)
@@ -658,7 +678,7 @@ class MainWindow(QMainWindow):
                         "  padding: 8px 24px;"
                         "  font-size: 13px;"
                         "  font-weight: 600;"
-                        "}"
+                        "}",
                     )
                 else:
                     btn.setChecked(False)
@@ -674,7 +694,7 @@ class MainWindow(QMainWindow):
                         "}"
                         "QPushButton:hover {"
                         "  background: rgba(46, 48, 227, 0.2);"
-                        "}"
+                        "}",
                     )
 
     def _update_power_button_style(self):
@@ -695,7 +715,7 @@ class MainWindow(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.1);"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Power On Device\nGray = Disconnected")
         elif power_state == "searching":
@@ -711,7 +731,7 @@ class MainWindow(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: #E6B800;"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Connecting...\nYellow = Searching")
         elif power_state == "connected":
@@ -727,14 +747,14 @@ class MainWindow(QMainWindow):
                 "}"
                 "QPushButton:hover {"
                 "  background: #2EAF4F;"
-                "}"
+                "}",
             )
             self.power_btn.setToolTip("Device Connected\nClick to power off")
 
     def on_device_config(self, config):
         self.device_config = config
         # Update power button state based on device connection
-        if config['ctrl'] and config['ctrl'] != '':
+        if config["ctrl"] and config["ctrl"] != "":
             self.power_btn.setProperty("powerState", "connected")
             self._update_power_button_style()
             self.power_btn.show()
@@ -745,9 +765,13 @@ class MainWindow(QMainWindow):
 
         # Create advanced menu
         self.advanced_menu = None
-        if config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR']:
+        if config["ctrl"] in ["P4SPR", "PicoP4SPR", "EZSPR", "PicoEZSPR"]:
             self.advanced_menu = P4SPRAdvMenu(parent=self)
-            self.settings = Settings(self.sensorgram.reference_channel_dlg, self.advanced_menu, self)
+            self.settings = Settings(
+                self.sensorgram.reference_channel_dlg,
+                self.advanced_menu,
+                self,
+            )
         # Removed connect_adv_sig emission - no longer needed
 
     def main_display_resized(self):
@@ -768,7 +792,10 @@ class MainWindow(QMainWindow):
 
     def _on_record_error(self):
         if self.recording:
-            show_message(msg="Recording Error:\nInvalid directory or no live data", msg_type='Warning')
+            show_message(
+                msg="Recording Error:\nInvalid directory or no live data",
+                msg_type="Warning",
+            )
             self.set_recording(False)
 
     def _forward_sidebar_polarizer(self, mode: str) -> None:
@@ -796,7 +823,7 @@ class MainWindow(QMainWindow):
                 "  color: #FF9500;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
         else:
             self.pause_btn.setText("⏸")  # Pause icon when running
@@ -808,7 +835,7 @@ class MainWindow(QMainWindow):
                     "  color: #FF3B30;"
                     "  font-size: 16px;"
                     "  background: transparent;"
-                    "}"
+                    "}",
                 )
             else:
                 # Resume non-recording status
@@ -818,17 +845,20 @@ class MainWindow(QMainWindow):
                     "  color: #86868B;"
                     "  font-size: 16px;"
                     "  background: transparent;"
-                    "}"
+                    "}",
                 )
         self.pause_sig.emit(self.paused)
 
     def power_off_device(self):
         """Handle power button click - Connect when OFF, gracefully exit when ON."""
-        ctrl_type = self.device_config.get('ctrl', '')
+        ctrl_type = self.device_config.get("ctrl", "")
 
         if not ctrl_type:
             # No device connected - act as Connect button
-            if hasattr(self.sidebar, 'device_widget') and hasattr(self.sidebar.device_widget, 'call_connect'):
+            if hasattr(self.sidebar, "device_widget") and hasattr(
+                self.sidebar.device_widget,
+                "call_connect",
+            ):
                 self.sidebar.device_widget.call_connect()
             return
 
@@ -842,22 +872,34 @@ class MainWindow(QMainWindow):
             from utils.logger import logger
 
             # Get controller from hardware manager
-            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+            if hasattr(self, "hardware_mgr") and self.hardware_mgr:
                 ctrl = self.hardware_mgr.ctrl
-                if ctrl and hasattr(ctrl, 'emergency_shutdown'):
+                if ctrl and hasattr(ctrl, "emergency_shutdown"):
                     if ctrl.emergency_shutdown():
                         logger.info("✅ Emergency stop executed - all LEDs off")
-                        show_message(msg_type="Success", msg="Emergency stop executed!\nAll LEDs turned off.")
+                        show_message(
+                            msg_type="Success",
+                            msg="Emergency stop executed!\nAll LEDs turned off.",
+                        )
                     else:
                         logger.error("❌ Emergency stop failed")
-                        show_message(msg_type="Error", msg="Emergency stop command failed.")
+                        show_message(
+                            msg_type="Error",
+                            msg="Emergency stop command failed.",
+                        )
                 else:
-                    logger.warning("Controller doesn't support emergency shutdown (needs V1.1+ firmware)")
-                    show_message(msg_type="Warning", msg="Emergency shutdown not available.\nController needs V1.1+ firmware.")
+                    logger.warning(
+                        "Controller doesn't support emergency shutdown (needs V1.1+ firmware)",
+                    )
+                    show_message(
+                        msg_type="Warning",
+                        msg="Emergency shutdown not available.\nController needs V1.1+ firmware.",
+                    )
             else:
                 show_message(msg_type="Warning", msg="No hardware connected.")
         except Exception as e:
             from utils.logger import logger
+
             logger.error(f"Emergency stop error: {e}")
             show_message(msg_type="Error", msg=f"Emergency stop error: {e}")
 
@@ -871,9 +913,9 @@ class MainWindow(QMainWindow):
                 "  color: #86868B;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
-            self.rec_btn.setIcon(QIcon(':/img/img/record.png'))
+            self.rec_btn.setIcon(QIcon(":/img/img/record.png"))
         else:
             self.rec_status_text.setText("Recording")
             self.rec_status_dot.setStyleSheet(
@@ -881,22 +923,25 @@ class MainWindow(QMainWindow):
                 "  color: #FF3B30;"
                 "  font-size: 16px;"
                 "  background: transparent;"
-                "}"
+                "}",
             )
-            self.rec_btn.setIcon(QIcon(':/img/img/stop.png'))
+            self.rec_btn.setIcon(QIcon(":/img/img/stop.png"))
 
     def show_adv_settings(self):
-        if self.advanced_menu and hasattr(self, 'settings'):
+        if self.advanced_menu and hasattr(self, "settings"):
             self.advanced_menu.refresh_values()
             self.settings.show()
             self.settings.activateWindow()
 
     def closeEvent(self, event):
-        if show_message(msg="Quit application?", msg_type='Warning', yes_no=True):
+        if show_message(msg="Quit application?", msg_type="Warning", yes_no=True):
             # No status bar in new design - remove status updates
             self.sensorgram.reference_channel_dlg.close()
             self.data_processing.reference_channel_dlg.close()
-            if self.advanced_menu and (self.device_config['ctrl'] in ['P4SPR', 'PicoP4SPR', 'EZSPR', 'PicoEZSPR']):
+            if self.advanced_menu and (
+                self.device_config["ctrl"]
+                in ["P4SPR", "PicoP4SPR", "EZSPR", "PicoEZSPR"]
+            ):
                 self.advanced_menu.close()
             self.app.close()
             super().closeEvent(event)
@@ -906,14 +951,15 @@ class MainWindow(QMainWindow):
     # === Layout Customization Helper Methods ===
 
     def move_graph_settings_to_device_status(self):
-        """
-        Move the Graph Display Settings box from Settings panel to Device Status widget.
+        """Move the Graph Display Settings box from Settings panel to Device Status widget.
         This allows you to consolidate all hardware-related settings in one place.
 
         Usage: Call this method after UI initialization, e.g., in __init__() after set_widgets()
         """
-        if not hasattr(self, 'settings_panel') or not hasattr(self, 'sidebar'):
-            logger.warning("Cannot move graph settings: settings_panel or sidebar not found")
+        if not hasattr(self, "settings_panel") or not hasattr(self, "sidebar"):
+            logger.warning(
+                "Cannot move graph settings: settings_panel or sidebar not found",
+            )
             return False
 
         # Get the device status widget from sidebar
@@ -934,13 +980,12 @@ class MainWindow(QMainWindow):
         return True
 
     def move_connect_button_to_device_bottom(self):
-        """
-        Move the Connect button to the bottom of the device status widget.
+        """Move the Connect button to the bottom of the device status widget.
         Makes it more prominent and easier to access.
 
         Usage: Call this method after UI initialization
         """
-        if not hasattr(self, 'sidebar'):
+        if not hasattr(self, "sidebar"):
             logger.warning("Cannot move connect button: sidebar not found")
             return False
 
@@ -961,13 +1006,12 @@ class MainWindow(QMainWindow):
 
     def get_device_status_widget(self):
         """Get the device status widget for manual layout manipulation."""
-        if hasattr(self, 'sidebar'):
+        if hasattr(self, "sidebar"):
             return self.sidebar.device_widget.device_status_widget
         return None
 
     def get_settings_panel(self):
         """Get the settings panel for manual layout manipulation."""
-        if hasattr(self, 'settings_panel'):
+        if hasattr(self, "settings_panel"):
             return self.settings_panel
         return None
-

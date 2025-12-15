@@ -302,4 +302,3 @@ Add metrics to track calibration quality:
 ✅ **More predictable and maintainable code**
 
 The S-mode LED calibration is now **robust, reliable, and fast**.
-

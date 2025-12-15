@@ -1,7 +1,9 @@
 """Test COM ports and Pico connection."""
-import serial.tools.list_ports
-import serial
+
 import time
+
+import serial
+import serial.tools.list_ports
 
 # Pico identifiers
 PICO_VID = 0x2E8A
@@ -82,6 +84,7 @@ else:
     except Exception as e:
         print(f"\n❌ Error during test: {e}")
         import traceback
+
         traceback.print_exc()
 
 print("\n" + "=" * 60)

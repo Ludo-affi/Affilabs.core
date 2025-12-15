@@ -1,12 +1,12 @@
 ﻿
 > class SidebarPrototype(QWidget):
       """Simplified sidebar prototype."""
-  
+
       def __init__(self, parent=None):
           super().__init__(parent)
           self._ui_setup_done = False
           self._setup_ui()
-  
+
       def _setup_ui(self):
           """Setup the sidebar UI."""
           if getattr(self, '_ui_setup_done', False):
@@ -16,10 +16,10 @@
           main_layout = QVBoxLayout(self)
           main_layout.setContentsMargins(0, 0, 0, 0)
           main_layout.setSpacing(0)
-  
+
           # Disable updates during setup to prevent freezing
           self.setUpdatesEnabled(False)
-  
+
           # Tab widget with West position (vertical tabs on left)
           self.tab_widget = QTabWidget()
           self.tab_widget.setTabPosition(QTabWidget.TabPosition.West)
@@ -60,13 +60,13 @@
                   "  height: 0px;"
                   "}"
               )
-  
+
               tab_content = QWidget()
               tab_content.setStyleSheet("background: #FFFFFF;")
               tab_layout = QVBoxLayout(tab_content)
               tab_layout.setContentsMargins(20, 20, 20, 20)
               tab_layout.setSpacing(12)
-  
+
               # Title
               title = QLabel(f"{tooltip}")
               title.setStyleSheet(
@@ -79,11 +79,11 @@
                   "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
               )
               tab_layout.addWidget(title)
-  
+
               # Device Status specific content
               if label == "Device Status":
                   tab_layout.addSpacing(12)
-  
+
                   # Section 1: Hardware Connected
                   # Section header
                   hw_section = QLabel("HARDWARE CONNECTED")
@@ -97,9 +97,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(hw_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for hardware section
                   hw_card = QFrame()
                   hw_card.setStyleSheet(
@@ -111,7 +111,7 @@
                   hw_card_layout = QVBoxLayout(hw_card)
                   hw_card_layout.setContentsMargins(12, 12, 12, 12)
                   hw_card_layout.setSpacing(6)
-  
+
                   # Container for connected devices (max 3)
                   self.hw_device_labels = []
                   for i in range(3):
@@ -126,7 +126,7 @@
                       device_label.setVisible(False)  # Hidden by default until devices are found
                       hw_card_layout.addWidget(device_label)
                       self.hw_device_labels.append(device_label)
-  
+
                   # No devices message (shown when no devices connected)
                   self.hw_no_devices = QLabel("No hardware detected")
                   self.hw_no_devices.setStyleSheet(
@@ -138,9 +138,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   hw_card_layout.addWidget(self.hw_no_devices)
-  
+
                   hw_card_layout.addSpacing(4)
-  
+
                   # Scan button
                   self.scan_btn = QPushButton("≡ƒöì Scan for Hardware")
                   self.scan_btn.setProperty("scanning", False)
@@ -166,11 +166,11 @@
                       "}"
                   )
                   hw_card_layout.addWidget(self.scan_btn)
-  
+
                   tab_layout.addWidget(hw_card)
-  
+
                   tab_layout.addSpacing(16)
-  
+
                   # Section 2: Subunit Readiness
                   subunit_section = QLabel("SUBUNIT READINESS")
                   subunit_section.setStyleSheet(
@@ -183,9 +183,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(subunit_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for subunits
                   subunit_card = QFrame()
                   subunit_card.setStyleSheet(
@@ -197,17 +197,17 @@
                   subunit_card_layout = QVBoxLayout(subunit_card)
                   subunit_card_layout.setContentsMargins(12, 10, 12, 10)
                   subunit_card_layout.setSpacing(8)
-  
+
                   # Three subunits: Sensor, Optics, Fluidics
                   self.subunit_status = {}
                   subunit_names = ["Sensor", "Optics", "Fluidics"]
-  
+
                   for i, subunit_name in enumerate(subunit_names):
                       # Container for each subunit
                       subunit_row = QHBoxLayout()
                       subunit_row.setSpacing(10)
                       subunit_row.setContentsMargins(0, 0, 0, 0)
-  
+
                       # Status indicator (circle)
                       status_indicator = QLabel("ΓùÅ")
                       status_indicator.setFixedWidth(12)
@@ -218,7 +218,7 @@
                           "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                       )
                       subunit_row.addWidget(status_indicator)
-  
+
                       # Subunit name
                       name_label = QLabel(subunit_name)
                       name_label.setStyleSheet(
@@ -229,9 +229,9 @@
                           "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                       )
                       subunit_row.addWidget(name_label)
-  
+
                       subunit_row.addStretch()
-  
+
                       # Status text
                       status_label = QLabel("Not Ready")
                       status_label.setStyleSheet(
@@ -241,18 +241,18 @@
                           "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                       )
                       subunit_row.addWidget(status_label)
-  
+
                       # Store references for later updates
                       self.subunit_status[subunit_name] = {
                           'indicator': status_indicator,
                           'status_label': status_label
                       }
-  
+
                       # Add to card layout
                       subunit_container = QWidget()
                       subunit_container.setLayout(subunit_row)
                       subunit_card_layout.addWidget(subunit_container)
-  
+
                       # Add separator between items (not after last)
                       if i < len(subunit_names) - 1:
                           separator = QFrame()
@@ -263,11 +263,11 @@
                               "margin: 4px 0px;"
                           )
                           subunit_card_layout.addWidget(separator)
-  
+
                   tab_layout.addWidget(subunit_card)
-  
+
                   tab_layout.addSpacing(16)
-  
+
                   # Section 3: Operation Modes
                   mode_section = QLabel("OPERATION MODES")
                   mode_section.setStyleSheet(
@@ -280,9 +280,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(mode_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for operation modes
                   mode_card = QFrame()
                   mode_card.setStyleSheet(
@@ -294,17 +294,17 @@
                   mode_card_layout = QVBoxLayout(mode_card)
                   mode_card_layout.setContentsMargins(12, 10, 12, 10)
                   mode_card_layout.setSpacing(8)
-  
+
                   # Operation Modes Container
                   self.operation_modes = {}
                   mode_names = ["Static", "Flow"]
-  
+
                   for i, mode_name in enumerate(mode_names):
                       # Container for each mode
                       mode_row = QHBoxLayout()
                       mode_row.setSpacing(10)
                       mode_row.setContentsMargins(0, 0, 0, 0)
-  
+
                       # Status indicator (circle)
                       mode_indicator = QLabel("ΓùÅ")
                       mode_indicator.setFixedWidth(12)
@@ -315,7 +315,7 @@
                           "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                       )
                       mode_row.addWidget(mode_indicator)
-  
+
                       # Mode name
                       mode_label = QLabel(mode_name)
                       mode_label.setStyleSheet(
@@ -326,9 +326,9 @@
                           "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                       )
                       mode_row.addWidget(mode_label)
-  
+
                       mode_row.addStretch()
-  
+
                       # Status text
                       status_label = QLabel("Disabled")
                       status_label.setStyleSheet(
@@ -338,19 +338,19 @@
                           "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                       )
                       mode_row.addWidget(status_label)
-  
+
                       # Store references for later updates
                       self.operation_modes[mode_name] = {
                           'indicator': mode_indicator,
                           'label': mode_label,
                           'status_label': status_label
                       }
-  
+
                       mode_card_layout.addLayout(mode_row)
-  
+
                   tab_layout.addWidget(mode_card)
                   tab_layout.addSpacing(16)
-  
+
                   # Section 4: Maintenance
                   maint_section = QLabel("Maintenance")
                   maint_section.setStyleSheet(
@@ -362,9 +362,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(maint_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Section divider line
                   maint_divider = QFrame()
                   maint_divider.setFixedHeight(1)
@@ -373,9 +373,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(maint_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for operational stats
                   stats_card = QFrame()
                   stats_card.setStyleSheet(
@@ -384,13 +384,13 @@
                       "  border-radius: 8px;"
                       "}"
                   )
-  
+
                   # Operational Statistics Container
                   stats_container = QWidget()
                   stats_layout = QVBoxLayout(stats_container)
                   stats_layout.setContentsMargins(12, 10, 12, 10)
                   stats_layout.setSpacing(10)
-  
+
                   # Operation Hours
                   hours_row = QHBoxLayout()
                   hours_row.setSpacing(8)
@@ -402,7 +402,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   hours_row.addWidget(hours_label)
-  
+
                   self.hours_value = QLabel("1,247 hrs")
                   self.hours_value.setStyleSheet(
                       "font-size: 13px;"
@@ -414,7 +414,7 @@
                   hours_row.addWidget(self.hours_value)
                   hours_row.addStretch()
                   stats_layout.addLayout(hours_row)
-  
+
                   # Last Operation Date
                   last_op_row = QHBoxLayout()
                   last_op_row.setSpacing(8)
@@ -426,7 +426,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   last_op_row.addWidget(last_op_label)
-  
+
                   self.last_op_value = QLabel("Nov 19, 2025")
                   self.last_op_value.setStyleSheet(
                       "font-size: 13px;"
@@ -438,7 +438,7 @@
                   last_op_row.addWidget(self.last_op_value)
                   last_op_row.addStretch()
                   stats_layout.addLayout(last_op_row)
-  
+
                   # Upcoming Maintenance (Annual reminder - every November)
                   upcoming_row = QHBoxLayout()
                   upcoming_row.setSpacing(8)
@@ -451,7 +451,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   upcoming_row.addWidget(upcoming_label)
-  
+
                   self.next_maintenance_value = QLabel("November 2025")
                   self.next_maintenance_value.setStyleSheet(
                       "font-size: 13px;"
@@ -464,12 +464,12 @@
                   upcoming_row.addWidget(self.next_maintenance_value)
                   upcoming_row.addStretch()
                   stats_layout.addLayout(upcoming_row)
-  
+
                   stats_card.setLayout(stats_layout)
                   tab_layout.addWidget(stats_card)
-  
+
                   tab_layout.addSpacing(12)
-  
+
                   # Debug Log Download Button
                   debug_btn_container = QFrame()
                   debug_btn_container.setStyleSheet(
@@ -480,7 +480,7 @@
                   )
                   debug_btn_layout = QVBoxLayout(debug_btn_container)
                   debug_btn_layout.setContentsMargins(12, 10, 12, 10)
-  
+
                   self.debug_log_btn = QPushButton("≡ƒôÑ Download Debug Log")
                   self.debug_log_btn.setFixedHeight(36)
                   self.debug_log_btn.setStyleSheet(
@@ -503,9 +503,9 @@
                   )
                   debug_btn_layout.addWidget(self.debug_log_btn)
                   tab_layout.addWidget(debug_btn_container)
-  
+
                   tab_layout.addSpacing(16)
-  
+
                   # Software Version
                   version_label = QLabel("AffiLabs.core Beta")
                   version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -517,7 +517,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(version_label)
-  
+
               # Graphic Control Tab Content
               elif label == "Graphic Control":
                   # Section 1: Data Filtering
@@ -531,9 +531,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(filter_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Section divider
                   filter_divider = QFrame()
                   filter_divider.setFixedHeight(1)
@@ -542,9 +542,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(filter_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for filtering options
                   filter_card = QFrame()
                   filter_card.setStyleSheet(
@@ -556,7 +556,7 @@
                   filter_card_layout = QVBoxLayout(filter_card)
                   filter_card_layout.setContentsMargins(12, 10, 12, 10)
                   filter_card_layout.setSpacing(10)
-  
+
                   # Enable filtering checkbox
                   from PySide6.QtWidgets import QCheckBox, QSlider
                   self.filter_enable = QCheckBox("Enable data filtering")
@@ -583,7 +583,7 @@
                       "}"
                   )
                   filter_card_layout.addWidget(self.filter_enable)
-  
+
                   # Filtering parameter slider
                   param_row = QHBoxLayout()
                   param_row.setSpacing(10)
@@ -595,7 +595,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   param_row.addWidget(param_label)
-  
+
                   self.filter_slider = QSlider(Qt.Horizontal)
                   self.filter_slider.setRange(1, 10)
                   self.filter_slider.setValue(1)  # Default: 1 = window 3 (matches MED_FILT_WIN)
@@ -622,7 +622,7 @@
                       "}"
                   )
                   param_row.addWidget(self.filter_slider)
-  
+
                   self.filter_value_label = QLabel("1")
                   self.filter_value_label.setFixedWidth(20)
                   self.filter_value_label.setStyleSheet(
@@ -633,9 +633,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   param_row.addWidget(self.filter_value_label)
-  
+
                   filter_card_layout.addLayout(param_row)
-  
+
                   # Filter method selection
                   method_row = QHBoxLayout()
                   method_row.setSpacing(10)
@@ -647,10 +647,10 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   method_row.addWidget(method_label)
-  
+
                   from PySide6.QtWidgets import QRadioButton, QButtonGroup
                   self.filter_method_group = QButtonGroup()
-  
+
                   # Filter method selection removed - using adaptive median filtering
                   # Radio buttons hidden but kept for backward compatibility
                   self.median_filter_radio = QRadioButton("Filter 1")
@@ -679,7 +679,7 @@
                   )
                   self.filter_method_group.addButton(self.median_filter_radio, 0)
                   # method_row.addWidget(self.median_filter_radio)  # Hidden - not added to layout
-  
+
                   self.kalman_filter_radio = QRadioButton("Filter 2")
                   self.kalman_filter_radio.setVisible(False)  # Hidden
                   self.kalman_filter_radio.setStyleSheet(
@@ -705,7 +705,7 @@
                   )
                   self.filter_method_group.addButton(self.kalman_filter_radio, 1)
                   # method_row.addWidget(self.kalman_filter_radio)  # Hidden - not added to layout
-  
+
                   self.sg_filter_radio = QRadioButton("Filter 3")
                   self.sg_filter_radio.setVisible(False)  # Hidden
                   self.sg_filter_radio.setStyleSheet(
@@ -732,19 +732,19 @@
                   self.filter_method_group.addButton(self.sg_filter_radio, 2)
                   # method_row.addWidget(self.sg_filter_radio)  # Hidden - not added to layout
                   # method_row.addStretch()  # Not needed since radio buttons hidden
-  
+
                   # Method row hidden entirely - using adaptive filtering
                   # filter_card_layout.addLayout(method_row)  # Comment out to hide entire row
-  
+
                   # Connect filter slider to enable/disable and value display
                   self.filter_enable.toggled.connect(self.filter_slider.setEnabled)
                   self.filter_slider.valueChanged.connect(
                       lambda v: self.filter_value_label.setText(str(v))
                   )
-  
+
                   tab_layout.addWidget(filter_card)
                   tab_layout.addSpacing(16)
-  
+
                   # Section 1b: Data Pipeline
                   pipeline_section = QLabel("Data Pipeline")
                   pipeline_section.setStyleSheet(
@@ -756,18 +756,18 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(pipeline_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   pipeline_divider = QFrame()
                   pipeline_divider.setFixedHeight(1)
                   pipeline_divider.setStyleSheet(
                       "background: rgba(0, 0, 0, 0.1);"
                   )
                   tab_layout.addWidget(pipeline_divider)
-  
+
                   tab_layout.addSpacing(12)
-  
+
                   # Pipeline Selection Card
                   pipeline_card = QWidget()
                   pipeline_card.setStyleSheet(
@@ -779,7 +779,7 @@
                   pipeline_card_layout = QVBoxLayout(pipeline_card)
                   pipeline_card_layout.setContentsMargins(16, 16, 16, 16)
                   pipeline_card_layout.setSpacing(12)
-  
+
                   # Pipeline method selection
                   pipeline_method_row = QHBoxLayout()
                   pipeline_method_row.setSpacing(10)
@@ -791,9 +791,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   pipeline_method_row.addWidget(pipeline_method_label)
-  
+
                   self.pipeline_method_group = QButtonGroup()
-  
+
                   self.pipeline1_radio = QRadioButton("Pipeline 1")
                   self.pipeline1_radio.setChecked(True)
                   self.pipeline1_radio.setStyleSheet(
@@ -819,7 +819,7 @@
                   )
                   self.pipeline_method_group.addButton(self.pipeline1_radio, 0)
                   pipeline_method_row.addWidget(self.pipeline1_radio)
-  
+
                   self.pipeline2_radio = QRadioButton("Pipeline 2")
                   self.pipeline2_radio.setStyleSheet(
                       "QRadioButton {"
@@ -845,15 +845,15 @@
                   self.pipeline_method_group.addButton(self.pipeline2_radio, 1)
                   pipeline_method_row.addWidget(self.pipeline2_radio)
                   pipeline_method_row.addStretch()
-  
+
                   pipeline_card_layout.addLayout(pipeline_method_row)
-  
+
                   # Connect pipeline selection to backend
                   self.pipeline_method_group.buttonClicked.connect(self.on_pipeline_changed)
-  
+
                   tab_layout.addWidget(pipeline_card)
                   tab_layout.addSpacing(16)
-  
+
                   # Section 2: Reference
                   ref_section = QLabel("Reference")
                   ref_section.setStyleSheet(
@@ -865,9 +865,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(ref_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   ref_divider = QFrame()
                   ref_divider.setFixedHeight(1)
                   ref_divider.setStyleSheet(
@@ -875,9 +875,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(ref_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for reference options
                   ref_card = QFrame()
                   ref_card.setStyleSheet(
@@ -889,7 +889,7 @@
                   ref_card_layout = QVBoxLayout(ref_card)
                   ref_card_layout.setContentsMargins(12, 10, 12, 10)
                   ref_card_layout.setSpacing(10)
-  
+
                   # Description text
                   ref_desc = QLabel("Select a channel to subtract from others")
                   ref_desc.setStyleSheet(
@@ -899,7 +899,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   ref_card_layout.addWidget(ref_desc)
-  
+
                   # Reference Channel selection
                   from PySide6.QtWidgets import QComboBox
                   ref_channel_row = QHBoxLayout()
@@ -914,7 +914,7 @@
                   )
                   ref_channel_row.addWidget(ref_channel_label)
                   ref_channel_row.addStretch()
-  
+
                   self.ref_combo = QComboBox()
                   self.ref_combo.addItems(["None", "Channel A", "Channel B", "Channel C", "Channel D"])
                   self.ref_combo.setFixedWidth(120)
@@ -946,7 +946,7 @@
                   )
                   ref_channel_row.addWidget(self.ref_combo)
                   ref_card_layout.addLayout(ref_channel_row)
-  
+
                   # Info label
                   ref_info = QLabel("Selected channel shown as faded dashed line")
                   ref_info.setStyleSheet(
@@ -957,14 +957,14 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   ref_card_layout.addWidget(ref_info)
-  
+
                   tab_layout.addWidget(ref_card)
                   tab_layout.addSpacing(16)
-  
+
                   # Section 3: Graphic Display
                   tab_layout.addWidget(ref_card)
                   tab_layout.addSpacing(16)
-  
+
                   # Section 3: Graphic Display
                   display_section = QLabel("Graphic Display")
                   display_section.setStyleSheet(
@@ -976,7 +976,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(display_section)
-  
+
                   # Note about cycle of interest
                   display_note = QLabel("Applied to cycle of interest")
                   display_note.setStyleSheet(
@@ -988,9 +988,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(display_note)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   display_divider = QFrame()
                   display_divider.setFixedHeight(1)
                   display_divider.setStyleSheet(
@@ -998,9 +998,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(display_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for display options
                   display_card = QFrame()
                   display_card.setStyleSheet(
@@ -1012,15 +1012,15 @@
                   display_card_layout = QVBoxLayout(display_card)
                   display_card_layout.setContentsMargins(12, 10, 12, 10)
                   display_card_layout.setSpacing(10)
-  
+
                   # Axis selector (segmented control)
                   axis_selector_row = QHBoxLayout()
                   axis_selector_row.setSpacing(0)
-  
+
                   from PySide6.QtWidgets import QComboBox, QLineEdit, QRadioButton, QButtonGroup
                   self.axis_button_group = QButtonGroup(self)
                   self.axis_button_group.setExclusive(True)
-  
+
                   self.x_axis_btn = QPushButton("X-Axis")
                   self.x_axis_btn.setCheckable(True)
                   self.x_axis_btn.setChecked(True)
@@ -1048,7 +1048,7 @@
                   )
                   self.axis_button_group.addButton(self.x_axis_btn, 0)
                   axis_selector_row.addWidget(self.x_axis_btn)
-  
+
                   self.y_axis_btn = QPushButton("Y-Axis")
                   self.y_axis_btn.setCheckable(True)
                   self.y_axis_btn.setFixedHeight(28)
@@ -1074,9 +1074,9 @@
                   )
                   self.axis_button_group.addButton(self.y_axis_btn, 1)
                   axis_selector_row.addWidget(self.y_axis_btn)
-  
+
                   axis_selector_row.addSpacing(16)
-  
+
                   # Grid toggle next to axis selector
                   self.grid_check = QCheckBox("Grid")
                   self.grid_check.setChecked(True)
@@ -1102,15 +1102,15 @@
                       "}"
                   )
                   axis_selector_row.addWidget(self.grid_check)
-  
+
                   axis_selector_row.addStretch()
-  
+
                   display_card_layout.addLayout(axis_selector_row)
-  
+
                   # Unified Axis Scaling controls (will update based on selection)
                   scale_radio_group = QButtonGroup()
                   scale_radio_group.setExclusive(True)
-  
+
                   self.auto_radio = QRadioButton("Autoscale")
                   self.auto_radio.setChecked(True)
                   self.auto_radio.setStyleSheet(
@@ -1136,13 +1136,13 @@
                   )
                   scale_radio_group.addButton(self.auto_radio, 0)
                   display_card_layout.addWidget(self.auto_radio)
-  
+
                   # Manual scaling container
                   manual_container = QWidget()
                   manual_layout = QVBoxLayout(manual_container)
                   manual_layout.setContentsMargins(0, 0, 0, 0)
                   manual_layout.setSpacing(6)
-  
+
                   self.manual_radio = QRadioButton("Manual")
                   self.manual_radio.setStyleSheet(
                       "QRadioButton {"
@@ -1167,12 +1167,12 @@
                   )
                   scale_radio_group.addButton(self.manual_radio, 1)
                   manual_layout.addWidget(self.manual_radio)
-  
+
                   # Manual input fields
                   inputs_row = QHBoxLayout()
                   inputs_row.setSpacing(8)
                   inputs_row.setContentsMargins(24, 0, 0, 0)
-  
+
                   min_label = QLabel("Min:")
                   min_label.setStyleSheet(
                       "font-size: 12px;"
@@ -1181,7 +1181,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   inputs_row.addWidget(min_label)
-  
+
                   self.min_input = QLineEdit()
                   self.min_input.setPlaceholderText("0")
                   self.min_input.setFixedWidth(60)
@@ -1205,7 +1205,7 @@
                       "}"
                   )
                   inputs_row.addWidget(self.min_input)
-  
+
                   max_label = QLabel("Max:")
                   max_label.setStyleSheet(
                       "font-size: 12px;"
@@ -1214,7 +1214,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   inputs_row.addWidget(max_label)
-  
+
                   self.max_input = QLineEdit()
                   self.max_input.setPlaceholderText("100")
                   self.max_input.setFixedWidth(60)
@@ -1239,10 +1239,10 @@
                   )
                   inputs_row.addWidget(self.max_input)
                   inputs_row.addStretch()
-  
+
                   manual_layout.addLayout(inputs_row)
                   display_card_layout.addWidget(manual_container)
-  
+
                   # Separator
                   separator = QFrame()
                   separator.setFixedHeight(1)
@@ -1252,11 +1252,11 @@
                       "margin: 8px 0px;"
                   )
                   display_card_layout.addWidget(separator)
-  
+
                   # Trace Style options row
                   options_row = QHBoxLayout()
                   options_row.setSpacing(12)
-  
+
                   # Channel selection
                   channel_label = QLabel("Channel:")
                   channel_label.setStyleSheet(
@@ -1266,7 +1266,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   options_row.addWidget(channel_label)
-  
+
                   channel_combo = QComboBox()
                   channel_combo.addItems(["All", "A", "B", "C", "D"])
                   channel_combo.setFixedWidth(70)
@@ -1297,7 +1297,7 @@
                       "}"
                   )
                   options_row.addWidget(channel_combo)
-  
+
                   # Markers
                   marker_label = QLabel("Markers:")
                   marker_label.setStyleSheet(
@@ -1307,7 +1307,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   options_row.addWidget(marker_label)
-  
+
                   marker_combo = QComboBox()
                   marker_combo.addItems(["Circle", "Triangle", "Square", "Star"])
                   marker_combo.setFixedWidth(90)
@@ -1338,14 +1338,14 @@
                       "}"
                   )
                   options_row.addWidget(marker_combo)
-  
+
                   options_row.addStretch()
-  
+
                   display_card_layout.addLayout(options_row)
-  
+
                   tab_layout.addWidget(display_card)
                   tab_layout.addSpacing(16)
-  
+
                   # Section 4: Visual Accessibility (moved from Colour Palette)
                   accessibility_section = QLabel("Visual Accessibility")
                   accessibility_section.setStyleSheet(
@@ -1357,9 +1357,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(accessibility_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   accessibility_divider = QFrame()
                   accessibility_divider.setFixedHeight(1)
                   accessibility_divider.setStyleSheet(
@@ -1367,9 +1367,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(accessibility_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for accessibility
                   accessibility_card = QFrame()
                   accessibility_card.setStyleSheet(
@@ -1381,7 +1381,7 @@
                   accessibility_card_layout = QVBoxLayout(accessibility_card)
                   accessibility_card_layout.setContentsMargins(12, 10, 12, 10)
                   accessibility_card_layout.setSpacing(10)
-  
+
                   # Colorblind-friendly palette toggle
                   self.colorblind_check = QCheckBox("Enable colour-blind friendly palette")
                   self.colorblind_check.setStyleSheet(
@@ -1406,7 +1406,7 @@
                       "}"
                   )
                   accessibility_card_layout.addWidget(self.colorblind_check)
-  
+
                   # Info text about colorblind palette
                   colorblind_info = QLabel("Uses optimized colors for deuteranopia and protanopia")
                   colorblind_info.setStyleSheet(
@@ -1417,9 +1417,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   accessibility_card_layout.addWidget(colorblind_info)
-  
+
                   tab_layout.addWidget(accessibility_card)
-  
+
               # Settings Tab Content
               elif label == "Settings":
                   # Section 1: Spectroscopy (Transmission and Raw Data graphs)
@@ -1433,9 +1433,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(graph_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   graph_divider = QFrame()
                   graph_divider.setFixedHeight(1)
                   graph_divider.setStyleSheet(
@@ -1443,9 +1443,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(graph_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for graph display
                   graph_card = QFrame()
                   graph_card.setStyleSheet(
@@ -1457,14 +1457,14 @@
                   graph_card_layout = QVBoxLayout(graph_card)
                   graph_card_layout.setContentsMargins(12, 10, 12, 10)
                   graph_card_layout.setSpacing(10)
-  
+
                   # Graph toggle (Transmission / Raw Data)
                   graph_toggle_row = QHBoxLayout()
                   graph_toggle_row.setSpacing(0)
-  
+
                   self.graph_button_group = QButtonGroup(self)
                   self.graph_button_group.setExclusive(True)  # Only one can be selected at a time
-  
+
                   self.transmission_btn = QPushButton("Transmission")
                   self.transmission_btn.setCheckable(True)
                   self.transmission_btn.setChecked(True)
@@ -1492,7 +1492,7 @@
                   )
                   self.graph_button_group.addButton(self.transmission_btn, 0)
                   graph_toggle_row.addWidget(self.transmission_btn)
-  
+
                   self.raw_data_btn = QPushButton("Raw Data")
                   self.raw_data_btn.setCheckable(True)
                   self.raw_data_btn.setFixedHeight(28)
@@ -1519,9 +1519,9 @@
                   self.graph_button_group.addButton(self.raw_data_btn, 1)
                   graph_toggle_row.addWidget(self.raw_data_btn)
                   graph_toggle_row.addStretch()
-  
+
                   graph_card_layout.addLayout(graph_toggle_row)
-  
+
                   # Transmission plot (shown by default)
                   import pyqtgraph as pg
                   self.transmission_plot = pg.PlotWidget()
@@ -1530,13 +1530,13 @@
                   self.transmission_plot.setLabel('bottom', 'Wavelength (nm)', color='#86868B', size='10pt')
                   self.transmission_plot.showGrid(x=True, y=True, alpha=0.15)
                   self.transmission_plot.setMinimumHeight(200)
-  
+
                   # Style axes
                   self.transmission_plot.getPlotItem().getAxis('left').setPen(color='#E5E5EA', width=1)
                   self.transmission_plot.getPlotItem().getAxis('bottom').setPen(color='#E5E5EA', width=1)
                   self.transmission_plot.getPlotItem().getAxis('left').setTextPen('#86868B')
                   self.transmission_plot.getPlotItem().getAxis('bottom').setTextPen('#86868B')
-  
+
                   # Create curves for 4 channels
                   colors = ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
                   self.transmission_curves = []
@@ -1546,10 +1546,10 @@
                           name=f'Channel {chr(65+i)}'
                       )
                       self.transmission_curves.append(curve)
-  
+
                   self.transmission_plot.setVisible(True)  # Visible by default (matches checked button)
                   graph_card_layout.addWidget(self.transmission_plot)
-  
+
                   # Raw data (intensity) plot (hidden by default)
                   self.raw_data_plot = pg.PlotWidget()
                   self.raw_data_plot.setBackground('#FFFFFF')
@@ -1558,13 +1558,13 @@
                   self.raw_data_plot.showGrid(x=True, y=True, alpha=0.15)
                   self.raw_data_plot.setMinimumHeight(200)
                   self.raw_data_plot.setVisible(False)  # Hidden by default
-  
+
                   # Style axes
                   self.raw_data_plot.getPlotItem().getAxis('left').setPen(color='#E5E5EA', width=1)
                   self.raw_data_plot.getPlotItem().getAxis('bottom').setPen(color='#E5E5EA', width=1)
                   self.raw_data_plot.getPlotItem().getAxis('left').setTextPen('#86868B')
                   self.raw_data_plot.getPlotItem().getAxis('bottom').setTextPen('#86868B')
-  
+
                   # Create curves for 4 channels
                   self.raw_data_curves = []
                   for i, color in enumerate(colors):
@@ -1573,17 +1573,17 @@
                           name=f'Channel {chr(65+i)}'
                       )
                       self.raw_data_curves.append(curve)
-  
+
                   graph_card_layout.addWidget(self.raw_data_plot)
-  
+
                   # Connect toggle buttons to switch visibility
                   self.transmission_btn.toggled.connect(self._on_spectroscopy_toggle)
                   self.raw_data_btn.toggled.connect(self._on_spectroscopy_toggle)
-  
+
                   tab_layout.addWidget(graph_card)
-  
+
                   tab_layout.addSpacing(16)
-  
+
                   # Section 2: Polarizer and LED Settings
                   polarizer_led_section = QLabel("Polarizer and LED Settings")
                   polarizer_led_section.setStyleSheet(
@@ -1595,9 +1595,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(polarizer_led_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   polarizer_led_divider = QFrame()
                   polarizer_led_divider.setFixedHeight(1)
                   polarizer_led_divider.setStyleSheet(
@@ -1605,9 +1605,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(polarizer_led_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for polarizer and LED options
                   polarizer_led_card = QFrame()
                   polarizer_led_card.setStyleSheet(
@@ -1619,7 +1619,7 @@
                   polarizer_led_card_layout = QVBoxLayout(polarizer_led_card)
                   polarizer_led_card_layout.setContentsMargins(12, 8, 12, 8)
                   polarizer_led_card_layout.setSpacing(6)
-  
+
                   # Polarizer Positions
                   polarizer_label = QLabel("Polarizer Positions:")
                   polarizer_label.setStyleSheet(
@@ -1630,10 +1630,10 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   polarizer_led_card_layout.addWidget(polarizer_label)
-  
+
                   polarizer_row = QHBoxLayout()
                   polarizer_row.setSpacing(12)
-  
+
                   # S Position
                   s_position_label = QLabel("S:")
                   s_position_label.setStyleSheet(
@@ -1643,7 +1643,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   polarizer_row.addWidget(s_position_label)
-  
+
                   self.s_position_input = QLineEdit()
                   self.s_position_input.setPlaceholderText("0-255")
                   self.s_position_input.setFixedWidth(60)
@@ -1662,9 +1662,9 @@
                       "}"
                   )
                   polarizer_row.addWidget(self.s_position_input)
-  
+
                   polarizer_row.addSpacing(16)
-  
+
                   # P Position
                   p_position_label = QLabel("P:")
                   p_position_label.setStyleSheet(
@@ -1674,7 +1674,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   polarizer_row.addWidget(p_position_label)
-  
+
                   self.p_position_input = QLineEdit()
                   self.p_position_input.setPlaceholderText("0-255")
                   self.p_position_input.setFixedWidth(60)
@@ -1693,7 +1693,7 @@
                       "}"
                   )
                   polarizer_row.addWidget(self.p_position_input)
-  
+
                   # Toggle S/P Button - shows current position
                   self.polarizer_toggle_btn = QPushButton("Position: S")
                   self.polarizer_toggle_btn.setFixedWidth(100)
@@ -1719,11 +1719,11 @@
                   # Track current polarizer position
                   self.current_polarizer_position = 'S'
                   polarizer_row.addWidget(self.polarizer_toggle_btn)
-  
+
                   polarizer_row.addStretch()
-  
+
                   polarizer_led_card_layout.addLayout(polarizer_row)
-  
+
                   # Separator
                   separator1 = QFrame()
                   separator1.setFixedHeight(1)
@@ -1733,7 +1733,7 @@
                       "margin: 2px 0px;"
                   )
                   polarizer_led_card_layout.addWidget(separator1)
-  
+
                   # LED Intensity per Channel
                   led_intensity_label = QLabel("LED Intensity per Channel:")
                   led_intensity_label.setStyleSheet(
@@ -1744,11 +1744,11 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   polarizer_led_card_layout.addWidget(led_intensity_label)
-  
+
                   # Channel A
                   channel_a_row = QHBoxLayout()
                   channel_a_row.setSpacing(10)
-  
+
                   channel_a_label = QLabel("Channel A:")
                   channel_a_label.setFixedWidth(70)
                   channel_a_label.setStyleSheet(
@@ -1758,7 +1758,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   channel_a_row.addWidget(channel_a_label)
-  
+
                   self.channel_a_input = QLineEdit()
                   self.channel_a_input.setPlaceholderText("0-255")
                   self.channel_a_input.setFixedWidth(60)
@@ -1778,13 +1778,13 @@
                   )
                   channel_a_row.addWidget(self.channel_a_input)
                   channel_a_row.addStretch()
-  
+
                   polarizer_led_card_layout.addLayout(channel_a_row)
-  
+
                   # Channel B
                   channel_b_row = QHBoxLayout()
                   channel_b_row.setSpacing(10)
-  
+
                   channel_b_label = QLabel("Channel B:")
                   channel_b_label.setFixedWidth(70)
                   channel_b_label.setStyleSheet(
@@ -1794,7 +1794,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   channel_b_row.addWidget(channel_b_label)
-  
+
                   self.channel_b_input = QLineEdit()
                   self.channel_b_input.setPlaceholderText("0-255")
                   self.channel_b_input.setFixedWidth(60)
@@ -1814,13 +1814,13 @@
                   )
                   channel_b_row.addWidget(self.channel_b_input)
                   channel_b_row.addStretch()
-  
+
                   polarizer_led_card_layout.addLayout(channel_b_row)
-  
+
                   # Channel C
                   channel_c_row = QHBoxLayout()
                   channel_c_row.setSpacing(10)
-  
+
                   channel_c_label = QLabel("Channel C:")
                   channel_c_label.setFixedWidth(70)
                   channel_c_label.setStyleSheet(
@@ -1830,7 +1830,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   channel_c_row.addWidget(channel_c_label)
-  
+
                   self.channel_c_input = QLineEdit()
                   self.channel_c_input.setPlaceholderText("0-255")
                   self.channel_c_input.setFixedWidth(60)
@@ -1850,13 +1850,13 @@
                   )
                   channel_c_row.addWidget(self.channel_c_input)
                   channel_c_row.addStretch()
-  
+
                   polarizer_led_card_layout.addLayout(channel_c_row)
-  
+
                   # Channel D
                   channel_d_row = QHBoxLayout()
                   channel_d_row.setSpacing(10)
-  
+
                   channel_d_label = QLabel("Channel D:")
                   channel_d_label.setFixedWidth(70)
                   channel_d_label.setStyleSheet(
@@ -1866,7 +1866,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   channel_d_row.addWidget(channel_d_label)
-  
+
                   self.channel_d_input = QLineEdit()
                   self.channel_d_input.setPlaceholderText("0-255")
                   self.channel_d_input.setFixedWidth(60)
@@ -1886,9 +1886,9 @@
                   )
                   channel_d_row.addWidget(self.channel_d_input)
                   channel_d_row.addStretch()
-  
+
                   polarizer_led_card_layout.addLayout(channel_d_row)
-  
+
                   # Separator
                   separator2 = QFrame()
                   separator2.setFixedHeight(1)
@@ -1898,11 +1898,11 @@
                       "margin: 4px 0px;"
                   )
                   polarizer_led_card_layout.addWidget(separator2)
-  
+
                   # Apply Settings Button Row with Advanced Settings icon
                   settings_button_row = QHBoxLayout()
                   settings_button_row.setSpacing(8)
-  
+
                   self.apply_settings_btn = QPushButton("Apply Settings")
                   self.apply_settings_btn.setFixedHeight(32)
                   self.apply_settings_btn.setStyleSheet(
@@ -1924,7 +1924,7 @@
                       "}"
                   )
                   settings_button_row.addWidget(self.apply_settings_btn)
-  
+
                   # Advanced Settings Button (cogs icon) - inline with Apply Settings
                   self.advanced_settings_btn = QPushButton("ΓÜÖ")
                   self.advanced_settings_btn.setFixedSize(32, 32)
@@ -1950,16 +1950,16 @@
                   # Install event filter for Control+10-click detection
                   self.advanced_settings_btn.installEventFilter(self)
                   settings_button_row.addWidget(self.advanced_settings_btn)
-  
+
                   polarizer_led_card_layout.addLayout(settings_button_row)
-  
+
                   # Connect polarizer toggle button
                   self.polarizer_toggle_btn.clicked.connect(self.toggle_polarizer_position)
-  
+
                   tab_layout.addWidget(polarizer_led_card)
-  
+
                   tab_layout.addSpacing(12)
-  
+
                   # Section 4: Advanced Calibrations
                   calibration_section = QLabel("Advanced Calibrations")
                   calibration_section.setStyleSheet(
@@ -1971,9 +1971,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(calibration_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   calibration_divider = QFrame()
                   calibration_divider.setFixedHeight(1)
                   calibration_divider.setStyleSheet(
@@ -1981,9 +1981,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(calibration_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for calibration buttons
                   calibration_card = QFrame()
                   calibration_card.setStyleSheet(
@@ -1995,7 +1995,7 @@
                   calibration_card_layout = QVBoxLayout(calibration_card)
                   calibration_card_layout.setContentsMargins(12, 8, 12, 8)
                   calibration_card_layout.setSpacing(6)
-  
+
                   # Simple LED Calibration Button (moved to top)
                   self.simple_led_calibration_btn = QPushButton("Simple LED Calibration")
                   self.simple_led_calibration_btn.setFixedHeight(32)
@@ -2018,7 +2018,7 @@
                       "}"
                   )
                   calibration_card_layout.addWidget(self.simple_led_calibration_btn)
-  
+
                   # Full Calibration Button (moved to middle)
                   self.full_calibration_btn = QPushButton("Full Calibration")
                   self.full_calibration_btn.setFixedHeight(32)
@@ -2041,7 +2041,7 @@
                       "}"
                   )
                   calibration_card_layout.addWidget(self.full_calibration_btn)
-  
+
                   # OEM LED Calibration Button (with afterglow)
                   self.oem_led_calibration_btn = QPushButton("OEM LED Calibration")
                   self.oem_led_calibration_btn.setFixedHeight(32)
@@ -2064,11 +2064,11 @@
                       "}"
                   )
                   calibration_card_layout.addWidget(self.oem_led_calibration_btn)
-  
+
                   tab_layout.addWidget(calibration_card)
-  
+
                   tab_layout.addSpacing(20)
-  
+
               # Static Tab Content with Collapsible Sections
               elif label == "Static":
                   # Signal Intel Bar (compact status indicators without card background)
@@ -2077,7 +2077,7 @@
                   signal_layout = QHBoxLayout(signal_bar)
                   signal_layout.setContentsMargins(16, 12, 16, 8)
                   signal_layout.setSpacing(12)
-  
+
                   # Good status indicator
                   good_status = QLabel("Γ£ô Good")
                   good_status.setStyleSheet(
@@ -2088,7 +2088,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   signal_layout.addWidget(good_status)
-  
+
                   # Separator
                   separator = QLabel("ΓÇó")
                   separator.setStyleSheet(
@@ -2097,7 +2097,7 @@
                       "background: transparent;"
                   )
                   signal_layout.addWidget(separator)
-  
+
                   # Ready for injection indicator
                   ready_status = QLabel("ΓåÆ Ready for injection")
                   ready_status.setStyleSheet(
@@ -2108,7 +2108,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   signal_layout.addWidget(ready_status)
-  
+
                   # Countdown (close to ready status)
                   countdown_label = QLabel("00:30")
                   countdown_label.setStyleSheet(
@@ -2121,15 +2121,15 @@
                       "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
                   )
                   signal_layout.addWidget(countdown_label)
-  
+
                   signal_layout.addStretch()
-  
+
                   tab_layout.addWidget(signal_bar)
                   tab_layout.addSpacing(8)
-  
+
                   # Section 1: Cycle Settings (Expanded by default)
                   cycle_settings_section = CollapsibleSection("Cycle Settings", is_expanded=True)
-  
+
                   # Card container for cycle settings
                   cycle_settings_card = QFrame()
                   cycle_settings_card.setStyleSheet(
@@ -2141,11 +2141,11 @@
                   cycle_settings_card_layout = QVBoxLayout(cycle_settings_card)
                   cycle_settings_card_layout.setContentsMargins(10, 6, 10, 6)
                   cycle_settings_card_layout.setSpacing(6)
-  
+
                   # Type
                   type_row = QHBoxLayout()
                   type_row.setSpacing(8)
-  
+
                   type_label = QLabel("Type:")
                   type_label.setFixedWidth(70)
                   type_label.setStyleSheet(
@@ -2156,7 +2156,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   type_row.addWidget(type_label)
-  
+
                   from PySide6.QtWidgets import QComboBox
                   type_combo = QComboBox()
                   type_combo.addItems(["Auto-read", "Baseline", "Immobilization", "Concentration"])
@@ -2190,13 +2190,13 @@
                   )
                   type_row.addWidget(type_combo)
                   type_row.addStretch()
-  
+
                   cycle_settings_card_layout.addLayout(type_row)
-  
+
                   # Length
                   length_row = QHBoxLayout()
                   length_row.setSpacing(8)
-  
+
                   length_label = QLabel("Length:")
                   length_label.setFixedWidth(70)
                   length_label.setStyleSheet(
@@ -2207,7 +2207,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   length_row.addWidget(length_label)
-  
+
                   length_combo = QComboBox()
                   length_combo.addItems(["2 min", "5 min", "15 min", "30 min", "60 min"])
                   length_combo.setCurrentIndex(1)
@@ -2240,9 +2240,9 @@
                   )
                   length_row.addWidget(length_combo)
                   length_row.addStretch()
-  
+
                   cycle_settings_card_layout.addLayout(length_row)
-  
+
                   # Note with tag-based channel system
                   note_label = QLabel("Note:")
                   note_label.setStyleSheet(
@@ -2253,11 +2253,11 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   cycle_settings_card_layout.addWidget(note_label)
-  
+
                   from PySide6.QtWidgets import QTextEdit
                   from PySide6.QtGui import QTextCharFormat, QColor, QSyntaxHighlighter, QTextDocument
                   from PySide6.QtCore import QRegularExpression
-  
+
                   # Custom syntax highlighter for channel tags with concentration support
                   class ChannelTagHighlighter(QSyntaxHighlighter):
                       def __init__(self, parent=None):
@@ -2265,11 +2265,11 @@
                           self.tag_format = QTextCharFormat()
                           self.tag_format.setForeground(QColor("#1D1D1F"))
                           self.tag_format.setFontWeight(700)
-  
+
                           self.conc_format = QTextCharFormat()
                           self.conc_format.setForeground(QColor("#34C759"))
                           self.conc_format.setFontWeight(700)
-  
+
                       def highlightBlock(self, text):
                           # Highlight [A:10], [B:50], [ALL:20] concentration tags (green)
                           conc_pattern = QRegularExpression(r"\[(A|B|C|D|ALL):(\d+\.?\d*)\]")
@@ -2277,7 +2277,7 @@
                           while iterator.hasNext():
                               match = iterator.next()
                               self.setFormat(match.capturedStart(), match.capturedLength(), self.conc_format)
-  
+
                           # Highlight [A], [B], [C], [D], [ALL] tags without concentration (blue)
                           tag_pattern = QRegularExpression(r"\[(A|B|C|D|ALL)\]")
                           iterator = tag_pattern.globalMatch(text)
@@ -2287,7 +2287,7 @@
                               start = match.capturedStart()
                               if self.format(start).foreground().color() != QColor("#34C759"):
                                   self.setFormat(start, match.capturedLength(), self.tag_format)
-  
+
                   note_input = QTextEdit()
                   note_input.setPlaceholderText("Use tags: [A] [B] [C] [D] [ALL] or with concentration [A:10] [ALL:50]  (max 250 chars)")
                   note_input.setMaximumHeight(60)
@@ -2305,10 +2305,10 @@
                       "  border: 2px solid #1D1D1F;"
                       "}"
                   )
-  
+
                   # Apply syntax highlighter to detect and highlight channel tags
                   highlighter = ChannelTagHighlighter(note_input.document())
-  
+
                   # Character counter for note
                   def update_note_counter():
                       text = note_input.toPlainText()
@@ -2316,14 +2316,14 @@
                           note_input.setPlainText(text[:250])
                           note_input.moveCursor(note_input.textCursor().End)
                       char_count_label.setText(f"{len(note_input.toPlainText())}/250 characters")
-  
+
                   note_input.textChanged.connect(update_note_counter)
                   cycle_settings_card_layout.addWidget(note_input)
-  
+
                   # Character count and tag help
                   note_info_row = QHBoxLayout()
                   note_info_row.setSpacing(10)
-  
+
                   char_count_label = QLabel("0/250 characters")
                   char_count_label.setStyleSheet(
                       "font-size: 11px;"
@@ -2333,7 +2333,7 @@
                   )
                   note_info_row.addWidget(char_count_label)
                   note_info_row.addStretch()
-  
+
                   tag_help_label = QLabel("≡ƒÆí [A] [B] [C] [D] [ALL] channels | [A:10] [ALL:50] with concentration")
                   tag_help_label.setStyleSheet(
                       "font-size: 11px;"
@@ -2343,13 +2343,13 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   note_info_row.addWidget(tag_help_label)
-  
+
                   cycle_settings_card_layout.addLayout(note_info_row)
-  
+
                   # Units (applies to concentrations in tags)
                   units_row = QHBoxLayout()
                   units_row.setSpacing(8)
-  
+
                   units_label = QLabel("Units:")
                   units_label.setFixedWidth(70)
                   units_label.setStyleSheet(
@@ -2360,7 +2360,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   units_row.addWidget(units_label)
-  
+
                   from PySide6.QtWidgets import QComboBox
                   units_combo = QComboBox()
                   units_combo.addItems(["M (Molar)", "mM (Millimolar)", "┬╡M (Micromolar)", "nM (Nanomolar)", "pM (Picomolar)", "mg/mL", "┬╡g/mL", "ng/mL"])
@@ -2394,7 +2394,7 @@
                   )
                   units_row.addWidget(units_combo)
                   units_row.addStretch()
-  
+
                   # Info about units applying to tags
                   units_info = QLabel("Units apply to concentrations in tags (e.g., [A:10] = 10 nM)")
                   units_info.setStyleSheet(
@@ -2407,7 +2407,7 @@
                   )
                   cycle_settings_card_layout.addLayout(units_row)
                   cycle_settings_card_layout.addWidget(units_info)
-  
+
                   # Separator before start button
                   start_separator = QFrame()
                   start_separator.setFixedHeight(1)
@@ -2417,11 +2417,11 @@
                       "margin: 8px 0px;"
                   )
                   cycle_settings_card_layout.addWidget(start_separator)
-  
+
                   # Action Buttons (Hybrid workflow)
                   buttons_row = QHBoxLayout()
                   buttons_row.setSpacing(8)
-  
+
                   # Start Cycle Button (Sequential mode)
                   self.start_cycle_btn = QPushButton("Γû╢ Start Cycle")
                   self.start_cycle_btn.setFixedSize(120, 36)
@@ -2448,7 +2448,7 @@
                       "}"
                   )
                   buttons_row.addWidget(self.start_cycle_btn)
-  
+
                   # Add to Queue Button (Batch mode)
                   self.add_to_queue_btn = QPushButton("+ Add to Queue")
                   self.add_to_queue_btn.setFixedSize(140, 36)
@@ -2476,9 +2476,9 @@
                   )
                   buttons_row.addWidget(self.add_to_queue_btn)
                   buttons_row.addStretch()
-  
+
                   cycle_settings_card_layout.addLayout(buttons_row)
-  
+
                   # Help text
                   help_text = QLabel("Γû╢ Start Cycle: Begin this cycle immediately | + Add to Queue: Plan multiple cycles (up to 5)")
                   help_text.setWordWrap(True)
@@ -2491,15 +2491,15 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   cycle_settings_card_layout.addWidget(help_text)
-  
+
                   cycle_settings_section.add_content_widget(cycle_settings_card)
                   tab_layout.addWidget(cycle_settings_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Section 2: Cycle History & Queue (Expanded by default)
                   summary_section = CollapsibleSection("Cycle History & Queue", is_expanded=True)
-  
+
                   # Start Run Button (shown when queue has items)
                   start_run_btn = QPushButton("Γû╢ Start Queued Run")
                   start_run_btn.setFixedHeight(36)
@@ -2523,7 +2523,7 @@
                   )
                   start_run_btn.setVisible(False)  # Hidden by default, shown when queue has items
                   tab_layout.addWidget(start_run_btn)
-  
+
                   # Queue status label
                   queue_status_label = QLabel("Queue: 0 cycles | Click 'Add to Queue' to plan batch runs")
                   queue_status_label.setStyleSheet(
@@ -2534,7 +2534,7 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(queue_status_label)
-  
+
                   # Card container for summary table
                   summary_card = QFrame()
                   summary_card.setStyleSheet(
@@ -2546,7 +2546,7 @@
                   summary_card_layout = QVBoxLayout(summary_card)
                   summary_card_layout.setContentsMargins(12, 8, 12, 8)
                   summary_card_layout.setSpacing(8)
-  
+
                   # Summary table
                   from PySide6.QtWidgets import QTableWidget, QHeaderView
                   self.summary_table = QTableWidget(5, 4)  # Added State column
@@ -2581,20 +2581,20 @@
                       "  font-size: 11px;"
                       "}"
                   )
-  
+
                   # Populate with empty data (will be filled by queue operations)
                   from PySide6.QtWidgets import QTableWidgetItem
-  
+
                   for row in range(5):
                       for col in range(4):
                           self.summary_table.setItem(row, col, QTableWidgetItem(""))
-  
+
                   summary_card_layout.addWidget(self.summary_table)
-  
+
                   # Table footer with info and button
                   table_footer_row = QHBoxLayout()
                   table_footer_row.setSpacing(10)
-  
+
                   # Info legend
                   info_legend = QLabel("Showing last 5 cycles")
                   info_legend.setStyleSheet(
@@ -2605,7 +2605,7 @@
                   )
                   table_footer_row.addWidget(info_legend)
                   table_footer_row.addStretch()
-  
+
                   # Open Full Data Table Button (compact, right-aligned)
                   self.open_table_btn = QPushButton("≡ƒôè View All Cycles")
                   self.open_table_btn.setFixedHeight(28)
@@ -2628,12 +2628,12 @@
                       "}"
                   )
                   table_footer_row.addWidget(self.open_table_btn)
-  
+
                   summary_card_layout.addLayout(table_footer_row)
-  
+
                   summary_section.add_content_widget(summary_card)
                   tab_layout.addWidget(summary_section)
-  
+
               # Export Tab Content
               elif label == "Export":
                   # Section 1: Data Selection
@@ -2647,9 +2647,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(data_selection_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   data_selection_divider = QFrame()
                   data_selection_divider.setFixedHeight(1)
                   data_selection_divider.setStyleSheet(
@@ -2657,9 +2657,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(data_selection_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for data selection
                   data_selection_card = QFrame()
                   data_selection_card.setStyleSheet(
@@ -2671,7 +2671,7 @@
                   data_selection_card_layout = QVBoxLayout(data_selection_card)
                   data_selection_card_layout.setContentsMargins(12, 10, 12, 10)
                   data_selection_card_layout.setSpacing(8)
-  
+
                   # Data type checkboxes
                   raw_data_check = QCheckBox("Raw Sensorgram Data")
                   raw_data_check.setChecked(True)
@@ -2697,7 +2697,7 @@
                       "}"
                   )
                   data_selection_card_layout.addWidget(raw_data_check)
-  
+
                   processed_data_check = QCheckBox("Processed Data (filtered/smoothed)")
                   processed_data_check.setChecked(True)
                   processed_data_check.setStyleSheet(
@@ -2722,7 +2722,7 @@
                       "}"
                   )
                   data_selection_card_layout.addWidget(processed_data_check)
-  
+
                   cycle_segments_check = QCheckBox("Cycle Segments (with metadata)")
                   cycle_segments_check.setChecked(True)
                   cycle_segments_check.setStyleSheet(
@@ -2747,7 +2747,7 @@
                       "}"
                   )
                   data_selection_card_layout.addWidget(cycle_segments_check)
-  
+
                   summary_table_check = QCheckBox("Summary Table")
                   summary_table_check.setChecked(True)
                   summary_table_check.setStyleSheet(
@@ -2772,11 +2772,11 @@
                       "}"
                   )
                   data_selection_card_layout.addWidget(summary_table_check)
-  
+
                   tab_layout.addWidget(data_selection_card)
-  
+
                   tab_layout.addSpacing(16)
-  
+
                   # Section 2: Channel Selection
                   channel_section = QLabel("Channel Selection")
                   channel_section.setStyleSheet(
@@ -2788,9 +2788,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(channel_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   channel_divider = QFrame()
                   channel_divider.setFixedHeight(1)
                   channel_divider.setStyleSheet(
@@ -2798,9 +2798,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(channel_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for channel selection
                   channel_card = QFrame()
                   channel_card.setStyleSheet(
@@ -2812,11 +2812,11 @@
                   channel_card_layout = QVBoxLayout(channel_card)
                   channel_card_layout.setContentsMargins(12, 10, 12, 10)
                   channel_card_layout.setSpacing(8)
-  
+
                   # Channel checkboxes in horizontal layout
                   channel_row = QHBoxLayout()
                   channel_row.setSpacing(12)
-  
+
                   self.export_channel_checkboxes = []
                   for ch in ["A", "B", "C", "D"]:
                       ch_check = QCheckBox(f"Ch {ch}")
@@ -2844,10 +2844,10 @@
                   )
                   self.export_channel_checkboxes.append(ch_check)
                   channel_row.addWidget(ch_check)
-  
+
                   channel_row.addStretch()
                   channel_card_layout.addLayout(channel_row)
-  
+
                   # Select All button
                   self.select_all_channels_btn = QPushButton("Select All")
                   self.select_all_channels_btn.setFixedHeight(28)
@@ -2872,11 +2872,11 @@
                   )
                   self.select_all_channels_btn.clicked.connect(self.toggle_all_channels)
                   channel_card_layout.addWidget(self.select_all_channels_btn)
-  
+
                   tab_layout.addWidget(channel_card)
-  
+
                   tab_layout.addSpacing(16)
-  
+
                   # Section 3: Export Format
                   format_section = QLabel("Export Format")
                   format_section.setStyleSheet(
@@ -2888,9 +2888,9 @@
                       "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                   )
                   tab_layout.addWidget(format_section)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   format_divider = QFrame()
                   format_divider.setFixedHeight(1)
                   format_divider.setStyleSheet(
@@ -2898,9 +2898,9 @@
                       "border: none;"
                   )
                   tab_layout.addWidget(format_divider)
-  
+
                   tab_layout.addSpacing(8)
-  
+
                   # Card container for format selection
                   format_card = QFrame()
                   format_card.setStyleSheet(
@@ -2912,11 +2912,11 @@
                   format_card_layout = QVBoxLayout(format_card)
                   format_card_layout.setContentsMargins(12, 10, 12, 10)
                   format_card_layout.setSpacing(6)
-  
+
                   # Format radio buttons
                   from PySide6.QtWidgets import QRadioButton, QButtonGroup
                   format_group = QButtonGroup()
-  
+
                   excel_radio = QRadioButton("Excel (.xlsx) - Multi-tab workbook")
                   excel_radio.setChecked(True)
                   excel_radio.setStyleSheet(
@@ -2942,7 +2942,7 @@
                   )
                   format_group.addButton(excel_radio)
                   format_card_layout.addWidget(excel_radio)
-  
+
                   csv_radio = QRadioButton("CSV (.csv) - Single or multiple files")
                   csv_radio.setStyleSheet(
                       "QRadioButton {"
@@ -2967,7 +2967,7 @@
                   )
                   format_group.addButton(csv_radio)
                   format_card_layout.addWidget(csv_radio)
-  
+
                   json_radio = QRadioButton("JSON (.json) - Structured data")
                   json_radio.setStyleSheet(
                       "QRadioButton {"
@@ -2992,7 +2992,7 @@
                   )
                   format_group.addButton(json_radio)
                   format_card_layout.addWidget(json_radio)
-  
+
                   hdf5_radio = QRadioButton("HDF5 (.h5) - Large datasets")
                   hdf5_radio.setStyleSheet(
                       "QRadioButton {"
@@ -3000,5 +3000,3 @@
                       "  color: #1D1D1F;"
                       "  background: transparent;"
                       "  spacing: 6px;"
-
-

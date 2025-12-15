@@ -111,7 +111,7 @@ class KineticHAL:
 
             self._device_info["connected"] = True
             logger.info(
-                f"Connected to KNX controller: {self._device_info['model']} v{self._device_info['firmware_version']}"
+                f"Connected to KNX controller: {self._device_info['model']} v{self._device_info['firmware_version']}",
             )
             return True
 
@@ -652,7 +652,10 @@ class KineticHAL:
             return False
 
     def _send_command(
-        self, cmd: str, parse_json: bool = False, reply: bool = True
+        self,
+        cmd: str,
+        parse_json: bool = False,
+        reply: bool = True,
     ) -> Any:
         """Send command to hardware.
 
@@ -670,7 +673,7 @@ class KineticHAL:
         """
         if not self.is_connected():
             raise HALOperationError(
-                "Cannot send command: not connected to KNX controller"
+                "Cannot send command: not connected to KNX controller",
             )
 
         try:
@@ -687,7 +690,7 @@ class KineticHAL:
                                 return json.loads(response)
                             except json.JSONDecodeError:
                                 logger.error(
-                                    f"Failed to parse JSON response for {cmd}: {response}"
+                                    f"Failed to parse JSON response for {cmd}: {response}",
                                 )
                                 return None
                         else:
@@ -781,7 +784,7 @@ class KineticHAL:
 
             self._device_info["connected"] = True
             logger.info(
-                f"Connected to KNX controller: {self._device_info['model']} v{self._device_info['firmware_version']}"
+                f"Connected to KNX controller: {self._device_info['model']} v{self._device_info['firmware_version']}",
             )
             return True
 
@@ -1229,7 +1232,10 @@ class KineticHAL:
             return False
 
     def _send_command(
-        self, cmd: str, parse_json: bool = False, reply: bool = True
+        self,
+        cmd: str,
+        parse_json: bool = False,
+        reply: bool = True,
     ) -> Any:
         """Send command to hardware.
 
@@ -1259,7 +1265,7 @@ class KineticHAL:
                             return json.loads(response)
                         except json.JSONDecodeError:
                             logger.error(
-                                f"Failed to parse JSON response for {cmd}: {response}"
+                                f"Failed to parse JSON response for {cmd}: {response}",
                             )
                             return None
                     else:

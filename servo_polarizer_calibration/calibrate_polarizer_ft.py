@@ -1,5 +1,4 @@
-"""
-Fast-Track Servo Polarizer Calibration Script (FT)
+"""Fast-Track Servo Polarizer Calibration Script (FT)
 
 Validates stored calibration positions (P and S) against OEM baseline without full sweep.
 Uses the same spectral analysis methods as the full calibration.
@@ -20,12 +19,13 @@ Fast-track validation takes ~30 seconds vs ~60 seconds for full calibration.
 Use this for routine checks when you have known-good P/S positions.
 """
 
-import sys
-from pathlib import Path
-import time
-import numpy as np
 import argparse
 import csv
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
 
 # Add src to path
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,24 +34,24 @@ sys.path.insert(0, str(ROOT / "src"))
 from core.hardware_manager import HardwareManager
 
 
-def measure_with_spectral_analysis(hm, wavelengths, method='max'):
-    """
-    Measure intensity using spectral analysis.
+def measure_with_spectral_analysis(hm, wavelengths, method="max"):
+    """Measure intensity using spectral analysis.
 
     Args:
         method: 'max' (for S - mean top 20), 'min_spr' (for P in 610-680nm ±10)
 
     Returns:
         float: Intensity value
+
     """
     spectrum = hm.usb.read_intensity()
 
-    if method == 'max':
+    if method == "max":
         # S position: Mean of top 20 max points
         top_20_indices = np.argsort(spectrum)[-20:]
         return float(spectrum[top_20_indices].mean())
 
-    elif method == 'min_spr':
+    if method == "min_spr":
         # P position: min in SPR range (610-680nm) + average ±10 points
         mask = (wavelengths >= 610) & (wavelengths <= 680)
         if not np.any(mask):
@@ -83,8 +83,7 @@ def move_to_position(hm, target_pwm, settle_time=1.5):
 
 
 def validate_position(hm, wavelengths, pwm, method, approach_from, n_measurements=20):
-    """
-    Validate a single position with multiple measurements.
+    """Validate a single position with multiple measurements.
 
     Args:
         hm: HardwareManager instance
@@ -96,6 +95,7 @@ def validate_position(hm, wavelengths, pwm, method, approach_from, n_measurement
 
     Returns:
         dict with statistics
+
     """
     # Approach from direction
     move_to_position(hm, approach_from, settle_time=0.5)
@@ -116,19 +116,18 @@ def validate_position(hm, wavelengths, pwm, method, approach_from, n_measurement
     max_val = measurements.max()
 
     return {
-        'pwm': pwm,
-        'mean': float(mean_val),
-        'std': float(std_val),
-        'cv_percent': float(cv),
-        'min': float(min_val),
-        'max': float(max_val),
-        'n_measurements': n_measurements
+        "pwm": pwm,
+        "mean": float(mean_val),
+        "std": float(std_val),
+        "cv_percent": float(cv),
+        "min": float(min_val),
+        "max": float(max_val),
+        "n_measurements": n_measurements,
     }
 
 
 def quick_validation(hm, wavelengths, p_pwm, s_pwm, verbose=True):
-    """
-    Fast-track validation of stored P and S positions.
+    """Fast-track validation of stored P and S positions.
 
     NOTE: Absolute intensity values are detector-specific. Your sensor may show
           different count values than the OEM baseline (e.g., 5000 vs 3000 counts).
@@ -146,11 +145,12 @@ def quick_validation(hm, wavelengths, p_pwm, s_pwm, verbose=True):
 
     Returns:
         dict with validation results and pass/fail status
+
     """
     if verbose:
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("FAST-TRACK SERVO POLARIZER CALIBRATION (FT)")
-        print("="*70)
+        print("=" * 70)
         print(f"Testing stored positions: P={p_pwm}, S={s_pwm}")
         print("20 measurements per position with spectral analysis")
         print("\nNOTE: Intensity values are detector-specific.")
@@ -160,10 +160,12 @@ def quick_validation(hm, wavelengths, p_pwm, s_pwm, verbose=True):
     if verbose:
         print(f"Validating P position (PWM {p_pwm})...")
     p_results = validate_position(
-        hm, wavelengths, p_pwm,
-        method='min_spr',
+        hm,
+        wavelengths,
+        p_pwm,
+        method="min_spr",
         approach_from=255,
-        n_measurements=20
+        n_measurements=20,
     )
     if verbose:
         print(f"  Mean: {p_results['mean']:.1f} ± {p_results['std']:.1f} counts")
@@ -174,10 +176,12 @@ def quick_validation(hm, wavelengths, p_pwm, s_pwm, verbose=True):
     if verbose:
         print(f"\nValidating S position (PWM {s_pwm})...")
     s_results = validate_position(
-        hm, wavelengths, s_pwm,
-        method='max',
+        hm,
+        wavelengths,
+        s_pwm,
+        method="max",
         approach_from=1,
-        n_measurements=20
+        n_measurements=20,
     )
     if verbose:
         print(f"  Mean: {s_results['mean']:.1f} ± {s_results['std']:.1f} counts")
@@ -185,54 +189,62 @@ def quick_validation(hm, wavelengths, p_pwm, s_pwm, verbose=True):
         print(f"  Noise: {s_results['cv_percent']:.2f}% CV")
 
     # Calculate metrics
-    ratio = s_results['mean'] / p_results['mean']
-    separation = s_results['mean'] - p_results['mean']
+    ratio = s_results["mean"] / p_results["mean"]
+    separation = s_results["mean"] - p_results["mean"]
 
     # Validation checks (same as full calibration)
     checks = {
-        'ratio_good': ratio > 1.5,
-        'p_stable': p_results['cv_percent'] < 2.0,
-        's_stable': s_results['cv_percent'] < 2.0,
-        'separation_good': separation > (p_results['mean'] * 0.5)
+        "ratio_good": ratio > 1.5,
+        "p_stable": p_results["cv_percent"] < 2.0,
+        "s_stable": s_results["cv_percent"] < 2.0,
+        "separation_good": separation > (p_results["mean"] * 0.5),
     }
 
     all_passed = all(checks.values())
 
     if verbose:
-        print(f"\n" + "="*70)
+        print("\n" + "=" * 70)
         print("VALIDATION RESULTS")
-        print("="*70)
-        print(f"S/P Ratio: {ratio:.2f}× {'✓' if checks['ratio_good'] else '✗'} (need > 1.5×)")
-        print(f"P Noise: {p_results['cv_percent']:.2f}% CV {'✓' if checks['p_stable'] else '✗'} (need < 2.0%)")
-        print(f"S Noise: {s_results['cv_percent']:.2f}% CV {'✓' if checks['s_stable'] else '✗'} (need < 2.0%)")
-        print(f"Separation: {separation:.0f} counts {'✓' if checks['separation_good'] else '✗'} (need > {p_results['mean']*0.5:.0f})")
+        print("=" * 70)
+        print(
+            f"S/P Ratio: {ratio:.2f}× {'✓' if checks['ratio_good'] else '✗'} (need > 1.5×)",
+        )
+        print(
+            f"P Noise: {p_results['cv_percent']:.2f}% CV {'✓' if checks['p_stable'] else '✗'} (need < 2.0%)",
+        )
+        print(
+            f"S Noise: {s_results['cv_percent']:.2f}% CV {'✓' if checks['s_stable'] else '✗'} (need < 2.0%)",
+        )
+        print(
+            f"Separation: {separation:.0f} counts {'✓' if checks['separation_good'] else '✗'} (need > {p_results['mean']*0.5:.0f})",
+        )
         print(f"\nOverall: {'✓✓✓ PASS ✓✓✓' if all_passed else '✗✗✗ FAIL ✗✗✗'}")
         print("\nNOTE: Compare with OEM baseline for your sensor:")
         print("      - OEM (USB4000): P~5250 counts, S~13450 counts")
         print("      - Your values may differ - focus on ratio and CV%")
-        print("="*70)
+        print("=" * 70)
 
     return {
-        'p_pwm': p_pwm,
-        'p_results': p_results,
-        's_pwm': s_pwm,
-        's_results': s_results,
-        'ratio': float(ratio),
-        'separation': float(separation),
-        'checks': checks,
-        'passed': all_passed
+        "p_pwm": p_pwm,
+        "p_results": p_results,
+        "s_pwm": s_pwm,
+        "s_results": s_results,
+        "ratio": float(ratio),
+        "separation": float(separation),
+        "checks": checks,
+        "passed": all_passed,
     }
 
 
 def load_stored_calibration(csv_path=None):
-    """
-    Load stored calibration from CSV file.
+    """Load stored calibration from CSV file.
 
     Args:
         csv_path: Path to calibration results CSV (default: polarizer_calibration_results.csv)
 
     Returns:
         tuple: (p_pwm, s_pwm) or (None, None) if not found
+
     """
     if csv_path is None:
         csv_path = ROOT / "polarizer_calibration_results.csv"
@@ -241,12 +253,12 @@ def load_stored_calibration(csv_path=None):
         return None, None
 
     try:
-        with open(csv_path, 'r') as f:
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
-            results = {row['Parameter']: row['Value'] for row in reader}
+            results = {row["Parameter"]: row["Value"] for row in reader}
 
-        p_pwm = int(results.get('P PWM', 0))
-        s_pwm = int(results.get('S PWM', 0))
+        p_pwm = int(results.get("P PWM", 0))
+        s_pwm = int(results.get("S PWM", 0))
 
         if p_pwm > 0 and s_pwm > 0:
             return p_pwm, s_pwm
@@ -258,14 +270,21 @@ def load_stored_calibration(csv_path=None):
 
 def main():
     """Main fast-track calibration routine."""
-
     parser = argparse.ArgumentParser(
-        description='Fast-track servo polarizer calibration (validates stored positions)'
+        description="Fast-track servo polarizer calibration (validates stored positions)",
     )
-    parser.add_argument('--p-pwm', type=int, help='P position PWM (default: load from file)')
-    parser.add_argument('--s-pwm', type=int, help='S position PWM (default: load from file)')
-    parser.add_argument('--csv', type=str, help='Path to calibration results CSV')
-    parser.add_argument('--quiet', action='store_true', help='Minimal output')
+    parser.add_argument(
+        "--p-pwm",
+        type=int,
+        help="P position PWM (default: load from file)",
+    )
+    parser.add_argument(
+        "--s-pwm",
+        type=int,
+        help="S position PWM (default: load from file)",
+    )
+    parser.add_argument("--csv", type=str, help="Path to calibration results CSV")
+    parser.add_argument("--quiet", action="store_true", help="Minimal output")
 
     args = parser.parse_args()
 
@@ -333,28 +352,34 @@ def main():
         time.sleep(1.0)
 
         # Run validation
-        results = quick_validation(hm, wavelengths, p_pwm, s_pwm, verbose=not args.quiet)
+        results = quick_validation(
+            hm,
+            wavelengths,
+            p_pwm,
+            s_pwm,
+            verbose=not args.quiet,
+        )
 
         # Save results
         output_path = ROOT / "polarizer_validation_results.csv"
-        with open(output_path, 'w', newline='') as f:
+        with open(output_path, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(['Parameter', 'Value'])
-            writer.writerow(['Calibration Mode', 'Fast-Track (FT)'])
-            writer.writerow(['Validation Date', time.strftime('%Y-%m-%d %H:%M:%S')])
-            writer.writerow(['P PWM', results['p_pwm']])
-            writer.writerow(['P Intensity', f"{results['p_results']['mean']:.1f}"])
-            writer.writerow(['P Std', f"{results['p_results']['std']:.1f}"])
-            writer.writerow(['P CV%', f"{results['p_results']['cv_percent']:.2f}"])
-            writer.writerow(['S PWM', results['s_pwm']])
-            writer.writerow(['S Intensity', f"{results['s_results']['mean']:.1f}"])
-            writer.writerow(['S Std', f"{results['s_results']['std']:.1f}"])
-            writer.writerow(['S CV%', f"{results['s_results']['cv_percent']:.2f}"])
-            writer.writerow(['S/P Ratio', f"{results['ratio']:.2f}"])
-            writer.writerow(['Separation', f"{results['separation']:.0f}"])
-            writer.writerow(['Status', 'PASS' if results['passed'] else 'FAIL'])
-            writer.writerow(['Note', 'Intensity values are detector-specific'])
-            writer.writerow(['OEM Baseline', 'USB4000: P~5250, S~13450 counts'])
+            writer.writerow(["Parameter", "Value"])
+            writer.writerow(["Calibration Mode", "Fast-Track (FT)"])
+            writer.writerow(["Validation Date", time.strftime("%Y-%m-%d %H:%M:%S")])
+            writer.writerow(["P PWM", results["p_pwm"]])
+            writer.writerow(["P Intensity", f"{results['p_results']['mean']:.1f}"])
+            writer.writerow(["P Std", f"{results['p_results']['std']:.1f}"])
+            writer.writerow(["P CV%", f"{results['p_results']['cv_percent']:.2f}"])
+            writer.writerow(["S PWM", results["s_pwm"]])
+            writer.writerow(["S Intensity", f"{results['s_results']['mean']:.1f}"])
+            writer.writerow(["S Std", f"{results['s_results']['std']:.1f}"])
+            writer.writerow(["S CV%", f"{results['s_results']['cv_percent']:.2f}"])
+            writer.writerow(["S/P Ratio", f"{results['ratio']:.2f}"])
+            writer.writerow(["Separation", f"{results['separation']:.0f}"])
+            writer.writerow(["Status", "PASS" if results["passed"] else "FAIL"])
+            writer.writerow(["Note", "Intensity values are detector-specific"])
+            writer.writerow(["OEM Baseline", "USB4000: P~5250, S~13450 counts"])
 
         if not args.quiet:
             print(f"\nValidation results saved to: {output_path}")
@@ -363,7 +388,7 @@ def main():
             print("          Focus on relative metrics (ratio, CV%) for validation.")
 
         # Exit code
-        sys.exit(0 if results['passed'] else 1)
+        sys.exit(0 if results["passed"] else 1)
 
     finally:
         # Cleanup

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Replace UNKNOWN debug prints with specific error codes"""
 
-with open('utils/led_calibration.py', 'r', encoding='utf-8') as f:
+with open("utils/led_calibration.py", encoding="utf-8") as f:
     content = f.read()
 
 # Replace all three UNKNOWN prints with specific error codes
 replacements = [
-    ('print(f"[ERROR] Ch {ch.upper()} FAILED: UNKNOWN")',
-     'logger.error(f"[ERROR] Ch {ch.upper()} FAILED: VALIDATION_ERROR")'),
+    (
+        'print(f"[ERROR] Ch {ch.upper()} FAILED: UNKNOWN")',
+        'logger.error(f"[ERROR] Ch {ch.upper()} FAILED: VALIDATION_ERROR")',
+    ),
 ]
 
 count = 0
@@ -16,7 +18,7 @@ for old, new in replacements:
     content = content.replace(old, new)
     count += old_count
 
-with open('utils/led_calibration.py', 'w', encoding='utf-8') as f:
+with open("utils/led_calibration.py", "w", encoding="utf-8") as f:
     f.write(content)
 
 print(f"[OK] Replaced {count} UNKNOWN prints with proper error codes")

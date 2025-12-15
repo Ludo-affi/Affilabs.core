@@ -1,5 +1,4 @@
-"""
-Command Batching Performance Test
+"""Command Batching Performance Test
 
 Tests different command batching strategies:
 1. Individual commands with wait-for-response
@@ -7,29 +6,28 @@ Tests different command batching strategies:
 3. Batch commands (if supported)
 """
 
-import time
-import sys
-from pathlib import Path
 import io
+import sys
+import time
+from pathlib import Path
+
 import numpy as np
 
 # Fix Windows console encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Add src to path
-src_path = Path(__file__).parent / 'src'
+src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from utils.controller import PicoP4SPR
-from utils.logger import logger
 
 
 def test_command_batching():
     """Test command batching strategies."""
-
-    print("="*80)
+    print("=" * 80)
     print("COMMAND BATCHING PERFORMANCE TEST")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Initialize hardware
@@ -44,27 +42,27 @@ def test_command_batching():
     print()
 
     # Check if rank sequence is available (V1.2+)
-    has_rank = ctrl.version >= 'V1.2'
-    print(f"Firmware capabilities:")
+    has_rank = ctrl.version >= "V1.2"
+    print("Firmware capabilities:")
     print(f"  Version: {ctrl.version}")
     print(f"  Rank sequence (V1.2+): {'YES' if has_rank else 'NO'}")
     print()
 
     # Strategy 1: Individual commands (current method)
-    print("="*80)
+    print("=" * 80)
     print("STRATEGY 1: Individual Commands (wait for each response)")
-    print("="*80)
+    print("=" * 80)
     print()
 
     test_sequence = [
-        ('a', 50),
-        ('b', 100),
-        ('c', 150),
-        ('d', 200),
-        ('a', 0),
-        ('b', 0),
-        ('c', 0),
-        ('d', 0),
+        ("a", 50),
+        ("b", 100),
+        ("c", 150),
+        ("d", 200),
+        ("a", 0),
+        ("b", 0),
+        ("c", 0),
+        ("d", 0),
     ]
 
     times_individual = []
@@ -78,16 +76,16 @@ def test_command_batching():
     avg_individual = np.mean(times_individual)
     std_individual = np.std(times_individual)
 
-    print(f"8 commands (4 ON + 4 OFF):")
+    print("8 commands (4 ON + 4 OFF):")
     print(f"  Average: {avg_individual:.1f}ms")
     print(f"  Std dev: {std_individual:.1f}ms")
     print(f"  Per command: {avg_individual/8:.1f}ms")
     print()
 
     # Strategy 2: Pipelined commands (send all, then read all)
-    print("="*80)
+    print("=" * 80)
     print("STRATEGY 2: Pipelined Commands (send bulk, read bulk)")
-    print("="*80)
+    print("=" * 80)
     print()
 
     times_pipelined = []
@@ -123,29 +121,31 @@ def test_command_batching():
         times_pipelined.append((t1 - t0) * 1000)
 
         # Verify responses
-        success_count = sum(1 for r in responses if r == b'1')
-        print(f"  Run {i+1}: {(t1-t0)*1000:.1f}ms, {success_count}/{len(test_sequence)} successful")
+        success_count = sum(1 for r in responses if r == b"1")
+        print(
+            f"  Run {i+1}: {(t1-t0)*1000:.1f}ms, {success_count}/{len(test_sequence)} successful",
+        )
 
     print()
     avg_pipelined = np.mean(times_pipelined)
     std_pipelined = np.std(times_pipelined)
 
-    print(f"8 commands (pipelined):")
+    print("8 commands (pipelined):")
     print(f"  Average: {avg_pipelined:.1f}ms")
     print(f"  Std dev: {std_pipelined:.1f}ms")
     print(f"  Per command: {avg_pipelined/8:.1f}ms")
     print()
 
     # Strategy 3: Batch command (V1.1+)
-    print("="*80)
+    print("=" * 80)
     print("STRATEGY 3: Batch Commands (single command for all 4 LEDs)")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Simulate same sequence using batch commands
     batch_sequence = [
-        {'a': 50, 'b': 100, 'c': 150, 'd': 200},  # All ON
-        {'a': 0, 'b': 0, 'c': 0, 'd': 0},         # All OFF
+        {"a": 50, "b": 100, "c": 150, "d": 200},  # All ON
+        {"a": 0, "b": 0, "c": 0, "d": 0},  # All OFF
     ]
 
     times_batch = []
@@ -159,28 +159,36 @@ def test_command_batching():
     avg_batch = np.mean(times_batch)
     std_batch = np.std(times_batch)
 
-    print(f"2 batch commands (8 LED operations):")
+    print("2 batch commands (8 LED operations):")
     print(f"  Average: {avg_batch:.1f}ms")
     print(f"  Std dev: {std_batch:.1f}ms")
     print(f"  Per LED operation: {avg_batch/8:.1f}ms")
     print()
 
     # Analysis
-    print("="*80)
+    print("=" * 80)
     print("PERFORMANCE COMPARISON")
-    print("="*80)
+    print("=" * 80)
     print()
 
-    print(f"Method                    | Total Time | Per Command | Speedup")
-    print(f"--------------------------+------------+-------------+---------")
-    print(f"Individual (baseline)     | {avg_individual:6.1f}ms   | {avg_individual/8:6.1f}ms    | 1.0x")
-    print(f"Pipelined                 | {avg_pipelined:6.1f}ms   | {avg_pipelined/8:6.1f}ms    | {avg_individual/avg_pipelined:.1f}x")
-    print(f"Batch (when applicable)   | {avg_batch:6.1f}ms   | {avg_batch/8:6.1f}ms    | {avg_individual/avg_batch:.1f}x")
+    print("Method                    | Total Time | Per Command | Speedup")
+    print("--------------------------+------------+-------------+---------")
+    print(
+        f"Individual (baseline)     | {avg_individual:6.1f}ms   | {avg_individual/8:6.1f}ms    | 1.0x",
+    )
+    print(
+        f"Pipelined                 | {avg_pipelined:6.1f}ms   | {avg_pipelined/8:6.1f}ms    | {avg_individual/avg_pipelined:.1f}x",
+    )
+    print(
+        f"Batch (when applicable)   | {avg_batch:6.1f}ms   | {avg_batch/8:6.1f}ms    | {avg_individual/avg_batch:.1f}x",
+    )
     print()
 
     if avg_pipelined < avg_individual * 0.8:
         print("RESULT: Pipelined commands show significant improvement!")
-        print(f"  Time saved: {avg_individual - avg_pipelined:.1f}ms ({(1 - avg_pipelined/avg_individual)*100:.0f}%)")
+        print(
+            f"  Time saved: {avg_individual - avg_pipelined:.1f}ms ({(1 - avg_pipelined/avg_individual)*100:.0f}%)",
+        )
         print()
         print("RECOMMENDATION:")
         print("  Implement pipelined command execution for calibration")
@@ -193,9 +201,9 @@ def test_command_batching():
 
     # Strategy 4: Firmware sequence (if V1.2+)
     if has_rank:
-        print("="*80)
+        print("=" * 80)
         print("STRATEGY 4: Firmware-Side Sequence (V1.2+ only)")
-        print("="*80)
+        print("=" * 80)
         print()
         print("Firmware can autonomously execute LED sequences")
         print("Python only needs to read spectra when signaled")
@@ -203,9 +211,9 @@ def test_command_batching():
         print("Expected performance: ~2.7x faster than Python control")
         print("Use led_rank_sequence() for optimal calibration speed")
     else:
-        print("="*80)
+        print("=" * 80)
         print("UPGRADE RECOMMENDATION")
-        print("="*80)
+        print("=" * 80)
         print()
         print("Firmware V1.2+ adds led_rank_sequence() command:")
         print("  - Firmware handles LED timing autonomously")
@@ -219,12 +227,12 @@ def test_command_batching():
     # Cleanup
     ctrl.turn_off_channels()
 
-    print("="*80)
+    print("=" * 80)
     print("TEST COMPLETE")
-    print("="*80)
+    print("=" * 80)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         test_command_batching()
     except KeyboardInterrupt:
@@ -232,4 +240,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n\nTest failed: {e}")
         import traceback
+
         traceback.print_exc()

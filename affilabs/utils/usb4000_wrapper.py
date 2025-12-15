@@ -93,10 +93,6 @@ class USB4000:
             try:
                 devices_to_cleanup = list_devices()
                 if devices_to_cleanup:
-                    logger.debug(
-                        f"Cleaning up {len(devices_to_cleanup)} stale device connections...",
-                    )
-
                     # Try to close each device up to 2 times (some devices need multiple attempts)
                     for attempt in range(2):
                         for dev in devices_to_cleanup:
@@ -121,9 +117,8 @@ class USB4000:
                     import time
 
                     time.sleep(0.3)  # Give USB stack time to release handles
-                    logger.debug("USB cleanup complete")
-            except Exception as cleanup_err:
-                logger.debug(f"USB cleanup: {cleanup_err}")
+            except Exception:
+                pass
 
             # Use HardwareManager timeouts if available
             try:
@@ -180,9 +175,6 @@ class USB4000:
 
             dev0 = devices[0]
             target_serial = getattr(dev0, "serial_number", None)
-            logger.info(
-                f"[SERIAL-DEBUG] Extracted serial from SeaBreeze device: {target_serial}",
-            )
             logger.info(f"Connecting to device serial: {target_serial}")
 
             connection_exception = [None]
@@ -268,7 +260,9 @@ class USB4000:
                             )
                             return False
                         target_serial = target_serial or getattr(
-                            dev0, "serial_number", None,
+                            dev0,
+                            "serial_number",
+                            None,
                         )
                         logger.info("Fallback Spectrometer(devices[0]) connected")
                     except Exception as fe_outer:
@@ -279,9 +273,6 @@ class USB4000:
 
             self.opened = True
             self.serial_number = target_serial
-            logger.info(
-                f"[SERIAL-DEBUG] USB4000 serial_number attribute set to: {self.serial_number}",
-            )
             self.spec = self._device
 
             try:

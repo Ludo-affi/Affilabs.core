@@ -16,20 +16,18 @@ from typing import Literal, Self, TypedDict
 
 import numpy as np
 import pandas as pd
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QRect, QSize, QPoint
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import (
     QBrush,
     QColor,
     QDoubleValidator,
     QFont,
-    QPen,
     QPainter,
+    QPen,
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
-    QFrame,
     QGraphicsEllipseItem,
     QGraphicsLineItem,
     QGraphicsScene,
@@ -38,10 +36,9 @@ from PySide6.QtWidgets import (
     QLayout,
     QPushButton,
     QScrollArea,
-    QSplitter,
-    QStyledItemDelegate,
-    QTableWidgetItem,
     QSizePolicy,
+    QSplitter,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -60,7 +57,6 @@ from widgets.message import show_message
 from widgets.metadata import Metadata, MetadataPrompt
 from widgets.segment_dataframe import SegmentDataFrame
 from widgets.table_manager import CycleTableManager
-from widgets.ui_constants import COLUMNS_TO_TOGGLE, CYCLE_TYPES
 
 TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 # Tab 1 (default): Shows ID, Start, Cycle Type, Note (columns 0, 1, 8, 9)
@@ -115,8 +111,13 @@ class RoundedFrame(QWidget):
 
         # Draw rounded corners by drawing a path
         from PySide6.QtGui import QPainterPath
+
         path = QPainterPath()
-        path.addRoundedRect(QRect(0, 0, self.width(), self.height()), self.border_radius, self.border_radius)
+        path.addRoundedRect(
+            QRect(0, 0, self.width(), self.height()),
+            self.border_radius,
+            self.border_radius,
+        )
         painter.setClipPath(path)
         painter.fillPath(path, QColor(255, 255, 255))
 
@@ -245,9 +246,7 @@ class Segment:
                         # Normalize to the earliest time across all channels
                         if min_time is not None:
                             self.seg_x[ch] = self.seg_x[ch] - min_time
-                        self.seg_y[ch] = (
-                            self.seg_y[ch] - self.seg_y[ch][ref_index]
-                        )
+                        self.seg_y[ch] = self.seg_y[ch] - self.seg_y[ch][ref_index]
                         self.shift[ch] = self.seg_y[ch][-1]
                         self.error = None
                     else:
@@ -281,8 +280,10 @@ class Segment:
         # Sanitize name - limit to 50 characters, remove problematic characters
         try:
             name_text = str(info.get("name", "")).strip()
-            name_text = name_text.replace('\x00', '')  # Remove null bytes
-            name_text = ''.join(char for char in name_text if ord(char) >= 32 or char in '\n\r\t')
+            name_text = name_text.replace("\x00", "")  # Remove null bytes
+            name_text = "".join(
+                char for char in name_text if ord(char) >= 32 or char in "\n\r\t"
+            )
             self.name = name_text[:50] if name_text else str(self.seg_id + 1)
         except Exception as e:
             logger.warning(f"Error sanitizing segment name: {e}")
@@ -291,8 +292,10 @@ class Segment:
         # Sanitize note - limit to 500 characters, remove problematic characters
         try:
             note_text = str(info.get("note", "")).strip()
-            note_text = note_text.replace('\x00', '')  # Remove null bytes
-            note_text = ''.join(char for char in note_text if ord(char) >= 32 or char in '\n\r\t')
+            note_text = note_text.replace("\x00", "")  # Remove null bytes
+            note_text = "".join(
+                char for char in note_text if ord(char) >= 32 or char in "\n\r\t"
+            )
             self.note = note_text[:500] if note_text else ""
         except Exception as e:
             logger.warning(f"Error sanitizing segment note: {e}")
@@ -307,7 +310,7 @@ class Segment:
                 self.cycle_type = "Auto-read"
 
         # Handle cycle time
-        if "cycle_time" in info and info["cycle_time"]:
+        if info.get("cycle_time"):
             try:
                 self.cycle_time = int(info["cycle_time"])
             except (ValueError, TypeError):
@@ -328,7 +331,7 @@ class DataWindow(QWidget):
     def __init__(
         self: Self,
         data_source: Literal["dynamic", "static"],
-        sidebar: 'Sidebar' = None,
+        sidebar: "Sidebar" = None,
     ) -> None:
         """Make a data processing widget."""
         super().__init__()
@@ -347,17 +350,20 @@ class DataWindow(QWidget):
         # --- Sidebar integration for cycle controls ---
         from widgets.cycle_controls_widget import CycleControlsWidget
         from widgets.prime_pump_widget import PrimePumpWidget
+
         if self.sidebar is not None:
             # Graph Controls tab: Clear Graph button
             graph_controls = QWidget()
-            from PySide6.QtWidgets import QVBoxLayout, QFrame
             from PySide6.QtCore import QSize
+            from PySide6.QtWidgets import QFrame, QVBoxLayout
+
             graph_layout = QVBoxLayout(graph_controls)
             graph_layout.setContentsMargins(0, 0, 0, 0)
             graph_layout.setSpacing(8)
 
             # Styled container for Clear Graph button
-            from ui.styles import get_container_style, get_button_style
+            from ui.styles import get_button_style, get_container_style
+
             clear_container = QFrame(graph_controls)
             clear_container.setObjectName("clear_graph_container")
             clear_container.setStyleSheet(get_container_style(elevated=True))
@@ -370,7 +376,7 @@ class DataWindow(QWidget):
             self.clear_graph_btn_sidebar = QPushButton("Clear Graph", clear_container)
             self.clear_graph_btn_sidebar.setMinimumSize(QSize(0, 35))
             self.clear_graph_btn_sidebar.setObjectName("clear_graph_btn_sidebar")
-            self.clear_graph_btn_sidebar.setStyleSheet(get_button_style('error'))
+            self.clear_graph_btn_sidebar.setStyleSheet(get_button_style("error"))
             clear_layout.addWidget(self.clear_graph_btn_sidebar)
             graph_layout.addWidget(clear_container)
 
@@ -381,33 +387,43 @@ class DataWindow(QWidget):
             graph_layout.addStretch()
 
             # Static tab: Cycle settings only
-            static_controls = CycleControlsWidget(show_cycle_data_button=False, show_cycle_settings=True)
+            static_controls = CycleControlsWidget(
+                show_cycle_data_button=False,
+                show_cycle_settings=True,
+            )
 
             # Flow tab: Cycle settings + Cycle Data Table + Prime Pump button (identical structure to Static)
             flow_controls = QWidget()
-            from PySide6.QtWidgets import QVBoxLayout, QLabel
+            from PySide6.QtWidgets import QVBoxLayout
+
             flow_layout = QVBoxLayout(flow_controls)
             flow_layout.setContentsMargins(0, 0, 0, 0)
             flow_layout.setSpacing(8)
 
-            flow_cycle_settings = CycleControlsWidget(show_cycle_data_button=False, show_cycle_settings=True)
+            flow_cycle_settings = CycleControlsWidget(
+                show_cycle_data_button=False,
+                show_cycle_settings=True,
+            )
             flow_layout.addWidget(flow_cycle_settings)
 
             # Add Cycle Data Table button in styled container
-            cycle_data_widget = CycleControlsWidget(show_cycle_data_button=True, show_cycle_settings=False)
+            cycle_data_widget = CycleControlsWidget(
+                show_cycle_data_button=True,
+                show_cycle_settings=False,
+            )
             cycle_data_widget.set_cycle_data_callback(self.open_cycle_table)
             flow_layout.addWidget(cycle_data_widget)
 
             prime_pump_widget = PrimePumpWidget()
             flow_layout.addWidget(prime_pump_widget)
             # Connect prime button to main handler if available
-            if hasattr(self, 'prime'):
+            if hasattr(self, "prime"):
                 prime_pump_widget.set_prime_callback(self.prime)
 
             self.sidebar.set_widgets(
                 cycle_controls_widget=graph_controls,
                 static_cycle_controls=static_controls,
-                flow_cycle_controls=flow_controls
+                flow_cycle_controls=flow_controls,
             )
 
         # display data processing or sensorgram page depending on source
@@ -418,14 +434,16 @@ class DataWindow(QWidget):
             self._fix_checkbox_styles()
 
             # White opaque rectangle as a standalone widget on the main UI
-            from PySide6.QtWidgets import QFrame
             from PySide6.QtCore import QSize
+            from PySide6.QtWidgets import QFrame
+
             from ui.styles import Colors, Radius
+
             self.bg_rect_widget = QFrame(self)
             self.bg_rect_widget.setStyleSheet(
                 f"background-color: {Colors.SURFACE};"
                 f"border: 1px solid {Colors.ON_SURFACE_VARIANT};"
-                f"border-radius: {Radius.MD}px;"
+                f"border-radius: {Radius.MD}px;",
             )
             # Store margins from splitter edges (left, top, right, bottom)
             self.bg_rect_margin_left = -2
@@ -491,7 +509,9 @@ class DataWindow(QWidget):
         self.reference_channel_dlg.ref_ch_signal.connect(self.reference_change)
         self.reference_channel_dlg.unit_to_ru_signal.connect(self.unit_to_nm)
         self.reference_channel_dlg.unit_to_nm_signal.connect(self.unit_to_nm)
-        self.reference_channel_dlg.cycle_marker_style_signal.connect(self.cycle_marker_style_changed)
+        self.reference_channel_dlg.cycle_marker_style_signal.connect(
+            self.cycle_marker_style_changed,
+        )
         if self.data_source == "static":
             # Disable filter for static data by unchecking the filter checkbox
             self.reference_channel_dlg.ui.filt_en.setChecked(False)
@@ -508,8 +528,10 @@ class DataWindow(QWidget):
         self.full_segment_view.segment_signal.connect(self.update_segment)
 
         # Connect shift values signal to update display box
-        if hasattr(self.full_segment_view, 'shift_values_signal'):
-            self.full_segment_view.shift_values_signal.connect(self.update_shift_display_box)
+        if hasattr(self.full_segment_view, "shift_values_signal"):
+            self.full_segment_view.shift_values_signal.connect(
+                self.update_shift_display_box,
+            )
 
         # channel display options changed in full segment plot
         for ch in CH_LIST:
@@ -533,16 +555,24 @@ class DataWindow(QWidget):
                 getattr(self.ui, f"segment_{ch.upper()}").stateChanged.connect(
                     lambda state, cb_name=right_checkbox_name: (
                         getattr(self.ui, cb_name).blockSignals(True),
-                        getattr(self.ui, cb_name).setChecked(state == Qt.CheckState.Checked),
-                        getattr(self.ui, cb_name).blockSignals(False)
-                    )
+                        getattr(self.ui, cb_name).setChecked(
+                            state == Qt.CheckState.Checked,
+                        ),
+                        getattr(self.ui, cb_name).blockSignals(False),
+                    ),
                 )
                 getattr(self.ui, right_checkbox_name).stateChanged.connect(
                     lambda state, ch_name=ch: (
-                        getattr(self.ui, f"segment_{ch_name.upper()}").blockSignals(True),
-                        getattr(self.ui, f"segment_{ch_name.upper()}").setChecked(state == Qt.CheckState.Checked),
-                        getattr(self.ui, f"segment_{ch_name.upper()}").blockSignals(False)
-                    )
+                        getattr(self.ui, f"segment_{ch_name.upper()}").blockSignals(
+                            True,
+                        ),
+                        getattr(self.ui, f"segment_{ch_name.upper()}").setChecked(
+                            state == Qt.CheckState.Checked,
+                        ),
+                        getattr(self.ui, f"segment_{ch_name.upper()}").blockSignals(
+                            False,
+                        ),
+                    ),
                 )
 
         if isinstance(self.ui, Ui_Processing):
@@ -563,27 +593,30 @@ class DataWindow(QWidget):
         else:
             self.ui.new_segment_btn.clicked.connect(self.new_segment)
 
-        if isinstance(self.ui, Ui_Sensorgram) and hasattr(self.ui, 'reset_segment_btn'):
+        if isinstance(self.ui, Ui_Sensorgram) and hasattr(self.ui, "reset_segment_btn"):
             self.ui.reset_segment_btn.hide()
-        elif hasattr(self.ui, 'reset_segment_btn'):
+        elif hasattr(self.ui, "reset_segment_btn"):
             self.ui.reset_segment_btn.clicked.connect(self.reset_graphs)
 
         # clear graph button (only in sensorgram UI)
         if isinstance(self.ui, Ui_Sensorgram):
             # Connect sidebar Clear Graph button if it exists
-            if hasattr(self, 'clear_graph_btn_sidebar'):
+            if hasattr(self, "clear_graph_btn_sidebar"):
                 self.clear_graph_btn_sidebar.clicked.connect(self.reset_graphs)
 
             # Legacy buttons (hidden)
-            if hasattr(self.ui, 'clear_graph_btn'):
+            if hasattr(self.ui, "clear_graph_btn"):
                 self.ui.clear_graph_btn.clicked.connect(self.reset_graphs)
 
             # Connect Clear button in Sensorgram graph (top-left)
-            if hasattr(self.full_segment_view, 'clear_button') and self.full_segment_view.clear_button:
+            if (
+                hasattr(self.full_segment_view, "clear_button")
+                and self.full_segment_view.clear_button
+            ):
                 self.full_segment_view.clear_button.clicked.connect(self.reset_graphs)
 
             # Connect legend checkboxes in Cycle of Interest graph to sync with UI checkboxes
-            if hasattr(self.SOI_view, 'legend_checkboxes'):
+            if hasattr(self.SOI_view, "legend_checkboxes"):
                 for ch in CH_LIST:
                     if ch in self.SOI_view.legend_checkboxes:
                         # When legend checkbox changes, update the UI checkbox
@@ -594,19 +627,25 @@ class DataWindow(QWidget):
                         legend_cb.stateChanged.connect(
                             lambda state, ui_checkbox=ui_cb: (
                                 ui_checkbox.blockSignals(True),
-                                ui_checkbox.setChecked(state == Qt.CheckState.Checked.value),
-                                ui_checkbox.blockSignals(False)
-                            )
+                                ui_checkbox.setChecked(
+                                    state == Qt.CheckState.Checked.value,
+                                ),
+                                ui_checkbox.blockSignals(False),
+                            ),
                         )
 
                         # UI checkbox -> Legend checkbox (already connected via display_channel_changed)
 
             # Connect adjust margins button
-            if hasattr(self.ui, 'adjust_margins_btn'):
-                self.ui.adjust_margins_btn.clicked.connect(self.open_margin_adjust_dialog)
+            if hasattr(self.ui, "adjust_margins_btn"):
+                self.ui.adjust_margins_btn.clicked.connect(
+                    self.open_margin_adjust_dialog,
+                )
             # Connect adjust margins button
-            if hasattr(self.ui, 'adjust_margins_btn'):
-                self.ui.adjust_margins_btn.clicked.connect(self.open_margin_adjust_dialog)
+            if hasattr(self.ui, "adjust_margins_btn"):
+                self.ui.adjust_margins_btn.clicked.connect(
+                    self.open_margin_adjust_dialog,
+                )
 
         # open cycle table dialog button (only in sensorgram UI)
         if isinstance(self.ui, Ui_Sensorgram):
@@ -625,8 +664,14 @@ class DataWindow(QWidget):
             # Set up text input delegates with character limits for name and note columns
             text_delegate_name = TextInputDelegate(self.ui.data_table)
             text_delegate_note = TextInputDelegate(self.ui.data_table)
-            self.ui.data_table.setItemDelegateForColumn(0, text_delegate_name)  # Name column
-            self.ui.data_table.setItemDelegateForColumn(9, text_delegate_note)  # Note column
+            self.ui.data_table.setItemDelegateForColumn(
+                0,
+                text_delegate_name,
+            )  # Name column
+            self.ui.data_table.setItemDelegateForColumn(
+                9,
+                text_delegate_note,
+            )  # Note column
 
             # data table
             self.ui.data_table.cellDoubleClicked.connect(self.enter_edit_mode)
@@ -645,7 +690,7 @@ class DataWindow(QWidget):
             # Initialize table manager (handles table operations)
             self.table_manager = CycleTableManager(
                 table_widget=self.ui.data_table,
-                toggle_indicators=self.circles
+                toggle_indicators=self.circles,
             )
 
         # open the average channel and reference channel dialog
@@ -664,7 +709,7 @@ class DataWindow(QWidget):
             self.cycle_manager = CycleManager(
                 cycle_type_dropdown=self.ui.current_cycle_type,
                 cycle_time_dropdown=self.ui.current_cycle_time,
-                sensorgram_graph=self.full_segment_view
+                sensorgram_graph=self.full_segment_view,
             )
         else:
             # Sensorgram doesn't have cycle controls in UI
@@ -675,9 +720,11 @@ class DataWindow(QWidget):
 
         # live view and reset segment button if dynamic window, imports if static window
         if self.data_source == "dynamic" and isinstance(self.ui, Ui_Sensorgram):
-            self.ui.live_btn.setChecked(True)  # noqa: FBT003
+            self.ui.live_btn.setChecked(True)
             self.ui.live_btn.clicked.connect(self.toggle_view)
-            self.reference_channel_dlg.ui.export_data.clicked.connect(self.export_trigger)
+            self.reference_channel_dlg.ui.export_data.clicked.connect(
+                self.export_trigger,
+            )
 
         elif isinstance(self.ui, Ui_Processing):
             self.ui.export_raw_data_btn.clicked.connect(self.export_raw_data)
@@ -704,7 +751,7 @@ class DataWindow(QWidget):
                 "}"
                 "QPushButton:pressed {"
                 "  background: #0F5C26;"
-                "}"
+                "}",
             )
             # Position it near the export button
             raw_btn_geom = self.ui.export_raw_data_btn.geometry()
@@ -712,7 +759,7 @@ class DataWindow(QWidget):
                 raw_btn_geom.x() + 35,
                 raw_btn_geom.y(),
                 70,
-                30
+                30,
             )
             self.export_excel_btn.clicked.connect(self.export_to_excel)
 
@@ -732,7 +779,7 @@ class DataWindow(QWidget):
                     graphic_control_tab = self.sidebar.tabWidget.widget(i)
                     break
 
-            if graphic_control_tab and hasattr(self.ui, 'groupBox'):
+            if graphic_control_tab and hasattr(self.ui, "groupBox"):
                 # The tab content is wrapped in a QScrollArea
                 scroll_area = graphic_control_tab.findChild(QScrollArea)
                 if scroll_area:
@@ -767,8 +814,11 @@ class DataWindow(QWidget):
         # Add settings panel to Settings tab in sidebar
         if self.sidebar is not None:
             from widgets.settings_panel import SettingsPanel
+
             settings_panel = SettingsPanel()
-            settings_panel.adjust_margins_requested.connect(self.open_margin_adjust_dialog)
+            settings_panel.adjust_margins_requested.connect(
+                self.open_margin_adjust_dialog,
+            )
             settings_tab = self.sidebar.get_settings_tab()
             if settings_tab:
                 layout = settings_tab.layout()
@@ -785,6 +835,7 @@ class DataWindow(QWidget):
             # Add data export panel to Data tab (for sensorgram)
             if isinstance(self.ui, Ui_Sensorgram):
                 from widgets.data_panel import DataPanel
+
                 self.data_panel = DataPanel()
                 self.data_panel.export_triggered.connect(self.export_trigger)
                 self.data_panel.export_excel_triggered.connect(self.export_to_excel)
@@ -914,21 +965,26 @@ class DataWindow(QWidget):
         those problematic inline styles while preserving text colors.
         """
         # Fix channel checkboxes - clear background but keep text color
-        for checkbox_name in ['segment_A', 'segment_B', 'segment_C', 'segment_D']:
+        for checkbox_name in ["segment_A", "segment_B", "segment_C", "segment_D"]:
             if hasattr(self.ui, checkbox_name):
                 checkbox = getattr(self.ui, checkbox_name)
                 # Get current text color from stylesheet
                 current_style = checkbox.styleSheet()
-                if 'color:' in current_style:
+                if "color:" in current_style:
                     # Extract just the color line
                     import re
-                    color_match = re.search(r'color:\s*([^;]+);', current_style)
+
+                    color_match = re.search(r"color:\s*([^;]+);", current_style)
                     if color_match:
                         color_value = color_match.group(1).strip()
                         # Set only text color, let global theme handle the rest
-                        checkbox.setStyleSheet(f"QCheckBox {{ color: {color_value}; background-color: transparent; }}")
+                        checkbox.setStyleSheet(
+                            f"QCheckBox {{ color: {color_value}; background-color: transparent; }}",
+                        )
                 else:
-                    checkbox.setStyleSheet("QCheckBox { background-color: transparent; }")
+                    checkbox.setStyleSheet(
+                        "QCheckBox { background-color: transparent; }",
+                    )
 
     @Slot()
     def toggle_table_style(self: Self) -> None:
@@ -945,7 +1001,7 @@ class DataWindow(QWidget):
 
     def _position_bg_rect(self: Self) -> None:
         """Position and size the background rectangle to match graph area with margins."""
-        if hasattr(self, 'bg_rect_widget') and hasattr(self, 'graph_splitter'):
+        if hasattr(self, "bg_rect_widget") and hasattr(self, "graph_splitter"):
             # Get splitter's geometry in DataWindow's coordinate space
             splitter_pos = self.graph_splitter.pos()
             splitter_width = self.graph_splitter.width()
@@ -954,8 +1010,12 @@ class DataWindow(QWidget):
             # Calculate rectangle geometry based on splitter size minus margins
             rect_x = splitter_pos.x() + self.bg_rect_margin_left
             rect_y = splitter_pos.y() + self.bg_rect_margin_top
-            rect_width = splitter_width - self.bg_rect_margin_left - self.bg_rect_margin_right
-            rect_height = splitter_height - self.bg_rect_margin_top - self.bg_rect_margin_bottom
+            rect_width = (
+                splitter_width - self.bg_rect_margin_left - self.bg_rect_margin_right
+            )
+            rect_height = (
+                splitter_height - self.bg_rect_margin_top - self.bg_rect_margin_bottom
+            )
 
             # Set geometry (position and size) in DataWindow coordinate space
             self.bg_rect_widget.setGeometry(rect_x, rect_y, rect_width, rect_height)
@@ -968,26 +1028,30 @@ class DataWindow(QWidget):
 
     def _position_channel_overlay(self: Self) -> None:
         """Keep the channel display block aligned with the sensorgram graph edge."""
-        if not hasattr(self, 'channel_overlay'):
+        if not hasattr(self, "channel_overlay"):
             return
 
-        if not hasattr(self, 'sensorgram_frame') or not hasattr(self, 'full_segment_view'):
+        if not hasattr(self, "sensorgram_frame") or not hasattr(
+            self,
+            "full_segment_view",
+        ):
             return
 
         # Map graph's origin into the sensorgram frame so we can align precisely
         top_left = self.full_segment_view.mapTo(self.sensorgram_frame, QPoint(0, 0))
-        x_offset = getattr(self, '_channel_overlay_left_offset', 0)
-        y_offset = getattr(self, '_channel_overlay_top_offset', 0)
+        x_offset = getattr(self, "_channel_overlay_left_offset", 0)
+        y_offset = getattr(self, "_channel_overlay_top_offset", 0)
         self.channel_overlay.move(top_left.x() + x_offset, top_left.y() + y_offset)
         self.channel_overlay.raise_()
 
     def eventFilter(self, obj, event):
         """Handle double-click on splitter handle to swap graph ratios and splitter resize."""
-        from PySide6.QtCore import QEvent
         import time
 
+        from PySide6.QtCore import QEvent
+
         # Check if double-click on splitter or its handle
-        if hasattr(self, 'graph_splitter'):
+        if hasattr(self, "graph_splitter"):
             is_splitter = obj == self.graph_splitter
             is_handle = obj == self.graph_splitter.handle(1)
 
@@ -1003,7 +1067,7 @@ class DataWindow(QWidget):
                     current_time = time.time()
 
                     # Initialize last_click_time if it doesn't exist
-                    if not hasattr(self, '_last_click_time'):
+                    if not hasattr(self, "_last_click_time"):
                         self._last_click_time = 0
 
                     # Check if this is a double-click (< 500ms between clicks)
@@ -1013,14 +1077,13 @@ class DataWindow(QWidget):
                         self._swap_graph_ratios()
                         self._last_click_time = 0  # Reset to prevent triple-click
                         return True
-                    else:
-                        self._last_click_time = current_time
+                    self._last_click_time = current_time
 
         return super().eventFilter(obj, event)
 
     def _swap_graph_ratios(self):
         """Swap graph size ratios: 30/70 ↔ 70/30."""
-        if not hasattr(self, 'graph_splitter'):
+        if not hasattr(self, "graph_splitter"):
             return
 
         self._detail_focused = not self._detail_focused
@@ -1100,7 +1163,7 @@ class DataWindow(QWidget):
                 if self.exp_clock_raw == 0:
                     self.ui.exp_clock.setText("00h 00m 00s")
                     # Also update the one in Cycle Settings
-                    if hasattr(self.ui, 'exp_clock_settings'):
+                    if hasattr(self.ui, "exp_clock_settings"):
                         self.ui.exp_clock_settings.setText("00h 00m 00s")
                 else:
                     time_str = (
@@ -1109,10 +1172,10 @@ class DataWindow(QWidget):
                         f"{int(self.exp_clock_raw % 60):02d}s"
                     )
                     # Only update if the widget exists
-                    if hasattr(self.ui, 'exp_clock'):
+                    if hasattr(self.ui, "exp_clock"):
                         self.ui.exp_clock.setText(time_str)
                     # Also update the one in Cycle Settings
-                    if hasattr(self.ui, 'exp_clock_settings'):
+                    if hasattr(self.ui, "exp_clock_settings"):
                         self.ui.exp_clock_settings.setText(time_str)
                 if (self.segment_edit is not None or self.viewing) and isinstance(
                     self.ui,
@@ -1199,7 +1262,6 @@ class DataWindow(QWidget):
     def update_shift_display_box(self: Self, shift_data: dict) -> None:
         """Update the shift display box with shift values."""
         # shift_display_box removed from UI - status now in Flow tab sidebar
-        pass
 
     def update_left(
         self: Self,
@@ -1274,16 +1336,16 @@ class DataWindow(QWidget):
         self.full_segment_view.hide_cycle_time_region()
         self.full_segment_view.fixed_window_active = False
         self.SOI_view.fixed_window_active = False
-        self.full_segment_view.plot.enableAutoRange(axis='x', enable=True)
-        self.SOI_view.plot.enableAutoRange(axis='x', enable=True)
+        self.full_segment_view.plot.enableAutoRange(axis="x", enable=True)
+        self.SOI_view.plot.enableAutoRange(axis="x", enable=True)
 
         if self.segment_edit is not None:
             self.reassert_row(self.segment_edit)
         self.segment_edit = None
         self.viewing = False
         if isinstance(self.ui, Ui_Processing):
-            self.ui.reference_channel_btn.setEnabled(True)  # noqa: FBT003
-            self.ui.curr_seg_box.setEnabled(True)  # noqa: FBT003
+            self.ui.reference_channel_btn.setEnabled(True)
+            self.ui.curr_seg_box.setEnabled(True)
         self.full_segment_view.movable_cursors(state=True)
         self.cursors_text_edit(state=True)
         self._get_table_widget().clearSelection()
@@ -1342,8 +1404,8 @@ class DataWindow(QWidget):
         # Update cursor labels with time values
         left_time = self.full_segment_view.left_cursor_pos
         right_time = self.full_segment_view.right_cursor_pos
-        self.full_segment_view.left_cursor.label.setFormat(f'Start\n{left_time:.2f}s')
-        self.full_segment_view.right_cursor.label.setFormat(f'Stop\n{right_time:.2f}s')
+        self.full_segment_view.left_cursor.label.setFormat(f"Start\n{left_time:.2f}s")
+        self.full_segment_view.right_cursor.label.setFormat(f"Stop\n{right_time:.2f}s")
 
         if not self.ui.left_cursor_time.hasFocus():
             self.ui.left_cursor_time.setText(
@@ -1444,12 +1506,14 @@ class DataWindow(QWidget):
                     # Check if a cycle is already running (fixed window is active)
                     cycle_already_running = (
                         self.data_source == "dynamic"
-                        and hasattr(self, 'full_segment_view')
+                        and hasattr(self, "full_segment_view")
                         and self.full_segment_view.fixed_window_active
                     )
 
                     if cycle_already_running:
-                        logger.info("⚠️ Cycle already running - completing and saving current cycle first")
+                        logger.info(
+                            "⚠️ Cycle already running - completing and saving current cycle first",
+                        )
 
                         # Save the currently running cycle with its current end time
                         current_time = self.full_segment_view.get_time()
@@ -1458,7 +1522,7 @@ class DataWindow(QWidget):
                             self.current_segment.start,
                             self.current_segment.end,
                             update=True,
-                            force=True
+                            force=True,
                         )
 
                         # Save the old segment
@@ -1468,24 +1532,32 @@ class DataWindow(QWidget):
                         # Insert old segment into table
                         self._insert_segment_into_table(old_segment, old_row)
                         self.saved_segments.insert(old_row, old_segment)
-                        logger.info(f"✓ Previous cycle saved: {old_segment.cycle_type} at row {old_row}")
+                        logger.info(
+                            f"✓ Previous cycle saved: {old_segment.cycle_type} at row {old_row}",
+                        )
 
                         # Create new segment at current time for the new cycle
                         self.seg_count += 1
                         self.current_segment = Segment(
                             self.seg_count,
                             current_time,
-                            current_time + 2
+                            current_time + 2,
                         )
                         self.full_segment_view.move_both_cursors(
                             self.current_segment.start,
                             self.current_segment.end,
                         )
-                        logger.info(f"✓ New segment created for new cycle: ID {self.seg_count}")
+                        logger.info(
+                            f"✓ New segment created for new cycle: ID {self.seg_count}",
+                        )
 
                     # Set cycle type and time from cycle manager for the current/new segment
-                    self.current_segment.cycle_type = self.cycle_manager.get_current_type()
-                    self.current_segment.cycle_time = self.cycle_manager.get_current_time_minutes()
+                    self.current_segment.cycle_type = (
+                        self.cycle_manager.get_current_type()
+                    )
+                    self.current_segment.cycle_time = (
+                        self.cycle_manager.get_current_time_minutes()
+                    )
 
                     seg = self.current_segment
                     row = len(self.saved_segments)
@@ -1495,7 +1567,9 @@ class DataWindow(QWidget):
 
                     # Apply fixed window and gray zone when cycle starts
                     if self.data_source == "dynamic":
-                        cycle_time_minutes = self.cycle_manager.get_current_time_minutes()
+                        cycle_time_minutes = (
+                            self.cycle_manager.get_current_time_minutes()
+                        )
                         self._apply_cycle_fixed_window(cycle_time_minutes)
                         self.cycle_manager.reset_to_default()
 
@@ -1552,7 +1626,9 @@ class DataWindow(QWidget):
             table.blockSignals(False)
         except Exception as e:
             logger.error(f"Error reasserting table row {row}: {e}")
-            self._get_table_widget().blockSignals(False)  # Ensure signals are re-enabled
+            self._get_table_widget().blockSignals(
+                False,
+            )  # Ensure signals are re-enabled
 
     def delete_row(self: Self, *, first_available: bool = False) -> None:
         """Delete a row in the data cycle table."""
@@ -1565,7 +1641,7 @@ class DataWindow(QWidget):
         if first_available:
             self.deleted_segment = self._get_table_manager().delete_row(
                 saved_segments=self.saved_segments,
-                first_available=True
+                first_available=True,
             )
         else:
             if self.viewing:
@@ -1577,7 +1653,7 @@ class DataWindow(QWidget):
 
             self.deleted_segment = self._get_table_manager().delete_row(
                 row=row,
-                saved_segments=self.saved_segments
+                saved_segments=self.saved_segments,
             )
 
             if new_seg_trigger and not self.saving:
@@ -1594,21 +1670,17 @@ class DataWindow(QWidget):
         self.table_dialog.raise_()
         self.table_dialog.activateWindow()
 
-
-
     def _get_table_widget(self):
         """Get the appropriate table widget based on UI type."""
         if isinstance(self.ui, Ui_Processing):
             return self.ui.data_table
-        else:
-            return self.table_dialog.ui.data_table
+        return self.table_dialog.ui.data_table
 
     def _get_table_manager(self):
         """Get the appropriate table manager based on UI type."""
         if isinstance(self.ui, Ui_Processing):
             return self.table_manager
-        else:
-            return self.table_dialog.table_manager
+        return self.table_dialog.table_manager
 
     def reset_graphs(self: Self, *, no_msg: bool = False) -> None:
         """Reset the graphs."""
@@ -1646,27 +1718,31 @@ class DataWindow(QWidget):
 
     def open_margin_adjust_dialog(self: Self) -> None:
         """Open dialog to adjust graph margins."""
-        if not hasattr(self, 'bg_rect_widget'):
+        if not hasattr(self, "bg_rect_widget"):
             from widgets.message import show_message
-            show_message(msg_type="Information", msg="Margin adjustment is only available in Sensorgram view.")
+
+            show_message(
+                msg_type="Information",
+                msg="Margin adjustment is only available in Sensorgram view.",
+            )
             return
 
         from widgets.margin_adjust_dialog import MarginAdjustDialog
 
         # Get current margin values
         current_margins = {
-            'left': self.bg_rect_margin_left,
-            'top': self.bg_rect_margin_top,
-            'right': self.bg_rect_margin_right,
-            'bottom': self.bg_rect_margin_bottom,
-            'radius': self.bg_rect_radius
+            "left": self.bg_rect_margin_left,
+            "top": self.bg_rect_margin_top,
+            "right": self.bg_rect_margin_right,
+            "bottom": self.bg_rect_margin_bottom,
+            "radius": self.bg_rect_radius,
         }
 
         # Store original values in case of cancel
         self._original_margins = current_margins.copy()
 
         # Create and show dialog (non-blocking)
-        if hasattr(self, '_margin_dialog') and self._margin_dialog:
+        if hasattr(self, "_margin_dialog") and self._margin_dialog:
             # Close existing dialog if open
             self._margin_dialog.close()
 
@@ -1675,12 +1751,12 @@ class DataWindow(QWidget):
 
         # Handle cancel/close to revert
         def on_rejected():
-            if hasattr(self, '_original_margins'):
+            if hasattr(self, "_original_margins"):
                 self.apply_margin_changes(self._original_margins)
                 del self._original_margins
 
         def on_accepted():
-            if hasattr(self, '_original_margins'):
+            if hasattr(self, "_original_margins"):
                 del self._original_margins
 
         self._margin_dialog.rejected.connect(on_rejected)
@@ -1692,24 +1768,26 @@ class DataWindow(QWidget):
 
     def apply_margin_changes(self: Self, margins: dict) -> None:
         """Apply new margin values to background rectangle."""
-        self.bg_rect_margin_left = margins['left']
-        self.bg_rect_margin_top = margins['top']
-        self.bg_rect_margin_right = margins['right']
-        self.bg_rect_margin_bottom = margins['bottom']
-        self.bg_rect_radius = margins['radius']
+        self.bg_rect_margin_left = margins["left"]
+        self.bg_rect_margin_top = margins["top"]
+        self.bg_rect_margin_right = margins["right"]
+        self.bg_rect_margin_bottom = margins["bottom"]
+        self.bg_rect_radius = margins["radius"]
 
         # Update border radius styling
-        if hasattr(self, 'bg_rect_widget'):
+        if hasattr(self, "bg_rect_widget"):
             self.bg_rect_widget.setStyleSheet(
                 f"background-color: rgb(255, 255, 255);"
                 f"border: 1px solid rgb(100, 100, 100);"
-                f"border-radius: {self.bg_rect_radius}px;"
+                f"border-radius: {self.bg_rect_radius}px;",
             )
 
         # Reposition rectangle with new margins
         self._position_bg_rect()
 
-        logger.debug(f"Applied new margins: L={margins['left']}, T={margins['top']}, R={margins['right']}, B={margins['bottom']}, Radius={margins['radius']}")
+        logger.debug(
+            f"Applied new margins: L={margins['left']}, T={margins['top']}, R={margins['right']}, B={margins['bottom']}, Radius={margins['radius']}",
+        )
 
     def reference_change(self: Self, ref_ch: str) -> None:
         """Change the reference channel."""
@@ -1730,15 +1808,15 @@ class DataWindow(QWidget):
     def set_reference(self: Self, ch: str | None) -> None:
         """Set the reference channel."""
         if ch == "a":
-            self.reference_channel_dlg.ui.channelA.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelA.setChecked(True)
         elif ch == "b":
-            self.reference_channel_dlg.ui.channelB.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelB.setChecked(True)
         elif ch == "c":
-            self.reference_channel_dlg.ui.channelC.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelC.setChecked(True)
         elif ch == "d":
-            self.reference_channel_dlg.ui.channelD.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.channelD.setChecked(True)
         else:
-            self.reference_channel_dlg.ui.noRef.setChecked(True)  # noqa: FBT003
+            self.reference_channel_dlg.ui.noRef.setChecked(True)
 
     def take_sensorgram_controls_panel(self) -> QWidget | None:
         """Detach the right-hand sensorgram controls so they can live in the sidebar."""
@@ -1760,7 +1838,11 @@ class DataWindow(QWidget):
 
     def setup(self: Self) -> None:
         """Set up the widget with master-detail layout (30% overview / 70% detail)."""
-        title = "Full Experiment Timeline" if self.data_source == "dynamic" else "Data Processing"
+        title = (
+            "Full Experiment Timeline"
+            if self.data_source == "dynamic"
+            else "Data Processing"
+        )
 
         # Create modern graph containers with Rev 1 styling
         from widgets.graph_components import GraphContainer
@@ -1768,23 +1850,39 @@ class DataWindow(QWidget):
         # Top graph (Overview) - 30%
         self.sensorgram_frame = GraphContainer(title, height=200, show_delta_spr=False)
         self.sensorgram_frame.setMinimumHeight(150)
-        self.sensorgram_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.sensorgram_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
 
         # Create graph and embed it
         self.full_segment_view = SensorgramGraph(title, show_title=False)
         self.full_segment_view.setMinimumHeight(150)
-        self.full_segment_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.full_segment_view.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self.sensorgram_frame.set_graph_widget(self.full_segment_view)
 
         # Bottom graph (Cycle of Interest) - 70%
-        self.soi_frame = GraphContainer("Cycle of Interest", height=400, show_delta_spr=True)
+        self.soi_frame = GraphContainer(
+            "Cycle of Interest",
+            height=400,
+            show_delta_spr=True,
+        )
         self.soi_frame.setMinimumHeight(200)
-        self.soi_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.soi_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
 
         # Create graph and embed it
         self.SOI_view = SegmentGraph("Cycle of Interest", self.unit, show_title=False)
         self.SOI_view.setMinimumHeight(200)
-        self.SOI_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.SOI_view.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self.soi_frame.set_graph_widget(self.SOI_view)
 
         # Create vertical splitter for master-detail layout with modern grayscale styling
@@ -1814,7 +1912,9 @@ class DataWindow(QWidget):
         """)
 
         # Track layout mode for ratio swapping
-        self._detail_focused = True  # True = 30/70 (detail gets 70%), False = 70/30 (overview gets 70%)
+        self._detail_focused = (
+            True  # True = 30/70 (detail gets 70%), False = 70/30 (overview gets 70%)
+        )
 
         # Set proportions: 3 parts overview, 7 parts detail (30%/70%)
         self.graph_splitter.setStretchFactor(0, 3)
@@ -1824,15 +1924,16 @@ class DataWindow(QWidget):
         self.graph_splitter.setHandleWidth(8)
 
         # Make splitter more responsive
-        self.graph_splitter.setChildrenCollapsible(False)  # Prevent graphs from collapsing completely
+        self.graph_splitter.setChildrenCollapsible(
+            False,
+        )  # Prevent graphs from collapsing completely
 
         # Configure the splitter handle to capture events
         handle = self.graph_splitter.handle(1)
         handle.setEnabled(True)
         handle.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         handle.setToolTip(
-            "Drag to resize graphs\n"
-            "Double-click to swap sizes (20/80 ↔ 80/20)"
+            "Drag to resize graphs\nDouble-click to swap sizes (20/80 ↔ 80/20)",
         )
 
         # Install event filter on BOTH handle and splitter to catch double-click
@@ -1846,10 +1947,10 @@ class DataWindow(QWidget):
         logger.debug("Event filter installed on splitter and handle")
 
         # Add splitter to UI - handle both UI types (Sensorgram and Processing)
-        if hasattr(self.ui, 'displays'):
+        if hasattr(self.ui, "displays"):
             # Ui_Sensorgram uses 'displays' layout
             target_layout = self.ui.displays
-        elif hasattr(self.ui, 'verticalLayout_5'):
+        elif hasattr(self.ui, "verticalLayout_5"):
             # Ui_Processing uses 'verticalLayout_5'
             target_layout = self.ui.verticalLayout_5
         else:
@@ -1868,21 +1969,21 @@ class DataWindow(QWidget):
         is_sensorgram = isinstance(self.ui, Ui_Sensorgram)
         # shift_display_box removed from UI
 
-        if is_sensorgram and hasattr(self.ui, 'groupBox'):
+        if is_sensorgram and hasattr(self.ui, "groupBox"):
             # Hide the groupBox since we now have legend checkboxes in Cycle of Interest
             self.ui.groupBox.setVisible(False)
 
             # Hide the standalone Clear Graph button since it's in the groupBox
-            if hasattr(self.ui, 'clear_graph_btn'):
+            if hasattr(self.ui, "clear_graph_btn"):
                 self.ui.clear_graph_btn.hide()
 
-            if hasattr(self.ui, 'groupBox_display_right'):
+            if hasattr(self.ui, "groupBox_display_right"):
                 self.ui.groupBox_display_right.setVisible(False)
 
         target_layout.addWidget(self.graph_splitter)
 
         # Position background rectangle after splitter is in layout
-        if hasattr(self, 'bg_rect_widget'):
+        if hasattr(self, "bg_rect_widget"):
             # Keep as child of DataWindow, position will be calculated relative to splitter
             QTimer.singleShot(0, self._position_bg_rect)
         self._update_display_group_width()
@@ -1892,12 +1993,12 @@ class DataWindow(QWidget):
         if len(error_channels) == 0:
             for ch in CH_LIST:
                 getattr(self.ui, f"segment_{ch.upper()}").setEnabled(
-                    True,  # noqa: FBT003
+                    True,
                 )
         else:
             for ch in error_channels:
                 getattr(self.ui, f"segment_{ch.upper()}").setEnabled(
-                    False,  # noqa: FBT003
+                    False,
                 )
 
     def unit_to_nm(self: Self) -> None:
@@ -1928,12 +2029,12 @@ class DataWindow(QWidget):
         """Clamp the display checkbox group to at most half the graph width."""
         if not isinstance(self.ui, Ui_Sensorgram):
             return
-        if not hasattr(self, 'graph_splitter'):
+        if not hasattr(self, "graph_splitter"):
             return
         max_width = max(250, int(self.graph_splitter.width() * 0.5))
         self.ui.groupBox.setMaximumWidth(max_width)
 
-    def resizeEvent(self: Self, event: QResizeEvent) -> None:  # noqa: D401
+    def resizeEvent(self: Self, event: QResizeEvent) -> None:
         """Ensure auxiliary widgets react to window resizes."""
         super().resizeEvent(event)
         self._update_display_group_width()
@@ -2015,8 +2116,8 @@ class DataWindow(QWidget):
             self.viewing = True
             self.full_segment_view.block_updates = True
             if isinstance(self.ui, Ui_Processing):
-                self.ui.curr_seg_box.setEnabled(False)  # noqa: FBT003
-                self.ui.reference_channel_btn.setEnabled(False)  # noqa: FBT003
+                self.ui.curr_seg_box.setEnabled(False)
+                self.ui.reference_channel_btn.setEnabled(False)
             row: int = self._get_table_widget().currentRow()
             logger.debug(f"row = {row}")
             if self.data_source == "dynamic":
@@ -2052,7 +2153,11 @@ class DataWindow(QWidget):
 
             # Show cycle type and time in dropdowns using cycle_manager
             try:
-                cycle_type_text = self.current_segment.cycle_type if self.current_segment.cycle_type else "Auto-read"
+                cycle_type_text = (
+                    self.current_segment.cycle_type
+                    if self.current_segment.cycle_type
+                    else "Auto-read"
+                )
                 cycle_time = self.current_segment.cycle_time
                 self.cycle_manager.set_cycle_info(cycle_type_text, cycle_time)
             except Exception as e:
@@ -2063,8 +2168,8 @@ class DataWindow(QWidget):
         """Enter edit mode."""
         if self._get_table_widget().currentRow() > -1 and self.segment_edit is None:
             if isinstance(self.ui, Ui_Processing):
-                self.ui.curr_seg_box.setEnabled(True)  # noqa: FBT003
-                self.ui.reference_channel_btn.setEnabled(True)  # noqa: FBT003
+                self.ui.curr_seg_box.setEnabled(True)
+                self.ui.reference_channel_btn.setEnabled(True)
             self.viewing = False
             if self.data_source == "dynamic":
                 self.set_live(on=False)
@@ -2200,7 +2305,7 @@ class DataWindow(QWidget):
 
                     columns = ["GraphAll_x", "GraphAll_y"]
                     # Read entire CSV at once (much faster than row-by-row)
-                    df = pd.read_csv(file, sep='\t', names=columns, skiprows=1)
+                    df = pd.read_csv(file, sep="\t", names=columns, skiprows=1)
 
                     # Convert to numpy arrays
                     times = df["GraphAll_x"].values.astype(float)
@@ -2214,10 +2319,12 @@ class DataWindow(QWidget):
                         ch_intensities = intensities[i::4]
 
                         self.data["lambda_times"][ch] = np.append(
-                            self.data["lambda_times"][ch], ch_times
+                            self.data["lambda_times"][ch],
+                            ch_times,
                         )
                         self.data["lambda_values"][ch] = np.append(
-                            self.data["lambda_values"][ch], ch_intensities
+                            self.data["lambda_values"][ch],
+                            ch_intensities,
                         )
 
                 else:
@@ -2225,62 +2332,81 @@ class DataWindow(QWidget):
                     import pandas as pd
 
                     columns = [
-                        "Time_A", "Channel_A",
-                        "Time_B", "Channel_B",
-                        "Time_C", "Channel_C",
-                        "Time_D", "Channel_D",
+                        "Time_A",
+                        "Channel_A",
+                        "Time_B",
+                        "Channel_B",
+                        "Time_C",
+                        "Channel_C",
+                        "Time_D",
+                        "Channel_D",
                     ]
 
                     # Read CSV with pandas (much faster)
-                    df = pd.read_csv(file, sep='\t', names=columns)
+                    df = pd.read_csv(file, sep="\t", names=columns)
 
                     # Extract reference values from first row if present
                     references = None
                     try:
                         # Check if first row contains reference values (non-numeric)
                         first_row = df.iloc[0]
-                        if pd.isna(first_row['Time_A']) or not isinstance(first_row['Time_A'], (int, float)):
+                        if pd.isna(first_row["Time_A"]) or not isinstance(
+                            first_row["Time_A"],
+                            (int, float),
+                        ):
                             # Has header/reference row
                             references = [
-                                float(first_row[f'Channel_{ch}']) if pd.notna(first_row[f'Channel_{ch}']) else 0.0
-                                for ch in ['A', 'B', 'C', 'D']
+                                float(first_row[f"Channel_{ch}"])
+                                if pd.notna(first_row[f"Channel_{ch}"])
+                                else 0.0
+                                for ch in ["A", "B", "C", "D"]
                             ]
                             df = df.iloc[1:]  # Skip reference row
                     except (ValueError, KeyError):
                         pass
 
                     # Convert to numeric
-                    df = df.apply(pd.to_numeric, errors='coerce')
+                    df = df.apply(pd.to_numeric, errors="coerce")
 
                     # Apply reference conversion if needed (RU to nm)
                     if references:
-                        for i, ch in enumerate(['A', 'B', 'C', 'D']):
-                            df[f'Channel_{ch}'] = df[f'Channel_{ch}'] / 355 + references[i]
+                        for i, ch in enumerate(["A", "B", "C", "D"]):
+                            df[f"Channel_{ch}"] = (
+                                df[f"Channel_{ch}"] / 355 + references[i]
+                            )
 
                     # Append to data arrays
                     self.data["lambda_times"]["a"] = np.append(
-                        self.data["lambda_times"]["a"], df["Time_A"].values
+                        self.data["lambda_times"]["a"],
+                        df["Time_A"].values,
                     )
                     self.data["lambda_values"]["a"] = np.append(
-                        self.data["lambda_values"]["a"], df["Channel_A"].values
+                        self.data["lambda_values"]["a"],
+                        df["Channel_A"].values,
                     )
                     self.data["lambda_times"]["b"] = np.append(
-                        self.data["lambda_times"]["b"], df["Time_B"].values
+                        self.data["lambda_times"]["b"],
+                        df["Time_B"].values,
                     )
                     self.data["lambda_values"]["b"] = np.append(
-                        self.data["lambda_values"]["b"], df["Channel_B"].values
+                        self.data["lambda_values"]["b"],
+                        df["Channel_B"].values,
                     )
                     self.data["lambda_times"]["c"] = np.append(
-                        self.data["lambda_times"]["c"], df["Time_C"].values
+                        self.data["lambda_times"]["c"],
+                        df["Time_C"].values,
                     )
                     self.data["lambda_values"]["c"] = np.append(
-                        self.data["lambda_values"]["c"], df["Channel_C"].values
+                        self.data["lambda_values"]["c"],
+                        df["Channel_C"].values,
                     )
                     self.data["lambda_times"]["d"] = np.append(
-                        self.data["lambda_times"]["d"], df["Time_D"].values
+                        self.data["lambda_times"]["d"],
+                        df["Time_D"].values,
                     )
                     self.data["lambda_values"]["d"] = np.append(
-                        self.data["lambda_values"]["d"], df["Channel_D"].values
+                        self.data["lambda_values"]["d"],
+                        df["Channel_D"].values,
                     )
 
                 self.data["filt"] = False
@@ -2338,13 +2464,13 @@ class DataWindow(QWidget):
                     _, row = row_dict
                     self.current_segment = Segment(
                         i,
-                        float(row['start']),
-                        float(row['end']),
+                        float(row["start"]),
+                        float(row["end"]),
                     )
                     self.current_segment.add_info(
-                        {"name": str(row['name']), "note": str(row['note'])},
+                        {"name": str(row["name"]), "note": str(row["note"])},
                     )
-                    ref_ch = row['ref_ch']
+                    ref_ch = row["ref_ch"]
                     if ref_ch in {"", "None", None}:
                         ref_ch = None
                     self.current_segment.add_data(
@@ -2353,7 +2479,9 @@ class DataWindow(QWidget):
                         ref_ch,
                     )
                     # Set cycle type from imported data
-                    self.current_segment.cycle_type = str(row.get('cycle_type', 'Auto-read'))
+                    self.current_segment.cycle_type = str(
+                        row.get("cycle_type", "Auto-read"),
+                    )
                     self.save_segment()
 
                 logger.info(f"Successfully imported {len(imported_df)} segments")
@@ -2427,7 +2555,9 @@ class DataWindow(QWidget):
                         logger.error("Cannot export: no data in lambda_values")
                         return
                     reference_index = min(reference_index, min_array_len - 1)
-                    logger.debug(f"Export reference index: {reference_index} (min array length: {min_array_len})")
+                    logger.debug(
+                        f"Export reference index: {reference_index} (min array length: {min_array_len})",
+                    )
                     references = [l_val_data[ch][reference_index] for ch in CH_LIST]
 
                     row_count = min(len(x) for x in l_time_data.values())
@@ -2445,15 +2575,27 @@ class DataWindow(QWidget):
                     # Prepare data dictionary
                     data_dict = {}
                     for i, ch in enumerate(CH_LIST):
-                        data_dict[f"X_RawData{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                        data_dict[f"X_RawData{ch.upper()}"] = np.round(
+                            l_time_data[ch][:row_count],
+                            4,
+                        )
                         # Convert wavelength to shift (nm) using reference
                         values = l_val_data[ch][:row_count]
-                        data_dict[f"Y_RawData{ch.upper()}"] = np.round((values - references[i]) * 355, 4)
+                        data_dict[f"Y_RawData{ch.upper()}"] = np.round(
+                            (values - references[i]) * 355,
+                            4,
+                        )
 
                     # Create DataFrame and write to CSV
                     df = pd.DataFrame(data_dict)
                     df.replace({np.nan: None}, inplace=True)
-                    df.to_csv(txtfile, sep='\t', index=False, header=False, encoding='utf-8')
+                    df.to_csv(
+                        txtfile,
+                        sep="\t",
+                        index=False,
+                        header=False,
+                        encoding="utf-8",
+                    )
 
             if self.data["filt"]:
                 full_file = f"{preset_dir} Filtered Data.txt"
@@ -2492,13 +2634,25 @@ class DataWindow(QWidget):
                         # Build DataFrame for vectorized CSV writing
                         data_dict = {}
                         for ch in CH_LIST:
-                            data_dict[f"X_Data{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
-                            data_dict[f"Y_Data{ch.upper()}"] = np.round(l_val_data[ch][:row_count], 4)
+                            data_dict[f"X_Data{ch.upper()}"] = np.round(
+                                l_time_data[ch][:row_count],
+                                4,
+                            )
+                            data_dict[f"Y_Data{ch.upper()}"] = np.round(
+                                l_val_data[ch][:row_count],
+                                4,
+                            )
 
                         # Create DataFrame and write to CSV
                         df = pd.DataFrame(data_dict)
                         df.replace({np.nan: None}, inplace=True)
-                        df.to_csv(txtfile, sep='\t', index=False, header=False, encoding='utf-8')
+                        df.to_csv(
+                            txtfile,
+                            sep="\t",
+                            index=False,
+                            header=False,
+                            encoding="utf-8",
+                        )
             if error:
                 self.export_error_signal.emit()
             elif not preset:
@@ -2527,8 +2681,8 @@ class DataWindow(QWidget):
                 return  # User cancelled
 
             # Ensure .xlsx extension
-            if not file_name.endswith('.xlsx'):
-                file_name += '.xlsx'
+            if not file_name.endswith(".xlsx"):
+                file_name += ".xlsx"
 
             # Prepare data from existing data structure
             l_val_data = deepcopy(self.data["lambda_values"])
@@ -2548,21 +2702,33 @@ class DataWindow(QWidget):
 
             # Create DataFrame for raw data
             raw_data = {
-                'Time_A (s)': [round(l_time_data["a"][i], 4) for i in range(row_count)],
-                'Channel_A (RU)': [round((l_val_data["a"][i] - references[0]) * 355, 4) for i in range(row_count)],
-                'Time_B (s)': [round(l_time_data["b"][i], 4) for i in range(row_count)],
-                'Channel_B (RU)': [round((l_val_data["b"][i] - references[1]) * 355, 4) for i in range(row_count)],
-                'Time_C (s)': [round(l_time_data["c"][i], 4) for i in range(row_count)],
-                'Channel_C (RU)': [round((l_val_data["c"][i] - references[2]) * 355, 4) for i in range(row_count)],
-                'Time_D (s)': [round(l_time_data["d"][i], 4) for i in range(row_count)],
-                'Channel_D (RU)': [round((l_val_data["d"][i] - references[3]) * 355, 4) for i in range(row_count)],
+                "Time_A (s)": [round(l_time_data["a"][i], 4) for i in range(row_count)],
+                "Channel_A (RU)": [
+                    round((l_val_data["a"][i] - references[0]) * 355, 4)
+                    for i in range(row_count)
+                ],
+                "Time_B (s)": [round(l_time_data["b"][i], 4) for i in range(row_count)],
+                "Channel_B (RU)": [
+                    round((l_val_data["b"][i] - references[1]) * 355, 4)
+                    for i in range(row_count)
+                ],
+                "Time_C (s)": [round(l_time_data["c"][i], 4) for i in range(row_count)],
+                "Channel_C (RU)": [
+                    round((l_val_data["c"][i] - references[2]) * 355, 4)
+                    for i in range(row_count)
+                ],
+                "Time_D (s)": [round(l_time_data["d"][i], 4) for i in range(row_count)],
+                "Channel_D (RU)": [
+                    round((l_val_data["d"][i] - references[3]) * 355, 4)
+                    for i in range(row_count)
+                ],
             }
             df_raw = pd.DataFrame(raw_data)
 
             # Create Excel writer
-            with pd.ExcelWriter(file_name, engine='openpyxl') as writer:
+            with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
                 # Write raw data
-                df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+                df_raw.to_excel(writer, sheet_name="Raw Data", index=False)
 
                 # Add filtered data if available
                 if self.data["filt"]:
@@ -2571,21 +2737,44 @@ class DataWindow(QWidget):
                     filt_count = min(len(x) for x in l_time_filt.values())
 
                     filtered_data = {
-                        'Time_A (s)': [round(l_time_filt["a"][i], 4) for i in range(filt_count)],
-                        'Channel_A (RU)': [round(l_val_filt["a"][i], 4) for i in range(filt_count)],
-                        'Time_B (s)': [round(l_time_filt["b"][i], 4) for i in range(filt_count)],
-                        'Channel_B (RU)': [round(l_val_filt["b"][i], 4) for i in range(filt_count)],
-                        'Time_C (s)': [round(l_time_filt["c"][i], 4) for i in range(filt_count)],
-                        'Channel_C (RU)': [round(l_val_filt["c"][i], 4) for i in range(filt_count)],
-                        'Time_D (s)': [round(l_time_filt["d"][i], 4) for i in range(filt_count)],
-                        'Channel_D (RU)': [round(l_val_filt["d"][i], 4) for i in range(filt_count)],
+                        "Time_A (s)": [
+                            round(l_time_filt["a"][i], 4) for i in range(filt_count)
+                        ],
+                        "Channel_A (RU)": [
+                            round(l_val_filt["a"][i], 4) for i in range(filt_count)
+                        ],
+                        "Time_B (s)": [
+                            round(l_time_filt["b"][i], 4) for i in range(filt_count)
+                        ],
+                        "Channel_B (RU)": [
+                            round(l_val_filt["b"][i], 4) for i in range(filt_count)
+                        ],
+                        "Time_C (s)": [
+                            round(l_time_filt["c"][i], 4) for i in range(filt_count)
+                        ],
+                        "Channel_C (RU)": [
+                            round(l_val_filt["c"][i], 4) for i in range(filt_count)
+                        ],
+                        "Time_D (s)": [
+                            round(l_time_filt["d"][i], 4) for i in range(filt_count)
+                        ],
+                        "Channel_D (RU)": [
+                            round(l_val_filt["d"][i], 4) for i in range(filt_count)
+                        ],
                     }
                     df_filt = pd.DataFrame(filtered_data)
-                    df_filt.to_excel(writer, sheet_name='Filtered Data', index=False)
+                    df_filt.to_excel(writer, sheet_name="Filtered Data", index=False)
 
                 # Add statistics summary
-                stats = df_raw[['Channel_A (RU)', 'Channel_B (RU)', 'Channel_C (RU)', 'Channel_D (RU)']].describe()
-                stats.to_excel(writer, sheet_name='Statistics')
+                stats = df_raw[
+                    [
+                        "Channel_A (RU)",
+                        "Channel_B (RU)",
+                        "Channel_C (RU)",
+                        "Channel_D (RU)",
+                    ]
+                ].describe()
+                stats.to_excel(writer, sheet_name="Statistics")
 
             show_message(
                 msg=f"Data exported to Excel:\n{Path(file_name).name}",
@@ -2805,8 +2994,7 @@ class DataWindow(QWidget):
 
                         row_count = len(seg.seg_x["a"])
                         for ch in CH_LIST:
-                            if len(seg.seg_x[ch]) < row_count:
-                                row_count = len(seg.seg_x[ch])
+                            row_count = min(len(seg.seg_x[ch]), row_count)
 
                         for j in range(row_count):
                             for ch in CH_LIST:
@@ -2840,7 +3028,9 @@ class DataWindow(QWidget):
             logger.warning("Invalid cycle time, skipping fixed window")
             return
 
-        logger.info(f"Cycle started: {self.current_segment.cycle_type}, {cycle_time_minutes} min")
+        logger.info(
+            f"Cycle started: {self.current_segment.cycle_type}, {cycle_time_minutes} min",
+        )
 
         # Calculate window parameters once
         window_seconds = cycle_time_minutes * 60 * CYCLE_WINDOW_PADDING_FACTOR
@@ -2848,11 +3038,19 @@ class DataWindow(QWidget):
         end_time = start_time + window_seconds
 
         # Apply fixed window to both graphs
-        self._set_fixed_x_range(self.full_segment_view, start_time, end_time, "Sensorgram")
+        self._set_fixed_x_range(
+            self.full_segment_view,
+            start_time,
+            end_time,
+            "Sensorgram",
+        )
         self._set_fixed_x_range(self.SOI_view, 0, window_seconds, "SOI")
 
         # Apply Y padding with auto-range enabled
-        for plot, name in [(self.full_segment_view.plot, "Sensorgram"), (self.SOI_view.plot, "SOI")]:
+        for plot, name in [
+            (self.full_segment_view.plot, "Sensorgram"),
+            (self.SOI_view.plot, "SOI"),
+        ]:
             self._apply_y_padding(plot, name)
 
         # Show cycle markers (after ranges are set)
@@ -2864,17 +3062,23 @@ class DataWindow(QWidget):
 
         logger.debug(f"Fixed window applied: {window_seconds:.0f}s")
 
-    def _set_fixed_x_range(self: Self, view, start: float, end: float, name: str) -> None:
+    def _set_fixed_x_range(
+        self: Self,
+        view,
+        start: float,
+        end: float,
+        name: str,
+    ) -> None:
         """Set fixed X range on a view and disable X auto-range."""
         view.fixed_window_active = True
         view.plot.setRange(xRange=(start, end), padding=0, disableAutoRange=False)
-        view.plot.enableAutoRange(axis='x', enable=False)
-        view.plot.enableAutoRange(axis='y', enable=True)
+        view.plot.enableAutoRange(axis="x", enable=False)
+        view.plot.enableAutoRange(axis="y", enable=True)
         logger.debug(f"{name}: X range [{start:.1f}, {end:.1f}]s")
 
     def _apply_y_padding(self: Self, plot, graph_name: str) -> None:
         """Ensure Y-axis auto-range is enabled for live data updates."""
-        plot.enableAutoRange(axis='y', enable=True)
+        plot.enableAutoRange(axis="y", enable=True)
         logger.debug(f"{graph_name}: Y auto-range enabled")
 
     def cycle_marker_style_changed(self: Self, style: str) -> None:
@@ -2882,10 +3086,17 @@ class DataWindow(QWidget):
         logger.info(f"Cycle marker style changed to: {style}")
 
         # Only re-render if currently in an active cycle
-        if not (hasattr(self, 'full_segment_view') and self.full_segment_view.fixed_window_active):
+        if not (
+            hasattr(self, "full_segment_view")
+            and self.full_segment_view.fixed_window_active
+        ):
             return
 
-        cycle_time = self.cycle_manager.get_current_time_minutes() if hasattr(self, 'cycle_manager') else CYCLE_TIME
+        cycle_time = (
+            self.cycle_manager.get_current_time_minutes()
+            if hasattr(self, "cycle_manager")
+            else CYCLE_TIME
+        )
         if cycle_time and cycle_time > 0:
             self.full_segment_view.hide_cycle_time_region()
             self.full_segment_view.show_cycle_time_region(cycle_time)
@@ -2896,6 +3107,7 @@ class DataWindow(QWidget):
         try:
             # Extract experiment name from rec_dir
             from pathlib import Path
+
             rec_path = Path(rec_dir)
             exp_name = rec_path.name if rec_path.name else "Recording"
 
@@ -2907,7 +3119,7 @@ class DataWindow(QWidget):
                 exporter.export_raw_data(
                     data=self.data,
                     metadata=self.metadata,
-                    references=None  # Will auto-calculate
+                    references=None,  # Will auto-calculate
                 )
             except Exception as e:
                 logger.error(f"Failed to export raw data: {e}")
@@ -2917,11 +3129,20 @@ class DataWindow(QWidget):
                 try:
                     # Create filtered data dict
                     filtered_data = {
-                        "lambda_times": self.data.get("buffered_lambda_times", self.data["lambda_times"]),
-                        "lambda_values": self.data.get("filtered_lambda_values", self.data["lambda_values"]),
-                        "filt": True
+                        "lambda_times": self.data.get(
+                            "buffered_lambda_times",
+                            self.data["lambda_times"],
+                        ),
+                        "lambda_values": self.data.get(
+                            "filtered_lambda_values",
+                            self.data["lambda_values"],
+                        ),
+                        "filt": True,
                     }
-                    exporter.export_filtered_data(data=filtered_data, metadata=self.metadata)
+                    exporter.export_filtered_data(
+                        data=filtered_data,
+                        metadata=self.metadata,
+                    )
                 except Exception as e:
                     logger.error(f"Failed to export filtered data: {e}")
 
@@ -2932,7 +3153,7 @@ class DataWindow(QWidget):
                     exporter.export_segments(
                         segments=segments,
                         value_list=self.data["lambda_values"],
-                        ts_list=self.data["lambda_times"]
+                        ts_list=self.data["lambda_times"],
                     )
             except Exception as e:
                 logger.error(f"Failed to export segments: {e}")

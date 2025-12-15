@@ -1,8 +1,10 @@
 """Test the fixed rank command with START/END protocol."""
-import serial
+
 import time
 
-port = serial.Serial('COM5', 115200, timeout=2)
+import serial
+
+port = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(0.1)
 
 print("Testing firmware version...")

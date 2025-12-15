@@ -309,8 +309,8 @@
               <property name="styleSheet">
                <string notr="true">QPushButton {
 
-	background-color: rgb(240, 240, 240); 
-	border: 1px solid; 
+	background-color: rgb(240, 240, 240);
+	border: 1px solid;
 	border-radius: 3px;
 
 }
@@ -376,8 +376,8 @@ QPushButton::hover{
               <property name="styleSheet">
                <string notr="true">QPushButton {
 
-	background-color: rgb(240, 240, 240); 
-	border: 1px solid; 
+	background-color: rgb(240, 240, 240);
+	border: 1px solid;
 	border-radius: 3px;
 
 }
@@ -443,8 +443,8 @@ QPushButton::hover{
               <property name="styleSheet">
                <string notr="true">QPushButton {
 
-	background-color: rgb(240, 240, 240); 
-	border: 1px solid; 
+	background-color: rgb(240, 240, 240);
+	border: 1px solid;
 	border-radius: 3px;
 
 }
@@ -513,7 +513,7 @@ QPushButton::hover{
               <property name="styleSheet">
                <string notr="true">QPushButton {
 
-	background-color: rgb(240, 240, 240);  
+	background-color: rgb(240, 240, 240);
 	border: 1px solid rgb(127, 127, 127);
 	border-radius: 3px;
 

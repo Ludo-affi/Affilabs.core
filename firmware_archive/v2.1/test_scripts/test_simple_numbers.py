@@ -1,8 +1,10 @@
 """Test with simpler numbers"""
-import serial
+
 import time
 
-ser = serial.Serial('COM5', 115200, timeout=2)
+import serial
+
+ser = serial.Serial("COM5", 115200, timeout=2)
 time.sleep(2)
 ser.reset_input_buffer()
 
@@ -17,7 +19,7 @@ start = time.time()
 
 while time.time() - start < 25:
     if ser.in_waiting > 0:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
+        line = ser.readline().decode("utf-8", errors="ignore").strip()
         if line:
             print(line)
             if line.startswith("CYCLE:"):

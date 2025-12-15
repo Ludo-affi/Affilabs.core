@@ -1,5 +1,4 @@
-"""
-Analyze S/P cleanliness and transmission for a 2-minute dataset.
+"""Analyze S/P cleanliness and transmission for a 2-minute dataset.
 
 - Loads latest S and P NPZ pair from training_data/<state> (default: used_current)
 - Denoises S and P using Savitzky–Golay (OptimalProcessor convention)
@@ -13,35 +12,44 @@ Analyze S/P cleanliness and transmission for a 2-minute dataset.
 Usage:
   python -u tools/analysis/analyze_sp_transmission_cleanliness.py --channel A --state used_current
 """
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Tuple, Dict
 
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
+import numpy as np
 from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
 
-from settings.settings import MIN_WAVELENGTH, MAX_WAVELENGTH, SPR_PEAK_EXPECTED_MIN, SPR_PEAK_EXPECTED_MAX
+from settings.settings import (
+    MAX_WAVELENGTH,
+    MIN_WAVELENGTH,
+    SPR_PEAK_EXPECTED_MAX,
+    SPR_PEAK_EXPECTED_MIN,
+)
 
 # Robust OptimalProcessor import (top-level or scripts path)
 try:
     from collect_training_data import OptimalProcessor  # type: ignore
 except Exception:
-    from scripts.collection.collect_training_data import OptimalProcessor  # type: ignore
+    from scripts.collection.collect_training_data import (
+        OptimalProcessor,  # type: ignore
+    )
 
 DATA_ROOT = Path("training_data")
 DEFAULT_STATE = "used_current"
 
 
-def find_latest_dataset(state: str, channel: str) -> Tuple[Path, Path, Path | None]:
+def find_latest_dataset(state: str, channel: str) -> tuple[Path, Path, Path | None]:
     state_dir = DATA_ROOT / state
     s_files = sorted(state_dir.glob(f"*_channel_{channel}_s_mode.npz"))
     p_files = sorted(state_dir.glob(f"*_channel_{channel}_p_mode.npz"))
     if not s_files or not p_files:
-        raise FileNotFoundError(f"No S/P NPZ found for state={state}, channel={channel}")
+        raise FileNotFoundError(
+            f"No S/P NPZ found for state={state}, channel={channel}",
+        )
     s_latest = s_files[-1]
     timestamp = s_latest.name.split("_channel_")[0]
     p_latest = state_dir / f"{timestamp}_channel_{channel}_p_mode.npz"
@@ -57,6 +65,7 @@ def load_wavelengths_masked(target_length: int | None = None) -> np.ndarray:
     # Try device wavelengths; fall back to a matching grid
     try:
         from utils.usb4000_oceandirect import USB4000OceanDirect
+
         spec = USB4000OceanDirect()
         if spec.connect():
             got = spec.get_wavelengths()
@@ -69,16 +78,27 @@ def load_wavelengths_masked(target_length: int | None = None) -> np.ndarray:
             wl = spec._get_fallback_wavelengths()
     except Exception:
         # Device libs not available or device not present
-        wl = np.linspace(float(MIN_WAVELENGTH), float(MAX_WAVELENGTH), target_length or 2048)
+        wl = np.linspace(
+            float(MIN_WAVELENGTH),
+            float(MAX_WAVELENGTH),
+            target_length or 2048,
+        )
 
     mask = (wl >= MIN_WAVELENGTH) & (wl <= MAX_WAVELENGTH)
     wl_masked = wl[mask]
     if target_length is not None and wl_masked.size != int(target_length):
-        return np.linspace(float(MIN_WAVELENGTH), float(MAX_WAVELENGTH), int(target_length))
+        return np.linspace(
+            float(MIN_WAVELENGTH),
+            float(MAX_WAVELENGTH),
+            int(target_length),
+        )
     return wl_masked
 
 
-def compute_transmission_series(s_npz: Path, p_npz: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def compute_transmission_series(
+    s_npz: Path,
+    p_npz: Path,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     s_data = np.load(s_npz)
     p_data = np.load(p_npz)
     s_spectra = s_data["spectra"]
@@ -91,7 +111,10 @@ def compute_transmission_series(s_npz: Path, p_npz: Path) -> Tuple[np.ndarray, n
     trans_series = np.zeros_like(p_spectra, dtype=np.float64)
     for i in range(n):
         trans_series[i] = OptimalProcessor.process_transmission(
-            s_spectra[i], p_spectra[i], s_dark, p_dark
+            s_spectra[i],
+            p_spectra[i],
+            s_dark,
+            p_dark,
         )
     return s_spectra, p_spectra, trans_series, s_dark, p_dark, t
 
@@ -104,15 +127,26 @@ def _pseudo_voigt(x, mu, fwhm, eta, A, y0):
     return y0 + A * v
 
 
-def pvoigt_fit_mu(wl: np.ndarray, y: np.ndarray, search_min: float, search_max: float) -> float:
+def pvoigt_fit_mu(
+    wl: np.ndarray,
+    y: np.ndarray,
+    search_min: float,
+    search_max: float,
+) -> float:
     mask = (wl >= search_min) & (wl <= search_max)
     if np.count_nonzero(mask) < 7:
         return float(wl[np.argmin(y)])
     w = wl[mask]
     spec = y[mask]
-    inv = (spec.max() - spec)
+    inv = spec.max() - spec
     mu0 = float(w[np.argmax(inv)])
-    p0 = [mu0, 8.0, 0.5, float(inv.max()) if inv.max() > 0 else 0.1, float(np.median(inv))]
+    p0 = [
+        mu0,
+        8.0,
+        0.5,
+        float(inv.max()) if inv.max() > 0 else 0.1,
+        float(np.median(inv)),
+    ]
     bounds = ([search_min, 0.5, 0.0, 0.0, 0.0], [search_max, 50.0, 1.0, np.inf, np.inf])
     try:
         popt, _ = curve_fit(_pseudo_voigt, w, inv, p0=p0, bounds=bounds, maxfev=2000)
@@ -124,7 +158,7 @@ def pvoigt_fit_mu(wl: np.ndarray, y: np.ndarray, search_min: float, search_max: 
         return mu0
 
 
-def summarize_metrics(x: np.ndarray) -> Dict[str, float]:
+def summarize_metrics(x: np.ndarray) -> dict[str, float]:
     return {
         "p2p": float(np.ptp(x)),
         "std": float(np.std(x)),
@@ -168,7 +202,12 @@ def main():
     for i in range(len(t)):
         spectrum = trans[i]
         centroid_series[i] = OptimalProcessor.find_minimum_centroid_nm(
-            spectrum, wl, search_min_nm=smin, search_max_nm=smax, window_nm=8.0, right_decay_gamma=0.02
+            spectrum,
+            wl,
+            search_min_nm=smin,
+            search_max_nm=smax,
+            window_nm=8.0,
+            right_decay_gamma=0.02,
         )
         pvoigt_series[i] = pvoigt_fit_mu(wl, spectrum, smin, smax)
 
@@ -199,7 +238,14 @@ def main():
 
     # Panel 2: Transmission example with fits
     ax2.plot(wl, y, color="#222", lw=1.0, label="Transmission")
-    c0 = OptimalProcessor.find_minimum_centroid_nm(y, wl, search_min_nm=smin, search_max_nm=smax, window_nm=8.0, right_decay_gamma=0.02)
+    c0 = OptimalProcessor.find_minimum_centroid_nm(
+        y,
+        wl,
+        search_min_nm=smin,
+        search_max_nm=smax,
+        window_nm=8.0,
+        right_decay_gamma=0.02,
+    )
     p0 = pvoigt_fit_mu(wl, y, smin, smax)
     ax2.axvline(c0, color="#1f77b4", ls="--", lw=1.2, label=f"Centroid {c0:.2f} nm")
     ax2.axvline(p0, color="#d62728", ls=":", lw=1.2, label=f"pVoigt {p0:.2f} nm")
@@ -212,8 +258,18 @@ def main():
 
     # Panel 3: Time series of positions
     t0 = t - float(t[0])
-    ax3.plot(t0, centroid_series, color="#1f77b4", label=f"Centroid  P2P={cmet['p2p']:.3f} nm, STD={cmet['std']:.3f} nm")
-    ax3.plot(t0, pvoigt_series, color="#d62728", label=f"pVoigt    P2P={pmet['p2p']:.3f} nm, STD={pmet['std']:.3f} nm")
+    ax3.plot(
+        t0,
+        centroid_series,
+        color="#1f77b4",
+        label=f"Centroid  P2P={cmet['p2p']:.3f} nm, STD={cmet['std']:.3f} nm",
+    )
+    ax3.plot(
+        t0,
+        pvoigt_series,
+        color="#d62728",
+        label=f"pVoigt    P2P={pmet['p2p']:.3f} nm, STD={pmet['std']:.3f} nm",
+    )
     ax3.set_title(f"Resonance position over time (state={args.state}, channel={ch})")
     ax3.set_xlabel("Time (s)")
     ax3.set_ylabel("Resonance (nm)")
@@ -226,9 +282,15 @@ def main():
 
     print("\n=== Cleanliness Summary ===")
     print(f"Dataset: {timestamp} channel {ch} (state: {args.state})")
-    print(f"Frames: {len(t)} | Pixels: {trans.shape[1]} | wl range: {wl.min():.1f}-{wl.max():.1f} nm | search: {smin:.1f}-{smax:.1f} nm")
-    print(f"Centroid: P-P {cmet['p2p']:.3f} nm, STD {cmet['std']:.3f} nm, mean {cmet['mean']:.2f} nm")
-    print(f"pVoigt:   P-P {pmet['p2p']:.3f} nm, STD {pmet['std']:.3f} nm, mean {pmet['mean']:.2f} nm")
+    print(
+        f"Frames: {len(t)} | Pixels: {trans.shape[1]} | wl range: {wl.min():.1f}-{wl.max():.1f} nm | search: {smin:.1f}-{smax:.1f} nm",
+    )
+    print(
+        f"Centroid: P-P {cmet['p2p']:.3f} nm, STD {cmet['std']:.3f} nm, mean {cmet['mean']:.2f} nm",
+    )
+    print(
+        f"pVoigt:   P-P {pmet['p2p']:.3f} nm, STD {pmet['std']:.3f} nm, mean {pmet['mean']:.2f} nm",
+    )
     print(f"Saved figure: {outfile}")
 
 

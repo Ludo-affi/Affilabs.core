@@ -1,10 +1,11 @@
-"""
-Test rank with pre-set LED intensities
+"""Test rank with pre-set LED intensities
 Set each LED to different brightness, then call rank
 """
 
-import serial
 import time
+
+import serial
+
 
 def test_rank_with_preset_intensities():
     print("=" * 70)
@@ -13,32 +14,32 @@ def test_rank_with_preset_intensities():
     print()
     print(">>> Setting individual LED intensities first...")
 
-    ser = serial.Serial('COM5', 115200, timeout=1)
+    ser = serial.Serial("COM5", 115200, timeout=1)
     time.sleep(1)
 
     # Set different brightness for each LED
     print("Setting LED A = 255 (100%)")
-    ser.write(b'la:255\n')
+    ser.write(b"la:255\n")
     time.sleep(0.5)
-    ser.write(b'lx\n')  # Turn off
+    ser.write(b"lx\n")  # Turn off
     time.sleep(0.5)
 
     print("Setting LED B = 192 (75%)")
-    ser.write(b'lb:192\n')
+    ser.write(b"lb:192\n")
     time.sleep(0.5)
-    ser.write(b'lx\n')
+    ser.write(b"lx\n")
     time.sleep(0.5)
 
     print("Setting LED C = 128 (50%)")
-    ser.write(b'lc:128\n')
+    ser.write(b"lc:128\n")
     time.sleep(0.5)
-    ser.write(b'lx\n')
+    ser.write(b"lx\n")
     time.sleep(0.5)
 
     print("Setting LED D = 64 (25%)")
-    ser.write(b'ld:64\n')
+    ser.write(b"ld:64\n")
     time.sleep(0.5)
-    ser.write(b'lx\n')
+    ser.write(b"lx\n")
     time.sleep(0.5)
 
     print()
@@ -61,27 +62,27 @@ def test_rank_with_preset_intensities():
     start_time = time.time()
     while True:
         if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
             if line:
                 elapsed = (time.time() - start_time) * 1000
 
                 if line == "START":
                     print(f"⏱️ {elapsed:6.1f}ms | START")
                 elif "READY" in line:
-                    led = line.split(':')[0].upper()
+                    led = line.split(":")[0].upper()
                     print(f"⏱️ {elapsed:6.1f}ms | {line} - ✨ LED {led} ON")
                     # Send ACK for READY
-                    ser.write(b'\n')
+                    ser.write(b"\n")
                 elif "READ" in line:
                     print(f"⏱️ {elapsed:6.1f}ms | {line}")
                 elif "DONE" in line:
                     print(f"⏱️ {elapsed:6.1f}ms | {line} - 💡 LED OFF")
                     # Send ACK for DONE
-                    ser.write(b'\n')
+                    ser.write(b"\n")
                 elif line == "END":
                     print(f"⏱️ {elapsed:6.1f}ms | END - ✅ Complete!")
                     # Send final ACK
-                    ser.write(b'\n')
+                    ser.write(b"\n")
                     break
                 elif line == "ACK":
                     # Ignore echo
@@ -102,6 +103,7 @@ def test_rank_with_preset_intensities():
     print("Did you see different brightness levels?")
     print("Or were they all the same (very dim)?")
     print("=" * 70)
+
 
 if __name__ == "__main__":
     test_rank_with_preset_intensities()

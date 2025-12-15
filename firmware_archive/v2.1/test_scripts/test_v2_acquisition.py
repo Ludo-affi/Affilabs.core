@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Test V2.0 firmware with rank command in acquisition loop"""
-import serial
-import time
-import numpy as np
 
-PORT = 'COM5'
+import time
+
+import serial
+
+PORT = "COM5"
 BAUD = 115200
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("V2.0 ACQUISITION TEST - Using RANK command")
-print("="*60)
+print("=" * 60)
 
 ser = serial.Serial(PORT, BAUD, timeout=2)
 time.sleep(2)
@@ -21,7 +22,7 @@ SETTLING_MS = 35
 DARK_MS = 5
 NUM_CYCLES = 5
 
-print(f"\nTest parameters:")
+print("\nTest parameters:")
 print(f"  LED intensity: {INTENSITY}")
 print(f"  Settling time: {SETTLING_MS}ms")
 print(f"  Dark time: {DARK_MS}ms")
@@ -43,21 +44,21 @@ for cycle in range(NUM_CYCLES):
 
     # Read response
     resp = ser.read(100)
-    if resp == b'6':
-        print(f"  ✅ Rank command ACK - LEDs sequenced A→B→C→D")
+    if resp == b"6":
+        print("  ✅ Rank command ACK - LEDs sequenced A→B→C→D")
     else:
         print(f"  ❌ Unexpected response: {resp}")
 
     # Small delay between cycles
     time.sleep(0.2)
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("✅ Acquisition test complete!")
 print("\nWith V2.0 firmware:")
 print("  • Single 'rank:' command sequences all 4 LEDs")
 print("  • No need for individual 'la/lb/lc/ld' commands")
 print("  • Eliminates USB command overhead")
 print("  • Perfect for high-speed acquisition")
-print("="*60)
+print("=" * 60)
 
 ser.close()

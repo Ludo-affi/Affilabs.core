@@ -69,7 +69,7 @@ class ApplicationIntegration:
     def _on_error_occurred(self, severity: str, category: str, message: str):
         """Handle error occurred signal."""
         self.logger.error(
-            f"Error boundary triggered: {severity} | {category} | {message}"
+            f"Error boundary triggered: {severity} | {category} | {message}",
         )
 
         # Log security event for certain error types
@@ -130,7 +130,10 @@ def with_performance_monitoring(operation_name: str):
 def log_hardware_command(device: str, command: str, parameters: dict[str, Any]):
     """Log hardware commands for security audit."""
     log_security_event(
-        "hardware_command", device=device, command=command, parameters=parameters
+        "hardware_command",
+        device=device,
+        command=command,
+        parameters=parameters,
     )
 
 

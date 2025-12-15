@@ -1,6 +1,4 @@
-"""
-Quick diagnostic to check current polarizer position
-"""
+"""Quick diagnostic to check current polarizer position"""
 
 import sys
 import time
@@ -9,17 +7,19 @@ from pathlib import Path
 # Add paths
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.controller import PicoP4SPR
-from utils.usb4000_oceandirect import USB4000OceanDirect
 import logging
 
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+from utils.controller import PicoP4SPR
+from utils.usb4000_oceandirect import USB4000OceanDirect
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
 def main():
-    print("="*70)
+    print("=" * 70)
     print("POLARIZER POSITION DIAGNOSTIC")
-    print("="*70)
+    print("=" * 70)
 
     # Initialize hardware
     ctrl = PicoP4SPR()
@@ -38,9 +38,9 @@ def main():
     print("\n✅ Hardware connected")
 
     # Test both modes
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TESTING S-MODE")
-    print("="*70)
+    print("=" * 70)
 
     result = ctrl.set_mode("s")
     print(f"Command result: {result}")
@@ -54,6 +54,7 @@ def main():
 
     if spectrum_s is not None:
         import numpy as np
+
         max_s = np.max(spectrum_s)
         mean_s = np.mean(spectrum_s)
         print(f"S-mode signal: max={max_s:.0f}, mean={mean_s:.0f} counts")
@@ -63,9 +64,9 @@ def main():
             print("✅ Normal signal - likely in S-mode position")
 
     # Test P-mode
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TESTING P-MODE")
-    print("="*70)
+    print("=" * 70)
 
     result = ctrl.set_mode("p")
     print(f"Command result: {result}")
@@ -87,22 +88,24 @@ def main():
             print("⚠️  Low signal - might be stuck in S-mode position!")
 
     # Compare
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("COMPARISON")
-    print("="*70)
+    print("=" * 70)
 
     if spectrum_s is not None and spectrum_p is not None:
         ratio = max_p / max(max_s, 1)
         print(f"\nP/S ratio: {ratio:.1f}:1")
-        print(f"\nExpected behavior:")
-        print(f"  S-mode: Low signal (no sensor resonance)")
-        print(f"  P-mode: High signal (sensor resonance, often saturated)")
-        print(f"\nActual behavior:")
+        print("\nExpected behavior:")
+        print("  S-mode: Low signal (no sensor resonance)")
+        print("  P-mode: High signal (sensor resonance, often saturated)")
+        print("\nActual behavior:")
         print(f"  S-mode: max={max_s:.0f} {'[SATURATED]' if max_s >= 65535 else ''}")
         print(f"  P-mode: max={max_p:.0f} {'[SATURATED]' if max_p >= 65535 else ''}")
 
         if max_s >= 65535 and max_p < 30000:
-            print("\n🚨 POLARIZER REVERSED! S-mode showing P-signal, P-mode showing S-signal")
+            print(
+                "\n🚨 POLARIZER REVERSED! S-mode showing P-signal, P-mode showing S-signal",
+            )
         elif max_s < 30000 and max_p >= 65535:
             print("\n✅ POLARIZER CORRECT! S-mode low, P-mode high")
         else:
@@ -111,6 +114,7 @@ def main():
     # Cleanup
     ctrl.close()
     usb.close()
+
 
 if __name__ == "__main__":
     main()

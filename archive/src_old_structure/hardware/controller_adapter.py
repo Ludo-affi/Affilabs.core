@@ -4,25 +4,26 @@ Wraps existing controller implementations (ArduinoController, PicoP4SPR, PicoEZS
 behind the IController interface for consistent access.
 """
 
-from typing import Optional, Dict, Any
-from .device_interface import (
-    IController,
-    DeviceInfo,
-    ControllerCapabilities,
-    ConnectionError as HWConnectionError,
-    CommandError
-)
+from typing import Any
 
 # Import existing controller classes
 from src.utils.controller import (
-    ControllerBase,
     ArduinoController,
-    PicoP4SPR,
-    PicoEZSPR,
+    ControllerBase,
+    FlowController,
     KineticController,
+    PicoEZSPR,
     PicoKNX2,
-    FlowController
+    PicoP4SPR,
 )
+
+from .device_interface import (
+    CommandError,
+    ControllerCapabilities,
+    DeviceInfo,
+    IController,
+)
+from .device_interface import ConnectionError as HWConnectionError
 
 
 class ControllerAdapter(IController):
@@ -41,6 +42,7 @@ class ControllerAdapter(IController):
 
         Args:
             controller: Existing controller instance (ArduinoController, PicoP4SPR, etc.)
+
         """
         self._controller = controller
         self._connected = False
@@ -52,7 +54,7 @@ class ControllerAdapter(IController):
     def connect(self, **kwargs) -> bool:
         """Connect to controller."""
         try:
-            if hasattr(self._controller, 'open'):
+            if hasattr(self._controller, "open"):
                 success = self._controller.open()
                 if success:
                     self._connected = True
@@ -64,7 +66,7 @@ class ControllerAdapter(IController):
     def disconnect(self) -> None:
         """Disconnect from controller."""
         try:
-            if hasattr(self._controller, 'close'):
+            if hasattr(self._controller, "close"):
                 self._controller.close()
         except Exception:
             pass  # Never raise on disconnect
@@ -77,7 +79,7 @@ class ControllerAdapter(IController):
         if not self._connected:
             return False
 
-        if hasattr(self._controller, '_ser') and self._controller._ser is not None:
+        if hasattr(self._controller, "_ser") and self._controller._ser is not None:
             try:
                 return self._controller._ser.is_open
             except:
@@ -91,16 +93,16 @@ class ControllerAdapter(IController):
 
         # Extract port if available
         port = None
-        if hasattr(self._controller, '_ser') and self._controller._ser is not None:
-            port = getattr(self._controller._ser, 'port', None)
+        if hasattr(self._controller, "_ser") and self._controller._ser is not None:
+            port = getattr(self._controller._ser, "port", None)
 
         # Get firmware version if available
         firmware_version = None
-        if hasattr(self._controller, 'get_info'):
+        if hasattr(self._controller, "get_info"):
             try:
                 info = self._controller.get_info()
                 if isinstance(info, dict):
-                    firmware_version = info.get('firmware_version')
+                    firmware_version = info.get("firmware_version")
             except:
                 pass
 
@@ -110,7 +112,7 @@ class ControllerAdapter(IController):
             serial_number=None,  # Controllers typically don't expose serial
             firmware_version=firmware_version,
             hardware_version=None,
-            port=port
+            port=port,
         )
 
     def get_capabilities(self) -> ControllerCapabilities:
@@ -121,13 +123,13 @@ class ControllerAdapter(IController):
         is_flow = isinstance(self._controller, FlowController)
 
         # Check for batch LED support
-        supports_batch = hasattr(self._controller, 'set_batch_intensities')
+        supports_batch = hasattr(self._controller, "set_batch_intensities")
 
         # Check for pump support (EZSPR only)
-        supports_pump = 'EZSPR' in controller_type or 'EZS' in controller_type
+        supports_pump = "EZSPR" in controller_type or "EZS" in controller_type
 
         # Check for temperature monitoring
-        supports_temp = hasattr(self._controller, 'get_temperature')
+        supports_temp = hasattr(self._controller, "get_temperature")
 
         return ControllerCapabilities(
             num_led_channels=4,
@@ -141,7 +143,7 @@ class ControllerAdapter(IController):
             is_flow_controller=is_flow,
             supports_reconnect=True,
             supports_firmware_update=False,
-            requires_calibration=True
+            requires_calibration=True,
         )
 
     # ========================================================================
@@ -151,7 +153,7 @@ class ControllerAdapter(IController):
     def turn_on_channel(self, channel: str) -> bool:
         """Turn on specific LED channel."""
         try:
-            if hasattr(self._controller, 'turn_on_channel'):
+            if hasattr(self._controller, "turn_on_channel"):
                 self._controller.turn_on_channel(channel)
                 return True
             return False
@@ -161,7 +163,7 @@ class ControllerAdapter(IController):
     def turn_off_channels(self) -> bool:
         """Turn off all LED channels."""
         try:
-            if hasattr(self._controller, 'turn_off_channels'):
+            if hasattr(self._controller, "turn_off_channels"):
                 self._controller.turn_off_channels()
                 return True
             return False
@@ -174,14 +176,20 @@ class ControllerAdapter(IController):
             raise ValueError(f"Intensity must be 0-255, got {intensity}")
 
         try:
-            if hasattr(self._controller, 'set_intensity'):
+            if hasattr(self._controller, "set_intensity"):
                 self._controller.set_intensity(channel, intensity)
                 return True
             return False
         except Exception as e:
             raise CommandError(f"Failed to set intensity for channel {channel}: {e}")
 
-    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+    def set_batch_intensities(
+        self,
+        a: int = 0,
+        b: int = 0,
+        c: int = 0,
+        d: int = 0,
+    ) -> bool:
         """Set all LED intensities in batch."""
         # Validate intensities
         for val in [a, b, c, d]:
@@ -189,32 +197,31 @@ class ControllerAdapter(IController):
                 raise ValueError(f"Intensities must be 0-255, got {val}")
 
         try:
-            if hasattr(self._controller, 'set_batch_intensities'):
+            if hasattr(self._controller, "set_batch_intensities"):
                 # Use native batch command
                 self._controller.set_batch_intensities(a, b, c, d)
                 return True
-            else:
-                # Fall back to sequential commands
-                self.set_intensity('a', a)
-                self.set_intensity('b', b)
-                self.set_intensity('c', c)
-                self.set_intensity('d', d)
-                return True
+            # Fall back to sequential commands
+            self.set_intensity("a", a)
+            self.set_intensity("b", b)
+            self.set_intensity("c", c)
+            self.set_intensity("d", d)
+            return True
         except Exception as e:
             raise CommandError(f"Failed to set batch intensities: {e}")
 
-    def get_led_intensities(self) -> Dict[str, int]:
+    def get_led_intensities(self) -> dict[str, int]:
         """Get current LED intensities."""
         try:
-            if hasattr(self._controller, 'get_all_led_intensities'):
+            if hasattr(self._controller, "get_all_led_intensities"):
                 result = self._controller.get_all_led_intensities()
                 if isinstance(result, dict):
                     return result
 
             # Return zeros if not supported
-            return {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            return {"a": 0, "b": 0, "c": 0, "d": 0}
         except Exception:
-            return {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+            return {"a": 0, "b": 0, "c": 0, "d": 0}
 
     # ========================================================================
     # POLARIZER CONTROL
@@ -222,11 +229,11 @@ class ControllerAdapter(IController):
 
     def set_mode(self, mode: str) -> bool:
         """Set polarizer mode."""
-        if mode not in ['s', 'p']:
+        if mode not in ["s", "p"]:
             raise ValueError(f"Mode must be 's' or 'p', got '{mode}'")
 
         try:
-            if hasattr(self._controller, 'set_mode'):
+            if hasattr(self._controller, "set_mode"):
                 self._controller.set_mode(mode)
                 return True
             return False
@@ -236,11 +243,11 @@ class ControllerAdapter(IController):
     def get_mode(self) -> str:
         """Get current polarizer mode."""
         try:
-            if hasattr(self._controller, 'get_mode'):
+            if hasattr(self._controller, "get_mode"):
                 return self._controller.get_mode()
-            return 's'  # Default
+            return "s"  # Default
         except Exception:
-            return 's'
+            return "s"
 
     def set_servo_position(self, position: int, save_to_eeprom: bool = False) -> bool:
         """Set servo position."""
@@ -248,10 +255,10 @@ class ControllerAdapter(IController):
             raise ValueError(f"Position must be 0-255, got {position}")
 
         try:
-            if save_to_eeprom and hasattr(self._controller, 'servo_move_and_save'):
+            if save_to_eeprom and hasattr(self._controller, "servo_move_and_save"):
                 self._controller.servo_move_and_save(position)
                 return True
-            elif hasattr(self._controller, 'servo_move_calibration_only'):
+            if hasattr(self._controller, "servo_move_calibration_only"):
                 self._controller.servo_move_calibration_only(position)
                 return True
             return False
@@ -262,10 +269,10 @@ class ControllerAdapter(IController):
     # TEMPERATURE MONITORING
     # ========================================================================
 
-    def get_temperature(self) -> Optional[float]:
+    def get_temperature(self) -> float | None:
         """Get controller temperature."""
         try:
-            if hasattr(self._controller, 'get_temperature'):
+            if hasattr(self._controller, "get_temperature"):
                 return self._controller.get_temperature()
             return None
         except Exception:
@@ -278,25 +285,25 @@ class ControllerAdapter(IController):
     def is_config_valid_in_eeprom(self) -> bool:
         """Check if valid configuration exists in EEPROM."""
         try:
-            if hasattr(self._controller, 'is_config_valid_in_eeprom'):
+            if hasattr(self._controller, "is_config_valid_in_eeprom"):
                 return self._controller.is_config_valid_in_eeprom()
             return False
         except Exception:
             return False
 
-    def read_config_from_eeprom(self) -> Optional[Dict[str, Any]]:
+    def read_config_from_eeprom(self) -> dict[str, Any] | None:
         """Read device configuration from EEPROM."""
         try:
-            if hasattr(self._controller, 'read_config_from_eeprom'):
+            if hasattr(self._controller, "read_config_from_eeprom"):
                 return self._controller.read_config_from_eeprom()
             return None
         except Exception:
             return None
 
-    def write_config_to_eeprom(self, config: Dict[str, Any]) -> bool:
+    def write_config_to_eeprom(self, config: dict[str, Any]) -> bool:
         """Write device configuration to EEPROM."""
         try:
-            if hasattr(self._controller, 'write_config_to_eeprom'):
+            if hasattr(self._controller, "write_config_to_eeprom"):
                 return self._controller.write_config_to_eeprom(config)
             return False
         except Exception:
@@ -306,6 +313,7 @@ class ControllerAdapter(IController):
 # ============================================================================
 # FACTORY FUNCTIONS
 # ============================================================================
+
 
 def create_controller_adapter(controller_type: str, **kwargs) -> ControllerAdapter:
     """Factory function to create controller adapter by type.
@@ -319,20 +327,21 @@ def create_controller_adapter(controller_type: str, **kwargs) -> ControllerAdapt
 
     Raises:
         ValueError: If controller_type is unknown
+
     """
     controller_map = {
-        'arduino': ArduinoController,
-        'pico_p4spr': PicoP4SPR,
-        'pico_ezspr': PicoEZSPR,
-        'kinetic': KineticController,
-        'pico_knx2': PicoKNX2
+        "arduino": ArduinoController,
+        "pico_p4spr": PicoP4SPR,
+        "pico_ezspr": PicoEZSPR,
+        "kinetic": KineticController,
+        "pico_knx2": PicoKNX2,
     }
 
     controller_class = controller_map.get(controller_type.lower())
     if not controller_class:
         raise ValueError(
             f"Unknown controller type '{controller_type}'. "
-            f"Valid types: {list(controller_map.keys())}"
+            f"Valid types: {list(controller_map.keys())}",
         )
 
     # Create controller instance
@@ -350,5 +359,6 @@ def wrap_existing_controller(controller: ControllerBase) -> ControllerAdapter:
 
     Returns:
         ControllerAdapter wrapping the controller
+
     """
     return ControllerAdapter(controller)

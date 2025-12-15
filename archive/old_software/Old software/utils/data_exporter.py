@@ -12,29 +12,30 @@ import csv
 import hashlib
 import json
 import tempfile
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Collection, Sequence
 
 import numpy as np
 import pandas as pd
 
-from settings import SW_VERSION, CH_LIST
+from settings import CH_LIST, SW_VERSION
 from utils.logger import logger
 
 
 class ExportFormat(Enum):
     """Supported export formats."""
+
     TRACEDRAWER = "tracedrawer"  # With metadata headers
-    CSV_SIMPLE = "csv_simple"     # Plain CSV without metadata
-    CSV_EXCEL = "csv_excel"       # Excel-compatible CSV
+    CSV_SIMPLE = "csv_simple"  # Plain CSV without metadata
+    CSV_EXCEL = "csv_excel"  # Excel-compatible CSV
 
 
 @dataclass
 class ExportedFile:
     """Record of an exported file."""
+
     filepath: str
     format: str
     checksum: str
@@ -46,6 +47,7 @@ class ExportedFile:
 @dataclass
 class ExportPreset:
     """Define what to export."""
+
     name: str
     include_raw: bool = True
     include_filtered: bool = False
@@ -64,7 +66,7 @@ EXPORT_PRESETS = {
         include_filtered=False,
         include_segments=True,
         include_temperature=False,
-        include_kinetics=False
+        include_kinetics=False,
     ),
     "full": ExportPreset(
         name="Full Export",
@@ -72,15 +74,15 @@ EXPORT_PRESETS = {
         include_filtered=True,
         include_segments=True,
         include_temperature=True,
-        include_kinetics=True
+        include_kinetics=True,
     ),
     "analysis": ExportPreset(
         name="For Analysis",
         include_raw=False,
         include_filtered=True,
         include_segments=True,
-        format=ExportFormat.CSV_SIMPLE
-    )
+        format=ExportFormat.CSV_SIMPLE,
+    ),
 }
 
 
@@ -96,11 +98,12 @@ class DataValidator:
 
         Returns:
             Tuple of (is_valid, error_message)
+
         """
         errors = []
 
         # Check structure
-        required_keys = ['lambda_times', 'lambda_values']
+        required_keys = ["lambda_times", "lambda_values"]
         for key in required_keys:
             if key not in data:
                 errors.append(f"Missing key: {key}")
@@ -108,11 +111,13 @@ class DataValidator:
 
         # Check data consistency per channel
         for ch in CH_LIST:
-            times = data['lambda_times'].get(ch, [])
-            values = data['lambda_values'].get(ch, [])
+            times = data["lambda_times"].get(ch, [])
+            values = data["lambda_values"].get(ch, [])
 
             if len(times) != len(values):
-                errors.append(f"Ch {ch}: length mismatch (times={len(times)}, values={len(values)})")
+                errors.append(
+                    f"Ch {ch}: length mismatch (times={len(times)}, values={len(values)})",
+                )
 
             if len(times) == 0:
                 errors.append(f"Ch {ch}: no data")
@@ -133,6 +138,7 @@ class DataValidator:
 
         Returns:
             Tuple of (is_valid, error_message)
+
         """
         if df is None:
             return (False, f"{name}: DataFrame is None")
@@ -157,6 +163,7 @@ class DataExporter:
         Args:
             base_dir: Base directory for exports
             experiment_name: Name of the experiment/recording
+
         """
         self.base_dir = Path(base_dir)
         self.exp_name = experiment_name
@@ -172,7 +179,7 @@ class DataExporter:
             self.base_dir / "raw_data",
             self.base_dir / "filtered_data",
             self.base_dir / "segments",
-            self.base_dir / "logs"
+            self.base_dir / "logs",
         ]
 
         for d in dirs:
@@ -186,32 +193,34 @@ class DataExporter:
 
         Returns:
             MD5 checksum as hex string
+
         """
         md5 = hashlib.md5()
         try:
-            with open(filepath, 'rb') as f:
-                for chunk in iter(lambda: f.read(8192), b''):
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
                     md5.update(chunk)
             return md5.hexdigest()
         except Exception as e:
             logger.error(f"Failed to calculate checksum for {filepath}: {e}")
             return ""
 
-    def _atomic_write(self, filepath: Path, content_writer, encoding='utf-8'):
+    def _atomic_write(self, filepath: Path, content_writer, encoding="utf-8"):
         """Write file atomically using temp file + rename.
 
         Args:
             filepath: Target file path
             content_writer: Callable that takes file handle and writes content
             encoding: File encoding
+
         """
         try:
             with tempfile.NamedTemporaryFile(
-                mode='w',
+                mode="w",
                 encoding=encoding,
                 dir=filepath.parent,
                 delete=False,
-                suffix='.tmp'
+                suffix=".tmp",
             ) as tmp_file:
                 content_writer(tmp_file)
                 tmp_path = Path(tmp_file.name)
@@ -231,26 +240,35 @@ class DataExporter:
             filepath: Path to exported file
             format: Export format used
             row_count: Number of data rows
+
         """
         try:
-            self.exported_files.append(ExportedFile(
-                filepath=str(filepath.relative_to(self.base_dir)),
-                format=format.value,
-                checksum=self._calculate_checksum(filepath),
-                row_count=row_count,
-                timestamp=datetime.now().isoformat(),
-                size_bytes=filepath.stat().st_size if filepath.exists() else 0
-            ))
+            self.exported_files.append(
+                ExportedFile(
+                    filepath=str(filepath.relative_to(self.base_dir)),
+                    format=format.value,
+                    checksum=self._calculate_checksum(filepath),
+                    row_count=row_count,
+                    timestamp=datetime.now().isoformat(),
+                    size_bytes=filepath.stat().st_size if filepath.exists() else 0,
+                ),
+            )
         except Exception as e:
             logger.error(f"Failed to record export for {filepath}: {e}")
 
-    def export_raw_data(self, data: dict, metadata=None, references: Optional[list] = None):
+    def export_raw_data(
+        self,
+        data: dict,
+        metadata=None,
+        references: list | None = None,
+    ):
         """Export raw sensorgram data with validation.
 
         Args:
             data: Dictionary with 'lambda_times' and 'lambda_values'
             metadata: Metadata widget for TraceDrawer headers (optional)
             references: Reference wavelengths for each channel (optional)
+
         """
         # Validate data
         is_valid, error_msg = DataValidator.validate_sensorgram(data)
@@ -258,12 +276,13 @@ class DataExporter:
             logger.error(f"Raw data validation failed: {error_msg}")
             raise ValueError(f"Invalid raw data: {error_msg}")
 
-        l_time_data = data['lambda_times']
-        l_val_data = data['lambda_values']
+        l_time_data = data["lambda_times"]
+        l_val_data = data["lambda_values"]
 
         # Calculate references if not provided
         if references is None:
             from bisect import bisect_left
+
             reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
             min_array_len = min(len(l_val_data[ch]) for ch in CH_LIST)
             if min_array_len == 0:
@@ -278,27 +297,42 @@ class DataExporter:
 
         def write_content(f):
             fieldnames = [
-                "X_RawDataA", "Y_RawDataA",
-                "X_RawDataB", "Y_RawDataB",
-                "X_RawDataC", "Y_RawDataC",
-                "X_RawDataD", "Y_RawDataD",
+                "X_RawDataA",
+                "Y_RawDataA",
+                "X_RawDataB",
+                "Y_RawDataB",
+                "X_RawDataC",
+                "Y_RawDataC",
+                "X_RawDataD",
+                "Y_RawDataD",
             ]
             writer = csv.DictWriter(f, dialect="excel-tab", fieldnames=fieldnames)
 
             # Write metadata header if available
             if metadata:
-                metadata.write_tracedrawer_header(writer, fieldnames, "Raw data", references)
+                metadata.write_tracedrawer_header(
+                    writer,
+                    fieldnames,
+                    "Raw data",
+                    references,
+                )
 
             # Build DataFrame for vectorized writing
             data_dict = {}
             for i, ch in enumerate(CH_LIST):
-                data_dict[f"X_RawData{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
+                data_dict[f"X_RawData{ch.upper()}"] = np.round(
+                    l_time_data[ch][:row_count],
+                    4,
+                )
                 values = l_val_data[ch][:row_count]
-                data_dict[f"Y_RawData{ch.upper()}"] = np.round((values - references[i]) * 355, 4)
+                data_dict[f"Y_RawData{ch.upper()}"] = np.round(
+                    (values - references[i]) * 355,
+                    4,
+                )
 
             df = pd.DataFrame(data_dict)
             df.replace({np.nan: None}, inplace=True)
-            df.to_csv(f, sep='\t', index=False, header=False)
+            df.to_csv(f, sep="\t", index=False, header=False)
 
         self._atomic_write(filepath, write_content)
         self._record_export(filepath, ExportFormat.TRACEDRAWER, row_count)
@@ -310,6 +344,7 @@ class DataExporter:
         Args:
             data: Dictionary with 'lambda_times' and 'lambda_values'
             metadata: Metadata widget for TraceDrawer headers (optional)
+
         """
         # Validate data
         is_valid, error_msg = DataValidator.validate_sensorgram(data)
@@ -321,32 +356,47 @@ class DataExporter:
             logger.warning("Filtered data not available, skipping export")
             return
 
-        l_time_data = data['lambda_times']
-        l_val_data = data['lambda_values']
+        l_time_data = data["lambda_times"]
+        l_val_data = data["lambda_values"]
         row_count = min(len(l_time_data[ch]) for ch in CH_LIST)
 
         filepath = self.base_dir / "filtered_data" / "filtered_data.txt"
 
         def write_content(f):
             fieldnames = [
-                "X_DataA", "Y_DataA",
-                "X_DataB", "Y_DataB",
-                "X_DataC", "Y_DataC",
-                "X_DataD", "Y_DataD",
+                "X_DataA",
+                "Y_DataA",
+                "X_DataB",
+                "Y_DataB",
+                "X_DataC",
+                "Y_DataC",
+                "X_DataD",
+                "Y_DataD",
             ]
             writer = csv.DictWriter(f, dialect="excel-tab", fieldnames=fieldnames)
 
             if metadata:
-                metadata.write_tracedrawer_header(writer, fieldnames, "Filtered data", [0, 0, 0, 0])
+                metadata.write_tracedrawer_header(
+                    writer,
+                    fieldnames,
+                    "Filtered data",
+                    [0, 0, 0, 0],
+                )
 
             data_dict = {}
             for ch in CH_LIST:
-                data_dict[f"X_Data{ch.upper()}"] = np.round(l_time_data[ch][:row_count], 4)
-                data_dict[f"Y_Data{ch.upper()}"] = np.round(l_val_data[ch][:row_count], 4)
+                data_dict[f"X_Data{ch.upper()}"] = np.round(
+                    l_time_data[ch][:row_count],
+                    4,
+                )
+                data_dict[f"Y_Data{ch.upper()}"] = np.round(
+                    l_val_data[ch][:row_count],
+                    4,
+                )
 
             df = pd.DataFrame(data_dict)
             df.replace({np.nan: None}, inplace=True)
-            df.to_csv(f, sep='\t', index=False, header=False)
+            df.to_csv(f, sep="\t", index=False, header=False)
 
         self._atomic_write(filepath, write_content)
         self._record_export(filepath, ExportFormat.TRACEDRAWER, row_count)
@@ -359,14 +409,15 @@ class DataExporter:
             segments: List of segment dictionaries
             value_list: Dictionary of value arrays per channel
             ts_list: Dictionary of timestamp arrays per channel
+
         """
         import re
 
         def sanitize_filename(name: str) -> str:
             """Remove/replace unsafe characters from filename."""
-            name = re.sub(r'[<>:"/\\|?*]', '_', name)
-            name = name.strip('. ')
-            return name[:200] if name else 'unnamed'
+            name = re.sub(r'[<>:"/\\|?*]', "_", name)
+            name = name.strip(". ")
+            return name[:200] if name else "unnamed"
 
         if not segments:
             logger.warning("No segments to export")
@@ -375,23 +426,25 @@ class DataExporter:
         # Export segments summary table
         summary_data = []
         for seg in segments:
-            summary_data.append({
-                'Name': seg['name'],
-                'StartTime': seg['start_ts'],
-                'EndTime': seg['end_ts'],
-                'ShiftA': seg.get('shift_a', ''),
-                'ShiftB': seg.get('shift_b', ''),
-                'ShiftC': seg.get('shift_c', ''),
-                'ShiftD': seg.get('shift_d', ''),
-                'ShiftM': seg.get('shift_m', ''),
-                'UserNote': seg.get('note', '')
-            })
+            summary_data.append(
+                {
+                    "Name": seg["name"],
+                    "StartTime": seg["start_ts"],
+                    "EndTime": seg["end_ts"],
+                    "ShiftA": seg.get("shift_a", ""),
+                    "ShiftB": seg.get("shift_b", ""),
+                    "ShiftC": seg.get("shift_c", ""),
+                    "ShiftD": seg.get("shift_d", ""),
+                    "ShiftM": seg.get("shift_m", ""),
+                    "UserNote": seg.get("note", ""),
+                },
+            )
 
         summary_path = self.base_dir / "segments" / "segments_summary.csv"
 
         def write_summary(f):
             df = pd.DataFrame(summary_data)
-            df.to_csv(f, sep='\t', index=False)
+            df.to_csv(f, sep="\t", index=False)
 
         self._atomic_write(summary_path, write_summary)
         self._record_export(summary_path, ExportFormat.CSV_SIMPLE, len(summary_data))
@@ -403,43 +456,59 @@ class DataExporter:
             for ch in CH_LIST:
                 start_val = None
                 for i, ts in enumerate(ts_list[ch]):
-                    if seg['start_ts'] <= ts <= seg['end_ts']:
+                    if seg["start_ts"] <= ts <= seg["end_ts"]:
                         if start_val is None:
                             start_val = value_list[ch][i]
                             start_time = ts_list[ch][i]
-                        data[ch].append({
-                            'ts': (ts - start_time),
-                            'val': round(value_list[ch][i] - start_val, 3)
-                        })
+                        data[ch].append(
+                            {
+                                "ts": (ts - start_time),
+                                "val": round(value_list[ch][i] - start_val, 3),
+                            },
+                        )
 
             # Fill blank cells
             max_len = max([len(v) for v in data.values()])
             for ch in CH_LIST:
                 for _ in range(max_len - len(data[ch])):
-                    data[ch].append({'ts': '', 'val': ''})
+                    data[ch].append({"ts": "", "val": ""})
 
             # Sanitize filename with sequential numbering
-            safe_name = sanitize_filename(seg['name'])
+            safe_name = sanitize_filename(seg["name"])
             seg_filename = f"segment_{idx:03d}_{safe_name}.csv"
             seg_path = self.base_dir / "segments" / seg_filename
 
             def write_segment(f):
                 headers = [
-                    [f"X_{seg['name']}_{ch}_{seg['start_ts']}",
-                     f"Y_{seg['name']}_{ch}_{seg['start_ts']}"]
-                    for ch in ['A', 'B', 'C', 'D', 'M']
+                    [
+                        f"X_{seg['name']}_{ch}_{seg['start_ts']}",
+                        f"Y_{seg['name']}_{ch}_{seg['start_ts']}",
+                    ]
+                    for ch in ["A", "B", "C", "D", "M"]
                 ]
-                writer = csv.writer(f, delimiter='\t', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+                writer = csv.writer(
+                    f,
+                    delimiter="\t",
+                    quotechar="|",
+                    quoting=csv.QUOTE_MINIMAL,
+                )
                 writer.writerow([h for sublist in headers for h in sublist])
 
                 for i in range(max_len):
-                    writer.writerow([
-                        data["a"][i]["ts"], data["a"][i]["val"],
-                        data["b"][i]["ts"], data["b"][i]["val"],
-                        data["c"][i]["ts"], data["c"][i]["val"],
-                        data["d"][i]["ts"], data["d"][i]["val"],
-                        data.get("m", data["a"])[i]["ts"], data.get("m", data["a"])[i]["val"],
-                    ])
+                    writer.writerow(
+                        [
+                            data["a"][i]["ts"],
+                            data["a"][i]["val"],
+                            data["b"][i]["ts"],
+                            data["b"][i]["val"],
+                            data["c"][i]["ts"],
+                            data["c"][i]["val"],
+                            data["d"][i]["ts"],
+                            data["d"][i]["val"],
+                            data.get("m", data["a"])[i]["ts"],
+                            data.get("m", data["a"])[i]["val"],
+                        ],
+                    )
 
             self._atomic_write(seg_path, write_segment)
             self._record_export(seg_path, ExportFormat.CSV_SIMPLE, max_len)
@@ -451,8 +520,12 @@ class DataExporter:
 
         Args:
             temp_log: DataFrame with temperature data
+
         """
-        is_valid, error_msg = DataValidator.validate_dataframe(temp_log, "Temperature log")
+        is_valid, error_msg = DataValidator.validate_dataframe(
+            temp_log,
+            "Temperature log",
+        )
         if not is_valid:
             logger.warning(f"Temperature log validation failed: {error_msg}")
             return
@@ -460,23 +533,31 @@ class DataExporter:
         filepath = self.base_dir / "logs" / "temperature_log.csv"
 
         def write_content(f):
-            temp_log.to_csv(f, sep='\t', index=False)
+            temp_log.to_csv(f, sep="\t", index=False)
 
         self._atomic_write(filepath, write_content)
         self._record_export(filepath, ExportFormat.CSV_SIMPLE, len(temp_log))
         logger.info(f"Exported temperature log: {len(temp_log)} rows")
 
-    def export_kinetic_log(self, log_ch1: pd.DataFrame, log_ch2: Optional[pd.DataFrame] = None,
-                          version: str = "1.0"):
+    def export_kinetic_log(
+        self,
+        log_ch1: pd.DataFrame,
+        log_ch2: pd.DataFrame | None = None,
+        version: str = "1.0",
+    ):
         """Export kinetic log(s) with validation.
 
         Args:
             log_ch1: DataFrame with channel 1 kinetic data
             log_ch2: DataFrame with channel 2 kinetic data (optional)
             version: Kinetic controller version for column naming
+
         """
         # Export Channel A
-        is_valid, error_msg = DataValidator.validate_dataframe(log_ch1, "Kinetic log Ch1")
+        is_valid, error_msg = DataValidator.validate_dataframe(
+            log_ch1,
+            "Kinetic log Ch1",
+        )
         if not is_valid:
             logger.warning(f"Kinetic Ch1 validation failed: {error_msg}")
         else:
@@ -484,25 +565,37 @@ class DataExporter:
 
             # Rename columns based on version
             if version == "1.1":
-                ch1_export = log_ch1.rename(columns={
-                    "timestamp": "Timestamp",
-                    "time": "Experiment Time",
-                    "event": "Event Type",
-                    "flow": "Flow Rate",
-                    "temp": "Sensor Temp",
-                    "dev": "Device Temp",
-                })
+                ch1_export = log_ch1.rename(
+                    columns={
+                        "timestamp": "Timestamp",
+                        "time": "Experiment Time",
+                        "event": "Event Type",
+                        "flow": "Flow Rate",
+                        "temp": "Sensor Temp",
+                        "dev": "Device Temp",
+                    },
+                )
             else:
-                ch1_export = log_ch1.rename(columns={
-                    "timestamp": "Timestamp",
-                    "time": "Experiment Time",
-                    "event": "Event Type",
-                    "flow": "Flow Rate",
-                    "temp": "Temperature",
-                })[["Timestamp", "Experiment Time", "Event Type", "Flow Rate", "Temperature"]]
+                ch1_export = log_ch1.rename(
+                    columns={
+                        "timestamp": "Timestamp",
+                        "time": "Experiment Time",
+                        "event": "Event Type",
+                        "flow": "Flow Rate",
+                        "temp": "Temperature",
+                    },
+                )[
+                    [
+                        "Timestamp",
+                        "Experiment Time",
+                        "Event Type",
+                        "Flow Rate",
+                        "Temperature",
+                    ]
+                ]
 
             def write_ch1(f):
-                ch1_export.to_csv(f, sep='\t', index=False)
+                ch1_export.to_csv(f, sep="\t", index=False)
 
             self._atomic_write(filepath_ch1, write_ch1)
             self._record_export(filepath_ch1, ExportFormat.CSV_SIMPLE, len(ch1_export))
@@ -510,35 +603,54 @@ class DataExporter:
 
         # Export Channel B if provided
         if log_ch2 is not None:
-            is_valid, error_msg = DataValidator.validate_dataframe(log_ch2, "Kinetic log Ch2")
+            is_valid, error_msg = DataValidator.validate_dataframe(
+                log_ch2,
+                "Kinetic log Ch2",
+            )
             if not is_valid:
                 logger.warning(f"Kinetic Ch2 validation failed: {error_msg}")
             else:
                 filepath_ch2 = self.base_dir / "logs" / "kinetic_ch_b.csv"
 
                 if version == "1.1":
-                    ch2_export = log_ch2.rename(columns={
-                        "timestamp": "Timestamp",
-                        "time": "Experiment Time",
-                        "event": "Event Type",
-                        "flow": "Flow Rate",
-                        "temp": "Sensor Temp",
-                        "dev": "Device Temp",
-                    })
+                    ch2_export = log_ch2.rename(
+                        columns={
+                            "timestamp": "Timestamp",
+                            "time": "Experiment Time",
+                            "event": "Event Type",
+                            "flow": "Flow Rate",
+                            "temp": "Sensor Temp",
+                            "dev": "Device Temp",
+                        },
+                    )
                 else:
-                    ch2_export = log_ch2.rename(columns={
-                        "timestamp": "Timestamp",
-                        "time": "Experiment Time",
-                        "event": "Event Type",
-                        "flow": "Flow Rate",
-                        "temp": "Temperature",
-                    })[["Timestamp", "Experiment Time", "Event Type", "Flow Rate", "Temperature"]]
+                    ch2_export = log_ch2.rename(
+                        columns={
+                            "timestamp": "Timestamp",
+                            "time": "Experiment Time",
+                            "event": "Event Type",
+                            "flow": "Flow Rate",
+                            "temp": "Temperature",
+                        },
+                    )[
+                        [
+                            "Timestamp",
+                            "Experiment Time",
+                            "Event Type",
+                            "Flow Rate",
+                            "Temperature",
+                        ]
+                    ]
 
                 def write_ch2(f):
-                    ch2_export.to_csv(f, sep='\t', index=False)
+                    ch2_export.to_csv(f, sep="\t", index=False)
 
                 self._atomic_write(filepath_ch2, write_ch2)
-                self._record_export(filepath_ch2, ExportFormat.CSV_SIMPLE, len(ch2_export))
+                self._record_export(
+                    filepath_ch2,
+                    ExportFormat.CSV_SIMPLE,
+                    len(ch2_export),
+                )
                 logger.info(f"Exported kinetic Ch B: {len(ch2_export)} rows")
 
     def save_manifest(self):
@@ -548,7 +660,7 @@ class DataExporter:
             "export_timestamp": datetime.now().isoformat(),
             "software_version": SW_VERSION,
             "total_files": len(self.exported_files),
-            "files": [asdict(f) for f in self.exported_files]
+            "files": [asdict(f) for f in self.exported_files],
         }
 
         manifest_path = self.base_dir / "export_manifest.json"
@@ -568,6 +680,7 @@ class DataExporter:
         Args:
             device_config: Device configuration dictionary
             settings: Experiment settings dictionary
+
         """
         metadata = {
             "experiment_name": self.exp_name,
@@ -576,10 +689,10 @@ class DataExporter:
                 "controller": device_config.get("ctrl", ""),
                 "kinetic": device_config.get("knx", ""),
                 "detector": device_config.get("detector", ""),
-                "device_id": device_config.get("device_id", "")
+                "device_id": device_config.get("device_id", ""),
             },
             "settings": settings,
-            "software_version": SW_VERSION
+            "software_version": SW_VERSION,
         }
 
         metadata_path = self.base_dir / "experiment_metadata.json"

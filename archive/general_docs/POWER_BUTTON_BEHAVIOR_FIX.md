@@ -1,6 +1,6 @@
 # Power Button Behavior - FIXED
 
-**Date:** November 22, 2025  
+**Date:** November 22, 2025
 **Status:** ✅ CORRECTED
 
 ## Issue
@@ -33,23 +33,23 @@ Changed the power button behavior so clicking while in "searching" state **CANCE
 ```python
 def _handle_power_click(self):
     """Handle power button click - connects/disconnects hardware.
-    
+
     Button behavior:
     - DISCONNECTED (gray): Click to start connection → SEARCHING (yellow)
     - SEARCHING (yellow): Click to CANCEL search → DISCONNECTED (gray)
     - CONNECTED (green): Click to disconnect → DISCONNECTED (gray)
     """
-    
+
     # ... existing disconnected logic ...
-    
+
     elif current_state == "searching":
         # Cancel hardware connection in progress
         print("[UI] CANCEL: User cancelled hardware search")
-        
+
         # Return to disconnected state
         self.power_btn.setProperty("powerState", "disconnected")
         self._update_power_button_style()
-        
+
         # Emit signal to cancel connection (backend handles cleanup)
         if hasattr(self, 'power_off_requested'):
             self.power_off_requested.emit()
@@ -72,7 +72,7 @@ To:
 ### State Machine:
 
 ```
-DISCONNECTED (gray) 
+DISCONNECTED (gray)
     ↓ [User clicks]
 SEARCHING (yellow)
     ↓ [Backend finds hardware] OR [User clicks to cancel]

@@ -128,7 +128,7 @@
 
 ## Summary
 
-**Keep**: 13 essential docs (README, guides, references)  
-**Archive**: ~80 historical/debug documents  
+**Keep**: 13 essential docs (README, guides, references)
+**Archive**: ~80 historical/debug documents
 
 **Action**: Move archived docs to `docs/archive/` directory for historical reference while keeping workspace clean.

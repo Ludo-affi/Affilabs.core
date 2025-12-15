@@ -4,16 +4,12 @@ Manages navigation bar creation, page switching, and button state management.
 Extracted from affilabs_core_ui.py for better modularity.
 """
 
-from typing import List
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QPushButton, QLabel, QFrame
-)
-from PySide6.QtGui import QPixmap, QPainter, QColor
 from pathlib import Path
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 from ui_styles import Colors, Fonts, label_style
-from affilabs.utils.logger import logger
 
 
 class NavigationPresenter:
@@ -24,15 +20,17 @@ class NavigationPresenter:
 
         Args:
             main_window: Reference to the main window (AffilabsMainWindow)
+
         """
         self.main_window = main_window
-        self.nav_buttons: List[QPushButton] = []
+        self.nav_buttons: list[QPushButton] = []
 
     def create_navigation_bar(self) -> QWidget:
         """Create the pill-shaped navigation bar with control buttons.
 
         Returns:
             QWidget containing the complete navigation bar
+
         """
         nav_widget = QWidget()
         nav_widget.setStyleSheet("background: #FFFFFF;")
@@ -79,7 +77,7 @@ class NavigationPresenter:
                 "  background: rgba(46, 48, 227, 1.0);"
                 "  color: white;"
                 "  font-weight: 600;"
-                "}"
+                "}",
             )
 
             # Connect to switch page
@@ -93,7 +91,7 @@ class NavigationPresenter:
         timer_label = QLabel("00:00:00")
         timer_label.setStyleSheet(
             label_style(12, color=Colors.ERROR, weight=600, font_family=Fonts.MONOSPACE)
-            + "background: rgba(255, 59, 48, 0.1);border:none;border-radius:4px;padding:4px 8px;"
+            + "background: rgba(255, 59, 48, 0.1);border:none;border-radius:4px;padding:4px 8px;",
         )
         timer_label.setVisible(False)  # Hidden until recording starts
         nav_layout.addWidget(timer_label)
@@ -114,7 +112,7 @@ class NavigationPresenter:
             "  color: #86868B;"
             "  font-size: 16px;"
             "  background: transparent;"
-            "}"
+            "}",
         )
         indicator_layout.addWidget(self.main_window.rec_status_dot)
 
@@ -122,10 +120,7 @@ class NavigationPresenter:
         indicator_layout.addStretch()
 
         self.main_window.recording_indicator.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(0, 0, 0, 0.04);"
-            "  border-radius: 6px;"
-            "}"
+            "QFrame {  background: rgba(0, 0, 0, 0.04);  border-radius: 6px;}",
         )
         # Hide recording indicator box (keep for internal use but don't display)
         self.main_window.recording_indicator.setVisible(False)
@@ -157,8 +152,12 @@ class NavigationPresenter:
         self.main_window.pause_btn = QPushButton()
         self.main_window.pause_btn.setCheckable(True)
         self.main_window.pause_btn.setFixedSize(40, 40)
-        self.main_window.pause_btn.setEnabled(False)  # Disabled until acquisition starts
-        self.main_window.pause_btn.setToolTip("Pause Live Acquisition\n(Enabled after calibration)")
+        self.main_window.pause_btn.setEnabled(
+            False,
+        )  # Disabled until acquisition starts
+        self.main_window.pause_btn.setToolTip(
+            "Pause Live Acquisition\n(Enabled after calibration)",
+        )
         self.main_window.pause_btn.setStyleSheet(
             "QPushButton {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F5F5F7);"
@@ -180,7 +179,7 @@ class NavigationPresenter:
             "QPushButton:disabled {"
             "  background: rgba(46, 48, 227, 0.1);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
-            "}"
+            "}",
         )
 
         # Override paintEvent to draw custom pause lines
@@ -213,17 +212,23 @@ class NavigationPresenter:
             # Left line
             left_x = center_x - line_width - gap // 2
             painter.drawRoundedRect(
-                left_x, center_y - line_height // 2,
-                line_width, line_height,
-                1.5, 1.5
+                left_x,
+                center_y - line_height // 2,
+                line_width,
+                line_height,
+                1.5,
+                1.5,
             )
 
             # Right line
             right_x = center_x + gap // 2
             painter.drawRoundedRect(
-                right_x, center_y - line_height // 2,
-                line_width, line_height,
-                1.5, 1.5
+                right_x,
+                center_y - line_height // 2,
+                line_width,
+                line_height,
+                1.5,
+                1.5,
             )
 
             painter.end()
@@ -237,8 +242,12 @@ class NavigationPresenter:
         self.main_window.record_btn = QPushButton("●")
         self.main_window.record_btn.setCheckable(True)
         self.main_window.record_btn.setFixedSize(40, 40)
-        self.main_window.record_btn.setEnabled(False)  # Disabled until acquisition starts
-        self.main_window.record_btn.setToolTip("Start Recording\n(Enabled after calibration)")
+        self.main_window.record_btn.setEnabled(
+            False,
+        )  # Disabled until acquisition starts
+        self.main_window.record_btn.setToolTip(
+            "Start Recording\n(Enabled after calibration)",
+        )
         self.main_window.record_btn.setStyleSheet(
             "QPushButton {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F5F5F7);"
@@ -265,7 +274,7 @@ class NavigationPresenter:
             "  background: rgba(46, 48, 227, 0.1);"
             "  color: rgba(46, 48, 227, 0.3);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
-            "}"
+            "}",
         )
         self.main_window.record_btn.clicked.connect(self.main_window._toggle_recording)
         layout.addWidget(self.main_window.record_btn)
@@ -290,13 +299,13 @@ class NavigationPresenter:
             "QPushButton:hover {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.5), stop:1 rgba(46, 48, 227, 0.6));"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
-            "}"
+            "}",
         )
 
         self.main_window._update_power_button_style()
         self.main_window.power_btn.setToolTip(
             "Power On Device (Ctrl+P)\n"
-            "Gray = Disconnected | Yellow = Searching | Green = Connected"
+            "Gray = Disconnected | Yellow = Searching | Green = Connected",
         )
         self.main_window.power_btn.clicked.connect(self.main_window._handle_power_click)
         layout.addWidget(self.main_window.power_btn)
@@ -305,7 +314,9 @@ class NavigationPresenter:
         """Create company logo label."""
         logo_label = QLabel()
         # Load logo using relative path from affilabs module
-        logo_path = Path(__file__).parent.parent / "ui" / "img" / "affinite-no-background.png"
+        logo_path = (
+            Path(__file__).parent.parent / "ui" / "img" / "affinite-no-background.png"
+        )
 
         # Debug: Log logo path
         print(f"[LOGO-DEBUG] Logo path: {logo_path}")
@@ -313,24 +324,35 @@ class NavigationPresenter:
 
         if logo_path.exists():
             logo_pixmap = QPixmap(str(logo_path))
-            print(f"[LOGO-DEBUG] Pixmap loaded: isNull={logo_pixmap.isNull()}, size={logo_pixmap.size()}")
+            print(
+                f"[LOGO-DEBUG] Pixmap loaded: isNull={logo_pixmap.isNull()}, size={logo_pixmap.size()}",
+            )
             if not logo_pixmap.isNull():
                 # Scale logo to larger size while maintaining aspect ratio
-                scaled_logo = logo_pixmap.scaledToHeight(40, Qt.TransformationMode.SmoothTransformation)
+                scaled_logo = logo_pixmap.scaledToHeight(
+                    40,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
                 logo_label.setPixmap(scaled_logo)
                 # Debug: Add border to see logo position
                 logo_label.setStyleSheet("border: 2px solid red; background: white;")
-                print(f"[LOGO-DEBUG] Logo set successfully, scaled height=40, width={scaled_logo.width()}")
+                print(
+                    f"[LOGO-DEBUG] Logo set successfully, scaled height=40, width={scaled_logo.width()}",
+                )
             else:
                 # Fallback if pixmap failed
-                print(f"[LOGO-DEBUG] Pixmap is null - using text fallback")
+                print("[LOGO-DEBUG] Pixmap is null - using text fallback")
                 logo_label.setText("Affinité")
-                logo_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #1D1D1F;")
+                logo_label.setStyleSheet(
+                    "font-size: 16px; font-weight: bold; color: #1D1D1F;",
+                )
         else:
             # Fallback if file not found
-            print(f"[LOGO-DEBUG] Logo file not found - using text fallback")
+            print("[LOGO-DEBUG] Logo file not found - using text fallback")
             logo_label.setText("Affinité")
-            logo_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #1D1D1F;")
+            logo_label.setStyleSheet(
+                "font-size: 16px; font-weight: bold; color: #1D1D1F;",
+            )
         logo_label.setStyleSheet("background: transparent;")
         logo_label.setToolTip("Affinité Instruments")
         layout.addWidget(logo_label)
@@ -340,6 +362,7 @@ class NavigationPresenter:
 
         Args:
             page_index: Index of the page to switch to (0-3)
+
         """
         self.main_window.content_stack.setCurrentIndex(page_index)
 
@@ -347,10 +370,11 @@ class NavigationPresenter:
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == page_index)
 
-    def get_buttons(self) -> List[QPushButton]:
+    def get_buttons(self) -> list[QPushButton]:
         """Get the list of navigation buttons.
 
         Returns:
             List of navigation QPushButton instances
+
         """
         return self.nav_buttons

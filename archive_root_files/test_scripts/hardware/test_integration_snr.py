@@ -1,5 +1,4 @@
-"""
-Integration Time vs SNR Analysis
+"""Integration Time vs SNR Analysis
 
 Tests the trade-off between:
 - Long integration (fewer points, high counts)
@@ -11,23 +10,22 @@ For SPR peak detection, we measure:
 3. Peak detection reliability
 """
 
-import time
-import sys
-from pathlib import Path
 import io
+import sys
+import time
+from pathlib import Path
+
 import numpy as np
-from scipy.signal import find_peaks
 
 # Fix Windows console encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Add src to path
-src_path = Path(__file__).parent / 'src'
+src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from utils.controller import PicoP4SPR
 from utils.usb4000_wrapper import USB4000
-from utils.logger import logger
 
 
 def calculate_snr(spectrum):
@@ -57,10 +55,9 @@ def find_peak_position(spectrum, wavelengths):
 
 def test_integration_time_snr():
     """Test integration time vs SNR trade-off."""
-
-    print("="*80)
+    print("=" * 80)
     print("INTEGRATION TIME vs SNR ANALYSIS")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Initialize hardware
@@ -85,11 +82,13 @@ def test_integration_time_snr():
         print("ERROR: Failed to read wavelengths")
         return
 
-    print(f"Detector: {len(wavelengths)} pixels, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm")
+    print(
+        f"Detector: {len(wavelengths)} pixels, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm",
+    )
     print()
 
     # Test parameters
-    led_channel = 'c'  # Use channel C (typically brightest)
+    led_channel = "c"  # Use channel C (typically brightest)
     led_intensity = 255
 
     # Integration times to test (ms)
@@ -98,7 +97,7 @@ def test_integration_time_snr():
     # Number of measurements per integration time
     num_measurements = 10
 
-    print(f"Test Configuration:")
+    print("Test Configuration:")
     print(f"  LED Channel: {led_channel.upper()}")
     print(f"  LED Intensity: {led_intensity}")
     print(f"  Integration times: {integration_times}")
@@ -111,9 +110,9 @@ def test_integration_time_snr():
 
     results = []
 
-    print("="*80)
+    print("=" * 80)
     print("MEASUREMENTS")
-    print("="*80)
+    print("=" * 80)
     print()
 
     for int_time in integration_times:
@@ -130,7 +129,7 @@ def test_integration_time_snr():
                 spectra.append(spectrum)
 
         if len(spectra) == 0:
-            print(f"  ERROR: No valid spectra")
+            print("  ERROR: No valid spectra")
             continue
 
         # Calculate statistics
@@ -158,21 +157,25 @@ def test_integration_time_snr():
         mean_signals = [np.mean(s) for s in spectra]
         signal_cv = np.std(mean_signals) / np.mean(mean_signals) * 100
 
-        results.append({
-            'int_time': int_time,
-            'signal_mean': signal_mean,
-            'signal_max': signal_max,
-            'noise_std': noise_std,
-            'snr': snr,
-            'peak_std': peak_std,
-            'centroid_std': centroid_std,
-            'signal_cv': signal_cv,
-            'num_spectra': len(spectra)
-        })
+        results.append(
+            {
+                "int_time": int_time,
+                "signal_mean": signal_mean,
+                "signal_max": signal_max,
+                "noise_std": noise_std,
+                "snr": snr,
+                "peak_std": peak_std,
+                "centroid_std": centroid_std,
+                "signal_cv": signal_cv,
+                "num_spectra": len(spectra),
+            },
+        )
 
         print(f"  Signal: mean={signal_mean:.0f}, max={signal_max:.0f}")
         print(f"  SNR: {snr:.1f}")
-        print(f"  Peak precision: {peak_std:.3f}nm (max), {centroid_std:.3f}nm (centroid)")
+        print(
+            f"  Peak precision: {peak_std:.3f}nm (max), {centroid_std:.3f}nm (centroid)",
+        )
         print(f"  Signal variability: {signal_cv:.2f}%")
         print()
 
@@ -180,17 +183,23 @@ def test_integration_time_snr():
     ctrl.turn_off_channels()
 
     # Analysis
-    print("="*80)
+    print("=" * 80)
     print("ANALYSIS")
-    print("="*80)
+    print("=" * 80)
     print()
 
-    print(f"{'Int Time':>8} | {'Signal':>8} | {'SNR':>6} | {'Peak Std':>9} | {'Centroid Std':>12} | {'Signal CV':>9}")
-    print(f"{'(ms)':>8} | {'(counts)':>8} | {'':>6} | {'(nm)':>9} | {'(nm)':>12} | {'(%)':>9}")
-    print(f"---------+----------+--------+-----------+--------------+-----------")
+    print(
+        f"{'Int Time':>8} | {'Signal':>8} | {'SNR':>6} | {'Peak Std':>9} | {'Centroid Std':>12} | {'Signal CV':>9}",
+    )
+    print(
+        f"{'(ms)':>8} | {'(counts)':>8} | {'':>6} | {'(nm)':>9} | {'(nm)':>12} | {'(%)':>9}",
+    )
+    print("---------+----------+--------+-----------+--------------+-----------")
 
     for r in results:
-        print(f"{r['int_time']:8d} | {r['signal_mean']:8.0f} | {r['snr']:6.1f} | {r['peak_std']:9.3f} | {r['centroid_std']:12.3f} | {r['signal_cv']:9.2f}")
+        print(
+            f"{r['int_time']:8d} | {r['signal_mean']:8.0f} | {r['snr']:6.1f} | {r['peak_std']:9.3f} | {r['centroid_std']:12.3f} | {r['signal_cv']:9.2f}",
+        )
 
     print()
 
@@ -203,25 +212,29 @@ def test_integration_time_snr():
 
         for r in results[1:]:
             # Expected SNR improvement
-            signal_ratio = r['signal_mean'] / baseline['signal_mean']
+            signal_ratio = r["signal_mean"] / baseline["signal_mean"]
             expected_snr_ratio = np.sqrt(signal_ratio)
-            actual_snr_ratio = r['snr'] / baseline['snr']
+            actual_snr_ratio = r["snr"] / baseline["snr"]
 
-            print(f"  {r['int_time']:3d}ms vs {baseline['int_time']:3d}ms: signal {signal_ratio:.2f}x → SNR expected {expected_snr_ratio:.2f}x, actual {actual_snr_ratio:.2f}x")
+            print(
+                f"  {r['int_time']:3d}ms vs {baseline['int_time']:3d}ms: signal {signal_ratio:.2f}x → SNR expected {expected_snr_ratio:.2f}x, actual {actual_snr_ratio:.2f}x",
+            )
 
     print()
 
     # Optimal strategy
-    print("="*80)
+    print("=" * 80)
     print("OPTIMAL STRATEGY FOR PEAK DETECTION")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Find best integration time for peak precision
-    best_centroid = min(results, key=lambda x: x['centroid_std'])
-    best_snr = max(results, key=lambda x: x['snr'])
+    best_centroid = min(results, key=lambda x: x["centroid_std"])
+    best_snr = max(results, key=lambda x: x["snr"])
 
-    print(f"Best peak precision: {best_centroid['int_time']}ms (centroid std = {best_centroid['centroid_std']:.3f}nm)")
+    print(
+        f"Best peak precision: {best_centroid['int_time']}ms (centroid std = {best_centroid['centroid_std']:.3f}nm)",
+    )
     print(f"Best SNR: {best_snr['int_time']}ms (SNR = {best_snr['snr']:.1f})")
     print()
 
@@ -234,26 +247,30 @@ def test_integration_time_snr():
 
     for r in results[:-1]:
         # How many short integrations equal one long integration time?
-        time_ratio = reference['int_time'] / r['int_time']
+        time_ratio = reference["int_time"] / r["int_time"]
         num_averages = int(time_ratio)
 
         # Expected SNR after averaging
-        snr_single = r['snr']
+        snr_single = r["snr"]
         snr_averaged = snr_single * np.sqrt(num_averages)
 
         # Compare to reference
-        snr_improvement = snr_averaged / reference['snr']
+        snr_improvement = snr_averaged / reference["snr"]
 
-        print(f"  {num_averages}× {r['int_time']}ms = {num_averages * r['int_time']}ms total")
+        print(
+            f"  {num_averages}× {r['int_time']}ms = {num_averages * r['int_time']}ms total",
+        )
         print(f"    Single: SNR = {snr_single:.1f}")
         print(f"    Averaged: SNR = {snr_averaged:.1f}")
-        print(f"    vs {reference['int_time']}ms: SNR = {reference['snr']:.1f} ({snr_improvement:.2f}x)")
+        print(
+            f"    vs {reference['int_time']}ms: SNR = {reference['snr']:.1f} ({snr_improvement:.2f}x)",
+        )
         print()
 
     # Recommendation
-    print("="*80)
+    print("=" * 80)
     print("RECOMMENDATION")
-    print("="*80)
+    print("=" * 80)
     print()
 
     print("For SPR peak detection:")
@@ -262,7 +279,9 @@ def test_integration_time_snr():
     # Find sweet spot (good SNR, reasonable time)
     sweet_spot = None
     for r in results:
-        if r['centroid_std'] < 0.1 and r['int_time'] <= 70:  # Good precision, reasonable time
+        if (
+            r["centroid_std"] < 0.1 and r["int_time"] <= 70
+        ):  # Good precision, reasonable time
             sweet_spot = r
             break
 
@@ -277,7 +296,7 @@ def test_integration_time_snr():
         print("    - Sub-0.1nm peak precision")
         print("    - Fast measurement cycle")
     else:
-        print(f"  Use maximum safe integration time: 70ms")
+        print("  Use maximum safe integration time: 70ms")
         print("    - Maximizes SNR")
         print("    - Best peak precision")
         print("    - Standard for SPR measurements")
@@ -285,7 +304,9 @@ def test_integration_time_snr():
     print()
     print("Key insights:")
     print("  1. SNR improves with sqrt(integration_time)")
-    print("  2. Averaging multiple short integrations = single long integration (theoretically)")
+    print(
+        "  2. Averaging multiple short integrations = single long integration (theoretically)",
+    )
     print("  3. In practice: single long integration is simpler and more reliable")
     print("  4. For real-time monitoring: shorter integration allows faster updates")
     print("  5. For precision: longer integration reduces measurement overhead")
@@ -295,12 +316,12 @@ def test_integration_time_snr():
     # Cleanup
     usb.close()
 
-    print("="*80)
+    print("=" * 80)
     print("TEST COMPLETE")
-    print("="*80)
+    print("=" * 80)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         test_integration_time_snr()
     except KeyboardInterrupt:
@@ -308,4 +329,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n\nTest failed: {e}")
         import traceback
+
         traceback.print_exc()

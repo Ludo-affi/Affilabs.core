@@ -1,9 +1,9 @@
 from pathlib import Path
 from time import sleep
 
-from ftd2xx import listDevices
 import numpy as np
-from numpy import all, arange, asarray, frombuffer, isnan
+from ftd2xx import listDevices
+from numpy import all, arange, frombuffer, isnan
 from numpy.polynomial import Polynomial
 
 from utils.common import get_config
@@ -59,8 +59,7 @@ class USB4000:
                 )
                 self.opened = True
                 return True
-            else:
-                return False
+            return False
         except Exception as e:
             logger.exception(f"Failed to connect to spectrometer - {e}")
             self.app.raise_error.emit("spec")

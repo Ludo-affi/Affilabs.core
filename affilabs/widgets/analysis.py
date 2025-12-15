@@ -20,15 +20,15 @@ from pyqtgraph import InfiniteLine, PlotDataItem, mkPen
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFileDialog, QTableWidgetItem, QWidget
 
-from settings import CH_LIST, SW_VERSION
-from ui.ui_analysis import Ui_FormAnalysis
+from affilabs.ui.ui_analysis import Ui_FormAnalysis
 from affilabs.utils.logger import logger
 from affilabs.utils.validator import NumericDelegate
-from widgets.datawindow import DataDict, Segment
-from widgets.graphs import SegmentGraph
-from widgets.ka_kd_wizard import KAKDWizardDialog
-from widgets.kd_wizard import KDWizardDialog
-from widgets.message import show_message
+from affilabs.widgets.datawindow import DataDict, Segment
+from affilabs.widgets.graphs import SegmentGraph
+
+# KD/KA-KD wizards are legacy; removed from current software
+from affilabs.widgets.message import show_message
+from settings import CH_LIST, SW_VERSION
 
 TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 SEGMENT_COLORS = [
@@ -110,10 +110,12 @@ class AnalysisWindow(QWidget):
         self.ui.export_btn.clicked.connect(self.export_analysis_data)
         self.ui.import_btn.clicked.connect(self.import_analysis_data)
         self.ui.reset_analysis_btn.clicked.connect(self.clear_analysis_segments)
-        self.ui.fit_wizard_btn.clicked.connect(self._show_kd_wizard)
-        self.ui.kin_wizard_btn.clicked.connect(self._show_ka_kd_wizard)
-        self._kd_dlg: KDWizardDialog | None = None
-        self._ka_kd_dlg: KAKDWizardDialog | None = None
+        # Hide legacy wizard buttons (disabled in current software)
+        try:
+            self.ui.fit_wizard_btn.setVisible(False)
+            self.ui.kin_wizard_btn.setVisible(False)
+        except Exception:
+            pass
 
         # Stacked Graph Setup
         self.ui.stack_graph.getAxis("bottom").enableAutoSIPrefix(enable=False)
@@ -431,27 +433,27 @@ class AnalysisWindow(QWidget):
                         table_data[i]["Note"] = f"{seg.note}"
                         for ch in CH_LIST:
                             table_data[i][f"Conc_{ch.upper()}"] = f"{seg.conc[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_Shift_{ch.upper()}"
-                            ] = f"{seg.assoc_shift[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_Start_{ch.upper()}"
-                            ] = f"{seg.assoc_start[ch]:.3f}"
-                            table_data[i][
-                                f"Assoc_End_{ch.upper()}"
-                            ] = f"{seg.assoc_end[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Shift_{ch.upper()}"
-                            ] = f"{seg.dissoc_shift[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Start_{ch.upper()}"
-                            ] = f"{seg.dissoc_start[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_End_{ch.upper()}"
-                            ] = f"{seg.dissoc_end[ch]:.3f}"
-                            table_data[i][
-                                f"Dissoc_Shift_{ch.upper()}"
-                            ] = f"{seg.dissoc_shift[ch]:.3f}"
+                            table_data[i][f"Assoc_Shift_{ch.upper()}"] = (
+                                f"{seg.assoc_shift[ch]:.3f}"
+                            )
+                            table_data[i][f"Assoc_Start_{ch.upper()}"] = (
+                                f"{seg.assoc_start[ch]:.3f}"
+                            )
+                            table_data[i][f"Assoc_End_{ch.upper()}"] = (
+                                f"{seg.assoc_end[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Shift_{ch.upper()}"] = (
+                                f"{seg.dissoc_shift[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Start_{ch.upper()}"] = (
+                                f"{seg.dissoc_start[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_End_{ch.upper()}"] = (
+                                f"{seg.dissoc_end[ch]:.3f}"
+                            )
+                            table_data[i][f"Dissoc_Shift_{ch.upper()}"] = (
+                                f"{seg.dissoc_shift[ch]:.3f}"
+                            )
                     writer = csv.DictWriter(
                         txtfile,
                         dialect="excel-tab",
@@ -684,9 +686,9 @@ class AnalysisWindow(QWidget):
                                 curve_target[fieldnames[ind]] = "Curve target"
                                 curve_target[fieldnames[ind + 1]] = "N/A"
                                 curve_desc[fieldnames[ind]] = "Curve description"
-                                curve_desc[
-                                    fieldnames[ind + 1]
-                                ] = f" Seg {seg.name} Ch {ch}"
+                                curve_desc[fieldnames[ind + 1]] = (
+                                    f" Seg {seg.name} Ch {ch}"
+                                )
                                 curve_xy[fieldnames[ind]] = "X"
                                 curve_xy[fieldnames[ind + 1]] = "Y"
                             writer.writerow(curve_num)
@@ -703,8 +705,7 @@ class AnalysisWindow(QWidget):
                             ):
                                 end_time = 1000000
                                 for seg in self.auto_segments:
-                                    if seg.seg_x[ch][-1] < end_time:
-                                        end_time = seg.seg_x[ch][-1]
+                                    end_time = min(seg.seg_x[ch][-1], end_time)
                                 temp_data = []
                                 for seg in self.auto_segments:
                                     x = []
@@ -718,8 +719,7 @@ class AnalysisWindow(QWidget):
                                     temp_data.append({"x": x, "y": y})
                                 max_length = 0
                                 for i in range(len(temp_data)):
-                                    if len(temp_data[i]["x"]) > max_length:
-                                        max_length = len(temp_data[i]["x"])
+                                    max_length = max(len(temp_data[i]["x"]), max_length)
                                 for i in range(len(temp_data)):
                                     for j in range(max_length):
                                         if (j + 1) > len(temp_data[i]["x"]):
@@ -904,72 +904,13 @@ class AnalysisWindow(QWidget):
             except Exception as e:
                 logger.debug(f"Error manually adjusting analysis segment{e}")
 
-    def _show_kd_wizard(self: Self) -> None:
-        if self._kd_dlg is None:
-            seg_data_to_fit = []
-            for i, seg in enumerate(self.auto_segments):
-                if self.assoc_plots[i].isVisible():
-                    seg_data_to_fit.append(seg)
-            self._kd_dlg = KDWizardDialog(
-                parent=self,
-                seg_data=seg_data_to_fit,
-                units=self.unit,
-            )
-            self._kd_dlg.closed.connect(self._on_kd_dlg_closed)
-            self._kd_dlg.show()
+    # Legacy KD wizard removed
 
-    def _show_ka_kd_wizard(self: Self) -> None:
-        if self._ka_kd_dlg is None:
-            seg_data_to_fit = []
-            for i, seg in enumerate(self.auto_segments):
-                if self.assoc_plots[i].isVisible():
-                    seg_data_to_fit.append(seg)
-            self._ka_kd_dlg = KAKDWizardDialog(
-                parent=self,
-                seg_data=seg_data_to_fit,
-                units=self.unit,
-            )
-            self._ka_kd_dlg.closed.connect(self._on_ka_kd_dlg_closed)
-            self._ka_kd_dlg.show()
+    # Legacy KA/KD wizard removed
 
-    def _on_kd_dlg_closed(self: Self) -> None:
-        if self._kd_dlg is not None:
-            try:
-                # Update conc data from the Fitting Wizard dialog
-                for ch in CH_LIST:
-                    if len(self._kd_dlg.seg_names[ch]) == len(
-                        self._kd_dlg.conc_data[ch],
-                    ):
-                        for i, c in enumerate(self._kd_dlg.conc_data[ch]):
-                            name = self._kd_dlg.seg_names[ch][i]
-                            for seg in self.auto_segments:
-                                if seg.name == name:
-                                    seg.conc[ch] = deepcopy(c)
-                                    break
-                self._kd_dlg = None
-                self.update_table()
-            except Exception as e:
-                logger.debug(f"Error while saving KD conc in Analysis: {e}")
-        else:
-            logger.debug("Error while saving KD conc in Analysis: no dialog widget")
+    # Legacy KD wizard removed
 
-    def _on_ka_kd_dlg_closed(self: Self) -> None:
-        # Update conc data from the Kinetic Wizard dialog
-        if self._ka_kd_dlg is not None:
-            for ch in CH_LIST:
-                if len(self._ka_kd_dlg.seg_names[ch]) == len(
-                    self._ka_kd_dlg.conc_data[ch],
-                ):
-                    for i, c in enumerate(self._ka_kd_dlg.conc_data[ch]):
-                        name = self._ka_kd_dlg.seg_names[ch][i]
-                        for seg in self.auto_segments:
-                            if seg.name == name:
-                                seg.conc[ch] = deepcopy(c)
-                                break
-            self._ka_kd_dlg = None
-            self.update_table()
-        else:
-            logger.debug("Error while closing KA KD wizard: no dialog widget")
+    # Legacy KA/KD wizard removed
 
     def _on_stack_channel_changed(
         self: Self,
@@ -1170,10 +1111,14 @@ class AnalysisSegment:
                                     self.assoc_start[ch] = self.data_x[ch][i]
                                     if self.assoc_end[ch] < self.assoc_start[ch]:
                                         self.assoc_end[ch] = self.data_x[ch][i + 1]
-                                    if self.dissoc_start[ch] < self.assoc_end[ch]:
-                                        self.dissoc_start[ch] = self.assoc_end[ch]
-                                    if self.dissoc_end[ch] < self.dissoc_start[ch]:
-                                        self.dissoc_end[ch] = self.dissoc_start[ch]
+                                    self.dissoc_start[ch] = max(
+                                        self.dissoc_start[ch],
+                                        self.assoc_end[ch],
+                                    )
+                                    self.dissoc_end[ch] = max(
+                                        self.dissoc_end[ch],
+                                        self.dissoc_start[ch],
+                                    )
                             j = i + 1
                             while j < len(self.data_x[ch]):
                                 if (

@@ -305,35 +305,45 @@ class DeviceConfiguration:
 
         # Map EEPROM data to config structure
         config["hardware"]["led_pcb_model"] = eeprom_config.get(
-            "led_pcb_model", "luminus_cool_white",
+            "led_pcb_model",
+            "luminus_cool_white",
         )
         config["hardware"]["optical_fiber_diameter_um"] = eeprom_config.get(
-            "fiber_diameter_um", 200,
+            "fiber_diameter_um",
+            200,
         )
         config["hardware"]["polarizer_type"] = eeprom_config.get(
-            "polarizer_type", "round",
+            "polarizer_type",
+            "round",
         )
         config["hardware"]["servo_s_position"] = eeprom_config.get(
-            "servo_s_position", 10,
+            "servo_s_position",
+            10,
         )
         config["hardware"]["servo_p_position"] = eeprom_config.get(
-            "servo_p_position", 100,
+            "servo_p_position",
+            100,
         )
 
         config["calibration"]["led_intensity_a"] = eeprom_config.get(
-            "led_intensity_a", 0,
+            "led_intensity_a",
+            0,
         )
         config["calibration"]["led_intensity_b"] = eeprom_config.get(
-            "led_intensity_b", 0,
+            "led_intensity_b",
+            0,
         )
         config["calibration"]["led_intensity_c"] = eeprom_config.get(
-            "led_intensity_c", 0,
+            "led_intensity_c",
+            0,
         )
         config["calibration"]["led_intensity_d"] = eeprom_config.get(
-            "led_intensity_d", 0,
+            "led_intensity_d",
+            0,
         )
         config["calibration"]["integration_time_ms"] = eeprom_config.get(
-            "integration_time_ms", 100,
+            "integration_time_ms",
+            100,
         )
         config["calibration"]["num_scans"] = eeprom_config.get("num_scans", 3)
 
@@ -553,7 +563,8 @@ class DeviceConfiguration:
 
         # Validate polarizer type
         polarizer_type = self.config["hardware"].get(
-            "polarizer_type", "barrel",
+            "polarizer_type",
+            "barrel",
         )  # Default for backward compatibility
         if polarizer_type not in self.VALID_POLARIZER_TYPES:
             errors.append(
@@ -656,7 +667,8 @@ class DeviceConfiguration:
     def get_polarizer_type(self) -> str:
         """Get polarizer type ('barrel' or 'round')."""
         return self.config["hardware"].get(
-            "polarizer_type", "barrel",
+            "polarizer_type",
+            "barrel",
         )  # Default to barrel for backward compatibility
 
     def set_polarizer_type(self, polarizer_type: str) -> None:
@@ -733,7 +745,8 @@ class DeviceConfiguration:
         if detector_wait is not None:
             return detector_wait
         return self.config["timing_parameters"].get(
-            "pre_led_delay_ms", DETECTOR_WAIT_BEFORE_MS,
+            "pre_led_delay_ms",
+            DETECTOR_WAIT_BEFORE_MS,
         )
 
     def get_post_led_delay_ms(self) -> float:
@@ -748,7 +761,8 @@ class DeviceConfiguration:
         if led_off is not None:
             return led_off
         return self.config["timing_parameters"].get(
-            "post_led_delay_ms", LED_OFF_PERIOD_MS,
+            "post_led_delay_ms",
+            LED_OFF_PERIOD_MS,
         )
 
     def set_pre_post_led_delays(self, pre_ms: float, post_ms: float) -> None:
@@ -795,11 +809,13 @@ class DeviceConfiguration:
         return {
             "led_off_period_ms": tp.get("led_off_period_ms", LED_OFF_PERIOD_MS),
             "detector_wait_before_ms": tp.get(
-                "detector_wait_before_ms", DETECTOR_WAIT_BEFORE_MS,
+                "detector_wait_before_ms",
+                DETECTOR_WAIT_BEFORE_MS,
             ),
             "detector_window_ms": tp.get("detector_window_ms", DETECTOR_WINDOW_MS),
             "detector_wait_after_ms": tp.get(
-                "detector_wait_after_ms", DETECTOR_WAIT_AFTER_MS,
+                "detector_wait_after_ms",
+                DETECTOR_WAIT_AFTER_MS,
             ),
         }
 
@@ -842,28 +858,32 @@ class DeviceConfiguration:
         """Get LED transition time between channels (ms)."""
         LED_OFF_PERIOD_MS = _get_setting("LED_OFF_PERIOD_MS", 5.0)
         return self.config["timing_parameters"].get(
-            "led_off_period_ms", LED_OFF_PERIOD_MS,
+            "led_off_period_ms",
+            LED_OFF_PERIOD_MS,
         )
 
     def get_detector_wait_before_ms(self) -> float:
         """Get detector wait time for LED stabilization (ms)."""
         DETECTOR_WAIT_BEFORE_MS = _get_setting("DETECTOR_WAIT_BEFORE_MS", 35.0)
         return self.config["timing_parameters"].get(
-            "detector_wait_before_ms", DETECTOR_WAIT_BEFORE_MS,
+            "detector_wait_before_ms",
+            DETECTOR_WAIT_BEFORE_MS,
         )
 
     def get_detector_window_ms(self) -> float:
         """Get detector acquisition window (ms)."""
         DETECTOR_WINDOW_MS = _get_setting("DETECTOR_WINDOW_MS", 210.0)
         return self.config["timing_parameters"].get(
-            "detector_window_ms", DETECTOR_WINDOW_MS,
+            "detector_window_ms",
+            DETECTOR_WINDOW_MS,
         )
 
     def get_detector_wait_after_ms(self) -> float:
         """Get detector wait time after acquisition (ms)."""
         DETECTOR_WAIT_AFTER_MS = _get_setting("DETECTOR_WAIT_AFTER_MS", 5.0)
         return self.config["timing_parameters"].get(
-            "detector_wait_after_ms", DETECTOR_WAIT_AFTER_MS,
+            "detector_wait_after_ms",
+            DETECTOR_WAIT_AFTER_MS,
         )
 
     def get_frequency_limits(self, num_leds: int) -> dict[str, float]:
@@ -1254,7 +1274,11 @@ class DeviceConfiguration:
         }
 
     def set_led_intensities(
-        self, led_a: int, led_b: int, led_c: int, led_d: int,
+        self,
+        led_a: int,
+        led_b: int,
+        led_c: int,
+        led_d: int,
     ) -> None:
         """Set calibrated LED intensities for all channels.
 
@@ -1297,7 +1321,9 @@ class DeviceConfiguration:
         }
 
     def set_calibration_settings(
-        self, integration_time_ms: int | None, num_scans: int | None,
+        self,
+        integration_time_ms: int | None,
+        num_scans: int | None,
     ) -> None:
         """Set calibration settings (integration time and number of scans).
 
@@ -1608,29 +1634,37 @@ class DeviceConfiguration:
             if calibration_data is not None:
                 # Extract values from dict
                 integration_time_ms = calibration_data.get(
-                    "integration_time_ms", integration_time_ms,
+                    "integration_time_ms",
+                    integration_time_ms,
                 )
                 s_mode_intensities = calibration_data.get(
-                    "s_mode_intensities", s_mode_intensities,
+                    "s_mode_intensities",
+                    s_mode_intensities,
                 )
                 p_mode_intensities = calibration_data.get(
-                    "p_mode_intensities", p_mode_intensities,
+                    "p_mode_intensities",
+                    p_mode_intensities,
                 )
                 s_ref_spectra = calibration_data.get(
-                    "s_ref_signals", s_ref_spectra,
+                    "s_ref_signals",
+                    s_ref_spectra,
                 )  # Note: dict uses 's_ref_signals'
                 p_ref_spectra = calibration_data.get("p_ref_signals", p_ref_spectra)
                 s_ref_wavelengths = calibration_data.get(
-                    "wavelengths", s_ref_wavelengths,
+                    "wavelengths",
+                    s_ref_wavelengths,
                 )
                 calibration_method = calibration_data.get(
-                    "calibration_method", calibration_method,
+                    "calibration_method",
+                    calibration_method,
                 )
                 per_channel_integration_times = calibration_data.get(
-                    "per_channel_integration_times", per_channel_integration_times,
+                    "per_channel_integration_times",
+                    per_channel_integration_times,
                 )
                 weakest_channel = calibration_data.get(
-                    "weakest_channel", weakest_channel,
+                    "weakest_channel",
+                    weakest_channel,
                 )
                 # Note: live_boost parameters not in calibration_data dict
 
@@ -1802,7 +1836,8 @@ class DeviceConfiguration:
 
             # Optional: pre-QC dark snapshot
             if "pre_qc_dark_snapshot" in cal and isinstance(
-                cal["pre_qc_dark_snapshot"], list,
+                cal["pre_qc_dark_snapshot"],
+                list,
             ):
                 try:
                     cal["pre_qc_dark_snapshot"] = np.array(cal["pre_qc_dark_snapshot"])

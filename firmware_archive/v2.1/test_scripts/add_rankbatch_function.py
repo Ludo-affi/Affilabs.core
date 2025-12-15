@@ -3,7 +3,7 @@
 firmware_path = r"C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Affilabs.core\pico-p4spr-firmware\affinite_p4spr.c"
 
 # The complete function implementation
-function_impl = '''
+function_impl = """
 
 /*** Function to execute LED ranking with batch intensities and cycle counting ***/
 
@@ -76,20 +76,20 @@ bool led_rank_batch_cycles(uint8_t int_a, uint8_t int_b, uint8_t int_c, uint8_t 
 
     return true;
 }
-'''
+"""
 
 print("Adding led_rank_batch_cycles function...")
 
-with open(firmware_path, 'r', encoding='utf-8') as f:
+with open(firmware_path, encoding="utf-8") as f:
     content = f.read()
 
-if 'BATCH_START' in content:
+if "BATCH_START" in content:
     print("✅ Function already exists!")
 else:
     # Append AFTER the file ends (not inside any function)
-    content = content + '\n' + function_impl
+    content = content + "\n" + function_impl
 
-    with open(firmware_path, 'w', encoding='utf-8') as f:
+    with open(firmware_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     print("✅ Function added successfully!")

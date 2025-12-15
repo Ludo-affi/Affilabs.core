@@ -7,19 +7,20 @@ This script checks that Step 4 properly:
 4. Adjusts other LEDs individually to hit target at frozen integration time
 """
 
-import sys
 import json
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Add project root to path
 ROOT_DIR = Path(__file__).parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from utils.logger import logger
 from settings.settings import CH_LIST
+from utils.logger import logger
 
 
 def load_calibration_data():
@@ -31,18 +32,18 @@ def load_calibration_data():
         return None
 
     try:
-        with open(config_file, 'r') as f:
+        with open(config_file) as f:
             config = json.load(f)
 
-        led_cal = config.get('calibration', {}).get('led_calibration', {})
+        led_cal = config.get("calibration", {}).get("led_calibration", {})
         if not led_cal:
             logger.error("❌ No LED calibration found in device_config.json")
             return None
 
         return {
-            'integration_time_ms': led_cal.get('integration_time_ms', 0),
-            's_mode_leds': led_cal.get('s_mode_intensities', {}),
-            'p_mode_leds': led_cal.get('p_mode_intensities', {}),
+            "integration_time_ms": led_cal.get("integration_time_ms", 0),
+            "s_mode_leds": led_cal.get("s_mode_intensities", {}),
+            "p_mode_leds": led_cal.get("p_mode_intensities", {}),
         }
     except Exception as e:
         logger.error(f"❌ Error loading calibration: {e}")
@@ -61,7 +62,11 @@ def load_s_ref_data():
     for ch in CH_LIST:
         # Find most recent s_ref file for this channel
         pattern = f"s_ref_{ch}_*.npy"
-        files = sorted(calib_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            calib_dir.glob(pattern),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
 
         if files:
             try:
@@ -78,15 +83,14 @@ def load_s_ref_data():
 
 def validate_step4_logic(cal_data, s_ref_data):
     """Validate that Step 4 followed the correct logic."""
-
     logger.info("")
     logger.info("=" * 80)
     logger.info("🔍 STEP 4 LOGIC VALIDATION")
     logger.info("=" * 80)
 
     # Extract LED values
-    leds = cal_data['s_mode_leds']
-    integration_ms = cal_data['integration_time_ms']
+    leds = cal_data["s_mode_leds"]
+    integration_ms = cal_data["integration_time_ms"]
 
     logger.info(f"Integration Time: {integration_ms} ms (frozen globally)")
     logger.info("")
@@ -131,10 +135,13 @@ def validate_step4_logic(cal_data, s_ref_data):
 
     unique_leds = set(leds.values())
     if len(unique_leds) == 1:
-        logger.error(f"❌ FAIL: All LEDs have same value ({list(unique_leds)[0]}) - no balancing occurred")
+        logger.error(
+            f"❌ FAIL: All LEDs have same value ({list(unique_leds)[0]}) - no balancing occurred",
+        )
         return False
-    else:
-        logger.info(f"✅ PASS: {len(unique_leds)} unique LED values: {sorted(unique_leds, reverse=True)}")
+    logger.info(
+        f"✅ PASS: {len(unique_leds)} unique LED values: {sorted(unique_leds, reverse=True)}",
+    )
 
     # Check 4: S-ref signals should be balanced (similar intensities)
     logger.info("")
@@ -142,14 +149,16 @@ def validate_step4_logic(cal_data, s_ref_data):
     logger.info("-" * 80)
 
     # Calculate mean signal in ROI region for each channel
-    roi_start = len(s_ref_data['a']) // 3
-    roi_end = 2 * len(s_ref_data['a']) // 3
+    roi_start = len(s_ref_data["a"]) // 3
+    roi_end = 2 * len(s_ref_data["a"]) // 3
 
     roi_means = {}
     for ch in CH_LIST:
         roi_data = s_ref_data[ch][roi_start:roi_end]
         roi_means[ch] = np.mean(roi_data)
-        logger.info(f"   {ch.upper()}: ROI mean = {roi_means[ch]:7.0f} counts (LED={leds[ch]})")
+        logger.info(
+            f"   {ch.upper()}: ROI mean = {roi_means[ch]:7.0f} counts (LED={leds[ch]})",
+        )
 
     # Calculate coefficient of variation
     mean_of_means = np.mean(list(roi_means.values()))
@@ -157,20 +166,20 @@ def validate_step4_logic(cal_data, s_ref_data):
     cv = (std_of_means / mean_of_means * 100) if mean_of_means > 0 else 0
 
     logger.info("")
-    logger.info(f"Balance Statistics:")
+    logger.info("Balance Statistics:")
     logger.info(f"   Target (mean): {mean_of_means:.0f} counts")
     logger.info(f"   Std deviation: {std_of_means:.0f} counts")
     logger.info(f"   CV (coefficient of variation): {cv:.1f}%")
     logger.info("")
 
     if cv < 10:
-        logger.info(f"✅ PASS: Excellent balance (CV < 10%)")
+        logger.info("✅ PASS: Excellent balance (CV < 10%)")
         balance_pass = True
     elif cv < 20:
-        logger.info(f"⚠️  MARGINAL: Acceptable balance (CV < 20%)")
+        logger.info("⚠️  MARGINAL: Acceptable balance (CV < 20%)")
         balance_pass = True
     else:
-        logger.error(f"❌ FAIL: Poor balance (CV >= 20%)")
+        logger.error("❌ FAIL: Poor balance (CV >= 20%)")
         balance_pass = False
 
     # Check 5: Verify LED intensity correlates with signal
@@ -187,14 +196,18 @@ def validate_step4_logic(cal_data, s_ref_data):
         led_ratio = leds[ch] / 255.0
         signal_ratio = roi_means[ch] / roi_means[weakest_channels[0]]
 
-        logger.info(f"   {ch.upper()}: LED ratio={led_ratio:.2f}, Signal ratio={signal_ratio:.2f}")
+        logger.info(
+            f"   {ch.upper()}: LED ratio={led_ratio:.2f}, Signal ratio={signal_ratio:.2f}",
+        )
 
         # Signal ratio should be approximately equal to LED ratio
         # (within 50% tolerance due to non-linearity)
         if abs(signal_ratio - led_ratio) / led_ratio < 0.5:
-            logger.info(f"      ✅ Correlation OK")
+            logger.info("      ✅ Correlation OK")
         else:
-            logger.warning(f"      ⚠️  Large deviation - possible non-linear LED response")
+            logger.warning(
+                "      ⚠️  Large deviation - possible non-linear LED response",
+            )
 
     logger.info("")
     logger.info("=" * 80)
@@ -211,38 +224,47 @@ def validate_step4_logic(cal_data, s_ref_data):
 
 def plot_step4_results(cal_data, s_ref_data):
     """Create diagnostic plots for Step 4 results."""
-
-    leds = cal_data['s_mode_leds']
+    leds = cal_data["s_mode_leds"]
 
     fig = plt.figure(figsize=(16, 12))
 
     # Plot 1: S-ref spectra overlay
     ax1 = plt.subplot(3, 2, 1)
-    colors = {'a': 'red', 'b': 'blue', 'c': 'green', 'd': 'orange'}
+    colors = {"a": "red", "b": "blue", "c": "green", "d": "orange"}
 
     for ch in CH_LIST:
-        ax1.plot(s_ref_data[ch], label=f'{ch.upper()} (LED={leds[ch]})',
-                color=colors[ch], alpha=0.7, linewidth=1.5)
+        ax1.plot(
+            s_ref_data[ch],
+            label=f"{ch.upper()} (LED={leds[ch]})",
+            color=colors[ch],
+            alpha=0.7,
+            linewidth=1.5,
+        )
 
-    ax1.set_xlabel('Pixel Index')
-    ax1.set_ylabel('Intensity (counts)')
-    ax1.set_title('S-ref Spectra After Step 4 Balancing')
+    ax1.set_xlabel("Pixel Index")
+    ax1.set_ylabel("Intensity (counts)")
+    ax1.set_title("S-ref Spectra After Step 4 Balancing")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
     # Plot 2: ROI region zoomed
     ax2 = plt.subplot(3, 2, 2)
-    roi_start = len(s_ref_data['a']) // 3
-    roi_end = 2 * len(s_ref_data['a']) // 3
+    roi_start = len(s_ref_data["a"]) // 3
+    roi_end = 2 * len(s_ref_data["a"]) // 3
 
     for ch in CH_LIST:
         roi_data = s_ref_data[ch][roi_start:roi_end]
-        ax2.plot(roi_data, label=f'{ch.upper()} (LED={leds[ch]})',
-                color=colors[ch], alpha=0.7, linewidth=2)
+        ax2.plot(
+            roi_data,
+            label=f"{ch.upper()} (LED={leds[ch]})",
+            color=colors[ch],
+            alpha=0.7,
+            linewidth=2,
+        )
 
-    ax2.set_xlabel('Pixel Index (ROI)')
-    ax2.set_ylabel('Intensity (counts)')
-    ax2.set_title('ROI Region (Balancing Target Zone)')
+    ax2.set_xlabel("Pixel Index (ROI)")
+    ax2.set_ylabel("Intensity (counts)")
+    ax2.set_title("ROI Region (Balancing Target Zone)")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 
@@ -252,22 +274,28 @@ def plot_step4_results(cal_data, s_ref_data):
     led_values = [leds[ch] for ch in CH_LIST]
     bars = ax3.bar(x_pos, led_values, color=[colors[ch] for ch in CH_LIST], alpha=0.7)
 
-    ax3.axhline(y=255, color='red', linestyle='--', linewidth=2, label='Maximum (255)')
-    ax3.set_xlabel('Channel')
-    ax3.set_ylabel('LED Intensity')
-    ax3.set_title('Step 4: Final LED Values')
+    ax3.axhline(y=255, color="red", linestyle="--", linewidth=2, label="Maximum (255)")
+    ax3.set_xlabel("Channel")
+    ax3.set_ylabel("LED Intensity")
+    ax3.set_title("Step 4: Final LED Values")
     ax3.set_xticks(x_pos)
     ax3.set_xticklabels([ch.upper() for ch in CH_LIST])
     ax3.set_ylim(0, 270)
     ax3.legend()
-    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.grid(True, alpha=0.3, axis="y")
 
     # Add value labels
     for bar in bars:
         height = bar.get_height()
-        ax3.text(bar.get_x() + bar.get_width()/2., height,
-                f'{int(height)}',
-                ha='center', va='bottom', fontsize=12, fontweight='bold')
+        ax3.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{int(height)}",
+            ha="center",
+            va="bottom",
+            fontsize=12,
+            fontweight="bold",
+        )
 
     # Plot 4: ROI mean intensities
     ax4 = plt.subplot(3, 2, 4)
@@ -280,24 +308,34 @@ def plot_step4_results(cal_data, s_ref_data):
     bars = ax4.bar(x_pos, mean_values, color=[colors[ch] for ch in CH_LIST], alpha=0.7)
 
     target = np.mean(mean_values)
-    ax4.axhline(y=target, color='red', linestyle='--', linewidth=2,
-                label=f'Target: {target:.0f}')
+    ax4.axhline(
+        y=target,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Target: {target:.0f}",
+    )
 
-    ax4.set_xlabel('Channel')
-    ax4.set_ylabel('Mean Intensity (counts)')
-    ax4.set_title('ROI Mean Intensities (Balance Quality)')
+    ax4.set_xlabel("Channel")
+    ax4.set_ylabel("Mean Intensity (counts)")
+    ax4.set_title("ROI Mean Intensities (Balance Quality)")
     ax4.set_xticks(x_pos)
     ax4.set_xticklabels([ch.upper() for ch in CH_LIST])
     ax4.legend()
-    ax4.grid(True, alpha=0.3, axis='y')
+    ax4.grid(True, alpha=0.3, axis="y")
 
     # Add value labels
     for bar in bars:
         height = bar.get_height()
         deviation = ((height - target) / target * 100) if target > 0 else 0
-        ax4.text(bar.get_x() + bar.get_width()/2., height,
-                f'{int(height)}\n({deviation:+.0f}%)',
-                ha='center', va='bottom', fontsize=9)
+        ax4.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{int(height)}\n({deviation:+.0f}%)",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     # Plot 5: LED vs Signal correlation
     ax5 = plt.subplot(3, 2, 5)
@@ -305,21 +343,32 @@ def plot_step4_results(cal_data, s_ref_data):
     led_vals = [leds[ch] for ch in CH_LIST]
     signal_vals = [roi_means[ch] for ch in CH_LIST]
 
-    ax5.scatter(led_vals, signal_vals, s=100, alpha=0.7,
-               c=[colors[ch] for ch in CH_LIST])
+    ax5.scatter(
+        led_vals,
+        signal_vals,
+        s=100,
+        alpha=0.7,
+        c=[colors[ch] for ch in CH_LIST],
+    )
 
-    for ch, led, sig in zip(CH_LIST, led_vals, signal_vals):
-        ax5.annotate(ch.upper(), (led, sig), fontsize=12, fontweight='bold',
-                    xytext=(5, 5), textcoords='offset points')
+    for ch, led, sig in zip(CH_LIST, led_vals, signal_vals, strict=False):
+        ax5.annotate(
+            ch.upper(),
+            (led, sig),
+            fontsize=12,
+            fontweight="bold",
+            xytext=(5, 5),
+            textcoords="offset points",
+        )
 
-    ax5.set_xlabel('LED Intensity')
-    ax5.set_ylabel('ROI Mean Signal (counts)')
-    ax5.set_title('LED Intensity vs Signal Correlation')
+    ax5.set_xlabel("LED Intensity")
+    ax5.set_ylabel("ROI Mean Signal (counts)")
+    ax5.set_title("LED Intensity vs Signal Correlation")
     ax5.grid(True, alpha=0.3)
 
     # Plot 6: Balance quality metrics
     ax6 = plt.subplot(3, 2, 6)
-    ax6.axis('off')
+    ax6.axis("off")
 
     # Calculate statistics
     std_signal = np.std(mean_values)
@@ -354,19 +403,28 @@ def plot_step4_results(cal_data, s_ref_data):
     """
 
     for ch in CH_LIST:
-        summary_text += f"\n       {ch.upper()}: {leds[ch]:3d}  →  {roi_means[ch]:7.0f} counts"
+        summary_text += (
+            f"\n       {ch.upper()}: {leds[ch]:3d}  →  {roi_means[ch]:7.0f} counts"
+        )
 
-    ax6.text(0.1, 0.95, summary_text, transform=ax6.transAxes,
-            fontsize=11, verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+    ax6.text(
+        0.1,
+        0.95,
+        summary_text,
+        transform=ax6.transAxes,
+        fontsize=11,
+        verticalalignment="top",
+        fontfamily="monospace",
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.3),
+    )
 
     plt.tight_layout()
 
     # Save figure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = ROOT_DIR / f"step4_validation_{timestamp}.png"
-    plt.savefig(output_file, dpi=150, bbox_inches='tight')
-    logger.info(f"")
+    plt.savefig(output_file, dpi=150, bbox_inches="tight")
+    logger.info("")
     logger.info(f"💾 Saved validation plot: {output_file}")
 
     plt.show()

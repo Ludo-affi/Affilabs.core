@@ -1,5 +1,4 @@
-"""
-Maximum Speed Test - 50k Counts Target
+"""Maximum Speed Test - 50k Counts Target
 
 Optimize integration time for each channel to hit 50,000 counts at peak.
 ALL LEDs at 255 intensity, measure actual speed and noise.
@@ -9,8 +8,9 @@ Goal: Find minimum integration time needed for 50k counts, measure throughput.
 
 import sys
 import time
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -26,7 +26,13 @@ def find_peak_counts(spectrum):
     return np.max(spectrum)
 
 
-def optimize_led_intensity(detector, ctrl, channel, target_counts=50000, max_integration=300):
+def optimize_led_intensity(
+    detector,
+    ctrl,
+    channel,
+    target_counts=50000,
+    max_integration=300,
+):
     """Find LED intensity AND integration time that gives target peak counts.
 
     Uses same algorithm as calibration_6step.py calibrate_led_channel()
@@ -42,6 +48,7 @@ def optimize_led_intensity(detector, ctrl, channel, target_counts=50000, max_int
 
     Returns:
         Tuple of (optimal_led_intensity, optimal_integration_time), or (None, None) if failed
+
     """
     print(f"  Optimizing Ch {channel} for {target_counts} counts...")
 
@@ -55,7 +62,7 @@ def optimize_led_intensity(detector, ctrl, channel, target_counts=50000, max_int
 
         # Start at maximum intensity
         intensity = 255
-        led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
+        led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
         led_values[channel] = intensity
         ctrl.set_batch_intensities(**led_values)
         time.sleep(0.02)  # LED settling
@@ -63,21 +70,25 @@ def optimize_led_intensity(detector, ctrl, channel, target_counts=50000, max_int
         # Read initial signal
         spectrum = detector.read_intensity()
         if spectrum is None:
-            print(f"    ❌ Failed to acquire spectrum")
+            print("    ❌ Failed to acquire spectrum")
             return None, None
 
         peak_counts = find_peak_counts(spectrum)
-        print(f"    Try {attempt+1}: Integration={integration_time:.1f}ms, LED={intensity} → {peak_counts:.0f} counts")
+        print(
+            f"    Try {attempt+1}: Integration={integration_time:.1f}ms, LED={intensity} → {peak_counts:.0f} counts",
+        )
 
         # Check if we can reach target at this integration time
         if peak_counts >= target_counts * 0.9:
             # Close enough, optimize LED intensity
-            print(f"    Can reach target at {integration_time:.1f}ms, optimizing LED...")
+            print(
+                f"    Can reach target at {integration_time:.1f}ms, optimizing LED...",
+            )
             break
 
         # Check if saturated
         if peak_counts >= 65535:
-            print(f"    Saturated, reducing LED...")
+            print("    Saturated, reducing LED...")
             # Reduce LED instead of increasing integration
             target_signal = target_counts * 0.85
             reduction_factor = target_signal / peak_counts
@@ -95,13 +106,18 @@ def optimize_led_intensity(detector, ctrl, channel, target_counts=50000, max_int
 
         # Need more signal, increase integration time
         if integration_time >= max_integration:
-            print(f"    ⚠️ Max integration reached, using what we have")
+            print("    ⚠️ Max integration reached, using what we have")
             break
 
         # Calculate needed integration time
         needed_ratio = target_counts / peak_counts
-        integration_time = min(integration_time * needed_ratio * 1.1, max_integration)  # 10% margin
-        print(f"    Need {needed_ratio:.2f}x more signal, increasing integration to {integration_time:.1f}ms")
+        integration_time = min(
+            integration_time * needed_ratio * 1.1,
+            max_integration,
+        )  # 10% margin
+        print(
+            f"    Need {needed_ratio:.2f}x more signal, increasing integration to {integration_time:.1f}ms",
+        )
 
     # Now optimize LED intensity at chosen integration time
     detector.set_integration(integration_time)
@@ -155,7 +171,9 @@ def optimize_led_intensity(detector, ctrl, channel, target_counts=50000, max_int
         iterations += 1
 
     error_pct = ((peak_counts - target_counts) / target_counts) * 100
-    print(f"    ✅ Final: Integration={integration_time:.1f}ms, LED={intensity} → {peak_counts:.0f} counts ({error_pct:+.1f}%)")
+    print(
+        f"    ✅ Final: Integration={integration_time:.1f}ms, LED={intensity} → {peak_counts:.0f} counts ({error_pct:+.1f}%)",
+    )
 
     # Turn OFF LED
     ctrl.set_batch_intensities(a=0, b=0, c=0, d=0)
@@ -175,29 +193,30 @@ def measure_speed_and_noise(detector, ctrl, channels_config, num_cycles=20):
 
     Returns:
         dict with per-channel speed and noise metrics
+
     """
     print(f"  Running {num_cycles} complete cycles (A→B→C→D)...")
     print()
 
     # Storage for all measurements
-    all_data = {ch: {'counts': [], 'acq_times': []} for ch in channels_config.keys()}
+    all_data = {ch: {"counts": [], "acq_times": []} for ch in channels_config.keys()}
     cycle_times = []
 
     for cycle in range(num_cycles):
         cycle_start = time.perf_counter()
-        print(f"  Cycle {cycle+1}/{num_cycles}: ", end='', flush=True)
+        print(f"  Cycle {cycle+1}/{num_cycles}: ", end="", flush=True)
 
-        for ch in ['a', 'b', 'c', 'd']:
+        for ch in ["a", "b", "c", "d"]:
             if ch not in channels_config:
                 continue
 
             # Set integration time for this channel
-            detector.set_integration(channels_config[ch]['integration_time'])
+            detector.set_integration(channels_config[ch]["integration_time"])
             time.sleep(0.005)
 
             # Turn ON LED at optimized intensity
-            led_values = {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-            led_values[ch] = channels_config[ch]['led_intensity']
+            led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
+            led_values[ch] = channels_config[ch]["led_intensity"]
             ctrl.set_batch_intensities(**led_values)
             time.sleep(0.01)  # LED settling
 
@@ -212,9 +231,9 @@ def measure_speed_and_noise(detector, ctrl, channels_config, num_cycles=20):
 
             if spectrum is not None:
                 peak = find_peak_counts(spectrum)
-                all_data[ch]['counts'].append(peak)
-                all_data[ch]['acq_times'].append(acq_time)
-                print(f"{ch.upper()}:{peak:.0f} ", end='', flush=True)
+                all_data[ch]["counts"].append(peak)
+                all_data[ch]["acq_times"].append(acq_time)
+                print(f"{ch.upper()}:{peak:.0f} ", end="", flush=True)
 
         cycle_time = (time.perf_counter() - cycle_start) * 1000.0
         cycle_times.append(cycle_time)
@@ -225,31 +244,30 @@ def measure_speed_and_noise(detector, ctrl, channels_config, num_cycles=20):
     # Calculate statistics per channel
     results = {}
     for ch in channels_config.keys():
-        if len(all_data[ch]['counts']) == 0:
+        if len(all_data[ch]["counts"]) == 0:
             results[ch] = None
             continue
 
-        counts = np.array(all_data[ch]['counts'])
-        acq_times = np.array(all_data[ch]['acq_times'])
+        counts = np.array(all_data[ch]["counts"])
+        acq_times = np.array(all_data[ch]["acq_times"])
 
         results[ch] = {
-            'mean_counts': np.mean(counts),
-            'std_counts': np.std(counts),
-            'noise_percent': (np.std(counts) / np.mean(counts)) * 100,
-            'mean_acq_time': np.mean(acq_times),
-            'std_acq_time': np.std(acq_times),
+            "mean_counts": np.mean(counts),
+            "std_counts": np.std(counts),
+            "noise_percent": (np.std(counts) / np.mean(counts)) * 100,
+            "mean_acq_time": np.mean(acq_times),
+            "std_acq_time": np.std(acq_times),
         }
 
-    results['cycle_times'] = cycle_times
-    results['mean_cycle_time'] = np.mean(cycle_times)
-    results['std_cycle_time'] = np.std(cycle_times)
+    results["cycle_times"] = cycle_times
+    results["mean_cycle_time"] = np.mean(cycle_times)
+    results["std_cycle_time"] = np.std(cycle_times)
 
     return results
 
 
 def test_max_speed():
     """Main test function."""
-
     print("=" * 80)
     print("MAXIMUM SPEED TEST - 50k Counts Target")
     print("=" * 80)
@@ -266,7 +284,7 @@ def test_max_speed():
 
     try:
         ctrl.open()
-        print(f"✅ Connected to controller")
+        print("✅ Connected to controller")
     except Exception as e:
         print(f"❌ Failed to connect: {e}")
         return False
@@ -275,7 +293,7 @@ def test_max_speed():
     detector = USB4000(parent=None)
     try:
         detector.open()
-        print(f"✅ Connected to detector")
+        print("✅ Connected to detector")
     except Exception as e:
         print(f"❌ Failed to connect to detector: {e}")
         ctrl.close()
@@ -284,27 +302,33 @@ def test_max_speed():
     print()
 
     # Test each channel
-    channels = ['a', 'b', 'c', 'd']
+    channels = ["a", "b", "c", "d"]
     results = {}
 
     print("=" * 80)
     print("STEP 1: OPTIMIZE INTEGRATION TIME AND LED INTENSITY")
     print("=" * 80)
-    print(f"Target counts: 50,000 (optimal SNR)")
-    print(f"Max integration: 300ms")
+    print("Target counts: 50,000 (optimal SNR)")
+    print("Max integration: 300ms")
     print()
 
     for ch in channels:
         print(f"Channel {ch.upper()}:")
-        optimal_led, optimal_int = optimize_led_intensity(detector, ctrl, ch, target_counts=50000, max_integration=300)
+        optimal_led, optimal_int = optimize_led_intensity(
+            detector,
+            ctrl,
+            ch,
+            target_counts=50000,
+            max_integration=300,
+        )
 
         if optimal_led is None or optimal_int is None:
             print(f"  ❌ Failed to optimize Ch {ch}")
             results[ch] = None
         else:
             results[ch] = {
-                'led_intensity': optimal_led,
-                'integration_time': optimal_int
+                "led_intensity": optimal_led,
+                "integration_time": optimal_int,
             }
 
         print()
@@ -327,13 +351,13 @@ def test_max_speed():
     metrics = measure_speed_and_noise(detector, ctrl, valid_channels, num_cycles=20)
 
     # Update results with metrics
-    for ch in valid_channels.keys():
+    for ch in valid_channels:
         if metrics[ch]:
             results[ch].update(metrics[ch])
 
-    results['cycle_stats'] = {
-        'mean_cycle_time': metrics['mean_cycle_time'],
-        'std_cycle_time': metrics['std_cycle_time'],
+    results["cycle_stats"] = {
+        "mean_cycle_time": metrics["mean_cycle_time"],
+        "std_cycle_time": metrics["std_cycle_time"],
     }
 
     print()
@@ -362,16 +386,16 @@ def test_max_speed():
         print(f"  Acquisition time: {r['mean_acq_time']:.1f} ms")
         print()
 
-        total_time += r['mean_acq_time']
+        total_time += r["mean_acq_time"]
 
     # Calculate throughput
     print("=" * 80)
     print("THROUGHPUT ANALYSIS")
     print("=" * 80)
 
-    if all_valid and 'cycle_stats' in results:
-        mean_cycle = results['cycle_stats']['mean_cycle_time']
-        std_cycle = results['cycle_stats']['std_cycle_time']
+    if all_valid and "cycle_stats" in results:
+        mean_cycle = results["cycle_stats"]["mean_cycle_time"]
+        std_cycle = results["cycle_stats"]["std_cycle_time"]
 
         print(f"Mean cycle time: {mean_cycle:.1f} ± {std_cycle:.1f} ms")
         print(f"Throughput: {1000.0/mean_cycle:.2f} Hz")
@@ -405,5 +429,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\n❌ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

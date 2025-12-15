@@ -1,6 +1,9 @@
 """Reusable UI section components extracted from LL_UI_v1_0.py."""
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton
-from ui_styles import collapsible_header_style
+
+from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+
+from affilabs.ui_styles import collapsible_header_style
+
 
 class CollapsibleSection(QWidget):
     """A collapsible section widget with header and content."""

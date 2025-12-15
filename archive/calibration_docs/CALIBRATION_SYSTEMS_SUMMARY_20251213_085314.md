@@ -242,4 +242,3 @@ User clicks "Calibrate" button
 - **Device Config**: `config/devices/FLMT09116/device_config.json`
 - **Optical Cal**: `config/devices/FLMT09116/optical_calibration.json`
 - **OEM Button**: `main_simplified.py:2491` (`_on_oem_led_calibration()`)
-

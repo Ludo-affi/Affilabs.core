@@ -11,14 +11,22 @@ import numpy
 import serial
 import serial.tools.list_ports
 
-from settings import ARDUINO_VID, ARDUINO_PID, CP210X_PID, CP210X_VID, BAUD_RATE, QSPR_BAUD_RATE, ADAFRUIT_VID, \
-    PICO_VID, PICO_PID
+from settings import (
+    ARDUINO_PID,
+    ARDUINO_VID,
+    BAUD_RATE,
+    CP210X_PID,
+    CP210X_VID,
+    PICO_PID,
+    PICO_VID,
+    QSPR_BAUD_RATE,
+)
 from utils.logger import logger
 
 if system() == "Windows":
     from os import listdrives
 
-CH_DICT = {'a': 1, 'b': 2, 'c': 3, 'd': 4}
+CH_DICT = {"a": 1, "b": 2, "c": 3, "d": 4}
 
 
 class ControllerBase:
@@ -34,13 +42,13 @@ class ControllerBase:
     def get_info(self):
         pass
 
-    def turn_on_channel(self, ch='a'):
+    def turn_on_channel(self, ch="a"):
         pass
 
     def turn_off_channels(self):
         pass
 
-    def set_mode(self, mode='s'):
+    def set_mode(self, mode="s"):
         pass
 
     def stop(self):
@@ -54,6 +62,7 @@ class ControllerBase:
             except Exception as e:
                 # Log but don't raise - we want cleanup to continue
                 import logging
+
                 logging.getLogger(__name__).error(f"Error closing serial port: {e}")
             finally:
                 self._ser = None
@@ -61,7 +70,7 @@ class ControllerBase:
     def __del__(self):
         """Destructor to ensure serial port is closed."""
         try:
-            if hasattr(self, '_ser') and self._ser is not None:
+            if hasattr(self, "_ser") and self._ser is not None:
                 self.close()
         except:
             pass
@@ -101,19 +110,23 @@ class FlowController(ControllerBase):
 
 
 class ArduinoController(StaticController):
-
     def __init__(self):
-        super().__init__(name='p4spr')
+        super().__init__(name="p4spr")
         self._ser = None
 
     def open(self):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == ARDUINO_PID and dev.vid == ARDUINO_VID:
-            # if dev.vid == ADAFRUIT_VID:
+                # if dev.vid == ADAFRUIT_VID:
                 logger.info(f"Found an Arduino board - {dev}")
                 # logger.info(f"Found a Feather board - {dev}")
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=3, write_timeout=2)
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=3,
+                        write_timeout=2,
+                    )
                     return True
                 except Exception as e:
                     logger.error(f"Failed to open Arduino - {e}")
@@ -121,8 +134,8 @@ class ArduinoController(StaticController):
                     return False
         return False
 
-    def turn_on_channel(self, ch='a'):
-        if ch not in {'a', 'b', 'c', 'd'}:
+    def turn_on_channel(self, ch="a"):
+        if ch not in {"a", "b", "c", "d"}:
             raise ValueError("Invalid Channel!")
         if self._ser is not None or self.open():
             self._ser.write(ch.encode())
@@ -131,12 +144,12 @@ class ArduinoController(StaticController):
 
     def turn_off_channels(self):
         if self._ser is not None or self.open():
-            self._ser.write(b'i')
-            return self._ser.read() == b'i'
+            self._ser.write(b"i")
+            return self._ser.read() == b"i"
 
-    def set_intensity(self, ch='a', raw_val=1):
+    def set_intensity(self, ch="a", raw_val=1):
         try:
-            if ch not in {'a', 'b', 'c', 'd'}:
+            if ch not in {"a", "b", "c", "d"}:
                 raise ValueError(f"Invalid Channel - {ch}")
             # error bounding: P4SPR LED intensity range is 0-255
             if raw_val > 255:
@@ -150,23 +163,23 @@ class ArduinoController(StaticController):
                 if self._ser is not None or self.open():
                     self._ser.write(cmd.encode())
                     time.sleep(0.05)  # Delay for device to process (50ms)
-                    return self._ser.read() == b'w'
+                    return self._ser.read() == b"w"
             else:
                 logger.error(f"Failed to turn LED {ch.upper()} ON!")
         except Exception as e:
             logger.error(f"error while setting led intensity {e}")
         return False
 
-    def set_mode(self, mode='s'):
+    def set_mode(self, mode="s"):
         if self._ser is not None or self.open():
             self._ser.write(mode.encode())
             return self._ser.read() == mode.encode()
 
     def servo_get(self):
-        commands = {'s': 'r5', 'p': 'r6'}
-        curr_pos = {'s': b'0000', 'p': b'0000'}
+        commands = {"s": "r5", "p": "r6"}
+        curr_pos = {"s": b"0000", "p": b"0000"}
         if self._ser is not None or self.open():
-            for pos in ['s', 'p']:
+            for pos in ["s", "p"]:
                 self._ser.write(commands[pos].encode())
                 curr_pos[pos] = self._ser.readline()
             logger.debug(f"Servo s, p: {curr_pos}")
@@ -179,24 +192,24 @@ class ArduinoController(StaticController):
         arduino_p_cmd = 6
         if (s < 0) or (p < 0) or (s > 180) or (p > 180):
             raise ValueError(f"Invalid polarizer position given: {s}, {p}")
+        cmd_s = f"w{arduino_s_cmd}{s:03d}"
+        cmd_p = f"w{arduino_p_cmd}{p:03d}"
+        if self._ser is not None or self.open():
+            for cmd in [cmd_s, cmd_p]:
+                self._ser.write(cmd.encode())
+                if self._ser.read() == b"w":
+                    pass
+                else:
+                    logger.error("servo position write failed")
+                    break
         else:
-            cmd_s = f"w{arduino_s_cmd}{s:03d}"
-            cmd_p = f"w{arduino_p_cmd}{p:03d}"
-            if self._ser is not None or self.open():
-                for cmd in [cmd_s, cmd_p]:
-                    self._ser.write(cmd.encode())
-                    if self._ser.read() == b'w':
-                        pass
-                    else:
-                        logger.error("servo position write failed")
-                        break
-            else:
-                logger.error("serial communication failed - servo set")
+            logger.error("serial communication failed - servo set")
 
     def flash(self):
         """Flash EEPROM to persist settings. Returns True if successful."""
         import time
-        flash_cmd = 'f'
+
+        flash_cmd = "f"
         try:
             if self._ser is not None or self.open():
                 # Flush any pending data in input buffer
@@ -219,15 +232,16 @@ class ArduinoController(StaticController):
                     time.sleep(0.1)
                     response = self._ser.readline().strip()
 
-                success = (response == flash_cmd.encode())
+                success = response == flash_cmd.encode()
                 if success:
                     logger.debug("EEPROM flash confirmed by controller")
                 else:
-                    logger.warning(f"EEPROM flash response mismatch: expected {flash_cmd.encode()}, got {response}")
+                    logger.warning(
+                        f"EEPROM flash response mismatch: expected {flash_cmd.encode()}, got {response}",
+                    )
                 return success
-            else:
-                logger.error("Cannot flash EEPROM - serial port not open")
-                return False
+            logger.error("Cannot flash EEPROM - serial port not open")
+            return False
         except Exception as e:
             logger.error(f"EEPROM flash failed with exception: {e}")
             return False
@@ -237,9 +251,8 @@ class ArduinoController(StaticController):
 
 
 class QSPRController(ControllerBase):
-
     def __init__(self):
-        super().__init__(name='qspr')
+        super().__init__(name="qspr")
         self._lock = threading.Lock()
 
     def open(self):
@@ -247,19 +260,22 @@ class QSPRController(ControllerBase):
             if dev.pid == CP210X_PID and dev.vid == CP210X_VID:
                 logger.info(f"Found an qSPR board - {dev}, trying to connect...")
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=QSPR_BAUD_RATE, timeout=3, write_timeout=1)
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=QSPR_BAUD_RATE,
+                        timeout=3,
+                        write_timeout=1,
+                    )
                     info = self.get_info()
                     if info is not None:
-                        if info['fw ver'].startswith('qSPR'):
+                        if info["fw ver"].startswith("qSPR"):
                             return True
-                        else:
-                            logger.debug('dev is not qSPR')
-                            self._ser.close()
-                            return False
-                    else:
-                        logger.debug(f"Error during get info, returned: {info}")
+                        logger.debug("dev is not qSPR")
                         self._ser.close()
                         return False
+                    logger.debug(f"Error during get info, returned: {info}")
+                    self._ser.close()
+                    return False
                 except Exception as e:
                     logger.error(f"Failed to open qSPR - {e}")
                     self._ser = None
@@ -267,7 +283,7 @@ class QSPRController(ControllerBase):
 
     def _send_command(self, cmd, parse_json=False, reply=False):
         if self._ser is not None or self.open():
-            if not (cmd.startswith('led_o')):
+            if not (cmd.startswith("led_o")):
                 logger.debug(f"QSPR command: {cmd}")
             try:
                 with self._lock:
@@ -290,53 +306,53 @@ class QSPRController(ControllerBase):
                 self._ser = None
 
     def get_status(self):
-        return self._send_command(cmd='status', parse_json=True)
+        return self._send_command(cmd="status", parse_json=True)
 
     def get_info(self):
-        return self._send_command(cmd='info', parse_json=True)
+        return self._send_command(cmd="info", parse_json=True)
 
     def get_parameters(self):
-        return self._send_command(cmd='param', parse_json=True)
+        return self._send_command(cmd="param", parse_json=True)
 
     def set_parameters(self, parameter_list):
-        return self._send_command(cmd=f'set_parameters:{parameter_list}:')
+        return self._send_command(cmd=f"set_parameters:{parameter_list}:")
 
     def read_wavelength(self):
-        data = self._send_command(cmd=f'wave')
+        data = self._send_command(cmd="wave")
         if data:
-            return numpy.asarray([int(v) for v in data.split(',')])
+            return numpy.asarray([int(v) for v in data.split(",")])
 
     def read_intensity(self):
         try:
-            data = self._send_command(cmd='read')
+            data = self._send_command(cmd="read")
             if data:
-                return numpy.asarray([int(v) for v in data.split(',')])
+                return numpy.asarray([int(v) for v in data.split(",")])
         except Exception as e:
             logger.debug(f"Error during QSPR read: {e}")
 
     def crt_up(self):
-        return self._send_command(cmd='crt_up', reply=True)
+        return self._send_command(cmd="crt_up", reply=True)
 
     def crt_down(self):
-        return self._send_command(cmd='crt_down', reply=True)
+        return self._send_command(cmd="crt_down", reply=True)
 
     def crt_adj_up(self):
-        return self._send_command(cmd='crt_adj_up')
+        return self._send_command(cmd="crt_adj_up")
 
     def crt_adj_down(self):
-        return self._send_command(cmd='crt_adj_down')
+        return self._send_command(cmd="crt_adj_down")
 
     def stop(self):
-        return self._send_command(cmd='led_off')
+        return self._send_command(cmd="led_off")
 
-    def turn_on_channel(self, ch='a'):
+    def turn_on_channel(self, ch="a"):
         self._send_command(f"led_on({CH_DICT[ch]})")
 
     def turn_off_channels(self):
-        self._send_command('led_off')
+        self._send_command("led_off")
 
     # Equivalent to the Arduino function to turn on a channel LED at a given intensity
-    def set_intensity(self, ch='a', raw_val=255):
+    def set_intensity(self, ch="a", raw_val=255):
         val = int((raw_val / 255) * 31) + 1  # convert from Arduino to QSPR
         self._send_command(f"led_intensity({CH_DICT[ch]},{val})")
         self._send_command(f"led_on({CH_DICT[ch]})")
@@ -344,7 +360,7 @@ class QSPRController(ControllerBase):
     def set_integration(self, int_ms):
         return self._send_command(f"set_integration({int_ms})")
 
-    def set_mode(self, mode='s'):
+    def set_mode(self, mode="s"):
         return self._send_command(f"servo_{mode}")
 
     def servo_set(self, s=10, p=100):
@@ -363,13 +379,13 @@ class QSPRController(ControllerBase):
         return self._send_command(f"knx_six({state})")
 
     def knx_status(self):
-        return self._send_command(cmd='knx_status', parse_json=True)
+        return self._send_command(cmd="knx_status", parse_json=True)
 
     def stop_kinetic(self):
         return self._send_command("knx_stop_all")
 
     def shutdown(self):
-        self._send_command('shutdown')
+        self._send_command("shutdown")
         self.close()
 
     def __str__(self):
@@ -377,41 +393,43 @@ class QSPRController(ControllerBase):
 
 
 class KineticController(FlowController):
-
     def __init__(self):
-        super().__init__(name='KNX2')
+        super().__init__(name="KNX2")
         self._lock = threading.Lock()
-        self.version = '1.0'
+        self.version = "1.0"
 
     def open(self):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == CP210X_PID and dev.vid == CP210X_VID:
                 logger.info(f"Found a KNX2 board - {dev}, trying to connect...")
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=BAUD_RATE, timeout=3, write_timeout=1)
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=BAUD_RATE,
+                        timeout=3,
+                        write_timeout=1,
+                    )
                     info = self.get_info()
                     if info is not None:
-                        if info['fw ver'].startswith('KNX2'):
-                            if info['fw ver'].startswith('KNX2 V1.1'):
-                                self.version = '1.1'
+                        if info["fw ver"].startswith("KNX2"):
+                            if info["fw ver"].startswith("KNX2 V1.1"):
+                                self.version = "1.1"
                             return True
-                        elif info['fw ver'].startswith('EZSPR'):
+                        if info["fw ver"].startswith("EZSPR"):
                             self.name = "EZSPR"
-                            if info['fw ver'].startswith('EZSPR V1.1'):
-                                self.version = '1.1'
+                            if info["fw ver"].startswith("EZSPR V1.1"):
+                                self.version = "1.1"
                             return True
-                        elif info['fw ver'].startswith('KNX1'):
+                        if info["fw ver"].startswith("KNX1"):
                             self.name = "KNX"
-                            self.version = '1.1'
+                            self.version = "1.1"
                             return True
-                        else:
-                            logger.debug('dev is not KNX2')
-                            self._ser.close()
-                            return False
-                    else:
-                        logger.debug(f"Error during get info, returned: {info}")
+                        logger.debug("dev is not KNX2")
                         self._ser.close()
                         return False
+                    logger.debug(f"Error during get info, returned: {info}")
+                    self._ser.close()
+                    return False
                 except Exception as e:
                     logger.error(f"Failed to open KNX2 - {e}")
                     self._ser = None
@@ -429,7 +447,9 @@ class KineticController(FlowController):
                             try:
                                 return json.loads(buf)
                             except JSONDecodeError:
-                                logger.error(f"Failed to parse to JSON of {cmd} - {buf}")
+                                logger.error(
+                                    f"Failed to parse to JSON of {cmd} - {buf}",
+                                )
                                 return None
                         else:
                             data = buf.splitlines()
@@ -439,35 +459,35 @@ class KineticController(FlowController):
                 self._ser = None
 
     def get_status(self):
-        return self._send_command(cmd='get_status', parse_json=True)
+        return self._send_command(cmd="get_status", parse_json=True)
 
     def get_info(self):
-        return self._send_command(cmd='get_info', parse_json=True)
+        return self._send_command(cmd="get_info", parse_json=True)
 
     def get_parameters(self):
-        return self._send_command(cmd='get_parameters', parse_json=True)
+        return self._send_command(cmd="get_parameters", parse_json=True)
 
     def read_wavelength(self, channel):
         data = self._send_command(cmd=f"read{channel}")
         if data:
-            return numpy.asarray([int(v) for v in data.split(',')])
+            return numpy.asarray([int(v) for v in data.split(",")])
 
     def read_intensity(self):
-        data = self._send_command(cmd='intensity')
+        data = self._send_command(cmd="intensity")
         if data:
-            return numpy.asarray([int(v) for v in data.split(',')])
+            return numpy.asarray([int(v) for v in data.split(",")])
 
     def stop(self):
         return self._send_command(cmd="stop")
 
-    def turn_on_channel(self, ch='a'):
+    def turn_on_channel(self, ch="a"):
         return self._send_command(f"led_on({CH_DICT[ch]})")
 
     def turn_off_channels(self):
-        return self._send_command('led_off')
+        return self._send_command("led_off")
 
     # Equivalent to the Arduino function to turn on a channel LED at a given intensity
-    def set_intensity(self, ch='a', raw_val=255):
+    def set_intensity(self, ch="a", raw_val=255):
         val = int((raw_val / 255) * 31) + 1  # convert from Arduino to QSPR
         self._send_command(f"led_intensity({CH_DICT[ch]},{val})")
         return self._send_command(f"led_on({CH_DICT[ch]})")
@@ -475,7 +495,7 @@ class KineticController(FlowController):
     def set_integration(self, int_ms):
         return self._send_command(f"set_integration({int_ms})")
 
-    def set_mode(self, mode='s'):
+    def set_mode(self, mode="s"):
         return self._send_command(f"servo_{mode}")
 
     def servo_set(self, s=10, p=100):
@@ -500,10 +520,10 @@ class KineticController(FlowController):
         return self._send_command(cmd=f"knx_status_{ch}", parse_json=True)
 
     def stop_kinetic(self):
-        self._send_command(f"knx_stop_all")
+        self._send_command("knx_stop_all")
 
     def shutdown(self):
-        self._send_command('shutdown')
+        self._send_command("shutdown")
         self.close()
 
     def __str__(self):
@@ -511,11 +531,10 @@ class KineticController(FlowController):
 
 
 class PicoP4SPR(StaticController):
-
     def __init__(self):
-        super().__init__(name='pico_p4spr')
+        super().__init__(name="pico_p4spr")
         self._ser = None
-        self.version = ''
+        self.version = ""
         self._lock = threading.Lock()
 
     def open(self):
@@ -530,51 +549,60 @@ class PicoP4SPR(StaticController):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=5)
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=1,
+                        write_timeout=5,
+                    )
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
 
-                    cmd = f"id\n"
+                    cmd = "id\n"
                     self._ser.write(cmd.encode())
                     import time
+
                     time.sleep(0.05)  # Small delay for Pico to respond
                     reply = self._ser.readline()[0:5].decode()
                     logger.debug(f"Pico P4SPR reply - {reply}")
-                    if reply == 'P4SPR':
-                        cmd = f"iv\n"
+                    if reply == "P4SPR":
+                        cmd = "iv\n"
                         self._ser.write(cmd.encode())
                         time.sleep(0.05)
                         self.version = self._ser.readline()[0:4].decode()
                         logger.debug(f" Pico P4SPR Fw: {self.version}")
                         return True
-                    else:
-                        try:
-                            self._ser.close()
-                        except Exception as close_err:
-                            logger.error(f"Error closing port after ID mismatch: {close_err}")
-                        finally:
-                            self._ser = None
+                    try:
+                        self._ser.close()
+                    except Exception as close_err:
+                        logger.error(
+                            f"Error closing port after ID mismatch: {close_err}",
+                        )
+                    finally:
+                        self._ser = None
                 except Exception as e:
                     logger.error(f"Failed to open Pico - {e}")
                     if self._ser is not None:
                         try:
                             self._ser.close()
                         except Exception as close_err:
-                            logger.error(f"Error closing port after exception: {close_err}")
+                            logger.error(
+                                f"Error closing port after exception: {close_err}",
+                            )
                         finally:
                             self._ser = None
         return False
 
-    def turn_on_channel(self, ch='a'):
+    def turn_on_channel(self, ch="a"):
         try:
-            if ch not in {'a', 'b', 'c', 'd'}:
+            if ch not in {"a", "b", "c", "d"}:
                 raise ValueError("Invalid Channel!")
             cmd = f"l{ch}\n"
             if self._ser is not None or self.open():
                 with self._lock:
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b'1'
+                    return self._ser.read() == b"1"
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False
@@ -584,7 +612,7 @@ class PicoP4SPR(StaticController):
         try:
             if self._ser is not None or self.open():
                 with self._lock:
-                    cmd = f"it\n"
+                    cmd = "it\n"
                     self._ser.reset_input_buffer()
                     self._ser.write(cmd.encode())
                     temp = self._ser.readline().decode()
@@ -600,16 +628,16 @@ class PicoP4SPR(StaticController):
         try:
             if self._ser is not None or self.open():
                 with self._lock:
-                    cmd = f"lx\n"
+                    cmd = "lx\n"
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b'1'
+                    return self._ser.read() == b"1"
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False
 
-    def set_intensity(self, ch='a', raw_val=1):
+    def set_intensity(self, ch="a", raw_val=1):
         try:
-            if ch not in {'a', 'b', 'c', 'd'}:
+            if ch not in {"a", "b", "c", "d"}:
                 raise ValueError(f"Invalid Channel - {ch}")
             # error bounding: P4SPR LED intensity range is 0-255
             if raw_val > 255:
@@ -637,13 +665,15 @@ class PicoP4SPR(StaticController):
                     with self._lock:
                         self._ser.write(cmd.encode())
                         time.sleep(0.05)  # device processing
-                        ok = self._ser.read() == b'1'
+                        ok = self._ser.read() == b"1"
                     # Ensure LED channel is on (no-op if already on)
                     self.turn_on_channel(ch=ch)
                     return ok
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        logger.debug(f"LED write timeout (ch {ch}, attempt {attempt+1}/{max_retries}): {e}")
+                        logger.debug(
+                            f"LED write timeout (ch {ch}, attempt {attempt+1}/{max_retries}): {e}",
+                        )
                         time.sleep(0.05)
                         continue
                     logger.error(f"error while setting led intensity {e}")
@@ -680,6 +710,7 @@ class PicoP4SPR(StaticController):
             Sequential commands: ~12ms for 4 LEDs
             Batch command: ~0.8ms for 4 LEDs
             Speedup: 15x faster
+
         """
         try:
             # Clamp values to valid range (0-255)
@@ -697,31 +728,30 @@ class PicoP4SPR(StaticController):
                 # Batch command executes successfully even with minimal response
                 logger.debug(f"Batch LED command sent: {cmd.strip()}")
                 return True
-            else:
-                logger.error(f"pico serial port not valid for batch command")
-                return False
+            logger.error("pico serial port not valid for batch command")
+            return False
 
         except Exception as e:
             logger.error(f"error while setting batch LED intensities: {e}")
             return False
 
-    def set_mode(self, mode='s'):
+    def set_mode(self, mode="s"):
         try:
             if self._ser is not None or self.open():
                 with self._lock:
-                    if mode == 's':
-                        cmd = f"ss\n"
+                    if mode == "s":
+                        cmd = "ss\n"
                     else:
-                        cmd = f"sp\n"
+                        cmd = "sp\n"
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b'1'
+                    return self._ser.read() == b"1"
         except Exception as e:
             logger.debug(f"error moving polarizer {e}")
             return False
 
     def servo_get(self):
-        cmd = f"sr\n"
-        curr_pos = {'s': b'0000', 'p': b'0000'}
+        cmd = "sr\n"
+        curr_pos = {"s": b"0000", "p": b"0000"}
         max_retries = 3
 
         for attempt in range(max_retries):
@@ -729,7 +759,9 @@ class PicoP4SPR(StaticController):
                 # Ensure connection is open
                 if self._ser is None:
                     if not self.open():
-                        logger.error("serial communication failed - servo get - cannot open port")
+                        logger.error(
+                            "serial communication failed - servo get - cannot open port",
+                        )
                         return curr_pos
 
                 with self._lock:
@@ -742,16 +774,19 @@ class PicoP4SPR(StaticController):
                     # Send command and wait for response
                     self._ser.write(cmd.encode())
                     import time
+
                     time.sleep(0.15)  # allow device to prepare reply
 
                     # Read up to a few lines to skip temperature or ack noise
                     for _ in range(3):
                         servo_reading = self._ser.readline()
-                        logger.debug(f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})")
+                        logger.debug(
+                            f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})",
+                        )
                         if not servo_reading:
                             break
-                        s = servo_reading.decode('utf-8', errors='ignore').strip()
-                        if s == '1' or s == '':
+                        s = servo_reading.decode("utf-8", errors="ignore").strip()
+                        if s == "1" or s == "":
                             # ack or empty, continue
                             continue
                         # If it's a float like temperature, ignore
@@ -762,15 +797,17 @@ class PicoP4SPR(StaticController):
                         except ValueError:
                             pass
                         # Expect comma-separated s,p
-                        if ',' in s:
-                            parts = s.split(',')
+                        if "," in s:
+                            parts = s.split(",")
                             if len(parts) == 2:
                                 try:
                                     s_val = int(parts[0])
                                     p_val = int(parts[1])
-                                    curr_pos['s'] = parts[0].encode()
-                                    curr_pos['p'] = parts[1].encode()
-                                    logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
+                                    curr_pos["s"] = parts[0].encode()
+                                    curr_pos["p"] = parts[1].encode()
+                                    logger.debug(
+                                        f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})",
+                                    )
                                     return curr_pos
                                 except ValueError:
                                     # Not integers; ignore and keep reading
@@ -802,29 +839,30 @@ class PicoP4SPR(StaticController):
             try:
                 if (s < 0) or (p < 0) or (s > 180) or (p > 180):
                     raise ValueError(f"Invalid polarizer position given: {s}, {p}")
+                cmd = f"sv{s:03d}{p:03d}\n"
+                if self._ser is not None or self.open():
+                    with self._lock:
+                        self._ser.write(cmd.encode())
+                        return self._ser.read() == b"1"
                 else:
-                    cmd = f"sv{s:03d}{p:03d}\n"
-                    if self._ser is not None or self.open():
-                        with self._lock:
-                            self._ser.write(cmd.encode())
-                            return self._ser.read() == b'1'
-                    else:
-                        logger.error("unable to update servo positions")
-                        return False
+                    logger.error("unable to update servo positions")
+                    return False
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.debug(f"Servo write timeout (attempt {attempt + 1}/{max_retries}), retrying...")
+                    logger.debug(
+                        f"Servo write timeout (attempt {attempt + 1}/{max_retries}), retrying...",
+                    )
                     continue
-                else:
-                    logger.warning(f"Servo write failed after {max_retries} attempts: {e}")
-                    return False
+                logger.warning(f"Servo write failed after {max_retries} attempts: {e}")
+                return False
         return False
 
     def flash(self):
         """Flash EEPROM to persist settings. Returns True if successful."""
         import time
+
         try:
-            flash_cmd = 'sf\n'
+            flash_cmd = "sf\n"
             if self._ser is not None or self.open():
                 with self._lock:
                     # Flush any pending data in input buffer
@@ -848,11 +886,13 @@ class PicoP4SPR(StaticController):
                         time.sleep(0.1)
                         response = self._ser.readline().strip()
 
-                    success = (response == b'1')
+                    success = response == b"1"
                     if success:
                         logger.debug("PicoP4SPR EEPROM flash confirmed")
                     else:
-                        logger.warning(f"PicoP4SPR EEPROM flash response mismatch: expected b'1', got {response}")
+                        logger.warning(
+                            f"PicoP4SPR EEPROM flash response mismatch: expected b'1', got {response}",
+                        )
                     return success
             else:
                 logger.error("Cannot flash PicoP4SPR EEPROM - serial port not open")
@@ -869,40 +909,47 @@ class PicoP4SPR(StaticController):
 
 
 class PicoKNX2(FlowController):
-
     def __init__(self):
-        super().__init__(name='pico_knx2')
+        super().__init__(name="pico_knx2")
         self._ser = None
-        self.version = ''
+        self.version = ""
 
     def open(self):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=1, write_timeout=3)
-                    cmd = f"id\n"
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=1,
+                        write_timeout=3,
+                    )
+                    cmd = "id\n"
                     self._ser.write(cmd.encode())
                     reply = self._ser.readline()[0:4].decode()
                     logger.debug(f"Pico KNX2 reply - {reply}")
-                    if reply == 'KNX2':
-                        cmd = f"iv\n"
+                    if reply == "KNX2":
+                        cmd = "iv\n"
                         self._ser.write(cmd.encode())
                         self.version = self._ser.readline()[0:4].decode()
                         return True
-                    else:
-                        try:
-                            self._ser.close()
-                        except Exception as close_err:
-                            logger.error(f"Error closing port after ID mismatch: {close_err}")
-                        finally:
-                            self._ser = None
+                    try:
+                        self._ser.close()
+                    except Exception as close_err:
+                        logger.error(
+                            f"Error closing port after ID mismatch: {close_err}",
+                        )
+                    finally:
+                        self._ser = None
                 except Exception as e:
                     logger.error(f"Failed to open Pico - {e}")
                     if self._ser is not None:
                         try:
                             self._ser.close()
                         except Exception as close_err:
-                            logger.error(f"Error closing port after exception: {close_err}")
+                            logger.error(
+                                f"Error closing port after exception: {close_err}",
+                            )
                         finally:
                             self._ser = None
         return False
@@ -911,7 +958,7 @@ class PicoKNX2(FlowController):
         temp = 0
         try:
             if self._ser is not None or self.open():
-                cmd = f"it\n"
+                cmd = "it\n"
                 self._ser.write(cmd.encode())
                 temp = self._ser.readline().decode()
                 if len(temp) > 5:
@@ -922,20 +969,20 @@ class PicoKNX2(FlowController):
         return temp
 
     def knx_status(self, ch):
-        status = {'flow': 0, 'temp': 0, '6P': 0, '3W': 0}
+        status = {"flow": 0, "temp": 0, "6P": 0, "3W": 0}
         try:
             cmd = f"ks{ch}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 data = self._ser.readline().decode()[0:-2]
-                data = data.split(',')
+                data = data.split(",")
                 if len(data) > 3:
-                    status['flow'] = float(data[0])
-                    status['temp'] = float(data[1])
-                    status['3W'] = float(data[2])
-                    status['6P'] = float(data[3])
+                    status["flow"] = float(data[0])
+                    status["temp"] = float(data[1])
+                    status["3W"] = float(data[2])
+                    status["6P"] = float(data[3])
             else:
-                logger.error(f"failed to send cmd knx_status")
+                logger.error("failed to send cmd knx_status")
             return status
         except Exception as e:
             logger.error(f"Error during knx_status {e}")
@@ -945,10 +992,10 @@ class PicoKNX2(FlowController):
             cmd = f"ps{ch}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                if self._ser.read() == b'1':
+                if self._ser.read() == b"1":
                     return True
             else:
-                logger.error(f"failed to send cmd knx_stop")
+                logger.error("failed to send cmd knx_stop")
             return False
         except Exception as e:
             logger.error(f"Error during knx_stop {e}")
@@ -958,10 +1005,10 @@ class PicoKNX2(FlowController):
             cmd = f"pr{ch}{rate:3d}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                if self._ser.read() == b'1':
+                if self._ser.read() == b"1":
                     return True
             else:
-                logger.error(f"failed to send cmd knx_start")
+                logger.error("failed to send cmd knx_start")
             return False
         except Exception as e:
             logger.error(f"Error during knx_start {e}")
@@ -972,8 +1019,7 @@ class PicoKNX2(FlowController):
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 return True
-            else:
-                logger.error(f"failed to send cmd knx_three")
+            logger.error("failed to send cmd knx_three")
             return False
         except Exception as e:
             logger.error(f"Error during knx_three {e}")
@@ -984,8 +1030,7 @@ class PicoKNX2(FlowController):
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 return True
-            else:
-                logger.error(f"failed to send cmd knx_six")
+            logger.error("failed to send cmd knx_six")
             return False
         except Exception as e:
             logger.error(f"Error during knx_six {e}")
@@ -1000,12 +1045,12 @@ class PicoKNX2(FlowController):
                 er = False
                 for cmd in cmds:
                     self._ser.write(cmd.encode())
-                    if not (self._ser.read() == b'1'):
+                    if self._ser.read() != b"1":
                         er = True
                 if er:
-                    logger.error(f"pico failed to confirm kinetics off")
+                    logger.error("pico failed to confirm kinetics off")
             else:
-                logger.error(f"pico failed to turn kinetics off")
+                logger.error("pico failed to turn kinetics off")
         except Exception as e:
             logger.error(f"error while shutting down kinetics {e}")
 
@@ -1014,10 +1059,10 @@ class PicoKNX2(FlowController):
             cmd = "do\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                if not (self._ser.read() == b'1'):
-                    logger.error(f"pico failed to confirm device off")
+                if self._ser.read() != b"1":
+                    logger.error("pico failed to confirm device off")
             else:
-                logger.error(f"pico failed to turn device off")
+                logger.error("pico failed to turn device off")
         except Exception as e:
             logger.error(f"error while shutting down device {e}")
 
@@ -1029,15 +1074,14 @@ class PicoKNX2(FlowController):
 
 
 class PicoEZSPR(FlowController):
-
     UPDATABLE_VERSIONS: Final[set] = {"V1.3", "V1.4"}
     VERSIONS_WITH_PUMP_CORRECTION: Final[set] = {"V1.4", "V1.5"}
     PUMP_CORRECTION_MULTIPLIER: Final[int] = 100
 
     def __init__(self):
-        super().__init__(name='pico_ezspr')
+        super().__init__(name="pico_ezspr")
         self._ser = None
-        self.version = ''
+        self.version = ""
 
     def valid(self):
         return self._ser is not None and self._ser.is_open or self.open()
@@ -1046,30 +1090,38 @@ class PicoEZSPR(FlowController):
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
-                    self._ser = serial.Serial(port=dev.device, baudrate=115200, timeout=5, write_timeout=5)
-                    cmd = f"id\n"
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=5,
+                        write_timeout=5,
+                    )
+                    cmd = "id\n"
                     self._ser.write(cmd.encode())
                     reply = self._ser.readline()[0:5].decode()
                     logger.debug(f"Pico EZSPR reply - {reply}")
-                    if reply == 'EZSPR':
-                        cmd = f"iv\n"
+                    if reply == "EZSPR":
+                        cmd = "iv\n"
                         self._ser.write(cmd.encode())
                         self.version = self._ser.readline()[0:4].decode()
                         return True
-                    else:
-                        try:
-                            self._ser.close()
-                        except Exception as close_err:
-                            logger.error(f"Error closing port after ID mismatch: {close_err}")
-                        finally:
-                            self._ser = None
+                    try:
+                        self._ser.close()
+                    except Exception as close_err:
+                        logger.error(
+                            f"Error closing port after ID mismatch: {close_err}",
+                        )
+                    finally:
+                        self._ser = None
                 except Exception as e:
                     logger.error(f"Failed to open Pico - {e}")
                     if self._ser is not None:
                         try:
                             self._ser.close()
                         except Exception as close_err:
-                            logger.error(f"Error closing port after exception: {close_err}")
+                            logger.error(
+                                f"Error closing port after exception: {close_err}",
+                            )
                         finally:
                             self._ser = None
                 return False
@@ -1085,7 +1137,9 @@ class PicoEZSPR(FlowController):
         timeout = now + 5_000_000_000
         while now <= timeout:
             try:
-                pico_drive = next(d for d in listdrives() if (Path(d) / "INFO_UF2.TXT").exists())
+                pico_drive = next(
+                    d for d in listdrives() if (Path(d) / "INFO_UF2.TXT").exists()
+                )
                 break
             except StopIteration:
                 time.sleep(0)
@@ -1117,20 +1171,22 @@ class PicoEZSPR(FlowController):
             return False
         corrections = pump_1_correction, pump_2_correction
         try:
-            corrrection_bytes = bytes(round(x * self.PUMP_CORRECTION_MULTIPLIER) for x in corrections)
+            corrrection_bytes = bytes(
+                round(x * self.PUMP_CORRECTION_MULTIPLIER) for x in corrections
+            )
         except ValueError:
             return False
         self._ser.write(b"pf" + corrrection_bytes + b"\n")
         return True
 
-    def turn_on_channel(self, ch='a'):
+    def turn_on_channel(self, ch="a"):
         try:
             if ch in {"a", "b", "c", "d"}:
                 cmd = f"l{ch}\n"
                 if self._ser is not None or self.open():
                     self._ser.write(cmd.encode())
                     return self._ser.read() == b"1"
-            elif ch not in {'a', 'b', 'c', 'd'}:
+            elif ch not in {"a", "b", "c", "d"}:
                 raise ValueError("Invalid Channel!")
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
@@ -1139,14 +1195,14 @@ class PicoEZSPR(FlowController):
     def turn_off_channels(self):
         try:
             if self._ser is not None or self.open():
-                cmd = f"lx\n"
+                cmd = "lx\n"
                 self._ser.write(cmd.encode())
                 return self._ser.read() == b"1"
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False
 
-    def set_intensity(self, ch='a', raw_val=1):
+    def set_intensity(self, ch="a", raw_val=1):
         try:
             if ch in {"a", "b", "c", "d"}:
                 # error bounding: P4SPR LED intensity range is 0-255
@@ -1176,13 +1232,15 @@ class PicoEZSPR(FlowController):
                         return reply
                     except Exception as e:
                         if attempt < max_retries - 1:
-                            logger.debug(f"LED write timeout (EZSPR ch {ch}, attempt {attempt+1}/{max_retries}): {e}")
+                            logger.debug(
+                                f"LED write timeout (EZSPR ch {ch}, attempt {attempt+1}/{max_retries}): {e}",
+                            )
                             time.sleep(0.05)
                             continue
                         logger.error(f"error while setting led intensity {e}")
                         return False
                 return False
-            elif ch not in {'a', 'b', 'c', 'd'}:
+            if ch not in {"a", "b", "c", "d"}:
                 raise ValueError(f"Invalid Channel - {ch}")
         except Exception as e:
             logger.error(f"error while setting led intensity {e}")
@@ -1215,6 +1273,7 @@ class PicoEZSPR(FlowController):
             Sequential commands: ~12ms for 4 LEDs
             Batch command: ~0.8ms for 4 LEDs
             Speedup: 15x faster
+
         """
         try:
             # Clamp values to valid range (0-255)
@@ -1232,21 +1291,20 @@ class PicoEZSPR(FlowController):
                 # Batch command executes successfully even with minimal response
                 logger.debug(f"Batch LED command sent: {cmd.strip()}")
                 return True
-            else:
-                logger.error(f"pico serial port not valid for batch command")
-                return False
+            logger.error("pico serial port not valid for batch command")
+            return False
 
         except Exception as e:
             logger.error(f"error while setting batch LED intensities: {e}")
             return False
 
-    def set_mode(self, mode='s'):
+    def set_mode(self, mode="s"):
         try:
             if self._ser is not None or self.open():
-                if mode == 's':
-                    cmd = f"ss\n"
+                if mode == "s":
+                    cmd = "ss\n"
                 else:
-                    cmd = f"sp\n"
+                    cmd = "sp\n"
                 self._ser.write(cmd.encode())
                 return self._ser.read() == b"1"
         except Exception as e:
@@ -1254,65 +1312,82 @@ class PicoEZSPR(FlowController):
             return False
 
     def servo_get(self):
-        cmd = f"sr\n"
-        curr_pos = {'s': b'0000', 'p': b'0000'}
+        cmd = "sr\n"
+        curr_pos = {"s": b"0000", "p": b"0000"}
         max_retries = 3
 
         for attempt in range(max_retries):
             try:
                 if self._ser is not None or self.open():
                     import time
+
                     self._ser.reset_input_buffer()
                     self._ser.write(cmd.encode())
                     time.sleep(0.15)  # Increased wait time for Pico to respond
 
                     servo_reading = self._ser.readline()
-                    logger.debug(f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})")
+                    logger.debug(
+                        f"servo reading pico {servo_reading} (attempt {attempt + 1}/{max_retries})",
+                    )
 
                     # If response is just "1\r\n", read again for actual positions
-                    if servo_reading.strip() == b'1':
+                    if servo_reading.strip() == b"1":
                         time.sleep(0.05)
                         servo_reading = self._ser.readline()
-                        logger.debug(f"servo reading pico (second read) {servo_reading}")
+                        logger.debug(
+                            f"servo reading pico (second read) {servo_reading}",
+                        )
 
                     # Parse comma-separated format: "s,p\r\n"
                     try:
-                        response_str = servo_reading.decode('utf-8').strip()
+                        response_str = servo_reading.decode("utf-8").strip()
                         if not response_str:
-                            logger.warning(f"Empty servo response on attempt {attempt + 1} - servo may not be initialized")
+                            logger.warning(
+                                f"Empty servo response on attempt {attempt + 1} - servo may not be initialized",
+                            )
                             if attempt < max_retries - 1:
                                 time.sleep(0.2)
                                 continue
                             return curr_pos
 
-                        if ',' in response_str:
-                            parts = response_str.split(',')
+                        if "," in response_str:
+                            parts = response_str.split(",")
                             if len(parts) == 2:
                                 # Validate that parts contain numeric values
                                 try:
                                     s_val = int(parts[0])
                                     p_val = int(parts[1])
-                                    curr_pos['s'] = parts[0].encode()
-                                    curr_pos['p'] = parts[1].encode()
-                                    logger.debug(f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})")
+                                    curr_pos["s"] = parts[0].encode()
+                                    curr_pos["p"] = parts[1].encode()
+                                    logger.debug(
+                                        f"Servo s, p: {curr_pos} (parsed as {s_val}, {p_val})",
+                                    )
                                     return curr_pos  # Success - return immediately
                                 except ValueError as ve:
-                                    logger.warning(f"Non-numeric servo values: {parts} - {ve}")
+                                    logger.warning(
+                                        f"Non-numeric servo values: {parts} - {ve}",
+                                    )
                                     if attempt < max_retries - 1:
                                         time.sleep(0.2)
                                         continue
                             else:
-                                logger.warning(f"Invalid servo response format (expected 2 parts): {servo_reading}")
+                                logger.warning(
+                                    f"Invalid servo response format (expected 2 parts): {servo_reading}",
+                                )
                                 if attempt < max_retries - 1:
                                     time.sleep(0.2)
                                     continue
                         else:
-                            logger.warning(f"Invalid servo response (no comma): {servo_reading}")
+                            logger.warning(
+                                f"Invalid servo response (no comma): {servo_reading}",
+                            )
                             if attempt < max_retries - 1:
                                 time.sleep(0.2)
                                 continue
                     except Exception as parse_error:
-                        logger.warning(f"Error parsing servo response {servo_reading}: {parse_error}")
+                        logger.warning(
+                            f"Error parsing servo response {servo_reading}: {parse_error}",
+                        )
                         if attempt < max_retries - 1:
                             time.sleep(0.2)
                             continue
@@ -1335,31 +1410,29 @@ class PicoEZSPR(FlowController):
             try:
                 if (s < 0) or (p < 0) or (s > 180) or (p > 180):
                     raise ValueError(f"Invalid polarizer position given: {s}, {p}")
-                else:
-                    cmd = f"sv{s:03d}{p:03d}\n"
-                    if self._ser is not None or self.open():
-                        self._ser.write(cmd.encode())
-                        return self._ser.read() == b'1'
-                    else:
-                        logger.error("unable to update servo positions")
-                        return False
+                cmd = f"sv{s:03d}{p:03d}\n"
+                if self._ser is not None or self.open():
+                    self._ser.write(cmd.encode())
+                    return self._ser.read() == b"1"
+                logger.error("unable to update servo positions")
+                return False
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.debug(f"Servo write timeout (attempt {attempt + 1}/{max_retries}), retrying...")
+                    logger.debug(
+                        f"Servo write timeout (attempt {attempt + 1}/{max_retries}), retrying...",
+                    )
                     continue
-                else:
-                    logger.warning(f"Servo write failed after {max_retries} attempts: {e}")
-                    return False
+                logger.warning(f"Servo write failed after {max_retries} attempts: {e}")
+                return False
         return False
 
     def flash(self):
         try:
-            flash_cmd = 'sf\n'
+            flash_cmd = "sf\n"
             if self._ser is not None or self.open():
                 self._ser.write(flash_cmd.encode())
-                return self._ser.read() == b'1'
-            else:
-                return False
+                return self._ser.read() == b"1"
+            return False
         except Exception as e:
             logger.debug(f"error flashing pico {e}")
             return False
@@ -1371,7 +1444,7 @@ class PicoEZSPR(FlowController):
         temp = 0
         try:
             if self._ser is not None or self.open():
-                cmd = f"it\n"
+                cmd = "it\n"
                 self._ser.write(cmd.encode())
                 temp = self._ser.readline().decode()
                 if len(temp) > 5:
@@ -1382,20 +1455,20 @@ class PicoEZSPR(FlowController):
         return temp
 
     def knx_status(self, ch):
-        status = {'flow': 0, 'temp': 0, '6P': 0, '3W': 0}
+        status = {"flow": 0, "temp": 0, "6P": 0, "3W": 0}
         try:
             cmd = f"ks{ch}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 data = self._ser.readline().decode()[0:-2]
-                data = data.split(',')
+                data = data.split(",")
                 if len(data) > 3:
-                    status['flow'] = float(data[0])
-                    status['temp'] = float(data[1])
-                    status['3W'] = float(data[2])
-                    status['6P'] = float(data[3])
+                    status["flow"] = float(data[0])
+                    status["temp"] = float(data[1])
+                    status["3W"] = float(data[2])
+                    status["6P"] = float(data[3])
             else:
-                logger.error(f"failed to send cmd knx_status")
+                logger.error("failed to send cmd knx_status")
             return status
         except Exception as e:
             logger.error(f"Error during knx_status {e}")
@@ -1405,10 +1478,10 @@ class PicoEZSPR(FlowController):
             cmd = f"ps{ch}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                if self._ser.read() == b'1':
+                if self._ser.read() == b"1":
                     return True
             else:
-                logger.error(f"failed to send cmd knx_stop")
+                logger.error("failed to send cmd knx_stop")
             return False
         except Exception as e:
             logger.error(f"Error during knx_stop {e}")
@@ -1429,10 +1502,10 @@ class PicoEZSPR(FlowController):
             cmd = f"pr{ch}{round(rate):3d}\n"
             if self.valid():
                 self._ser.write(cmd.encode())
-                if self._ser.read() == b'1':
+                if self._ser.read() == b"1":
                     return True
             else:
-                logger.error(f"failed to send cmd knx_start")
+                logger.error("failed to send cmd knx_start")
             return False
         except Exception as e:
             logger.error(f"Error during knx_start {e}")
@@ -1443,8 +1516,7 @@ class PicoEZSPR(FlowController):
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 return self._ser.read() == b"1"
-            else:
-                logger.error(f"failed to send cmd knx_three")
+            logger.error("failed to send cmd knx_three")
             return False
         except Exception as e:
             logger.error(f"Error during knx_three {e}")
@@ -1455,8 +1527,7 @@ class PicoEZSPR(FlowController):
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 return self._ser.read() == b"1"
-            else:
-                logger.error(f"failed to send cmd knx_six")
+            logger.error("failed to send cmd knx_six")
             return False
         except Exception as e:
             logger.error(f"Error during knx_six {e}")
@@ -1471,12 +1542,12 @@ class PicoEZSPR(FlowController):
                 er = False
                 for cmd in cmds:
                     self._ser.write(cmd.encode())
-                    if not (self._ser.read() == b'1'):
+                    if self._ser.read() != b"1":
                         er = True
                 if er:
-                    logger.error(f"pico failed to confirm kinetics off")
+                    logger.error("pico failed to confirm kinetics off")
             else:
-                logger.error(f"pico failed to turn kinetics off")
+                logger.error("pico failed to turn kinetics off")
         except Exception as e:
             logger.error(f"error while shutting down kinetics {e}")
 
@@ -1485,10 +1556,10 @@ class PicoEZSPR(FlowController):
             cmd = "do\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                if not (self._ser.read() == b'1'):
-                    logger.error(f"pico failed to confirm device off")
+                if self._ser.read() != b"1":
+                    logger.error("pico failed to confirm device off")
             else:
-                logger.error(f"pico failed to turn device off")
+                logger.error("pico failed to turn device off")
         except Exception as e:
             logger.error(f"error while shutting down device {e}")
 
@@ -1499,7 +1570,7 @@ class PicoEZSPR(FlowController):
         temp = 0
         try:
             if self._ser is not None or self.open():
-                cmd = f"it\n"
+                cmd = "it\n"
                 self._ser.write(cmd.encode())
                 temp = self._ser.readline().decode()
                 if len(temp) > 5:
@@ -1512,4 +1583,3 @@ class PicoEZSPR(FlowController):
 
     def __str__(self):
         return "Pico Carrier Board"
-

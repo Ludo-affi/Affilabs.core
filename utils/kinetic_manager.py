@@ -256,11 +256,11 @@ class KineticManager(QObject):
         # Injection timers
         self._injection_timer_ch1 = QTimer()
         self._injection_timer_ch1.timeout.connect(
-            lambda: self._auto_end_injection("CH1")
+            lambda: self._auto_end_injection("CH1"),
         )
         self._injection_timer_ch2 = QTimer()
         self._injection_timer_ch2.timeout.connect(
-            lambda: self._auto_end_injection("CH2")
+            lambda: self._auto_end_injection("CH2"),
         )
 
         # Sensor reading control
@@ -345,11 +345,13 @@ class KineticManager(QObject):
 
             # Emit signal
             self.valve_state_changed.emit(
-                channel, self.get_valve_position_name(channel)
+                channel,
+                self.get_valve_position_name(channel),
             )
             if self.synced and channel == "CH1":
                 self.valve_state_changed.emit(
-                    "CH2", self.get_valve_position_name("CH2")
+                    "CH2",
+                    self.get_valve_position_name("CH2"),
                 )
 
             logger.debug(f"3-way valve {channel} set to position {position}")
@@ -442,11 +444,13 @@ class KineticManager(QObject):
 
             # Emit signal
             self.valve_state_changed.emit(
-                channel, self.get_valve_position_name(channel)
+                channel,
+                self.get_valve_position_name(channel),
             )
             if self.synced and channel == "CH1":
                 self.valve_state_changed.emit(
-                    "CH2", self.get_valve_position_name("CH2")
+                    "CH2",
+                    self.get_valve_position_name("CH2"),
                 )
 
             logger.debug(f"6-port valve {channel} set to position {position}")
@@ -644,7 +648,7 @@ class KineticManager(QObject):
                 self.channels[channel].injection_timeout_sec = int(timeout_minutes * 60)
 
                 logger.debug(
-                    f"Injection timer set for {channel}: {timeout_minutes:.1f} minutes"
+                    f"Injection timer set for {channel}: {timeout_minutes:.1f} minutes",
                 )
 
             # Log the injection event
