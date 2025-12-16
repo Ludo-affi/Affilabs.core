@@ -1,7 +1,13 @@
 """Controller Hardware Abstraction Layer.
 
-Provides unified interface for all controller types (PicoP4SPR, PicoEZSPR, etc.)
-with type-safe capability queries and consistent API.
+Provides unified interface for supported controller types:
+- PicoP4SPR (affinite_P4SPR)
+- PicoEZSPR (affinite_P4PRO)
+
+Features:
+- Type-safe capability queries
+- Consistent API across controller types
+- Servo position management
 
 This is an ADDITIVE layer - does not modify existing controller implementations.
 Use create_controller_hal() factory function to wrap existing controller instances.
@@ -106,12 +112,53 @@ class ControllerHAL(Protocol):
         """
         ...
 
+    def servo_move_calibration_only(
+        self,
+        s: int | None = None,
+        p: int | None = None,
+    ) -> bool:
+        """Move servo to position without firmware lock (calibration mode).
+
+        Args:
+            s: S-mode position (1-255)
+            p: P-mode position (1-255)
+
+        Returns:
+            True if command succeeded (False if polarizer not supported)
+
+        """
+        ...
+
+    def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
+        """Set and lock servo positions in firmware RAM.
+
+        Args:
+            s: S-mode position (1-255)
+            p: P-mode position (1-255)
+
+        Returns:
+            True if command succeeded (False if polarizer not supported)
+
+        """
+        ...
+
+    # LED Query
+    def get_all_led_intensities(self) -> dict[str, int] | None:
+        """Query current LED intensities from device (firmware V1.1+).
+
+        Returns:
+            Dict with keys 'a', 'b', 'c', 'd' and intensity values (0-255),
+            or None if not supported or query failed
+
+        """
+        ...
+
     # Device Info & Capabilities
     def get_device_type(self) -> str:
         """Get the underlying device type string.
 
         Returns:
-            Device type: 'PicoP4SPR', 'PicoEZSPR', 'Arduino', 'Kinetic'
+            Device type: 'PicoP4SPR' (affinite_P4SPR) or 'PicoEZSPR' (affinite_P4PRO)
 
         """
         ...
@@ -226,63 +273,10 @@ class PicoP4SPRAdapter:
         self._device_type = "PicoP4SPR"
         self._device_config = device_config
 
-    def sync_servo_positions(self) -> bool:
-        """Sync servo positions from device_config to device RAM.
-
-        This method reads servo_s_position and servo_p_position from DeviceConfiguration
-        and sends them to the device using the 'sv' command. This ensures the device
-        uses the calibration values from config instead of EEPROM.
-
-        Returns:
-            bool: True if sync succeeded, False if config unavailable or command failed
-
-        """
-        if self._device_config is None:
-            logger.warning("Cannot sync servo positions - no device_config provided")
-            return False
-
-        try:
-            # Get positions from config (in degrees, 0-180)
-            positions = self._device_config.get_servo_positions()
-            s_deg = positions.get("s", 10)  # Default S position: 10°
-            p_deg = positions.get("p", 100)  # Default P position: 100°
-
-            logger.info(f"Syncing servo positions from config: S={s_deg}°, P={p_deg}°")
-
-            # Convert degrees (0-180) to servo PWM range (0-255)
-            s_pwm = int(s_deg * 255 / 180)
-            p_pwm = int(p_deg * 255 / 180)
-
-            # Format command: sv{s:03d}{p:03d}\n (7 chars total for positions)
-            cmd = f"sv{s_pwm:03d}{p_pwm:03d}\n"
-
-            # Send to device
-            if self._ctrl._ser is None:
-                if not self._ctrl.open():
-                    logger.error("Cannot sync servo positions - device not connected")
-                    return False
-
-            self._ctrl._ser.write(cmd.encode())
-            import time
-
-            time.sleep(0.05)
-
-            # Read acknowledgment
-            response = self._ctrl._ser.readline().strip()
-            if response != b"1":
-                logger.warning(
-                    f"Servo position sync may have failed (response: {response!r})",
-                )
-                return False
-
-            logger.info(
-                f"Servo positions synced successfully: S={s_deg}° ({s_pwm}), P={p_deg}° ({p_pwm})",
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to sync servo positions: {e}")
-            return False
+    @property
+    def _ser(self):
+        """Expose serial port for low-level calibration operations."""
+        return self._ctrl._ser
 
     # LED Control
     def turn_on_channel(self, ch: str) -> bool:
@@ -330,6 +324,29 @@ class PicoP4SPRAdapter:
         except Exception as e:
             logger.error(f"get_polarizer_position error: {e}")
             return {}
+
+    def servo_move_calibration_only(
+        self,
+        s: int | None = None,
+        p: int | None = None,
+    ) -> bool:
+        """Move servo to position without firmware lock (calibration mode)."""
+        return self._ctrl.servo_move_calibration_only(s=s, p=p) or False
+
+    def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
+        """Set and lock servo positions in firmware RAM.
+
+        NOTE: PicoP4SPR doesn't have separate firmware RAM lock like PicoEZSPR.
+        Just move servo to position - firmware remembers last position.
+        """
+        return self._ctrl.servo_move_calibration_only(s=s, p=p) or False
+
+    # LED Query
+    def get_all_led_intensities(self) -> dict[str, int] | None:
+        """Query current LED intensities from device (firmware V1.1+)."""
+        if hasattr(self._ctrl, "get_all_led_intensities"):
+            return self._ctrl.get_all_led_intensities()
+        return None
 
     # Device Info & Capabilities
     def get_device_type(self) -> str:
@@ -400,6 +417,11 @@ class PicoEZSPRAdapter:
         self._ctrl = controller
         self._device_type = "PicoEZSPR"
 
+    @property
+    def _ser(self):
+        """Expose serial port for low-level calibration operations."""
+        return self._ctrl._ser
+
     # LED Control
     def turn_on_channel(self, ch: str) -> bool:
         return self._ctrl.turn_on_channel(ch) or False
@@ -435,6 +457,25 @@ class PicoEZSPRAdapter:
 
     def get_polarizer_position(self) -> dict[str, Any]:
         return {}  # No polarizer support
+
+    def servo_move_calibration_only(
+        self,
+        s: int | None = None,
+        p: int | None = None,
+    ) -> bool:
+        """EZSPR does not have polarizer/servo - always returns False."""
+        return False
+
+    def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
+        """EZSPR does not have polarizer/servo - always returns False."""
+        return False
+
+    # LED Query
+    def get_all_led_intensities(self) -> dict[str, int] | None:
+        """Query current LED intensities from device (if supported)."""
+        if hasattr(self._ctrl, "get_all_led_intensities"):
+            return self._ctrl.get_all_led_intensities()
+        return None
 
     # Device Info & Capabilities
     def get_device_type(self) -> str:
@@ -489,199 +530,10 @@ class PicoEZSPRAdapter:
         return self._ctrl.valid()
 
 
-class ArduinoAdapter:
-    """Adapter wrapping Arduino controller to provide ControllerHAL interface."""
-
-    def __init__(self, controller):
-        """Initialize adapter with existing ArduinoController instance.
-
-        Args:
-            controller: ArduinoController instance from affilabs.utils.controller
-
-        """
-        self._ctrl = controller
-        self._device_type = "Arduino"
-
-    # LED Control
-    def turn_on_channel(self, ch: str) -> bool:
-        return self._ctrl.turn_on_channel(ch) or False
-
-    def turn_off_channels(self) -> bool:
-        return self._ctrl.turn_off_channels() or False
-
-    def set_intensity(self, ch: str, raw_val: int) -> bool:
-        # Arduino has basic LED control but intensity may not be supported
-        return False
-
-    def set_batch_intensities(
-        self,
-        a: int = 0,
-        b: int = 0,
-        c: int = 0,
-        d: int = 0,
-    ) -> bool:
-        return False
-
-    # Polarizer Control
-    def set_mode(self, mode: str) -> bool:
-        return False
-
-    def get_polarizer_position(self) -> dict[str, Any]:
-        return {}
-
-    # Device Info & Capabilities
-    def get_device_type(self) -> str:
-        return self._device_type
-
-    def get_firmware_version(self) -> str:
-        return ""
-
-    def get_temperature(self) -> float:
-        return -1.0
-
-    # Capability queries
-    @property
-    def supports_polarizer(self) -> bool:
-        return False
-
-    @property
-    def supports_batch_leds(self) -> bool:
-        return False
-
-    @property
-    def supports_pump(self) -> bool:
-        return False
-
-    @property
-    def supports_firmware_update(self) -> bool:
-        return False
-
-    @property
-    def channel_count(self) -> int:
-        return 4
-
-    # Pump Control (not supported)
-    def get_pump_corrections(self) -> tuple[float, float] | None:
-        return None
-
-    def set_pump_corrections(
-        self,
-        pump_1_correction: float,
-        pump_2_correction: float,
-    ) -> bool:
-        return False
-
-    # Connection Management
-    def open(self) -> bool:
-        return self._ctrl.open()
-
-    def close(self) -> None:
-        self._ctrl.close()
-
-    def is_connected(self) -> bool:
-        return self._ctrl._ser is not None and self._ctrl._ser.is_open
-
-
-class KineticAdapter:
-    """Adapter wrapping Kinetic controller to provide ControllerHAL interface."""
-
-    def __init__(self, controller):
-        """Initialize adapter with existing KineticController instance.
-
-        Args:
-            controller: KineticController instance from affilabs.utils.controller
-
-        """
-        self._ctrl = controller
-        self._device_type = "Kinetic"
-
-    # LED Control
-    def turn_on_channel(self, ch: str) -> bool:
-        return self._ctrl.turn_on_channel(ch) or False
-
-    def turn_off_channels(self) -> bool:
-        return self._ctrl.turn_off_channels() or False
-
-    def set_intensity(self, ch: str, raw_val: int) -> bool:
-        return self._ctrl.set_intensity(ch, raw_val) or False
-
-    def set_batch_intensities(
-        self,
-        a: int = 0,
-        b: int = 0,
-        c: int = 0,
-        d: int = 0,
-    ) -> bool:
-        # Kinetic doesn't have batch command
-        success = True
-        if a > 0:
-            success &= self.set_intensity("a", a)
-        if b > 0:
-            success &= self.set_intensity("b", b)
-        if c > 0:
-            success &= self.set_intensity("c", c)
-        if d > 0:
-            success &= self.set_intensity("d", d)
-        return success
-
-    # Polarizer Control
-    def set_mode(self, mode: str) -> bool:
-        return False
-
-    def get_polarizer_position(self) -> dict[str, Any]:
-        return {}
-
-    # Device Info & Capabilities
-    def get_device_type(self) -> str:
-        return self._device_type
-
-    def get_firmware_version(self) -> str:
-        return ""
-
-    def get_temperature(self) -> float:
-        return -1.0
-
-    # Capability queries
-    @property
-    def supports_polarizer(self) -> bool:
-        return False
-
-    @property
-    def supports_batch_leds(self) -> bool:
-        return False
-
-    @property
-    def supports_pump(self) -> bool:
-        return False
-
-    @property
-    def supports_firmware_update(self) -> bool:
-        return False
-
-    @property
-    def channel_count(self) -> int:
-        return 4
-
-    # Pump Control (not supported)
-    def get_pump_corrections(self) -> tuple[float, float] | None:
-        return None
-
-    def set_pump_corrections(
-        self,
-        pump_1_correction: float,
-        pump_2_correction: float,
-    ) -> bool:
-        return False
-
-    # Connection Management
-    def open(self) -> bool:
-        return self._ctrl.open()
-
-    def close(self) -> None:
-        self._ctrl.close()
-
-    def is_connected(self) -> bool:
-        return self._ctrl._ser is not None and self._ctrl._ser.is_open
+# ============================================================================
+# NOTE: ArduinoAdapter and KineticAdapter classes REMOVED
+# Only PicoP4SPR and PicoEZSPR controllers are supported.
+# ============================================================================
 
 
 def create_controller_hal(controller, device_config=None) -> ControllerHAL:
@@ -691,8 +543,12 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
     controller instance and get back a ControllerHAL interface with type-safe
     capability queries.
 
+    Supported Controllers:
+        - PicoP4SPR (affinite_P4SPR) - 4-channel with polarizer control
+        - PicoEZSPR (affinite_P4PRO) - 4-channel with pump control
+
     Args:
-        controller: Controller instance (PicoP4SPR, PicoEZSPR, Arduino, Kinetic)
+        controller: Controller instance (PicoP4SPR or PicoEZSPR only)
         device_config: Optional DeviceConfiguration for servo position management (P4SPR only)
 
     Returns:
@@ -714,9 +570,6 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
         # Wrap with HAL and provide config for servo management
         hal = create_controller_hal(ctrl, device_config)
 
-        # Sync servo positions from config to device
-        hal.sync_servo_positions()
-
         # Type-safe capability check (no more string matching!)
         if hal.supports_polarizer:
             hal.set_mode('s')
@@ -730,19 +583,13 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
         controller.name if hasattr(controller, "name") else type(controller).__name__
     )
 
-    # Map controller name to adapter class
+    # Map controller name to adapter class - ONLY SUPPORTED CONTROLLERS
     adapter_map = {
-        "pico_p4spr": PicoP4SPRAdapter,
+        "pico_p4spr": PicoP4SPRAdapter,  # PicoP4SPR / affinite_P4SPR
         "PicoP4SPR": PicoP4SPRAdapter,
-        "pico_ezspr": PicoEZSPRAdapter,
+        "pico_ezspr": PicoEZSPRAdapter,  # PicoEZSPR / affinite_P4PRO
         "PicoEZSPR": PicoEZSPRAdapter,
-        "p4spr": ArduinoAdapter,  # Arduino uses 'p4spr' as name
-        "ArduinoController": ArduinoAdapter,
-        "kinetic": KineticAdapter,
-        "KineticController": KineticAdapter,
-        "KNX2": KineticAdapter,  # KineticController uses 'KNX2' as name
         "EZSPR": PicoEZSPRAdapter,  # Legacy EZSPR name
-        "KNX": KineticAdapter,  # Legacy KNX name
     }
 
     adapter_class = adapter_map.get(controller_name)

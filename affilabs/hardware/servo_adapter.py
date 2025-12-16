@@ -256,11 +256,11 @@ class ServoAdapter(IServo):
 
     def _unwrap_controller(self, controller: IController):
         """Extract raw controller from adapter."""
-        from affilabs.hardware.controller_adapter import ControllerAdapter
-
-        if isinstance(controller, ControllerAdapter):
-            return controller._controller
-        return None
+        # NOTE: Controller HAL adapters have _ctrl attribute
+        if hasattr(controller, "_ctrl"):
+            return controller._ctrl
+        # Fallback: might already be a raw controller
+        return controller
 
     def _unwrap_spectrometer(self, spectrometer: ISpectrometer):
         """Extract raw spectrometer from adapter."""

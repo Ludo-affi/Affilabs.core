@@ -4,6 +4,14 @@ import sys
 from pathlib import Path
 from re import search
 
+# TIMING ARCHITECTURE - Base timing parameters
+# ==========================================
+# These values define the timing synchronization between firmware and detector
+LED_ON_TIME_MS = 250.0  # LED ON duration (firmware default: 250ms)
+DETECTOR_WAIT_MS = 60.0  # MAX INTEGRATION TIME PER SCAN (default: 60ms)
+NUM_SCANS = 3  # Number of scans per spectrum (HAL averages these)
+SAFETY_BUFFER_MS = 10.0  # Safety margin for timing calculations
+
 
 def get_version() -> str:
     """Get the current version of this software."""
@@ -316,7 +324,8 @@ import datetime
 try:
     TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 except AttributeError:
-    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
+    # Python < 3.11 compatibility
+    TIME_ZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
 
 DEFAULT_CONFIG = {
     "unit": UNIT,

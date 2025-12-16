@@ -55,7 +55,7 @@ class CalibrationData:
 
     # Core calibration data
     s_pol_ref: dict[str, np.ndarray]  # channel -> reference spectrum
-    wavelengths: np.ndarray  # wavelength array (nm)
+    wavelengths: np.ndarray  # wavelength array in nanometers (nm), converted from SeaBreeze µm
 
     # LED intensities
     p_mode_intensities: dict[str, int]  # P-mode LED brightness
@@ -97,7 +97,10 @@ class CalibrationData:
     transmission_validation: dict[str, dict] = field(default_factory=dict)
 
     # Timing synchronization results (from Step 6)
-    timing_sync: dict | None = None  # LED/detector timing consistency metrics
+    # timing_sync deleted - old calibration code, not used
+
+    # Convergence summary (from LED calibration Steps 3-5)
+    convergence_summary: dict | None = None  # LED convergence results for QC report
 
     # Metadata
     timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
@@ -412,22 +415,11 @@ class CalibrationData:
             "transmission_validation": qc_validation
             if qc_validation
             else self.transmission_validation,
-            # Timing synchronization (Step 6)
-            "timing_sync": (
-                self.timing_sync.copy() if isinstance(self.timing_sync, dict) else None
-            ),
-            "timing_sync_avg_ms": (
-                float(self.timing_sync.get("avg_cycle_ms"))
-                if isinstance(self.timing_sync, dict) and "avg_cycle_ms" in self.timing_sync
+            # Convergence summary (LED calibration Steps 3-5)
+            "convergence_summary": (
+                self.convergence_summary.copy()
+                if isinstance(self.convergence_summary, dict)
                 else None
-            ),
-            "timing_sync_jitter_ms": (
-                float(self.timing_sync.get("jitter_ms"))
-                if isinstance(self.timing_sync, dict) and "jitter_ms" in self.timing_sync
-                else None
-            ),
-            "timing_sync_status": (
-                self.timing_sync.get("status") if isinstance(self.timing_sync, dict) else None
             ),
             # ROI
             "roi_start": self.roi_start,

@@ -86,6 +86,9 @@ class FlowTabBuilder:
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
         """Build intelligence bar section."""
+        # TEMPORARY: Hidden for v1.0 release - will be re-enabled with AI diagnostics
+        return
+
         intel_section = QLabel("INTELLIGENCE BAR")
         intel_section.setStyleSheet(section_header_style())
         intel_section.setToolTip(

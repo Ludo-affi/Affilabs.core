@@ -6,9 +6,8 @@ from asyncio import Task, create_task, sleep
 from typing import Self
 
 try:
-    from pump_controller import PumpController, PumpException
+    from pump_controller import PumpException
 except ModuleNotFoundError:
-    PumpController = None  # type: ignore
     PumpException = Exception
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QIcon
@@ -24,12 +23,13 @@ from PySide6.QtWidgets import (
 
 from affilabs.utils.common import logger
 from affilabs.utils.controller import KineticController, PicoEZSPR
+from affilabs.utils.hal.pump_hal import PumpHAL
 
 
 class PrimingWindow(QDialog):
     """Modal dialogue for priming the system."""
 
-    pump: PumpController
+    pump: PumpHAL
 
     knx: KineticController | PicoEZSPR
 
@@ -53,7 +53,7 @@ class PrimingWindow(QDialog):
 
     def __init__(
         self: Self,
-        pump: PumpController,
+        pump: PumpHAL,
         knx: KineticController | PicoEZSPR,
         parent: QWidget | None = None,
     ) -> None:
@@ -191,9 +191,16 @@ class PrimingWindow(QDialog):
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
 
+    from affipump import CavroPumpManager, PumpController
+
+    from affilabs.utils.hal.pump_hal import create_pump_hal
+
     app = QApplication([])
 
-    pump = PumpController.from_first_available()
+    # Connect to pump via HAL
+    controller = PumpController.from_first_available()
+    pump_manager = CavroPumpManager(controller)
+    pump = create_pump_hal(pump_manager)
 
     widget = PrimingWindow(pump)
     widget.open()

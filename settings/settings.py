@@ -106,7 +106,7 @@ INVERT_TRANSMISSION_VISUAL = False
 # ==========================================
 # DEPRECATED: These are now loaded from detector profiles
 # Use: profile = get_current_detector_profile()
-MIN_WAVELENGTH = 580  # DEPRECATED: Use profile.spr_wavelength_min_nm
+MIN_WAVELENGTH = 560  # DEPRECATED: Use profile.spr_wavelength_min_nm (GitHub: 560-720nm ROI)
 MAX_WAVELENGTH = 720  # DEPRECATED: Use profile.spr_wavelength_max_nm
 POL_WAVELENGTH = 620  # index for auto polarization
 
@@ -122,28 +122,33 @@ WAVELENGTH_CACHE_ENABLED: bool = True
 WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by default
 
 # ==========================================
-# ADVANCED SETTINGS OVERRIDES
+# ADVANCED SETTINGS OVERRIDES - TIMING ARCHITECTURE
 # ==========================================
 # These values can be set via Advanced Settings dialog to override calibration defaults
-# If None, calibration values will be used
-DETECTOR_ON_TIME_MS = None  # Integration time override (None = use calibration)
-LED_ON_TIME_MS = None  # LED ON duration override (None = use default 250ms)
+# ALL timing calculations derive from these base parameters
+
+# Base timing parameters (can be changed in Advanced Settings)
+LED_ON_TIME_MS = 250.0  # LED ON duration (firmware default: 250ms)
+DETECTOR_WAIT_MS = 60.0  # MAX INTEGRATION TIME PER SCAN (default: 60ms)
+NUM_SCANS = 3  # Number of scans per spectrum (HAL averages these)
+SAFETY_BUFFER_MS = 10.0  # Safety margin for timing calculations
+
+# Derived timing (DO NOT MODIFY - calculated from base parameters)
+# DETECTOR_ON_TIME = LED_ON_TIME - DETECTOR_WAIT
+# DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER
+# Formula: num_scans × integration_time ≤ DETECTOR_WINDOW
+#          integration_time ≤ DETECTOR_WAIT_MS (per-scan cap)
+
+# Legacy overrides (deprecated - use base parameters above)
+DETECTOR_ON_TIME_MS = None  # DEPRECATED: Use LED_ON_TIME_MS and DETECTOR_WAIT_MS
 LED_OFF_TIME_MS = None  # LED OFF duration override (None = use default 0ms)
-DETECTOR_WAIT_MS = None  # Software detector wait override (None = use default 60ms)
 
 # ==========================================
-# TIMING PARAMETERS
+# OLD TIMING PARAMETERS - DELETED
 # ==========================================
-# LED Stabilization - time between LED turn-on and spectrum acquisition
-# LED timing defaults (seconds or milliseconds as noted)
-# Deprecated single delay (kept for backward compatibility in older paths)
-LED_DELAY = 0.010  # 10ms minimum LED settling time (fallback for legacy code)
-
-# Optimized LED delays (ms) - determined from LED characterization
-PRE_LED_DELAY_MS: float = 12.0  # Delay after LED ON before measurement (stabilization)
-POST_LED_DELAY_MS: float = (
-    40.0  # Delay after LED OFF before switching channel (afterglow decay)
-)
+# All timing now controlled by LED_ON_TIME_MS, DETECTOR_WAIT_MS, NUM_SCANS, SAFETY_BUFFER_MS
+# No more PRE_LED_DELAY_MS, POST_LED_DELAY_MS, or LED_DELAY
+# See Advanced Settings section above for all timing parameters
 
 # Optional: one-cycle LED verification at maximum brightness in live mode
 # When True, each channel will run the first live acquisition at LED=255 and log a clear message.
@@ -151,41 +156,30 @@ POST_LED_DELAY_MS: float = (
 LED_FORCE_255_TEST_CYCLE: bool = False
 
 # ==========================================
-# TIMING ARCHITECTURE - MATCHING OLD SOFTWARE
+# TIMING CALCULATION FORMULAS
 # ==========================================
-# ✨ OLD SOFTWARE TIMING MODEL (Apple-to-Apple Comparison):
-#   - LED settle: 100ms (hardware stabilization)
-#   - Acquisition: 200ms total (integration_time × num_scans)
-#   - Target: 300ms TOTAL per channel (100ms LED + 200ms acquisition)
+# All timing derived from base parameters above:
 #
-# Formula (matching old software exactly):
-#   num_scans = min(200ms / integration_time, 25)
+# DETECTOR_ON_TIME = LED_ON_TIME_MS - DETECTOR_WAIT_MS
+#                  = 250ms - 60ms = 190ms
 #
-# Example with 40ms integration time:
-#   num_scans = min(200/40, 25) = 5 scans
-#   Total time = 100ms LED + (40ms × 5) = 300ms per channel
-#   Full cycle = 300ms × 4 channels = 1200ms (~0.83 Hz, 1.2 seconds per cycle)
+# DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER_MS
+#                 = 190ms - 10ms = 180ms
 #
-# The number of scans is calculated dynamically in calibration using
-# calculate_dynamic_scans() to maintain the 200ms acquisition budget.
-
-# Legacy timing constants (DEPRECATED - kept for backward compatibility only)
-# DO NOT USE these for new code - use calculate_dynamic_scans() instead
-ACQUISITION_FREQUENCY = 1.0  # Hz - DEPRECATED (use calculate_dynamic_scans)
-ACQUISITION_CYCLE_TIME = (
-    1.0 / ACQUISITION_FREQUENCY
-)  # DEPRECATED (target is now 200ms/channel)
-TIME_PER_CHANNEL = (
-    ACQUISITION_CYCLE_TIME / 4
-)  # DEPRECATED (use calculate_dynamic_scans)
-CYCLE_TIME = 1.3  # DEPRECATED: Use calculate_dynamic_scans() instead
+# MAX_INTEGRATION_PER_SCAN = DETECTOR_WAIT_MS = 60ms
+#
+# num_scans calculation in live data:
+#   1. Cap integration_time to DETECTOR_WAIT_MS (60ms max per scan)
+#   2. num_scans = floor(DETECTOR_WINDOW / integration_time)
+#   3. Total acquisition = num_scans × integration_time ≤ 180ms
+#
+# Example: integration_time = 40ms
+#   → num_scans = floor(180ms / 40ms) = 4 scans
+#   → Total = 4 × 40ms = 160ms (within 180ms window)
 
 # Reference Signal Averaging
-# Number of scans is DYNAMIC based on integration time (via calculate_dynamic_scans)
-# to maintain 100ms acquisition budget (matching old software)
-# ✨ OLD SOFTWARE FORMULA: num_scans = min(100ms / integration_time, 25)
-DARK_NOISE_SCANS = 25  # Match old software maximum (but will be reduced dynamically)
-REF_SCANS = 20  # DEPRECATED: Now calculated dynamically via calculate_dynamic_scans()
+DARK_NOISE_SCANS = 25  # Maximum dark noise scans
+REF_SCANS = NUM_SCANS  # Reference scans = same as live data scans
 
 # Legacy LED parameters
 S_LED_INT = int(0.66 * 255)  # max s-polarized led intensity

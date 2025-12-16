@@ -128,7 +128,10 @@ class USB4000Adapter(ISpectrometer):
     # ========================================================================
 
     def get_wavelengths(self) -> np.ndarray:
-        """Get wavelength calibration array."""
+        """Get wavelength calibration array in nanometers.
+
+        HAL contract: Returns wavelengths in nm, converting from SeaBreeze µm.
+        """
         try:
             # USB4000 has wavelengths as a property, not a method
             if hasattr(self._spectrometer, "wavelengths"):
@@ -140,7 +143,9 @@ class USB4000Adapter(ISpectrometer):
 
             if wl is None:
                 raise CommandError("Wavelength calibration not available")
-            return np.array(wl)
+
+            # HAL: Convert SeaBreeze µm → Application nm
+            return np.array(wl) * 1000.0
         except Exception as e:
             raise CommandError(f"Failed to get wavelengths: {e}")
 
@@ -280,7 +285,10 @@ class PhasePhotonicsAdapter(ISpectrometer):
     # ========================================================================
 
     def get_wavelengths(self) -> np.ndarray:
-        """Get wavelength calibration array."""
+        """Get wavelength calibration array in nanometers.
+
+        SeaBreeze returns wavelengths in micrometers (µm), we convert to nm.
+        """
         try:
             # Handle both property and method patterns
             if hasattr(self._spectrometer, "wavelengths"):
@@ -292,7 +300,10 @@ class PhasePhotonicsAdapter(ISpectrometer):
 
             if wl is None:
                 raise CommandError("Wavelength calibration not available")
-            return np.array(wl)
+
+            # Convert from micrometers to nanometers
+            # SeaBreeze: 0.4-0.8 µm → Application: 400-800 nm
+            return np.array(wl) * 1000.0
         except Exception as e:
             raise CommandError(f"Failed to get wavelengths: {e}")
 

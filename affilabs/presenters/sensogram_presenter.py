@@ -53,32 +53,17 @@ class SensogramPresenter:
             for ch_idx, data in channel_data.items():
                 if ch_idx < len(self.window.full_timeline_graph.curves):
                     curve = self.window.full_timeline_graph.curves[ch_idx]
-                    curve.setData(time_array, data)
+                    # Skip first point and shift time axis so displayed data starts at t=0
+                    if len(time_array) > 1:
+                        display_time = time_array[1:] - time_array[1]
+                        display_data = data[1:]
+                        curve.setData(display_time, display_data)
+                    else:
+                        curve.setData([], [])
         except Exception as e:
             print(f"Error updating timeline data: {e}")
 
-    def update_cycle_data(
-        self,
-        channel_data: dict[int, np.ndarray],
-        time_array: np.ndarray,
-    ) -> None:
-        """Update cycle-of-interest graph with new data.
 
-        Args:
-            channel_data: Dictionary mapping channel index (0-3) to data array
-            time_array: Time axis array for the cycle region
-
-        """
-        if not hasattr(self.window, "cycle_of_interest_graph"):
-            return
-
-        try:
-            for ch_idx, data in channel_data.items():
-                if ch_idx < len(self.window.cycle_of_interest_graph.curves):
-                    curve = self.window.cycle_of_interest_graph.curves[ch_idx]
-                    curve.setData(time_array, data)
-        except Exception as e:
-            print(f"Error updating cycle data: {e}")
 
     def update_cursor_positions(
         self,

@@ -475,7 +475,7 @@ class DeviceConfigManager:
                 logger.info("Step 3/5: Updating calibration data in device config...")
                 import time
 
-                time.sleep(2)
+                time.sleep(0.5)  # Reduced from 2s for faster hardware response
 
                 if data_mgr and hasattr(data_mgr, "leds_calibrated") and data_mgr.leds_calibrated:
                     led_a = data_mgr.leds_calibrated.get("a", 0)

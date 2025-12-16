@@ -225,9 +225,7 @@ class DataAcquisitionManager(QObject):
         # Runtime state
         self.ch_error_list = []  # Failed channels from calibration
 
-        # LED timing (from device config, can override calibration_data)
-        self._pre_led_delay_ms = None  # PRE LED delay (device-specific, loaded from config)
-        self._post_led_delay_ms = None  # POST LED delay (device-specific, loaded from config)
+        # LED overlap optimization state
         self._led_overlap_active = False  # Track if LED is already ON from previous overlap
 
         # V2.4 CYCLE_SYNC state tracking
@@ -254,8 +252,8 @@ class DataAcquisitionManager(QObject):
 
         self.queue_size = getattr(root_settings, "QUEUE_SIZE", 4)
 
-        # Load LED timing delays from device config (device-specific, persisted)
-        self._load_led_delays_from_config()
+        # LED timing now controlled via Advanced Settings (LED_ON_TIME_MS, LED_OFF_TIME_MS)
+        # No device-specific delays loaded - timing is global configuration
 
         # Timing instrumentation for LED/detector synchronization analysis
         self._enable_timing_instrumentation = getattr(
@@ -283,39 +281,24 @@ class DataAcquisitionManager(QObject):
         # One-time run parameter summary flag (reset on each start)
         self._run_params_logged = False
 
-    def _load_led_delays_from_config(self) -> None:
-        """Load PRE/POST LED delays from device configuration.
-
-        This is called during initialization to set initial defaults.
-        These values will be overridden by apply_calibration() with the
-        actual delays used during calibration (single source of truth).
-
-        Falls back to hard-coded defaults (45ms/5ms) if config not available.
-
-        Note: Uses silent loading to avoid verbose logging at startup.
-        Device config summary will be logged when hardware is powered on.
-        """
-        try:
-            from affilabs.utils.device_configuration import DeviceConfiguration
-
-            device_serial = (
-                getattr(self.hardware_mgr.usb, "serial_number", None)
-                if self.hardware_mgr.usb
-                else None
-            )
-
-            # Silent load - don't trigger verbose config summary at startup
-            device_config = DeviceConfiguration(
-                device_serial=device_serial,
-                silent_load=True,
-            )
-
-            self._pre_led_delay_ms = device_config.get_pre_led_delay_ms()
-            self._post_led_delay_ms = device_config.get_post_led_delay_ms()
-        except Exception:
-            # Fall back to defaults if config loading fails
-            self._pre_led_delay_ms = 45.0
-            self._post_led_delay_ms = 5.0
+    # LED TIMING ARCHITECTURE (Modern):
+    # ==================================
+    # LED timing is now controlled via Advanced Settings tab:
+    # - LED_ON_TIME_MS (default 250ms) - LED illumination duration
+    # - LED_OFF_TIME_MS (default 0ms) - LED transition/dark time
+    #
+    # BATCH mode: SOFTWARE-CONTROLLED synchronization
+    #             - Python code handles timing (time.sleep)
+    #             - Uses LED_ON/OFF values for software delays
+    #             - Manual sequencing through channels
+    #
+    # RANKBATCH mode: FIRMWARE-CONTROLLED synchronization
+    #                 - Hardware timer controls LED timing
+    #                 - Passes LED_ON/OFF as "settle" and "dark" to firmware
+    #                 - Format: rankbatch:a,b,c,d,settle,dark,cycles
+    #                 - Example: rankbatch:128,128,128,128,250,0,3600
+    #
+    # Obsolete PRE/POST LED delay parameters have been removed.
 
     def set_queue_size(self, queue_size: int) -> None:
         """Set number of channels in sequential acquisition queue.
@@ -370,6 +353,11 @@ class DataAcquisitionManager(QObject):
             # Store calibration data (single source of truth)
             self.calibration_data = calibration_data
 
+            # CRITICAL: Override num_scans from settings (don't trust old calibration files)
+            import settings as root_settings
+
+            self.calibration_data.num_scans = root_settings.NUM_SCANS
+
             # DIAGNOSTIC: Log S-pol ref dictionary contents
             spol_channels = (
                 list(calibration_data.s_pol_ref.keys()) if calibration_data.s_pol_ref else []
@@ -392,13 +380,8 @@ class DataAcquisitionManager(QObject):
                 f"  SPR Range Indices: {calibration_data.wave_min_index}-{calibration_data.wave_max_index}",
             )
 
-            # Update LED timing delays from calibration data (single source of truth)
-            # These are the delays that were actually used during calibration
-            self._pre_led_delay_ms = calibration_data.pre_led_delay_ms
-            self._post_led_delay_ms = calibration_data.post_led_delay_ms
-            logger.info(
-                f"LED timing updated: PRE={self._pre_led_delay_ms}ms, POST={self._post_led_delay_ms}ms",
-            )
+            # LED timing now controlled via Advanced Settings (LED_ON_TIME_MS, LED_OFF_TIME_MS)
+            # These parameters are used in firmware RANKBATCH command and BATCH preset timing
 
             # Mark as calibrated (enables start_acquisition)
             self.calibrated = True
@@ -498,9 +481,8 @@ class DataAcquisitionManager(QObject):
 
             logger.info("=" * 80)
             logger.info("🚀 STARTING ACQUISITION")
-            logger.info(
-                f"Integration: {self.calibration_data.integration_time}ms × {self.calibration_data.num_scans}",
-            )
+            logger.info(f"Integration: {self.calibration_data.integration_time}ms")
+            logger.info(f"Scans per spectrum: {self.calibration_data.num_scans}")
             logger.info("=" * 80)
 
             # Ensure any previous acquisition thread is fully stopped
@@ -790,7 +772,9 @@ class DataAcquisitionManager(QObject):
                 try:
                     usb = self.hardware_mgr.usb
                     if usb:
-                        result = usb.set_integration(p_integration_time_effective)
+                        result = usb.set_integration(
+                            p_integration_time_effective
+                        )  # API expects milliseconds
                         if result:
                             logger.info(
                                 f"[PRE-ARM] ✓ Integration time pre-armed: {p_integration_time_effective:.1f}ms",
@@ -827,27 +811,43 @@ class DataAcquisitionManager(QObject):
             use_timing_tracks = True  # New architecture enabled
 
             if use_timing_tracks:
-                # Use timing track parameters (not calibration delays)
-                detector_wait_ms = getattr(
-                    root_settings,
-                    "DETECTOR_WAIT_BEFORE_MS",
-                    100.0,
-                )
-                detector_window_ms = getattr(root_settings, "DETECTOR_WINDOW_MS", 210.0)
+                # ALL timing derived from base parameters in settings
+                led_on_total_ms = root_settings.LED_ON_TIME_MS
+                detector_wait_ms = root_settings.DETECTOR_WAIT_MS  # Max integration per scan
+                safety_buffer_ms = root_settings.SAFETY_BUFFER_MS
 
-                # CRITICAL: Calculate maximum scans that fit in detection window
-                # Each scan takes integration_time_ms to complete
+                # Calculate derived timing
+                detector_on_time_ms = led_on_total_ms - detector_wait_ms
+                detector_window_ms = detector_on_time_ms - safety_buffer_ms
+
+                # CRITICAL: Enforce integration time cap BEFORE calculating num_scans
+                # DETECTOR_WAIT_MS = MAX INTEGRATION TIME PER SCAN
+                # Formula: DETECTOR_ON_TIME = LED_ON_TIME_MS - DETECTOR_WAIT_MS
+                #          DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER_MS
+                #          integration_time ≤ DETECTOR_WAIT_MS (per-scan cap)
+                #          num_scans = floor(DETECTOR_WINDOW / integration_time)
+                max_integration_per_scan_ms = detector_wait_ms
+
+                if p_integration_time_effective > max_integration_per_scan_ms:
+                    logger.warning(
+                        f"⚠️ Integration time ({p_integration_time_effective:.1f}ms) exceeds "
+                        f"max per-scan limit ({max_integration_per_scan_ms:.1f}ms) - capping to prevent timing issues"
+                    )
+                    p_integration_time_effective = max_integration_per_scan_ms
+
+                # Calculate maximum scans that fit in detection window
                 max_scans_in_window = int(
                     detector_window_ms / p_integration_time_effective,
                 )
+
+                # Apply window constraint
                 if num_scans > max_scans_in_window:
                     num_scans = max_scans_in_window if max_scans_in_window > 0 else 1
 
-                # Map timing tracks to delay parameters for _acquire_raw_spectrum
+                # Map timing to delay parameters for _acquire_raw_spectrum
                 # PRE delay = detector wait time (LED stabilization)
                 # POST delay = remaining LED ON time after detector finishes
-                led_on_total_ms = getattr(root_settings, "LED_ON_PERIOD_MS", 260.0)
-                pre_led_delay = detector_wait_ms  # 100ms - LED stabilization
+                pre_led_delay = detector_wait_ms
 
                 # Calculate actual detection time needed
                 actual_detection_ms = num_scans * p_integration_time_effective
@@ -857,17 +857,10 @@ class DataAcquisitionManager(QObject):
                 post_led_delay = max(post_led_delay, 0)
 
             else:
-                # Legacy mode: Use calibration delays
-                pre_led_delay = (
-                    self.calibration_data.pre_led_delay_ms
-                    if self.calibration_data.pre_led_delay_ms is not None
-                    else self._pre_led_delay_ms
-                )
-                post_led_delay = (
-                    self.calibration_data.post_led_delay_ms
-                    if self.calibration_data.post_led_delay_ms is not None
-                    else self._post_led_delay_ms
-                )
+                # Legacy mode: Not used (timing tracks always enabled)
+                # LED timing controlled via LED_ON_TIME_MS and LED_OFF_TIME_MS
+                pre_led_delay = detector_wait_ms  # Detector wait time
+                post_led_delay = 0  # No post delay in modern architecture
 
             # =============================================================================
             # TIMING ALIGNMENT REMOVED FROM MAIN LOOP
@@ -915,9 +908,9 @@ class DataAcquisitionManager(QObject):
                     )
 
                     # ========================================================================
-                    # ACQUISITION METHOD 1: RANKBATCH (CYCLE_SYNC) - OPTIONAL
+                    # ACQUISITION METHOD 1: RANKBATCH (CYCLE_SYNC) - FIRMWARE SYNC
                     # ========================================================================
-                    # Event-driven firmware timer - automatic LED sequencing
+                    # FIRMWARE-CONTROLLED timing: Hardware timer handles LED sequencing
                     # Only enabled if firmware supports it AND configured in settings
                     if self._rank_mode_enabled:
                         try:
@@ -1019,8 +1012,9 @@ class DataAcquisitionManager(QObject):
                             # Fall through to batch or sequential acquisition
 
                     # ========================================================================
-                    # ACQUISITION METHOD 2: BATCH PRESET (DEFAULT)
+                    # ACQUISITION METHOD 2: BATCH PRESET (DEFAULT) - SOFTWARE SYNC
                     # ========================================================================
+                    # SOFTWARE-CONTROLLED timing: Python code handles all sequencing
                     # Use set_batch_intensities() to preset all 4 LEDs, then sequence manually
                     # This is the standard production method - reliable and predictable
                     if not self._rank_mode_enabled and self._batch_supported:
@@ -1140,10 +1134,21 @@ class DataAcquisitionManager(QObject):
 
                                 # Package data for processing
                                 # Note: wavelength array is immutable calibration data - no need to copy
+
+                                # Capture timestamp AFTER read completes
+                                read_complete_time = time.time()
+
+                                # Calculate detector ON time by subtracting integration duration
+                                # This gives the approximate time when detector started integrating
+                                total_integration_ms = ch_integration_time * num_scans
+                                detector_on_time = read_complete_time - (
+                                    total_integration_ms / 1000.0
+                                )
+
                                 spectrum_data = {
                                     "raw_spectrum": raw_spectrum,
                                     "wavelength": self.calibration_data.wavelengths,  # Reference, not copy (wavelengths never change)
-                                    "timestamp": time.time(),
+                                    "timestamp": detector_on_time,  # Synced to detector ON, not read completion
                                     "led_time_ms": led_time_ms,  # Time since batch start when this LED's detector window completed
                                     "integration_time": self.calibration_data.integration_time,
                                     "num_scans": self.calibration_data.num_scans,
@@ -1153,7 +1158,7 @@ class DataAcquisitionManager(QObject):
                                     ),
                                 }
 
-                                timestamp = time.time()
+                                timestamp = detector_on_time  # Use detector ON time for consistency
                                 batch_success = True
                                 spectra_acquired += 1
 
@@ -1267,10 +1272,13 @@ class DataAcquisitionManager(QObject):
                             self._stop_acquisition.set()
                             break
 
-                    # Minimal delay between batch cycles for timing precision
-                    # Old: 10ms (blocked acquisition for no reason)
-                    # New: 1ms (allows faster batch processing, better jitter)
-                    time.sleep(0.001)
+                    # Intelligent delay between cycles:
+                    # - If we're getting valid data: minimal 1ms delay (fast acquisition)
+                    # - If we got nothing this cycle: 50ms delay to prevent CPU thrashing
+                    if batch_success or spectra_acquired > 0:
+                        time.sleep(0.001)  # Fast mode: got data
+                    else:
+                        time.sleep(0.05)  # Throttle mode: no data, prevent CPU spike
 
                 except Exception as e:
                     consecutive_errors += 1
@@ -1300,10 +1308,10 @@ class DataAcquisitionManager(QObject):
     # ========================================================================
     # This layer matches calibration_6step.py hardware pattern exactly:
     #   1. Set LED intensity (batch command)
-    #   2. Wait PRE_LED_DELAY_MS (LED stabilization)
-    #   3. Read spectrum from detector
-    #   4. Wait POST_LED_DELAY_MS (afterglow decay)
-    #   5. Turn off LED
+    #   2. LED ON period (LED_ON_TIME_MS from Advanced Settings, default 250ms)
+    #   3. Read spectrum from detector during LED ON window
+    #   4. LED OFF period (LED_OFF_TIME_MS from Advanced Settings, default 0ms)
+    #   5. Turn off LED (or auto-transition to next LED)
     # Returns RAW spectrum with NO processing (dark subtraction in Layer 4)
     # ========================================================================
 
@@ -1312,13 +1320,17 @@ class DataAcquisitionManager(QObject):
 
         This is the ONLY output from DataAcquisitionManager.
         Processing happens in a separate component that subscribes to this signal.
+        Peak wavelength/intensity added by pipeline processing, NOT here.
         """
         try:
             # Package RAW spectrum data with all context needed for processing
+            # NO PLACEHOLDERS - peak comes from pipeline or crashes
             spectrum_data = {
                 "channel": channel,
                 "raw_spectrum": raw_spectrum,
-                "wavelength": self.calibration_data.wavelengths,
+                "wavelengths": self.calibration_data.wavelengths,  # Array for plotting (plural!)
+                # wavelength and intensity added by pipeline processing
+                "intensity": 0,  # Raw intensity (will be calculated from spectrum if needed)
                 "timestamp": time.time(),
                 "integration_time": self.calibration_data.integration_time,
                 "num_scans": self.calibration_data.num_scans,
@@ -1345,11 +1357,12 @@ class DataAcquisitionManager(QObject):
         integration_time_ms: float,
         num_scans: int,
     ) -> dict:
-        """Acquire all channels using batch preset + manual sequencing (DEFAULT method).
+        """Acquire all channels using batch preset + SOFTWARE synchronization (DEFAULT method).
 
         BATCH MODE (Standard Production):
         - Uses set_batch_intensities() to preset all 4 LEDs once
-        - Manually sequences through channels (turn on → wait → read → turn off)
+        - SOFTWARE-CONTROLLED timing: Python code sequences channels
+        - Manual sequencing: turn on → software delay → read → turn off
         - Same pattern as LEDconverge (reliable, predictable)
         - Compatible with all firmware versions that support batch command
 
@@ -1382,10 +1395,8 @@ class DataAcquisitionManager(QObject):
             # CRITICAL: Ensure integration time is set (verify pre-arm or set now)
             # If pre-arm failed, this will catch it before reading spectra
             try:
-                usb.set_integration(integration_time_ms)
-                logger.debug(
-                    f"[BATCH] Integration time set: {integration_time_ms:.1f}ms",
-                )
+                usb.set_integration(integration_time_ms)  # API expects milliseconds
+                # logger.debug removed - fires every batch, causes terminal lag
             except (ConnectionError, OSError) as conn_e:
                 logger.error(
                     f"[BATCH] USB disconnected while setting integration time: {conn_e}",
@@ -1398,39 +1409,80 @@ class DataAcquisitionManager(QObject):
                 logger.error(f"[BATCH] Failed to set integration time: {e}")
                 return {}
 
-            # Acquire each channel sequentially (250ms cycles)
-            # Use batch command with ONLY ONE channel at a time (others=0)
-            # This way next LED auto-turns off previous without separate turn_off command
+            # Store LED intensities for this cycle (will be set individually per channel)
+            # Don't use batch command - it turns on all LEDs at once causing crosstalk
+
+            # Track current intensities to avoid redundant commands
+            current_intensities = {ch: led_intensities.get(ch, 128) for ch in channels}
+
+            # Get LED ON timing from settings (respects Advanced Settings)
+            import settings as root_settings
+
+            led_on_time_ms = getattr(root_settings, "LED_ON_TIME_MS", None) or 250.0
+            detector_wait_ms = getattr(self, "detector_wait_ms", 60)  # Wait before reading
+
+            # Calculate timing: LED ON time = detector_wait + detection + remaining
+            actual_detection_ms = integration_time_ms  # Time spent acquiring spectrum
+            remaining_time_ms = led_on_time_ms - detector_wait_ms - actual_detection_ms
+
+            # Convert to seconds for time.sleep()
+            detector_wait_s = detector_wait_ms / 1000.0
+            remaining_time_s = max(remaining_time_ms, 0) / 1000.0
+
+            # Acquire each channel sequentially
+            # Just switch LEDs with turn_on_channel() - intensities already loaded
             channel_spectra = {}
 
             for ch in channels:
                 try:
-                    # Set batch intensities with ONLY this channel active (others = 0)
-                    batch_vals = {ch_key: 0 for ch_key in ["a", "b", "c", "d"]}
-                    batch_vals[ch] = led_intensities.get(ch, 0)
+                    # Set intensity ONLY if changed (avoids redundant serial commands)
+                    intensity = current_intensities[ch]
+                    if (
+                        not hasattr(self, "_last_led_intensities")
+                        or self._last_led_intensities.get(ch) != intensity
+                    ):
+                        ctrl.set_intensity(ch=ch, raw_val=intensity)
+                        if not hasattr(self, "_last_led_intensities"):
+                            self._last_led_intensities = {}
+                        self._last_led_intensities[ch] = intensity
 
-                    success = ctrl.set_batch_intensities(
-                        a=batch_vals["a"],
-                        b=batch_vals["b"],
-                        c=batch_vals["c"],
-                        d=batch_vals["d"],
-                    )
-
-                    if not success:
-                        logger.error(f"[BATCH] Failed to set batch for channel {ch}")
-                        continue
-
-                    logger.debug(f"[BATCH] Batch set: {batch_vals}")
-
-                    # Turn on this LED (previous LED auto-turns off because it's set to 0)
+                    # Now turn on LED at the preset intensity
                     ctrl.turn_on_channel(ch=ch)
 
-                    # Use HAL interface with ROI
+                    # Wait for LED to stabilize before reading
+                    time.sleep(detector_wait_s)
+
+                    # Acquire spectrum while LED is on
+                    # DIAGNOSTIC: Log details (first cycle only)
+                    if not hasattr(self, "_num_scans_logged"):
+                        logger.info(f"[BATCH] num_scans={num_scans}")
+                        logger.info(
+                            f"[BATCH] ROI: {self.calibration_data.wave_min_index} to {self.calibration_data.wave_max_index}"
+                        )
+                        logger.info(f"[BATCH] usb type: {type(usb).__name__}")
+                        logger.info(f"[BATCH] usb has read_roi: {hasattr(usb, 'read_roi')}")
+                        self._num_scans_logged = True
+
                     raw_spectrum = usb.read_roi(
                         self.calibration_data.wave_min_index,
                         self.calibration_data.wave_max_index,
-                        num_scans=1,
+                        num_scans=num_scans,
                     )
+
+                    # Wait remaining time to complete full LED ON duration
+                    if remaining_time_s > 0:
+                        time.sleep(remaining_time_s)
+
+                    # DEBUG: Log what read_roi returned (first time only)
+                    if not hasattr(self, "_read_roi_logged"):
+                        logger.info(
+                            f"[BATCH DEBUG] Ch {ch}: raw_spectrum type={type(raw_spectrum)}, len={len(raw_spectrum) if raw_spectrum is not None else 'None'}"
+                        )
+                        if raw_spectrum is not None and len(raw_spectrum) > 0:
+                            logger.info(
+                                f"[BATCH DEBUG] First 5 values: {raw_spectrum[:5]}, max={max(raw_spectrum):.0f}"
+                            )
+                        self._read_roi_logged = True
 
                     if raw_spectrum is not None and len(raw_spectrum) > 0:
                         # Ensure spectrum length matches calibrated wavelength array length
@@ -1438,11 +1490,20 @@ class DataAcquisitionManager(QObject):
                             raw_spectrum = raw_spectrum[: len(self.calibration_data.wavelengths)]
 
                         channel_spectra[ch] = raw_spectrum
-                        logger.debug(
-                            f"[BATCH] Ch {ch}: Acquired {len(raw_spectrum)} pixels (masked)",
-                        )
+                        # logger.debug removed - fires every channel every cycle
                     else:
-                        logger.warning(f"[BATCH] Ch {ch}: Empty spectrum")
+                        # Throttle empty spectrum warnings to avoid log spam
+                        if not hasattr(self, "_empty_batch_count"):
+                            self._empty_batch_count = {}
+                        self._empty_batch_count[ch] = self._empty_batch_count.get(ch, 0) + 1
+                        if self._empty_batch_count[ch] <= 3:  # Only log first 3
+                            logger.warning(
+                                f"[BATCH] Ch {ch}: Empty spectrum (returned: {raw_spectrum})"
+                            )
+                        elif self._empty_batch_count[ch] == 4:
+                            logger.warning(
+                                f"[BATCH] Ch {ch}: Empty spectrum (suppressing further warnings)"
+                            )
 
                 except (ConnectionError, OSError) as conn_e:
                     logger.error(f"[BATCH] Ch {ch} connection lost: {conn_e}")
@@ -1458,8 +1519,8 @@ class DataAcquisitionManager(QObject):
                 except Exception as e:
                     logger.error(f"[BATCH] Ch {ch} failed: {e}")
 
-            # Turn off ALL LEDs after all acquisitions complete
-            ctrl.turn_off_channels()
+            # Don't turn off LEDs - controller auto-disables previous LED when next turns on
+            # Final LED stays on briefly but gets turned off at start of next cycle
 
             return channel_spectra
 
@@ -1477,11 +1538,11 @@ class DataAcquisitionManager(QObject):
         integration_time_ms: float,
         per_channel_integration: dict = None,
     ) -> dict:
-        """Acquire all channels using RANKBATCH event-driven firmware timer (CYCLE_SYNC).
+        """Acquire all channels using RANKBATCH with FIRMWARE synchronization (CYCLE_SYNC).
 
         RANKBATCH MODE (V2.4+ Firmware):
+        - FIRMWARE-CONTROLLED timing: Hardware timer sequences LEDs automatically
         - Firmware sends ONE CYCLE_START event per cycle (75% less USB traffic)
-        - Firmware controls LED timing via hardware timer
         - Software reads at calculated offsets from CYCLE_START
         - Deterministic timing, lowest USB overhead
         - Watchdog on separate Timer 1 (zero impact on LED timing)
@@ -1575,7 +1636,7 @@ class DataAcquisitionManager(QObject):
                         ):
                             ctrl._ser.write(b"ka\n")
                             self._last_keepalive = time.time()
-                            logger.debug("[WATCHDOG] Keepalive sent")
+                            # logger.debug removed - fires frequently, causes terminal lag
 
                         # Acquire each channel at its scheduled time
                         for ch in channels:
@@ -1594,15 +1655,14 @@ class DataAcquisitionManager(QObject):
                                 if per_channel_integration
                                 else integration_time_ms
                             )
-                            usb.set_integration(ch_int_time)
+                            usb.set_integration(ch_int_time)  # API expects milliseconds
 
                             # Read spectrum using HAL interface
                             spectrum = usb.read_roi(
                                 self.calibration_data.wave_min_index,
                                 self.calibration_data.wave_max_index,
-                                num_scans=1,
+                                num_scans=num_scans,
                             )
-                            actual_read_time = time.time()
 
                             # Validate spectrum
                             if spectrum is None or len(spectrum) == 0:
@@ -1616,19 +1676,14 @@ class DataAcquisitionManager(QObject):
                                 )
                                 continue
 
-                            logger.debug(
-                                f"[CYCLE-SYNC] Ch {ch}: Read at offset={actual_read_time - cycle_start_time:.3f}s "
-                                f"(target={led_read_offsets[ch]:.3f}s)",
-                            )
+                            # logger.debug removed - fires every channel every cycle, causes VS Code lag
 
                             # Store and emit raw spectrum
                             channel_spectra[ch] = spectrum
                             self._emit_raw_spectrum(ch, spectrum, led_intensities)
 
                         # Cycle complete - return to acquisition worker
-                        logger.debug(
-                            f"[CYCLE-SYNC] Cycle complete ({len(channel_spectra)} channels)",
-                        )
+                        # logger.debug removed - fires every cycle, causes terminal lag
                         return channel_spectra
 
                     if line == "BATCH_COMPLETE":
@@ -1726,7 +1781,7 @@ class DataAcquisitionManager(QObject):
             if not pre_armed:
                 # Per-channel mode: Set integration time each time
                 try:
-                    usb.set_integration(integration_time_ms)
+                    usb.set_integration(integration_time_ms)  # API expects milliseconds
                 except (ConnectionError, OSError) as conn_e:
                     logger.error(
                         f"Connection lost while setting integration time: {conn_e}",
@@ -1872,12 +1927,12 @@ class DataAcquisitionManager(QObject):
             # Validate spectrum (guard against empty/zero reads); retry once if needed
             try:
                 if raw_spectrum is None or np.count_nonzero(raw_spectrum) == 0:
-                    # Brief wait then one retry using HAL interface
+                    # Brief wait then one retry using HAL interface (single scan for speed)
                     time.sleep(0.005)
                     retry_spectrum = usb.read_roi(
                         self.calibration_data.wave_min_index,
                         self.calibration_data.wave_max_index,
-                        num_scans=1,
+                        num_scans=1,  # Single scan retry for fast recovery
                     )
                     if retry_spectrum is None or np.count_nonzero(retry_spectrum) == 0:
                         logger.warning(

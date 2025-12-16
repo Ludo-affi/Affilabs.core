@@ -5,11 +5,13 @@ and mock implementations for testing.
 
 Architecture:
 - device_interface.py: Abstract base classes (IController, ISpectrometer, etc.)
-- controller_adapter.py: Wraps existing controller.py implementations
 - spectrometer_adapter.py: Wraps USB4000/PhasePhotonics implementations
 - servo_adapter.py: Wraps servo calibration functionality
 - mock_devices.py: Mock implementations for testing without hardware
 - device_manager.py: Coordinates multiple devices with lifecycle management
+
+Note: Controller HAL is now in affilabs.utils.hal.controller_hal
+Use create_controller_hal() instead of the old controller_adapter.py
 
 Benefits:
 1. Testability: Swap real hardware for mocks in tests
@@ -19,12 +21,8 @@ Benefits:
 """
 
 # Abstract interfaces
-# Real hardware adapters
-from affilabs.hardware.controller_adapter import (
-    ControllerAdapter,
-    create_controller_adapter,
-    wrap_existing_controller,
-)
+# NOTE: Controller HAL moved to affilabs.utils.hal.controller_hal
+# Use create_controller_hal() instead of ControllerAdapter
 from affilabs.hardware.device_interface import (
     ConnectionState,
     ControllerCapabilities,
@@ -46,16 +44,6 @@ from affilabs.hardware.device_manager import (
     SystemState,
 )
 
-# Mock devices
-from affilabs.hardware.mock_devices import (
-    MockController,
-    MockServo,
-    MockSpectrometer,
-    create_full_mock_system,
-    create_mock_controller,
-    create_mock_servo,
-    create_mock_spectrometer,
-)
 from affilabs.hardware.servo_adapter import ServoAdapter, create_servo_adapter
 from affilabs.hardware.spectrometer_adapter import (
     PhasePhotonicsAdapter,
@@ -77,23 +65,13 @@ __all__ = [
     "DeviceError",
     "DeviceInfo",
     # Real hardware adapters
-    "ControllerAdapter",
+    # NOTE: Controller HAL moved to affilabs.utils.hal.controller_hal
     "USB4000Adapter",
     "PhasePhotonicsAdapter",
     "ServoAdapter",
-    "create_controller_adapter",
     "create_spectrometer_adapter",
     "create_servo_adapter",
-    "wrap_existing_controller",
     "wrap_existing_spectrometer",
-    # Mock devices
-    "MockController",
-    "MockSpectrometer",
-    "MockServo",
-    "create_mock_controller",
-    "create_mock_spectrometer",
-    "create_mock_servo",
-    "create_full_mock_system",
     # Device manager
     "DeviceManager",
     "SystemState",

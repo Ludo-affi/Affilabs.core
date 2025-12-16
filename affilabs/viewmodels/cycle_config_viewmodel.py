@@ -5,6 +5,7 @@ This enables clean separation between data (model) and presentation (view).
 
 Part of MVVM architecture refactoring for sidebar components.
 """
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime

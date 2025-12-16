@@ -115,7 +115,7 @@ file_handler = logging.FileHandler(
     encoding="utf8",
     delay=False,
 )
-file_handler.setLevel(logging.DEBUG)
+file_handler.setLevel(logging.INFO)  # Reduce disk I/O overhead (was DEBUG)
 file_handler.setFormatter(fmt=log_formatter)
 
 _MAIN_THREAD_ID = threading.main_thread().ident
@@ -142,7 +142,7 @@ class ConditionalThreadFilterConsoleHandler(logging.StreamHandler):
 
 
 console_handler = ConditionalThreadFilterConsoleHandler(sys.stdout)
-console_handler.setLevel(logging.DEBUG)  # Show DEBUG again
+console_handler.setLevel(logging.INFO)  # Reduce console spam (DEBUG still goes to file)
 console_handler.setFormatter(fmt=safe_console_formatter)
 
 logger = logging.getLogger("LOG")

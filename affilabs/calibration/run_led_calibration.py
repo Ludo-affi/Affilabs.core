@@ -25,7 +25,7 @@ sys.path.insert(0, str(parent_dir))
 import argparse
 
 from affilabs.calibration.led_bilinear_calibrator import LEDBilinearCalibrator
-from affilabs.hardware.controller_adapter import wrap_existing_controller
+from affilabs.utils.hal.controller_hal import create_controller_hal
 from affilabs.hardware.optimized_led_controller import create_optimized_controller
 from affilabs.hardware.spectrometer_adapter import wrap_existing_spectrometer
 from affilabs.utils.controller import PicoP4SPR
@@ -81,17 +81,18 @@ def main():
     controller_hw = PicoP4SPR()
     spec_hw = USB4000()
 
-    controller = wrap_existing_controller(controller_hw)
+    # Use controller HAL instead of old adapter
+    controller = create_controller_hal(controller_hw)
     spectrometer = wrap_existing_spectrometer(spec_hw)
 
     # Connect
-    if not controller.connect():
+    if not controller_hw.open():
         print("ERROR: Could not connect to LED controller!")
         return 1
 
     if not spectrometer.connect():
         print("ERROR: Could not connect to spectrometer!")
-        controller.disconnect()
+        controller_hw.close()
         return 1
 
     print("[OK] Connected to hardware")
@@ -192,7 +193,7 @@ def main():
     finally:
         # Cleanup
         opt_controller.turn_off_all_leds()
-        controller.disconnect()
+        controller_hw.close()
         spectrometer.disconnect()
         print("\n[OK] Hardware disconnected")
 

@@ -7,7 +7,7 @@ All concrete implementations (real hardware or mocks) must implement these inter
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -58,10 +58,10 @@ class DeviceInfo:
 
     device_type: str  # "controller", "spectrometer", "servo", "pump"
     model: str  # "PicoP4SPR", "USB4000", etc.
-    serial_number: str | None = None
-    firmware_version: str | None = None
-    hardware_version: str | None = None
-    port: str | None = None  # COM port or USB address
+    serial_number: Optional[str] = None
+    firmware_version: Optional[str] = None
+    hardware_version: Optional[str] = None
+    port: Optional[str] = None  # COM port or USB address
 
 
 @dataclass
@@ -136,9 +136,9 @@ class ServoCapabilities(DeviceCapabilities):
     mode_switch_time: float = 0.15  # seconds
 
     # Polarizer
-    polarizer_type: str | None = None  # "barrel" or "round"
-    s_position: int | None = None
-    p_position: int | None = None
+    polarizer_type: Optional[str] = None  # "barrel" or "round"
+    s_position: Optional[int] = None
+    p_position: Optional[int] = None
 
     # Calibration
     supports_calibration: bool = True
@@ -302,7 +302,7 @@ class IController(ABC):
     # ========================================================================
 
     @abstractmethod
-    def get_temperature(self) -> float | None:
+    def get_temperature(self) -> Optional[float]:
         """Get controller temperature in Celsius.
 
         Returns:
@@ -319,7 +319,7 @@ class IController(ABC):
         """Check if valid configuration exists in EEPROM."""
 
     @abstractmethod
-    def read_config_from_eeprom(self) -> dict[str, Any] | None:
+    def read_config_from_eeprom(self) -> Optional[dict]:
         """Read device configuration from EEPROM.
 
         Returns:
@@ -421,7 +421,7 @@ class ISpectrometer(ABC):
     # ========================================================================
 
     @abstractmethod
-    def read_spectrum(self, num_scans: int = 1) -> np.ndarray | None:
+    def read_spectrum(self, num_scans: int = 1) -> Optional[np.ndarray]:
         """Capture and return spectrum.
 
         Args:
@@ -433,7 +433,7 @@ class ISpectrometer(ABC):
         """
 
     @abstractmethod
-    def read_intensities(self, num_scans: int = 1) -> np.ndarray | None:
+    def read_intensities(self, num_scans: int = 1) -> Optional[np.ndarray]:
         """Alias for read_spectrum() for compatibility."""
 
 
@@ -502,7 +502,7 @@ class IServo(ABC):
         """
 
     @abstractmethod
-    def get_calibrated_positions(self) -> dict[str, int] | None:
+    def get_calibrated_positions(self) -> Optional[dict]:
         """Get previously calibrated S/P positions.
 
         Returns:

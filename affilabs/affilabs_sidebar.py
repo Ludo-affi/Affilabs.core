@@ -154,6 +154,9 @@ class AffilabsSidebar(QWidget):
                 border: none;
                 background: {Colors.BACKGROUND_WHITE};
             }}
+            QTabBar {{
+                alignment: left;
+            }}
             QTabBar::tab {{
                 background: transparent;
                 color: {Colors.SECONDARY_TEXT};
@@ -271,6 +274,11 @@ class AffilabsSidebar(QWidget):
         # Compatibility alias expected by main code
         self.tabs = self.tab_widget
         main_layout.addWidget(container)
+
+        # TEMPORARY: Hide Flow tab for v1.0 (no pump hardware yet)
+        if "Flow" in self.tab_indices:
+            flow_index = self.tab_indices["Flow"]
+            self.tab_widget.setTabVisible(flow_index, False)
 
         # Connect tab change to lazy-load Settings tab plots
         self.tab_widget.currentChanged.connect(self._on_tab_changed)

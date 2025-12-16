@@ -324,15 +324,16 @@ class USB4000:
 
     def set_integration(self, time_ms) -> bool | None:
         if not self._device or not self.opened:
+            logger.error(f"set_integration FAILED: device={self._device is not None}, opened={self.opened}")
             return False
         try:
-            time_us = int(time_ms * 1000)
+            time_us = int(time_ms * 1000)  # SeaBreeze API requires microseconds
             with _usb_device_lock:
                 self._device.integration_time_micros(time_us)
-            self._integration_time = time_ms / 1000.0
+            self._integration_time = time_ms / 1000.0  # Store in seconds
             return True
         except Exception as e:
-            logger.error(f"set_integration error: {e}")
+            logger.error(f"set_integration error for {time_ms:.1f}ms ({time_us}us, {time_ms/1000:.4f}s): {e}")
             if "[Errno 19]" in str(e) or "No such device" in str(e):
                 logger.error("Spectrometer disconnected during operation")
                 self.opened = False

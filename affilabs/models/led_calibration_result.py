@@ -75,17 +75,8 @@ class LEDCalibrationResult:
         default_factory=dict,
     )  # P-mode ROI2 (710-720nm)
 
-    # LED timing delays (ms)
-    # SHARED WITH LIVE ACQUISITION: These exact timing values are reused in data_acquisition_manager
-    # - pre_led_delay_ms: LED stabilization time before spectrum acquisition (typically 12ms)
-    # - post_led_delay_ms: Afterglow decay time after LED off (typically 40ms)
-    # Same timing ensures calibration and live data match
-    pre_led_delay_ms: float | None = (
-        None  # LED stabilization delay (used in acquire_raw_spectrum)
-    )
-    post_led_delay_ms: float | None = (
-        None  # Afterglow decay delay (used in acquire_raw_spectrum)
-    )
+    # OLD LED timing delays deleted - replaced by new timing architecture
+    # All timing now in settings: LED_ON_TIME_MS, DETECTOR_WAIT_MS, NUM_SCANS, SAFETY_BUFFER_MS
 
     # Cycle time metrics (for 1Hz constraint validation)
     cycle_time_ms: float | None = None
@@ -119,9 +110,7 @@ class LEDCalibrationResult:
     qc_results: dict[str, dict[str, float]] = field(default_factory=dict)
     p_mode_intensity: dict[str, int] = field(default_factory=dict)
 
-    # Timing synchronization metrics (Step 6)
-    # Contains: avg_cycle_ms, std_cycle_ms, jitter_percent, status ('PASS'/'FAIL')
-    timing_sync: dict[str, float] | None = None
+    # timing_sync deleted - old calibration code
 
     # Diagnostic data
     ch_error_list: list = field(default_factory=list)  # List of channels that failed QC

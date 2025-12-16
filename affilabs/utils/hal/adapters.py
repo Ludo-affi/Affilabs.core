@@ -155,7 +155,9 @@ class OceanSpectrometerAdapter(Spectrometer):
 
     def read_roi(self, wave_min_index: int, wave_max_index: int, num_scans: int = 1):  # type: ignore[override]
         try:
-            if getattr(self._usb, "use_seabreeze", False):
+            # ALWAYS use seabreeze path - DLL path is broken
+            if True:  # Force seabreeze path
+            # if getattr(self._usb, "use_seabreeze", False):
                 if num_scans == 1:
                     full = self._usb.read_intensity()
                     return (
@@ -193,11 +195,16 @@ class OceanSpectrometerAdapter(Spectrometer):
         except Exception:
             return None
 
+    def read_intensity(self) -> np.ndarray:  # type: ignore[override]
+        """Read full spectrum intensity data."""
+        return self._usb.read_intensity()
+
     def read_wavelength(self) -> np.ndarray:  # type: ignore[override]
         return self._usb.read_wavelength()
 
-    def set_integration(self, integration_ms: int) -> None:  # type: ignore[override]
-        self._usb.set_integration(integration_ms)
+    def set_integration(self, integration_ms: int) -> bool:  # type: ignore[override]
+        # CRITICAL: Must return the result from underlying detector for pre-arm validation
+        return self._usb.set_integration(integration_ms)
 
     @property
     def min_integration(self) -> float:  # type: ignore[override]
@@ -206,3 +213,8 @@ class OceanSpectrometerAdapter(Spectrometer):
     @property
     def serial_number(self) -> str | None:  # type: ignore[override]
         return getattr(self._usb, "serial_number", None)
+
+    def close(self) -> None:
+        """Close the underlying USB device gracefully."""
+        if hasattr(self._usb, "close"):
+            self._usb.close()

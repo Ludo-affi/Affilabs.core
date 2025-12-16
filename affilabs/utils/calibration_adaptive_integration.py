@@ -20,12 +20,35 @@ CALIBRATION FLOW:
   STEP 5: P-Mode Integration Optimization (per-channel, target 50k counts)
   STEP 6: Data Processing & QC Validation
 
+TIMING CONSTRAINTS (Hardware Budget - Formula-Based):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMULA:
+  DETECTOR_ON  = LED_ON_TIME - DETECTOR_WAIT
+  MAX_INTEGRATION = (DETECTOR_ON - SAFETY_BUFFER) / NUM_SCANS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFAULT VALUES:
+  LED_ON_TIME:       250 ms (firmware fixed, configurable via settings)
+  DETECTOR_WAIT:      60 ms (POST_LED_DELAY_MS - only variable we can change)
+  NUM_SCANS:           3 scans (per acquisition)
+  SAFETY_BUFFER:      10 ms (timing margin)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CALCULATED:
+  DETECTOR_ON:       190 ms (250 - 60)
+  MAX_INTEGRATION:    60 ms ((190 - 10) / 3)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+P-POL LED BALANCING LOGIC:
+- Weakest LED is capped at 255 intensity / 60ms integration
+- Weakest LED's counts become the TARGET for all other LEDs
+- Stronger LEDs reduce intensity to match weakest LED's signal level
+- Result: Uniform brightness across all channels (like GitHub GOLDEN S-mode)
+
 VALIDATED PERFORMANCE (from test_max_speed_50k_counts.py):
 - Throughput: 1.51 Hz (660ms/cycle for 4 channels)
 - Noise: 0.22-0.63% across all channels
 - Target: 50,000 counts achieved on ALL channels
-- Integration times: Ch A=63ms, B=23ms, C=21ms, D=54ms
-- LED: All channels at 255 (max brightness)
+- Integration times: Ch A=63ms, B=23ms, C=21ms, D=54ms (UPDATED to 60ms cap)
+- LED: All channels at 255 (max brightness, then balanced)
 
 ENABLE: Set USE_ALTERNATIVE_CALIBRATION = True in settings.py
 STATUS: Currently DISABLED (production uses Mode 1)
@@ -64,12 +87,23 @@ if TYPE_CHECKING:
 # MODE 2 CONSTANTS
 # =============================================================================
 
+import settings as root_settings
+
 # LED intensity (FIXED for all channels in Mode 2)
 FIXED_LED_INTENSITY = 255  # Maximum brightness for optimal stability
 
+# Timing constants - ALL imported from settings (no hard-coding)
+LED_ON_TIME_DEFAULT_MS = root_settings.LED_ON_TIME_MS
+DETECTOR_WAIT_MS = root_settings.DETECTOR_WAIT_MS  # MAX integration time per scan
+NUM_SCANS = root_settings.NUM_SCANS
+SAFETY_BUFFER_MS = root_settings.SAFETY_BUFFER_MS
+
+# Calculate derived timing from base parameters
+DETECTOR_ON_MS = LED_ON_TIME_DEFAULT_MS - DETECTOR_WAIT_MS
+MAX_INTEGRATION_MS = DETECTOR_WAIT_MS  # Per-scan cap = DETECTOR_WAIT_MS
+
 # Optimization targets (validated for optimal SNR)
 TARGET_COUNTS = 50000  # 50k counts target per channel
-MAX_INTEGRATION_MS = 300.0  # Maximum allowed integration time
 
 # Optimization parameters
 MAX_ATTEMPTS = 5  # Maximum iterations per channel
@@ -483,17 +517,84 @@ def run_adaptive_integration_calibration(
                     f"      [OK] Reference captured ({scan_config.ref_scans} scans averaged via HAL)",
                 )
 
-        # Store P-mode results
-        result.p_mode_intensity = p_led_intensities
-        result.p_integration_time = max(p_integration_times.values())  # Global max
+        # Store P-mode results (before LED balancing)
+        result.p_integration_time = min(max(p_integration_times.values()), MAX_INTEGRATION_MS)  # Global max capped by timing budget
         result.p_integration_times_per_channel = p_integration_times
+
+        # ===================================================================
+        # LED INTENSITY BALANCING: Match all channels to weakest LED counts
+        # ===================================================================
+        logger.info("\n" + "=" * 80)
+        logger.info("🔧 P-MODE LED BALANCING (Match Weakest Channel)")
+        logger.info("="  * 80)
+        logger.info(f"Timing Budget: {LED_ON_TIME_DEFAULT_MS:.0f}ms LED ON - {DETECTOR_WAIT_MS:.0f}ms wait = {DETECTOR_ON_MS:.0f}ms available")
+        logger.info(f"Max Integration: {MAX_INTEGRATION_MS:.0f}ms per scan ({NUM_SCANS} scans)")
+        logger.info(f"Weakest LED at 255/{MAX_INTEGRATION_MS:.0f}ms becomes the target for all channels")
+        logger.info("This ensures uniform brightness across all channels\n")
+
+        # Use global max integration time for consistency
+        usb.set_integration(result.p_integration_time / 1000.0)
+        time.sleep(0.05)
+
+        # Find weakest channel (lowest signal at LED=255)
+        weakest_ch = None
+        weakest_signal = float('inf')
+        channel_signals = {}
+
+        for ch in ch_list:
+            if stop_flag and stop_flag.is_set():
+                break
+
+            # Measure signal at LED=255
+            ctrl.set_intensity(ch=ch, raw_val=FIXED_LED_INTENSITY)
+            time.sleep(LED_DELAY)
+
+            spectrum = usb.read_roi(wave_min_index, wave_max_index, num_scans=1)
+            ctrl.turn_off_channels()
+            time.sleep(0.05)
+
+            if spectrum is not None:
+                ch_signal = np.max(spectrum)
+                channel_signals[ch] = ch_signal
+                if ch_signal < weakest_signal:
+                    weakest_signal = ch_signal
+                    weakest_ch = ch
+
+        logger.info(f"Weakest channel: {weakest_ch.upper()}")
+        logger.info(f"   Signal: {weakest_signal:.0f} counts @ LED=255")
+        logger.info(f"   Integration: {result.p_integration_time:.1f}ms")
+        logger.info(f"\nBalancing all channels to match weakest signal level...\n")
+
+        # Balance all other channels to match weakest
+        for ch in ch_list:
+            if ch == weakest_ch:
+                p_led_intensities[ch] = FIXED_LED_INTENSITY
+                logger.info(
+                    f"   Ch {ch.upper()}: {weakest_signal:.0f} counts @ LED=255 (weakest - stays at max)"
+                )
+                continue
+
+            # Calculate target LED to match weakest signal
+            current_signal = channel_signals[ch]
+            target_led = int(FIXED_LED_INTENSITY * (weakest_signal / current_signal))
+            target_led = max(10, min(target_led, 255))
+
+            p_led_intensities[ch] = target_led
+            logger.info(
+                f"   Ch {ch.upper()}: {current_signal:.0f} → {weakest_signal:.0f} counts, LED 255 → {target_led}"
+            )
+
+        # Store final P-mode LED intensities
+        result.p_mode_intensity = p_led_intensities
 
         logger.info("\n" + "=" * 80)
         logger.info("[OK] P-MODE OPTIMIZATION COMPLETE")
         logger.info("=" * 80)
-        logger.info(f"Integration times: {p_integration_times}")
-        logger.info(f"Global max: {result.p_integration_time:.1f}ms")
-        logger.info(f"All LEDs: {FIXED_LED_INTENSITY}")
+        logger.info(f"Timing Budget: {LED_ON_TIME_DEFAULT_MS:.0f}ms LED ON → {DETECTOR_ON_MS:.0f}ms available ({NUM_SCANS} scans × {MAX_INTEGRATION_MS:.0f}ms max)")
+        logger.info(f"Integration times per channel: {p_integration_times}")
+        logger.info(f"Global max: {result.p_integration_time:.1f}ms (capped at {MAX_INTEGRATION_MS:.0f}ms budget)")
+        logger.info(f"LED intensities (balanced): {p_led_intensities}")
+        logger.info(f"Weakest LED at 255 @ {MAX_INTEGRATION_MS:.0f}ms = target for all channels")
         logger.info("=" * 80 + "\n")
 
         # ===================================================================

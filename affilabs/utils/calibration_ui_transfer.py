@@ -286,31 +286,22 @@ def transfer_calibration_to_live_view(
         device_config: DeviceConfiguration instance
 
     """
-    logger.info("=" * 80)
-    logger.info("🔄 TRANSFERRING CALIBRATION TO LIVE VIEW")
-    logger.info("=" * 80)
-    logger.info("User clicked Start button - beginning transfer...\n")
+    # Single log entry for calibration transfer (performance optimization)
+    logger.info("🔄 Transferring calibration to live view...")
 
     try:
         # Save calibration to device config (full arrays)
-        logger.info("Saving calibration to device_config.json...")
         save_calibration_to_device_config(
             calibration_result,
             device_config,
         )
-        logger.info("[OK] Calibration saved to device config\n")
 
         # Transfer to data acquisition manager
-        logger.info("Configuring live acquisition system...")
-
         # Set LED intensities
         data_acquisition_manager.set_led_intensities(
             s_mode=calibration_result.ref_intensity,
             p_mode=calibration_result.p_mode_intensity,
         )
-        logger.info("[OK] LED intensities configured")
-        logger.info(f"   S-mode: {calibration_result.ref_intensity}")
-        logger.info(f"   P-mode: {calibration_result.p_mode_intensity}")
 
         # Set integration time and scans
         data_acquisition_manager.set_integration_time(
@@ -319,8 +310,6 @@ def transfer_calibration_to_live_view(
         data_acquisition_manager.set_num_scans(
             calibration_result.num_scans,
         )
-        logger.info(f"[OK] Integration time: {calibration_result.integration_time}ms")
-        logger.info(f"[OK] Scans per channel: {calibration_result.num_scans}")
 
         # Set reference signals and dark noise
         data_acquisition_manager.set_reference_signals(
@@ -329,14 +318,10 @@ def transfer_calibration_to_live_view(
         data_acquisition_manager.set_dark_noise(
             calibration_result.dark_noise,
         )
-        logger.info("[OK] Reference signals and dark noise configured")
 
         # Set wavelength data
         data_acquisition_manager.set_wavelength_data(
             calibration_result.wave_data,
-        )
-        logger.info(
-            f"[OK] Wavelength data configured ({len(calibration_result.wave_data)} pixels)",
         )
 
         # If using alternative calibration (per-channel integration)
@@ -344,23 +329,15 @@ def transfer_calibration_to_live_view(
             hasattr(calibration_result, "per_channel_integration")
             and calibration_result.per_channel_integration
         ):
-            logger.info("Using per-channel integration times (Global LED Mode)")
             data_acquisition_manager.set_per_channel_integration(
                 calibration_result.per_channel_integration,
-            )
-            logger.info(
-                f"[OK] Per-channel integration: {calibration_result.per_channel_integration}",
             )
 
         # Mark system as calibrated
         data_acquisition_manager.set_calibration_state(True)
 
-        logger.info("\n" + "=" * 80)
-        logger.info("[OK] TRANSFER COMPLETE - LIVE VIEW READY")
-        logger.info("=" * 80)
-        logger.info("System is now calibrated and ready for live measurements")
-        logger.info("Starting live acquisition...")
-        logger.info("=" * 80 + "\n")
+        # Single completion log (instead of 5 separate logs)
+        logger.info("✅ Calibration transfer complete - live view ready")
 
         # Start live acquisition
         data_acquisition_manager.start_live_acquisition()
@@ -386,8 +363,6 @@ def save_calibration_to_device_config(
         device_config: DeviceConfiguration instance
 
     """
-    logger.info("Saving calibration to device_config.json...")
-
     # Load existing calibration to check for fast-track counter
     existing_cal = device_config.load_led_calibration()
     is_fast_track = (
@@ -399,11 +374,9 @@ def save_calibration_to_device_config(
     if is_fast_track:
         # Increment counter for fast-track
         fast_track_count = existing_cal.get("fast_track_count", 0) + 1
-        logger.info(f"[OK] Fast-track calibration #{fast_track_count}/5")
     else:
         # Reset counter for full calibration
         fast_track_count = 0
-        logger.info("[OK] Full calibration - fast-track counter reset")
 
     # Build calibration data structure
     cal_data = {
@@ -462,7 +435,6 @@ def save_calibration_to_device_config(
         cal_data["per_channel_integration_times"] = (
             calibration_result.per_channel_integration
         )
-        logger.info("Including per-channel integration times (Global LED Mode)")
 
     # Add per-channel dark noise if present
     if (
@@ -473,101 +445,9 @@ def save_calibration_to_device_config(
             ch: dark.tolist()
             for ch, dark in calibration_result.per_channel_dark_noise.items()
         }
-        logger.info("Including per-channel dark noise arrays")
 
     # Save to device config
     device_config.save_led_calibration(cal_data)
 
-    # Log summary
-    logger.info("[OK] Calibration saved with FULL arrays:")
-    logger.info(
-        f"   S-ref signals: {len(calibration_result.s_pol_ref)} channels × {len(calibration_result.wave_data)} pixels",
-    )
-    if hasattr(calibration_result, "p_pol_ref") and calibration_result.p_pol_ref:
-        logger.info(
-            f"   P-ref signals: {len(calibration_result.p_pol_ref)} channels × {len(calibration_result.wave_data)} pixels",
-        )
-    logger.info(f"   Dark noise: {len(calibration_result.dark_noise)} pixels")
-    logger.info(f"   Wavelengths: {len(calibration_result.wave_data)} pixels")
-    logger.info("   LED intensities: S-mode and P-mode")
-    logger.info(f"   Integration: {calibration_result.integration_time}ms")
-    logger.info(f"   Scans: {calibration_result.num_scans}")
-
-    if cal_data.get("per_channel_integration_times"):
-        logger.info(
-            f"   Per-channel integration: {cal_data['per_channel_integration_times']}",
-        )
-
-
-def check_and_run_afterglow_calibration(
-    device_config,
-    usb,
-    ctrl,
-    calibration_result,
-) -> bool | None:
-    """Check if afterglow calibration exists, run if missing.
-
-    This is called automatically after LED calibration completes.
-    If afterglow calibration is missing from device config, it
-    triggers automatic afterglow measurement.
-
-    Args:
-        device_config: DeviceConfiguration instance
-        usb: Spectrometer instance
-        ctrl: Controller instance
-        calibration_result: LEDCalibrationResult with LED intensities
-
-    Returns:
-        bool: True if afterglow calibration exists or was completed
-
-    """
-    logger.info("\n" + "=" * 80)
-    logger.info("Checking for afterglow calibration...")
-    logger.info("=" * 80)
-
-    try:
-        # Check if afterglow calibration exists
-        afterglow_data = device_config.load_afterglow_calibration()
-
-        if afterglow_data and "channel_models" in afterglow_data:
-            logger.info("[OK] Afterglow calibration found in device config")
-            logger.info(
-                f"   Calibrated channels: {list(afterglow_data['channel_models'].keys())}",
-            )
-            logger.info(
-                f"   Calibration date: {afterglow_data.get('calibration_date', 'unknown')}",
-            )
-            logger.info("   No need to recalibrate\n")
-            return True
-
-        logger.warning("[WARN] Afterglow calibration NOT found in device config")
-        logger.info("Running automatic afterglow calibration...")
-        logger.info("This will take 5-10 minutes per channel\n")
-
-        # Import afterglow calibration module
-        from affilabs.utils.afterglow_calibration import run_afterglow_calibration
-
-        # Run afterglow calibration using LED intensities from calibration
-        afterglow_result = run_afterglow_calibration(
-            usb,
-            ctrl,
-            led_intensities=calibration_result.s_mode_intensity,
-            device_config=device_config,
-            stop_flag=None,
-            progress_callback=None,
-        )
-
-        if afterglow_result and afterglow_result.get("success"):
-            logger.info("\n[OK] Automatic afterglow calibration complete")
-            logger.info("   Results saved to device config")
-            logger.info("=" * 80 + "\n")
-            return True
-        logger.error("\n[ERROR] Automatic afterglow calibration failed")
-        logger.error("   System will operate without afterglow correction")
-        logger.error("=" * 80 + "\n")
-        return False
-
-    except Exception as e:
-        logger.exception(f"Failed to check/run afterglow calibration: {e}")
-        logger.warning("System will operate without afterglow correction")
-        return False
+    # Single log summary (performance optimization - avoid terminal spam)
+    logger.info(f"✅ Calibration saved: {len(calibration_result.s_pol_ref)} channels, {calibration_result.integration_time}ms, {calibration_result.num_scans} scans")

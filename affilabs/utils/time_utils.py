@@ -1,14 +1,14 @@
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 
 def now_utc() -> datetime:
     """Get current UTC datetime."""
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def now_iso_utc() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def now_utc_iso() -> str:
@@ -21,7 +21,7 @@ def monotonic() -> float:
 
 
 def filename_timestamp() -> str:
-    return datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 
 def for_filename(prefix: str = "", ext: str = "txt") -> str:

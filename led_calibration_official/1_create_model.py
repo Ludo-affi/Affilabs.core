@@ -31,8 +31,17 @@ def measure_led_response(
     Args:
         detector_wait_ms: Time to wait after LED stabilization before detector sampling (default: 50ms)
 
+    WARNING: This function uses DIRECT hardware commands (NOT HAL).
+    This is acceptable for OEM calibration since:
+    1. It's a one-time factory calibration process
+    2. Creates the model that HAL will use for runtime
+    3. Uses fixed detector_wait_ms (not settings-driven)
+
+    The timing here is INDEPENDENT of runtime settings because this is
+    measuring the LED-to-counts relationship, not performing live acquisition.
+
     """
-    # Set integration time first
+    # Set integration time first (DIRECT hardware command)
     spectrometer.set_integration(integration_time_ms)
     time.sleep(0.05)
 
@@ -44,6 +53,7 @@ def measure_led_response(
     time.sleep(detector_wait_ms / 1000.0)  # Detector wait time
 
     # Measure (average of 3 scans, then average top 10 pixels)
+    # NOTE: This is a DIRECT hardware call, NOT using HAL
     spectrum = spectrometer.intensities(num_scans=3)
     import numpy as np
 
@@ -111,6 +121,20 @@ def main():
 
     # Integration times to test
     integration_times = [10, 20, 30, 50, 70, 100]
+
+    print("\n" + "=" * 80)
+    print("⚠️  OEM CALIBRATION TIMING NOTICE")
+    print("=" * 80)
+    print("This script uses DIRECT hardware commands (NOT HAL).")
+    print("This is intentional because:")
+    print("  1. OEM calibration is a one-time factory process")
+    print("  2. It measures LED-to-counts relationship at multiple times")
+    print("  3. Creates the model that HAL will use for runtime")
+    print("  4. Uses fixed detector_wait_ms (independent of settings)")
+    print()
+    print("Runtime calibration and live acquisition will use HAL with")
+    print("centralized timing from settings.py (LED_ON_TIME_MS, DETECTOR_WAIT_MS, etc.)")
+    print("=" * 80 + "\n")
 
     # Measure dark current at each integration time
     print("Measuring dark current at each integration time...")

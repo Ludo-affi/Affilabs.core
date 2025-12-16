@@ -932,7 +932,6 @@ class PicoP4SPR(StaticController):
 
             # Skip if already enabled (optimization)
             if ch in self._channels_enabled:
-                logger.debug(f"LED {ch.upper()} already enabled - skipping command")
                 return True
 
             cmd = f"l{ch}\n"
@@ -944,6 +943,9 @@ class PicoP4SPR(StaticController):
                     response = self._ser.read(1)  # Read 1 byte (firmware sends '1')
                     success = response == b"6"
                     if success:
+                        # CRITICAL: Firmware auto-disables previous LED when new one turns on
+                        # Clear tracking set and add only the new channel
+                        self._channels_enabled.clear()
                         self._channels_enabled.add(ch)
                         logger.debug(
                             f"[OK] LED {ch.upper()} enabled via 'l{ch}' command",
@@ -1321,11 +1323,10 @@ class PicoP4SPR(StaticController):
                             success = b"6" in response
 
                 if success:
-                    # Update enabled channels tracking
+                    # CRITICAL: Clear enabled tracking so turn_on_channel() doesn't skip
+                    # Batch enables all LEDs at once (lm:A,B,C,D), but we need sequential control
+                    # Clear the tracking so subsequent turn_on_channel() calls will execute
                     self._channels_enabled.clear()
-                    for ch, intensity in [("a", a), ("b", b), ("c", c), ("d", d)]:
-                        if intensity > 0:
-                            self._channels_enabled.add(ch)
                     logger.debug(
                         f"Batch LED command successful: A={a}, B={b}, C={c}, D={d}",
                     )

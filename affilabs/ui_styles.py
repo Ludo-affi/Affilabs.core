@@ -1,6 +1,7 @@
 """UI Stylesheet Constants and Style Builders
 Centralized styling for consistent UI appearance across the application.
 """
+from __future__ import annotations
 
 
 # ============================================================================

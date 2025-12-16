@@ -149,7 +149,7 @@ class LiveDataDialog(QDialog):
         plot_widget.setLabel("bottom", "Wavelength", units="nm")
         if plot_type == "transmission":
             plot_widget.setLabel("left", "Transmission", units="%")
-            # No hard axis: enable full autorange
+            # Enable full autorange (no fixed X-axis so it scales to actual data)
             try:
                 plot_widget.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
             except Exception:
@@ -163,7 +163,8 @@ class LiveDataDialog(QDialog):
                 plot_widget.enableAutoRange("x", True)
                 plot_widget.enableAutoRange("y", True)
 
-        plot_widget.setXRange(400, 1000)
+        # Don't set fixed X-range - let it auto-scale to calibrated wavelength range
+        # (typically 640-680nm SPR region, not full 400-1000nm detector range)
 
         # Create curves for each channel
         for channel, color in channel_colors.items():

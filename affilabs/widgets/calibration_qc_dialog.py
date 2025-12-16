@@ -59,16 +59,19 @@ class CalibrationQCDialog(QDialog):
         self.calibration_data = calibration_data or {}
 
         self.setWindowTitle("Calibration QC Report")
-        self.setMinimumSize(900, 600)  # Smaller minimum size, fully resizable
-        self.setModal(True)
+        self.setModal(False)  # Non-modal so it doesn't block and can be moved easily
 
-        # Ensure dialog stays within screen bounds
+        # Ensure dialog stays within screen bounds with better constraints
         from PySide6.QtGui import QGuiApplication
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        # Default to 80% of screen size, but fully resizable
-        dialog_width = min(int(screen.width() * 0.8), 1400)
-        dialog_height = min(int(screen.height() * 0.8), 900)
+        # Use 90% of screen size with reasonable max dimensions
+        dialog_width = min(int(screen.width() * 0.9), 1600)
+        dialog_height = min(int(screen.height() * 0.85), 850)
+
+        # Set size constraints to prevent dialog from becoming unusable
+        self.setMinimumSize(1200, 650)
+        self.setMaximumSize(screen.width(), screen.height() - 50)  # Leave room for taskbar
         self.resize(dialog_width, dialog_height)
 
         # Center dialog on screen initially
@@ -76,7 +79,7 @@ class CalibrationQCDialog(QDialog):
             (screen.width() - dialog_width) // 2,
             (screen.height() - dialog_height) // 2,
         )
-        # Apply modern styling
+        # Apply modern styling matching the software design system
         self.setStyleSheet("""
             QDialog {
                 background: #FFFFFF;
@@ -84,22 +87,29 @@ class CalibrationQCDialog(QDialog):
             QLabel {
                 color: #1D1D1F;
                 font-size: 13px;
+                font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
             }
             QPushButton {
                 background: #007AFF;
                 color: white;
                 border: none;
-                border-radius: 6px;
-                padding: 10px 20px;
+                border-radius: 8px;
+                padding: 8px 20px;
                 font-size: 13px;
                 font-weight: 600;
-                min-width: 100px;
+                min-width: 110px;
+                min-height: 36px;
+                font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
             }
             QPushButton:hover {
                 background: #0051D5;
             }
             QPushButton:pressed {
-                background: #003D99;
+                background: #004FC4;
+            }
+            QPushButton:disabled {
+                background: #E5E5EA;
+                color: #86868B;
             }
         """)
 
@@ -111,23 +121,41 @@ class CalibrationQCDialog(QDialog):
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(8)
 
-        # Title
-        title = QLabel("📊 Calibration Quality Control Report")
+        # Title and metadata in single compact header
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(16)
+
+        title = QLabel("📊 Calibration QC Report")
         title.setStyleSheet("""
             font-size: 16px;
             font-weight: 600;
             color: #1D1D1F;
             padding: 5px 0px;
         """)
-        layout.addWidget(title)
+        header_layout.addWidget(title)
+        header_layout.addStretch()
 
-        # Summary section with LED intensities and peak counts
+        # Add timestamp inline
+        from datetime import datetime
+        timestamp = self.calibration_data.get(
+            "timestamp",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        timestamp_label = QLabel(f"📅 {timestamp}")
+        timestamp_label.setStyleSheet("""
+            font-size: 12px;
+            color: #86868B;
+            padding: 5px 0px;
+        """)
+        header_layout.addWidget(timestamp_label)
+
+        layout.addWidget(header_widget)
+
+        # Consolidated summary section (one row only)
         summary_section = self._create_summary_section()
         layout.addWidget(summary_section)
-
-        # Metadata section
-        metadata_section = self._create_metadata_section()
-        layout.addWidget(metadata_section)
 
         # Create tab widget
         tabs = QTabWidget()
@@ -168,14 +196,22 @@ class CalibrationQCDialog(QDialog):
 
         # Export PDF button
         export_pdf_btn = QPushButton("📄 Export PDF")
+        export_pdf_btn.setFixedSize(140, 36)
         export_pdf_btn.setStyleSheet("""
             QPushButton {
                 background: #34C759;
                 color: white;
-                min-width: 120px;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background: #2DA84C;
+            }
+            QPushButton:pressed {
+                background: #248A3D;
             }
         """)
         export_pdf_btn.clicked.connect(self._export_to_pdf)
@@ -183,14 +219,22 @@ class CalibrationQCDialog(QDialog):
 
         # Export HTML button
         export_html_btn = QPushButton("🌐 Export HTML")
+        export_html_btn.setFixedSize(150, 36)
         export_html_btn.setStyleSheet("""
             QPushButton {
                 background: #FF9500;
                 color: white;
-                min-width: 120px;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background: #E68600;
+            }
+            QPushButton:pressed {
+                background: #CC7000;
             }
         """)
         export_html_btn.clicked.connect(self._export_to_html)
@@ -198,14 +242,22 @@ class CalibrationQCDialog(QDialog):
 
         # View History button
         history_btn = QPushButton("📊 View History")
+        history_btn.setFixedSize(150, 36)
         history_btn.setStyleSheet("""
             QPushButton {
                 background: #5856D6;
                 color: white;
-                min-width: 120px;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background: #4745B0;
+            }
+            QPushButton:pressed {
+                background: #3634A3;
             }
         """)
         history_btn.clicked.connect(self._view_history)
@@ -215,6 +267,24 @@ class CalibrationQCDialog(QDialog):
 
         # Close button
         close_btn = QPushButton("Close")
+        close_btn.setFixedSize(100, 36)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: #007AFF;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #0051D5;
+            }
+            QPushButton:pressed {
+                background: #004FC4;
+            }
+        """)
         close_btn.clicked.connect(self.accept)
         button_layout.addWidget(close_btn)
 
@@ -227,34 +297,39 @@ class CalibrationQCDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        # Grid of graphs (2x2 layout for better visibility)
+        # Single row of graphs (1x3 layout for better horizontal space usage)
         graphs_container = QFrame()
-        graphs_layout = QGridLayout(graphs_container)
-        graphs_layout.setSpacing(10)
+        graphs_layout = QHBoxLayout(graphs_container)
+        graphs_layout.setSpacing(8)
+        graphs_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Row 0: S-pol and P-pol
-        s_pol_graph = self._create_graph("S-Polarization (s_pol_spectra)", "s_pol")
-        p_pol_graph = self._create_graph("P-Polarization (p_pol_spectra)", "p_pol")
-        graphs_layout.addWidget(s_pol_graph, 0, 0)
-        graphs_layout.addWidget(p_pol_graph, 0, 1)
+        # All 3 graphs in one row
+        s_pol_graph = self._create_graph("S-Pol", "s_pol")
+        p_pol_graph = self._create_graph("P-Pol", "p_pol")
+        transmission_graph = self._create_graph("Transmission", "transmission")
 
-        # Row 1: Transmission and Dark
-        transmission_graph = self._create_graph(
-            "Transmission (transmission_spectra)",
-            "transmission",
-        )
-        dark_graph = self._create_graph(
-            "Dark References (8 spectra: S-pol solid, P-pol dashed)",
-            "dark",
-        )
-        graphs_layout.addWidget(transmission_graph, 1, 0)
-        graphs_layout.addWidget(dark_graph, 1, 1)
+        graphs_layout.addWidget(s_pol_graph)
+        graphs_layout.addWidget(p_pol_graph)
+        graphs_layout.addWidget(transmission_graph)
 
         layout.addWidget(graphs_container)
 
-        # QC table below graphs (single column, no model validation table)
+        # Tables side by side: LED Calibration | QC Validation
+        tables_container = QWidget()
+        tables_layout = QHBoxLayout(tables_container)
+        tables_layout.setContentsMargins(0, 0, 0, 0)
+        tables_layout.setSpacing(12)
+
+        # Convergence summary (LED Calibration)
+        convergence_summary = self._create_convergence_summary()
+        if convergence_summary:
+            tables_layout.addWidget(convergence_summary, stretch=1)
+
+        # QC validation table
         combined_qc_table = self._create_combined_qc_table()
-        layout.addWidget(combined_qc_table)
+        tables_layout.addWidget(combined_qc_table, stretch=1)
+
+        layout.addWidget(tables_container)
 
         return widget
 
@@ -310,8 +385,23 @@ class CalibrationQCDialog(QDialog):
 
         return frame
 
-    def _create_combined_qc_table(self) -> QFrame:
-        """Create combined QC validation table with both orientation and transmission data."""
+    def _create_convergence_summary(self) -> QWidget | None:
+        """Create convergence summary section showing LED calibration results.
+
+        Returns:
+            QWidget with title and convergence data, or None if no convergence data available
+
+        """
+        convergence_summary = self.calibration_data.get("convergence_summary")
+        if not convergence_summary or not isinstance(convergence_summary, dict):
+            return None
+
+        # Container for frame + title at bottom
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(4)
+
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame.setStyleSheet(
@@ -322,11 +412,139 @@ class CalibrationQCDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        title = QLabel("🔬 Quality Control Validation")
-        title.setStyleSheet(
-            "font-size: 13px; font-weight: 600; color: #1D1D1F; padding-bottom: 3px;",
+        # Extract convergence data
+        strategy = convergence_summary.get("strategy", "intensity")
+        shared_integration = convergence_summary.get("shared_integration_ms", 0)
+        ok = convergence_summary.get("ok", False)
+        channels = convergence_summary.get("channels", {})
+
+        # Summary line
+        status_color = "#34C759" if ok else "#FF3B30"
+        status_text = "PASS" if ok else "FAIL"
+        summary_html = f"""
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>STRATEGY</span>
+        <span style='color:#1D1D1F; font-weight:500;'>{strategy.title()}</span>
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>INTEGRATION TIME</span>
+        <span style='color:#1D1D1F; font-weight:600;'>{shared_integration:.2f}ms</span>
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>STATUS</span>
+        <span style='color:{status_color}; font-weight:700;'>{status_text}</span>
+        """
+
+        summary_label = QLabel(summary_html)
+        summary_label.setTextFormat(Qt.TextFormat.RichText)
+        summary_label.setStyleSheet("""
+            background: transparent;
+            padding: 4px 0px;
+            font-size: 11px;
+            color: #1D1D1F;
+            border: none;
+        """)
+        summary_label.setWordWrap(False)
+        layout.addWidget(summary_label)
+
+        # Per-channel table
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(
+            ["Channel", "LED Intensity", "Integration (ms)", "Signal (counts)", "Saturation %"],
         )
-        layout.addWidget(title)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setStyleSheet("""
+            QTableWidget {
+                background: white;
+                border: none;
+                gridline-color: #E5E5EA;
+                font-size: 11px;
+            }
+            QHeaderView::section {
+                background: #F5F5F7;
+                color: #1D1D1F;
+                padding: 6px;
+                border: none;
+                font-weight: 600;
+                font-size: 11px;
+            }
+        """)
+
+        channels_list = ["a", "b", "c", "d"]
+        table.setRowCount(len(channels_list))
+
+        for idx, ch in enumerate(channels_list):
+            if ch not in channels:
+                continue
+
+            ch_data = channels[ch]
+
+            # Channel name
+            ch_item = QTableWidgetItem(ch.upper())
+            ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 0, ch_item)
+
+            # LED intensity
+            led = ch_data.get("final_led", 0)
+            led_item = QTableWidgetItem(str(led))
+            led_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 1, led_item)
+
+            # Integration time
+            integration = ch_data.get("final_integration_ms", 0)
+            int_item = QTableWidgetItem(f"{integration:.2f}")
+            int_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 2, int_item)
+
+            # Signal (top50 counts)
+            signal = ch_data.get("final_top50_counts", 0)
+            sig_item = QTableWidgetItem(f"{signal:.0f}")
+            sig_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 3, sig_item)
+
+            # Saturation percentage
+            saturation = ch_data.get("final_percentage", 0)
+            sat_item = QTableWidgetItem(f"{saturation:.1f}%")
+            sat_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if saturation > 95:
+                sat_item.setForeground(QColor("#FF3B30"))  # Red (saturated)
+            elif saturation > 85:
+                sat_item.setForeground(QColor("#34C759"))  # Green (good)
+            else:
+                sat_item.setForeground(QColor("#FF9500"))  # Orange (low)
+            table.setItem(idx, 4, sat_item)
+
+        table.resizeColumnsToContents()
+        table.setMaximumHeight(150)
+        layout.addWidget(table)
+
+        container_layout.addWidget(frame)
+
+        # Title at bottom without box
+        title = QLabel("LED Convergence Results")
+        title.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #1D1D1F; padding-top: 4px; background: transparent; border: none;",
+        )
+        container_layout.addWidget(title)
+
+        return container
+
+    def _create_combined_qc_table(self) -> QWidget:
+        """Create combined QC validation table with both orientation and transmission data."""
+        # Container for frame + title at bottom
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(4)
+
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.StyledPanel)
+        frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+        )
+
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
 
         table = QTableWidget()
         table.setColumnCount(8)
@@ -542,7 +760,16 @@ class CalibrationQCDialog(QDialog):
         """)
         layout.addWidget(result_label)
 
-        return frame
+        container_layout.addWidget(frame)
+
+        # Title at bottom without box
+        title = QLabel("🔬 Quality Control Validation")
+        title.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #1D1D1F; padding-top: 4px;",
+        )
+        container_layout.addWidget(title)
+
+        return container
 
     def _create_model_validation_table(self) -> QFrame:
         """Create model validation table showing predicted vs measured LED values."""
@@ -1111,30 +1338,50 @@ class CalibrationQCDialog(QDialog):
         s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
         p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
 
+        # Calculate average dark signal across all channels
+        dark_s_scans = data.get("dark_s_scans", {})
+        dark_p_scans = data.get("dark_p_scans", {})
+        dark_avg_parts = []
+
+        for ch in ["a", "b", "c", "d"]:
+            if ch in dark_s_scans and dark_s_scans[ch] is not None:
+                dark_s_avg = np.mean(dark_s_scans[ch])
+                dark_avg_parts.append(f"{ch.upper()}:{dark_s_avg:.0f}")
+            elif ch in dark_p_scans and dark_p_scans[ch] is not None:
+                dark_p_avg = np.mean(dark_p_scans[ch])
+                dark_avg_parts.append(f"{ch.upper()}:{dark_p_avg:.0f}")
+
+        dark_avg_str = ", ".join(dark_avg_parts) if dark_avg_parts else "N/A"
+
         # Swap warning badge
         swap_badge = (
-            "  <span style='color:#FF9500; font-weight:600;'>[WARN] S/P Swapped</span>"
+            "  <span style='background:#FFF3CD; color:#856404; padding:2px 6px; border-radius:3px; font-weight:600; font-size:10px;'>⚠ S/P SWAPPED</span>"
             if sp_swap_applied
             else ""
         )
 
-        # SINGLE ROW with LED intensities and max counts
+        # SINGLE ROW with LED intensities, max counts, and dark average - consolidated and compact
         combined_text = f"""
-        <b>LEDs:</b> {led_str}  |
-        <b>S-max:</b> {s_max_str}  |
-        <b>P-max:</b> {p_max_str}{swap_badge}
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>LED INTENSITIES</span> <span style='color:#1D1D1F; font-weight:500;'>{led_str}</span>
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>S-POL MAX</span> <span style='color:#34C759; font-weight:600;'>{s_max_str}</span>
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>P-POL MAX</span> <span style='color:#007AFF; font-weight:600;'>{p_max_str}</span>
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        <span style='color:#86868B; font-size:10px; font-weight:600;'>DARK AVG</span> <span style='color:#8E8E93; font-weight:600;'>{dark_avg_str}</span>{swap_badge}
         """
 
         combined_label = QLabel(combined_text)
         combined_label.setTextFormat(Qt.TextFormat.RichText)
         combined_label.setStyleSheet("""
             background: white;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 10px 16px;
+            border-radius: 6px;
             font-size: 11px;
             color: #1D1D1F;
+            border: 1px solid #E5E5EA;
         """)
-        combined_label.setWordWrap(True)
+        combined_label.setWordWrap(False)
         layout.addWidget(combined_label)
 
         return frame
@@ -1174,10 +1421,12 @@ class CalibrationQCDialog(QDialog):
         """)
         layout.addWidget(title_label)
 
-        # Create plot widget
+        # Create plot widget with fixed height for consistent layout
         plot_widget = pg.PlotWidget()
         plot_widget.setBackground("w")
         plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        plot_widget.setMinimumHeight(200)
+        plot_widget.setMaximumHeight(280)
 
         # Configure axes
         plot_widget.setLabel("bottom", "Wavelength", units="nm")

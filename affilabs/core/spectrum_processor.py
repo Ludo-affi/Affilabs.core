@@ -91,19 +91,20 @@ class SpectrumProcessor:
             if np.count_nonzero(raw_intensity) == 0:
                 return None
 
-            # CRITICAL: Apply ROI mask to match calibration wavelengths
-            # Raw spectrum is 3840 pixels, but calibration data is already sliced
-            # We need to slice raw data to match the CALIBRATED size (wavelengths array)
+            # SAFETY CHECK: Verify spectrum matches calibration wavelengths length
+            # NOTE: When using HAL's read_roi(), raw_intensity is ALREADY sliced to ROI (560-720nm)
+            # This check should never trigger - it's a defensive fallback for legacy code paths
+            # HAL returns spectrum of length (wave_max_index - wave_min_index) = len(wavelengths)
             if hasattr(self.calibration_data, "wavelengths") and len(
                 self.calibration_data.wavelengths
             ) < len(raw_intensity):
-                # Slice from the center or use wave_min_index as starting point
+                # LEGACY FALLBACK: Slice if full spectrum was passed (shouldn't happen with HAL)
                 if hasattr(self.calibration_data, "wave_min_index"):
                     start_idx = self.calibration_data.wave_min_index
                     end_idx = start_idx + len(self.calibration_data.wavelengths)
                     raw_intensity = raw_intensity[start_idx:end_idx]
                 else:
-                    # Fallback: slice to match wavelengths size from start
+                    # Last resort: slice to match wavelengths size from start
                     raw_intensity = raw_intensity[: len(self.calibration_data.wavelengths)]
 
             # CRITICAL QC: Check if LED actually turned on

@@ -1,0 +1,230 @@
+"""Spectrum Processing Helper Utilities.
+
+Provides helper functions for:
+- Spectrum data processing (filtering, monitoring)
+- Transmission spectrum updates and queueing
+- Buffer management
+- Recording integration
+
+These are utility functions extracted from the main Application class.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from main_simplified import Application  # type: ignore[import-not-found]
+
+
+class SpectrumHelpers:
+    """Spectrum processing utility functions.
+
+    Static methods for spectrum data processing and updates.
+    """
+
+    @staticmethod
+    def process_spectrum_data(app: Application, data: dict) -> None:
+        """Process spectrum data in dedicated worker thread (Phase 3 optimization).
+
+        All the actual processing happens here, not in acquisition callback.
+        This includes: intensity monitoring, transmission updates, buffer updates, etc.
+
+        Args:
+            app: Application instance
+            data: Spectrum data dictionary
+
+        """
+        try:
+            channel = data["channel"]  # 'a', 'b', 'c', 'd'
+            intensity = data.get("intensity", 0)  # Raw intensity
+            timestamp = data["timestamp"]
+            elapsed_time = data["elapsed_time"]
+            is_preview = data.get("is_preview", False)  # Interpolated preview vs real data
+
+            # Get pipeline-calculated peak - NO PLACEHOLDER FALLBACK
+            # If this fails, we WANT to see the error
+            wavelength = app._latest_peaks[channel]  # Will KeyError if not set - GOOD
+            raw_peak = wavelength  # Store before filtering
+
+            # Apply EMA display filter (if enabled) before storing
+            if app._display_filter_method in ["ema_light", "ema_smooth"]:
+                if app._ema_state[channel] is None:
+                    app._ema_state[channel] = wavelength
+                else:
+                    alpha = app._display_filter_alpha
+                    wavelength = alpha * wavelength + (1 - alpha) * app._ema_state[channel]
+                    app._ema_state[channel] = wavelength
+
+            # Log what actually goes to sensorgram
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"[BUFFER] Ch {channel}: pipeline={raw_peak:.2f}nm → buffer={wavelength:.2f}nm (EMA={app._display_filter_method})")
+
+            # Append to timeline data buffers (with optional EMA filtering applied)
+            try:
+                app.buffer_mgr.append_timeline_point(
+                    channel, elapsed_time, wavelength, timestamp
+                )
+            except Exception as e:
+                # Silently skip - buffer append is non-critical
+                pass
+
+            # Queue transmission spectrum update for sidebar (QC/diagnostic display)
+            # ALWAYS UPDATE: Sidebar is a QC tool and should show all available data
+            has_raw_data = data.get("raw_spectrum") is not None
+            has_transmission = data.get("transmission_spectrum") is not None
+
+            # QC POLICY: Always update sidebar if we have ANY data (raw or transmission)
+            # Sidebar is a diagnostic tool and must show data regardless of processing issues
+            if has_raw_data or has_transmission:
+                try:
+                    SpectrumHelpers.queue_transmission_update(app, channel, data)
+
+                    # Update Sensor IQ display if available
+                    if "sensor_iq" in data:
+                        app._update_sensor_iq_display(channel, data["sensor_iq"])
+
+                except Exception as e:
+                    # Silently skip - non-critical queue error
+                    pass
+
+            # Cursor auto-follow (thread-safe via signal)
+            # Emit signal to update cursor on main thread
+            try:
+                app.cursor_update_signal.emit(elapsed_time)
+            except Exception as e:
+                pass  # Silently skip cursor update errors
+
+        except Exception as e:
+            # TOP-LEVEL CATCH: Prevent any exception from killing the processing thread
+            # Log critical processing errors only
+            if not hasattr(app, "_processing_error_count"):
+                app._processing_error_count = 0
+            app._processing_error_count += 1
+            if app._processing_error_count <= 3:  # First 3 only
+                import logging
+                logging.error(f"Spectrum processing error: {e}")
+
+        # Queue graph update instead of immediate update (throttled by timer)
+        # DOWNSAMPLED: Only queue every Nth update
+        app._sensorgram_update_counter += 1
+        from affilabs.app_config import SENSORGRAM_DOWNSAMPLE_FACTOR
+        should_update_graph = app._sensorgram_update_counter % SENSORGRAM_DOWNSAMPLE_FACTOR == 0
+
+        if should_update_graph:
+            try:
+                # Queue the update (main thread will check if live data is enabled)
+                app._pending_graph_updates[channel] = {
+                    "elapsed_time": elapsed_time,
+                    "channel": channel,
+                }
+            except Exception as e:
+                pass  # Silently skip graph update errors
+
+        # Record data point if recording is active
+        try:
+            if app.recording_mgr.is_recording:
+                # Build data point with all channels (use latest value for each)
+                data_point = {}
+                for ch in app._idx_to_channel:
+                    latest_value = app.buffer_mgr.get_latest_value(ch)
+                    data_point[f"channel_{ch}"] = latest_value if latest_value is not None else ""
+
+                app.recording_mgr.record_data_point(data_point)
+        except Exception as e:
+            pass  # Silently skip recording errors
+
+        # Update cycle of interest graph (bottom graph) - handled by UI refresh timer
+
+    @staticmethod
+    def queue_transmission_update(app: Application, channel: str, data: dict) -> None:
+        """Queue transmission spectrum update for batch processing (Phase 2 optimization).
+
+        Instead of updating plots immediately in acquisition thread, queue the data
+        for batch processing in the UI timer. This prevents blocking.
+
+        Args:
+            app: Application instance
+            channel: Channel letter ('a', 'b', 'c', 'd')
+            data: Spectrum data dictionary containing transmission_spectrum and raw_spectrum
+
+        """
+        # Skip if updates are disabled (performance optimization) - check coordinator flags
+        if (
+            not app.ui_updates._transmission_updates_enabled
+            and not app.ui_updates._raw_spectrum_updates_enabled
+        ):
+            return
+
+        transmission = data.get("transmission_spectrum")
+        # Get raw spectrum using unified field name
+        raw_spectrum = data.get("raw_spectrum")
+
+        # Fallback: calculate transmission if not provided
+        if transmission is None and raw_spectrum is not None and len(raw_spectrum) > 0:
+            if app.data_mgr.calibration_data and app.data_mgr.calibration_data.s_pol_ref:
+                ref_spectrum = app.data_mgr.calibration_data.s_pol_ref[channel]
+
+                # Get LED intensities for this channel
+                p_led = app.data_mgr.calibration_data.p_mode_intensities.get(channel)
+                s_led = app.data_mgr.calibration_data.s_mode_intensities.get(channel)
+
+                # Use SpectrumViewModel if available (Phase 1.3 integration)
+                if app.spectrum_viewmodels and channel in app.spectrum_viewmodels:
+                    # Get wavelengths
+                    wavelengths = data.get("wavelengths", app.data_mgr.wave_data)
+                    if wavelengths is None and not data.get("simulated", False):
+                        pass  # Skip update if no wavelength data
+                        return
+
+                    # Process through ViewModel (handles services pipeline)
+                    # This will emit spectrum_updated signal which we handle below
+                    app.spectrum_viewmodels[channel].process_raw_spectrum(
+                        channel=channel,
+                        wavelengths=wavelengths,
+                        p_spectrum=raw_spectrum,
+                        s_reference=ref_spectrum,
+                        p_led_intensity=p_led,
+                        s_led_intensity=s_led,
+                    )
+                    return  # ViewModel will handle the update via signals
+                # Fallback: Direct service calls (if ViewModel not available)
+                transmission = app.transmission_calc.calculate(
+                    p_spectrum=raw_spectrum,
+                    s_reference=ref_spectrum,
+                    p_led_intensity=p_led,
+                    s_led_intensity=s_led,
+                )
+
+                # Apply baseline correction
+                if transmission is not None and len(transmission) > 0:
+                    try:
+                        transmission = app.baseline_corrector.correct(transmission)
+                    except Exception as e:
+                        pass  # Skip baseline correction on error
+
+        # Queue for batch update if we have valid data
+        if transmission is not None and len(transmission) > 0:
+            # Unified wavelength source-of-truth: data_mgr.wave_data (set after calibration)
+            wavelengths = app.data_mgr.wave_data
+            if wavelengths is None:
+                cd = getattr(app.data_mgr, "calibration_data", None)
+                wavelengths = getattr(cd, "wavelengths", None) if cd is not None else None
+
+            if wavelengths is None:
+                # Silently skip - calibration not loaded yet
+                pass
+                return
+
+            # Queue for batch processing via AL_UIUpdateCoordinator
+            app.ui_updates.queue_transmission_update(
+                channel, wavelengths, transmission, raw_spectrum
+            )
+
+            # === PHASE 1.1 INTEGRATION: Create domain models for type safety ===
+            # Create domain models (for future use)
+            raw_spectrum_model = app._dict_to_raw_spectrum(channel, data)
+            processed_spectrum_model = app._dict_to_processed_spectrum(
+                channel, data, transmission
+            )

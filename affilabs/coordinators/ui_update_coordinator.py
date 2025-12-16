@@ -21,8 +21,8 @@ from PySide6.QtCore import QObject, QTimer
 logger = logging.getLogger(__name__)
 
 # Update rate constants (milliseconds)
-SETTINGS_SIDEBAR_UPDATE_RATE = 100  # 10 Hz for Settings tab (was 1000ms - too slow)
-LIVE_DATA_UPDATE_RATE = 100  # 10 Hz for live sensorgram (handled by main_simplified)
+SETTINGS_SIDEBAR_UPDATE_RATE = 500  # 2 Hz for Settings tab (balance between smoothness and performance)
+LIVE_DATA_UPDATE_RATE = 500  # 2 Hz for live sensorgram (handled by main_simplified)
 
 
 class AL_UIUpdateCoordinator(QObject):
@@ -70,6 +70,7 @@ class AL_UIUpdateCoordinator(QObject):
         logger.info(
             f"[OK] AL_UIUpdateCoordinator initialized (Settings sidebar: {1000//SETTINGS_SIDEBAR_UPDATE_RATE} Hz, Live data: {1000//LIVE_DATA_UPDATE_RATE} Hz handled by main_simplified)",
         )
+        logger.info(f"[TIMER-INIT] Update timer started: active={self._update_timer.isActive()}, interval={self._update_timer.interval()}ms")
 
     def queue_transmission_update(
         self,
@@ -106,6 +107,10 @@ class AL_UIUpdateCoordinator(QObject):
     def process_pending_updates(self):
         """Process all queued UI updates in batch (called by timer)."""
         try:
+            # Log EVERY timer tick to verify timer is running
+            pending_count = sum(1 for v in self._pending_transmission_updates.values() if v is not None)
+            logger.debug(f"[COORDINATOR-TIMER] TICK - {pending_count} pending updates (transmission_enabled={self._transmission_updates_enabled}, raw_enabled={self._raw_spectrum_updates_enabled})")
+
             # Process transmission curve updates
             if self._transmission_updates_enabled:
                 self._update_transmission_curves()
@@ -122,37 +127,56 @@ class AL_UIUpdateCoordinator(QObject):
         if not self.spectroscopy_presenter._plots_check_logged:
             self.spectroscopy_presenter.check_plots_available()
 
-        # DEBUG: Log pending updates
-        pending_count = sum(
-            1 for v in self._pending_transmission_updates.values() if v is not None
-        )
-        if pending_count > 0:
-            pass  # Processing pending updates
-
+        # Process pending updates (no logging needed - happens every 100ms)
         for channel, update_data in self._pending_transmission_updates.items():
             if update_data is None:
                 continue
 
             try:
                 wavelengths = update_data["wavelengths"]
-                transmission = update_data["transmission"]
+                transmission = update_data.get("transmission")
                 raw_spectrum = update_data.get("raw_spectrum")
 
-                # Update transmission curve via presenter
-                if self._transmission_updates_enabled:
+                # Update transmission curve via presenter (only if available)
+                if self._transmission_updates_enabled and transmission is not None:
                     self.spectroscopy_presenter.update_transmission(
                         channel,
                         wavelengths,
                         transmission,
                     )
 
-                # Update raw spectrum curve via presenter
+                # Update raw spectrum curve via presenter (independent of transmission)
                 if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
+                    logger.debug(f"[RAW-UPDATE] Calling presenter.update_raw_spectrum for {channel}: {len(raw_spectrum)} points, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm")
                     self.spectroscopy_presenter.update_raw_spectrum(
                         channel,
                         wavelengths,
                         raw_spectrum,
                     )
+                else:
+                    if raw_spectrum is None:
+                        logger.debug(f"[RAW-UPDATE] Skipping {channel}: raw_spectrum is None")
+                    if not self._raw_spectrum_updates_enabled:
+                        logger.debug(f"[RAW-UPDATE] Skipping {channel}: updates disabled")
+
+                # *** LIVE DATA DIALOG UPDATE ***
+                # Update live data dialog if it exists and is visible
+                live_dialog = None
+                if hasattr(self.app, 'acquisition_events') and hasattr(self.app.acquisition_events, '_live_data_dialog'):
+                    live_dialog = self.app.acquisition_events._live_data_dialog
+
+                if live_dialog is not None and live_dialog.isVisible():
+                    try:
+                        # Update transmission plot
+                        if self._transmission_updates_enabled:
+                            live_dialog.update_transmission_plot(channel, wavelengths, transmission)
+
+                        # Update raw data plot
+                        if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
+                            live_dialog.update_raw_data_plot(channel, wavelengths, raw_spectrum)
+                    except Exception as dialog_e:
+                        # Silently ignore dialog update errors (dialog may be closing)
+                        pass
 
             except Exception as e:
                 logger.warning(f"Failed to update curves for channel {channel}: {e}")

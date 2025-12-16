@@ -35,6 +35,7 @@ class SpectrumViewModel(QObject):
         object,
         object,
     )  # channel, wavelengths, intensities
+    peak_updated = Signal(str, float, dict)  # channel, peak_wavelength, metadata
     processing_error = Signal(str)  # error_message
     statistics_updated = Signal(str, dict)  # channel, stats
 
@@ -48,6 +49,9 @@ class SpectrumViewModel(QObject):
         self._baseline_correction_enabled = True
         self._baseline_method = "polynomial"
         self._baseline_order = 1
+
+        # Peak finding pipeline (initialized on first use)
+        self._peak_processor = None
 
         # Latest data cache
         self._latest_spectra = {}  # channel -> (wavelengths, transmission)
@@ -192,6 +196,28 @@ class SpectrumViewModel(QObject):
 
             # Emit update signal
             self.spectrum_updated.emit(channel, wavelengths, transmission)
+
+            # Find resonance peak using active pipeline - NO FALLBACKS
+            # Lazy-initialize peak processor
+            if self._peak_processor is None:
+                from affilabs.utils.spectrum_processor import SpectrumProcessor
+                self._peak_processor = SpectrumProcessor()
+
+            # Run pipeline to find resonance wavelength - MUST SUCCEED
+            result = self._peak_processor.process_transmission(
+                transmission=transmission,
+                wavelengths=wavelengths,
+                channel=channel,
+                s_reference=s_reference,
+            )
+
+            # Emit peak result for sensorgram update - NO VALIDATION
+            # If pipeline returns garbage, we WANT to see the crash
+            self.peak_updated.emit(channel, result.resonance_wavelength, result.metadata)
+            logger.info(
+                f"Peak found for {channel}: {result.resonance_wavelength:.2f} nm "
+                f"using {result.pipeline_used} ({result.processing_time_ms:.1f}ms)"
+            )
 
             # Calculate and emit statistics
             stats = self._transmission_calculator.get_statistics(transmission)

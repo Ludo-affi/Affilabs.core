@@ -144,9 +144,7 @@ class LEDCalibrationModelLoader:
                         actual_20ms = stages[1].get("slope", 0)
                     else:
                         actual_20ms = stages[1][1]
-                    linearity_20 = (
-                        actual_20ms / expected_20ms if expected_20ms > 0 else 0
-                    )
+                    linearity_20 = actual_20ms / expected_20ms if expected_20ms > 0 else 0
                 else:
                     linearity_20 = 1.0
 
@@ -156,9 +154,7 @@ class LEDCalibrationModelLoader:
                         actual_30ms = stages[2].get("slope", 0)
                     else:
                         actual_30ms = stages[2][1]
-                    linearity_30 = (
-                        actual_30ms / expected_30ms if expected_30ms > 0 else 0
-                    )
+                    linearity_30 = actual_30ms / expected_30ms if expected_30ms > 0 else 0
                 else:
                     linearity_30 = 1.0
 
@@ -523,9 +519,9 @@ class LEDCalibrationModelLoader:
         slopes = {}
         for channel in channels:
             try:
-                slopes[channel] = self.model_data["bilinear_models"][channel][
-                    polarization
-                ]["slope_10ms"]
+                slopes[channel] = self.model_data["bilinear_models"][channel][polarization][
+                    "slope_10ms"
+                ]
             except (KeyError, TypeError):
                 slopes[channel] = 0.0  # Fallback if channel/pol missing
 
@@ -1051,9 +1047,7 @@ class LEDCalibrationModelLoader:
             msg = "No model loaded"
             raise ModelValidationError(msg)
 
-        params = self.model_data["bilinear_models"][led][
-            "S"
-        ]  # S and P are same in 3-stage
+        params = self.model_data["bilinear_models"][led]["S"]  # S and P are same in 3-stage
         slope_10ms = params["slope_10ms"]
 
         # 3-stage linear formula

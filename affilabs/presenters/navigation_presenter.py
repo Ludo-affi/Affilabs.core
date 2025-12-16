@@ -56,6 +56,10 @@ class NavigationPresenter:
             btn.setChecked(i == 0)  # First button selected by default
             btn.setToolTip(tooltip)
 
+            # TEMPORARY: Hide Analyze and Report tabs (v1.0 focus on Sensorgram/Edits)
+            if label in ["Analyze", "Report"]:
+                btn.setVisible(False)
+
             # Store button reference
             self.nav_buttons.append(btn)
 

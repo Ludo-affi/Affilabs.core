@@ -302,7 +302,18 @@ def LEDconverge(
                 factor = max(0.95, min(1.05, factor))
                 current_integration *= factor
 
-            # Clamp to detector limits
+            # CRITICAL: Cap to timing budget FIRST (DETECTOR_WAIT_MS = 60ms max per-scan)
+            # This ensures calibration respects live acquisition timing constraints
+            import settings as root_settings
+            DETECTOR_WAIT_MS = root_settings.DETECTOR_WAIT_MS
+            if current_integration > DETECTOR_WAIT_MS:
+                if logger:
+                    logger.warning(
+                        f"   ⚠️ Integration time ({current_integration:.1f}ms) exceeds timing budget ({DETECTOR_WAIT_MS:.1f}ms) - capping"
+                    )
+                current_integration = DETECTOR_WAIT_MS
+
+            # Then clamp to detector hardware limits
             current_integration = max(
                 detector_params.min_integration_time,
                 min(detector_params.max_integration_time, current_integration),

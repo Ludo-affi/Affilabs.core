@@ -68,8 +68,13 @@ def _build_final_results(
     """Legacy Step 3A: Rank channels by measuring at fixed LED/time.
 
     Returns normalized LED intensities (weakest=255) or None on failure.
+    WARNING: This function is OBSOLETE - should never be called.
+    Model predictions are the ONLY valid source for LED intensities.
     """
-    test_led = 51  # 20% LED for ranking measurement
+    if logger:
+        logger.error("❌ CRITICAL: _rank_channels_by_signal() is OBSOLETE and should not be called!")
+        logger.error("   Model predictions MUST be used instead of hard-coded fallbacks.")
+    return None  # Force failure to prevent use of obsolete code
 
     try:
         usb.set_integration(initial_integration_ms)
@@ -83,6 +88,8 @@ def _build_final_results(
     weakest_mean = None
 
     for ch in ch_list:
+        # OLD: pre_led_delay_ms=45.0, post_led_delay_ms=5.0 - DELETED
+        # Timing now controlled by settings: LED_ON_TIME_MS, DETECTOR_WAIT_MS
         spec = acquire_raw_spectrum_fn(
             usb=usb,
             ctrl=ctrl,
@@ -90,8 +97,6 @@ def _build_final_results(
             led_intensity=test_led,
             integration_time_ms=initial_integration_ms,
             num_scans=1,
-            pre_led_delay_ms=45.0,
-            post_led_delay_ms=5.0,
             use_batch_command=use_batch_command,
         )
         if spec is None:
@@ -123,7 +128,7 @@ def _build_final_results(
     normalized = LEDnormalizationintensity(
         channel_measurements,
         weakest_mean,
-        min_led=10,
+        min_led=1,  # Allow full LED range - model determines optimal values
         max_led=255,
     )
 
@@ -165,9 +170,7 @@ def _run_preflight_verification(
                     led_intensity=normalized_leds.get(ch, 255),
                     integration_time_ms=initial_integration_ms,
                     num_scans=1,
-                    pre_led_delay_ms=45.0,
-                    post_led_delay_ms=5.0,
-                    use_batch_command=use_batch_command,
+                    use_batch_command=use_batch_command,  # OLD timing params deleted
                 )
                 if spec is None:
                     if logger:
@@ -250,15 +253,14 @@ def _check_final_saturation(
     sat_summary = {}
     try:
         for ch in ch_list:
+            # OLD timing params deleted - use settings timing
             spec = acquire_raw_spectrum_fn(
                 usb=usb,
                 ctrl=ctrl,
                 channel=ch,
                 led_intensity=int(normalized_leds.get(ch, 255)),
-                integration_time_ms=float(shared_int),
+                integration_time_ms=shared_int,
                 num_scans=1,
-                pre_led_delay_ms=45.0,
-                post_led_delay_ms=5.0,
                 use_batch_command=use_batch_command,
             )
             if spec is None:
@@ -274,7 +276,7 @@ def _check_final_saturation(
 
         sat_total = sum(sat_summary.values())
         if logger:
-            logger.info(
+            logger.debug(
                 f"[CONV] final_saturation total={sat_total} per_channel={sat_summary}",
             )
         return sat_summary, sat_total
@@ -398,15 +400,14 @@ def run_convergence(
         results: dict[str, dict[str, float]] = {}
         for ch in ch_list:
             Tch = float(per_times.get(ch, initial_integration_ms))
+            # OLD timing deleted
             spec = acquire_raw_spectrum_fn(
                 usb=usb,
                 ctrl=ctrl,
                 channel=ch,
                 led_intensity=255,
-                integration_time_ms=Tch,
+                integration_time_ms=int_time_candidate,
                 num_scans=1,
-                pre_led_delay_ms=45.0,
-                post_led_delay_ms=5.0,
                 use_batch_command=use_batch_command,
             )
             if spec is None:
@@ -444,8 +445,7 @@ def run_convergence(
                     led_intensity=255,
                     integration_time_ms=Tch,
                     num_scans=1,
-                    pre_led_delay_ms=45.0,
-                    post_led_delay_ms=5.0,
+                    # OLD timing deleted - HAL uses settings timing
                     use_batch_command=use_batch_command,
                 )
                 if spec_final is None:
@@ -560,13 +560,13 @@ def run_convergence(
     ok_final = (sat_total == 0) and ok
 
     if logger:
-        logger.info(
+        logger.debug(
             f"[CONV] SUCCESS: convergence={'OK' if ok else 'FAIL'}, saturation={sat_total} pixels",
         )
-        logger.info(
+        logger.debug(
             f"[CONV] FINAL RESULT: {'PASS' if ok_final else 'FAIL'} (0 saturated pixels required, {sat_total} detected)",
         )
-        logger.info(f"[CONV] shared_int={shared_int:.2f}ms results={results}")
+        logger.debug(f"[CONV] shared_int={shared_int:.2f}ms results={results}")
 
         # Structured summary for parsing
         try:
@@ -577,7 +577,7 @@ def run_convergence(
                 }
                 for ch in results
             }
-            logger.info(
+            logger.debug(
                 f"[CONV] SUMMARY {{'strategy':'intensity','shared_int_ms':{shared_int:.2f},'ok':{ok_final},"
                 f"'sat_total':{sat_total},'sat_summary':{sat_summary},'channels':{flat}}}",
             )

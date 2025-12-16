@@ -463,15 +463,12 @@ class CalibrationService(QObject):
             # Get LED timing from device config
             pre_led_delay_ms = device_config.get_pre_led_delay_ms()
             post_led_delay_ms = device_config.get_post_led_delay_ms()
-            logger.info(
-                f"📊 LED timing: PRE={pre_led_delay_ms}ms, POST={post_led_delay_ms}ms",
-            )
 
             # Run calibration
-            from affilabs.utils.startup_calibration import run_full_7step_calibration
+            from affilabs.core.calibration_workflow import run_full_7step_calibration
 
             logger.info(
-                "🚀 Starting 7-step calibration (includes timing synchronization)...",
+                "🚀 Starting 6-step calibration...",
             )
 
             # Get device type from controller
@@ -686,7 +683,7 @@ class CalibrationService(QObject):
 
             # Get device configuration
             from affilabs.utils.device_configuration import DeviceConfiguration
-            from affilabs.utils.startup_calibration import (
+            from affilabs.core.calibration_workflow import (
                 get_detector_params,
                 preflight_light_and_polarizer,
             )
@@ -704,7 +701,7 @@ class CalibrationService(QObject):
             # Calculate wavelength ROI
             import numpy as np
 
-            from affilabs.utils.startup_calibration import (
+            from affilabs.core.calibration_workflow import (
                 MAX_WAVELENGTH,
                 MIN_WAVELENGTH,
             )
@@ -716,7 +713,7 @@ class CalibrationService(QObject):
             detector_params = get_detector_params(usb)
 
             # Determine channel list
-            from affilabs.utils.startup_calibration import determine_channel_list
+            from affilabs.core.calibration_workflow import determine_channel_list
 
             device_type = type(ctrl).__name__
             ch_list = determine_channel_list(

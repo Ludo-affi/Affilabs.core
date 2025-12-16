@@ -306,9 +306,9 @@ def main():
         logger.info("Cleaning up hardware...")
         try:
             if hardware_mgr and hardware_mgr.ctrl:
-                hardware_mgr.ctrl.all_off()
+                hardware_mgr.ctrl.turn_off_channels()
                 try:
-                    hardware_mgr.ctrl.disconnect()
+                    hardware_mgr.ctrl.close()
                 except:
                     pass
             if hardware_mgr and hardware_mgr.usb:

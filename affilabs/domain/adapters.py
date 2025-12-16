@@ -200,10 +200,13 @@ def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
         roi_end=float(wavelengths[-1]),
     )
 
-    # Propagate timing synchronization metrics if available (Step 6 results)
+    # timing_sync removed - old calibration code
+
+    # Propagate convergence summary if available (Steps 3-5 results)
     try:
-        if hasattr(legacy_result, "timing_sync") and legacy_result.timing_sync:
-            cal_data.timing_sync = dict(legacy_result.timing_sync)
+        convergence_summary = safe_get("convergence_summary")
+        if convergence_summary:
+            cal_data.convergence_summary = dict(convergence_summary)
     except Exception:
         pass
 

@@ -33,7 +33,7 @@
   },
   "spr_settings": {
     "wavelength_range_nm": {
-      "min": 580,
+      "min": 560,
       "max": 720
     },
     "expected_filtered_pixels": 1591,

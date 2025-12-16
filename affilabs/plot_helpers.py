@@ -26,6 +26,10 @@ def create_time_plot(
     w.getPlotItem().getAxis("bottom").setPen(color=AXIS_PEN_COLOR, width=1)
     w.getPlotItem().getAxis("left").setTextPen(AXIS_COLOR)
     w.getPlotItem().getAxis("bottom").setTextPen(AXIS_COLOR)
+
+    # Don't enable Y-axis autorange initially to prevent slope from 0
+    # Will be enabled dynamically when first data arrives
+
     return w
 
 

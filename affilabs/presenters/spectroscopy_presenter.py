@@ -49,17 +49,12 @@ class SpectroscopyPresenter:
         has_raw = hasattr(self.main_window, "raw_data_curves")
 
         if not self._plots_check_logged:
-            print("\n[SPECTRO-DEBUG] Checking for plots in main_window:")
-            print(f"  - transmission_curves exists: {has_trans}")
-            print(f"  - raw_data_curves exists: {has_raw}")
-
-            if has_trans:
-                print(
-                    f"  - transmission_curves count: {len(self.main_window.transmission_curves)}",
-                )
-            if has_raw:
-                print(
-                    f"  - raw_data_curves count: {len(self.main_window.raw_data_curves)}",
+            # Log plot availability once only
+            if has_trans and has_raw:
+                logger.info(
+                    f"Spectroscopy plots available: "
+                    f"transmission={len(self.main_window.transmission_curves)}, "
+                    f"raw={len(self.main_window.raw_data_curves)}"
                 )
 
         if has_trans and has_raw:
@@ -97,16 +92,12 @@ class SpectroscopyPresenter:
         try:
             channel_idx = self._channel_to_idx[channel]
 
-            # Log first update per channel for diagnostics
+            # Log first update per channel for diagnostics (INFO level only)
             if channel not in self._first_update_logged:
-                print(
-                    f"\n[GRAPH-UPDATE] First transmission data for channel {channel.upper()}:",
-                )
-                print(
-                    f"  Wavelengths: {len(wavelengths)} points, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm",
-                )
-                print(
-                    f"  Transmission: min={np.min(transmission):.1f}%, max={np.max(transmission):.1f}%",
+                logger.info(
+                    f"First transmission update: Ch {channel.upper()} - "
+                    f"{len(wavelengths)} pts, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm, "
+                    f"range {np.min(transmission):.1f}-{np.max(transmission):.1f}%"
                 )
                 self._first_update_logged.add(channel)
 
@@ -159,43 +150,36 @@ class SpectroscopyPresenter:
             # Log first update for debugging
             if channel not in self._first_update_logged:
                 logger.info(
-                    f"[RAW-SPECTRUM] First update for channel {channel}: {len(raw_spectrum)} points",
+                    f"First raw spectrum update for channel {channel}: {len(raw_spectrum)} points",
                 )
                 self._first_update_logged.add(channel)
 
             # Update curve (try direct access first, fallback to sidebar method)
             if hasattr(self.main_window, "raw_data_curves"):
-                logger.debug(
-                    f"[RAW-SPECTRUM] Updating via main_window.raw_data_curves[{channel_idx}]",
-                )
-                self.main_window.raw_data_curves[channel_idx].setData(
-                    wavelengths,
-                    raw_spectrum,
-                )
-                logger.debug(
-                    f"[RAW-SPECTRUM] Successfully updated {channel} via main_window.raw_data_curves",
-                )
+                # CRITICAL: raw_data_curves is a list indexed 0-3, so channel_idx must match
+                if channel_idx < len(self.main_window.raw_data_curves):
+                    self.main_window.raw_data_curves[channel_idx].setData(
+                        wavelengths,
+                        raw_spectrum,
+                    )
+                else:
+                    logger.error(
+                        f"Channel index {channel_idx} out of range for raw_data_curves (len={len(self.main_window.raw_data_curves)})",
+                    )
             elif hasattr(self.main_window, "sidebar") and hasattr(
                 self.main_window.sidebar,
                 "update_raw_data_plot",
             ):
                 # Fallback: use sidebar API
-                logger.debug(
-                    "[RAW-SPECTRUM] Updating via sidebar.update_raw_data_plot()",
-                )
                 self.main_window.sidebar.update_raw_data_plot(
                     channel,
                     wavelengths,
                     raw_spectrum,
                 )
-            elif channel not in self._first_update_logged:
-                logger.warning(
-                    f"[RAW-SPECTRUM] No raw_data_curves found in main_window for channel {channel}",
-                )
 
         except Exception as e:
             logger.exception(
-                f"[RAW-SPECTRUM] EXCEPTION updating raw spectrum for {channel}: {e}",
+                f"Error updating raw spectrum for {channel}: {e}",
             )
 
     def clear_transmission(self, channel: str = None):

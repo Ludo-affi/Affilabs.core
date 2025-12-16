@@ -1187,7 +1187,14 @@ class AffilabsMainWindow(QMainWindow):
 
         icon_path = Path(__file__).parent / "ui" / "img" / "affinite2.ico"
         if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
+            icon = QIcon(str(icon_path))
+            if not icon.isNull():
+                self.setWindowIcon(icon)
+                logger.debug(f"Window icon loaded successfully: {icon_path}")
+            else:
+                logger.warning(f"Failed to create icon from file: {icon_path}")
+        else:
+            logger.warning(f"Icon file not found: {icon_path}")
         self.setGeometry(100, 100, 1400, 900)
         self.is_recording = False
         self.recording_indicator = None
@@ -5611,23 +5618,8 @@ End of Debug Log
                 self.nm_btn.isChecked() if hasattr(self, "nm_btn") else False,
             )
 
-        # Load LED delays from settings
-        try:
-            sys.path.insert(0, str(Path(__file__).parent.parent))
-            from settings import settings
-
-            pre_led_delay = settings.PRE_LED_DELAY_MS
-            post_led_delay = settings.POST_LED_DELAY_MS
-            if hasattr(dialog, "led_delay_input"):
-                dialog.led_delay_input.setValue(int(pre_led_delay))
-            if hasattr(dialog, "post_led_delay_input"):
-                dialog.post_led_delay_input.setValue(int(post_led_delay))
-        except Exception as e:
-            logger.warning(f"Could not load LED delays, using defaults: {e}")
-            if hasattr(dialog, "led_delay_input"):
-                dialog.led_delay_input.setValue(45)  # Default PRE LED
-            if hasattr(dialog, "post_led_delay_input"):
-                dialog.post_led_delay_input.setValue(5)  # Default POST LED
+        # OLD LED delay loading removed - replaced by new timing architecture
+        # All timing now controlled by: LED_ON_TIME_MS, DETECTOR_WAIT_MS, NUM_SCANS, SAFETY_BUFFER_MS
 
         # Load current pipeline selection
         try:
