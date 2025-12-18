@@ -1,29 +1,31 @@
-# Affilabs SPR Control System (ezControl-AI)
+# Affilabs-Core SPR Control System
 
-**Version 3.2.9** - Production Ready (October 2025)
+**Version 1.0.1** - Stable Release (December 2025)
 
 ## ⚡ Quick Start
 
 ### Prerequisites
 - Windows 10/11
-- Python 3.12+ (**REQUIRED** - enforced by launcher)
+- Python 3.11+ (recommended: 3.12)
 - USB4000 spectrometer with WinUSB drivers
-- PicoP4SPR 4-channel controller
+- PicoP4SPR V2.4 firmware controller
 
 ### Running the Application
 ```powershell
-# PRIMARY METHOD (Recommended)
-.\run_app_312.ps1
+# Development mode
+python run_app.py
 
-# Alternative
-.\run_app_312.bat
+# Or simplified
+python main-simplified.py
 ```
 
-The launcher will:
-- ✅ Verify Python 3.12 is being used
-- ✅ Activate the correct virtual environment (`.venv312`)
-- ✅ Display Python version confirmation
-- ✅ Start the application
+### Building Executable
+```powershell
+# Build with PyInstaller
+pyinstaller Affilabs-Core.spec
+```
+
+The compiled executable will be in `dist/Affilabs-Core.exe`
 
 ---
 

@@ -91,6 +91,25 @@ htmlcov/
 # Calibration data (runtime generated)
 generated-files/calibration_history/*.json
 generated-files/calibration_profiles/*.json
+calibration_data/*.json
+calibration_results/*.json
+calibration_checkpoints/*.json
+
+# Data output files
+data_results/
+*.csv
+!**/templates/**/*.csv
+!**/reference_data/**/*.csv
+
+# QC reports (runtime generated)
+OpticalSystem_QC/**/validation_reports/*.html
+OpticalSystem_QC/**/validation_reports/*.json
+!OpticalSystem_QC/**/validation_reports/qc_report_latest.json
+
+# Build artifacts
+dist/
+build/
+*.spec.bak
 
 # Public/generated content
 public/
