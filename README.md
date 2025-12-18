@@ -12,11 +12,11 @@
 
 ### Running the Application
 ```powershell
-# Development mode
+# Development mode (recommended)
 python run_app.py
 
-# Or simplified
-python main-simplified.py
+# Direct execution
+python main.py
 ```
 
 ### Building Executable

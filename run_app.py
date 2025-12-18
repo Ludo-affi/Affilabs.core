@@ -98,27 +98,13 @@ def main():
     """Run the Affinite application with Python 3.12."""
     project_root = Path(__file__).parent
 
-    # CLI args: allow running simplified main
-    parser = argparse.ArgumentParser(description="Affinite App Launcher")
-    parser.add_argument(
-        "--simplified",
-        action="store_true",
-        help="Run main-simplified.py instead of full UI",
-    )
-    args = parser.parse_args()
-
     # Try Python 3.12 venv first, then fall back to .venv
     venv_python = project_root / ".venv312" / "Scripts" / "python.exe"
     if not venv_python.exists():
         venv_python = project_root / ".venv" / "Scripts" / "python.exe"
 
-    # Choose script: simplified if requested or when full main missing
-    simplified_script = project_root / "main-simplified.py"
-    full_script = project_root / "main" / "main.py"
-    if args.simplified:
-        main_script = simplified_script
-    else:
-        main_script = full_script if full_script.exists() else simplified_script
+    # Main application entry point
+    main_script = project_root / "main.py"
 
     if not venv_python.exists():
         print("ERROR: Virtual environment Python not found!")

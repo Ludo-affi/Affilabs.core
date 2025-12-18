@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['main-simplified.py'],
+    ['main.py'],
     pathex=[],
     binaries=[('.venv312/Lib/site-packages/libusb_package/libusb-1.0.dll', '.')],
     datas=[
