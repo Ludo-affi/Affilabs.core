@@ -4,6 +4,8 @@ Pure Python data structures for hardware status.
 NO Qt dependencies - fully testable.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

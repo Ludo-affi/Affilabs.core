@@ -89,8 +89,8 @@ class HardwareEventCoordinator:
             return
         self._last_hw_callback_time = current_time
 
-        logger.info("Hardware connection callback received")
-        logger.info(f"   Status: {status}")
+        logger.debug("Hardware connection callback received")
+        logger.debug(f"   Status: {status}")
 
         # Reset scan button state in UI
         self._main_window._on_hardware_scan_complete()
@@ -439,7 +439,7 @@ class HardwareEventCoordinator:
 
         if not model_exists:
             logger.warning("=" * 80)
-            logger.warning("NO VALID MODEL → REDIRECTING TO OEM CALIBRATION")
+            logger.warning("NO VALID MODEL → STARTING OEM MODEL TRAINING")
             logger.warning("=" * 80)
 
             from affilabs.widgets.message import show_message
@@ -447,23 +447,111 @@ class HardwareEventCoordinator:
             show_message(
                 "No Calibration Model Found!\n\n"
                 f"Detector: {device_serial}\n\n"
-                "This device requires OEM calibration before use.\n"
-                "The OEM Calibration workflow will now start.\n\n"
+                "This device requires OEM model training before use.\n"
+                "The automatic model training workflow will now start.\n\n"
                 "This process will:\n"
-                "  1. Calibrate servo positions (S/P polarization)\n"
-                "  2. Measure LED characteristics\n"
-                "  3. Generate bilinear model\n"
-                "  4. Enable live view functionality",
-                title="Calibration Required",
+                "  1. Measure LED response at multiple integration times\n"
+                "  2. Generate 3-stage linear calibration model\n"
+                "  3. Save model for future calibrations\n"
+                "  4. Automatically start regular calibration\n\n"
+                "This takes approximately 2-3 minutes.",
+                title="Model Training Required",
                 msg_type="Warning",
             )
 
-            # Trigger OEM Calibration workflow
-            QTimer.singleShot(500, self._app._on_oem_led_calibration)
+            # Start OEM model training workflow (automatically proceeds to calibration)
+            QTimer.singleShot(500, self._start_oem_model_training)
             return False
 
         logger.info("=" * 80)
         return True
+
+    def _start_oem_model_training(self):
+        """Start OEM model training workflow for new device without calibration model.
+
+        This workflow:
+        1. Shows progress dialog
+        2. Runs LED model training (3-stage linear calibration)
+        3. Saves model to led_calibration_official/spr_calibration/data/
+        4. Automatically starts regular 6-step calibration after model is created
+        """
+        logger.info("=" * 80)
+        logger.info("STARTING OEM MODEL TRAINING WORKFLOW")
+        logger.info("=" * 80)
+
+        from affilabs_core_ui import StartupCalibProgressDialog
+
+        # Show progress dialog
+        training_dialog = StartupCalibProgressDialog(
+            parent=self._app.main_window,
+            title="OEM Model Training",
+            message=(
+                "Training LED calibration model for new device...\n\n"
+                "This process will:\n"
+                "  1. Measure LED response at 10ms, 20ms, 30ms\n"
+                "  2. Fit 3-stage linear models\n"
+                "  3. Save model for future use\n"
+                "  4. Automatically start system calibration\n\n"
+                "Please wait 2-3 minutes..."
+            ),
+            show_start_button=False,
+        )
+        training_dialog.show()
+        training_dialog.show_progress_bar()
+
+        # Run training in background thread
+        import threading
+
+        def training_workflow():
+            try:
+                from affilabs.core.oem_model_training import (
+                    run_oem_model_training_workflow,
+                )
+
+                # Progress callback to update dialog
+                def update_progress(message: str, percent: int):
+                    training_dialog.update_status(message)
+                    training_dialog.set_progress(percent, 100)
+
+                # Run training
+                success = run_oem_model_training_workflow(
+                    hardware_mgr=self._hardware_mgr,
+                    progress_callback=update_progress,
+                )
+
+                if success:
+                    logger.info("=" * 80)
+                    logger.info("✅ OEM MODEL TRAINING COMPLETE")
+                    logger.info("=" * 80)
+                    logger.info("Starting regular calibration workflow...")
+
+                    # Close training dialog
+                    training_dialog.close()
+
+                    # Start regular calibration (now model exists)
+                    QTimer.singleShot(500, self._app._on_oem_led_calibration)
+                else:
+                    logger.error("❌ Model training failed")
+                    training_dialog.update_status(
+                        "Model training failed!\n\nPlease check logs and try again."
+                    )
+                    QTimer.singleShot(3000, training_dialog.close)
+
+            except Exception as e:
+                logger.error(f"❌ Model training workflow failed: {e}")
+                logger.exception("Full traceback:")
+                training_dialog.update_status(
+                    f"Model training error:\n{e}\n\nPlease check logs."
+                )
+                QTimer.singleShot(3000, training_dialog.close)
+
+        # Start training thread
+        training_thread = threading.Thread(
+            target=training_workflow,
+            daemon=True,
+            name="OEMModelTraining",
+        )
+        training_thread.start()
 
     def _handle_oem_config_complete(self):
         """Handle OEM config completion + spectrometer connection."""
@@ -544,20 +632,8 @@ class HardwareEventCoordinator:
         )
 
         # Check for optical calibration file
-        from affilabs.utils.device_integration import (
-            get_device_optical_calibration_path,
-        )
-
-        optical_cal_path = get_device_optical_calibration_path()
-
-        if not optical_cal_path or not optical_cal_path.exists():
-            logger.info(
-                "Optical calibration file not found - starting LED calibration"
-            )
-            self._app.calibration.start_calibration()
-            return
-
-        logger.info("Optical calibration exists - running LED calibration only")
+        # Start LED calibration directly
+        logger.info("Starting LED calibration")
         self._app.calibration.start_calibration()
 
     def _update_led_status_display(self):

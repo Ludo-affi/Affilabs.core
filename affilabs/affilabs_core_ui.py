@@ -108,6 +108,8 @@ This UI is integrated with main_simplified.py via:
 Last Updated: November 22, 2025
 """
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -1333,30 +1335,13 @@ class AffilabsMainWindow(QMainWindow):
         self.apply_settings_btn = self.sidebar.apply_settings_btn
 
         # Forward spectroscopy plots (if they exist)
-        print("\n[FORWARDING-DEBUG] Checking for transmission_plot in sidebar...")
-        print(
-            f"  hasattr(self.sidebar, 'transmission_plot') = {hasattr(self.sidebar, 'transmission_plot')}",
-        )
-        if hasattr(self.sidebar, "transmission_plot"):
-            print(
-                f"  self.sidebar.transmission_plot = {self.sidebar.transmission_plot}",
-            )
-            print(
-                f"  hasattr(self.sidebar, 'transmission_curves') = {hasattr(self.sidebar, 'transmission_curves')}",
-            )
-            if hasattr(self.sidebar, "transmission_curves"):
-                print(
-                    f"  self.sidebar.transmission_curves = {self.sidebar.transmission_curves}",
-                )
-                print(
-                    f"  len(self.sidebar.transmission_curves) = {len(self.sidebar.transmission_curves)}",
-                )
+        logger.debug("Checking for transmission_plot in sidebar...")
 
         if hasattr(self.sidebar, "transmission_plot"):
             self.transmission_plot = self.sidebar.transmission_plot
             self.transmission_curves = self.sidebar.transmission_curves
-            logger.info(
-                f"✅ Forwarded transmission plot with {len(self.transmission_curves)} curves from sidebar",
+            logger.debug(
+                f"✓ Forwarded transmission plot ({len(self.transmission_curves)} curves)",
             )
         else:
             logger.warning(
@@ -1366,8 +1351,8 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self.sidebar, "raw_data_plot"):
             self.raw_data_plot = self.sidebar.raw_data_plot
             self.raw_data_curves = self.sidebar.raw_data_curves
-            logger.info(
-                f"✅ Forwarded raw data plot with {len(self.raw_data_curves)} curves from sidebar",
+            logger.debug(
+                f"✓ Forwarded raw plot ({len(self.raw_data_curves)} curves)",
             )
         else:
             logger.warning("⚠️ raw_data_plot NOT found in sidebar - plots will not work")
@@ -1381,7 +1366,7 @@ class AffilabsMainWindow(QMainWindow):
         # Forward baseline capture button (REBUILT)
         if hasattr(self.sidebar, "baseline_capture_btn"):
             self.baseline_capture_btn = self.sidebar.baseline_capture_btn
-            logger.info("✅ Forwarded baseline capture button from sidebar")
+            logger.debug("✓ Forwarded baseline capture button")
         else:
             logger.warning("⚠️ baseline_capture_btn NOT found in sidebar")
 
@@ -1630,7 +1615,7 @@ class AffilabsMainWindow(QMainWindow):
             self.navigation_presenter.switch_page(0)
 
             self._deferred_ui_loaded = True
-            logger.info("✅ Sensorgram graphs loaded")
+            logger.debug("✓ Sensorgram graphs loaded")
 
         except Exception as e:
             logger.error(f"❌ Failed to load deferred graphs: {e}", exc_info=True)
@@ -2070,9 +2055,9 @@ class AffilabsMainWindow(QMainWindow):
         else:
             self.live_data_enabled = enabled
             if enabled:
-                print("Live data updates enabled")
+                logger.debug("Live data updates enabled")
             else:
-                print("Live data updates disabled - graph frozen")
+                logger.debug("Live data updates disabled - graph frozen")
 
     def _toggle_channel_visibility(self, channel, visible):
         """Toggle visibility of a channel on both graphs."""
@@ -4140,14 +4125,10 @@ class AffilabsMainWindow(QMainWindow):
         """
         current_state = self.power_btn.property("powerState")
         logger.info(f"Power button clicked: current_state={current_state}")
-        print(f"\n{'='*80}")
-        print(f"[UI] Power button clicked! Current state: {current_state}")
-        print(f"{'='*80}\n")
 
         if current_state == "disconnected":
             # Start hardware connection
-            logger.info("[UI] Power ON: Starting hardware connection...")
-            print("[UI] Power ON: Starting hardware connection...")
+            logger.debug("Starting hardware connection...")
 
             # Update UI state to searching IMMEDIATELY
             self.power_btn.setProperty("powerState", "searching")
@@ -4159,21 +4140,20 @@ class AffilabsMainWindow(QMainWindow):
             self.power_btn.repaint()  # Force immediate repaint
             QCoreApplication.processEvents()  # Process all pending UI events
 
-            logger.info(
-                "[UI] Power button state updated to 'searching' - visual update FORCED",
+            logger.debug(
+                "Power button state: searching",
             )
 
             # Emit signal to Application layer (clean architecture)
-            logger.info("[UI] Emitting power_on_requested signal...")
+            logger.debug("Emitting power_on_requested signal...")
             self.power_on_requested.emit()
-            logger.info("[UI] Signal emitted")
+            logger.debug("Signal emitted")
 
         elif current_state == "searching":
             # Button is inactive while searching - ignore clicks
-            logger.info(
-                "[UI] Button clicked during search - ignoring (search in progress)",
+            logger.debug(
+                "Button clicked during search - ignoring",
             )
-            print("[UI] Button clicked during search - ignoring (search in progress)")
             return  # Do nothing while hardware search is active
 
         elif current_state == "connected":
@@ -4323,7 +4303,7 @@ class AffilabsMainWindow(QMainWindow):
     def _on_hardware_scan_complete(self) -> None:
         """Called when hardware scan completes - reset scan button."""
         self.sidebar.set_scan_state(False)  # Use encapsulated method
-        logger.info("[SCAN] Hardware scan complete - button reset")
+        logger.debug("Hardware scan complete - button reset")
 
     def update_hardware_status(self, status: dict[str, Any]) -> None:
         """Update hardware status display with real hardware information.

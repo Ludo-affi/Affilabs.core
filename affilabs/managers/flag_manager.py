@@ -8,6 +8,8 @@ This manager encapsulates all flag-related logic:
 - Flagging mode management
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

@@ -4,6 +4,8 @@ Manages UI state and interactions for baseline data recording.
 Extracted from affilabs_core_ui.py for better modularity.
 """
 
+from __future__ import annotations
+
 from PySide6.QtWidgets import QMessageBox
 
 from affilabs.utils.baseline_data_recorder import BaselineDataRecorder

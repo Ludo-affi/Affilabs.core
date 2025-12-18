@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -87,6 +89,12 @@ class LEDCalibrationResult:
 
     # Dark noise reference
     dark_noise: np.ndarray | None = None  # Dark spectrum for QC reconstruction
+
+    # Raw data from Steps 4 & 5 (before preprocessing)
+    s_raw_data: dict[str, np.ndarray] = field(default_factory=dict)  # S-mode raw ROI spectra
+    p_raw_data: dict[str, np.ndarray] = field(default_factory=dict)  # P-mode raw ROI spectra
+    dark_s: dict[str, np.ndarray] = field(default_factory=dict)  # S-mode dark noise per channel
+    dark_p: dict[str, np.ndarray] = field(default_factory=dict)  # P-mode dark noise per channel
 
     # Reference spectra (clean, preprocessed by SpectrumPreprocessor)
     # SHARED WITH LIVE ACQUISITION: These are used in TransmissionProcessor.process_single_channel()

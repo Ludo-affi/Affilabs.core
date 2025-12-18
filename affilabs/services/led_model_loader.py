@@ -69,9 +69,10 @@ class LEDCalibrationModelLoader:
             ModelNotFoundError: If model file not found
 
         """
-        self.detector_serial = detector_serial
+        # Normalize requested serial (uppercase, trimmed)
+        self.detector_serial = (detector_serial or "").strip().upper()
 
-        # Try finding latest 3-stage calibration file
+        # Find all candidate 3-stage calibration files
         # Pattern: led_calibration_3stage_YYYYMMDD_HHMMSS.json
         import glob
 
@@ -83,14 +84,41 @@ class LEDCalibrationModelLoader:
                 f"No 3-stage LED calibration model found in {self.qc_base_path}. "
                 f"Run: python led_calibration_official/1_create_model.py"
             )
-            raise ModelNotFoundError(
-                msg,
+            raise ModelNotFoundError(msg)
+
+        # Filter by detector_serial inside the file
+        matched_files: list[Path] = []
+        available_serials: set[str] = set()
+        for mf in model_files:
+            try:
+                with open(mf, "r", encoding="utf-8") as f:
+                    hdr = json.load(f)
+                file_serial = str(hdr.get("detector_serial", "")).strip().upper()
+                if file_serial:
+                    available_serials.add(file_serial)
+                # Accept file only if serial matches requested
+                if file_serial and file_serial == self.detector_serial:
+                    matched_files.append(Path(mf))
+            except Exception:
+                # Skip unreadable or invalid files
+                continue
+
+        if not matched_files:
+            # No exact serial match found; fail fast with helpful message
+            avail = ", ".join(sorted(available_serials)) or "none"
+            msg = (
+                f"No LED calibration model found for detector {self.detector_serial}. "
+                f"Available serials in {self.qc_base_path}: {avail}"
             )
+            raise ModelNotFoundError(msg)
 
-        model_file = Path(model_files[0])
-        logger.info(f"Loading 3-stage LED calibration model: {model_file.name}")
+        # Pick the most recent matched file
+        model_file = matched_files[0]
+        logger.info(
+            f"Loading 3-stage LED calibration model for {self.detector_serial}: {model_file.name}"
+        )
 
-        with open(model_file) as f:
+        with open(model_file, encoding="utf-8") as f:
             raw_data = json.load(f)
 
         # Transform to standard format expected by downstream code
@@ -100,7 +128,8 @@ class LEDCalibrationModelLoader:
         if "led_models" in raw_data:
             logger.info("  Converting 3-stage model to standard format")
             transformed = {
-                "detector_serial": detector_serial,
+                # Preserve the serial from file to enforce correctness
+                "detector_serial": str(raw_data.get("detector_serial", "")).strip(),
                 "timestamp": raw_data.get(
                     "timestamp",
                     model_file.stem.replace("led_calibration_3stage_", ""),
@@ -184,7 +213,15 @@ class LEDCalibrationModelLoader:
         # Validate model structure
         self._validate_model_structure()
 
-        logger.info(f"✓ Model loaded: {detector_serial}")
+        # Validate serial match (file vs requested)
+        loaded_serial = str(self.model_data.get("detector_serial", "")).strip().upper()
+        if loaded_serial != self.detector_serial:
+            # Should never happen given our filtering, but guard anyway
+            raise ModelValidationError(
+                f"Loaded model serial '{loaded_serial}' does not match requested '{self.detector_serial}'"
+            )
+
+        logger.info(f"✓ Model loaded for detector: {loaded_serial}")
         logger.info(f"  Channels: {list(self.model_data['bilinear_models'].keys())}")
         logger.info("  Polarizations: S, P")
 

@@ -13,6 +13,7 @@ import contextlib
 import os
 import time
 
+
 from affilabs.utils.led_methods import (
     DetectorParams,
     LEDconverge,
@@ -20,6 +21,15 @@ from affilabs.utils.led_methods import (
     LEDnormalizationtime,
     count_saturated_pixels,
 )
+
+# New convergence engine imports (adapters + engine)
+from affilabs.convergence.adapters import RealSpectrometerAdapter, ROIFromStartup
+from affilabs.convergence.config import ConvergenceRecipe as EngineRecipe
+from affilabs.convergence.config import DetectorParams as EngineDetectorParams
+from affilabs.convergence.engine import ConvergenceEngine
+from affilabs.convergence.scheduler import ThreadScheduler
+from affilabs.utils.hal.controller_hal import create_controller_hal
+from affilabs.hardware.spectrometer_adapter import wrap_existing_spectrometer
 
 
 def _normalize_led_predictions(
@@ -90,8 +100,6 @@ def _build_final_results(
             led_intensity=test_led,
             integration_time_ms=initial_integration_ms,
             num_scans=1,
-            pre_led_delay_ms=45.0,
-            post_led_delay_ms=5.0,
             use_batch_command=use_batch_command,
         )
         if spec is None:
@@ -165,8 +173,6 @@ def _run_preflight_verification(
                     led_intensity=normalized_leds.get(ch, 255),
                     integration_time_ms=initial_integration_ms,
                     num_scans=1,
-                    pre_led_delay_ms=45.0,
-                    post_led_delay_ms=5.0,
                     use_batch_command=use_batch_command,
                 )
                 if spec is None:
@@ -255,8 +261,6 @@ def _check_final_saturation(
                 led_intensity=int(normalized_leds.get(ch, 255)),
                 integration_time_ms=float(shared_int),
                 num_scans=1,
-                pre_led_delay_ms=45.0,
-                post_led_delay_ms=5.0,
                 use_batch_command=use_batch_command,
             )
             if spec is None:
@@ -401,8 +405,6 @@ def run_convergence(
                 led_intensity=255,
                 integration_time_ms=Tch,
                 num_scans=1,
-                pre_led_delay_ms=45.0,
-                post_led_delay_ms=5.0,
                 use_batch_command=use_batch_command,
             )
             if spec is None:
@@ -440,8 +442,6 @@ def run_convergence(
                     led_intensity=255,
                     integration_time_ms=Tch,
                     num_scans=1,
-                    pre_led_delay_ms=45.0,
-                    post_led_delay_ms=5.0,
                     use_batch_command=use_batch_command,
                 )
                 if spec_final is None:
@@ -497,35 +497,103 @@ def run_convergence(
 
     # === CONVERGENCE: Adjust LEDs/time to reach target signal without saturation ===
     # No preflight needed - convergence iteration 1 measures all channels anyway
-    try:
-        if logger:
-            logger.info("[CONV] Calling LEDconverge (shared-time strategy)")
-            if model_slopes:
-                logger.info(f"[CONV]   Model slopes: {model_slopes}")
+    def _use_new_engine() -> bool:
+        v = os.getenv("AFFILABS_USE_NEW_CONVERGENCE", "1").strip().lower()
+        return v not in ("0", "false", "no")
 
-        shared_int, ch_signals, ok = LEDconverge(
-            usb=usb,
-            ctrl=ctrl,
-            ch_list=ch_list,
-            led_intensities=normalized_leds,
-            acquire_raw_spectrum_fn=acquire_raw_spectrum_fn,
-            roi_signal_fn=roi_signal_fn,
-            initial_integration_ms=initial_integration_ms,
-            target_percent=target_percent,
-            tolerance_percent=tolerance_percent,
-            detector_params=detector_params,
-            wave_min_index=wave_min_index,
-            wave_max_index=wave_max_index,
-            max_iterations=max_iter_override if max_iter_override is not None else 15,
-            step_name="Step 4",
-            use_batch_command=use_batch_command,
-            model_slopes=model_slopes,
-            polarization=polarization,
+    def _run_engine_strategy() -> tuple[float, dict[str, float], bool]:
+        # Build HAL-backed adapters (no direct device commands)
+        ctrl_hal = create_controller_hal(ctrl)
+        spec_hal = wrap_existing_spectrometer(usb)
+        spect = RealSpectrometerAdapter(spectrometer=spec_hal, controller=ctrl_hal, logger=logger)
+        roi = ROIFromStartup(method="median", top_n=50)
+        engine = ConvergenceEngine(
+            spectrometer=spect,
+            roi_extractor=roi,
+            scheduler=ThreadScheduler(1),
             logger=logger,
         )
+        # Map detector params
+        ep = EngineDetectorParams(
+            max_counts=float(detector_params.max_counts),
+            saturation_threshold=float(detector_params.saturation_threshold),
+            min_integration_time=float(detector_params.min_integration_time),
+            max_integration_time=float(detector_params.max_integration_time),
+        )
+        # Recipe
+        recipe = EngineRecipe(
+            channels=ch_list,
+            initial_leds=normalized_leds,
+            initial_integration_ms=float(initial_integration_ms),
+            target_percent=float(target_percent),
+            tolerance_percent=float(tolerance_percent),
+            near_window_percent=0.10,
+            max_iterations=max_iter_override if max_iter_override is not None else 15,
+            prefer_est_after_iters=1,
+            max_led_change=50,
+            led_small_step=5,
+            boundary_margin=5,
+            near_boundary_scale=0.5,
+            measurement_timeout_s=2.0,
+            parallel_workers=1,
+            use_batch_command=bool(use_batch_command),
+            num_scans=1,
+            min_signal_for_model=0.2,
+            accept_above_extra_percent=0.0,
+        )
+
+        # Model slopes mapping (at 10ms)
+        model_at_10 = None
+        if model_slopes:
+            try:
+                model_at_10 = {k: float(v) for k, v in model_slopes.items()}
+            except Exception:
+                model_at_10 = None
+
+        res = engine.run(
+            recipe=recipe,
+            params=ep,
+            wave_min_index=wave_min_index,
+            wave_max_index=wave_max_index,
+            model_slopes_at_10ms=model_at_10,
+        )
+        # Build return signature compatible with legacy path
+        ch_signals: dict[str, float] = {}
+        for ch in ch_list:
+            ch_signals[ch] = float(res.signals.get(ch, 0.0))
+        return float(res.integration_ms), ch_signals, bool(res.converged)
+
+    try:
+        if _use_new_engine():
+            if logger:
+                logger.info("[CONV] Calling ConvergenceEngine (shared-time strategy)")
+            shared_int, ch_signals, ok = _run_engine_strategy()
+        else:
+            if logger:
+                logger.info("[CONV] Calling LEDconverge (legacy shared-time strategy)")
+            shared_int, ch_signals, ok = LEDconverge(
+                usb=usb,
+                ctrl=ctrl,
+                ch_list=ch_list,
+                led_intensities=normalized_leds,
+                acquire_raw_spectrum_fn=acquire_raw_spectrum_fn,
+                roi_signal_fn=roi_signal_fn,
+                initial_integration_ms=initial_integration_ms,
+                target_percent=target_percent,
+                tolerance_percent=tolerance_percent,
+                detector_params=detector_params,
+                wave_min_index=wave_min_index,
+                wave_max_index=wave_max_index,
+                max_iterations=max_iter_override if max_iter_override is not None else 15,
+                step_name="Step 4",
+                use_batch_command=use_batch_command,
+                model_slopes=model_slopes,
+                polarization=polarization,
+                logger=logger,
+            )
     except Exception as e:
         if logger:
-            logger.exception(f"[CONV] LEDconverge crashed: {e}")
+            logger.exception(f"[CONV] Convergence step crashed: {e}")
         return initial_integration_ms, {}, False
 
     # === RESULTS: Build final summary and check saturation ===

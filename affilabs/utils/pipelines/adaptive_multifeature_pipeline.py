@@ -68,6 +68,8 @@ Author: AI Assistant
 Date: November 20, 2025
 """
 
+from __future__ import annotations
+
 import logging
 
 import numpy as np

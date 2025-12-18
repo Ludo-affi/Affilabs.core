@@ -4,6 +4,8 @@ Handles all hardware status UI updates for the sidebar and status displays.
 Extracted from AffilabsMainWindow to follow Presenter Pattern and improve testability.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:

@@ -4,6 +4,8 @@ Pure business logic for spectrum processing operations.
 NO Qt dependencies - fully testable.
 """
 
+from __future__ import annotations
+
 import logging
 
 import numpy as np

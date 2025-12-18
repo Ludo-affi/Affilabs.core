@@ -15,6 +15,8 @@ Usage in main_simplified.py:
     self.ui.update_device_status('spectrometer', True)
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal

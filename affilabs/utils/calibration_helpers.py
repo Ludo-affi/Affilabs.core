@@ -21,11 +21,12 @@ def get_detector_params(usb) -> DetectorParams:
     # Minimal detector parameters; adjust with usb if available
     # Fallback values typical for Ocean Optics-style detectors
     max_counts = getattr(usb, "max_counts", 65535)
-    saturation_threshold = int(0.95 * max_counts)
-    target_counts = int(0.90 * max_counts)  # Target 90% of max for optimal SNR
+    saturation_threshold = max_counts  # 100% of max - saturation is the physical limit
+    target_counts = int(0.85 * max_counts)  # Target 85% of max for optimal SNR with headroom
     # If usb exposes min/max integration in seconds, convert to ms
     min_int_ms = int(getattr(usb, "min_integration_ms", 5))
-    max_int_ms = int(getattr(usb, "max_integration_ms", 1000))
+    # Max integration: 60ms per scan (3 scans × 60ms = 180ms time budget)
+    max_int_ms = int(getattr(usb, "max_integration_ms", 60))
     return DetectorParams(
         max_counts=max_counts,
         saturation_threshold=saturation_threshold,

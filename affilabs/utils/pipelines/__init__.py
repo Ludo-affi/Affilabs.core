@@ -63,7 +63,7 @@ def initialize_pipelines():
     }
     registry.set_active_pipeline(saved_pipeline, config=pipeline_config)
 
-    logger.info(f"Initialized {len(registry.list_pipelines())} processing pipelines")
-    logger.info(f"Active pipeline: {registry.active_pipeline_id}")
+    logger.debug(f"Initialized {len(registry.list_pipelines())} processing pipelines")
+    logger.debug(f"Active pipeline: {registry.active_pipeline_id}")
     if TRANSMISSION_BASELINE_METHOD != "none":
-        logger.info(f"  Baseline method: {TRANSMISSION_BASELINE_METHOD}")
+        logger.debug(f"  Baseline method: {TRANSMISSION_BASELINE_METHOD}")

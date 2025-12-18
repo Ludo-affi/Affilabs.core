@@ -34,10 +34,10 @@ def get_version() -> str:
                 spec_file = Path(__file__).parent.parent / "main.spec"
             match = search("name='ezControl (.+ )?v(.+)',", spec_file.read_text())
             if match is None:
-                return "0.2-beta"  # Fallback version for affilabs.core-beta branch
+                return "1.0-beta"  # Fallback version for affilabs.core-beta branch
             return match[2]
         except (FileNotFoundError, AttributeError):
-            return "0.2-beta"  # Fallback version for affilabs.core-beta branch
+            return "1.0-beta"  # Fallback version for affilabs.core-beta branch
 
 
 DEV = False  # Set to True to enable OEM/factory features (optical calibration button, etc.)
@@ -70,7 +70,8 @@ GRAPH_COLORS_COLORBLIND = {
 }
 
 # Current active palette (can be toggled by user)
-ACTIVE_GRAPH_COLORS = GRAPH_COLORS.copy()
+# Using colorblind-friendly Okabe-Ito palette by default for accessibility
+ACTIVE_GRAPH_COLORS = GRAPH_COLORS_COLORBLIND.copy()
 
 # Cycle marker style: "cursors" or "lines"
 CYCLE_MARKER_STYLE = "cursors"  # Can be changed to "lines" for vertical line markers

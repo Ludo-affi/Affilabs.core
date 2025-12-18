@@ -165,7 +165,7 @@ class SystemIntelligence:
         # Load historical data
         self._load_history()
 
-        logger.info("🧠 System Intelligence initialized")
+        logger.debug("✓ System Intelligence initialized")
 
     def update_calibration_metrics(
         self,

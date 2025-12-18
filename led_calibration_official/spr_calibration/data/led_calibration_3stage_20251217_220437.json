@@ -1,0 +1,76 @@
+{
+  "detector_serial": "FLMT09788",
+  "timestamp": "20251217_220437",
+  "model_type": "3-stage-linear",
+  "model_equation": "counts = slope_10ms \u00d7 intensity \u00d7 (time_ms / 10)",
+  "integration_times": [
+    10,
+    20,
+    30
+  ],
+  "dark_counts_per_time": {
+    "10": 3088.6230334280604,
+    "20": 3162.862625611578,
+    "30": 3198.7024287346553
+  },
+  "led_models": {
+    "A": [
+      {
+        "time_ms": 10,
+        "slope": 870.9925487553589
+      },
+      {
+        "time_ms": 20,
+        "slope": 1729.8682574048576
+      },
+      {
+        "time_ms": 30,
+        "slope": 2591.6498737696456
+      }
+    ],
+    "B": [
+      {
+        "time_ms": 10,
+        "slope": 845.5637817752125
+      },
+      {
+        "time_ms": 20,
+        "slope": 1678.8333733076822
+      },
+      {
+        "time_ms": 30,
+        "slope": 2514.383760280525
+      }
+    ],
+    "C": [
+      {
+        "time_ms": 10,
+        "slope": 874.6951417494312
+      },
+      {
+        "time_ms": 20,
+        "slope": 1735.119215226711
+      },
+      {
+        "time_ms": 30,
+        "slope": 2597.57624121464
+      }
+    ],
+    "D": [
+      {
+        "time_ms": 10,
+        "slope": 789.3016908368245
+      },
+      {
+        "time_ms": 20,
+        "slope": 1572.787804731166
+      },
+      {
+        "time_ms": 30,
+        "slope": 2354.9023742823456
+      }
+    ]
+  },
+  "training_method": "automatic_oem_workflow",
+  "detector_wait_ms": 50
+}

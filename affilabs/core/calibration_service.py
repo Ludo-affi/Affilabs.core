@@ -134,7 +134,7 @@ class CalibrationService(QObject):
             "6-Step Calibration Process:\n"
             "  1. Hardware Validation & LED Verification\n"
             "  2. Wavelength Calibration\n"
-            "  3. LED Brightness Measurement & Bilinear Model Load\n"
+            "  3. LED Brightness Measurement & 3-Stage Model Load\n"
             "  4. S-Mode LED Convergence + Reference Capture\n"
             "  5. P-Mode LED Convergence + Reference + Dark Capture\n"
             "  6. QC Validation & Result Packaging\n\n"
@@ -460,12 +460,8 @@ class CalibrationService(QObject):
             device_serial = getattr(usb, "serial_number", None)
             device_config = DeviceConfiguration(device_serial=device_serial)
 
-            # Get LED timing from device config
-            pre_led_delay_ms = device_config.get_pre_led_delay_ms()
-            post_led_delay_ms = device_config.get_post_led_delay_ms()
-
             # Run calibration
-            from affilabs.core.calibration_workflow import run_full_7step_calibration
+            from affilabs.core.calibration_orchestrator import run_startup_calibration
 
             logger.info(
                 "🚀 Starting 6-step calibration...",
@@ -474,14 +470,12 @@ class CalibrationService(QObject):
             # Get device type from controller
             device_type = type(ctrl).__name__
 
-            cal_result = run_full_7step_calibration(
+            cal_result = run_startup_calibration(
                 usb=usb,
                 ctrl=ctrl,
                 device_type=device_type,
                 device_config=device_config,
                 detector_serial=device_serial,
-                pre_led_delay_ms=pre_led_delay_ms,
-                post_led_delay_ms=post_led_delay_ms,
                 progress_callback=self._progress_callback,
             )
 
@@ -494,20 +488,8 @@ class CalibrationService(QObject):
                         error_msg = cal_result.error_message
                 raise RuntimeError(error_msg)
 
-            # Create immutable CalibrationData
+            # Convert calibration result to domain model
             self.calibration_progress.emit("Storing results...", 95)
-
-            {
-                "device_type": type(ctrl).__name__,
-                "detector_serial": device_serial or "N/A",
-                "firmware_version": getattr(ctrl, "version", "N/A"),
-                "pre_led_delay_ms": pre_led_delay_ms,
-                "post_led_delay_ms": post_led_delay_ms,
-            }
-
-            # Get wavelength indices from calibration result
-
-            # Convert legacy LEDCalibrationResult to Phase 1.1 domain model
             # This provides type safety, validation, and immutability
             logger.info("🔄 Converting calibration result to domain model...")
             try:
@@ -656,118 +638,6 @@ class CalibrationService(QObject):
 
         """
         return self._current_calibration_data
-
-    def run_quick_oem_validation(self) -> dict:
-        """Run Quick OEM validation for servo polarizer positions.
-
-        Uses preflight_light_and_polarizer internally to verify stored positions
-        work correctly. No subprocess dependency.
-
-        Returns:
-            dict: { 'success': bool, 'stdout': str, 'stderr': str }
-
-        """
-        logger.info(
-            "Starting Quick OEM Validation (~5s) via internal preflight check...",
-        )
-        try:
-            # Get hardware handles
-            hardware_mgr = self.app.hardware_mgr
-            ctrl = hardware_mgr.ctrl
-            usb = hardware_mgr.usb
-
-            if not ctrl or not usb:
-                msg = "Hardware not connected - cannot validate polarizer positions"
-                logger.warning(msg)
-                return {"success": False, "stdout": "", "stderr": msg}
-
-            # Get device configuration
-            from affilabs.utils.device_configuration import DeviceConfiguration
-            from affilabs.core.calibration_workflow import (
-                get_detector_params,
-                preflight_light_and_polarizer,
-            )
-
-            device_serial = getattr(usb, "serial_number", None)
-            device_config = DeviceConfiguration(device_serial=device_serial)
-
-            # Get wavelength data
-            wave_data = usb.read_wavelength()
-            if wave_data is None or len(wave_data) == 0:
-                msg = "Failed to read wavelengths from detector"
-                logger.error(msg)
-                return {"success": False, "stdout": "", "stderr": msg}
-
-            # Calculate wavelength ROI
-            import numpy as np
-
-            from affilabs.core.calibration_workflow import (
-                MAX_WAVELENGTH,
-                MIN_WAVELENGTH,
-            )
-
-            wave_min_index = np.searchsorted(wave_data, MIN_WAVELENGTH)
-            wave_max_index = np.searchsorted(wave_data, MAX_WAVELENGTH)
-
-            # Get detector params
-            detector_params = get_detector_params(usb)
-
-            # Determine channel list
-            from affilabs.core.calibration_workflow import determine_channel_list
-
-            device_type = type(ctrl).__name__
-            ch_list = determine_channel_list(
-                device_type,
-                single_mode=False,
-                single_ch="a",
-            )
-
-            # Convert device_config to dict for preflight
-            if hasattr(device_config, "to_dict"):
-                device_config_dict = device_config.to_dict()
-            elif hasattr(device_config, "config"):
-                device_config_dict = device_config.config
-            else:
-                device_config_dict = device_config
-
-            # Run preflight check (fast mode, ~5 seconds)
-            logger.info("Running preflight check to validate stored servo positions...")
-            ok, msg = preflight_light_and_polarizer(
-                usb=usb,
-                ctrl=ctrl,
-                ch_list=ch_list,
-                wave_min_index=wave_min_index,
-                wave_max_index=wave_max_index,
-                device_config_det=device_config_dict,
-                detector_params=detector_params,
-                min_counts_threshold=4000.0,
-                integration_time_ms=70.0,
-                use_batch_command=True,
-                fast=True,
-            )
-
-            if ok:
-                logger.info(
-                    "[OK] Quick OEM validation passed - servo positions working correctly",
-                )
-                stdout = (
-                    "Quick OEM Validation: PASSED\n"
-                    "Servo positions validated successfully.\n"
-                    "Light detected in S-mode with stored positions.\n"
-                    f"Message: {msg}\n"
-                )
-                return {"success": True, "stdout": stdout, "stderr": ""}
-            logger.warning(f"[WARN] Quick OEM validation failed: {msg}")
-            stderr = (
-                "Quick OEM Validation: FAILED\n"
-                f"Reason: {msg}\n"
-                "Consider running full polarizer calibration from OEM menu.\n"
-            )
-            return {"success": False, "stdout": "", "stderr": stderr}
-
-        except Exception as e:
-            logger.error(f"Quick OEM validation error: {e}", exc_info=True)
-            return {"success": False, "stdout": "", "stderr": str(e)}
 
     def _update_ml_intelligence(self, calibration_data: CalibrationData) -> None:
         """Update ML QC intelligence with new calibration data.

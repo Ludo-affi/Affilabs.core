@@ -176,7 +176,7 @@ class PipelineRegistry:
 
         """
         self._pipelines[pipeline_id] = pipeline_class
-        logger.info(f"Registered pipeline: {pipeline_id}")
+        logger.debug(f"Registered pipeline: {pipeline_id}")
 
     def get_pipeline(
         self,
@@ -243,7 +243,7 @@ class PipelineRegistry:
         except Exception as e:
             logger.warning(f"Could not save pipeline preference: {e}")
 
-        logger.info(f"Active pipeline: {pipeline_id}")
+        logger.debug(f"Active pipeline: {pipeline_id}")
 
     def get_active_pipeline(self) -> ProcessingPipeline:
         """Get the currently active pipeline instance.

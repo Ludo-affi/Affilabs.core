@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2025-11-21T10:19:32.590056",
-    "last_modified": "2025-12-12T17:11:30.221320",
+    "last_modified": "2025-12-18T13:32:32.539383",
     "device_id": "FLMT09116"
   },
   "hardware": {
@@ -15,10 +15,10 @@
     "controller_serial": null,
     "optical_fiber_diameter_um": 200,
     "polarizer_type": "circular",
-    "servo_model": "HS-55MG",
-    "servo_s_position": 43,
-    "servo_p_position": 133,
-    "controller_firmware_version": "V1.2"
+    "servo_model": "HS-65MG",
+    "servo_s_position": 67,
+    "servo_p_position": 157,
+    "controller_firmware_version": "V2.4"
   },
   "timing_parameters": {
     "pre_led_delay_ms": 15.0,
@@ -46,8 +46,8 @@
     "dark_calibration_date": null,
     "s_mode_calibration_date": "2025-11-27T12:29:51.320044",
     "p_mode_calibration_date": null,
-    "polarizer_calibration_date": null,
-    "polarizer_extinction_ratio_percent": null,
+    "polarizer_calibration_date": "2025-12-18T13:32:32.539383",
+    "polarizer_extinction_ratio_percent": 2.9701648268082783,
     "factory_calibrated": false,
     "user_calibrated": true,
     "preferred_calibration_mode": "global",

@@ -150,6 +150,11 @@ class Ui_mainWindow:
         self.sensorgram_btn.setAutoDefault(False)
         self.sensorgram_btn.setFlat(False)
 
+        # HIDDEN: Legacy zoom/review button - conflicts with acquisition focus
+        # Cycle review should be done via "View All Cycles" button in Static tab
+        self.sensorgram_btn.setVisible(False)
+        self.sensorgram_btn.setEnabled(False)
+
         self.horizontalLayout_4.addWidget(self.sensorgram_btn)
 
         self.spectroscopy_btn = QPushButton(self.frame_2)

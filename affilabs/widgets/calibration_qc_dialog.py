@@ -7,6 +7,8 @@ Shows:
 4. Transmission spectra (all 4 channels)
 """
 
+from __future__ import annotations
+
 import matplotlib
 import numpy as np
 import pyqtgraph as pg
@@ -426,7 +428,7 @@ class CalibrationQCDialog(QDialog):
         <span style='color:#1D1D1F; font-weight:500;'>{strategy.title()}</span>
         &nbsp;&nbsp;•&nbsp;&nbsp;
         <span style='color:#86868B; font-size:10px; font-weight:600;'>INTEGRATION TIME</span>
-        <span style='color:#1D1D1F; font-weight:600;'>{shared_integration:.2f}ms</span>
+        <span style='color:#1D1D1F; font-weight:600;'>{shared_integration:.1f}ms</span>
         &nbsp;&nbsp;•&nbsp;&nbsp;
         <span style='color:#86868B; font-size:10px; font-weight:600;'>STATUS</span>
         <span style='color:{status_color}; font-weight:700;'>{status_text}</span>

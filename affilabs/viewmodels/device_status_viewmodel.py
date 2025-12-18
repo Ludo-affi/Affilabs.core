@@ -9,6 +9,8 @@ Integrates with Hardware Abstraction Layer (Phase 1.4):
 - Provides backward-compatible API for existing code
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from enum import Enum

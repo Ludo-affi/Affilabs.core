@@ -4,6 +4,8 @@ Provides UI controls for switching between processing pipelines
 and viewing their parameters.
 """
 
+from __future__ import annotations
+
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,

@@ -51,15 +51,15 @@ class SpectroscopyPresenter:
         if not self._plots_check_logged:
             # Log plot availability once only
             if has_trans and has_raw:
-                logger.info(
+                logger.debug(
                     f"Spectroscopy plots available: "
                     f"transmission={len(self.main_window.transmission_curves)}, "
                     f"raw={len(self.main_window.raw_data_curves)}"
                 )
 
         if has_trans and has_raw:
-            logger.info(
-                f"[OK] Spectroscopy plots found: transmission={len(self.main_window.transmission_curves)} curves, raw={len(self.main_window.raw_data_curves)} curves",
+            logger.debug(
+                f"✓ Spectroscopy plots: transmission={len(self.main_window.transmission_curves)}, raw={len(self.main_window.raw_data_curves)}",
             )
             self._plots_available = True
         else:

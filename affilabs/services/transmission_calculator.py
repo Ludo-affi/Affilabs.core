@@ -4,6 +4,8 @@ Pure business logic for calculating transmission spectra.
 NO Qt dependencies - fully testable.
 """
 
+from __future__ import annotations
+
 import logging
 
 import numpy as np

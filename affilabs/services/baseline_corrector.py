@@ -4,6 +4,8 @@ Pure business logic for baseline correction of transmission spectra.
 NO Qt dependencies - fully testable.
 """
 
+from __future__ import annotations
+
 import logging
 
 import numpy as np

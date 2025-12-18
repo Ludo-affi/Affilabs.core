@@ -4,6 +4,8 @@ Handles all graph-related UI updates for timeline and cycle-of-interest plots.
 Extracted from AffilabsMainWindow to follow Presenter Pattern and improve testability.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -302,6 +304,6 @@ class SensogramPresenter:
         """
         self.window.live_data_enabled = enabled
         if enabled:
-            print("Live data updates enabled")
+            logger.debug("Live data updates enabled")
         else:
-            print("Live data updates disabled - graph frozen")
+            logger.debug("Live data updates disabled - graph frozen")

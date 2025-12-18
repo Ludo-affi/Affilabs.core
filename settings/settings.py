@@ -189,6 +189,7 @@ P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 64000  # DEPRECATED: Use profile.max_intensity_counts (62,000 for Flame-T)
 P_COUNT_THRESHOLD = 3000  # minimum p-polarized count for successful calibration (adjusted for real hardware sensitivity)
 MIN_INTEGRATION = 5  # DEPRECATED: Use profile.min_integration_time_ms
+CYCLE_TIME = 1.3  # cycle time for all 4 channels
 MAX_INTEGRATION = (
     70  # DEPRECATED: Use profile.max_integration_time_ms (70ms for 3-scan budget)
 )
@@ -532,12 +533,18 @@ CONSOLE_LOG_LEVEL = logging.INFO  # WARNING = production (fast, clean console)
 DEVICES = ["PicoP4SPR", "PicoEZSPR"]  # Supported device types
 import datetime
 
+# Robust timezone: prefer datetime.timezone.utc; fallback if needed
 try:
-    # Python 3.11+ has datetime.UTC
-    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
-except AttributeError:
-    # Python 3.10 and earlier - use timezone.utc
-    TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
+    tz_utc = datetime.timezone.utc
+except Exception:
+    # Very old Python fallback (unlikely)
+    tz_utc = None
+
+if tz_utc is not None:
+    TIME_ZONE = datetime.datetime.now(tz_utc).astimezone().tzinfo
+else:
+    # Fallback: local timezone
+    TIME_ZONE = datetime.datetime.now().astimezone().tzinfo
 
 DEFAULT_CONFIG = {
     "unit": UNIT,

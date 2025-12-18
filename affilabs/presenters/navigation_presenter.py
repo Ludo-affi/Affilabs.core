@@ -322,15 +322,8 @@ class NavigationPresenter:
             Path(__file__).parent.parent / "ui" / "img" / "affinite-no-background.png"
         )
 
-        # Debug: Log logo path
-        print(f"[LOGO-DEBUG] Logo path: {logo_path}")
-        print(f"[LOGO-DEBUG] Logo exists: {logo_path.exists()}")
-
         if logo_path.exists():
             logo_pixmap = QPixmap(str(logo_path))
-            print(
-                f"[LOGO-DEBUG] Pixmap loaded: isNull={logo_pixmap.isNull()}, size={logo_pixmap.size()}",
-            )
             if not logo_pixmap.isNull():
                 # Scale logo to larger size while maintaining aspect ratio
                 scaled_logo = logo_pixmap.scaledToHeight(
@@ -340,19 +333,14 @@ class NavigationPresenter:
                 logo_label.setPixmap(scaled_logo)
                 # Debug: Add border to see logo position
                 logo_label.setStyleSheet("border: 2px solid red; background: white;")
-                print(
-                    f"[LOGO-DEBUG] Logo set successfully, scaled height=40, width={scaled_logo.width()}",
-                )
             else:
                 # Fallback if pixmap failed
-                print("[LOGO-DEBUG] Pixmap is null - using text fallback")
                 logo_label.setText("Affinité")
                 logo_label.setStyleSheet(
                     "font-size: 16px; font-weight: bold; color: #1D1D1F;",
                 )
         else:
             # Fallback if file not found
-            print("[LOGO-DEBUG] Logo file not found - using text fallback")
             logo_label.setText("Affinité")
             logo_label.setStyleSheet(
                 "font-size: 16px; font-weight: bold; color: #1D1D1F;",

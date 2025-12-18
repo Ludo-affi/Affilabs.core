@@ -4,6 +4,8 @@ Wraps servo calibration functionality behind the IServo interface.
 Delegates to existing servo_calibration.py module.
 """
 
+from __future__ import annotations
+
 import time
 
 from .device_interface import (

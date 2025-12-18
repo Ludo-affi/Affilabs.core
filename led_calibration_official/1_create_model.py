@@ -14,82 +14,8 @@ parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 
 from affilabs.utils.controller import PicoP4SPR
+from affilabs.utils.led_model_helpers import fit_linear_model, measure_led_response
 from affilabs.utils.usb4000_wrapper import USB4000
-
-
-def measure_led_response(
-    controller,
-    spectrometer,
-    led_char,
-    intensity,
-    integration_time_ms,
-    dark_counts,
-    detector_wait_ms=50,
-):
-    """Measure single LED at given intensity and integration time.
-
-    Args:
-        detector_wait_ms: Time to wait after LED stabilization before detector sampling (default: 50ms)
-
-    WARNING: This function uses DIRECT hardware commands (NOT HAL).
-    This is acceptable for OEM calibration since:
-    1. It's a one-time factory calibration process
-    2. Creates the model that HAL will use for runtime
-    3. Uses fixed detector_wait_ms (not settings-driven)
-
-    The timing here is INDEPENDENT of runtime settings because this is
-    measuring the LED-to-counts relationship, not performing live acquisition.
-
-    """
-    # Set integration time first (DIRECT hardware command)
-    spectrometer.set_integration(integration_time_ms)
-    time.sleep(0.05)
-
-    # Turn on this LED (other LEDs stay off)
-    intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
-    intensities[led_char] = intensity
-    controller.set_batch_intensities(**intensities)
-    time.sleep(0.3)  # LED settle time
-    time.sleep(detector_wait_ms / 1000.0)  # Detector wait time
-
-    # Measure (average of 3 scans, then average top 10 pixels)
-    # NOTE: This is a DIRECT hardware call, NOT using HAL
-    spectrum = spectrometer.intensities(num_scans=3)
-    import numpy as np
-
-    top_10_indices = np.argpartition(spectrum, -10)[-10:]
-    top_10_avg = float(spectrum[top_10_indices].mean())
-    corrected = top_10_avg - dark_counts
-
-    # Enhanced saturation check: warn if approaching saturation (>60000 = 92% full)
-    saturated_pixels = int((spectrum >= 65535).sum())
-    near_saturation = int((spectrum >= 60000).sum())
-
-    return {
-        "raw_counts": top_10_avg,
-        "corrected_counts": corrected,
-        "saturated_wavelengths": saturated_pixels,
-        "near_saturation_pixels": near_saturation,
-        "is_saturated": saturated_pixels > 0 or top_10_avg >= 60000,
-    }
-
-
-def fit_linear_model(data_points):
-    """Fit linear model: counts = slope * intensity
-    Returns slope (counts per intensity unit)
-    """
-    if len(data_points) < 2:
-        return None
-
-    # Simple linear fit through origin: counts = k * intensity
-    sum_i_c = sum(i * c for i, c in data_points)
-    sum_i_i = sum(i * i for i, _ in data_points)
-
-    if sum_i_i == 0:
-        return None
-
-    slope = sum_i_c / sum_i_i
-    return slope
 
 
 def main():

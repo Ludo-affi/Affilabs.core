@@ -4,6 +4,8 @@ Converts between legacy data structures and new domain models.
 These adapters allow gradual migration to the new architecture.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 
 import numpy as np

@@ -139,19 +139,18 @@ def main(argv=None):
     usb, ctrl = hm.usb, hm.ctrl
 
     # Light device configuration
-    from utils.device_configuration import DeviceConfiguration
+    from affilabs.utils.device_configuration import DeviceConfiguration
 
     device_serial = getattr(usb, "serial_number", None)
     device_config = DeviceConfiguration(device_serial=device_serial)
-    pre_led_delay_ms = device_config.get_pre_led_delay_ms()
-    post_led_delay_ms = device_config.get_post_led_delay_ms()
-    logger.info(f"📊 LED timing: PRE={pre_led_delay_ms}ms POST={post_led_delay_ms}ms")
+    # LED timing now built into hardware commands - no explicit delays needed
+    logger.info("📊 LED timing: Built into hardware commands (no explicit delays)")
 
     # Flush spectrometer IO
     _flush_usb(usb, logger)
 
     # Run calibration core
-    from utils.calibration_6step import run_full_6step_calibration
+    from affilabs.utils.startup_calibration import run_full_6step_calibration
 
     logger.info("🚀 Starting 6-step calibration (CLI)…")
     try:
@@ -161,8 +160,6 @@ def main(argv=None):
             device_type=type(ctrl).__name__,
             device_config=device_config,
             detector_serial=device_serial,
-            pre_led_delay_ms=pre_led_delay_ms,
-            post_led_delay_ms=post_led_delay_ms,
             progress_callback=_progress,
         )
     except Exception:

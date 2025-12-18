@@ -90,6 +90,33 @@ class ControllerHAL(Protocol):
         """
         ...
 
+    def led_rank_sequence(
+        self,
+        test_intensity: int = 128,
+        settling_ms: int = 45,
+        dark_ms: int = 5,
+        timeout_s: float = 10.0,
+    ):
+        """Execute firmware-side LED ranking sequence for fast calibration (V2.4+).
+
+        This command triggers the firmware to sequence through all 4 LEDs automatically,
+        with precise timing control. Python reads spectra when signaled by firmware.
+
+        Args:
+            test_intensity: LED test brightness (0-255, default 128)
+            settling_ms: LED settling time in ms (default 45ms)
+            dark_ms: Dark time between channels in ms (default 5ms)
+            timeout_s: Maximum time to wait for sequence (default 10s)
+
+        Yields:
+            tuple: (channel, signal) where signal is 'READY', 'READ', or 'DONE'
+
+        Returns:
+            Generator yielding (channel, signal) tuples, or None if not supported
+
+        """
+        ...
+
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
         """Set polarizer mode.
@@ -122,6 +149,21 @@ class ControllerHAL(Protocol):
         Args:
             s: S-mode position (1-255)
             p: P-mode position (1-255)
+
+        Returns:
+            True if command succeeded (False if polarizer not supported)
+
+        """
+        ...
+
+    def servo_move_raw_pwm(self, pwm: int) -> bool:
+        """Move servo to arbitrary PWM position (CALIBRATION SWEEPS ONLY).
+
+        This method is for servo calibration workflows that need to scan
+        arbitrary PWM positions (1-255) to find optimal S and P angles.
+
+        Args:
+            pwm: Raw PWM value (1-255)
 
         Returns:
             True if command succeeded (False if polarizer not supported)
@@ -190,6 +232,11 @@ class ControllerHAL(Protocol):
     @property
     def supports_batch_leds(self) -> bool:
         """Check if device supports batch LED intensity commands."""
+        ...
+
+    @property
+    def supports_rank_sequence(self) -> bool:
+        """Check if device supports firmware-controlled LED rank sequence (V2.4+)."""
         ...
 
     @property
@@ -298,6 +345,22 @@ class PicoP4SPRAdapter:
         # PicoP4SPR supports batch command
         return self._ctrl.set_batch_intensities(a=a, b=b, c=c, d=d)
 
+    def led_rank_sequence(
+        self,
+        test_intensity: int = 128,
+        settling_ms: int = 45,
+        dark_ms: int = 5,
+        timeout_s: float = 10.0,
+    ):  # type: ignore
+        """Execute firmware-side LED ranking sequence (V2.4+)."""
+        # PicoP4SPR V2.4 supports rank command
+        return self._ctrl.led_rank_sequence(
+            test_intensity=test_intensity,
+            settling_ms=settling_ms,
+            dark_ms=dark_ms,
+            timeout_s=timeout_s,
+        )
+
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
         return self._ctrl.set_mode(mode) or False
@@ -332,6 +395,26 @@ class PicoP4SPRAdapter:
     ) -> bool:
         """Move servo to position without firmware lock (calibration mode)."""
         return self._ctrl.servo_move_calibration_only(s=s, p=p) or False
+
+    def servo_move_raw_pwm(self, pwm: int) -> bool:
+        """Move servo to arbitrary PWM position for calibration sweeps.
+
+        Sends raw sv command: svPPP000\n where PPP is PWM value (1-255).
+        Used during servo calibration to scan arbitrary positions.
+        """
+        try:
+            if not (1 <= pwm <= 255):
+                return False
+
+            cmd = f"sv{pwm:03d}000\n"
+            if self._ser is None or not self._ser.is_open:
+                return False
+
+            self._ser.write(cmd.encode())
+            self._ser.readline()  # Read response
+            return True
+        except Exception:
+            return False
 
     def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
         """Set and lock servo positions in firmware RAM.
@@ -369,6 +452,10 @@ class PicoP4SPRAdapter:
     @property
     def supports_batch_leds(self) -> bool:
         return True  # P4SPR has batch command
+
+    @property
+    def supports_rank_sequence(self) -> bool:
+        return True  # P4SPR V2.4+ has firmware rank command
 
     @property
     def supports_pump(self) -> bool:
@@ -451,6 +538,16 @@ class PicoEZSPRAdapter:
             success &= self.set_intensity("d", d)
         return success
 
+    def led_rank_sequence(
+        self,
+        test_intensity: int = 128,
+        settling_ms: int = 45,
+        dark_ms: int = 5,
+        timeout_s: float = 10.0,
+    ):  # type: ignore
+        """EZSPR does not support firmware rank sequence - returns None."""
+        return None
+
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
         return False  # EZSPR does not have polarizer
@@ -463,6 +560,10 @@ class PicoEZSPRAdapter:
         s: int | None = None,
         p: int | None = None,
     ) -> bool:
+        """EZSPR does not have polarizer/servo - always returns False."""
+        return False
+
+    def servo_move_raw_pwm(self, pwm: int) -> bool:
         """EZSPR does not have polarizer/servo - always returns False."""
         return False
 
@@ -495,6 +596,10 @@ class PicoEZSPRAdapter:
     @property
     def supports_batch_leds(self) -> bool:
         return False  # EZSPR doesn't have batch command
+
+    @property
+    def supports_rank_sequence(self) -> bool:
+        return False  # EZSPR doesn't have firmware rank command
 
     @property
     def supports_pump(self) -> bool:

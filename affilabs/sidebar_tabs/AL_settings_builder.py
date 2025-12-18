@@ -83,7 +83,7 @@ class SettingsTabBuilder:
 
         from affilabs.utils.logger import logger
 
-        logger.info("🔨 Building spectroscopy plots in Settings tab...")
+        logger.debug("Building spectroscopy plots in Settings tab...")
         spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
 
         spectro_help = QLabel(
@@ -206,8 +206,8 @@ class SettingsTabBuilder:
         self.sidebar.spectro_section = spectro_section
         self.sidebar.spectro_card = spectro_card
 
-        logger.info(
-            f"[OK] Spectroscopy plots created: transmission={len(self.sidebar.transmission_curves)} curves, raw={len(self.sidebar.raw_data_curves)} curves",
+        logger.debug(
+            f"✓ Spectroscopy plots: transmission={len(self.sidebar.transmission_curves)}, raw={len(self.sidebar.raw_data_curves)}",
         )
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):

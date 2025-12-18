@@ -91,27 +91,14 @@ class UIControlEventCoordinator:
                 )
 
                 # Import servo worker function
-                from affilabs.core.calibration_workflow import (
-                    resolve_device_config_for_detector,
-                    servo_move_1_then,
-                )
+                from affilabs.utils.startup_calibration import servo_move_1_then
 
-                # Get device config (reads updated UI positions)
-                device_config_det = None
-                if (
-                    hasattr(self.app.main_window, "device_config")
-                    and self.app.main_window.device_config
-                ):
-                    device_config_det = self.app.main_window.device_config.config
-                else:
-                    # Fallback: try to resolve from USB
-                    try:
-                        if hasattr(self.app.hardware_mgr, "usb") and self.app.hardware_mgr.usb:
-                            device_config_det = resolve_device_config_for_detector(
-                                self.app.hardware_mgr.usb,
-                            )
-                    except Exception:
-                        pass
+                # Get device config via HAL method
+                try:
+                    device_config_det = self.app.hardware_mgr.get_device_config()
+                except Exception as e:
+                    logger.warning(f"Could not get device config from HAL: {e}")
+                    device_config_det = None
 
                 if device_config_det:
                     # Use servo worker function - it reads positions from device_config

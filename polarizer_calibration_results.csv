@@ -1,0 +1,14 @@
+Parameter,Value
+Polarizer Type,CIRCULAR
+P PWM,157
+P Stable Range,151-163
+P Intensity,4387.4
+P Std,7.1
+P CV%,0.16
+S PWM,67
+S Stable Range,64-73
+S Intensity,13031.3
+S Std,12.2
+S CV%,0.09
+S/P Ratio,2.97
+Separation,8644

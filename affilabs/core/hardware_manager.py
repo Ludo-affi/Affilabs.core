@@ -57,7 +57,6 @@ def _get_controller_classes():
         if _controller_classes_cache is None:
             try:
                 from affilabs.utils.controller import (
-                    ArduinoController,
                     KineticController,
                     PicoEZSPR,
                     PicoKNX2,
@@ -65,7 +64,6 @@ def _get_controller_classes():
                 )
 
                 _controller_classes_cache = {
-                    "ArduinoController": ArduinoController,
                     "PicoP4SPR": PicoP4SPR,
                     "PicoEZSPR": PicoEZSPR,
                     "KineticController": KineticController,
@@ -84,7 +82,6 @@ def _get_controller_classes():
                         pass
 
                 _controller_classes_cache = {
-                    "ArduinoController": StubController,
                     "PicoP4SPR": StubController,
                     "PicoEZSPR": StubController,
                     "KineticController": StubController,
@@ -174,6 +171,81 @@ class HardwareManager(QObject):
         # FWHM readiness tracking
         self._channel_fwhm = {"a": None, "b": None, "c": None, "d": None}
         self._fwhm_threshold = 60.0  # nm
+
+    def get_servo_positions(self) -> dict[str, int]:
+        """Get servo positions from device configuration (HAL method).
+
+        This is the single source of truth for servo positions.
+        Positions are read from device_config which is loaded at hardware init.
+
+        Returns:
+            Dict with keys 's_position' and 'p_position' (int values, in degrees)
+
+        Raises:
+            RuntimeError: If device_config not available or positions invalid
+
+        """
+        if not self.device_config:
+            msg = "Device configuration not loaded - call scan_and_connect first"
+            raise RuntimeError(msg)
+
+        # device_config is a DeviceConfiguration object with .config property
+        if hasattr(self.device_config, "config"):
+            cfg = self.device_config.config
+        else:
+            cfg = self.device_config
+
+        # Get detector serial for logging
+        detector_serial = None
+        if self.usb and hasattr(self.usb, "serial_number"):
+            detector_serial = self.usb.serial_number
+
+        # Read from hardware section only (single source of truth)
+        if "hardware" in cfg:
+            s_pos = cfg["hardware"].get("servo_s_position")
+            p_pos = cfg["hardware"].get("servo_p_position")
+            if s_pos is not None and p_pos is not None:
+                # Validate positions are in valid range (1-180 degrees)
+                if not (1 <= s_pos <= 180):
+                    msg = f"Invalid S-position {s_pos} (must be 1-180)"
+                    raise ValueError(msg)
+                if not (1 <= p_pos <= 180):
+                    msg = f"Invalid P-position {p_pos} (must be 1-180)"
+                    raise ValueError(msg)
+
+                logger.info(
+                    f"[HAL] Servo positions for {detector_serial}: S={s_pos}°, P={p_pos}°",
+                )
+                return {"s_position": s_pos, "p_position": p_pos}
+
+        # Fallback to defaults if not found
+        logger.warning(
+            f"[HAL] No servo positions in config for {detector_serial} - using defaults",
+        )
+        return {"s_position": 120, "p_position": 60}
+
+    def get_device_config(self) -> dict:
+        """Get device configuration dictionary (HAL method).
+
+        Returns the configuration dictionary for the connected detector.
+        This provides access to hardware settings, calibration data, etc.
+
+        Returns:
+            Device configuration dictionary
+
+        Raises:
+            RuntimeError: If device_config not available
+
+        """
+        if not self.device_config:
+            msg = "Device configuration not loaded - call scan_and_connect first"
+            raise RuntimeError(msg)
+
+        # Return the config dict
+        if hasattr(self.device_config, "config"):
+            return self.device_config.config
+
+        return self.device_config
 
     def _try_reconnect_controller(self) -> bool | None:
         """Fast reconnect to cached controller port/type after file reload."""
@@ -279,42 +351,31 @@ class HardwareManager(QObject):
                 )
                 return
 
-            # Load device config to get servo positions
+            # Check if device_config is available (should be loaded by now)
+            if not self.device_config:
+                logger.error("❌ Device configuration not loaded - cannot initialize servo!")
+                logger.error("   Servo initialization requires device_config to be loaded first")
+                return
+
+            # Get servo positions from device_config (single source of truth)
+            servo_positions = self.device_config.get_servo_positions()
+            s_position = servo_positions["s"]
+            p_position = servo_positions["p"]
+
+            logger.info(f"📍 Servo positions from device_config: S={s_position}°, P={p_position}°")
+
+            # CRITICAL: Sync device_config to EEPROM FIRST (device_config is truth)
+            logger.info("📝 Syncing device_config to EEPROM (device_config is source of truth)...")
             try:
-                from affilabs.utils.common import get_config
-            except ImportError:
-                from affilabs.utils.common import get_config
-
-            config = get_config()
-
-            # Try to get detector serial for device-specific config
-            detector_serial = None
-            if self.usb and hasattr(self.usb, "serial_number"):
-                detector_serial = self.usb.serial_number
-
-            # Look for servo positions in config
-            s_position = None
-            p_position = None
-
-            # Try detector-specific config first
-            if detector_serial and "detectors" in config:
-                detector_config = config["detectors"].get(detector_serial, {})
-                hw = detector_config.get("hardware", {})
-                s_position = hw.get("servo_s_position")
-                p_position = hw.get("servo_p_position")
-                if s_position and p_position:
-                    logger.info(
-                        f"📍 Using detector-specific servo positions: S={s_position}°, P={p_position}°",
+                sync_success = self.device_config.sync_to_eeprom(self._ctrl_raw)
+                if sync_success:
+                    logger.info("[OK] Device config synced to EEPROM successfully")
+                else:
+                    logger.warning(
+                        "⚠️  EEPROM sync failed - servo positions may not match device_config"
                     )
-
-            # Fall back to default config
-            if s_position is None or p_position is None:
-                hw = config.get("hardware", {})
-                s_position = hw.get("servo_s_position", 120)  # Default S=120°
-                p_position = hw.get("servo_p_position", 60)  # Default P=60°
-                logger.info(
-                    f"📍 Using default servo positions: S={s_position}°, P={p_position}°",
-                )
+            except Exception as sync_err:
+                logger.error(f"Failed to sync device_config to EEPROM: {sync_err}")
 
             # Turn off all LEDs for safety during servo movement
             logger.info("💡 Turning off all LEDs for safe servo movement...")
@@ -329,7 +390,7 @@ class HardwareManager(QObject):
             self.ctrl.servo_move_calibration_only(s=1, p=1)
             time.sleep(0.5)  # Allow servo to complete movement
 
-            # Move to S-mode position
+            # Move to S-mode position (degrees 0-180)
             logger.info(
                 f"↗ Moving polarizer to S-mode: S={s_position}°, P={p_position}°...",
             )
@@ -431,7 +492,7 @@ class HardwareManager(QObject):
 
         See: README_HARDWARE_BEHAVIOR.md for complete documentation
         """
-        logger.info("HardwareManager.scan_and_connect() called")
+        logger.debug("HardwareManager.scan_and_connect() called")
         _ = auto_connect  # reserved for future use per API
 
         # Check if main unit (controller+detector) is already locked
@@ -597,6 +658,22 @@ class HardwareManager(QObject):
                         if hasattr(self._preinit_detector, "serial_number"):
                             self._spec_serial = self._preinit_detector.serial_number
                             logger.info(f"Detector found: {self._spec_serial}")
+
+                            # Initialize device configuration for this detector
+                            from affilabs.utils.device_configuration import DeviceConfiguration
+
+                            self.device_config = DeviceConfiguration(
+                                device_serial=self._spec_serial,
+                                controller=self._ctrl_raw
+                                if hasattr(self, "_ctrl_raw") and self._ctrl_raw
+                                else None,
+                                silent_load=True,
+                            )
+                            logger.info(f"Device configuration loaded for {self._spec_serial}")
+
+                            # NOW initialize servo polarizer (device_config is loaded)
+                            if self.ctrl:
+                                self._initialize_servo_polarizer()
                 else:
                     logger.error("Detector initialization failed")
                     self.usb = None
@@ -953,8 +1030,7 @@ class HardwareManager(QObject):
                         self._ctrl_port = pico_p4spr._ser.port
                         logger.info(f"Cached controller port: {self._ctrl_port}")
 
-                # Initialize servo polarizer to S-mode position on connection
-                self._initialize_servo_polarizer()
+                # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
                 logger.info("[OK] Controller wrapped with HAL")
                 return  # Found controller - stop searching
             logger.debug("PicoP4SPR open failed")
@@ -979,43 +1055,17 @@ class HardwareManager(QObject):
                     if hasattr(pico_ezspr, "_ser") and pico_ezspr._ser:
                         self._ctrl_port = pico_ezspr._ser.port
 
-                # Initialize servo polarizer to S-mode position on connection
-                self._initialize_servo_polarizer()
+                # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
                 logger.info("[OK] Controller wrapped with HAL")
                 return  # Found controller - stop searching
 
-            # Priority 3: Try Arduino (legacy controller) - only if enabled
-            if ENABLE_ARDUINO_SCAN:
-                logger.info(
-                    f"Trying Arduino P4SPR (VID:PID = {hex(settings['ARDUINO_VID'])}:{hex(settings['ARDUINO_PID'])})...",
-                )
-                arduino = classes["ArduinoController"]()
-                if arduino.open():
-                    logger.info(f"[OK] Controller connected: {arduino.name}")
-
-                    # Wrap with HAL for consistent interface
-                    from affilabs.utils.hal.controller_hal import create_controller_hal
-
-                    hal_ctrl = create_controller_hal(arduino, self.device_config)
-
-                    with self._connection_lock:
-                        self.ctrl = hal_ctrl
-                        self._ctrl_raw = arduino  # Keep raw reference for non-HAL methods
-                        self._ctrl_type = "ArduinoController"
-                        if hasattr(arduino, "_ser") and arduino._ser:
-                            self._ctrl_port = arduino._ser.port
-
-                    # Initialize servo polarizer to S-mode position on connection
-                    self._initialize_servo_polarizer()
-                    logger.info("[OK] Controller wrapped with HAL")
-                    return  # Found controller - stop searching
-            else:
-                logger.debug("[SCAN] Arduino scan disabled (ENABLE_ARDUINO_SCAN=False)")
+            # Arduino controller DELETED - obsolete hardware
+            # Only PicoP4SPR and PicoEZSPR are supported
 
             logger.warning("No SPR controller found")
             settings = _get_settings()
             logger.info(
-                f"   Checked: Arduino ({hex(settings['ARDUINO_VID'])}:{hex(settings['ARDUINO_PID'])}), Pico ({hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})",
+                f"   Checked: Pico ({hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})",
             )
             logger.info("   Check: drivers, USB cable, port, other programs")
             with self._connection_lock:

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from affilabs.core.calibration_data import CalibrationData
+    from affilabs.domain.calibration_data import CalibrationData
 
 logger = logging.getLogger(__name__)
 

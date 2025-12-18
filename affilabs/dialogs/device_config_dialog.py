@@ -6,6 +6,8 @@ Dialog to collect device configuration information (LED model, controller type,
 fiber diameter, polarizer type, device ID) with optional EEPROM sync.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from PySide6.QtCore import Qt

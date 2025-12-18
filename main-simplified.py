@@ -458,15 +458,15 @@ class Application(QApplication):
 
         """
         try:
-            logger.info(f"Phase {phase}: {name}...")
+            logger.info(f"[{phase}] {name}")
             func()
-            logger.debug(f"Phase {phase}: {name} complete")
+            logger.debug(f"[{phase}] ✓ {name}")
         except Exception as e:
-            logger.error(f"Phase {phase}: {name} failed: {e}", exc_info=True)
+            logger.error(f"[{phase}] ✗ {name}: {e}", exc_info=True)
             if critical:
-                logger.critical(f"Critical phase {phase} failed, cannot continue")
+                logger.critical(f"Critical initialization failed")
                 raise SystemExit(1)
-            logger.warning(f"Non-critical phase {phase} failed, continuing anyway")
+            logger.warning(f"[{phase}] Non-critical error, continuing")
 
     def _validate_critical_imports(self):
         """Fail fast if critical modules are missing or broken.
@@ -478,26 +478,25 @@ class Application(QApplication):
             SystemExit: If any critical import fails
 
         """
-        logger.info("Validating critical imports...")
+        logger.debug("Validating imports...")
 
         failures = []
 
-        # Validate controller classes
+        # Validate controller classes (ArduinoController deleted - obsolete)
         try:
             from affilabs.utils.controller import (
-                ArduinoController,
                 PicoEZSPR,
                 PicoP4SPR,
             )
 
             # Verify classes are actually callable (not None/stub)
             if not all(
-                callable(cls) for cls in [PicoP4SPR, PicoEZSPR, ArduinoController]
+                callable(cls) for cls in [PicoP4SPR, PicoEZSPR]
             ):
                 raise ImportError("Controller classes are not callable")
-            logger.debug("  Controller classes OK")
+            logger.debug("✓ Controllers")
         except (ImportError, AttributeError) as e:
-            failures.append(f"Controller classes: {e}")
+            failures.append(f"Controllers: {e}")
 
         # Validate settings
         try:
@@ -506,23 +505,20 @@ class Application(QApplication):
             # Verify settings are valid integers
             if not all(isinstance(vid, int) for vid in [PICO_VID, ARDUINO_VID]):
                 raise ValueError("VID values must be integers")
-            logger.debug("  Settings OK")
+            logger.debug("✓ Settings")
         except (ImportError, AttributeError, ValueError) as e:
             failures.append(f"Settings: {e}")
 
         # Report HAL availability
-        if HAL_AVAILABLE:
-            logger.info("  Phase 1.4 HAL available")
-        else:
-            error_msg = _safe_get_global("_hal_import_error", "unknown error")
-            logger.warning(f"  Phase 1.4 HAL not available: {error_msg}")
+        hal_status = "✓ HAL" if HAL_AVAILABLE else "⚠ HAL unavailable"
+        logger.debug(hal_status)
 
         # Report Coordinators availability
         if COORDINATORS_AVAILABLE:
-            logger.info("  UI Coordinators available")
+            logger.debug("✓ UI Coordinators")
         else:
             error_msg = _safe_get_global("_coordinators_import_error", "unknown error")
-            logger.warning(f"  UI Coordinators not available: {error_msg}")
+            logger.warning(f"⚠ UI Coordinators not available: {error_msg}")
 
         # Fail fast if critical imports missing
         if failures:
@@ -534,7 +530,7 @@ class Application(QApplication):
             logger.critical("=" * 80)
             raise SystemExit(1)
 
-        logger.info("  All critical imports validated")
+        logger.debug("✓ All critical imports validated")
 
     def _setup_infrastructure(self):
         """Setup logging, theme, profiling (no business logic).
@@ -663,7 +659,7 @@ class Application(QApplication):
         from affilabs.utils.pipelines import initialize_pipelines
 
         initialize_pipelines()
-        logger.info("  Processing pipelines initialized")
+        logger.debug("✓ Pipelines")
 
         # Hardware manager (does NOT auto-connect)
         self.hardware_mgr = HardwareManager()
@@ -674,13 +670,13 @@ class Application(QApplication):
         if HAL_AVAILABLE:
             try:
                 self.device_manager = DeviceManager()
-                logger.info("  DeviceManager (HAL) initialized")
+                logger.debug("✓ DeviceManager (HAL)")
             except Exception as e:
-                logger.error(f"  DeviceManager failed to initialize: {e}")
+                logger.warning(f"⚠ DeviceManager unavailable: {e}")
                 self.device_manager = None
         else:
             self.device_manager = None
-            logger.info("  Using legacy HardwareManager only")
+            logger.debug("Using legacy HardwareManager")
 
         # Data acquisition manager
         self.data_mgr = DataAcquisitionManager(self.hardware_mgr)
@@ -712,9 +708,9 @@ class Application(QApplication):
 
         # Segment queue (TEST MODE - minimal implementation)
         self.segment_queue = []  # List of segment definition dicts
-        logger.info("  Segment queue initialized (TEST MODE)")
+        logger.debug("Segment queue initialized (TEST MODE)")
 
-        logger.info("  All managers initialized successfully")
+        logger.debug("✓ Managers")
 
     def _init_services(self):
         """Initialize business services (pure logic, no UI).
@@ -736,7 +732,7 @@ class Application(QApplication):
             raise RuntimeError("BaselineCorrector initialization failed")
 
         logger.info(
-            "  Business services initialized (TransmissionCalculator, BaselineCorrector)",
+            "✓ Business services",
         )
 
         # Calibration and cycle coordinators
@@ -753,13 +749,13 @@ class Application(QApplication):
         if self.profiler is None:
             logger.warning("  Profiler not available, performance tracking disabled")
 
-        logger.info("  All services initialized successfully")
+        logger.debug("All services initialized successfully")
 
-        logger.info("  Services initialized")
+        logger.debug("✓ Services")
 
     def _create_main_window(self):
         """Create main window (UI layer entry point)."""
-        logger.info("Creating main window...")
+        logger.debug("Creating main window...")
 
         # Create main window
         self.main_window = AffilabsMainWindow()
@@ -782,20 +778,18 @@ class Application(QApplication):
 
         # Verify spectroscopy plots availability
         if not hasattr(self.main_window, "transmission_curves"):
-            logger.warning(
-                "  Spectroscopy plots NOT found in main window - graphs will not display",
-            )
+            logger.warning("⚠ Spectroscopy plots unavailable")
 
         # Debug controller (requires main_window)
         from affilabs.utils.debug_controller import DebugController
 
         self.debug = DebugController(self)
 
-        logger.info("  Main window created")
+        logger.debug("✓ Main window")
 
     def _init_coordinators(self):
         """Initialize UI coordinators (require main window)."""
-        logger.info("Initializing coordinators...")
+        logger.debug("Initializing coordinators...")
 
         # Hardware event coordinator
         from affilabs.coordinators.hardware_event_coordinator import (
@@ -807,7 +801,6 @@ class Application(QApplication):
             self.main_window,
             self,
         )
-        logger.info("  HardwareEventCoordinator initialized")
 
         # Acquisition event coordinator
         from affilabs.coordinators.acquisition_event_coordinator import (
@@ -820,7 +813,6 @@ class Application(QApplication):
             self.main_window,
             self,
         )
-        logger.info("  AcquisitionEventCoordinator initialized")
 
         # UI control event coordinator
         from affilabs.coordinators.ui_control_event_coordinator import (
@@ -828,7 +820,6 @@ class Application(QApplication):
         )
 
         self.ui_control_events = UIControlEventCoordinator(self)
-        logger.info("  UIControlEventCoordinator initialized")
 
         # Peripheral event coordinator
         from affilabs.coordinators.peripheral_event_coordinator import (
@@ -836,32 +827,30 @@ class Application(QApplication):
         )
 
         self.peripheral_events = PeripheralEventCoordinator(self)
-        logger.info("  PeripheralEventCoordinator initialized")
 
         # UI update coordinator and dialog manager
         if COORDINATORS_AVAILABLE:
             self.ui_updates = AL_UIUpdateCoordinator(self, self.main_window)
             self.dialog_manager = DialogManager(self.main_window)
-            logger.info(
-                "  UI coordinators initialized (AL_UIUpdateCoordinator, DialogManager)",
-            )
+            logger.debug("✓ Coordinators (5 loaded)")
         else:
             self.ui_updates = None
             self.dialog_manager = None
+            logger.debug("✓ Coordinators (4 loaded)")
             logger.warning("  Running without UI coordinators (compatibility mode)")
 
     def _init_viewmodels(self):
         """Initialize ViewModels (UI-aware, require coordinators and services)."""
-        logger.info("Initializing viewmodels...")
+        logger.debug("Initializing viewmodels...")
 
         # Device status view model
         self.device_status_vm = DeviceStatusViewModel(
             device_manager=self.device_manager if HAL_AVAILABLE else None,
         )
         if HAL_AVAILABLE and self.device_manager:
-            logger.info("  DeviceStatusViewModel initialized with HAL DeviceManager")
+            logger.debug("✓ DeviceStatusViewModel (HAL)")
         else:
-            logger.info("  DeviceStatusViewModel initialized (legacy mode)")
+            logger.debug("✓ DeviceStatusViewModel (legacy)")
 
         # SpectrumViewModel for each channel
         try:
@@ -884,7 +873,7 @@ class Application(QApplication):
                     spectrum_processor,
                 )
 
-            logger.info("  SpectrumViewModel initialized for all channels")
+            logger.debug("✓ SpectrumViewModel (4 channels)")
         except (ImportError, AttributeError) as e:
             logger.warning(f"  Failed to initialize SpectrumViewModel: {e}")
             self.spectrum_viewmodels = None
@@ -902,7 +891,7 @@ class Application(QApplication):
             self.calibration_viewmodel = CalibrationViewModel()
             calibration_validator = CalibrationValidator()
             self.calibration_viewmodel.set_validator(calibration_validator)
-            logger.info("  CalibrationViewModel initialized with validator")
+            logger.debug("✓ CalibrationViewModel")
         except (ImportError, AttributeError) as e:
             logger.warning(f"  Failed to initialize CalibrationViewModel: {e}")
             self.calibration_viewmodel = None
@@ -915,7 +904,7 @@ class Application(QApplication):
 
     def _connect_all_signals(self):
         """Connect all signals (require all subsystems initialized)."""
-        logger.info("Connecting signals...")
+        logger.debug("Connecting signals...")
 
         # Connect hardware manager signals to UI
         self._connect_signals()
@@ -925,11 +914,11 @@ class Application(QApplication):
         self._connect_manager_signals()
         self._connect_ui_event_signals()
 
-        logger.info("  All signals connected")
+        logger.debug("✓ All signals connected")
 
     def _finalize_and_show(self):
         """Finalize initialization and show main window."""
-        logger.info("Finalizing application...")
+        logger.debug("Finalizing application...")
 
         # Start processing thread (acquisition ΓåÆ processing separation)
         self._start_processing_thread()
@@ -952,7 +941,7 @@ class Application(QApplication):
             )
 
         # Show window FIRST (before loading heavy widgets)
-        logger.info("Showing main window...")
+        logger.debug("Showing main window...")
         if hasattr(self, "update_splash_message"):
             self.update_splash_message("Building interface...")
 
@@ -960,7 +949,7 @@ class Application(QApplication):
         self.main_window.raise_()
         self.main_window.activateWindow()
         QApplication.processEvents()  # Force immediate render
-        logger.info(f"  Window visible: {self.main_window.isVisible()}")
+        logger.debug(f"Window visible: {self.main_window.isVisible()}")
 
         # Load deferred widgets in background (after window visible)
         QTimer.singleShot(50, self._load_deferred_widgets)
@@ -975,7 +964,7 @@ class Application(QApplication):
         then loading expensive components in the background.
         """
         try:
-            logger.info("Loading deferred UI components...")
+            logger.debug("Loading deferred UI components...")
             # Update splash message
             if hasattr(self, "update_splash_message"):
                 self.update_splash_message("Loading graphs...")
@@ -983,7 +972,7 @@ class Application(QApplication):
             # Load heavy graph widgets (PyQtGraph plots)
             if hasattr(self.main_window, "load_deferred_graphs"):
                 self.main_window.load_deferred_graphs()
-                logger.info("  Graph widgets loaded")
+                logger.debug("✓ Graph widgets")
 
             # Process events to ensure graphs are rendered before connecting signals
             QApplication.processEvents()
@@ -999,11 +988,11 @@ class Application(QApplication):
                     self.main_window.full_timeline_graph.stop_cursor.sigPositionChanged.connect(
                         self._update_cycle_of_interest_graph,
                     )
-                logger.info("  Timeline graph cursors connected")
+                logger.debug("✓ Timeline cursors")
 
             # Connect cursor auto-follow signal (thread-safe)
             self.cursor_update_signal.connect(self._update_stop_cursor_position)
-            logger.info("  Cursor auto-follow connected")
+            logger.debug("✓ Cursor auto-follow")
 
             # [Timeframe Mode removed - using legacy cursor system]
 
@@ -1013,8 +1002,8 @@ class Application(QApplication):
                 and hasattr(self.main_window.full_timeline_graph, "stop_cursor")
                 and self.main_window.full_timeline_graph.stop_cursor is not None
             )
-            logger.info(
-                f"  ╬ô├ñΓòúΓê⌐Γòò├à  Stop cursor available: {self._has_stop_cursor}",
+            logger.debug(
+                f"\u2713 Stop cursor available: {self._has_stop_cursor}",
             )
 
             # Connect polarizer toggle button to servo control
@@ -1022,23 +1011,23 @@ class Application(QApplication):
                 self.main_window.polarizer_toggle_btn.clicked.connect(
                     self._on_polarizer_toggle_clicked,
                 )
-                logger.info("  Polarizer toggle connected")
+                logger.debug("✓ Polarizer toggle")
 
             # Connect mouse events for channel selection and flagging
             if hasattr(self.main_window, "cycle_of_interest_graph"):
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked,
                 )
-                logger.info("  Graph click events connected")
+                logger.debug("✓ Graph click events")
 
             # Mark deferred loading as complete
             self._deferred_connections_pending = False
 
             # Now connect UI button/control signals (after graphs are loaded)
             self._connect_ui_signals()
-            logger.info("  UI control signals connected")
+            logger.debug("✓ UI control signals")
 
-            logger.info("Deferred UI components loaded successfully")
+            logger.debug("✓ Deferred UI components loaded")
 
         except Exception as e:
             logger.error(f"[X] Error loading deferred widgets: {e}", exc_info=True)
@@ -1105,8 +1094,8 @@ class Application(QApplication):
             Qt.QueuedConnection,
         )
         # NOTE: _on_calibration_complete_status_update handles BOTH status updates AND QC dialog
-        logger.info(
-            "Connected: calibration.calibration_complete -> _on_calibration_complete_status_update",
+        logger.debug(
+            "✓ calibration.calibration_complete signal",
         )
 
         # === RECORDING MANAGER SIGNALS ===
@@ -1159,8 +1148,8 @@ class Application(QApplication):
         """Connect UI signals after handler method is defined."""
         # === UI SIGNALS (user requests) ===
         self.main_window.power_on_requested.connect(self._on_power_on_requested)
-        logger.info(
-            "Connected: main_window.power_on_requested -> _on_power_on_requested",
+        logger.debug(
+            "✓ power_on_requested signal",
         )
 
         self.main_window.power_off_requested.connect(self._on_power_off_requested)
@@ -1174,14 +1163,12 @@ class Application(QApplication):
         # self.main_window.clear_graphs_requested.connect(self._on_clear_graphs_requested)
         # self.main_window.clear_flags_requested.connect(self._on_clear_flags_requested)
         # self.main_window.pipeline_changed.connect(self._on_pipeline_changed)
-        logger.info("Connected: main_window UI action signals")
+        logger.debug("Connected: main_window UI action signals")
 
         # === DEBUG SHORTCUTS ===
         from PySide6.QtGui import QKeySequence, QShortcut
 
-        logger.info("=" * 80)
-        logger.info("REGISTERING DEBUG SHORTCUTS")
-        logger.info("=" * 80)
+        logger.debug("Registering debug shortcuts...")
 
         # Ctrl+Shift+C: Bypass calibration - DISABLED (missing debug_helpers module)
         # bypass_calibration_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self.main_window)
@@ -1193,9 +1180,9 @@ class Application(QApplication):
         simulation_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self.main_window)
         simulation_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         simulation_shortcut.activated.connect(self.debug.start_simulation)
-        logger.info(f"[OK] Ctrl+Shift+S registered: {simulation_shortcut}")
-        logger.info(f"   Context: {simulation_shortcut.context()}")
-        logger.info(f"   Key: {simulation_shortcut.key().toString()}")
+        logger.debug(f"[DEBUG] Ctrl+Shift+S: {simulation_shortcut}")
+        logger.debug(f"   Context: {simulation_shortcut.context()}")
+        logger.debug(f"   Key: {simulation_shortcut.key().toString()}")
 
         # Ctrl+Shift+1: Single data point test (minimal test)
         single_point_shortcut = QShortcut(
@@ -1204,12 +1191,11 @@ class Application(QApplication):
         )
         single_point_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         single_point_shortcut.activated.connect(self.debug.send_single_data_point)
-        logger.info(f"[OK] Ctrl+Shift+1 registered: {single_point_shortcut}")
-        logger.info(f"   Context: {single_point_shortcut.context()}")
-        logger.info(f"   Key: {single_point_shortcut.key().toString()}")
+        logger.debug(f"[DEBUG] Ctrl+Shift+1: {single_point_shortcut}")
+        logger.debug(f"   Context: {single_point_shortcut.context()}")
+        logger.debug(f"   Key: {single_point_shortcut.key().toString()}")
 
-        logger.info("=" * 80)
-        logger.info("[DEBUG] Ctrl+Shift+S to start spectrum simulation")
+        logger.debug("Ctrl+Shift+S: spectrum simulation")
 
         self.main_window.acquisition_pause_requested.connect(
             self._on_acquisition_pause_requested,
@@ -1217,12 +1203,12 @@ class Application(QApplication):
         self.main_window.export_requested.connect(self._on_export_requested)
 
         # === TIMEFRAME MODE SIGNALS (Phase 2 - Cursor Replacement) ===
-        logger.info("[Timeframe Mode removed]")
+        logger.debug("[Timeframe Mode removed]")
 
         # === UI CONTROL SIGNALS (direct connections - not through event bus) ===
         self._connect_ui_control_signals()
 
-        logger.info("[OK] All signal connections registered")
+        logger.debug("[DEBUG] All shortcuts registered")
 
     def _connect_ui_control_signals(self):
         """Register UI control element signal connections.
@@ -1261,7 +1247,7 @@ class Application(QApplication):
         # If available, connect here to ensure functionality
         if hasattr(ui, "polarizer_calibration_btn"):
             ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
-            logger.info("[OK] Connected Polarizer Calibration button to handler")
+            logger.debug("[OK] Connected Polarizer Calibration button to handler")
 
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
@@ -1269,7 +1255,7 @@ class Application(QApplication):
         # Baseline Capture button (REBUILT - direct connection, no lambda)
         if hasattr(ui, "baseline_capture_btn"):
             ui.baseline_capture_btn.clicked.connect(self._on_record_baseline_clicked)
-            logger.info("[OK] Connected Baseline Capture button to handler")
+            logger.debug("[OK] Connected Baseline Capture button to handler")
         else:
             logger.warning("[WARN] baseline_capture_btn NOT found in UI")
 
@@ -1286,8 +1272,8 @@ class Application(QApplication):
         # Start Cycle button: App layer needs to start data acquisition
         # (UI's start_cycle() handles experiment queue - different purpose)
         ui.sidebar.start_cycle_btn.clicked.connect(self._on_start_button_clicked)
-        logger.info(
-            "[OK] Connected start_cycle_btn -> _on_start_button_clicked (acquisition start)",
+        logger.debug(
+            "✓ start_cycle_btn connected",
         )
 
         # NOTE: Detector wait time and pipeline selector are in Advanced Settings dialog
@@ -1296,8 +1282,8 @@ class Application(QApplication):
         # Add to Queue button (TEST MODE - segment queue)
         if hasattr(ui.sidebar, "add_to_queue_btn"):
             ui.sidebar.add_to_queue_btn.clicked.connect(self._on_add_to_queue)
-            logger.info(
-                "[OK] Connected add_to_queue_btn -> _on_add_to_queue (TEST MODE)",
+            logger.debug(
+                "✓ add_to_queue_btn connected (TEST MODE)",
             )
         else:
             logger.warning("[WARN] add_to_queue_btn NOT found in UI")
@@ -1314,7 +1300,7 @@ class Application(QApplication):
         )
         self.device_status_vm.device_error.connect(self._on_vm_device_error)
         self.device_status_vm.overall_status_changed.connect(self._on_vm_status_changed)
-        logger.info("[OK] DeviceStatusViewModel signals connected")
+        logger.debug("✓ DeviceStatusViewModel signals")
 
         # === SPECTRUM VIEWMODELS ===
         if self.spectrum_viewmodels:
@@ -1340,7 +1326,7 @@ class Application(QApplication):
                         meta,
                     ),
                 )
-            logger.info("[OK] SpectrumViewModel signals connected for all channels")
+            logger.debug("✓ SpectrumViewModel signals (4 channels)")
 
         # === CALIBRATION VIEWMODEL ===
         if self.calibration_viewmodel:
@@ -1359,7 +1345,7 @@ class Application(QApplication):
             self.calibration_viewmodel.validation_complete.connect(
                 self._on_cal_vm_validation_complete,
             )
-            logger.info("[OK] CalibrationViewModel signals connected")
+            logger.debug("✓ CalibrationViewModel signals")
 
     def _connect_manager_signals(self):
         """Connect manager/service signals to handlers (Phase 4 refactoring).
@@ -1411,9 +1397,9 @@ class Application(QApplication):
 
         # Initialize filter to default (None/Raw) - must be outside the if block
         self._set_display_filter(0)
-        logger.info("[OK] EMA display filter initialized to None (Raw)")
+        logger.debug("✓ EMA filter: Raw")
 
-        logger.info("[OK] UI event signals connected (tabs/pages/filters)")
+        logger.debug("✓ UI event signals (tabs/pages/filters)")
 
     def _set_display_filter(self, filter_id: int):
         """Set EMA display filter method based on radio button selection.
@@ -1436,8 +1422,8 @@ class Application(QApplication):
             # Reset EMA state when changing filters
             self._ema_state = {"a": None, "b": None, "c": None, "d": None}
 
-            logger.info(f"≡ƒÄ¢ Display filter changed to: {config['label']}")
-            logger.info(
+            logger.info(f"Display filter: {config['label']}")
+            logger.debug(
                 f"   Method: {self._display_filter_method}, Alpha: {self._display_filter_alpha}",
             )
 
@@ -1498,21 +1484,19 @@ class Application(QApplication):
             tags = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)\]", note)
             if tags:
                 segment["concentrations"] = dict(tags)
-                logger.info(
-                    f"   Parsed concentrations: {segment['concentrations']} {units}",
+                logger.debug(
+                    f"Parsed concentrations: {segment['concentrations']} {units}",
                 )
 
             # Add to queue
             self.segment_queue.append(segment)
 
             # Log success
-            logger.info(f"[OK] Added to queue: {segment['name']}")
-            logger.info(f"   Type: {segment['type']}")
-            logger.info(f"   Length: {segment['length_minutes']} minutes")
-            logger.info(f"   Note: {segment['note'][:100]}...") if len(
+            logger.info(f"✓ Added cycle {len(self.segment_queue)}: {cycle_type}, {length_minutes}min")
+            logger.debug(f"   Name: {segment['name']}")
+            logger.debug(f"   Note: {segment['note'][:100]}...") if len(
                 segment["note"],
-            ) > 100 else logger.info(f"   Note: {segment['note']}")
-            logger.info(f"   Queue size: {len(self.segment_queue)}")
+            ) > 100 else logger.debug(f"   Note: {segment['note']}")
 
             # Update intelligence bar
             if hasattr(self.main_window.sidebar, "intel_message_label"):
@@ -1526,6 +1510,9 @@ class Application(QApplication):
                     "font-weight: 600;"
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
+
+            # Update summary table
+            self._update_summary_table()
 
             # Validate queue structure
             self._validate_segment_queue()
@@ -1544,39 +1531,118 @@ class Application(QApplication):
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
+    def _update_summary_table(self):
+        """Update summary table with last 5 cycles from segment queue.
+
+        Displays cycle state, type (with color coding), start time, and notes.
+        Color codes cycle types for easy visual distinction.
+        """
+        from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QTableWidgetItem
+        from datetime import datetime
+
+        # Define color scheme for cycle types
+        type_colors = {
+            "Auto-read": QColor(242, 242, 247),  # Light gray
+            "Baseline": QColor(217, 234, 250),  # Light blue
+            "Immobilization": QColor(232, 245, 233),  # Light green
+            "Concentration": QColor(255, 243, 224),  # Light orange
+        }
+
+        # Get last 5 segments (most recent first)
+        recent_segments = self.segment_queue[-5:] if len(self.segment_queue) > 0 else []
+        recent_segments.reverse()  # Show newest at top
+
+        # Clear table and populate with segments
+        for row in range(5):
+            if row < len(recent_segments):
+                segment = recent_segments[row]
+
+                # State column with color coding
+                status = segment.get("status", "pending")
+                if status == "pending":
+                    state_text = "⏳ Queued"
+                    state_color = QColor(255, 249, 196)  # Light yellow
+                elif status == "active":
+                    state_text = "▶ Running"
+                    state_color = QColor(217, 234, 250)  # Light blue
+                elif status == "completed":
+                    state_text = "✓ Done"
+                    state_color = QColor(232, 245, 233)  # Light green
+                else:
+                    state_text = "•"
+                    state_color = QColor(242, 242, 247)  # Gray
+
+                state_item = QTableWidgetItem(state_text)
+                state_item.setBackground(state_color)
+                self.main_window.sidebar.summary_table.setItem(row, 0, state_item)
+
+                # Type column with type-specific color
+                cycle_type = segment.get("type", "")
+                type_item = QTableWidgetItem(cycle_type)
+                type_color = type_colors.get(cycle_type, QColor(242, 242, 247))
+                type_item.setBackground(type_color)
+                self.main_window.sidebar.summary_table.setItem(row, 1, type_item)
+
+                # Start time column
+                timestamp = segment.get("timestamp", 0)
+                if timestamp > 0:
+                    start_time = datetime.fromtimestamp(timestamp).strftime("%H:%M")
+                else:
+                    start_time = "--:--"
+                start_item = QTableWidgetItem(start_time)
+                start_item.setBackground(state_color)
+                self.main_window.sidebar.summary_table.setItem(row, 2, start_item)
+
+                # Notes column (truncated)
+                note = segment.get("note", "")
+                note_display = note[:40] + "..." if len(note) > 40 else note
+                note_item = QTableWidgetItem(note_display)
+                note_item.setBackground(state_color)
+                self.main_window.sidebar.summary_table.setItem(row, 3, note_item)
+
+            else:
+                # Empty row
+                for col in range(4):
+                    empty_item = QTableWidgetItem("")
+                    empty_item.setBackground(QColor(255, 255, 255))  # White
+                    self.main_window.sidebar.summary_table.setItem(row, col, empty_item)
+
+        logger.debug(f"✓ Summary table updated ({len(recent_segments)} cycles)")
+
     def _validate_segment_queue(self):
         """Validate segment queue structure (TEST MODE).
 
         Logs queue contents and validates data structure.
         This helps verify the architecture is sound.
         """
-        logger.info("=" * 80)
-        logger.info("≡ƒº¬ SEGMENT QUEUE VALIDATION TEST")
-        logger.info("=" * 80)
-        logger.info(f"Queue size: {len(self.segment_queue)} segments")
-        logger.info("")
+        logger.debug("=" * 80)
+        logger.debug("🧪 SEGMENT QUEUE VALIDATION TEST")
+        logger.debug("=" * 80)
+        logger.debug(f"Queue size: {len(self.segment_queue)} segments")
+        logger.debug("")
 
         for i, seg in enumerate(self.segment_queue):
-            logger.info(f"[{i + 1}] {seg['name']}")
-            logger.info(f"    Type: {seg['type']}")
-            logger.info(f"    Length: {seg['length_minutes']} minutes")
-            logger.info(f"    Status: {seg['status']}")
+            logger.debug(f"[{i + 1}] {seg['name']}")
+            logger.debug(f"    Type: {seg['type']}")
+            logger.debug(f"    Length: {seg['length_minutes']} minutes")
+            logger.debug(f"    Status: {seg['status']}")
 
             if "concentrations" in seg:
-                logger.info(
+                logger.debug(
                     f"    Concentrations: {seg['concentrations']} {seg['units']}",
                 )
 
             if seg["note"]:
-                logger.info(f"    Note: {seg['note'][:80]}...") if len(
+                logger.debug(f"    Note: {seg['note'][:80]}...") if len(
                     seg["note"],
-                ) > 80 else logger.info(f"    Note: {seg['note']}")
+                ) > 80 else logger.debug(f"    Note: {seg['note']}")
 
-            logger.info("")
+            logger.debug("")
 
-        logger.info("=" * 80)
-        logger.info("[OK] Queue validation complete")
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
+        logger.debug("[OK] Queue validation complete")
+        logger.debug("=" * 80)
 
     def _on_scan_requested(self):
         """User clicked Scan button in UI."""
@@ -1699,7 +1765,7 @@ class Application(QApplication):
         Separates acquisition from processing to prevent jitter in acquisition timing.
         Acquisition thread only queues data, processing thread handles all analysis.
         """
-        logger.info("[THREAD-INIT] Starting processing thread...")
+        logger.debug("Starting processing thread...")
         self._processing_active = True
         self._processing_thread = threading.Thread(
             target=self._processing_worker,
@@ -1707,10 +1773,9 @@ class Application(QApplication):
             daemon=True,
         )
         self._processing_thread.start()
-        logger.info(
-            f"Thread started: alive={self._processing_thread.is_alive()}, name={self._processing_thread.name}",
+        logger.debug(
+            f"✓ Processing thread started: {self._processing_thread.name}",
         )
-        logger.info("[OK] Processing thread started (acquisition/processing separated)")
 
     def _stop_processing_thread(self):
         """Stop processing thread gracefully."""
@@ -2150,7 +2215,7 @@ class Application(QApplication):
 
     def _on_pump_initialized(self):
         """Pump initialized successfully."""
-        logger.info("[OK] Pump initialized")
+        logger.debug("✓ Pump initialized")
         # TODO: Enable pump controls in UI
 
     def _on_pump_error(self, error: str):
@@ -2293,7 +2358,7 @@ class Application(QApplication):
             )
 
             if success:
-                logger.info("[OK] HAL devices connected successfully")
+                logger.debug("✓ HAL devices connected")
                 # Start auto-reconnect monitoring
                 self.device_status_vm.start_auto_reconnect(interval=5.0)
             else:
@@ -2315,7 +2380,7 @@ class Application(QApplication):
             self.device_status_vm.stop_auto_reconnect()
             # Disconnect all
             self.device_manager.disconnect_all()
-            logger.info("[OK] HAL devices disconnected")
+            logger.debug("✓ HAL devices disconnected")
         except Exception as e:
             logger.error(f"[X] HAL disconnect error: {e}", exc_info=True)
 
@@ -2337,7 +2402,7 @@ class Application(QApplication):
             ):
                 # hardware_mgr.ctrl is already a HAL created by create_controller_hal()
                 self.device_manager.register_controller(self.hardware_mgr.ctrl)
-                logger.info("[OK] Controller HAL registered with DeviceManager")
+                logger.debug("✓ Controller HAL registered")
 
             # Wrap legacy spectrometer if available
             if (
@@ -2349,7 +2414,7 @@ class Application(QApplication):
                     self.hardware_mgr.usb,
                 )
                 self.device_manager.register_spectrometer(spec_adapter)
-                logger.info("[OK] Legacy spectrometer registered with HAL")
+                logger.debug("✓ Legacy spectrometer registered")
 
             # Note: Servo is managed separately, could add servo adapter here
 
@@ -2657,21 +2722,7 @@ class Application(QApplication):
             led_c = int(self.main_window.channel_c_input.text() or "0")
             led_d = int(self.main_window.channel_d_input.text() or "0")
 
-            # Get LED delay values from Advanced Settings if available
-            pre_led_delay = 12  # Default (optimized for <1Hz acquisition)
-            post_led_delay = 40  # Default (optimized for <1Hz acquisition)
-            if (
-                hasattr(self.main_window, "advanced_menu")
-                and self.main_window.advanced_menu
-            ):
-                if hasattr(self.main_window.advanced_menu, "led_delay_input"):
-                    pre_led_delay = (
-                        self.main_window.advanced_menu.led_delay_input.value()
-                    )
-                if hasattr(self.main_window.advanced_menu, "post_led_delay_input"):
-                    post_led_delay = (
-                        self.main_window.advanced_menu.post_led_delay_input.value()
-                    )
+            # LED timing now built into hardware commands - no explicit delays needed
 
             # Validate ranges
             if not (0 <= s_pos <= 180 and 0 <= p_pos <= 180):
@@ -2699,14 +2750,9 @@ class Application(QApplication):
                 self.hardware_mgr.ctrl.set_intensity("c", led_c)
                 self.hardware_mgr.ctrl.set_intensity("d", led_d)
 
-                # Apply LED delays to data acquisition manager
-                if self.data_mgr:
-                    self.data_mgr.set_led_delays(pre_led_delay, post_led_delay)
-                    logger.info(
-                        f"Applied LED delays: PRE={pre_led_delay}ms, POST={post_led_delay}ms",
-                    )
+                # LED timing now built into hardware commands - no explicit delays needed
 
-                # Save servo positions, LED intensities, and LED timing delays to device config file
+                # Save servo positions and LED intensities to device config file
                 # The device config file is provided by OEM with factory positions
                 if self.main_window.device_config:
                     logger.info("Γëí╞Æ├åΓò¢ Saving settings to device config file...")
@@ -2717,13 +2763,9 @@ class Application(QApplication):
                         led_c,
                         led_d,
                     )
-                    self.main_window.device_config.set_pre_post_led_delays(
-                        pre_led_delay,
-                        post_led_delay,
-                    )
                     self.main_window.device_config.save()
                     logger.info(
-                        "[OK] Settings saved to device config file (including LED timing delays)",
+                        "[OK] Settings saved to device config file",
                     )
                 else:
                     logger.warning(
@@ -2894,18 +2936,17 @@ class Application(QApplication):
     def _on_power_on_requested(self):
         """User requested to power on (connect hardware)."""
         try:
-            logger.info("Power ON requested - starting hardware connection...")
+            logger.info("Power ON: Scanning for hardware...")
 
             # Set to searching state
-            logger.info("Setting power button to 'searching' state...")
+            logger.debug("Setting power button to 'searching' state...")
             self.main_window.set_power_state("searching")
-            logger.info("Power button state updated")
+            logger.debug("Power button state updated")
 
             # Start hardware scan and connection
-            logger.info("Calling hardware_mgr.scan_and_connect()...")
-            print("[APPLICATION] Calling hardware_mgr.scan_and_connect()...")
+            logger.debug("Calling hardware_mgr.scan_and_connect()...")
             self.hardware_mgr.scan_and_connect()
-            logger.info(
+            logger.debug(
                 "scan_and_connect() call completed (scanning in background thread)",
             )
         except Exception as e:
@@ -3080,7 +3121,7 @@ class Application(QApplication):
             status: Hardware status dict from HardwareManager
 
         """
-        logger.info("Updating Device Status UI via ViewModel...")
+        logger.debug("Updating Device Status UI via ViewModel...")
 
         # Update ViewModel with hardware status (Phase 1.3+1.4 integration)
         # ViewModel will emit signals that trigger UI updates
@@ -3132,7 +3173,7 @@ class Application(QApplication):
         sensor = "✓" if status.get("sensor_ready") else "✗"
         optics = "✓" if status.get("optics_ready") else "✗"
         fluids = "✓" if status.get("fluidics_ready") else "✗"
-        logger.info(
+        logger.debug(
             f"Hardware: {ctrl} | Spec:{spec} KNX:{knx} Pump:{pump} | Sensor:{sensor} Optics:{optics} Fluids:{fluids}",
         )
 
@@ -3210,7 +3251,7 @@ class Application(QApplication):
             None,
         )
         logger.debug(f"[ViewModel] Spectrum updated for channel {channel}")
-    
+
     def _on_peak_updated(
         self,
         channel: str,
@@ -3218,21 +3259,21 @@ class Application(QApplication):
         metadata: dict,
     ):
         """Handle peak_updated signal from SpectrumViewModel.
-        
+
         Updates the most recent spectrum data dict with the pipeline-calculated
         resonance wavelength so it flows to the sensorgram.
-        
+
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             peak_wavelength: Resonance wavelength in nm (from pipeline)
             metadata: Pipeline metadata (name, timing, etc.)
-        
+
         """
         # Store peak for next buffer append
         if not hasattr(self, '_latest_peaks'):
             self._latest_peaks = {}
         self._latest_peaks[channel] = peak_wavelength
-        
+
         logger.debug(
             f"[Peak] Channel {channel}: {peak_wavelength:.2f} nm "
             f"(pipeline: {metadata.get('pipeline_id', 'unknown')})"
@@ -3630,10 +3671,9 @@ def main():
     sys.stderr = QtWarningFilter(original_stderr)
 
     dtnow = dt.datetime.now(TIME_ZONE)
-    logger.info("=" * 70)
-    logger.info("AffiLabs.core BETA - Surface Plasmon Resonance Analysis")
-    logger.info(f"{SW_VERSION} | {dtnow.strftime('%Y-%m-%d %H:%M')}")
-    logger.info("=" * 70)
+    logger.info("="*70)
+    logger.info(f"AffiLabs.core {SW_VERSION.split()[1]} | {dtnow.strftime('%Y-%m-%d %H:%M')}")
+    logger.info("="*70)
 
     # Install emergency cleanup on exit
     def emergency_silence():
@@ -3741,7 +3781,7 @@ def main():
     # Close splash after deferred widgets load (total ~350ms)
     QTimer.singleShot(350, close_splash)
 
-    logger.info("Γëí╞Æ├£├ç Starting event loop...")
+    logger.info("Ready | Starting application")
     exit_code = app.exec()
 
     # Restore original stderr

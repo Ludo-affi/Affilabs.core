@@ -4,6 +4,8 @@ Manages spectrum processing and display state.
 Bridges spectrum processing services with Qt UI.
 """
 
+from __future__ import annotations
+
 import logging
 
 import numpy as np

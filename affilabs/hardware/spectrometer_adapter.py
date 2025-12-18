@@ -4,6 +4,8 @@ Wraps existing spectrometer implementations (USB4000, PhasePhotonics)
 behind the ISpectrometer interface for consistent access.
 """
 
+from __future__ import annotations
+
 import numpy as np
 
 # Import existing spectrometer classes

@@ -51,7 +51,13 @@ from scipy.signal import find_peaks, peak_prominences
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from affilabs.utils.hal.pico_p4spr_hal import ChannelID, PicoP4SPRHAL
+# Legacy HAL imports - wrapped for compatibility
+try:
+    from affilabs.utils.hal.pico_p4spr_hal import ChannelID, PicoP4SPRHAL
+except (ImportError, ModuleNotFoundError):
+    ChannelID = None  # Legacy code, not needed for DeviceProfileManager
+    PicoP4SPRHAL = None
+
 from affilabs.utils.logger import logger as base_logger
 
 try:
@@ -377,20 +383,72 @@ class PolarizerCalibrator:
 
         # Find peaks
         peaks, _ = find_peaks(intensities, prominence=200)
-        if len(peaks) < 2:
-            logger.error("Failed to find two distinct peaks in intensity curve")
+
+        # For CIRCULAR polarizers: Find S (highest peak), calculate P as ~90° away
+        # Servo range: 0-255 PWM ≈ 0-180° → 90° ≈ 127 PWM units
+        CIRCULAR_POLARIZER_OFFSET = 127  # ~90° in PWM units (255 * 90/180)
+
+        if len(peaks) == 0:
+            logger.error("Failed to find any peaks in intensity curve")
             logger.error("This may indicate:")
             logger.error("  • Polarizer mechanical issue")
             logger.error("  • LED not working")
             logger.error("  • Servo not responding")
             return self.results  # Return partial results
 
+        # Find S position (highest peak = maximum transmission)
         prominences = peak_prominences(intensities, peaks)
-        peak_indices = prominences[0].argsort()[-2:]  # Two highest peaks
+        highest_peak_idx = prominences[0].argmax()
+        s_position = int(angles[peaks[highest_peak_idx]])
 
-        # Get peak positions directly from angles array
-        pos1 = int(angles[peaks[peak_indices[0]]])
-        pos2 = int(angles[peaks[peak_indices[1]]])
+        logger.info(f"Found S position (highest transmission): {s_position} PWM")
+
+        # Calculate P position: ~90° from S
+        # Try both directions and pick the one that gives minimum transmission
+        p_candidate_1 = s_position + CIRCULAR_POLARIZER_OFFSET
+        p_candidate_2 = s_position - CIRCULAR_POLARIZER_OFFSET
+
+        # Clamp to valid servo range (10-255)
+        if p_candidate_1 > 255:
+            p_candidate_1 = p_candidate_1 - 255 + 10  # Wrap around
+        if p_candidate_2 < 10:
+            p_candidate_2 = p_candidate_2 + 255 - 10  # Wrap around
+
+        # Clamp to valid range
+        p_candidate_1 = max(10, min(255, p_candidate_1))
+        p_candidate_2 = max(10, min(255, p_candidate_2))
+
+        logger.info(f"P position candidates: {p_candidate_1} PWM or {p_candidate_2} PWM")
+
+        # Measure both candidates and pick the one with minimum transmission
+        self.ctrl.servo_set(s=s_position, p=p_candidate_1)
+        time.sleep(0.5)
+        self.ctrl.set_mode("p")
+        time.sleep(0.3)
+        intensity_p1 = self.spec.intensities().max()
+
+        self.ctrl.servo_set(s=s_position, p=p_candidate_2)
+        time.sleep(0.5)
+        self.ctrl.set_mode("p")
+        time.sleep(0.3)
+        intensity_p2 = self.spec.intensities().max()
+
+        logger.info(f"P candidate 1 ({p_candidate_1} PWM): {intensity_p1:.0f} counts")
+        logger.info(f"P candidate 2 ({p_candidate_2} PWM): {intensity_p2:.0f} counts")
+
+        # Pick the P position with LOWER transmission (correct for P-mode)
+        if intensity_p1 < intensity_p2:
+            p_position = p_candidate_1
+            p_intensity = intensity_p1
+            logger.info(f"✅ Selected P position: {p_position} PWM (lower transmission)")
+        else:
+            p_position = p_candidate_2
+            p_intensity = intensity_p2
+            logger.info(f"✅ Selected P position: {p_position} PWM (lower transmission)")
+
+        # Use calculated positions instead of detected peaks
+        pos1 = s_position
+        pos2 = p_position
 
         # ✨ CRITICAL: Enforce minimum separation for barrel polarizers
         # Barrel polarizers have 2 perpendicular windows ~90° apart (≈64 servo units on 0-255 scale)
@@ -441,48 +499,22 @@ class PolarizerCalibrator:
             )
             return self.results
 
-        # Verify which position is S vs P by measuring actual behavior
-        logger.info("Verifying polarization modes...")
+        # Verify S position by measuring
+        logger.info("Verifying S position...")
         self.ctrl.servo_set(s=pos1, p=pos2)
         time.sleep(0.5)
-
-        # Measure at position 1 (labeled as S)
         self.ctrl.set_mode("s")
         time.sleep(0.3)
-        intensity_pos1 = self.spec.intensities().max()
+        s_intensity = self.spec.intensities().max()
 
-        # Measure at position 2 (labeled as P)
-        self.ctrl.set_mode("p")
-        time.sleep(0.3)
-        intensity_pos2 = self.spec.intensities().max()
+        logger.info(f"  S position ({pos1} PWM): {s_intensity:.0f} counts (high transmission)")
+        logger.info(f"  P position ({pos2} PWM): {p_intensity:.0f} counts (low transmission)")
 
-        logger.info("Position verification:")
-        logger.info(f"  Hardware 'S' position ({pos1}°): {intensity_pos1:.0f} counts")
-        logger.info(f"  Hardware 'P' position ({pos2}°): {intensity_pos2:.0f} counts")
-
-        # Determine actual polarization behavior
-        # CORRECTED PHYSICS (per user clarification):
-        # S-mode (perpendicular): HIGHER transmission (more light reaches detector)
-        # P-mode (parallel): LOWER transmission (less light, but still substantial - NOT near zero)
-        # Most servo positions: Very LOW/blocked (near zero)
-
-        # Identify which position gives higher transmission
-        if intensity_pos1 > intensity_pos2:
-            # Position 1 is HIGH → Actually S-mode (perpendicular)
-            actual_s_position = pos1
-            actual_p_position = pos2
-            s_intensity = intensity_pos1
-            p_intensity = intensity_pos2
-            label_status = "✅ LABELS CORRECT"
-            labels_inverted = False
-        else:
-            # Position 2 is HIGH → Actually S-mode (perpendicular)
-            actual_s_position = pos2
-            actual_p_position = pos1
-            s_intensity = intensity_pos2
-            p_intensity = intensity_pos1
-            label_status = "⚠️ LABELS INVERTED"
-            labels_inverted = True
+        # Positions already determined correctly (S=highest peak, P=calculated ~90° away)
+        actual_s_position = pos1
+        actual_p_position = pos2
+        label_status = "✅ CALCULATED FROM S PEAK + 90° OFFSET"
+        labels_inverted = False
 
         # Calculate S/P ratio for validation
         # Expected: S > P (S-mode has higher transmission)
@@ -826,59 +858,60 @@ class DeviceProfileManager:
         logger.info(f"   LED Type: {led_type} ({led_type_full})")
         return profile_path
 
-    def update_device_config(self, polarizer_results: dict | None) -> None:
-        """Update config/device_config.json with OEM calibration data.
+    def update_device_config(self, polarizer_results: dict | None, serial_number: str = None) -> None:
+        """Update device-specific config with OEM calibration data.
 
-        This ensures the main application can load OEM positions from the
-        single source of truth (device_config.json) without needing to
-        search for device profile files.
+        This updates the device-specific config file at:
+        affilabs/config/devices/{SERIAL}/device_config.json
+
+        Updates hardware.servo_s_position and hardware.servo_p_position fields.
 
         Args:
             polarizer_results: Polarizer calibration results with s_position, p_position
+            serial_number: Detector serial number (required to find correct config)
 
         """
         if not polarizer_results:
             logger.warning("⚠️ No polarizer results to save to device_config")
             return
 
-        # Path to device_config.json
-        config_path = Path(__file__).parent.parent / "config" / "device_config.json"
+        if not serial_number:
+            logger.warning("⚠️ No serial number provided - cannot update device_config")
+            return
 
         try:
-            # Load existing config
-            if config_path.exists():
-                with open(config_path) as f:
-                    config = json.load(f)
-            else:
-                logger.warning(
-                    f"⚠️ device_config.json not found at {config_path}, creating new",
-                )
-                config = {}
+            # Use DeviceConfiguration to properly load device-specific config
+            from affilabs.utils.device_configuration import DeviceConfiguration
 
-            # Update OEM calibration section
-            config["oem_calibration"] = {
-                "polarizer_s_position": polarizer_results["s_position"],
-                "polarizer_p_position": polarizer_results["p_position"],
-                "polarizer_sp_ratio": polarizer_results.get("sp_ratio", 0.0),
-                "calibration_date": datetime.now().isoformat(),
-                "calibration_method": polarizer_results.get("method", "oem_tool"),
-            }
+            device_config = DeviceConfiguration(device_serial=serial_number)
 
-            # Update last modified timestamp if device_info exists
-            if "device_info" in config:
-                config["device_info"]["last_modified"] = datetime.now().isoformat()
+            # NOTE: polarizer_results["s_position"] and ["p_position"] are DEGREES (0-180)
+            # despite being labeled "PWM" in calibrate_polarizer.py output
+            # The firmware sv command expects degrees, not PWM values
+            s_degrees = polarizer_results["s_position"]
+            p_degrees = polarizer_results["p_position"]
 
-            # Ensure directory exists
-            config_path.parent.mkdir(parents=True, exist_ok=True)
+            # Update servo positions in hardware section (already in degrees)
+            device_config.config["hardware"]["servo_s_position"] = s_degrees
+            device_config.config["hardware"]["servo_p_position"] = p_degrees
 
-            # Save updated config
-            with open(config_path, "w") as f:
-                json.dump(config, f, indent=2)
+            # Update polarizer type if provided
+            if "polarizer_type" in polarizer_results:
+                device_config.config["hardware"]["polarizer_type"] = polarizer_results["polarizer_type"].lower()
+
+            # Update calibration section with metadata
+            device_config.config["calibration"]["polarizer_calibration_date"] = datetime.now().isoformat()
+            if "sp_ratio" in polarizer_results:
+                device_config.config["calibration"]["polarizer_extinction_ratio_percent"] = polarizer_results["sp_ratio"]
+
+            # Save using DeviceConfiguration's save method (handles path correctly)
+            device_config.save()
 
             logger.info("✅ Updated device_config.json with OEM calibration:")
-            logger.info(f"   S position: {polarizer_results['s_position']}")
-            logger.info(f"   P position: {polarizer_results['p_position']}")
-            logger.info(f"   P/S ratio: {polarizer_results.get('sp_ratio', 0.0):.3f}")
+            logger.info(f"   Serial: {serial_number}")
+            logger.info(f"   S position: {s_degrees}°")
+            logger.info(f"   P position: {p_degrees}°")
+            logger.info(f"   S/P ratio: {polarizer_results.get('sp_ratio', 0.0):.3f}")
 
         except Exception as e:
             logger.exception(f"❌ Failed to update device_config.json: {e}")

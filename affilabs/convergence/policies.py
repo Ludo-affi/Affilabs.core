@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+from .config import ConvergenceRecipe, DetectorParams
+
+
+@dataclass
+class AcceptanceResult:
+    converged: bool
+    acceptable: List[str]
+    saturating: List[str]
+
+
+class AcceptancePolicy:
+    def evaluate(
+        self,
+        signals: Dict[str, float],
+        saturation: Dict[str, int],
+        target_signal: float,
+        tol_signal: float,
+        recipe: ConvergenceRecipe,
+    ) -> AcceptanceResult:
+        lower = target_signal - tol_signal
+        upper = target_signal + tol_signal
+        extra = recipe.accept_above_extra_percent * target_signal
+        acceptable: List[str] = []
+        saturating: List[str] = []
+        for ch, sig in signals.items():
+            sat = saturation.get(ch, 0)
+            in_tol = (lower <= sig <= upper)
+            above_but_safe = (sig > upper) and (sig <= upper + extra) and (sat == 0)
+            if in_tol or above_but_safe:
+                if sat == 0:
+                    acceptable.append(ch)
+            if sat > 0:
+                saturating.append(ch)
+        converged = (len(acceptable) == len(signals)) and (len(saturating) == 0)
+        return AcceptanceResult(converged, acceptable, saturating)
+
+
+class PriorityPolicy:
+    def classify(
+        self,
+        channels: List[str],
+        signals: Dict[str, float],
+        saturation: Dict[str, int],
+        target_signal: float,
+        near_window_percent: float,
+        locked: List[str],
+    ) -> Tuple[List[str], List[str]]:
+        urgent: List[str] = []
+        near: List[str] = []
+        margin = target_signal * near_window_percent
+        low, high = target_signal - margin, target_signal + margin
+        for ch in channels:
+            if ch in locked:
+                continue
+            sat = saturation.get(ch, 0)
+            sig = signals[ch]
+            if sat > 0 or sig < low or sig > high:
+                urgent.append(ch)
+            else:
+                near.append(ch)
+        return urgent, near
+
+
+class BoundaryPolicy:
+    def __init__(self, margin: int, near_scale: float, near_window_percent: float) -> None:
+        self.margin = margin
+        self.near_scale = near_scale
+        self.near_window_percent = near_window_percent
+
+    def margin_for(self, current_signal: Optional[float], target_signal: float) -> int:
+        if current_signal is None or target_signal <= 0:
+            return self.margin
+        err_pct = abs(current_signal - target_signal) / target_signal
+        if err_pct <= self.near_window_percent:
+            scaled = int(round(self.margin * self.near_scale))
+            return max(1, scaled)
+        return self.margin
+
+
+class SlopeSelectionStrategy:
+    def __init__(self, min_signal_for_model: float, prefer_est_after_iters: int) -> None:
+        self.min_signal_for_model = min_signal_for_model
+        self.prefer_est_after_iters = max(0, prefer_est_after_iters)
+
+    def choose(
+        self,
+        *,
+        iteration: int,
+        model: Optional[float],
+        estimated: Optional[float],
+        current_signal: float,
+        target_signal: float,
+    ) -> Optional[float]:
+        # Weak signals → avoid slope usage
+        if current_signal <= target_signal * self.min_signal_for_model:
+            return None
+
+        def valid(x: Optional[float]) -> bool:
+            return x is not None and abs(x) > 0.1
+
+        prefer_est = self.prefer_est_after_iters >= 1 and iteration >= self.prefer_est_after_iters
+        if prefer_est and valid(estimated):
+            return estimated
+        if valid(model):
+            return model
+        if valid(estimated):
+            return estimated
+        return None
+
+
+class SaturationPolicy:
+    def reduce_integration(
+        self,
+        saturation: Dict[str, int],
+        current_integration_ms: float,
+        params: DetectorParams,
+    ) -> float:
+        total_sat = sum(saturation.values())
+        if total_sat == 0:
+            return current_integration_ms
+        max_sat = max(saturation.values()) if saturation else 0
+        if max_sat > 50:
+            factor = 0.70
+        else:
+            factor = 0.90
+        new_time = max(params.min_integration_time, current_integration_ms * factor)
+        return new_time

@@ -733,64 +733,6 @@ class DeviceConfiguration:
                 tp[f"led_{channel}_delay_ms"] = delay
         logger.info(f"LED delays updated: {delays}")
 
-    def get_pre_led_delay_ms(self) -> float:
-        """Get PRE LED delay (DEPRECATED: use get_detector_wait_before_ms instead).
-
-        This method is kept for backward compatibility. New code should use
-        timing track methods (get_detector_wait_before_ms, get_led_off_period_ms).
-        """
-        DETECTOR_WAIT_BEFORE_MS = _get_setting("DETECTOR_WAIT_BEFORE_MS", 35.0)
-        # Try new timing track parameter first, fallback to legacy
-        detector_wait = self.config["timing_parameters"].get("detector_wait_before_ms")
-        if detector_wait is not None:
-            return detector_wait
-        return self.config["timing_parameters"].get(
-            "pre_led_delay_ms",
-            DETECTOR_WAIT_BEFORE_MS,
-        )
-
-    def get_post_led_delay_ms(self) -> float:
-        """Get POST LED delay (DEPRECATED: use get_led_off_period_ms instead).
-
-        This method is kept for backward compatibility. New code should use
-        timing track methods (get_detector_wait_before_ms, get_led_off_period_ms).
-        """
-        LED_OFF_PERIOD_MS = _get_setting("LED_OFF_PERIOD_MS", 5.0)
-        # Try new timing track parameter first, fallback to legacy
-        led_off = self.config["timing_parameters"].get("led_off_period_ms")
-        if led_off is not None:
-            return led_off
-        return self.config["timing_parameters"].get(
-            "post_led_delay_ms",
-            LED_OFF_PERIOD_MS,
-        )
-
-    def set_pre_post_led_delays(self, pre_ms: float, post_ms: float) -> None:
-        """Set PRE/POST LED delays (DEPRECATED: use set_timing_tracks instead).
-
-        This method is kept for backward compatibility. It maps legacy parameters
-        to the new timing track architecture:
-        - pre_ms → detector_wait_before_ms
-        - post_ms → led_off_period_ms
-
-        Args:
-            pre_ms: PRE LED delay in milliseconds (maps to detector_wait_before)
-            post_ms: POST LED delay in milliseconds (maps to led_off_period)
-
-        """
-        # Store both legacy and new format for compatibility
-        self.config["timing_parameters"]["pre_led_delay_ms"] = pre_ms
-        self.config["timing_parameters"]["post_led_delay_ms"] = post_ms
-        self.config["timing_parameters"]["detector_wait_before_ms"] = pre_ms
-        self.config["timing_parameters"]["led_off_period_ms"] = post_ms
-        self.save()
-        logger.info(
-            f"LED timing delays saved (legacy format): PRE={pre_ms}ms, POST={post_ms}ms",
-        )
-        logger.info(
-            f"  Mapped to timing tracks: DETECTOR_WAIT={pre_ms}ms, LED_OFF={post_ms}ms",
-        )
-
     # NEW: Timing track methods (separated LED and detector timing)
     def get_timing_tracks(self) -> dict[str, float]:
         """Get all timing track parameters.
@@ -841,9 +783,7 @@ class DeviceConfiguration:
         tp["detector_window_ms"] = detector_window
         tp["detector_wait_after_ms"] = detector_after
 
-        # Also update legacy params for backward compatibility
-        tp["pre_led_delay_ms"] = detector_wait
-        tp["post_led_delay_ms"] = led_off
+        # Legacy params removed - timing now built into hardware
 
         self.save()
         cycle_time = led_off + detector_wait + detector_window + detector_after
@@ -969,8 +909,11 @@ class DeviceConfiguration:
     def get_servo_positions(self) -> dict[str, int]:
         """Get polarizer servo positions for S and P modes.
 
+        CRITICAL: These values are in DEGREES (0-180), NOT PWM units.
+        The firmware sv command and EEPROM storage expect degree values.
+
         Returns:
-            Dict with keys 's' and 'p' containing servo positions (0-180)
+            Dict with keys 's' and 'p' containing servo positions in degrees (0-180)
 
         """
         hw = self.config["hardware"]
@@ -983,7 +926,7 @@ class DeviceConfiguration:
         """Get polarizer servo position for S-mode.
 
         Returns:
-            Servo position for S-mode (0-180)
+            Servo position for S-mode in degrees (0-180)
 
         """
         return self.config["hardware"]["servo_s_position"]
@@ -992,7 +935,7 @@ class DeviceConfiguration:
         """Get polarizer servo position for P-mode.
 
         Returns:
-            Servo position for P-mode (0-180)
+            Servo position for P-mode in degrees (0-180)
 
         """
         return self.config["hardware"]["servo_p_position"]

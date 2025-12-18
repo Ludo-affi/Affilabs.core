@@ -4,6 +4,8 @@ Pure Python data structures for calibration.
 NO Qt dependencies - fully testable.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 

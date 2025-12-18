@@ -647,7 +647,11 @@ class StaticTabBuilder:
         self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
 
     def _open_cycle_table_dialog(self):
-        """Open the full cycle table dialog."""
+        """Open the full cycle table dialog for reviewing completed cycles.
+
+        This is the designated location for cycle review/analysis, keeping
+        the Live Sensorgram page focused on acquisition and monitoring.
+        """
         if self.sidebar.cycle_table_dialog is None:
             self.sidebar.cycle_table_dialog = CycleTableDialog(self.sidebar)
 

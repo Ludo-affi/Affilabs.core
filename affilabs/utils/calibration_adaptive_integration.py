@@ -75,8 +75,6 @@ from settings import (
     MAX_WAVELENGTH,
     MIN_INTEGRATION,
     MIN_WAVELENGTH,
-    POST_LED_DELAY_MS,
-    PRE_LED_DELAY_MS,
 )
 
 if TYPE_CHECKING:
@@ -240,8 +238,6 @@ def run_adaptive_integration_calibration(
     stop_flag=None,
     progress_callback=None,
     afterglow_correction=None,
-    pre_led_delay_ms: float = PRE_LED_DELAY_MS,
-    post_led_delay_ms: float = POST_LED_DELAY_MS,
 ) -> LEDCalibrationResult:
     """Mode 2: Adaptive Integration Calibration (LED=255, variable integration per channel).
 
@@ -250,7 +246,7 @@ def run_adaptive_integration_calibration(
     - Mode 2: Fixed LED=255, optimize integration per channel
 
     Uses same 4-layer configuration:
-    - Layer 1: LED timing delays (PRE_LED_DELAY_MS, POST_LED_DELAY_MS)
+    - Layer 1: LED timing delays (built into hardware)
     - Layer 2: Scan averaging (calculate_scan_counts)
     - Layer 3: Dark noise baseline (common dark-ref)
     - Layer 4: Reference signals (S-pol-ref, P-pol-ref)
@@ -266,8 +262,6 @@ def run_adaptive_integration_calibration(
         stop_flag: Optional cancellation flag
         progress_callback: Optional progress callback
         afterglow_correction: Optional afterglow correction instance
-        pre_led_delay_ms: LED turn-on delay (Layer 1)
-        post_led_delay_ms: LED turn-off delay (Layer 1)
 
     Returns:
         LEDCalibrationResult with all calibration data
@@ -378,7 +372,7 @@ def run_adaptive_integration_calibration(
             progress_callback("Step 4/6: S-Mode Integration Optimization")
 
         # Switch to S-mode
-        switch_mode_safely(ctrl, "s", pre_led_delay_ms, post_led_delay_ms)
+        switch_mode_safely(ctrl, "s")
 
         # Optimize integration time for each channel
         s_integration_times = {}
@@ -464,7 +458,7 @@ def run_adaptive_integration_calibration(
             progress_callback("Step 5/6: P-Mode Integration Optimization")
 
         # Switch to P-mode
-        switch_mode_safely(ctrl, "p", pre_led_delay_ms, post_led_delay_ms)
+        switch_mode_safely(ctrl, "p")
 
         # Optimize integration time for each channel
         p_integration_times = {}
