@@ -1270,6 +1270,13 @@ class AffilabsMainWindow(QMainWindow):
         self._optics_warning_active = False
         self._optics_status_details = None
 
+        # Connecting indicator animation state
+        self._connecting_anim_timer = QTimer()
+        self._connecting_anim_timer.setInterval(300)
+        self._connecting_anim_timer.setSingleShot(False)
+        self._connecting_anim_step = 0
+        self._connecting_anim_timer.timeout.connect(self._update_connecting_animation)
+
     def _setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -1486,6 +1493,91 @@ class AffilabsMainWindow(QMainWindow):
 
         content_layout.addWidget(splitter, 1)
         return content_widget
+
+    def show_connecting_indicator(self, active: bool) -> None:
+        """Show or hide centered overlay 'Connecting to hardware...' indicator.
+
+        When active, shows a centered overlay with animated text and busy cursor.
+        When inactive, hides overlay and restores cursor.
+        """
+        try:
+            if not hasattr(self, "connecting_label") or self.connecting_label is None:
+                return
+
+            from PySide6.QtWidgets import QApplication
+            from affilabs.utils.logger import logger
+
+            if active:
+                # Only set cursor if not already set to avoid stacking
+                if not hasattr(self, "_busy_cursor_active") or not self._busy_cursor_active:
+                    self._connecting_anim_step = 0
+                    self.connecting_label.setText("Connecting to hardware...")
+
+                    # Position as centered overlay
+                    self.connecting_label.setParent(self)
+                    self.connecting_label.raise_()  # Bring to front
+
+                    # Center the label
+                    label_width = 300
+                    label_height = 60
+                    x = (self.width() - label_width) // 2
+                    y = (self.height() - label_height) // 2
+                    self.connecting_label.setGeometry(x, y, label_width, label_height)
+
+                    self.connecting_label.setVisible(True)
+
+                    # Start animation and set busy cursor
+                    self._connecting_anim_timer.start()
+                    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                    self._busy_cursor_active = True
+                    logger.debug("Connecting indicator: busy cursor set")
+            else:
+                # Stop animation and hide label
+                self._connecting_anim_timer.stop()
+                self.connecting_label.setVisible(False)
+
+                # Restore cursor with fallback safety
+                if hasattr(self, "_busy_cursor_active") and self._busy_cursor_active:
+                    try:
+                        # Restore once for the cursor we set
+                        QApplication.restoreOverrideCursor()
+                        logger.debug("Connecting indicator: cursor restored")
+                    except Exception as e:
+                        logger.warning(f"Failed to restore cursor: {e}")
+                    finally:
+                        self._busy_cursor_active = False
+
+                        # Safety: clear any remaining override cursors
+                        # Qt can stack cursors, so restore until we're back to default
+                        max_attempts = 5
+                        attempts = 0
+                        while QApplication.overrideCursor() is not None and attempts < max_attempts:
+                            try:
+                                QApplication.restoreOverrideCursor()
+                                attempts += 1
+                                logger.debug(f"Cleared stacked cursor (attempt {attempts})")
+                            except Exception:
+                                break
+        except Exception as e:
+            # Defensive: log but do not raise UI errors from optional indicator
+            from affilabs.utils.logger import logger
+            logger.error(f"Error in show_connecting_indicator: {e}")
+
+    def _update_connecting_animation(self) -> None:
+        """Tick the 'Connecting to hardware...' animated ellipsis."""
+        try:
+            if not hasattr(self, "connecting_label") or not self.connecting_label.isVisible():
+                return
+            frames = [
+                "Connecting to hardware",
+                "Connecting to hardware.",
+                "Connecting to hardware..",
+                "Connecting to hardware..."
+            ]
+            self.connecting_label.setText(frames[self._connecting_anim_step % len(frames)])
+            self._connecting_anim_step += 1
+        except Exception:
+            pass
 
     def _create_sensorgram_placeholder(self):
         """Create lightweight placeholder for sensorgram page during initial load.
@@ -4134,6 +4226,9 @@ class AffilabsMainWindow(QMainWindow):
             self.power_btn.setProperty("powerState", "searching")
             self._update_power_button_style()
 
+            # Show connecting indicator
+            self.show_connecting_indicator(True)
+
             # FORCE immediate visual update (process all pending events)
             from PySide6.QtCore import QCoreApplication
 
@@ -4232,6 +4327,9 @@ class AffilabsMainWindow(QMainWindow):
         """
         self.power_btn.setProperty("powerState", state)
         self._update_power_button_style()
+
+        # Show/hide connecting indicator based on state
+        self.show_connecting_indicator(state == "searching")
 
         # Reset subunit status whenever power state is not "connected"
         if state in ["disconnected", "searching"]:

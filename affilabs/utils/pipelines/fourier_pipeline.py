@@ -103,11 +103,11 @@ class FourierPipeline(ProcessingPipeline):
 
         """
         try:
-            # CRITICAL: Work ONLY on SPR region (620-680nm) to avoid edge artifacts
-            # Operating on full spectrum causes zero-crossing to land at region boundary (620nm)
-            spr_mask = (wavelengths >= 620.0) & (wavelengths <= 680.0)
+            # CRITICAL: Work ONLY on SPR region (560-720nm) - full calibration range
+            # Must match calibration wavelength range to detect all valid peaks
+            spr_mask = (wavelengths >= 560.0) & (wavelengths <= 720.0)
             if not np.any(spr_mask):
-                logger.warning("No SPR region (620-680nm) in wavelength array")
+                logger.warning("No SPR region (560-720nm) in wavelength array")
                 return np.nan
 
             # Extract SPR region only
@@ -195,7 +195,8 @@ class FourierPipeline(ProcessingPipeline):
             fit_lambda = -line.intercept / line.slope
 
             # Validate result is within SPR region (should always be true now)
-            if fit_lambda < 620.0 or fit_lambda > 680.0:
+            # Expanded range to 560-720nm to match actual SPR calibration range
+            if fit_lambda < 560.0 or fit_lambda > 720.0:
                 # Should rarely happen since we're working only on SPR region
                 logger.warning(
                     f"Fourier fit outside SPR region: {fit_lambda:.1f}nm - using triangulated hint",

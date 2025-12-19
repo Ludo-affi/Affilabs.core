@@ -31,12 +31,15 @@ class AcceptancePolicy:
             sat = saturation.get(ch, 0)
             in_tol = (lower <= sig <= upper)
             above_but_safe = (sig > upper) and (sig <= upper + extra) and (sat == 0)
-            if in_tol or above_but_safe:
-                if sat == 0:
-                    acceptable.append(ch)
+
+            # STRICT: No saturation allowed - must have sat == 0
+            if (in_tol or above_but_safe) and sat == 0:
+                acceptable.append(ch)
             if sat > 0:
                 saturating.append(ch)
-        converged = (len(acceptable) == len(signals)) and (len(saturating) == 0)
+
+        # Converged if ALL channels acceptable with ZERO saturation
+        converged = (len(acceptable) == len(signals))
         return AcceptanceResult(converged, acceptable, saturating)
 
 
@@ -120,13 +123,29 @@ class SaturationPolicy:
         current_integration_ms: float,
         params: DetectorParams,
     ) -> float:
+        """Reduce integration time based on saturation severity.
+
+        More aggressive reduction for severe saturation to break out of
+        saturation spirals faster.
+        """
         total_sat = sum(saturation.values())
         if total_sat == 0:
             return current_integration_ms
+
         max_sat = max(saturation.values()) if saturation else 0
-        if max_sat > 50:
+        num_saturating = sum(1 for s in saturation.values() if s > 0)
+
+        # Graduated reduction based on severity
+        if max_sat > 100:  # Very severe
+            factor = 0.50  # Cut in half
+        elif max_sat > 50:  # Severe
+            factor = 0.60
+        elif max_sat > 20:  # Moderate
+            factor = 0.75
+        elif num_saturating >= 3:  # Multiple channels saturating
             factor = 0.70
-        else:
-            factor = 0.90
+        else:  # Mild
+            factor = 0.85
+
         new_time = max(params.min_integration_time, current_integration_ms * factor)
         return new_time

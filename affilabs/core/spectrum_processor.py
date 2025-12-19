@@ -194,8 +194,14 @@ class SpectrumProcessor:
                         or len(ref_spectrum) == 0
                         or len(clean_spectrum) != len(ref_spectrum)
                     ):
-                        logger.warning(
-                            f"[RANK] Channel {channel} array size mismatch: clean={len(clean_spectrum)}, ref={len(ref_spectrum)}"
+                        logger.error(
+                            f"❌ Channel {channel} ARRAY LENGTH MISMATCH: "
+                            f"live_spectrum={len(clean_spectrum)}, "
+                            f"s_pol_ref={len(ref_spectrum)}, "
+                            f"wavelengths={len(self.calibration_data.wavelengths)}"
+                        )
+                        logger.error(
+                            "   This causes shape distortion! Check ROI slicing in calibration vs live acquisition."
                         )
                         transmission_spectrum = None
                     else:
@@ -287,8 +293,8 @@ class SpectrumProcessor:
                 and len(transmission_spectrum) > 0
                 and len(wavelength) == len(transmission_spectrum)
             ):
-                # Find indices for SPR region
-                spr_mask = (wavelength >= 620.0) & (wavelength <= 680.0)
+                # Find indices for SPR region (full calibration range)
+                spr_mask = (wavelength >= 560.0) & (wavelength <= 720.0)
                 if np.any(spr_mask):
                     spr_transmission = transmission_spectrum[spr_mask]
                     spr_wavelengths = wavelength[spr_mask]
@@ -301,7 +307,9 @@ class SpectrumProcessor:
                 "transmission_spectrum": transmission_spectrum,
                 "peak_input": peak_input,
                 "minimum_hint_nm": minimum_hint_nm,
-                "wavelength": wavelength,
+                # NOTE: "wavelength" field removed - conflicts with peak wavelength
+                # Wavelengths array is already available from calibration_data.wavelengths
+                # Peak wavelength is calculated by SpectrumViewModel.process_raw_spectrum()
             }
 
         except Exception:

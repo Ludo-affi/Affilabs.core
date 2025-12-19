@@ -113,9 +113,9 @@ class UIUpdateHelpers:
                 # Calculate ╬ö SPR (baseline is first point in cycle or calibrated baseline)
                 baseline = app.buffer_mgr.baseline_wavelengths[ch_letter]
                 if baseline is None and len(cycle_wavelength) > 0:
-                    # Use first VALID wavelength (620-680nm range for SPR)
+                    # Use first VALID wavelength (560-720nm range for SPR)
                     for wl in cycle_wavelength:
-                        if 620.0 <= wl <= 680.0:
+                        if 560.0 <= wl <= 720.0:
                             baseline = wl
                             break
                     else:
@@ -148,17 +148,21 @@ class UIUpdateHelpers:
                 if len(cycle_time) == 0:
                     continue
 
-                # Shift time axis so cycle starts at t=0
-                if len(cycle_time) > 0:
-                    display_cycle_time = cycle_time - cycle_time[0]
+                # Match Live Sensorgram behavior: skip first point and rebase to second sample
+                if len(cycle_time) > 1:
+                    first_time = cycle_time[1]
+                    display_cycle_time = cycle_time[1:] - first_time
+                    display_delta_spr = delta_spr[1:]
                     if len(display_cycle_time) > 0:
                         max_cycle_time = max(max_cycle_time, display_cycle_time[-1])
                 else:
-                    display_cycle_time = cycle_time
+                    # Not enough points to form a segment; draw nothing for now
+                    display_cycle_time = []
+                    display_delta_spr = []
 
                 # Update cycle of interest graph
                 curve = app.main_window.cycle_of_interest_graph.curves[ch_idx]
-                curve.setData(display_cycle_time, delta_spr)
+                curve.setData(display_cycle_time, display_delta_spr)
 
             # Set X-axis range to show only the cursor region and disable auto-ranging
             if max_cycle_time > 0:

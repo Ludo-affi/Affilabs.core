@@ -109,8 +109,8 @@ class GraphicControlTabBuilder:
             f"}}"
         )
 
-        # Option 1: None (Raw)
-        self.sidebar.filter_none_radio = QRadioButton("None (Raw)")
+        # Option 1: None (Raw) - DEFAULT
+        self.sidebar.filter_none_radio = QRadioButton("None (Raw) ⭐")
         self.sidebar.filter_none_radio.setChecked(True)  # Default
         self.sidebar.filter_none_radio.setStyleSheet(radio_style)
         self.sidebar.filter_none_radio.setToolTip(
@@ -134,7 +134,8 @@ class GraphicControlTabBuilder:
         gc_layout.addWidget(self.sidebar.filter_light_radio)
 
         # Option 3: EMA Smooth (α=0.18) - RECOMMENDED
-        self.sidebar.filter_smooth_radio = QRadioButton("EMA Smooth (α=0.18) ⭐")
+        self.sidebar.filter_smooth_radio = QRadioButton("EMA Smooth (α=0.18)")
+        self.sidebar.filter_smooth_radio.setChecked(False)
         self.sidebar.filter_smooth_radio.setStyleSheet(radio_style)
         self.sidebar.filter_smooth_radio.setToolTip(
             "Smooth display filter - 36% noise reduction ⭐ RECOMMENDED\n"

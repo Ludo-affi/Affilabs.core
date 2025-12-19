@@ -207,8 +207,7 @@ def LEDconverge(
                     yield_cb()
                 except Exception:
                     pass
-            else:
-                time.sleep(0.01)
+            # No sleep needed - hardware timing already handled in measurement
             continue
 
         # STEP 2: Check convergence
@@ -238,37 +237,9 @@ def LEDconverge(
             config=config,
         )
 
-        # Classify device sensitivity in early iterations
-        if iteration <= 2:
-            avg_slope_10 = 0.0
-            if model_slopes:
-                vals = [v for v in model_slopes.values() if v > 0]
-                avg_slope_10 = float(np.mean(vals)) if vals else 0.0
-            features = SensitivityFeatures(
-                integration_ms=integration_ms,
-                num_channels=len(ch_list),
-                num_saturating=len(channels_saturating),
-                total_saturated_pixels=sum(sat_per_ch.values()),
-                avg_signal_fraction_of_target=float(
-                    np.mean([signals[c] / target_signal for c in ch_list])
-                ) if target_signal > 0 else 0.0,
-                avg_model_slope_10ms=avg_slope_10,
-            )
-            label, conf, reason = classifier.classify(features)
-            sensitivity_reason = reason
-            if label == SensitivityLabel.HIGH:
-                high_sensitivity_detected = True
-                _log(
-                    logger,
-                    "info",
-                    f"  🧭 Classifier: HIGH sensitivity (conf={conf:.2f}) [{reason}] → cap integration ≤20ms",
-                )
-            else:
-                _log(
-                    logger,
-                    "info",
-                    f"  🧭 Classifier: BASELINE (conf={conf:.2f}) [{reason}]",
-                )
+        # Skip sensitivity classification - adds overhead without benefit for modern workflow
+        # Integration time is already constrained by DETECTOR_WINDOW_MS (180ms with 10 scans)
+        # Classifier logging removed to reduce console spam during calibration
 
         if converged:
             _log(logger, "info", f"\n✅ CONVERGED at iteration {iteration}!")

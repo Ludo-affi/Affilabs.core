@@ -21,7 +21,9 @@ def get_detector_params(usb) -> DetectorParams:
     # Minimal detector parameters; adjust with usb if available
     # Fallback values typical for Ocean Optics-style detectors
     max_counts = getattr(usb, "max_counts", 65535)
-    saturation_threshold = max_counts  # 100% of max - saturation is the physical limit
+    # CRITICAL: Saturation threshold must be BELOW physical max to catch non-linearity
+    # Flame-T and USB4000 start saturating around 90% of max due to ADC non-linearity
+    saturation_threshold = int(max_counts * 0.90)  # 90% of max - conservative threshold
     target_counts = int(0.85 * max_counts)  # Target 85% of max for optimal SNR with headroom
     # If usb exposes min/max integration in seconds, convert to ms
     min_int_ms = int(getattr(usb, "min_integration_ms", 5))

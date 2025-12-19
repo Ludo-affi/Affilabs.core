@@ -56,6 +56,7 @@ def LEDconverge_engine(
     polarization: str = "S",
     config: Optional[ConvergenceConfig] = None,
     logger: Optional[object] = None,
+    progress_callback: Optional[callable] = None,
 ) -> Tuple[float, Dict[str, float], bool]:
     """LED convergence using the new convergence engine.
 
@@ -145,10 +146,11 @@ def LEDconverge_engine(
             wave_min_index=wave_min_index,
             wave_max_index=wave_max_index,
             model_slopes_at_10ms=model_slopes,
+            progress_callback=progress_callback,
         )
 
         # Convert engine result to production format
-        integration_ms, signals, converged = convert_engine_result_to_production(
+        integration_ms, signals, converged, final_leds = convert_engine_result_to_production(
             result=result,
             channel_list=ch_list,
         )
@@ -162,7 +164,7 @@ def LEDconverge_engine(
                 logger.warning(f"\n⚠️  ENGINE DID NOT CONVERGE")
                 logger.warning(f"   Final integration time: {integration_ms:.1f}ms")
 
-        return integration_ms, signals, converged
+        return integration_ms, signals, converged, final_leds
 
     except Exception as e:
         if logger:
@@ -170,4 +172,4 @@ def LEDconverge_engine(
             logger.exception("Engine execution failed")
 
         # Return failure format
-        return initial_integration_ms, {}, False
+        return initial_integration_ms, {}, False, {}

@@ -43,12 +43,12 @@ class ConvergenceConfig:
     ACCEPT_ABOVE_EXTRA_PERCENT = 0.0
 
     # Measurement behavior
-    # Run per-channel measurements using worker threads to avoid blocking the caller thread.
-    # Keep workers to 1 by default to avoid hardware contention; increase if device supports it.
-    PARALLEL_MEASUREMENTS = True
+    # Parallel measurements disabled - hardware (USB spectrometer) requires exclusive access
+    # Single-threaded sequential measurement is faster and more reliable than thread overhead
+    PARALLEL_MEASUREMENTS = False
     MAX_MEASURE_WORKERS = 1
-    # Per-channel measurement timeout (seconds). Prevents indefinite blocking if hardware stalls.
-    MEASUREMENT_TIMEOUT_S = 2.0
+    # Per-channel measurement timeout (seconds). Reduced from 2s for faster failure detection.
+    MEASUREMENT_TIMEOUT_S = 1.0
     # Optional callback invoked to yield to UI/event loop between steps (set by caller if needed)
     YIELD_CALLBACK: Optional[Callable[[], None]] = None
 
@@ -418,7 +418,12 @@ def calculate_led_adjustment(
         # Dampen when within near window to avoid overshoot
         err_pct = abs(signal_error) / target_signal if target_signal > 0 else 0.0
         if err_pct <= config.NEAR_WINDOW_PERCENT:
-            led_delta *= config.NEAR_DAMPING
+            # LESS damping when going UP (increasing LED) vs going DOWN
+            # This makes convergence more aggressive when approaching target from below
+            if led_delta > 0:  # Increasing LED (signal below target)
+                led_delta *= min(config.NEAR_DAMPING * 1.5, 0.9)  # Less damping, max 90%
+            else:  # Decreasing LED (signal above target)
+                led_delta *= config.NEAR_DAMPING  # Keep conservative damping
 
         new_led = int(current_led + led_delta)
         if effective_slope is model_slope:

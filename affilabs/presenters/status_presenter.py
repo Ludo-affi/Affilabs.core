@@ -214,6 +214,10 @@ class StatusPresenter:
             elif state == "disconnected":
                 self.window.power_btn.setChecked(False)
 
+            # Show centered overlay indicator when searching
+            if hasattr(self.window, "show_connecting_indicator"):
+                self.window.show_connecting_indicator(state == "searching")
+
         except Exception as e:
             from affilabs.utils.logger import logger
 

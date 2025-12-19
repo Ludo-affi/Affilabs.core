@@ -13,7 +13,7 @@ a = Analysis(
         ('servo_polarizer_calibration', 'servo_polarizer_calibration'),
         ('settings', 'settings')
     ],
-    hiddenimports=['PySide6', 'pyqtgraph', 'oceandirect', 'scipy', 'numpy', 'seabreeze', 'seabreeze.cseabreeze', 'libusb_package'],
+    hiddenimports=['PySide6', 'pyqtgraph', 'scipy', 'numpy', 'seabreeze', 'seabreeze.cseabreeze', 'libusb_package'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

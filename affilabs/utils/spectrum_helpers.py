@@ -35,41 +35,25 @@ class SpectrumHelpers:
             data: Spectrum data dictionary
 
         """
+        from affilabs.utils.logger import logger
+
         try:
-            channel = data["channel"]  # 'a', 'b', 'c', 'd'
-            intensity = data.get("intensity", 0)  # Raw intensity
+            channel = data["channel"]
+            intensity = data.get("intensity", 0)
             timestamp = data["timestamp"]
             elapsed_time = data["elapsed_time"]
-            is_preview = data.get("is_preview", False)  # Interpolated preview vs real data
+            is_preview = data.get("is_preview", False)
 
-            # Get pipeline-calculated peak - NO PLACEHOLDER FALLBACK
-            # If this fails, we WANT to see the error
-            wavelength = app._latest_peaks[channel]  # Will KeyError if not set - GOOD
-            raw_peak = wavelength  # Store before filtering
+            # Get pipeline-calculated peak from app state (set by ViewModel via signal)
+            wavelength = app._latest_peaks.get(channel) if hasattr(app, '_latest_peaks') else None
 
-            # Apply EMA display filter (if enabled) before storing
-            if app._display_filter_method in ["ema_light", "ema_smooth"]:
-                if app._ema_state[channel] is None:
-                    app._ema_state[channel] = wavelength
-                else:
-                    alpha = app._display_filter_alpha
-                    wavelength = alpha * wavelength + (1 - alpha) * app._ema_state[channel]
-                    app._ema_state[channel] = wavelength
-
-            # Log what actually goes to sensorgram
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"[BUFFER] Ch {channel}: pipeline={raw_peak:.2f}nm → buffer={wavelength:.2f}nm (EMA={app._display_filter_method})")
-
-            # Append to timeline data buffers (with optional EMA filtering applied)
-            try:
-                app.buffer_mgr.append_timeline_point(
-                    channel, elapsed_time, wavelength, timestamp
-                )
-            except Exception as e:
-                # Silently skip - buffer append is non-critical
-                pass
-
+            # Append to timeline data buffers
+            # Skip if wavelength is None (first frame before ViewModel calculates peak)
+            if wavelength is not None:
+                try:
+                    app.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength, timestamp)
+                except Exception:
+                    pass  # Silently skip - buffer append is non-critical
             # Queue transmission spectrum update for sidebar (QC/diagnostic display)
             # ALWAYS UPDATE: Sidebar is a QC tool and should show all available data
             has_raw_data = data.get("raw_spectrum") is not None
@@ -77,8 +61,10 @@ class SpectrumHelpers:
 
             # QC POLICY: Always update sidebar if we have ANY data (raw or transmission)
             # Sidebar is a diagnostic tool and must show data regardless of processing issues
+            logger.info(f"[QUEUE] Ch {channel}: has_raw={has_raw_data}, has_trans={has_transmission}")
             if has_raw_data or has_transmission:
                 try:
+                    logger.info(f"[QUEUE] Ch {channel}: Calling queue_transmission_update")
                     SpectrumHelpers.queue_transmission_update(app, channel, data)
 
                     # Update Sensor IQ display if available
@@ -86,8 +72,7 @@ class SpectrumHelpers:
                         app._update_sensor_iq_display(channel, data["sensor_iq"])
 
                 except Exception as e:
-                    # Silently skip - non-critical queue error
-                    pass
+                    logger.error(f"[QUEUE] Ch {channel}: FAILED to queue update: {e}", exc_info=True)
 
             # Cursor auto-follow (thread-safe via signal)
             # Emit signal to update cursor on main thread
@@ -102,9 +87,12 @@ class SpectrumHelpers:
             if not hasattr(app, "_processing_error_count"):
                 app._processing_error_count = 0
             app._processing_error_count += 1
-            if app._processing_error_count <= 3:  # First 3 only
+            if app._processing_error_count <= 10:  # Log first 10 errors
                 import logging
-                logging.error(f"Spectrum processing error: {e}")
+                import traceback
+                channel_str = data.get('channel', 'UNKNOWN') if 'data' in locals() else 'UNKNOWN'
+                logging.error(f"[PROCESS ERROR] Ch {channel_str}: Spectrum processing error: {e}")
+                logging.error(f"[PROCESS ERROR] Traceback: {traceback.format_exc()}")
 
         # Queue graph update instead of immediate update (throttled by timer)
         # DOWNSAMPLED: Only queue every Nth update
@@ -150,12 +138,15 @@ class SpectrumHelpers:
             data: Spectrum data dictionary containing transmission_spectrum and raw_spectrum
 
         """
-        # Skip if updates are disabled (performance optimization) - check coordinator flags
-        if (
-            not app.ui_updates._transmission_updates_enabled
-            and not app.ui_updates._raw_spectrum_updates_enabled
-        ):
-            return
+        from affilabs.utils.logger import logger
+
+        # Check if updates are disabled (if coordinator exists)
+        if hasattr(app, 'ui_updates') and app.ui_updates is not None:
+            if (
+                not app.ui_updates._transmission_updates_enabled
+                and not app.ui_updates._raw_spectrum_updates_enabled
+            ):
+                return
 
         transmission = data.get("transmission_spectrum")
         # Get raw spectrum using unified field name
@@ -179,7 +170,6 @@ class SpectrumHelpers:
                         return
 
                     # Process through ViewModel (handles services pipeline)
-                    # This will emit spectrum_updated signal which we handle below
                     app.spectrum_viewmodels[channel].process_raw_spectrum(
                         channel=channel,
                         wavelengths=wavelengths,

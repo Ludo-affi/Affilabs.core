@@ -144,6 +144,23 @@ class NavigationPresenter:
         # Power button
         self._create_power_button(nav_layout)
 
+        # Connecting overlay (hidden until connecting) - will be positioned over main content
+        self.main_window.connecting_label = QLabel("Connecting to hardware...")
+        self.main_window.connecting_label.setVisible(False)
+        self.main_window.connecting_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_window.connecting_label.setStyleSheet(
+            "QLabel {"
+            "  color: #1D1D1F;"
+            "  background: rgba(255, 255, 255, 0.95);"
+            "  font-size: 14px;"
+            "  font-weight: 600;"
+            "  padding: 16px 32px;"
+            "  border: 2px solid #E6B800;"
+            "  border-radius: 8px;"
+            "}",
+        )
+        # Don't add to nav_layout - will be positioned as overlay in show_connecting_indicator
+
         nav_layout.addSpacing(16)  # Space between power button and logo
 
         # Company logo

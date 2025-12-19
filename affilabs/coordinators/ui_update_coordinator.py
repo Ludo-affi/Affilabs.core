@@ -43,7 +43,7 @@ class AL_UIUpdateCoordinator(QObject):
         self.main_window = main_window
 
         # Initialize SpectroscopyPresenter for transmission/raw spectrum updates
-        from presenters import SpectroscopyPresenter
+        from affilabs.presenters import SpectroscopyPresenter
 
         self.spectroscopy_presenter = SpectroscopyPresenter(main_window)
 

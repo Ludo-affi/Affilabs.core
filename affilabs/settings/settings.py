@@ -7,9 +7,10 @@ from re import search
 # TIMING ARCHITECTURE - Base timing parameters
 # ==========================================
 # These values define the timing synchronization between firmware and detector
-LED_ON_TIME_MS = 250.0  # LED ON duration (firmware default: 250ms)
-DETECTOR_WAIT_MS = 60.0  # MAX INTEGRATION TIME PER SCAN (default: 60ms)
-NUM_SCANS = 3  # Number of scans per spectrum (HAL averages these)
+# LED_ON_TIME = DETECTOR_WAIT + detection_time (no post-delay, LED OFF immediately after detection)
+LED_ON_TIME_MS = 250.0  # LED ON duration for 1 Hz rate: 200ms wait + ~30ms detection + 20ms safety
+DETECTOR_WAIT_MS = 200.0  # LED stabilization - acquire at LATER stage of ON window for stability
+NUM_SCANS = 5  # Number of scans per spectrum (HAL averages these) - capped at 5 for speed
 SAFETY_BUFFER_MS = 10.0  # Safety margin for timing calculations
 
 

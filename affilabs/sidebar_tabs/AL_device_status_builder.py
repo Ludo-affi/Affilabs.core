@@ -93,6 +93,7 @@ class DeviceStatusTabBuilder:
         self.sidebar.scan_btn.setProperty("scanning", False)
         self.sidebar.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar.scan_btn.setFixedHeight(36)
+        self.sidebar.scan_btn.setVisible(False)  # Hidden until hardware connected
         self.sidebar.scan_btn.setStyleSheet(primary_button_style())
         self.sidebar.scan_btn.setToolTip(
             "Search for connected hardware devices (optics, sensors, pumps)",

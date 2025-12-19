@@ -63,7 +63,9 @@ def create_recipe_from_production_config(
         measurement_timeout_s=getattr(config, 'MEASUREMENT_TIMEOUT_S', 2.0),
         parallel_workers=getattr(config, 'MAX_MEASURE_WORKERS', 1) if getattr(config, 'PARALLEL_MEASUREMENTS', False) else 1,
         use_batch_command=True,  # Production always uses batch command
-        num_scans=1,  # Production uses 1 scan during convergence
+        # CRITICAL: Use same num_scans as reference capture (180ms detector window)
+        # This ensures saturation is detected during convergence, not after
+        num_scans=max(1, int(180.0 / initial_integration_ms)),
 
         # Slope trust
         min_signal_for_model=getattr(config, 'MIN_SIGNAL_FOR_MODEL', 0.20),
@@ -114,11 +116,7 @@ def validate_engine_result(
     if not result:
         return False
 
-    # Check convergence
-    if not result.converged:
-        return False
-
-    # Check all channels present
+    # Check all channels present (don't require convergence - return data even if not converged)
     if set(result.final_leds.keys()) != set(expected_channels):
         return False
 
@@ -145,7 +143,7 @@ def validate_engine_result(
 def convert_engine_result_to_production(
     result,
     channel_list: List[str],
-) -> tuple[float, Dict[str, float], bool]:
+) -> tuple[float, Dict[str, float], bool, Dict[str, int]]:
     """Convert engine result to production LEDconverge return format.
 
     Args:
@@ -153,15 +151,16 @@ def convert_engine_result_to_production(
         channel_list: List of channels (for validation)
 
     Returns:
-        Tuple (integration_ms, signals_dict, converged)
-        Same format as LEDconverge() return value
+        Tuple (integration_ms, signals_dict, converged, final_leds)
+        Extended format with final LED values
     """
     if not validate_engine_result(result, channel_list):
         # Return failure format
-        return result.integration_ms, {}, False
+        return result.integration_ms, {}, False, {}
 
     return (
         result.integration_ms,
         result.signals.copy(),
         result.converged,
+        result.final_leds.copy(),
     )

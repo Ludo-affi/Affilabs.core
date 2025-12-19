@@ -157,7 +157,7 @@ class RecordingEventCoordinator:
                 )
                 return
 
-            from baseline_data_recorder import BaselineDataRecorder
+            from affilabs.utils.baseline_data_recorder import BaselineDataRecorder
 
             self.app._baseline_recorder = BaselineDataRecorder(
                 self.app.data_mgr,

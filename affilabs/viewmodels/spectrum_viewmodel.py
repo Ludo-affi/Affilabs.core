@@ -48,8 +48,11 @@ class SpectrumViewModel(QObject):
         self._smoothing_enabled = True
         self._smoothing_window = 11
         self._smoothing_polyorder = 2
-        self._baseline_correction_enabled = True
-        self._baseline_method = "polynomial"
+        # CRITICAL: Disable baseline correction here - TransmissionProcessor already applied it!
+        # Transmission data from spectrum_processor is ALREADY baseline-corrected using percentile method
+        # Applying a second correction causes shape distortion and method mismatch
+        self._baseline_correction_enabled = False
+        self._baseline_method = "percentile"  # For reference only - not used when disabled
         self._baseline_order = 1
 
         # Peak finding pipeline (initialized on first use)

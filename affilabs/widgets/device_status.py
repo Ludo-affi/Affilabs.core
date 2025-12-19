@@ -91,10 +91,11 @@ class DeviceStatusWidget(QWidget):
 
         hw_card_layout.addSpacing(4)
 
-        # Scan button
+        # Scan button (hidden at startup - only show when adding devices)
         self.scan_btn = QPushButton("[SEARCH] Scan for Hardware")
         self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.scan_btn.setFixedHeight(36)
+        self.scan_btn.setVisible(False)  # Hidden at startup
         self.scan_btn.clicked.connect(self._on_connect_clicked)
         self.scan_btn.setStyleSheet(
             "QPushButton {"
@@ -452,11 +453,13 @@ class DeviceStatusWidget(QWidget):
         # Show/hide no devices message
         self.hw_no_devices.setVisible(device_count == 0)
 
-        # Update scan button text based on connection status
+        # Update scan button text and visibility based on connection status
         if device_count > 0:
             self.scan_btn.setText("✓ Hardware Connected")
+            self.scan_btn.setVisible(True)  # Show when devices connected
         else:
             self.scan_btn.setText("[SEARCH] Scan for Hardware")
+            # Keep hidden at startup until user initiates device scan
 
         # Determine system capacity based on controller type
         capacity = self._determine_capacity(ctrl_type, knx_type)

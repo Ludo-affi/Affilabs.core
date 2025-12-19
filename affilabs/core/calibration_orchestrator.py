@@ -312,7 +312,7 @@ def run_startup_calibration(
         # Set polarizer to S-mode using HAL
         logger.info("Setting polarizer to S-mode...")
         ctrl.set_mode("s")  # Servo moves to S position from EEPROM
-        time.sleep(0.5)
+        time.sleep(0.35)  # Optimized - adequate for cold start servo movement
         logger.info("[OK] S-mode set")
 
         # Run LED convergence for S-mode
@@ -355,8 +355,8 @@ def run_startup_calibration(
         # Calculate initial LED intensities using model if available
         if model_exists and model_loader.model_data:
             # Use model loader to calculate initial intensities - EXACT method from led_model_loader.py
-            # Target: 85% of saturation (55700 counts)
-            target_counts = 55700
+            # Target: 75% of max (49151 counts) - prevents hot pixels from saturating during reference capture
+            target_counts = int(0.75 * detector_params.max_counts)  # 49151 for 65535 max
 
             # OPTIMAL LOGIC: Calculate integration time for weakest LED at max intensity (255)
             # This gives shortest time to hit target with weakest channel maxed = optimal condition
@@ -379,9 +379,7 @@ def run_startup_calibration(
                 )
 
                 initial_integration_ms = optimal_integration_ms
-                logger.info(
-                    f"[OK] Optimal integration time for weakest LED {weakest_ch.upper()} at max: {initial_integration_ms:.1f}ms (slope: {weakest_slope:.1f})"
-                )
+                logger.info(f"Integration time: {initial_integration_ms:.1f}ms")
             else:
                 # Fallback: use average slope method
                 avg_slope = np.mean([model_slopes_s.get(ch, 870.0) for ch in ch_list])
@@ -413,39 +411,29 @@ def run_startup_calibration(
                     if ch_slope > weakest_slope * 1.5:  # Significantly brighter than weakest
                         correction = 0.917  # ~8% reduction
                         normalized_led = int(normalized_led * correction)
-                        logger.info(
-                            f"{ch.upper()}: BRIGHT LED (slope={ch_slope:.1f}) @ {initial_integration_ms:.1f}ms - applying conservative correction {correction:.3f} to prevent saturation"
-                        )
                     initial_leds[ch] = max(10, min(255, normalized_led))
                 else:
                     # Fallback if slope missing
                     initial_leds[ch] = 150
 
-            logger.info(f"[OK] Model-based initial LED intensities: {initial_leds}")
+            logger.info(f"Initial LEDs: {initial_leds}")
         else:
             # Fallback to equal intensities if no model
             # Use safer integration in trained range
             initial_integration_ms = 30.0
             initial_leds = {ch: 255 for ch in ch_list}
-            logger.info("[OK] Using equal initial LED intensities (no model)")
 
         # Turn on all LEDs with calculated intensities
         for ch in ch_list:
             ctrl.set_intensity(ch, initial_leds[ch])
-        time.sleep(0.05)
-        logger.info("[OK] All LEDs turned ON for convergence")
+        time.sleep(0.03)  # Minimal delay - LEDs stabilize quickly
 
         # Select convergence function based on flag
         if use_convergence_engine and ENGINE_AVAILABLE:
-            logger.info("🔬 Using NEW convergence engine (EXPERIMENTAL)")
             LEDconverge = LEDconverge_engine
         else:
-            if use_convergence_engine and not ENGINE_AVAILABLE:
-                logger.warning("⚠️  Convergence engine not available, using current stack")
             LEDconverge = LEDconverge_current
-
-        logger.info("Running S-mode convergence...")
-        s_integration_time, s_final_signals, s_success = LEDconverge(
+        s_integration_time, s_final_signals, s_success, s_converged_leds = LEDconverge(
             usb=usb,
             ctrl=ctrl,
             ch_list=ch_list,
@@ -453,18 +441,19 @@ def run_startup_calibration(
             acquire_raw_spectrum_fn=acquire_raw_spectrum,
             roi_signal_fn=roi_signal,
             initial_integration_ms=initial_integration_ms,
-            target_percent=0.85,
+            target_percent=0.75,  # 75% target prevents hot pixels from saturating during reference capture
             tolerance_percent=0.05,
             detector_params=detector_params,
             wave_min_index=int(wave_min_index),
             wave_max_index=int(wave_max_index),
-            max_iterations=15,
+            max_iterations=12,  # Optimized - good model guess converges quickly
             step_name="Step 4 (S-mode)",
             use_batch_command=True,
             model_slopes=model_slopes_s,
             polarization="S",
             config=None,
             logger=logger,
+            progress_callback=progress_callback,
         )
 
         if not s_success:
@@ -487,26 +476,25 @@ def run_startup_calibration(
                 error_msg += "No signal measurements obtained."
             raise RuntimeError(error_msg)
 
-        # Use final LED intensities from convergence loop (not queried from hardware)
-        # Querying LEDs triggers PermissionError(13) and corrupts serial state
-        s_mode_leds = initial_leds  # Updated during convergence
+        # Use final LED intensities from convergence engine
+        # These are the converged values, NOT the initial values
+        s_mode_leds = s_converged_leds if s_converged_leds else initial_leds
         result.s_mode_intensity = s_mode_leds
         result.s_integration_time = s_integration_time
 
-        logger.info(f"[OK] S-mode convergence: integration={s_integration_time:.1f}ms")
-        for ch in ch_list:
-            logger.info(f"     {ch.upper()}: LED={s_mode_leds[ch]}")
+        logger.info(f"S-mode: {s_integration_time:.1f}ms, LEDs={s_mode_leds}")
 
         # Capture S-pol reference spectra (using num_scans for high-quality baseline)
-        logger.info("Capturing S-pol reference spectra...")
-
-        # Calculate num_scans: floor(DETECTOR_WINDOW / integration_time)
+        # Calculate num_scans: floor(DETECTOR_WINDOW / integration_time), capped at 10
         DETECTOR_WINDOW_MS = 180.0
-        num_scans_s = max(1, int(DETECTOR_WINDOW_MS / s_integration_time))
-        logger.info(f"[OK] Reference num_scans: {num_scans_s} (180ms / {s_integration_time:.1f}ms)")
+        MAX_NUM_SCANS = 10  # Cap to reduce USB transfer overhead (10 scans = 3.16x SNR improvement)
+        num_scans_s = min(MAX_NUM_SCANS, max(1, int(DETECTOR_WINDOW_MS / s_integration_time)))
+
+        # Store num_scans in result for live data acquisition
+        result.num_scans = num_scans_s
 
         usb.set_integration(s_integration_time)
-        time.sleep(0.05)
+        time.sleep(0.03)  # Minimal delay - integration setting applies quickly
 
         s_raw_data = {}
         for ch in ch_list:
@@ -521,14 +509,26 @@ def run_startup_calibration(
                 use_batch_command=True,
             )
             if spectrum is not None:
-                s_raw_data[ch] = spectrum[wave_min_index:wave_max_index]
+                roi_spectrum = spectrum[wave_min_index:wave_max_index]
+                s_raw_data[ch] = roi_spectrum
+
+                # CRITICAL: Check for saturation in reference capture
+                max_pixel = float(max(roi_spectrum))
+                if max_pixel >= detector_params.saturation_threshold:
+                    logger.error(
+                        f"[ERROR] S-pol reference SATURATED for channel {ch.upper()}: {max_pixel:.0f} counts >= {detector_params.saturation_threshold}"
+                    )
+                    logger.error(
+                        f"   Convergence target was too high - reference capture with {num_scans_s} scans caused saturation"
+                    )
+                    raise RuntimeError(
+                        f"S-pol reference saturated for channel {ch.upper()}: {max_pixel:.0f} counts. Lower target_percent or reduce LED intensities."
+                    )
             else:
                 logger.error(f"Failed to capture S-pol reference for channel {ch}")
                 raise RuntimeError(f"Failed to capture S-pol reference for channel {ch}")
 
         result.s_raw_data = s_raw_data
-        logger.info(f"[OK] S-pol reference captured: {len(s_raw_data)} channels")
-        logger.info("[OK] Step 4 complete\n")
 
         # =================================================================
         # STEP 5: P-Mode LED Convergence + Reference + Dark Capture
@@ -541,84 +541,62 @@ def run_startup_calibration(
 
         # Turn off LEDs before servo movement
         ctrl.turn_off_channels()
-        time.sleep(0.1)
+        time.sleep(0.05)  # Minimal delay - just ensure command processed
 
         # Set polarizer to P-mode using HAL
-        logger.info("Setting polarizer to P-mode...")
         ctrl.set_mode("p")  # Servo moves to P position from EEPROM
-        time.sleep(0.5)
-        logger.info("[OK] P-mode set")
+        time.sleep(0.2)  # Optimized - servo is warm, motor has settled from S-mode
 
         # Calculate initial LED intensities for P-mode
-        # GUIDELINE: P-mode should use 90% of S-mode LED values from the model
-        if model_slopes_p and model_slopes_s:
-            # Use model to calculate initial intensities for P-mode
-            # Apply 90% rule: P-mode LEDs should be 90% of S-mode values
-            target_counts = 52400
-            initial_p_leds = {}
-            for ch in ch_list:
-                # Calculate S-mode intensity at this integration time
-                slope_s = model_slopes_s.get(ch, 870.0)
-                s_intensity = target_counts / (slope_s * (s_integration_time / 10.0))
-                # Apply 90% rule for P-mode
-                p_intensity = s_intensity * 0.90
-                p_intensity = max(10, min(255, int(p_intensity)))
-                initial_p_leds[ch] = p_intensity
-            logger.info(f"[OK] Model-based P-mode LEDs (90% of S-mode): {initial_p_leds}")
-        else:
-            # Start from S-mode values if no model, apply 90% rule
-            initial_p_leds = {ch: int(s_mode_leds[ch] * 0.90) for ch in ch_list}
-            logger.info(f"[OK] P-mode LEDs (90% of S-mode values): {initial_p_leds}")
+        # OPTIMIZED: Use converged S-mode LEDs directly with 92% rule for better initial guess
+        # This is much more accurate than model prediction since S-mode just converged
+        initial_p_leds = {ch: max(10, min(255, int(s_mode_leds[ch] * 0.92))) for ch in ch_list}
 
         # Turn on all LEDs with calculated intensities
         for ch in ch_list:
             ctrl.set_intensity(ch, initial_p_leds[ch])
-        time.sleep(0.05)
+        time.sleep(0.03)  # Minimal delay - just ensure LEDs stabilize
 
         # Run LED convergence for P-mode
-        logger.info("Running P-mode convergence...")
-        p_integration_time, p_final_signals, p_success = LEDconverge(
+        p_integration_time, p_final_signals, p_success, p_converged_leds = LEDconverge(
             usb=usb,
             ctrl=ctrl,
             ch_list=ch_list,
-            led_intensities=initial_p_leds.copy(),  # Use model-based or S-mode values
+            led_intensities=initial_p_leds.copy(),  # Use S-mode converged values (more accurate)
             acquire_raw_spectrum_fn=acquire_raw_spectrum,
             roi_signal_fn=roi_signal,
             initial_integration_ms=s_integration_time,  # Start from S-mode integration
-            target_percent=0.80,
+            target_percent=0.75,  # 75% target prevents hot pixels from saturating during reference capture
             tolerance_percent=0.05,
             detector_params=detector_params,
             wave_min_index=int(wave_min_index),
             wave_max_index=int(wave_max_index),
-            max_iterations=15,
+            max_iterations=10,  # Reduced from 15 - better initial guess from S-mode
             step_name="Step 5 (P-mode)",
             use_batch_command=True,
             model_slopes=model_slopes_p,
             polarization="P",
             config=None,
             logger=logger,
+            progress_callback=progress_callback,
         )
 
         if not p_success:
             raise RuntimeError("P-mode convergence failed")
 
-        # Use final LED intensities from convergence loop (not queried from hardware)
-        # Querying LEDs triggers PermissionError(13) and corrupts serial state
-        p_mode_leds = initial_p_leds  # Updated during convergence
+        # Use final LED intensities from convergence engine
+        # These are the converged values, NOT the initial values
+        p_mode_leds = p_converged_leds if p_converged_leds else initial_p_leds
 
         result.p_mode_intensity = p_mode_leds
         result.p_integration_time = p_integration_time
 
-        logger.info(f"[OK] P-mode convergence: integration={p_integration_time:.1f}ms")
-        for ch in ch_list:
-            logger.info(f"     {ch.upper()}: LED={p_mode_leds[ch]}")
+        logger.info(f"P-mode: {p_integration_time:.1f}ms, LEDs={p_mode_leds}")
 
         # Capture P-pol reference spectra
-        logger.info("Capturing P-pol reference spectra...")
 
-        # Calculate num_scans for P-pol using same formula as S-pol
-        num_scans_p = max(1, int(DETECTOR_WINDOW_MS / p_integration_time))
-        logger.info(f"[OK] Reference num_scans: {num_scans_p} (180ms / {p_integration_time:.1f}ms)")
+        # Calculate num_scans for P-pol using same formula as S-pol (capped at 10)
+        num_scans_p = min(MAX_NUM_SCANS, max(1, int(DETECTOR_WINDOW_MS / p_integration_time)))
 
         usb.set_integration(p_integration_time)
         time.sleep(0.05)
@@ -636,18 +614,30 @@ def run_startup_calibration(
                 use_batch_command=True,
             )
             if spectrum is not None:
-                p_raw_data[ch] = spectrum[wave_min_index:wave_max_index]
+                roi_spectrum = spectrum[wave_min_index:wave_max_index]
+                p_raw_data[ch] = roi_spectrum
+
+                # CRITICAL: Check for saturation in reference capture
+                max_pixel = float(max(roi_spectrum))
+                if max_pixel >= detector_params.saturation_threshold:
+                    logger.error(
+                        f"[ERROR] P-pol reference SATURATED for channel {ch.upper()}: {max_pixel:.0f} counts >= {detector_params.saturation_threshold}"
+                    )
+                    logger.error(
+                        f"   Convergence target was too high - reference capture with {num_scans_p} scans caused saturation"
+                    )
+                    raise RuntimeError(
+                        f"P-pol reference saturated for channel {ch.upper()}: {max_pixel:.0f} counts. Lower target_percent or reduce LED intensities."
+                    )
             else:
                 logger.error(f"Failed to capture P-pol reference for channel {ch}")
                 raise RuntimeError(f"Failed to capture P-pol reference for channel {ch}")
 
         result.p_raw_data = p_raw_data
-        logger.info(f"[OK] P-pol reference captured: {len(p_raw_data)} channels")
 
         # Capture dark spectrum (LEDs off) using same num_scans as S-pol for consistency
-        logger.info("Capturing dark spectrum...")
         ctrl.turn_off_channels()
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         # Use same num_scans as S-pol reference - average multiple reads
         spectra = []
@@ -655,17 +645,14 @@ def run_startup_calibration(
             spectrum = usb.read_intensity()
             if spectrum is not None:
                 spectra.append(spectrum)
-            time.sleep(0.02)
+            time.sleep(0.01)
 
         dark_spectrum_full = np.mean(spectra, axis=0)
         dark_roi = dark_spectrum_full[wave_min_index:wave_max_index]
 
-        logger.info(f"[OK] Dark spectrum captured ({num_scans_s} scans)")
-
         # Store dark for both modes (same dark for both)
         result.dark_s = {ch: dark_roi for ch in ch_list}
         result.dark_p = {ch: dark_roi for ch in ch_list}
-        logger.info("[OK] Step 5 complete\n")
 
         # =================================================================
         # STEP 6: QC Validation & Result Packaging

@@ -92,8 +92,8 @@ class CalibrationSpectrometerAdapter(Spectrometer):
                 ctrl=self.ctrl,
                 channel=channel,
                 led_intensity=led_intensity,
-                integration_ms=integration_time_ms,
-                use_batch=use_batch_command,
+                integration_time_ms=integration_time_ms,
+                use_batch_command=use_batch_command,
                 num_scans=num_scans,
             )
 
@@ -144,8 +144,14 @@ class ProductionROIExtractor(ROIExtractor):
             # Extract ROI window
             roi = arr[i_min:i_max]
 
-            # Return mean signal (same as production code)
-            return float(np.mean(roi))
+            # Use TOP 50 pixels for signal (more robust to noise/baseline)
+            # Sort descending and take mean of brightest pixels
+            if len(roi) > 50:
+                top_pixels = np.partition(roi, -50)[-50:]  # Fast selection of top 50
+                return float(np.mean(top_pixels))
+            else:
+                # If ROI < 50 pixels, use all
+                return float(np.mean(roi))
 
         except Exception:
             return 0.0

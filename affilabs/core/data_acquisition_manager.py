@@ -797,11 +797,14 @@ class DataAcquisitionManager(QObject):
                     traceback.print_exc()
 
             # Common parameters (same for all channels)
+            # Cap num_scans to 10 maximum (match reference capture quality)
             num_scans = (
                 self.calibration_data.num_scans
                 if self.calibration_data.num_scans and self.calibration_data.num_scans > 0
                 else 1
             )
+            MAX_LIVE_SCANS = 10  # Match calibration reference quality
+            num_scans = min(num_scans, MAX_LIVE_SCANS) if num_scans else MAX_LIVE_SCANS
 
             # TIMING TRACK MODE: Override calibration delays with new timing architecture
             # LED Track: OFF 55ms → ON 260ms (total 315ms per channel)

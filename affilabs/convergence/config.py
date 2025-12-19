@@ -29,15 +29,17 @@ class ConvergenceRecipe:
     target_percent: float  # e.g., 0.85 for 85% of detector max
     tolerance_percent: float  # e.g., 0.05 for ±5%
 
-    # Behavior (PRODUCTION-PROVEN VALUES)
-    near_window_percent: float = 0.10  # ±10% window for fine-tuning
-    max_iterations: int = 15  # Typical convergence in 3-7 iterations
-    prefer_est_after_iters: int = 1  # Use estimated slope after 1 iteration
+    # Behavior (OPTIMIZED FOR SPEED - AGGRESSIVE)
+    near_window_percent: float = 0.15  # ±15% window for earlier fine-tuning entry (faster)
+    max_iterations: int = 6  # Further reduced - trust model predictions for faster convergence
+    enable_analysis_phase: bool = False  # Disabled - skip fine-tuning validation for speed
+    analysis_iterations: int = 0  # No fine-tuning - go straight to reference capture
+    prefer_est_after_iters: int = 1  # Use estimated slope after 1 iteration (trust live data)
 
-    # LED step constraints (PRODUCTION-PROVEN VALUES)
-    max_led_change: int = 50  # Maximum LED jump per iteration
-    led_small_step: int = 5  # Small adjustment for fine-tuning
-    boundary_margin: int = 5  # Safety margin from known-bad values
+    # LED step constraints (OPTIMIZED FOR SPEED)
+    max_led_change: int = 80  # Larger jumps allowed for faster convergence (was 50)
+    led_small_step: int = 8  # Slightly larger fine adjustments (was 5)
+    boundary_margin: int = 3  # Tighter safety margin for speed (was 5)
     near_boundary_scale: float = 0.5  # Reduce margin when near target
 
     # Measurement behavior
@@ -46,11 +48,11 @@ class ConvergenceRecipe:
     use_batch_command: bool = True  # Use batch LED command for reliability
     num_scans: int = 1  # Single scan during convergence (averaging in reference)
 
-    # Slope trust (PRODUCTION-PROVEN VALUE)
-    min_signal_for_model: float = 0.20  # Require 20% of target for slope usage
+    # Slope trust (OPTIMIZED FOR SPEED)
+    min_signal_for_model: float = 0.10  # Lower threshold - trust model more aggressively (was 0.20)
 
-    # Acceptance (PRODUCTION-PROVEN VALUE)
-    accept_above_extra_percent: float = 0.0  # Strict: must be in tolerance
+    # Acceptance (OPTIMIZED FOR SPEED)
+    accept_above_extra_percent: float = 0.03  # Allow 3% overshoot for faster convergence (was 0.0)
 
     def __post_init__(self) -> None:
         """Validate and adjust configuration for logical consistency.

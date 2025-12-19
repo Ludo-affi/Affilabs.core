@@ -146,7 +146,11 @@ class BaselineDataRecorder(QObject):
         # Start progress timer (update every second)
         self.progress_timer.start(1000)
 
-        # Connect to data acquisition signals
+        # Connect to data acquisition signals ONLY when recording starts
+        try:
+            self.data_mgr.spectrum_acquired.disconnect(self._on_spectrum_acquired)
+        except:
+            pass  # Not connected yet, that's fine
         self.data_mgr.spectrum_acquired.connect(self._on_spectrum_acquired)
 
         self.recording_started.emit()
@@ -154,27 +158,32 @@ class BaselineDataRecorder(QObject):
 
     def _on_spectrum_acquired(self, data: dict) -> None:
         """Handle new spectrum data from acquisition manager."""
-        if not self.recording:
-            return
+        try:
+            if not self.recording:
+                return
 
-        channel = data.get("channel")
-        if channel not in ["a", "b", "c", "d"]:
-            return
+            channel = data.get("channel")
+            if channel not in ["a", "b", "c", "d"]:
+                return
 
-        # Store transmission spectrum (full array)
-        transmission = data.get("transmission_spectrum")
-        if transmission is not None and len(transmission) > 0:
-            self.transmission_data[channel].append(transmission.copy())
+            # Store transmission spectrum (full array)
+            transmission = data.get("transmission_spectrum")
+            if transmission is not None and len(transmission) > 0:
+                self.transmission_data[channel].append(transmission.copy())
 
-            # Also store timestamp when we successfully capture transmission
-            timestamp = data.get("timestamp")
-            if timestamp is not None:
-                self.timestamps[channel].append(timestamp)
+                # Also store timestamp when we successfully capture transmission
+                timestamp = data.get("timestamp")
+                if timestamp is not None:
+                    self.timestamps[channel].append(timestamp)
 
-        # Store processed wavelength (single value - peak position)
-        wavelength = data.get("wavelength")
-        if wavelength is not None:
-            self.wavelength_data[channel].append(wavelength)
+            # Store processed wavelength (single value - peak position)
+            wavelength = data.get("wavelength")
+            if wavelength is not None:
+                self.wavelength_data[channel].append(wavelength)
+        except Exception as e:
+            # Don't let baseline recorder crash the main acquisition thread
+            logger.error(f"Baseline recorder error: {e}")
+            pass
 
     def _update_progress(self) -> None:
         """Update recording progress."""

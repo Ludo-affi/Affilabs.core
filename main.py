@@ -220,6 +220,9 @@ try:
 except ImportError as e:
     COORDINATORS_AVAILABLE = False
     _coordinators_import_error = str(e)
+    # Log the import error for debugging
+    import logging
+    logging.warning(f"Coordinator import failed: {e}")
 
 # --- Phase 1 Architecture Components ---
 # ViewModels (Phase 1.3 - UI presentation logic)
@@ -635,7 +638,7 @@ class Application(QApplication):
         self._sensorgram_update_counter = 0
 
         # Peak finding results (updated by pipeline)
-        self._latest_peaks = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
+        self._latest_peaks = {"a": None, "b": None, "c": None, "d": None}
 
         # UI update management
         self._pending_graph_updates = {"a": None, "b": None, "c": None, "d": None}
@@ -828,15 +831,31 @@ class Application(QApplication):
 
         self.peripheral_events = PeripheralEventCoordinator(self)
 
+        # Recording event coordinator
+        from affilabs.coordinators.recording_event_coordinator import (
+            RecordingEventCoordinator,
+        )
+
+        self.recording_events = RecordingEventCoordinator(self)
+
         # UI update coordinator and dialog manager
         if COORDINATORS_AVAILABLE:
             self.ui_updates = AL_UIUpdateCoordinator(self, self.main_window)
             self.dialog_manager = DialogManager(self.main_window)
-            logger.debug("✓ Coordinators (5 loaded)")
+            self.spectroscopy_presenter = None  # Managed by coordinator
+            logger.debug("✓ Coordinators (6 loaded)")
         else:
             self.ui_updates = None
             self.dialog_manager = None
-            logger.debug("✓ Coordinators (4 loaded)")
+            # Create spectroscopy presenter directly when coordinator isn't available
+            try:
+                from affilabs.presenters import SpectroscopyPresenter
+                self.spectroscopy_presenter = SpectroscopyPresenter(self.main_window)
+                logger.debug("✓ SpectroscopyPresenter (fallback)")
+            except Exception as e:
+                logger.warning(f"  Failed to initialize SpectroscopyPresenter: {e}")
+                self.spectroscopy_presenter = None
+            logger.debug("✓ Coordinators (5 loaded)")
             logger.warning("  Running without UI coordinators (compatibility mode)")
 
     def _init_viewmodels(self):
@@ -1395,9 +1414,9 @@ class Application(QApplication):
                 lambda checked: self._set_display_filter(2) if checked else None,
             )
 
-        # Initialize filter to default (None/Raw) - must be outside the if block
+        # Initialize filter to default (None - raw data)
         self._set_display_filter(0)
-        logger.debug("✓ EMA filter: Raw")
+        logger.debug("✓ Display filter: None (raw data)")
 
         logger.debug("✓ UI event signals (tabs/pages/filters)")
 
@@ -1888,9 +1907,12 @@ class Application(QApplication):
 
     def _process_spectrum_data(self, data: dict):
         """Process spectrum data in dedicated worker thread."""
-        from affilabs.utils.spectrum_helpers import SpectrumHelpers
-
-        SpectrumHelpers.process_spectrum_data(self, data)
+        try:
+            from affilabs.utils.spectrum_helpers import SpectrumHelpers
+            logger.info(f"[MAIN] About to process spectrum for channel {data.get('channel', 'UNKNOWN')}")
+            SpectrumHelpers.process_spectrum_data(self, data)
+        except Exception as e:
+            logger.error(f"[MAIN] Failed to process spectrum: {e}", exc_info=True)
 
     def _handle_intensity_monitoring(self, channel: str, data: dict, timestamp: float):
         """Handle intensity monitoring and leak detection (extracted for clarity).
@@ -3243,13 +3265,25 @@ class Application(QApplication):
             transmission: Processed transmission spectrum
 
         """
-        # Queue via AL_UIUpdateCoordinator (raw spectrum handled separately in _on_raw_spectrum_updated)
-        self.ui_updates.queue_transmission_update(
-            channel,
-            wavelengths,
-            transmission,
-            None,
-        )
+        # Update via UI coordinator if available
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            self.ui_updates.queue_transmission_update(
+                channel,
+                wavelengths,
+                transmission,
+                None,
+            )
+        # Fallback: Update spectroscopy presenter directly
+        elif hasattr(self, 'spectroscopy_presenter') and self.spectroscopy_presenter is not None:
+            try:
+                self.spectroscopy_presenter.update_transmission_spectrum(
+                    channel,
+                    wavelengths,
+                    transmission,
+                )
+            except Exception as e:
+                logger.error(f"Failed to update transmission spectrum: {e}")
+        
         logger.debug(f"[ViewModel] Spectrum updated for channel {channel}")
 
     def _on_peak_updated(
@@ -3296,8 +3330,16 @@ class Application(QApplication):
         # DIRECT UPDATE - don't queue, update immediately
         # Timer-based updates weren't firing during heavy acquisition load
         try:
-            if self.ui_updates.spectroscopy_presenter and self.ui_updates._raw_spectrum_updates_enabled:
-                self.ui_updates.spectroscopy_presenter.update_raw_spectrum(
+            if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+                if self.ui_updates.spectroscopy_presenter and self.ui_updates._raw_spectrum_updates_enabled:
+                    self.ui_updates.spectroscopy_presenter.update_raw_spectrum(
+                        channel,
+                        wavelengths,
+                        raw_spectrum,
+                    )
+            # Fallback: Update spectroscopy presenter directly
+            elif hasattr(self, 'spectroscopy_presenter') and self.spectroscopy_presenter is not None:
+                self.spectroscopy_presenter.update_raw_spectrum(
                     channel,
                     wavelengths,
                     raw_spectrum,

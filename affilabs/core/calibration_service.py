@@ -477,6 +477,7 @@ class CalibrationService(QObject):
                 device_config=device_config,
                 detector_serial=device_serial,
                 progress_callback=self._progress_callback,
+                use_convergence_engine=True,  # EXPERIMENTAL: Enable new convergence engine
             )
 
             if not cal_result or not cal_result.success:
