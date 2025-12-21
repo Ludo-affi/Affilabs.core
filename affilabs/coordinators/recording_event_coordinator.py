@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from main_simplified import Application
 
 from affilabs.utils.logger import logger
-from affilabs.widgets.message import show_message, ui_error, ui_info, ui_question, ui_warn
+from affilabs.widgets.message import show_message
 
 
 class RecordingEventCoordinator:
@@ -150,17 +150,24 @@ class RecordingEventCoordinator:
         # Create recorder if not exists
         if self.app._baseline_recorder is None:
             if not self.app.data_mgr:
-                ui_warn(
-                    self.app.main_window,
-                    "Not Ready",
+                show_message(
                     "Data acquisition system not initialized.",
+                    msg_type="Warning",
+                    title="Not Ready",
                 )
                 return
 
             from affilabs.utils.baseline_data_recorder import BaselineDataRecorder
 
+            # Pass spectrum_viewmodel to baseline recorder so it can access transmission data
+            # The recorder will connect to all 4 channel viewmodels via spectrum_viewmodels dict
+            spectrum_viewmodels = getattr(self.app, 'spectrum_viewmodels', None)
+            if not spectrum_viewmodels:
+                logger.warning("[WARN] spectrum_viewmodels not available - baseline recorder will use fallback mode")
+
             self.app._baseline_recorder = BaselineDataRecorder(
                 self.app.data_mgr,
+                spectrum_viewmodels=spectrum_viewmodels,
                 parent=self.app.main_window,
             )
 
@@ -180,12 +187,13 @@ class RecordingEventCoordinator:
             logger.info("[OK] Baseline recorder initialized and signals connected")
 
         # Confirm with user
-        reply_yes = ui_question(
-            self.app.main_window,
-            "Record Baseline Data",
+        reply_yes = show_message(
             "This will record 5 minutes of transmission data for noise optimization analysis.\n\n"
             "[WARN] Ensure stable baseline (no sample injections) during recording.\n\n"
             "Continue?",
+            msg_type="Question",
+            yes_no=True,
+            title="Record Baseline Data",
         )
         if reply_yes:
             logger.info("User confirmed - starting 5-minute baseline recording")
@@ -268,12 +276,12 @@ class RecordingEventCoordinator:
             )
 
         # Show completion message
-        ui_info(
-            self.app.main_window,
-            "Recording Complete",
+        show_message(
             f"[OK] Baseline data successfully recorded!\n\n"
             f"Saved to: {filepath}\n\n"
             f"You can now send this data for offline noise optimization analysis.",
+            msg_type="Information",
+            title="Recording Complete",
         )
         logger.info(f"[OK] Baseline recording complete - user notified: {filepath}")
 
@@ -311,9 +319,9 @@ class RecordingEventCoordinator:
             )
 
         # Show error message
-        ui_error(
-            self.app.main_window,
-            "Recording Error",
+        show_message(
             f"Failed to record baseline data:\n\n{error_msg}",
+            msg_type="Critical",
+            title="Recording Error",
         )
         logger.error(f"[X] Baseline recording error - user notified: {error_msg}")

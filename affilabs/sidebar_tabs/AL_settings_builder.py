@@ -41,10 +41,7 @@ class SettingsTabBuilder:
         """
         self._build_intelligence_bar(tab_layout)
         self._build_hardware_configuration(tab_layout)
-        tab_layout.addSpacing(12)
-
         self._build_calibration_controls(tab_layout)
-        tab_layout.addSpacing(12)
 
         # Build spectroscopy plots immediately (needed by spectroscopy presenter at startup)
         self._build_spectroscopy_plots(tab_layout)

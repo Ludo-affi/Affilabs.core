@@ -399,14 +399,31 @@ class PicoP4SPRAdapter:
     def servo_move_raw_pwm(self, pwm: int) -> bool:
         """Move servo to arbitrary PWM position for calibration sweeps.
 
-        Sends raw sv command: svPPP000\n where PPP is PWM value (1-255).
-        Used during servo calibration to scan arbitrary positions.
+        IMPORTANT: The firmware sv command expects DEGREES (0-180), not PWM values!
+        This method converts PWM (1-255) to degrees (0-180) before sending.
+
+        PWM to Degrees conversion:
+        - PWM 1 → 0°
+        - PWM 128 → 90°
+        - PWM 255 → 180°
+
+        Args:
+            pwm: PWM value (1-255) - will be converted to degrees
+
+        Returns:
+            True if command succeeded
         """
         try:
             if not (1 <= pwm <= 255):
                 return False
 
-            cmd = f"sv{pwm:03d}000\n"
+            # Convert PWM (1-255) to degrees (0-180)
+            degrees = int((pwm - 1) * 180 / 254)
+
+            # Clamp to valid range
+            degrees = max(0, min(180, degrees))
+
+            cmd = f"sv{degrees:03d}000\n"
             if self._ser is None or not self._ser.is_open:
                 return False
 

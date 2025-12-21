@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from asyncio import Task, create_task, sleep
-from typing import Self
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 try:
     from pump_controller import PumpException

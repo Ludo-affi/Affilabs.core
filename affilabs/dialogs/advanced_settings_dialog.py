@@ -203,39 +203,15 @@ class AdvancedSettingsDialog(QDialog):
         )
         form.addRow(detector_wait_label, self.detector_wait_input)
 
-        # Pipeline Selection
-        pipeline_label = QLabel("Data Pipeline:")
-        pipeline_label.setStyleSheet("font-weight: 600; font-size: 13px;")
-        self.pipeline_combo = QComboBox()
-        self.pipeline_combo.addItems(
-            [
-                "Fourier (Standard - 17.98 RU)",
-                "Hybrid Original (First attempt - 8.82 RU)",
-                "Hybrid Optimized (90% reduction - 1.81 RU)",
-            ],
-        )
-        self.pipeline_combo.setFixedWidth(300)
-        self.pipeline_combo.setStyleSheet(
-            "QComboBox {"
-            "  padding: 6px 8px;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 6px;"
-            "  background: white;"
-            "  font-size: 13px;"
-            "}"
-            "QComboBox::drop-down {"
-            "  border: none;"
-            "  width: 30px;"
-            "}"
-            "QComboBox::down-arrow {"
-            "  image: none;"
-            "  border-left: 4px solid transparent;"
-            "  border-right: 4px solid transparent;"
-            "  border-top: 5px solid #86868B;"
-            "  margin-right: 8px;"
-            "}",
-        )
-        form.addRow(pipeline_label, self.pipeline_combo)
+        # Pipeline Selection - HIDDEN (Fourier is default and only option)
+        # Keeping code for reference but not displaying in UI
+        # pipeline_label = QLabel("Data Pipeline:")
+        # pipeline_label.setStyleSheet("font-weight: 600; font-size: 13px;")
+        self.pipeline_combo = QComboBox()  # Keep for compatibility
+        self.pipeline_combo.addItems(["Fourier (Standard)"])
+        self.pipeline_combo.setCurrentIndex(0)
+        self.pipeline_combo.setVisible(False)  # Hide from UI
+        # form.addRow(pipeline_label, self.pipeline_combo)  # Not added to UI
 
         main_layout.addLayout(form)
 

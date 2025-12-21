@@ -219,29 +219,6 @@ class CalibrationQCDialog(QDialog):
         export_pdf_btn.clicked.connect(self._export_to_pdf)
         button_layout.addWidget(export_pdf_btn)
 
-        # Export HTML button
-        export_html_btn = QPushButton("🌐 Export HTML")
-        export_html_btn.setFixedSize(150, 36)
-        export_html_btn.setStyleSheet("""
-            QPushButton {
-                background: #FF9500;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: #E68600;
-            }
-            QPushButton:pressed {
-                background: #CC7000;
-            }
-        """)
-        export_html_btn.clicked.connect(self._export_to_html)
-        button_layout.addWidget(export_html_btn)
-
         # View History button
         history_btn = QPushButton("📊 View History")
         history_btn.setFixedSize(150, 36)
@@ -763,13 +740,6 @@ class CalibrationQCDialog(QDialog):
         layout.addWidget(result_label)
 
         container_layout.addWidget(frame)
-
-        # Title at bottom without box
-        title = QLabel("🔬 Quality Control Validation")
-        title.setStyleSheet(
-            "font-size: 13px; font-weight: 600; color: #1D1D1F; padding-top: 4px;",
-        )
-        container_layout.addWidget(title)
 
         return container
 
@@ -1981,11 +1951,14 @@ FAILURE DIAGNOSIS:
         plt.tight_layout()
 
     def _export_to_pdf(self):
-        """Export QC report to PDF file."""
+        """Export QC report to PDF file with graphs and tables."""
         try:
             from pathlib import Path
 
             from PySide6.QtWidgets import QFileDialog
+            from matplotlib.backends.backend_pdf import PdfPages
+            import matplotlib.pyplot as plt
+            from datetime import datetime
 
             device_serial = self.calibration_data.get("detector_serial", "Unknown")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1999,42 +1972,99 @@ FAILURE DIAGNOSIS:
             )
 
             if file_path:
-                # Use QC Report Manager to find the saved report
-                from affilabs.managers.qc_report_manager import QCReportManager
+                # Create multi-page PDF
+                with PdfPages(file_path) as pdf:
+                    # Page 1: Title and metadata
+                    fig = plt.figure(figsize=(11, 8.5))
+                    fig.suptitle(f"Calibration QC Report - {device_serial}", fontsize=16, fontweight='bold')
 
-                qc_manager = QCReportManager()
+                    # Add metadata
+                    metadata_text = f"""
+                    Timestamp: {self.calibration_data.get('timestamp', 'N/A')}
+                    Device: {self.calibration_data.get('device_type', 'N/A')}
+                    Firmware: {self.calibration_data.get('firmware_version', 'N/A')}
+                    Integration Time: {self.calibration_data.get('integration_time_ms', 'N/A')} ms
+                    """
+                    fig.text(0.1, 0.7, metadata_text, fontsize=12, family='monospace')
+                    pdf.savefig(fig)
+                    plt.close()
 
-                # Find the latest report for this device
-                reports_dir = qc_manager._get_reports_dir(device_serial)
-                latest_json = reports_dir / "qc_report_latest.json"
+                    # Page 2: Graphs (S-Pol, P-Pol, Transmission)
+                    fig, axes = plt.subplots(1, 3, figsize=(11, 8.5))
+                    fig.suptitle('Calibration Spectra', fontsize=14, fontweight='bold')
 
-                if latest_json.exists():
-                    # Generate HTML first
-                    html_path = qc_manager.export_to_html(latest_json)
+                    wavelengths = self.calibration_data.get('wavelengths', [])
+                    channels = ['a', 'b', 'c', 'd']
+                    colors = ['black', 'red', 'blue', 'green']
 
-                    # Convert HTML to PDF (placeholder - requires additional library)
-                    from affilabs.widgets.message import show_message
+                    # S-Pol graph
+                    s_pol_data = self.calibration_data.get('s_pol_spectra', {})
+                    for ch, color in zip(channels, colors):
+                        if ch in s_pol_data:
+                            axes[0].plot(wavelengths, s_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                    axes[0].set_title('S-Pol Spectra')
+                    axes[0].set_xlabel('Wavelength (nm)')
+                    axes[0].set_ylabel('Counts')
+                    axes[0].legend()
+                    axes[0].grid(True, alpha=0.3)
 
-                    show_message(
-                        f"PDF export feature coming soon!\n\n"
-                        f"HTML report available at:\n{html_path}",
-                        "PDF Export",
-                        "Information",
-                    )
-                    logger.info(f"HTML report generated: {html_path}")
-                else:
-                    from affilabs.widgets.message import show_message
+                    # P-Pol graph
+                    p_pol_data = self.calibration_data.get('p_pol_spectra', {})
+                    for ch, color in zip(channels, colors):
+                        if ch in p_pol_data:
+                            axes[1].plot(wavelengths, p_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                    axes[1].set_title('P-Pol Spectra')
+                    axes[1].set_xlabel('Wavelength (nm)')
+                    axes[1].set_ylabel('Counts')
+                    axes[1].legend()
+                    axes[1].grid(True, alpha=0.3)
 
-                    show_message(
-                        "No saved QC report found.\nReport must be saved first.",
-                        "Export Error",
-                        "Warning",
-                    )
+                    # Transmission graph
+                    trans_data = self.calibration_data.get('transmission_spectra', {})
+                    for ch, color in zip(channels, colors):
+                        if ch in trans_data:
+                            axes[2].plot(wavelengths, trans_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                    axes[2].set_title('Transmission Spectra')
+                    axes[2].set_xlabel('Wavelength (nm)')
+                    axes[2].set_ylabel('Transmission %')
+                    axes[2].legend()
+                    axes[2].grid(True, alpha=0.3)
+
+                    plt.tight_layout()
+                    pdf.savefig(fig)
+                    plt.close()
+
+                    # Page 3: QC Tables
+                    fig = plt.figure(figsize=(11, 8.5))
+                    fig.suptitle('QC Validation Results', fontsize=14, fontweight='bold')
+
+                    # Add convergence summary if available
+                    convergence_summary = self.calibration_data.get('convergence_summary', {})
+                    if convergence_summary:
+                        table_text = f"""LED Convergence Results:\n"""
+                        channels_data = convergence_summary.get('channels', {})
+                        for ch in ['a', 'b', 'c', 'd']:
+                            if ch in channels_data:
+                                ch_data = channels_data[ch]
+                                table_text += f"  Ch {ch.upper()}: LED={ch_data.get('led', 'N/A')}, Signal={ch_data.get('signal', 'N/A')}\n"
+                        fig.text(0.1, 0.7, table_text, fontsize=10, family='monospace')
+
+                    pdf.savefig(fig)
+                    plt.close()
+
+                from affilabs.widgets.message import show_message
+                show_message(
+                    f"PDF exported successfully to:\n{file_path}",
+                    "PDF Export",
+                    "Information",
+                )
+                logger.info(f"✅ PDF report exported: {file_path}")
 
         except Exception as e:
             logger.error(f"Failed to export PDF: {e}")
+            import traceback
+            traceback.print_exc()
             from affilabs.widgets.message import show_message
-
             show_message(f"Failed to export PDF:\n{e!s}", "Export Error", "Error")
 
     def _export_to_html(self):
@@ -2099,7 +2129,15 @@ FAILURE DIAGNOSIS:
     def _view_history(self):
         """Open QC history viewer dialog."""
         try:
-            device_serial = self.calibration_data.get("detector_serial", "Unknown")
+            # Try multiple possible keys for device serial
+            device_serial = (
+                self.calibration_data.get("detector_serial")
+                or self.calibration_data.get("device_serial")
+                or self.calibration_data.get("serial_number")
+                or "Unknown"
+            )
+
+            logger.info(f"Opening QC history for device: {device_serial}")
 
             from affilabs.widgets.qc_history_dialog import QCHistoryDialog
 
@@ -2107,33 +2145,10 @@ FAILURE DIAGNOSIS:
             history_dialog.exec()
 
         except Exception as e:
-            logger.error(f"Failed to open history viewer: {e}")
+            logger.error(f"Failed to open history viewer: {e}", exc_info=True)
             from affilabs.widgets.message import show_message
 
             show_message(f"Failed to open history viewer:\n{e!s}", "Error", "Error")
-
-        fig.tight_layout()
-        diag_layout.addWidget(canvas)
-
-        # Add instruction label
-        instruction = QLabel(
-            "💡 Restart the application and run calibration again. "
-            "The EEPROM sync will update the controller with correct positions.",
-        )
-        instruction.setStyleSheet("""
-            QLabel {
-                background: #E3F2FD;
-                border: 2px solid #2196F3;
-                border-radius: 6px;
-                padding: 12px;
-                font-size: 12px;
-                color: #1565C0;
-            }
-        """)
-        instruction.setWordWrap(True)
-        diag_layout.addWidget(instruction)
-
-        return widget
 
     @staticmethod
     def show_qc_report(parent=None, calibration_data: dict = None):

@@ -1,7 +1,11 @@
 """Widgets related to fluidic controls."""
 
 from math import inf
-from typing import Literal, Self
+from typing import Literal
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator

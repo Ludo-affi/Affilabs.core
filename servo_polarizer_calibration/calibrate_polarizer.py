@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from affilabs.core.hardware_manager import HardwareManager
-from affilabs.utils.oem_servo_calibration import DeviceProfileManager
+from affilabs.utils.oem_calibration_tool import DeviceProfileManager
 
 
 def measure_signal(hm):
@@ -733,7 +733,7 @@ def main():
             )
             print(f"✅ Device profile saved: {profile_path}")
 
-            # Also update device_config.json (pass serial_number)
+            # Also update device_config.json
             profile_mgr.update_device_config(polarizer_results, serial_number=serial_number)
             print("✅ Updated device_config.json")
 
@@ -877,7 +877,7 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
             )
             print(f"✅ Device profile saved: {profile_path}")
 
-            # Also update device_config.json (pass serial_number)
+            # Also update device_config.json
             profile_mgr.update_device_config(polarizer_results, serial_number=serial_number)
             print("✅ Updated device_config.json")
 
@@ -897,6 +897,177 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
         return False
     finally:
         # Cleanup
+        try:
+            ctrl._ser.write(b"lx\n")
+        except:
+            pass
+
+
+def run_calibration_with_hardware(hardware_manager, progress_callback=None):
+    """Run polarizer calibration using existing hardware connection.
+    
+    This function is called from the main application and uses the hardware
+    that's already connected, avoiding COM port conflicts.
+    
+    Args:
+        hardware_manager: HardwareManager instance with connected hardware
+        progress_callback: Optional callback for progress updates
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    from affilabs.utils.logger import logger
+    
+    hm = hardware_manager
+    ctrl = hm.ctrl
+    usb = hm.usb
+    
+    if not ctrl or not usb:
+        logger.error("Hardware not available for polarizer calibration")
+        return False
+    
+    try:
+        logger.info("=" * 70)
+        logger.info("POLARIZER CALIBRATION (Using Connected Hardware)")
+        logger.info("=" * 70)
+        
+        # Get serial number for device identification
+        serial_number = usb.serial_number
+        ctrl_name = ctrl.get_device_type() if hasattr(ctrl, 'get_device_type') else 'Controller'
+        logger.info(f"Connected: {ctrl_name}, {serial_number}")
+        logger.info(f"Device Serial: {serial_number}")
+        
+        # Try 20% first, fallback to 5% if saturated
+        led_intensity_percent = 20
+        max_attempts = 2
+        
+        for attempt in range(max_attempts):
+            led_intensity = int(led_intensity_percent * 255 / 100)
+            
+            # Set LED intensities
+            logger.info(f"Setting LEDs to {led_intensity_percent}% ({led_intensity}/255)...")
+            ctrl._ser.write(b"lm:A,B,C,D\n")
+            time.sleep(0.1)
+            ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
+            
+            # Set integration time to 5ms
+            logger.info("Setting integration time to 5ms...")
+            usb.set_integration(5.0)
+            
+            # Get wavelengths
+            wavelengths = usb.read_wavelength()
+            
+            time.sleep(1.0)
+            
+            # === STAGE 1: Bidirectional sweep ===
+            sweep_data = stage1_bidirectional_sweep(hm)
+            
+            # === STAGE 2: Detect polarizer type ===
+            polarizer_type, type_info = detect_polarizer_type(hm, sweep_data)
+            
+            # Check if saturated - restart with lower intensity
+            if polarizer_type == "SATURATED":
+                if attempt < max_attempts - 1:
+                    logger.warning(f"🔄 Restarting calibration (Attempt {attempt + 2}/{max_attempts})")
+                    led_intensity_percent = 5  # Lower to 5%
+                    time.sleep(1.0)
+                    continue
+                else:
+                    logger.error("❌ Saturation persists at 5% - cannot calibrate")
+                    return False
+            
+            # Success - break out of retry loop
+            break
+        
+        logger.info(f"\n📊 Polarizer Type Detected: {polarizer_type}")
+        logger.info(f"   Detection Confidence: {type_info.get('confidence', 'N/A')}")
+        
+        if progress_callback:
+            progress_callback(f"Detected: {polarizer_type}", 40)
+        
+        # === STAGE 3: Refinement ===
+        logger.info("\n" + "=" * 70)
+        logger.info("STAGE 3: REFINEMENT")
+        logger.info("=" * 70)
+        
+        is_barrel = (polarizer_type == "BARREL")
+        refinement = stage3_refine_positions(
+            hm,
+            wavelengths,
+            type_info["p_region_center"],
+            type_info["s_region_center"],
+            is_barrel=is_barrel,
+            alternate_p=type_info.get("alternate_p"),
+            alternate_s=type_info.get("alternate_s"),
+        )
+        
+        # Display results
+        ratio = refinement["s_intensity"] / refinement["p_intensity"] if refinement["p_intensity"] > 0 else 0
+        
+        logger.info("\n" + "=" * 70)
+        logger.info("✅ CALIBRATION COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Polarizer Type:    {polarizer_type}")
+        logger.info(f"S Position (PWM):  {refinement['s_pwm']}")
+        logger.info(f"P Position (PWM):  {refinement['p_pwm']}")
+        logger.info(f"S/P Ratio:         {ratio:.2f}")
+        logger.info(f"S Intensity:       {refinement['s_intensity']:.1f}")
+        logger.info(f"P Intensity:       {refinement['p_intensity']:.1f}")
+        logger.info(f"S Stable Range:    {refinement['s_stable_range']}")
+        logger.info(f"P Stable Range:    {refinement['p_stable_range']}")
+        logger.info("=" * 70)
+        
+        if progress_callback:
+            progress_callback(f"Calibration Complete! S={refinement['s_pwm']} P={refinement['p_pwm']}", 80)
+        
+        # Save to device profile
+        polarizer_results = {
+            "s_position": refinement["s_pwm"],
+            "p_position": refinement["p_pwm"],
+            "sp_ratio": ratio,
+            "polarizer_type": polarizer_type,
+            "method": "servo_calibration_barrel_detection",
+            "led_intensity_used": f"{led_intensity_percent}%",
+            "s_intensity": refinement["s_intensity"],
+            "p_intensity": refinement["p_intensity"],
+            "s_stable_range": refinement["s_stable_range"],
+            "p_stable_range": refinement["p_stable_range"],
+        }
+        
+        try:
+            from pathlib import Path as PathLib
+            project_root = PathLib(__file__).resolve().parents[1]
+            
+            profile_mgr = DeviceProfileManager(project_root / "calibration_data")
+            profile_path = profile_mgr.save_profile(
+                serial_number=serial_number,
+                polarizer_results=polarizer_results,
+                afterglow_results=None,
+                detector_model="USB4000",
+                led_type="LCW",
+            )
+            logger.info(f"✅ Device profile saved: {profile_path}")
+            
+            # Update device_config.json
+            profile_mgr.update_device_config(polarizer_results, serial_number=serial_number)
+            logger.info("✅ Updated device_config.json")
+            
+            if progress_callback:
+                progress_callback("Servo calibration complete!", 100)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"⚠️  Failed to save device profile: {e}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Servo calibration failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        # Cleanup - turn off LEDs
         try:
             ctrl._ser.write(b"lx\n")
         except:

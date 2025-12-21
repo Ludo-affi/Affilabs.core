@@ -106,6 +106,7 @@ class CalibrationData:
 
     # Metadata
     timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
+    detector_serial: str = "Unknown"  # Device serial number
     roi_start: float = 560.0  # ROI start wavelength (nm)
     roi_end: float = 720.0  # ROI end wavelength (nm)
 
@@ -411,7 +412,7 @@ class CalibrationData:
                 "%Y-%m-%d %H:%M:%S",
             ),
             "device_type": "USB4000",  # Default value
-            "detector_serial": "Unknown",  # Not stored in domain model
+            "detector_serial": self.detector_serial,  # Use stored serial
             "firmware_version": "Unknown",  # Not stored in domain model
             # QC validation results (flattened for table display)
             "transmission_validation": qc_validation

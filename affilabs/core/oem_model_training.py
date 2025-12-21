@@ -265,16 +265,24 @@ def train_led_model(
         "detector_wait_ms": detector_wait_ms,
     }
 
-    # Save to led_calibration_official/spr_calibration/data/
+    # Save to BOTH active location and legacy archive
     project_root = Path(__file__).resolve().parents[2]
+
+    # 1. Save to active calibrations (primary location)
+    active_dir = project_root / "calibrations" / "active" / detector_serial
+    active_dir.mkdir(parents=True, exist_ok=True)
+    active_file = active_dir / "led_model.json"
+    with open(active_file, "w") as f:
+        json.dump(model_data, f, indent=2)
+    logger.info(f"✓ Active model saved: calibrations/active/{detector_serial}/led_model.json")
+
+    # 2. Save timestamped copy to legacy archive (for history)
     output_dir = project_root / "led_calibration_official" / "spr_calibration" / "data"
     output_dir.mkdir(parents=True, exist_ok=True)
-
     output_file = output_dir / f"led_calibration_3stage_{timestamp}.json"
     with open(output_file, "w") as f:
         json.dump(model_data, f, indent=2)
-
-    logger.info(f"✓ Model saved: {output_file.name}")
+    logger.info(f"✓ Archive saved: {output_file.name}")
     logger.info("")
 
     # Print summary

@@ -182,13 +182,14 @@ def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
         pre_led_delay=float(safe_get("pre_led_delay_ms", 12.0)),
         post_led_delay=float(safe_get("post_led_delay_ms", 40.0)),
         # Dark references (per-channel for S-pol and P-pol integration times)
+        # Try both 'dark_s' and 'channel_dark_s' for backward compatibility
         dark_s={
             k: v.copy() if hasattr(v, "copy") else v
-            for k, v in (safe_get("channel_dark_s") or {}).items()
+            for k, v in (safe_get("dark_s") or safe_get("channel_dark_s") or {}).items()
         },
         dark_p={
             k: v.copy() if hasattr(v, "copy") else v
-            for k, v in (safe_get("channel_dark_p") or {}).items()
+            for k, v in (safe_get("dark_p") or safe_get("channel_dark_p") or {}).items()
         },
         # Per-channel integration times (alternative calibration mode)
         channel_integration_times=dict(safe_get("channel_integration_times") or {}),
@@ -198,6 +199,9 @@ def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
         transmission_validation=transmission_validation,
         # Metadata
         timestamp=datetime.now().timestamp(),
+        detector_serial=safe_get(
+            "detector_serial", "Unknown"
+        ),  # Extract serial from calibration result
         roi_start=float(wavelengths[0]),
         roi_end=float(wavelengths[-1]),
     )

@@ -45,6 +45,44 @@ class KineticManager(QObject):
 
         # Initialized silently
 
+    def scan_for_pump(self) -> None:
+        """Scan for and connect to Affipump peripheral device.
+
+        This method triggers a scan for available pump hardware and attempts
+        to establish a connection. Status updates are emitted via signals.
+        """
+        try:
+            logger.info("🔍 Scanning for Affipump peripheral...")
+
+            # Check if hardware manager is available
+            if not self.hardware_mgr:
+                error_msg = "Hardware manager not available"
+                logger.error(error_msg)
+                self.pump_error.emit(error_msg)
+                return
+
+            # Attempt to scan/reconnect to pump
+            if hasattr(self.hardware_mgr, "pump") and self.hardware_mgr.pump:
+                logger.info("✓ Pump already connected")
+                self.pump_initialized.emit()
+                return
+
+            # TODO: Implement actual pump scanning logic
+            # This would involve:
+            # 1. Scanning available serial ports
+            # 2. Attempting connection on each port
+            # 3. Verifying pump identity
+            # 4. Establishing connection
+
+            logger.warning(
+                "⚠️ Pump scanning not yet implemented - requires hardware abstraction layer"
+            )
+            self.pump_error.emit("Pump scanning feature not yet implemented")
+
+        except Exception as e:
+            logger.exception(f"Failed to scan for pump: {e}")
+            self.pump_error.emit(f"Pump scan failed: {e}")
+
     def initialize_pump(self) -> None:
         """Initialize the pump system."""
         try:

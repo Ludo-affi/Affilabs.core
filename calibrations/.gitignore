@@ -1,0 +1,5 @@
+# Archive folder contains historical calibrations (not needed in git)
+archive/
+
+# Active calibrations are tracked in git (single source of truth)
+!active/

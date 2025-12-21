@@ -722,18 +722,43 @@ def acquire_raw_spectrum(
 
         # Step 2: Turn on LED channel and set intensity
         if use_batch_command:
-            # Batch command (faster, used in live acquisition and LED calibration model)
-            # NOTE: lm:A,B,C,D command sent once at calibration start, not here
-            led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
-            led_values[channel] = led_intensity
-            ctrl.set_batch_intensities(**led_values)
+            # Optimized batch command using direct serial (faster than set_batch_intensities)
+            # Set brightness for target channel, turn on with direct serial command
+            try:
+                # Access the serial port safely through the controller wrapper
+                if hasattr(ctrl, '_ctrl'):
+                    serial_port = ctrl._ctrl._ser
+                else:
+                    serial_port = ctrl._ser
+
+                # Set brightness command
+                cmd = f"b{channel}{int(led_intensity):03d}\n"
+                serial_port.write(cmd.encode())
+                time.sleep(0.005)
+
+                # Turn on the channel
+                cmd = f"l{channel}\n"
+                serial_port.write(cmd.encode())
+                time.sleep(0.005)
+            except AttributeError:
+                # Fallback to slower batch method if direct access fails
+                logger.warning("Direct serial access failed, using batch command fallback")
+                led_values = {"a": 0, "b": 0, "c": 0, "d": 0}
+                led_values[channel] = led_intensity
+                ctrl.set_batch_intensities(**led_values)
         else:
             # Individual command (traditional calibration)
             # CRITICAL: Must call turn_on_channel BEFORE set_intensity for V2.0 firmware
             ctrl.turn_on_channel(channel)
             ctrl.set_intensity(ch=channel, raw_val=led_intensity)
 
-        # Step 3: LED stabilization handled by new timing system
+        # Start timing for LED enforcement (keep LED on for full LED_ON_TIME_MS duration)
+        led_on_start = time.perf_counter()
+
+        # Step 3: LED stabilization wait
+        import settings as root_settings
+        detector_wait_ms = getattr(root_settings, "DETECTOR_WAIT_MS", 45.0)
+        time.sleep(detector_wait_ms / 1000.0)
 
         # Step 4: Read spectrum with averaging
         if num_scans == 1:
@@ -752,12 +777,22 @@ def acquire_raw_spectrum(
 
             spectrum = np.mean(spectra, axis=0)
 
-        # Step 5: Turn off LED (only needed for non-batch mode or final cleanup)
+        # Step 5: Enforce LED on time (keep LED on for full LED_ON_TIME_MS duration)
+        # This prevents LED from turning off too early and ensures consistent timing
+        elapsed_since_led_on = (time.perf_counter() - led_on_start) * 1000  # ms
+        led_on_time_ms = getattr(root_settings, "LED_ON_TIME_MS", 225.0)
+        remaining_time_ms = max(0, led_on_time_ms - elapsed_since_led_on)
+        if remaining_time_ms > 0:
+            time.sleep(remaining_time_ms / 1000.0)
+
+        # Step 6: Turn off LED (only needed for non-batch mode or final cleanup)
         # In batch mode, the next acquisition automatically turns off previous LEDs
         if not use_batch_command:
             # For V2.0: set intensity to 0 disables the channel
             ctrl.set_intensity(ch=channel, raw_val=0)
-            # Step 6: Afterglow decay handled by new timing system
+            # Afterglow decay (LED_OFF_PERIOD_MS)
+            led_off_period_ms = getattr(root_settings, "LED_OFF_PERIOD_MS", 5.0)
+            time.sleep(led_off_period_ms / 1000.0)
 
         return spectrum
 

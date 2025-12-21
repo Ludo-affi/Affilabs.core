@@ -14,7 +14,15 @@ from bisect import bisect_left
 from copy import deepcopy
 from functools import partial
 from pathlib import Path
-from typing import Literal, Self, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
+else:
+    try:
+        from typing import Self
+    except ImportError:
+        from typing_extensions import Self
 
 import numpy as np
 import pandas as pd

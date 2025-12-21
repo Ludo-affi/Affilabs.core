@@ -263,6 +263,9 @@ class AffilabsSidebar(QWidget):
             # Call specific builder method for tab content
             builder_method(tab_layout)
 
+            # Add stretch to push all sections to the top (prevents even spacing when collapsed)
+            tab_layout.addStretch()
+
             self.tab_widget.addTab(scroll_area, label)
             scroll_area.setWidget(tab_content)
 

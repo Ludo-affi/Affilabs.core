@@ -353,11 +353,6 @@ class DataAcquisitionManager(QObject):
             # Store calibration data (single source of truth)
             self.calibration_data = calibration_data
 
-            # CRITICAL: Override num_scans from settings (don't trust old calibration files)
-            import settings as root_settings
-
-            self.calibration_data.num_scans = root_settings.NUM_SCANS
-
             # DIAGNOSTIC: Log S-pol ref dictionary contents
             spol_channels = (
                 list(calibration_data.s_pol_ref.keys()) if calibration_data.s_pol_ref else []
@@ -1326,6 +1321,12 @@ class DataAcquisitionManager(QObject):
         Peak wavelength/intensity added by pipeline processing, NOT here.
         """
         try:
+            # Get channel-specific timestamp (captured immediately after detector read)
+            if hasattr(self, "_channel_timestamps") and channel in self._channel_timestamps:
+                channel_timestamp = self._channel_timestamps[channel]
+            else:
+                channel_timestamp = time.time()  # Fallback if timestamp not captured
+
             # Package RAW spectrum data with all context needed for processing
             # NO PLACEHOLDERS - peak comes from pipeline or crashes
             spectrum_data = {
@@ -1334,7 +1335,7 @@ class DataAcquisitionManager(QObject):
                 "wavelengths": self.calibration_data.wavelengths,  # Array for plotting (plural!)
                 # wavelength and intensity added by pipeline processing
                 "intensity": 0,  # Raw intensity (will be calculated from spectrum if needed)
-                "timestamp": time.time(),
+                "timestamp": channel_timestamp,  # Channel-specific acquisition time
                 "integration_time": self.calibration_data.integration_time,
                 "num_scans": self.calibration_data.num_scans,
                 "led_intensity": led_intensities.get(channel, 0),
@@ -1412,48 +1413,50 @@ class DataAcquisitionManager(QObject):
                 logger.error(f"[BATCH] Failed to set integration time: {e}")
                 return {}
 
-            # Store LED intensities for this cycle (will be set individually per channel)
-            # Don't use batch command - it turns on all LEDs at once causing crosstalk
+            # ========================================================================
+            # OPTIMIZED LED CONTROL (Set Once + Turn On)
+            # ========================================================================
+            # Set all LED intensities ONCE at start via direct serial commands
+            # Then use turn_on_channel() to switch between LEDs (15ms vs 31ms per command)
+            # This avoids the legacy V1.9 firmware delay from set_batch_intensities
+            # ========================================================================
 
-            # Track current intensities to avoid redundant commands
+            # Set LED intensities once at start (only if changed since last cycle)
             current_intensities = {ch: led_intensities.get(ch, 128) for ch in channels}
+
+            if (
+                not hasattr(self, "_batch_led_intensities_set")
+                or self._last_led_intensities != current_intensities
+            ):
+                # Use direct serial commands to set brightness (ba224\n, bb087\n, etc.)
+                for ch in channels:
+                    intensity = current_intensities[ch]
+                    cmd = f"b{ch}{int(intensity):03d}\n"
+                    ctrl._ctrl._ser.write(cmd.encode())
+                    time.sleep(0.005)  # 5ms between commands for firmware processing
+
+                self._last_led_intensities = current_intensities.copy()
+                self._batch_led_intensities_set = True
 
             # Get LED ON timing from settings (respects Advanced Settings)
             import settings as root_settings
 
-            led_on_time_ms = getattr(root_settings, "LED_ON_TIME_MS", None) or 250.0
-            detector_wait_ms = getattr(self, "detector_wait_ms", 60)  # Wait before reading
-
-            # Calculate timing: LED ON time = detector_wait + detection + remaining
-            actual_detection_ms = integration_time_ms  # Time spent acquiring spectrum
-            remaining_time_ms = led_on_time_ms - detector_wait_ms - actual_detection_ms
-
-            # Convert to seconds for time.sleep()
-            detector_wait_s = detector_wait_ms / 1000.0
-            remaining_time_s = max(remaining_time_ms, 0) / 1000.0
+            led_on_time_ms = getattr(root_settings, "LED_ON_TIME_MS", None) or 225.0
+            detector_wait_ms = getattr(root_settings, "DETECTOR_WAIT_MS", None) or 45.0
 
             # Acquire each channel sequentially
-            # Just switch LEDs with turn_on_channel() - intensities already loaded
             channel_spectra = {}
 
             for ch in channels:
                 try:
-                    # Set intensity ONLY if changed (avoids redundant serial commands)
-                    intensity = current_intensities[ch]
-                    if (
-                        not hasattr(self, "_last_led_intensities")
-                        or self._last_led_intensities.get(ch) != intensity
-                    ):
-                        ctrl.set_intensity(ch=ch, raw_val=intensity)
-                        if not hasattr(self, "_last_led_intensities"):
-                            self._last_led_intensities = {}
-                        self._last_led_intensities[ch] = intensity
+                    # Track LED on time for enforcement
+                    led_on_start = time.perf_counter()
 
-                    # Now turn on LED at the preset intensity
+                    # Turn on LED (intensity already set, just switches channel)
                     ctrl.turn_on_channel(ch=ch)
 
                     # Wait for LED to stabilize before reading
-                    time.sleep(detector_wait_s)
+                    time.sleep(detector_wait_ms / 1000.0)
 
                     # Acquire spectrum while LED is on
                     # DIAGNOSTIC: Log details (first cycle only)
@@ -1472,9 +1475,14 @@ class DataAcquisitionManager(QObject):
                         num_scans=num_scans,
                     )
 
-                    # Wait remaining time to complete full LED ON duration
-                    if remaining_time_s > 0:
-                        time.sleep(remaining_time_s)
+                    # Capture timestamp immediately after detector read for this specific channel
+                    channel_timestamp = time.time()
+
+                    # ENFORCEMENT: Wait remaining time to ensure LED stays on for full duration
+                    elapsed_since_led_on = (time.perf_counter() - led_on_start) * 1000  # ms
+                    remaining_time_ms = max(0, led_on_time_ms - elapsed_since_led_on)
+                    if remaining_time_ms > 0:
+                        time.sleep(remaining_time_ms / 1000.0)
 
                     # DEBUG: Log what read_roi returned (first time only)
                     if not hasattr(self, "_read_roi_logged"):
@@ -1493,6 +1501,10 @@ class DataAcquisitionManager(QObject):
                             raw_spectrum = raw_spectrum[: len(self.calibration_data.wavelengths)]
 
                         channel_spectra[ch] = raw_spectrum
+                        # Store timestamp for this channel
+                        if not hasattr(self, "_channel_timestamps"):
+                            self._channel_timestamps = {}
+                        self._channel_timestamps[ch] = channel_timestamp
                         # logger.debug removed - fires every channel every cycle
                     else:
                         # Throttle empty spectrum warnings to avoid log spam
@@ -1818,12 +1830,8 @@ class DataAcquisitionManager(QObject):
             # Get timing parameters from settings
             import settings as root_settings
 
-            LED_ON_PERIOD_MS = getattr(root_settings, "LED_ON_PERIOD_MS", 245.0)
-            DETECTOR_WAIT_BEFORE_MS = getattr(
-                root_settings,
-                "DETECTOR_WAIT_BEFORE_MS",
-                35.0,
-            )
+            LED_ON_PERIOD_MS = root_settings.LED_ON_TIME_MS
+            DETECTOR_WAIT_BEFORE_MS = root_settings.DETECTOR_WAIT_MS
 
             # =============================================================================
             # LED TRACK: Turn on target LED (automatically turns off others via batch command)

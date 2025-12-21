@@ -54,30 +54,35 @@ class HybridOriginalPipeline(ProcessingPipeline):
         """Initialize original hybrid pipeline.
 
         Args:
-            config: Optional configuration dict. If not provided, uses original defaults.
+            config: Optional configuration dict. If not provided, uses improved defaults.
 
         """
         super().__init__(config)
         self.name = "Hybrid Original"
         self.description = (
-            "Fourier + Aggressive filtering (51% noise reduction, first attempt)"
+            "Fourier + Optimized filtering with temporal smoothing"
         )
 
-        # Load configuration or use original defaults
+        # Load configuration or use improved defaults
         cfg = config or {}
 
-        # Original parameters (before optimization)
+        # Improved parameters (optimized for better stability)
         self.alpha = cfg.get("fourier_alpha", 2000)
         self.sg_window = cfg.get("sg_window", 11)
-        self.sg_poly = cfg.get("sg_poly", 5)  # More aggressive than standard
-        self.gaussian_sigma = cfg.get("gaussian_sigma", 1.5)  # Stronger smoothing
+        self.sg_poly = cfg.get("sg_poly", 3)  # Reduced from 5 for better accuracy
+        self.gaussian_sigma = cfg.get("gaussian_sigma", 1.0)  # Reduced from 1.5 for better position accuracy
         self.regression_window = cfg.get("regression_window", 50)
-        self.use_quadratic = cfg.get("use_quadratic", True)  # Added complexity
-        self.gaussian_refinement = cfg.get("gaussian_refinement", True)  # Extra step
+        self.use_quadratic = cfg.get("use_quadratic", False)  # Disabled - causes DC bias
+        self.gaussian_refinement = cfg.get("gaussian_refinement", True)  # Keep for sub-pixel accuracy
+
+        # Temporal smoothing for peak-to-peak stability
+        self.temporal_smoothing = cfg.get("temporal_smoothing", True)
+        self.temporal_window = cfg.get("temporal_window", 3)  # Running average window
+        self.peak_history = []  # Track last N peaks for temporal smoothing
 
         logger.debug(
             f"Initialized {self.name}: alpha={self.alpha}, sg_poly={self.sg_poly}, "
-            f"gaussian_sigma={self.gaussian_sigma}, quadratic={self.use_quadratic}",
+            f"gaussian_sigma={self.gaussian_sigma}, temporal_smoothing={self.temporal_smoothing}",
         )
 
     def get_metadata(self) -> PipelineMetadata:
@@ -183,39 +188,7 @@ class HybridOriginalPipeline(ProcessingPipeline):
                 f"[HYBRID-ORIG] Initial peak_idx from zero-crossing: {peak_idx}, wavelength: {wavelengths[peak_idx]:.2f}nm",
             )
 
-            # Stage 5: Quadratic regression refinement (if enabled)
-            if self.use_quadratic:
-                half_window = self.regression_window // 2
-                start_idx = max(0, peak_idx - half_window)
-                end_idx = min(len(wavelengths), peak_idx + half_window)
-
-                # Quadratic fit: y = ax^2 + bx + c
-                x_window = np.arange(start_idx, end_idx)
-                y_window = derivative_filtered[start_idx:end_idx]
-
-                if len(x_window) >= 3:  # Need at least 3 points for quadratic
-                    try:
-                        coeffs = np.polyfit(x_window, y_window, deg=2)
-                        # Find vertex of parabola: x = -b/(2a)
-                        if abs(coeffs[0]) > 1e-10:
-                            refined_idx = -coeffs[1] / (2 * coeffs[0])
-                            logger.debug(
-                                f"[HYBRID-ORIG] Quadratic refinement: refined_idx={refined_idx:.2f}, bounds=[0, {len(wavelengths)})",
-                            )
-                            # Validate refined index is within full array bounds
-                            if 0 <= refined_idx < len(wavelengths):
-                                peak_idx = int(refined_idx)
-                                logger.debug(
-                                    f"[HYBRID-ORIG] Accepted refined peak_idx: {peak_idx}, wavelength: {wavelengths[peak_idx]:.2f}nm",
-                                )
-                            else:
-                                logger.warning(
-                                    f"[HYBRID-ORIG] Rejected out-of-bounds refined_idx={refined_idx:.2f}, keeping peak_idx={peak_idx}",
-                                )
-                    except np.linalg.LinAlgError:
-                        logger.warning(
-                            f"[HYBRID-ORIG] Quadratic fit failed, keeping peak_idx={peak_idx}",
-                        )
+            # Quadratic regression disabled to avoid DC bias and over-fitting
 
             # Validate peak_idx is within bounds before using it
             peak_idx = max(0, min(peak_idx, len(wavelengths) - 1))
@@ -276,6 +249,23 @@ class HybridOriginalPipeline(ProcessingPipeline):
                     f"[HYBRID-ORIG] No Gaussian refinement, final wavelength: {peak_wavelength:.2f}nm",
                 )
 
+            # Temporal smoothing: running average of last N peaks
+            if self.temporal_smoothing and not np.isnan(peak_wavelength):
+                self.peak_history.append(peak_wavelength)
+                # Keep only last N peaks
+                if len(self.peak_history) > self.temporal_window:
+                    self.peak_history.pop(0)
+
+                # Apply simple moving average if we have enough history
+                if len(self.peak_history) >= 2:
+                    # Simple moving average (unweighted)
+                    smoothed_peak = np.mean(self.peak_history)
+
+                    logger.debug(
+                        f"[HYBRID-ORIG] Temporal smoothing: {peak_wavelength:.2f} → {smoothed_peak:.2f}nm (history={len(self.peak_history)})",
+                    )
+                    peak_wavelength = smoothed_peak
+
             return ProcessingResult(
                 transmission=transmission,
                 resonance_wavelength=peak_wavelength,
@@ -286,7 +276,10 @@ class HybridOriginalPipeline(ProcessingPipeline):
                     "gaussian_sigma": self.gaussian_sigma,
                     "quadratic_refinement": self.use_quadratic,
                     "gaussian_refinement": self.gaussian_refinement,
-                    "note": "Original hybrid - superseded by optimized version",
+                    "temporal_smoothing": self.temporal_smoothing,
+                    "temporal_window": self.temporal_window,
+                    "peak_history_size": len(self.peak_history),
+                    "note": "Improved hybrid with temporal smoothing",
                 },
                 success=True,
             )

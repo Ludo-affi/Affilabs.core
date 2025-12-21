@@ -100,6 +100,38 @@ class DeviceStatusTabBuilder:
         )
         hw_card_layout.addWidget(self.sidebar.scan_btn)
 
+        # Add Hardware button (for peripherals only)
+        self.sidebar.add_hardware_btn = QPushButton("🔌 Add Hardware")
+        self.sidebar.add_hardware_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar.add_hardware_btn.setFixedHeight(36)
+        self.sidebar.add_hardware_btn.setVisible(False)  # Hidden until core module connected
+        self.sidebar.add_hardware_btn.setStyleSheet("""
+            QPushButton {
+                background: #5856D6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 600;
+                font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+            }
+            QPushButton:hover {
+                background: #4745B0;
+            }
+            QPushButton:pressed {
+                background: #3634A3;
+            }
+            QPushButton:disabled {
+                background: #E5E5EA;
+                color: #86868B;
+            }
+        """)
+        self.sidebar.add_hardware_btn.setToolTip(
+            "Scan for peripheral devices (Affipump, etc.) when core module is connected",
+        )
+        hw_card_layout.addWidget(self.sidebar.add_hardware_btn)
+
         tab_layout.addWidget(hw_card)
         tab_layout.addSpacing(16)
 
@@ -334,7 +366,7 @@ class DeviceStatusTabBuilder:
         tab_layout.addSpacing(16)
 
         # Software Version
-        version_label = QLabel("AffiLabs.core Beta")
+        version_label = QLabel("beta v1.01")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
             label_style(11, Colors.SECONDARY_TEXT) + "font-weight: 500;",

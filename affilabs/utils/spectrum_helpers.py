@@ -51,7 +51,15 @@ class SpectrumHelpers:
             # Skip if wavelength is None (first frame before ViewModel calculates peak)
             if wavelength is not None:
                 try:
-                    app.buffer_mgr.append_timeline_point(channel, elapsed_time, wavelength, timestamp)
+                    # Pass EMA state and alpha for live display filtering
+                    app.buffer_mgr.append_timeline_point(
+                        channel,
+                        elapsed_time,
+                        wavelength,
+                        timestamp,
+                        ema_state=app._ema_state,
+                        ema_alpha=app._display_filter_alpha,
+                    )
                 except Exception:
                     pass  # Silently skip - buffer append is non-critical
             # Queue transmission spectrum update for sidebar (QC/diagnostic display)
@@ -61,10 +69,10 @@ class SpectrumHelpers:
 
             # QC POLICY: Always update sidebar if we have ANY data (raw or transmission)
             # Sidebar is a diagnostic tool and must show data regardless of processing issues
-            logger.info(f"[QUEUE] Ch {channel}: has_raw={has_raw_data}, has_trans={has_transmission}")
+            logger.debug(f"[QUEUE] Ch {channel}: has_raw={has_raw_data}, has_trans={has_transmission}")
             if has_raw_data or has_transmission:
                 try:
-                    logger.info(f"[QUEUE] Ch {channel}: Calling queue_transmission_update")
+                    logger.debug(f"[QUEUE] Ch {channel}: Calling queue_transmission_update")
                     SpectrumHelpers.queue_transmission_update(app, channel, data)
 
                     # Update Sensor IQ display if available
@@ -169,6 +177,13 @@ class SpectrumHelpers:
                         pass  # Skip update if no wavelength data
                         return
 
+                    # Get P-mode dark reference from calibration data
+                    dark_ref = None
+                    if app.data_mgr.calibration_data and app.data_mgr.calibration_data.dark_p:
+                        dark_ref = app.data_mgr.calibration_data.dark_p.get(channel)
+                        if dark_ref is None:
+                            logger.warning(f"[{channel.upper()}] No P-mode dark reference in calibration data!")
+
                     # Process through ViewModel (handles services pipeline)
                     app.spectrum_viewmodels[channel].process_raw_spectrum(
                         channel=channel,
@@ -177,22 +192,13 @@ class SpectrumHelpers:
                         s_reference=ref_spectrum,
                         p_led_intensity=p_led,
                         s_led_intensity=s_led,
+                        dark_ref=dark_ref,
                     )
-                    return  # ViewModel will handle the update via signals
-                # Fallback: Direct service calls (if ViewModel not available)
-                transmission = app.transmission_calc.calculate(
-                    p_spectrum=raw_spectrum,
-                    s_reference=ref_spectrum,
-                    p_led_intensity=p_led,
-                    s_led_intensity=s_led,
-                )
+                    return  # ViewModel handles all processing and UI updates via signals
 
-                # Apply baseline correction
-                if transmission is not None and len(transmission) > 0:
-                    try:
-                        transmission = app.baseline_corrector.correct(transmission)
-                    except Exception as e:
-                        pass  # Skip baseline correction on error
+                # If ViewModel not available, skip processing - ViewModels should always be present
+                logger.warning(f"ViewModel not available for channel {channel} - skipping transmission calculation")
+                return
 
         # Queue for batch update if we have valid data
         if transmission is not None and len(transmission) > 0:

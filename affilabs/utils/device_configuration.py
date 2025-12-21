@@ -909,11 +909,12 @@ class DeviceConfiguration:
     def get_servo_positions(self) -> dict[str, int]:
         """Get polarizer servo positions for S and P modes.
 
-        CRITICAL: These values are in DEGREES (0-180), NOT PWM units.
-        The firmware sv command and EEPROM storage expect degree values.
+        CRITICAL: These values are in PWM UNITS (1-255), NOT degrees.
+        The firmware stores and uses PWM values directly in EEPROM.
+        Conversion to servo angles happens in the servo hardware itself.
 
         Returns:
-            Dict with keys 's' and 'p' containing servo positions in degrees (0-180)
+            Dict with keys 's' and 'p' containing servo positions in PWM units (1-255)
 
         """
         hw = self.config["hardware"]
@@ -926,7 +927,7 @@ class DeviceConfiguration:
         """Get polarizer servo position for S-mode.
 
         Returns:
-            Servo position for S-mode in degrees (0-180)
+            Servo position for S-mode in PWM units (1-255)
 
         """
         return self.config["hardware"]["servo_s_position"]
@@ -935,7 +936,7 @@ class DeviceConfiguration:
         """Get polarizer servo position for P-mode.
 
         Returns:
-            Servo position for P-mode in degrees (0-180)
+            Servo position for P-mode in PWM units (1-255)
 
         """
         return self.config["hardware"]["servo_p_position"]
@@ -944,18 +945,18 @@ class DeviceConfiguration:
         """Set polarizer servo positions for S and P modes.
 
         Args:
-            s_pos: Servo position for S-mode (0-180)
-            p_pos: Servo position for P-mode (0-180)
+            s_pos: Servo position for S-mode in PWM units (1-255)
+            p_pos: Servo position for P-mode in PWM units (1-255)
 
         Raises:
             ValueError: If positions are out of valid range
 
         """
-        if not (0 <= s_pos <= 180):
-            msg = f"S position {s_pos} out of range (0-180)"
+        if not (1 <= s_pos <= 255):
+            msg = f"S position {s_pos} out of range (1-255)"
             raise ValueError(msg)
-        if not (0 <= p_pos <= 180):
-            msg = f"P position {p_pos} out of range (0-180)"
+        if not (1 <= p_pos <= 255):
+            msg = f"P position {p_pos} out of range (1-255)"
             raise ValueError(msg)
 
         hw = self.config["hardware"]

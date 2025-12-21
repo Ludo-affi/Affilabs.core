@@ -86,32 +86,53 @@ class DataBufferManager:
         time: float,
         wavelength: float,
         timestamp: float | None = None,
-    ) -> None:
-        """Append a data point to the timeline buffer.
+        ema_state: dict | None = None,
+        ema_alpha: float = 0.0,
+    ) -> float:
+        """Append a data point to the timeline buffer with optional EMA filtering.
 
         Args:
             channel: Channel letter ('a', 'b', 'c', 'd')
             time: Elapsed time in seconds
-            wavelength: Wavelength in nanometers
+            wavelength: Wavelength in nanometers (raw, unfiltered)
             timestamp: Absolute timestamp (seconds since epoch), optional
+            ema_state: Dictionary containing previous EMA values per channel
+            ema_alpha: EMA smoothing factor (0=no filtering, higher=less smoothing)
+
+        Returns:
+            Filtered wavelength value (or raw if ema_alpha=0)
 
         """
         buffer = self.timeline_data[channel]
+
+        # Apply EMA filtering if enabled
+        display_wavelength = wavelength
+        if ema_alpha > 0 and ema_state is not None:
+            if ema_state.get(channel) is None:
+                # First point - no previous state
+                display_wavelength = wavelength
+            else:
+                # EMA formula: y[i] = α * x[i] + (1 - α) * y[i-1]
+                display_wavelength = ema_alpha * wavelength + (1 - ema_alpha) * ema_state[channel]
+            # Update EMA state for next point
+            ema_state[channel] = display_wavelength
 
         # Check if new point is out of order (due to threading/async arrival)
         if len(buffer.time) > 0 and time < buffer.time[-1]:
             # Point arrived late - insert in sorted position to maintain monotonic time
             insert_idx = np.searchsorted(buffer.time, time)
             buffer.time = np.insert(buffer.time, insert_idx, time)
-            buffer.wavelength = np.insert(buffer.wavelength, insert_idx, wavelength)
+            buffer.wavelength = np.insert(buffer.wavelength, insert_idx, display_wavelength)
             if timestamp is not None and len(buffer.timestamp) > 0:
                 buffer.timestamp = np.insert(buffer.timestamp, insert_idx, timestamp)
         else:
             # Normal case - append to end
             buffer.time = np.append(buffer.time, time)
-            buffer.wavelength = np.append(buffer.wavelength, wavelength)
+            buffer.wavelength = np.append(buffer.wavelength, display_wavelength)
             if timestamp is not None:
                 buffer.timestamp = np.append(buffer.timestamp, timestamp)
+
+        return display_wavelength
 
     def append_intensity_point(
         self,

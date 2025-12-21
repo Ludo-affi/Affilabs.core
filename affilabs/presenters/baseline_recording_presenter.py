@@ -58,8 +58,14 @@ class BaselineRecordingPresenter:
                 )
                 return
 
+            # Pass spectrum_viewmodel to baseline recorder for transmission data access
+            spectrum_vm = getattr(self.app, 'spectrum_vm', None)
+            if not spectrum_vm:
+                logger.warning("[WARN] spectrum_viewmodel not available - baseline recorder will use fallback mode")
+
             self._baseline_recorder = BaselineDataRecorder(
                 data_mgr,
+                spectrum_viewmodel=spectrum_vm,
                 parent=self.main_window,
             )
 

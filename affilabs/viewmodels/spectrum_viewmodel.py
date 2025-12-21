@@ -48,12 +48,8 @@ class SpectrumViewModel(QObject):
         self._smoothing_enabled = True
         self._smoothing_window = 11
         self._smoothing_polyorder = 2
-        # CRITICAL: Disable baseline correction here - TransmissionProcessor already applied it!
-        # Transmission data from spectrum_processor is ALREADY baseline-corrected using percentile method
-        # Applying a second correction causes shape distortion and method mismatch
-        self._baseline_correction_enabled = False
-        self._baseline_method = "percentile"  # For reference only - not used when disabled
-        self._baseline_order = 1
+        # Note: Baseline correction is applied by TransmissionProcessor in the services pipeline
+        # No additional correction is needed here
 
         # Peak finding pipeline (initialized on first use)
         self._peak_processor = None
@@ -124,23 +120,6 @@ class SpectrumViewModel(QObject):
         self._smoothing_polyorder = polyorder
         logger.debug(f"Smoothing parameters: window={window}, polyorder={polyorder}")
 
-    def set_baseline_correction_enabled(self, enabled: bool):
-        """Enable/disable baseline correction."""
-        self._baseline_correction_enabled = enabled
-        logger.debug(f"Baseline correction {'enabled' if enabled else 'disabled'}")
-
-    def set_baseline_method(self, method: str, poly_order: int = 1):
-        """Set baseline correction method.
-
-        Args:
-            method: 'polynomial', 'moving_min', or 'als'
-            poly_order: Polynomial order (for polynomial method)
-
-        """
-        self._baseline_method = method
-        self._baseline_order = poly_order
-        logger.debug(f"Baseline method: {method}, order={poly_order}")
-
     def process_raw_spectrum(
         self,
         channel: str,
@@ -149,18 +128,20 @@ class SpectrumViewModel(QObject):
         s_reference: np.ndarray,
         p_led_intensity: int | None = None,
         s_led_intensity: int | None = None,
+        dark_ref: np.ndarray | None = None,
     ):
         """Process raw P-mode spectrum through services pipeline.
 
-        Pipeline: Calculate transmission → Baseline correction → Smoothing
+        Pipeline: Dark subtraction → Calculate transmission → Baseline correction → Smoothing
 
         Args:
             channel: Channel identifier
             wavelengths: Wavelength array
-            p_spectrum: Raw P-mode intensities
-            s_reference: S-mode reference
+            p_spectrum: Raw P-mode intensities (NOT dark-subtracted)
+            s_reference: S-mode reference (ALREADY dark-subtracted from calibration)
             p_led_intensity: P-mode LED brightness
             s_led_intensity: S-mode LED brightness
+            dark_ref: P-mode dark reference (from calibration, matches P-pol integration time)
 
         """
         if self._transmission_calculator is None:
@@ -169,26 +150,37 @@ class SpectrumViewModel(QObject):
             return
 
         try:
-            # Store raw data
+            # Store raw data (before dark subtraction)
             self._latest_raw[channel] = (wavelengths.copy(), p_spectrum.copy())
             self.raw_spectrum_updated.emit(channel, wavelengths, p_spectrum)
 
-            # Calculate transmission
+            # Step 0: Dark subtraction (CRITICAL - must match calibration workflow!)
+            # P-pol raw spectrum needs dark subtraction before transmission calculation
+            # S-pol reference is ALREADY dark-subtracted during calibration
+            p_spectrum_clean = p_spectrum
+            if dark_ref is not None and len(dark_ref) == len(p_spectrum):
+                p_spectrum_clean = p_spectrum - dark_ref
+                logger.debug(
+                    f"[{channel.upper()}] Dark subtracted: "
+                    f"raw mean={np.mean(p_spectrum):.1f} → "
+                    f"clean mean={np.mean(p_spectrum_clean):.1f}"
+                )
+            elif dark_ref is None:
+                logger.warning(f"[{channel.upper()}] No dark reference - skipping dark subtraction!")
+
+            # Step 1: Calculate transmission (P/S ratio with LED correction)
+            # Both P and S are now dark-subtracted
             transmission = self._transmission_calculator.calculate(
-                p_spectrum=p_spectrum,
+                p_spectrum=p_spectrum_clean,
                 s_reference=s_reference,
                 p_led_intensity=p_led_intensity,
                 s_led_intensity=s_led_intensity,
             )
 
-            # Apply baseline correction if enabled
-            if self._baseline_correction_enabled:
-                corrector = self._baseline_corrector
-                corrector.method = self._baseline_method
-                corrector.poly_order = self._baseline_order
-                transmission = corrector.correct(transmission, wavelengths)
+            # Step 2: Baseline correction REMOVED - was over-correcting and distorting spectra
+            # Transmission is now raw P/S ratio without artificial flattening
 
-            # Apply smoothing if enabled
+            # Step 3: Apply smoothing if enabled
             if self._smoothing_enabled:
                 transmission = self._spectrum_processor.smooth_savgol(
                     transmission,
@@ -266,20 +258,13 @@ class SpectrumViewModel(QObject):
             return None
 
         try:
-            # Calculate batch transmission
+            # Calculate batch transmission (baseline correction already applied by TransmissionProcessor)
             transmissions = self._transmission_calculator.calculate_batch(
                 p_spectra=p_spectra,
                 s_references=s_references,
                 p_led_intensities=p_led_intensities,
                 s_led_intensities=s_led_intensities,
             )
-
-            # Apply baseline correction if enabled
-            if self._baseline_correction_enabled:
-                corrector = self._baseline_corrector
-                corrector.method = self._baseline_method
-                corrector.poly_order = self._baseline_order
-                transmissions = corrector.correct_batch(transmissions, wavelengths)
 
             # Apply smoothing if enabled
             if self._smoothing_enabled:

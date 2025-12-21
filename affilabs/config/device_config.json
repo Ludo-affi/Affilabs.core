@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2025-11-21T22:33:12.869228",
-    "last_modified": "2025-12-17T22:03:49.340245",
+    "last_modified": "2025-12-20T15:48:36.788774",
     "device_id": null
   },
   "hardware": {
@@ -16,8 +16,8 @@
     "controller_serial": null,
     "optical_fiber_diameter_um": 200,
     "polarizer_type": "circular",
-    "servo_s_position": 69,
-    "servo_p_position": 6
+    "servo_s_position": 4,
+    "servo_p_position": 96
   },
   "timing_parameters": {
     "led_a_delay_ms": 0,
@@ -54,10 +54,11 @@
     "next_maintenance_due": null
   },
   "oem_calibration": {
-    "polarizer_s_position": 133,
-    "polarizer_p_position": 69,
-    "polarizer_sp_ratio": 7.794369029046764,
-    "calibration_date": "2025-12-17T22:03:49.340245",
-    "calibration_method": "servo_calibration_barrel_detection"
+    "polarizer_s_position": 4,
+    "polarizer_p_position": 96,
+    "polarizer_sp_ratio": 2.096644296567195,
+    "calibration_date": "2025-12-20T15:30:11.191367",
+    "calibration_method": "servo_calibration_barrel_detection",
+    "serial_number": "FLMT09116"
   }
 }

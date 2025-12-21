@@ -28,6 +28,13 @@ class SensitivityFeatures:
     total_saturated_pixels: int
     avg_signal_fraction_of_target: float
     avg_model_slope_10ms: float
+    # Enhanced features from ML (available when ML attempted)
+    max_signal_fraction: float = 0.0
+    min_signal_fraction: float = 0.0
+    signal_imbalance: float = 0.0
+    avg_led: float = 0.0
+    max_led: int = 0
+    min_led: int = 0
 
 
 class SensitivityClassifier:
@@ -72,6 +79,23 @@ class SensitivityClassifier:
         if f.avg_signal_fraction_of_target >= 1.2:
             score += 0.15
             reasons.append(f"avg_signal={f.avg_signal_fraction_of_target:.2f}× target")
+
+        # Additional indicators from ML features (if available)
+        if f.max_signal_fraction > 0:  # ML features available
+            # Very high max signal at low integration = HIGH sensitivity
+            if f.integration_ms <= 25.0 and f.max_signal_fraction >= 1.3:
+                score += 0.2
+                reasons.append(f"max_signal={f.max_signal_fraction:.2f}× target at {f.integration_ms:.1f}ms")
+
+            # Large signal imbalance with high average = HIGH sensitivity
+            if f.signal_imbalance >= 0.3 and f.avg_signal_fraction_of_target >= 0.9:
+                score += 0.1
+                reasons.append(f"signal_imbalance={f.signal_imbalance:.2f}")
+
+            # Max LED close to 255 but still saturating = HIGH sensitivity
+            if f.max_led >= 200 and f.num_saturating > 0:
+                score += 0.15
+                reasons.append(f"max_led={f.max_led} with saturation")
 
         # Classify based on score
         if score >= 0.5:

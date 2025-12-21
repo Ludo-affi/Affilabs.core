@@ -241,8 +241,60 @@ class ExportHelpers:
                 # Write DataFrame (vectorized)
                 df.to_csv(f, index=False, float_format="%.4f")
 
+            # Save flag metadata to JSON
+            metadata = {
+                "timestamp": now_utc_iso(),
+                "cycle_start": start_time,
+                "cycle_stop": stop_time,
+                "duration": stop_time - start_time,
+                "cycle_type": app.sidebar.cycle_type_combo.currentText() if hasattr(app, 'sidebar') else "Unknown",
+                "cycle_length": app.sidebar.cycle_length_combo.currentText() if hasattr(app, 'sidebar') else "Unknown",
+                "note": app.sidebar.note_input.toPlainText() if hasattr(app, 'sidebar') else "",
+                "units": app.sidebar.units_combo.currentText() if hasattr(app, 'sidebar') else "RU",
+                "filter_enabled": app._filter_enabled if hasattr(app, '_filter_enabled') else False,
+                "filter_strength": app._filter_strength if hasattr(app, '_filter_strength') and app._filter_enabled else None,
+                "reference_subtraction": app._ref_subtraction_enabled if hasattr(app, '_ref_subtraction_enabled') else False,
+                "reference_channel": app._ref_channel if hasattr(app, '_ref_channel') and app._ref_subtraction_enabled else None,
+                "flags": [],
+                "channel_offsets": {},
+                "injection_time": None
+            }
+
+            # Extract flag data if it exists
+            if hasattr(app, '_flag_markers') and app._flag_markers:
+                for flag in app._flag_markers:
+                    metadata["flags"].append({
+                        "channel": flag["channel"],
+                        "time": flag["time"],
+                        "spr": flag["spr"],
+                        "type": flag["type"]
+                    })
+
+                # Find injection time (first injection flag)
+                injection_flags = [f for f in app._flag_markers if f["type"] == "injection"]
+                if injection_flags:
+                    metadata["injection_time"] = injection_flags[0]["time"]
+
+            # Extract channel offsets if they exist
+            if hasattr(app, '_channel_offsets'):
+                metadata["channel_offsets"] = dict(app._channel_offsets)
+
+            # Save JSON metadata file
+            json_filepath = filepath.with_suffix('.json')
+            import json
+            with open(json_filepath, 'w', encoding='utf-8') as jf:
+                json.dump(metadata, jf, indent=2)
+
+            # Count flags by type for display
+            flag_counts = {}
+            for flag in metadata["flags"]:
+                flag_type = flag["type"]
+                flag_counts[flag_type] = flag_counts.get(flag_type, 0) + 1
+
+            flag_summary = ", ".join(f"{t.capitalize()}:{c}" for t, c in flag_counts.items()) if flag_counts else "No flags"
+
             print(
-                f"Cycle autosaved to {filename} ({len(active_channels)} channels, {len(df)} points)",
+                f"Cycle autosaved to {filename} ({len(active_channels)} channels, {len(df)} points, {flag_summary})",
             )
 
         except Exception as e:

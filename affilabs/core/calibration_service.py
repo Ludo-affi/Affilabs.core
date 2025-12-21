@@ -70,6 +70,17 @@ class CalibrationService(QObject):
             logger.warning("Calibration already in progress")
             return False
 
+        # CRITICAL: Stop live data acquisition before calibration
+        if hasattr(self.app, "data_mgr") and self.app.data_mgr:
+            if self.app.data_mgr._acquiring:
+                logger.info("🛑 Stopping live data acquisition before calibration...")
+                self.app.data_mgr.stop_acquisition()
+                # Wait briefly for acquisition to stop
+                import time
+
+                time.sleep(0.1)
+                logger.info("[OK] Live data stopped")
+
         # Headless mode: allowed only when NOT running inside the UI
         # In UI context, we always show the dialog regardless of env var
         in_ui_context = hasattr(self.app, "main_window") and self.app.main_window is not None

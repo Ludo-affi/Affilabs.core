@@ -73,7 +73,7 @@ class HybridPipeline(ProcessingPipeline):
         """
         super().__init__(config)
         self.name = "Hybrid (Optimized)"
-        self.description = "Fourier + Light Gaussian (90% noise reduction, 2000 alpha)"
+        self.description = "Fourier + Light Gaussian + Temporal Smoothing"
 
         # Load configuration or use optimized defaults
         cfg = config or {}
@@ -87,6 +87,11 @@ class HybridPipeline(ProcessingPipeline):
         self.sg_poly = cfg.get("sg_poly", 3)
         self.gaussian_sigma = cfg.get("gaussian_sigma", 1.0)  # Reduced from 1.5
         self.regression_window = cfg.get("regression_window", 50)
+
+        # Temporal smoothing parameters
+        self.temporal_smoothing = cfg.get("temporal_smoothing", True)
+        self.temporal_window = cfg.get("temporal_window", 3)
+        self.peak_history = []  # Track last N peaks for temporal filtering
 
     def get_metadata(self) -> PipelineMetadata:
         """Return pipeline metadata."""
@@ -228,6 +233,18 @@ class HybridPipeline(ProcessingPipeline):
                 )
                 resonance_wavelength = wavelengths[np.argmin(transmission)]
 
+            # Step 6: Temporal smoothing (reduce frame-to-frame jitter)
+            # Apply simple moving average of last N peaks
+            if self.temporal_smoothing and not np.isnan(resonance_wavelength):
+                self.peak_history.append(resonance_wavelength)
+                if len(self.peak_history) > self.temporal_window:
+                    self.peak_history.pop(0)
+
+                # Apply simple moving average if we have enough history
+                if len(self.peak_history) >= 2:
+                    smoothed_peak = np.mean(self.peak_history)
+                    resonance_wavelength = smoothed_peak
+
             # Prepare metadata
             result_metadata = {
                 "method": "hybrid_optimized",
@@ -237,6 +254,8 @@ class HybridPipeline(ProcessingPipeline):
                 "sg_poly": self.sg_poly,
                 "peak_transmission": float(transmission_sg[peak_idx]),
                 "confidence": 0.95,  # High confidence with this optimized method
+                "temporal_smoothing": self.temporal_smoothing,
+                "temporal_window": self.temporal_window if self.temporal_smoothing else None,
             }
 
             if metadata:
@@ -274,4 +293,6 @@ class HybridPipeline(ProcessingPipeline):
             "regression_window": self.regression_window,
             "use_quadratic": self.use_quadratic,
             "gaussian_refinement": self.gaussian_refinement,
+            "temporal_smoothing": self.temporal_smoothing,
+            "temporal_window": self.temporal_window,
         }

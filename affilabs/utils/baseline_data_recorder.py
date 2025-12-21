@@ -37,10 +37,11 @@ class BaselineDataRecorder(QObject):
     recording_complete = Signal(str)  # filepath
     recording_error = Signal(str)
 
-    def __init__(self, data_acquisition_mgr, parent=None) -> None:
+    def __init__(self, data_acquisition_mgr, spectrum_viewmodels=None, parent=None) -> None:
         super().__init__(parent)
 
         self.data_mgr = data_acquisition_mgr
+        self.spectrum_viewmodels = spectrum_viewmodels  # Dict of SpectrumViewModel (one per channel)
         self.recording = False
         self.duration_seconds = 300  # 5 minutes default
 
@@ -146,18 +147,113 @@ class BaselineDataRecorder(QObject):
         # Start progress timer (update every second)
         self.progress_timer.start(1000)
 
-        # Connect to data acquisition signals ONLY when recording starts
-        try:
-            self.data_mgr.spectrum_acquired.disconnect(self._on_spectrum_acquired)
-        except:
-            pass  # Not connected yet, that's fine
-        self.data_mgr.spectrum_acquired.connect(self._on_spectrum_acquired)
+        # Connect to spectrum_updated and peak_updated signals (transmission + wavelength data)
+        # If spectrum_viewmodels dict is available, connect to all 4 channels
+        if self.spectrum_viewmodels and isinstance(self.spectrum_viewmodels, dict):
+            logger.info("[OK] Connecting to spectrum_viewmodels signals...")
+            for channel, vm in self.spectrum_viewmodels.items():
+                if channel in ["a", "b", "c", "d"]:
+                    try:
+                        vm.spectrum_updated.disconnect(self._on_transmission_spectrum)
+                    except:
+                        pass  # Not connected yet, that's fine
+                    vm.spectrum_updated.connect(self._on_transmission_spectrum)
+
+                    try:
+                        vm.peak_updated.disconnect(self._on_peak_updated)
+                    except:
+                        pass  # Not connected yet, that's fine
+                    vm.peak_updated.connect(self._on_peak_updated)
+
+                    logger.info(f"  ✓ Channel {channel.upper()}: Connected to spectrum_updated + peak_updated")
+        else:
+            # Fallback: connect to raw data acquisition signal
+            try:
+                self.data_mgr.spectrum_acquired.disconnect(self._on_spectrum_acquired)
+            except:
+                pass  # Not connected yet, that's fine
+            self.data_mgr.spectrum_acquired.connect(self._on_spectrum_acquired)
+            logger.warning("[FALLBACK] Connected to data_mgr.spectrum_acquired (transmission may not be available)")
 
         self.recording_started.emit()
         logger.info("[OK] Recording started - collecting data...")
 
+    def _on_transmission_spectrum(self, channel: str, wavelengths: np.ndarray, transmission: np.ndarray) -> None:
+        """Handle processed transmission spectrum from SpectrumViewModel.
+
+        This is the preferred signal - transmission is already calculated.
+
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+            wavelengths: Wavelength axis (nm)
+            transmission: Transmission spectrum (%)
+        """
+        try:
+            if not self.recording:
+                return
+
+            if channel not in ["a", "b", "c", "d"]:
+                return
+
+            # Store wavelength axis (first time only)
+            if self.wavelength_axis is None and wavelengths is not None and len(wavelengths) > 0:
+                self.wavelength_axis = wavelengths.copy()
+                logger.info(f"✓ Wavelength axis captured: {len(self.wavelength_axis)} points ({wavelengths[0]:.1f}-{wavelengths[-1]:.1f} nm)")
+
+            # Store transmission spectrum (full array)
+            if transmission is not None and isinstance(transmission, (np.ndarray, list)) and len(transmission) > 0:
+                if isinstance(transmission, list):
+                    transmission = np.ndarray(transmission)
+                self.transmission_data[channel].append(transmission.copy())
+
+                # Store timestamp
+                import time
+                self.timestamps[channel].append(time.time())
+            else:
+                # Log once per channel if transmission data is missing
+                if not hasattr(self, '_logged_missing_transmission'):
+                    self._logged_missing_transmission = set()
+                if channel not in self._logged_missing_transmission:
+                    logger.warning(f"Channel {channel}: transmission spectrum is empty or invalid")
+                    self._logged_missing_transmission.add(channel)
+
+        except Exception as e:
+            logger.error(f"Baseline recorder error processing transmission spectrum: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _on_peak_updated(self, channel: str, peak_wavelength: float, metadata: dict) -> None:
+        """Handle peak_updated signal from SpectrumViewModel.
+
+        Captures the processed wavelength peak for each spectrum.
+
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+            peak_wavelength: Detected peak wavelength (nm)
+            metadata: Additional peak detection metadata
+        """
+        try:
+            if not self.recording:
+                return
+
+            if channel not in ["a", "b", "c", "d"]:
+                return
+
+            # Store processed wavelength (single value - peak position)
+            if peak_wavelength is not None:
+                self.wavelength_data[channel].append(peak_wavelength)
+
+        except Exception as e:
+            logger.error(f"Baseline recorder error processing peak wavelength: {e}")
+            import traceback
+            traceback.print_exc()
+
     def _on_spectrum_acquired(self, data: dict) -> None:
-        """Handle new spectrum data from acquisition manager."""
+        """Handle new spectrum data from acquisition manager (FALLBACK - raw data only).
+
+        This is a fallback when SpectrumViewModel is not available.
+        Transmission may not be present in raw data.
+        """
         try:
             if not self.recording:
                 return
@@ -166,15 +262,31 @@ class BaselineDataRecorder(QObject):
             if channel not in ["a", "b", "c", "d"]:
                 return
 
-            # Store transmission spectrum (full array)
+            # Store wavelength axis (first time only)
+            wavelengths = data.get("wavelengths")
+            if self.wavelength_axis is None and wavelengths is not None and len(wavelengths) > 0:
+                self.wavelength_axis = wavelengths.copy()
+                logger.info(f"✓ Wavelength axis captured: {len(self.wavelength_axis)} points")
+
+            # Store transmission spectrum (full array) - may not be available in raw data
             transmission = data.get("transmission_spectrum")
-            if transmission is not None and len(transmission) > 0:
+            if transmission is not None and isinstance(transmission, (np.ndarray, list)) and len(transmission) > 0:
+                # Convert to numpy array if it's a list
+                if isinstance(transmission, list):
+                    transmission = np.array(transmission)
                 self.transmission_data[channel].append(transmission.copy())
 
                 # Also store timestamp when we successfully capture transmission
                 timestamp = data.get("timestamp")
                 if timestamp is not None:
                     self.timestamps[channel].append(timestamp)
+            else:
+                # Log once per channel if transmission data is missing
+                if not hasattr(self, '_logged_missing_transmission'):
+                    self._logged_missing_transmission = set()
+                if channel not in self._logged_missing_transmission:
+                    logger.warning(f"Channel {channel}: transmission_spectrum not available in raw data dict (expected with fallback mode)")
+                    self._logged_missing_transmission.add(channel)
 
             # Store processed wavelength (single value - peak position)
             wavelength = data.get("wavelength")
@@ -182,8 +294,9 @@ class BaselineDataRecorder(QObject):
                 self.wavelength_data[channel].append(wavelength)
         except Exception as e:
             # Don't let baseline recorder crash the main acquisition thread
-            logger.error(f"Baseline recorder error: {e}")
-            pass
+            logger.error(f"Baseline recorder error processing spectrum: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _update_progress(self) -> None:
         """Update recording progress."""
@@ -227,10 +340,25 @@ class BaselineDataRecorder(QObject):
 
         # Stop timer and disconnect signals
         self.progress_timer.stop()
-        try:
-            self.data_mgr.spectrum_acquired.disconnect(self._on_spectrum_acquired)
-        except:
-            pass  # Already disconnected
+
+        # Disconnect from spectrum viewmodels if connected
+        if self.spectrum_viewmodels and isinstance(self.spectrum_viewmodels, dict):
+            for channel, vm in self.spectrum_viewmodels.items():
+                if channel in ["a", "b", "c", "d"]:
+                    try:
+                        vm.spectrum_updated.disconnect(self._on_transmission_spectrum)
+                    except:
+                        pass  # Already disconnected
+                    try:
+                        vm.peak_updated.disconnect(self._on_peak_updated)
+                    except:
+                        pass  # Already disconnected
+        else:
+            # Disconnect from fallback signal
+            try:
+                self.data_mgr.spectrum_acquired.disconnect(self._on_spectrum_acquired)
+            except:
+                pass  # Already disconnected
 
         self.recording = False
 
@@ -251,34 +379,53 @@ class BaselineDataRecorder(QObject):
             Path to saved file
 
         """
-        # Create output directory
-        output_dir = Path("baseline_data")
-        output_dir.mkdir(exist_ok=True)
+        try:
+            # Create output directory
+            output_dir = Path("baseline_data")
+            output_dir.mkdir(exist_ok=True)
 
-        timestamp_str = self.start_time.strftime("%Y%m%d_%H%M%S")
-        filepath = output_dir / f"baseline_recording_{timestamp_str}.xlsx"
+            timestamp_str = self.start_time.strftime("%Y%m%d_%H%M%S")
+            filepath = output_dir / f"baseline_recording_{timestamp_str}.xlsx"
+
+            logger.info(f"💾 Saving baseline data to: {filepath}")
+
+            # Check if we have any data to save
+            total_transmission_count = sum(len(self.transmission_data[ch]) for ch in ["a", "b", "c", "d"])
+            if total_transmission_count == 0:
+                raise ValueError("No transmission data collected during recording. Check that transmission_spectrum is available in data stream.")
+
+            logger.info(f"Total transmission spectra collected: {total_transmission_count}")
+        except Exception as e:
+            logger.error(f"Failed to initialize save operation: {e}")
+            raise
 
         # Create Excel writer
         with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
             # Tab 1-4: Transmission spectra (one tab per channel)
             for ch in ["a", "b", "c", "d"]:
-                if not self.transmission_data[ch]:
+                if not self.transmission_data[ch] or len(self.transmission_data[ch]) == 0:
+                    logger.warning(f"  Channel {ch}: No transmission data collected, skipping")
                     continue
 
-                # Create DataFrame with wavelength axis as index
-                df = pd.DataFrame(
-                    np.array(self.transmission_data[ch]).T,
-                    index=self.wavelength_axis,
-                    columns=[
-                        f"t_{i:04d}" for i in range(len(self.transmission_data[ch]))
-                    ],
-                )
-                df.index.name = "wavelength_nm"
+                try:
+                    # Create DataFrame with wavelength axis as index
+                    df = pd.DataFrame(
+                        np.array(self.transmission_data[ch]).T,
+                        index=self.wavelength_axis,
+                        columns=[
+                            f"t_{i:04d}" for i in range(len(self.transmission_data[ch]))
+                        ],
+                    )
+                    df.index.name = "wavelength_nm"
 
-                df.to_excel(writer, sheet_name=f"Channel_{ch.upper()}")
-                logger.info(
-                    f"  Channel {ch}: {len(self.transmission_data[ch])} spectra -> Tab 'Channel_{ch.upper()}'",
-                )
+                    df.to_excel(writer, sheet_name=f"Channel_{ch.upper()}")
+                    logger.info(
+                        f"  Channel {ch}: {len(self.transmission_data[ch])} spectra -> Tab 'Channel_{ch.upper()}'",
+                    )
+                except Exception as e:
+                    logger.error(f"  Channel {ch}: Failed to save transmission data - {e}")
+                    # Continue with other channels even if one fails
+                    continue
 
             # Tab 5: Wavelength traces (all channels)
             max_length = max(

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 """Advanced settings set during calibration."""
 
-from typing import Self
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (

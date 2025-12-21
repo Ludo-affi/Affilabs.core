@@ -1,6 +1,10 @@
 """Menu for setting reference channel, data filtering, and units."""
 
-from typing import Literal, Self
+from typing import Literal
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon

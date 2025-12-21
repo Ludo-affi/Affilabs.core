@@ -60,7 +60,7 @@ DEV = True
 # Application identity for UI
 SW_APP_NAME = "Affilab.core"
 # Pin version to repository tag (requested)
-SW_VERSION = "v0.2"
+SW_VERSION = f"Version {get_version()}"
 TARGET = "win"
 
 if TARGET == "win":
@@ -74,7 +74,25 @@ elif TARGET == "mac":
 CH_LIST = ["a", "b", "c", "d"]
 EZ_CH_LIST = ["a", "b"]
 UNIT_LIST = {"nm": 1, "RU": 355}
+
+# Standard color palette
 GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 230, 65)}
+
+# Colorblind-friendly palette (Okabe-Ito)
+# Designed to be distinguishable for all types of colorblindness
+GRAPH_COLORS_COLORBLIND = {
+    "a": (1, 115, 178),  # Blue
+    "b": (222, 143, 5),  # Orange
+    "c": (2, 158, 115),  # Green
+    "d": (204, 120, 188),  # Magenta
+}
+
+# Current active palette (can be toggled by user)
+# Using colorblind-friendly Okabe-Ito palette by default for accessibility
+ACTIVE_GRAPH_COLORS = GRAPH_COLORS_COLORBLIND.copy()
+
+# Cycle marker style: "cursors" or "lines"
+CYCLE_MARKER_STYLE = "cursors"  # Can be changed to "lines" for vertical line markers
 
 ARDUINO_VID = 0x2341
 ARDUINO_PID = 0x8036
@@ -128,8 +146,8 @@ WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by defa
 # ALL timing calculations derive from these base parameters
 
 # Base timing parameters (can be changed in Advanced Settings)
-LED_ON_TIME_MS = 250.0  # LED ON duration (firmware default: 250ms)
-DETECTOR_WAIT_MS = 60.0  # MAX INTEGRATION TIME PER SCAN (default: 60ms)
+LED_ON_TIME_MS = 225.0  # LED ON duration - optimized (actual=250ms with 25ms overhead)
+DETECTOR_WAIT_MS = 45.0  # Optimized LED stabilization time (was 60ms)
 NUM_SCANS = 3  # Number of scans per spectrum (HAL averages these)
 SAFETY_BUFFER_MS = 10.0  # Safety margin for timing calculations
 
@@ -161,21 +179,21 @@ LED_FORCE_255_TEST_CYCLE: bool = False
 # All timing derived from base parameters above:
 #
 # DETECTOR_ON_TIME = LED_ON_TIME_MS - DETECTOR_WAIT_MS
-#                  = 250ms - 60ms = 190ms
+#                  = 225ms - 45ms = 180ms
 #
 # DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER_MS
-#                 = 190ms - 10ms = 180ms
+#                 = 180ms - 10ms = 170ms
 #
-# MAX_INTEGRATION_PER_SCAN = DETECTOR_WAIT_MS = 60ms
+# MAX_INTEGRATION_PER_SCAN = DETECTOR_WAIT_MS = 45ms
 #
 # num_scans calculation in live data:
-#   1. Cap integration_time to DETECTOR_WAIT_MS (60ms max per scan)
+#   1. Cap integration_time to DETECTOR_WAIT_MS (45ms max per scan)
 #   2. num_scans = floor(DETECTOR_WINDOW / integration_time)
-#   3. Total acquisition = num_scans × integration_time ≤ 180ms
+#   3. Total acquisition = num_scans × integration_time ≤ 170ms
 #
 # Example: integration_time = 40ms
-#   → num_scans = floor(180ms / 40ms) = 4 scans
-#   → Total = 4 × 40ms = 160ms (within 180ms window)
+#   → num_scans = floor(170ms / 40ms) = 4 scans
+#   → Total = 4 × 40ms = 160ms (within 170ms window)
 
 # Reference Signal Averaging
 DARK_NOISE_SCANS = 25  # Maximum dark noise scans
@@ -241,6 +259,16 @@ STRONGEST_MIN_LED = (
 # - Don't over-optimize if marginal gains
 # - Prioritize leaving LED headroom for P-mode boost
 MAX_READ_TIME = 200  # maximum total read time in milliseconds
+
+# === TRANSMISSION BASELINE CORRECTION ===
+TRANSMISSION_BASELINE_METHOD = "percentile"  # Options: 'percentile', 'polynomial', 'off_spr', 'none'
+TRANSMISSION_BASELINE_PERCENTILE = 95.0  # Percentile for 'percentile' method (80-99 typical)
+TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE = 2  # Polynomial degree for 'polynomial' method (1=linear, 2=quadratic)
+TRANSMISSION_OFF_SPR_WAVELENGTH_RANGE = (560.0, 570.0)  # Wavelength range (nm) for 'off_spr' method
+
+# === CALIBRATION MODE ===
+USE_ALTERNATIVE_CALIBRATION = False  # Use alternative calibration method (disabled)
+
 CURVE_FIT_HEIGHT = 5  # height of transmission segment to take for width0
 TRANS_SEG_H = 20  # height to define transmission segment
 TRANS_SEG_H_REQ = 0.5  # factor for calibrated channel fitting height on both ends
@@ -526,6 +554,10 @@ import logging
 CONSOLE_LOG_LEVEL = logging.INFO  # WARNING = production (fast, clean console)
 # INFO = development (more details)
 # DEBUG = troubleshooting (verbose)
+
+# === Performance Profiling Settings ===
+PROFILING_ENABLED = False  # Enable performance profiling
+PROFILING_REPORT_INTERVAL = 30  # Seconds between profiling reports (if enabled)
 
 # =============================================================================
 

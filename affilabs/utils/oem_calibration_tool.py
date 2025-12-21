@@ -843,9 +843,22 @@ class DeviceProfileManager:
         logger.info(f"✅ Device profile saved: {profile_path}")
         logger.info(f"   Serial: {serial_number}")
         logger.info(f"   LED Type: {led_type} ({led_type_full})")
+
+        # ALSO save to active calibrations location
+        try:
+            project_root = Path(__file__).resolve().parents[2]
+            active_dir = project_root / "calibrations" / "active" / serial_number
+            active_dir.mkdir(parents=True, exist_ok=True)
+            active_profile = active_dir / "device_profile.json"
+            with active_profile.open("w") as f:
+                json.dump(profile_data, f, indent=2)
+            logger.info(f"✅ Active profile saved: calibrations/active/{serial_number}/device_profile.json")
+        except Exception as e:
+            logger.warning(f"Could not save to active location: {e}")
+
         return profile_path
 
-    def update_device_config(self, polarizer_results: dict | None) -> None:
+    def update_device_config(self, polarizer_results: dict | None, serial_number: str | None = None) -> None:
         """Update config/device_config.json with OEM calibration data.
 
         This ensures the main application can load OEM positions from the
@@ -854,14 +867,20 @@ class DeviceProfileManager:
 
         Args:
             polarizer_results: Polarizer calibration results with s_position, p_position
+            serial_number: Device serial number (optional, uses device_info if not provided)
 
         """
         if not polarizer_results:
             logger.warning("⚠️ No polarizer results to save to device_config")
             return
 
-        # Path to device_config.json
-        config_path = Path(__file__).parent.parent / "config" / "device_config.json"
+        # Path to device_config.json (device-specific if serial provided)
+        if serial_number:
+            # Use device-specific config: config/devices/<serial>/device_config.json
+            config_path = Path(__file__).parent.parent / "config" / "devices" / serial_number / "device_config.json"
+        else:
+            # Fallback to global config
+            config_path = Path(__file__).parent.parent / "config" / "device_config.json"
 
         try:
             # Load existing config
@@ -874,14 +893,21 @@ class DeviceProfileManager:
                 )
                 config = {}
 
-            # Update OEM calibration section
-            config["oem_calibration"] = {
-                "polarizer_s_position": polarizer_results["s_position"],
-                "polarizer_p_position": polarizer_results["p_position"],
-                "polarizer_sp_ratio": polarizer_results.get("sp_ratio", 0.0),
-                "calibration_date": datetime.now().isoformat(),
-                "calibration_method": polarizer_results.get("method", "oem_tool"),
-            }
+            # Get serial number from config if not provided
+            if not serial_number and "device_info" in config:
+                serial_number = config["device_info"].get("serial_number")
+
+            # Store PWM values directly (firmware expects PWM, not degrees)
+            # The polarizer calibration returns PWM values which the firmware uses as-is
+            s_pwm = polarizer_results["s_position"]
+            p_pwm = polarizer_results["p_position"]
+
+            # Update hardware section with servo positions (single source of truth)
+            if "hardware" not in config:
+                config["hardware"] = {}
+
+            config["hardware"]["servo_s_position"] = s_pwm
+            config["hardware"]["servo_p_position"] = p_pwm
 
             # Update last modified timestamp if device_info exists
             if "device_info" in config:
@@ -894,9 +920,11 @@ class DeviceProfileManager:
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
 
-            logger.info("✅ Updated device_config.json with OEM calibration:")
-            logger.info(f"   S position: {polarizer_results['s_position']}")
-            logger.info(f"   P position: {polarizer_results['p_position']}")
+            logger.info("✅ Updated device_config.json with servo positions:")
+            logger.info(f"   Serial: {serial_number}")
+            logger.info(f"   S position: {s_pwm} PWM")
+            logger.info(f"   P position: {p_pwm} PWM")
+            logger.info(f"   P position: {polarizer_results['p_position']} PWM")
             logger.info(f"   P/S ratio: {polarizer_results.get('sp_ratio', 0.0):.3f}")
 
         except Exception as e:

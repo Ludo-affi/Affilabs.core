@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Self
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from PySide6.QtWidgets import QDialog, QTabWidget, QVBoxLayout, QWidget
 

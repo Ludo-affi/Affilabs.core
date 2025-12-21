@@ -9,8 +9,18 @@ from __future__ import annotations
 import csv
 import re
 from collections.abc import Collection, Hashable, Sequence
-from datetime import UTC, datetime
-from typing import Generic, NamedTuple, Self, TypeVar
+from datetime import datetime, timezone
+from typing import Generic, NamedTuple, TypeVar
+
+# Python 3.11+ has UTC, older versions use timezone.utc
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from PySide6.QtCore import QSize, Qt, Slot
 from PySide6.QtGui import QDoubleValidator, QIcon
@@ -210,10 +220,10 @@ class Concentrations(QWidget):
 
 
 # Type variable for a type that can be used as a key to a dictionary
-KeyType = TypeVar("KeyType", bound=Hashable, contravariant=True)
+KeyType = TypeVar("KeyType", bound=Hashable)
 
 
-class CurveOutput(NamedTuple, Generic[KeyType]):
+class CurveOutput(NamedTuple):
     """Class to hold output of CurveMetadata."""
 
     ligand: dict[KeyType, str]

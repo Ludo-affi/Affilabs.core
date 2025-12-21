@@ -110,6 +110,25 @@ class CalibrationSpectrometerAdapter(Spectrometer):
             self._log("error", f"Error acquiring spectrum for channel {channel}: {e}")
             return None
 
+    def set_integration(self, integration_time_ms: float) -> bool:
+        """Set integration time on spectrometer hardware.
+
+        Args:
+            integration_time_ms: Integration time in milliseconds
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.usb.set_integration(integration_time_ms)
+            # Add settling delay for hardware reconfiguration
+            import time
+            time.sleep(0.02)
+            return True
+        except Exception as e:
+            self._log("error", f"Failed to set integration time to {integration_time_ms}ms: {e}")
+            return False
+
 
 class ProductionROIExtractor(ROIExtractor):
     """ROI extractor that matches production calibration logic.
@@ -212,7 +231,12 @@ class ProductionLEDActuator(LEDActuator):
                     pass
 
     def set_many(self, mapping: Mapping[str, int]) -> bool:
-        """Set LED intensities for multiple channels.
+        """Set LED intensities for multiple channels using optimized direct serial commands.
+
+        OPTIMIZED METHOD (V2.4.1 firmware):
+        - Uses direct serial commands (ba224\n, bb087\n, etc.)
+        - Avoids legacy V1.9 firmware delays from set_batch_intensities
+        - 15ms per command vs 31-233ms with batch
 
         Args:
             mapping: Dict mapping channel names to LED intensities (0-255)
@@ -222,19 +246,24 @@ class ProductionLEDActuator(LEDActuator):
             True if successful, False otherwise
         """
         try:
+            import time
+
             # Extract intensities, defaulting to 0 for missing channels
             a = int(max(0, min(255, mapping.get('a', 0))))
             b = int(max(0, min(255, mapping.get('b', 0))))
             c = int(max(0, min(255, mapping.get('c', 0))))
             d = int(max(0, min(255, mapping.get('d', 0))))
 
-            # Use batch command (production-tested)
-            success = self.ctrl.set_batch_intensities(a=a, b=b, c=c, d=d)
+            # Use optimized direct serial commands (V2.4.1 firmware)
+            # Format: b{channel}{intensity:03d}\n (e.g., ba224\n)
+            channels = [('a', a), ('b', b), ('c', c), ('d', d)]
 
-            if not success:
-                self._log("warning", f"Batch LED command failed: a={a}, b={b}, c={c}, d={d}")
-                return False
+            for ch, intensity in channels:
+                cmd = f"b{ch}{intensity:03d}\n"
+                self.ctrl._ctrl._ser.write(cmd.encode())
+                time.sleep(0.005)  # 5ms between commands for firmware processing
 
+            self._log("debug", f"Optimized LED brightness set: A={a}, B={b}, C={c}, D={d}")
             return True
 
         except Exception as e:

@@ -10,6 +10,9 @@ class LEDCalibrationResult:
     success: bool = False
     error: str | None = None
 
+    # Device identification
+    detector_serial: str | None = None  # Detector serial number (e.g., 'FLMT09788')
+
     # Wavelength data
     # NOTE: wave_data and wavelengths are ALIASES (same array, different names for backward compatibility)
     # - wave_data: Legacy name from original calibration code
@@ -220,6 +223,7 @@ class LEDCalibrationResult:
             "spr_fwhm": getattr(self, "spr_fwhm", {}),
             "num_scans": self.num_scans,
             "timing_sync": self.timing_sync,  # Step 6 timing synchronization metrics
+            "detector_serial": self.detector_serial,  # Device serial number for QC history
         }
 
     def get_channels(self) -> list:

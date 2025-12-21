@@ -6,12 +6,6 @@ convenience functions for pipeline management.
 
 from affilabs.utils.logger import logger
 from affilabs.utils.pipelines.fourier_pipeline import FourierPipeline
-from affilabs.utils.pipelines.hybrid_original_pipeline import (
-    HybridOriginalPipeline,  # First attempt - 8.82 RU (51% improvement)
-)
-from affilabs.utils.pipelines.hybrid_pipeline import (
-    HybridPipeline,  # OPTIMIZED - 1.81 RU (90% improvement)
-)
 from affilabs.utils.processing_pipeline import get_pipeline_registry
 
 
@@ -30,16 +24,11 @@ def initialize_pipelines():
 
     registry = get_pipeline_registry()
 
-    # Register pipeline classes in order
+    # Register only Fourier pipeline
     registry.register(
         "fourier",
         FourierPipeline,
-    )  # Position 1: Standard production (17.98 RU)
-    registry.register(
-        "hybrid_original",
-        HybridOriginalPipeline,
-    )  # Position 2: First attempt (8.82 RU)
-    registry.register("hybrid", HybridPipeline)  # Position 3: OPTIMIZED (1.81 RU)
+    )
 
     # Load saved pipeline preference or default to fourier
     config_file = (

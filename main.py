@@ -602,6 +602,12 @@ class Application(QApplication):
         self._reference_channel = None
         self._ref_subtraction_enabled = False
         self._ref_channel = None
+        
+        # Flag system - selected channel for Active Cycle graph
+        self._selected_flag_channel = 'a'  # Default to Channel A
+        
+        # Channel time shifts for injection alignment (Phase 2)
+        self._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
 
         # Data filtering
         self._filter_enabled = DEFAULT_FILTER_ENABLED
@@ -775,8 +781,8 @@ class Application(QApplication):
 
         self.main_window._get_elapsed_time = get_elapsed_time
 
-        # NOTE: Not storing app reference in UI (violates separation of concerns)
-        # UI should only emit signals, not call app methods directly
+        # Store app reference for CalibrationManager to access calibration methods
+        self.main_window.app = self
         # All UIΓåÆApp communication happens through Qt signals
 
         # Verify spectroscopy plots availability
@@ -1034,6 +1040,9 @@ class Application(QApplication):
 
             # Connect mouse events for channel selection and flagging
             if hasattr(self.main_window, "cycle_of_interest_graph"):
+                # Disable default PyQtGraph context menu (conflicts with flag system)
+                self.main_window.cycle_of_interest_graph.setMenuEnabled(False)
+                
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked,
                 )
@@ -1178,8 +1187,20 @@ class Application(QApplication):
         self.main_window.recording_stop_requested.connect(
             self._on_recording_stop_requested,
         )
+        
+        # Connect Clear Graph signal from sensorgram graphs
+        # This signal is emitted when user clicks Clear Graph button
+        if hasattr(self.main_window, 'full_timeline_graph'):
+            # full_timeline_graph is actually a DataWindow instance that has the signal
+            from affilabs.widgets.datawindow import DataWindow
+            # Find the DataWindow widget (the graphs are wrapped in it)
+            for widget in self.main_window.findChildren(DataWindow):
+                if hasattr(widget, 'reset_graphs_sig'):
+                    widget.reset_graphs_sig.connect(self._on_clear_graphs_requested)
+                    logger.debug("✓ Connected: DataWindow.reset_graphs_sig -> _on_clear_graphs_requested")
+                    break
+        
         # NOTE: These signals not yet implemented in main window
-        # self.main_window.clear_graphs_requested.connect(self._on_clear_graphs_requested)
         # self.main_window.clear_flags_requested.connect(self._on_clear_flags_requested)
         # self.main_window.pipeline_changed.connect(self._on_pipeline_changed)
         logger.debug("Connected: main_window UI action signals")
@@ -1262,19 +1283,36 @@ class Application(QApplication):
             self._on_graph_clicked,
         )
 
-        # NOTE: Polarizer Calibration button is connected in affilabs_core_ui.py
-        # If available, connect here to ensure functionality
-        if hasattr(ui, "polarizer_calibration_btn"):
-            ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
-            logger.debug("[OK] Connected Polarizer Calibration button to handler")
+        # NOTE: Polarizer Calibration button is already connected in affilabs_core_ui.py
+        # to _handle_polarizer_calibration which calls app._on_polarizer_calibration
+        # Do NOT connect again here to avoid double-triggering
+        # if hasattr(ui, "polarizer_calibration_btn"):
+        #     ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
+        #     logger.debug("[OK] Connected Polarizer Calibration button to handler")
 
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
 
         # Baseline Capture button (REBUILT - direct connection, no lambda)
         if hasattr(ui, "baseline_capture_btn"):
+            logger.debug(f"[DEBUG] Found baseline_capture_btn: {ui.baseline_capture_btn}")
+            logger.debug(f"[DEBUG] Button object name: {ui.baseline_capture_btn.objectName()}")
+            logger.debug(f"[DEBUG] Button is enabled: {ui.baseline_capture_btn.isEnabled()}")
+            logger.debug(f"[DEBUG] Button is visible: {ui.baseline_capture_btn.isVisible()}")
+            
+            # Disconnect any existing connections first
+            try:
+                ui.baseline_capture_btn.clicked.disconnect()
+                logger.debug("[DEBUG] Disconnected existing button connections")
+            except:
+                logger.debug("[DEBUG] No existing connections to disconnect")
+            
+            # Connect to handler
             ui.baseline_capture_btn.clicked.connect(self._on_record_baseline_clicked)
-            logger.debug("[OK] Connected Baseline Capture button to handler")
+            logger.info("[OK] ✓ Connected Baseline Capture button to handler")
+            
+            # Test connection
+            logger.debug(f"[DEBUG] Button has {ui.baseline_capture_btn.receivers('clicked()')} receivers")
         else:
             logger.warning("[WARN] baseline_capture_btn NOT found in UI")
 
@@ -1409,10 +1447,6 @@ class Application(QApplication):
             ui.filter_light_radio.toggled.connect(
                 lambda checked: self._set_display_filter(1) if checked else None,
             )
-        if hasattr(ui, "filter_smooth_radio"):
-            ui.filter_smooth_radio.toggled.connect(
-                lambda checked: self._set_display_filter(2) if checked else None,
-            )
 
         # Initialize filter to default (None - raw data)
         self._set_display_filter(0)
@@ -1424,13 +1458,12 @@ class Application(QApplication):
         """Set EMA display filter method based on radio button selection.
 
         Args:
-            filter_id: 0=None (Raw), 1=EMA Light (╬▒=0.33), 2=EMA Smooth (╬▒=0.18)
+            filter_id: 0=None (Raw), 1=EMA Light (╬▒=0.50)
 
         """
         filter_configs = [
             {"method": "none", "alpha": 0.0, "label": "None (Raw)"},
-            {"method": "ema_light", "alpha": 0.33, "label": "EMA Light (╬▒=0.33)"},
-            {"method": "ema_smooth", "alpha": 0.18, "label": "EMA Smooth (╬▒=0.18)"},
+            {"method": "ema_light", "alpha": 0.50, "label": "EMA Light (╬▒=0.50)"},
         ]
 
         if 0 <= filter_id < len(filter_configs):
@@ -1909,7 +1942,7 @@ class Application(QApplication):
         """Process spectrum data in dedicated worker thread."""
         try:
             from affilabs.utils.spectrum_helpers import SpectrumHelpers
-            logger.info(f"[MAIN] About to process spectrum for channel {data.get('channel', 'UNKNOWN')}")
+            logger.debug(f"[MAIN] About to process spectrum for channel {data.get('channel', 'UNKNOWN')}")
             SpectrumHelpers.process_spectrum_data(self, data)
         except Exception as e:
             logger.error(f"[MAIN] Failed to process spectrum: {e}", exc_info=True)
@@ -2067,32 +2100,50 @@ class Application(QApplication):
         UIUpdateHelpers.update_cycle_of_interest_graph(self)
 
     def _update_delta_display(self):
-        """Update the Δ SPR display label with values at Stop cursor position."""
+        """Update the Δ SPR display label with delta values BETWEEN start and stop cursors.
+        
+        Uses average of 5 points around each cursor position for more stable measurements.
+        """
         if self.main_window.cycle_of_interest_graph.delta_display is None:
             return
 
         # numpy imported at module scope as np
 
-        # Get Stop cursor position from full timeline graph
+        # Get Start and Stop cursor positions from full timeline graph
+        start_time = self.main_window.full_timeline_graph.start_cursor.value()
         stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
 
-        # Get Δ SPR value at Stop cursor position for each channel
+        # Calculate Δ SPR between start and stop cursors for each channel
         delta_values = {}
         for ch in self._idx_to_channel:
             time_data = self.buffer_mgr.cycle_data[ch].time
             spr_data = self.buffer_mgr.cycle_data[ch].spr
 
             if len(time_data) > 0 and len(spr_data) > 0:
-                # Find the index closest to stop_time
-                idx = np.argmin(np.abs(time_data - stop_time))
-                delta_values[ch] = spr_data[idx]
+                # Find indices closest to start and stop times
+                start_idx = np.argmin(np.abs(time_data - start_time))
+                stop_idx = np.argmin(np.abs(time_data - stop_time))
+                
+                # Average 5 points around each cursor (2 before, center, 2 after)
+                # This reduces noise and provides more stable delta measurements
+                def get_averaged_value(center_idx, data):
+                    """Get average of 5 points centered at index."""
+                    start = max(0, center_idx - 2)
+                    end = min(len(data), center_idx + 3)
+                    return np.mean(data[start:end])
+                
+                start_value = get_averaged_value(start_idx, spr_data)
+                stop_value = get_averaged_value(stop_idx, spr_data)
+                
+                # Calculate delta: stop_value - start_value
+                delta_values[ch] = stop_value - start_value
             else:
                 delta_values[ch] = 0.0
 
         # Update label with bold text for better visibility
         self.main_window.cycle_of_interest_graph.delta_display.setText(
-            f"<b>SPR: Ch A: {delta_values['a']:.1f} RU  |  Ch B: {delta_values['b']:.1f} RU  |  "
-            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU</b>",
+            f"<b>Δ SPR: Ch A: {delta_values['a']:+.1f} RU  |  Ch B: {delta_values['b']:+.1f} RU  |  "
+            f"Ch C: {delta_values['c']:+.1f} RU  |  Ch D: {delta_values['d']:+.1f} RU</b>",
         )
 
     def _on_acquisition_error(self, error: str):
@@ -2667,11 +2718,313 @@ class Application(QApplication):
     def _on_graph_clicked(self, event):
         """Handle mouse clicks on cycle_of_interest_graph.
 
-        Left click: Select channel closest to cursor
-        Right click: Add flag/annotation at cursor position for selected channel
+        Double-Click: Select nearest channel (highlights curve)
+        Ctrl+Click: Show flag type menu to add marker
+        Right-Click: Remove flag marker near cursor
         """
-        pass  # graph_events removed
+        from PySide6.QtCore import Qt
+        
+        # Get click position in scene coordinates
+        pos = event.scenePos()
+        
+        # Map scene position to data coordinates
+        view_box = self.main_window.cycle_of_interest_graph.plotItem.vb
+        mouse_point = view_box.mapSceneToView(pos)
+        time_clicked = mouse_point.x()
+        spr_clicked = mouse_point.y()
+        
+        # Check if double-click (select nearest channel)
+        if event.double():
+            logger.debug(f"Double-click detected at t={time_clicked:.2f}, SPR={spr_clicked:.2f}")
+            nearest_channel = self._find_nearest_channel_at_click(time_clicked, spr_clicked)
+            if nearest_channel:
+                self._select_flag_channel_visual(nearest_channel)
+                logger.info(f"Selected Channel {nearest_channel.upper()} for flag placement (double-click)")
+            else:
+                logger.warning("Double-click: No channel found near click position")
+            return
+        
+        # Check if Ctrl key is pressed (add flag)
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Use the selected flag channel instead of auto-detecting
+            selected_channel = self._selected_flag_channel
+            
+            # CRITICAL: Get DISPLAY data (time rebased to 0, skipping first point)
+            # The cycle_of_interest_graph shows rebased time: cycle_time[1:] - cycle_time[1]
+            # So we need to work with the displayed/rebased data to match what's shown
+            cycle_time_raw = self.buffer_mgr.cycle_data[selected_channel].time
+            cycle_spr_raw = self.buffer_mgr.cycle_data[selected_channel].spr
+            
+            if len(cycle_time_raw) < 2 or len(cycle_spr_raw) < 2:
+                logger.warning(f"Not enough data for Channel {selected_channel.upper()} (need at least 2 points)")
+                return
+            
+            # Match ui_update_helpers.py logic: skip first point and rebase
+            first_time = cycle_time_raw[1]
+            cycle_time_display = cycle_time_raw[1:] - first_time  # Rebased to 0
+            cycle_spr_display = cycle_spr_raw[1:]
+            
+            # Find NEAREST DATA POINT in DISPLAY coordinates
+            time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
+            time_at_point = cycle_time_display[time_idx]  # Display time (rebased)
+            spr_at_time = cycle_spr_display[time_idx]
+            
+            # Show flag type selection menu (use display time for alignment)
+            self._show_flag_type_menu(event, selected_channel, time_at_point, spr_at_time)
+            
+        # Check if right-click (remove flag)
+        elif event.button() == Qt.MouseButton.RightButton:
+            self._remove_flag_near_click(time_clicked, spr_clicked)
 
+    def _show_flag_type_menu(self, event, channel: str, time_val: float, spr_val: float):
+        """Show dropdown menu to select flag type.
+        
+        Args:
+            event: Mouse event
+            channel: Channel identifier
+            time_val: Time position for flag
+            spr_val: SPR value at flag position
+        """
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction, QCursor
+        
+        menu = QMenu()
+        
+        # Create flag type actions
+        injection_action = QAction("▲ Injection", menu)
+        injection_action.triggered.connect(
+            lambda: self._add_flag_marker(channel, time_val, spr_val, 'injection')
+        )
+        
+        wash_action = QAction("■ Wash", menu)
+        wash_action.triggered.connect(
+            lambda: self._add_flag_marker(channel, time_val, spr_val, 'wash')
+        )
+        
+        spike_action = QAction("★ Spike", menu)
+        spike_action.triggered.connect(
+            lambda: self._add_flag_marker(channel, time_val, spr_val, 'spike')
+        )
+        
+        menu.addAction(injection_action)
+        menu.addAction(wash_action)
+        menu.addAction(spike_action)
+        
+        # Show menu at cursor position
+        menu.exec(QCursor.pos())
+    
+    def _find_nearest_channel_at_click(self, time_clicked: float, spr_clicked: float) -> str | None:
+        """Find which channel curve is closest to the click position.
+        
+        CRITICAL: Works with DISPLAY coordinates (time rebased to 0, first point skipped)
+        to match what's actually shown on the cycle_of_interest_graph.
+        
+        Args:
+            time_clicked: Time coordinate of click (in display/rebased time)
+            spr_clicked: SPR coordinate of click
+            
+        Returns:
+            Channel identifier ('a', 'b', 'c', 'd') or None if no data
+        """
+        min_distance = float('inf')
+        nearest_channel = None
+        
+        # Check all 4 channels
+        for ch in ['a', 'b', 'c', 'd']:
+            # Get RAW cycle data
+            cycle_time_raw = self.buffer_mgr.cycle_data[ch].time
+            cycle_spr_raw = self.buffer_mgr.cycle_data[ch].spr
+            
+            if len(cycle_time_raw) < 2 or len(cycle_spr_raw) < 2:
+                logger.debug(f"Channel {ch.upper()}: Insufficient data (need at least 2 points)")
+                continue
+            
+            # Match ui_update_helpers.py: skip first point and rebase to 0
+            first_time = cycle_time_raw[1]
+            cycle_time_display = cycle_time_raw[1:] - first_time
+            cycle_spr_display = cycle_spr_raw[1:]
+            
+            # Find the data point closest to clicked time IN DISPLAY COORDINATES
+            time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
+            
+            if time_idx < len(cycle_spr_display):
+                # Calculate distance from click to this channel's curve at that time
+                spr_at_time = cycle_spr_display[time_idx]
+                distance = abs(spr_at_time - spr_clicked)
+                
+                logger.debug(f"Channel {ch.upper()}: SPR at t={time_clicked:.2f} is {spr_at_time:.2f}, distance={distance:.2f}")
+                
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_channel = ch
+        
+        if nearest_channel:
+            logger.debug(f"Nearest channel: {nearest_channel.upper()} (distance={min_distance:.2f})")
+        else:
+            logger.debug("No nearest channel found (all channels have insufficient data)")
+        
+        return nearest_channel
+    
+    def _select_flag_channel_visual(self, channel: str):
+        """Select a channel for flagging and update visual highlighting.
+        
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+        """
+        # Store the selected channel
+        self._selected_flag_channel = channel
+        
+        # Update visual highlighting through UI
+        self.main_window._on_flag_channel_selected(channel)
+    
+    def _add_flag_marker(self, channel: str, time_val: float, spr_val: float, flag_type: str):
+        """Add a visual flag marker to the cycle graph.
+        
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+            time_val: Time position for flag
+            spr_val: SPR value at flag position
+            flag_type: Type of flag ('injection', 'wash', 'spike')
+        """
+        import pyqtgraph as pg
+        
+        # Initialize flag storage if needed
+        if not hasattr(self, '_flag_markers'):
+            self._flag_markers = []
+        
+        # Injection alignment (Phase 2)
+        if not hasattr(self, '_injection_reference_time'):
+            self._injection_reference_time = None
+            self._injection_reference_channel = None
+            self._injection_alignment_line = None
+            self._injection_snap_tolerance = 10.0  # Seconds
+        
+        # Define flag appearance based on type (Phase 2)
+        flag_styles = {
+            'injection': {'symbol': 't', 'size': 15, 'color': (255, 50, 50, 230)},    # Red triangle
+            'wash': {'symbol': 's', 'size': 12, 'color': (50, 150, 255, 230)},        # Blue square
+            'spike': {'symbol': 'star', 'size': 18, 'color': (255, 200, 0, 230)}      # Yellow star
+        }
+        
+        style = flag_styles.get(flag_type, flag_styles['injection'])
+        
+        # INJECTION ALIGNMENT LOGIC (Phase 2)
+        if flag_type == 'injection':
+            if self._injection_reference_time is None:
+                # First injection - set as reference
+                self._injection_reference_time = time_val
+                self._injection_reference_channel = channel
+                self._create_injection_alignment_line(time_val)
+                logger.info(f"✓ Injection reference set at t={time_val:.2f}s (Channel {channel.upper()})")
+            else:
+                # Subsequent injection - ALWAYS align channel data to reference
+                time_diff = time_val - self._injection_reference_time
+                
+                # Shift this channel's data to align with reference
+                shift_amount = -time_diff  # Negative because we shift left to align
+                self._channel_time_shifts[channel] = shift_amount
+                
+                logger.info(f"→ Aligning Channel {channel.upper()}: shifting {shift_amount:+.2f}s to match reference (diff was {time_diff:.2f}s)")
+                
+                # Trigger graph update to show shifted data
+                self._update_cycle_of_interest_graph()
+                
+                # Snap flag marker to reference position
+                time_val = self._injection_reference_time
+        
+        # Create flag marker with type-specific appearance
+        marker = pg.ScatterPlotItem(
+            [time_val],
+            [spr_val],
+            symbol=style['symbol'],
+            size=style['size'],
+            brush=pg.mkBrush(*style['color']),
+            pen=pg.mkPen('w', width=2)  # White border
+        )
+        
+        # Add marker to graph
+        self.main_window.cycle_of_interest_graph.addItem(marker)
+        
+        # Store marker reference
+        self._flag_markers.append({
+            'channel': channel,
+            'time': time_val,
+            'spr': spr_val,
+            'marker': marker,
+            'type': flag_type
+        })
+        
+        logger.info(f"🚩 {flag_type.capitalize()} flag added: Channel {channel.upper()} at t={time_val:.2f}s")
+    
+    def _create_injection_alignment_line(self, time_val: float):
+        """Create vertical line at injection reference time for alignment."""
+        import pyqtgraph as pg
+        from PySide6.QtCore import Qt
+        
+        # Create vertical line spanning the graph
+        self._injection_alignment_line = pg.InfiniteLine(
+            pos=time_val,
+            angle=90,  # Vertical
+            pen=pg.mkPen(color=(255, 50, 50, 100), width=2, style=Qt.PenStyle.DashLine),
+            movable=False,
+            label='Injection Reference'
+        )
+        self.main_window.cycle_of_interest_graph.addItem(self._injection_alignment_line)
+    
+    def _remove_flag_near_click(self, time_clicked: float, spr_clicked: float, tolerance: float = 2.0):
+        """Remove flag marker near the click position using 2D distance.
+        
+        Args:
+            time_clicked: Time coordinate of click
+            spr_clicked: SPR coordinate of click
+            tolerance: Not used (kept for compatibility)
+        """
+        if not hasattr(self, '_flag_markers') or not self._flag_markers:
+            return
+        
+        # Find flag closest to click position using 2D distance
+        min_distance = float('inf')
+        closest_flag_idx = None
+        
+        # Get view range for normalization
+        view_range = self.main_window.cycle_of_interest_graph.viewRange()
+        time_range = view_range[0][1] - view_range[0][0]
+        spr_range = view_range[1][1] - view_range[1][0]
+        
+        for idx, flag in enumerate(self._flag_markers):
+            # Calculate normalized 2D distance
+            time_dist = abs(flag['time'] - time_clicked) / time_range
+            spr_dist = abs(flag['spr'] - spr_clicked) / spr_range
+            distance = np.sqrt(time_dist**2 + spr_dist**2)
+            
+            if distance < min_distance:
+                min_distance = distance
+                closest_flag_idx = idx
+        
+        # Remove the closest flag if within tolerance (2% of screen diagonal)
+        if closest_flag_idx is not None and min_distance < 0.02:
+            flag = self._flag_markers[closest_flag_idx]
+            
+            # Remove from graph
+            self.main_window.cycle_of_interest_graph.removeItem(flag['marker'])
+            
+            # Remove from storage
+            self._flag_markers.pop(closest_flag_idx)
+            
+            # If we removed an injection flag, check if we need to clear alignment
+            if flag['type'] == 'injection':
+                # Count remaining injection flags
+                remaining_injections = [f for f in self._flag_markers if f['type'] == 'injection']
+                if len(remaining_injections) == 0:
+                    # No more injections - clear alignment line
+                    if self._injection_alignment_line is not None:
+                        self.main_window.cycle_of_interest_graph.removeItem(self._injection_alignment_line)
+                        self._injection_alignment_line = None
+                    self._injection_reference_time = None
+                    logger.info("✓ Injection alignment cleared")
+            
+            logger.info(f"🚩 {flag['type'].capitalize()} flag removed: Channel {flag['channel'].upper()} at t={flag['time']:.2f}s")
+    
     def _select_nearest_channel(self, click_time: float, click_value: float):
         """Select the channel whose curve is nearest to the click position."""
         pass  # graph_events removed
@@ -2881,17 +3234,218 @@ class Application(QApplication):
 
     # === CALIBRATION WORKFLOWS ===
 
-    def _on_polarizer_calibration(self):
-        """Servo calibration is now integrated into OEM calibration workflow."""
-        logger.info("Polarizer calibration integrated into OEM Calibration workflow")
-        ui_info(
-            self,
-            "Use OEM Calibration",
-            "Servo polarizer calibration is now integrated into the\n"
-            "OEM Calibration workflow.\n\n"
-            "Please use: Calibration ΓåÆ OEM Calibration\n\n"
-            "This runs the complete workflow including servo optimization.",
+    def _on_simple_led_calibration(self):
+        """Run simple LED intensity adjustment (quick, for sensor swaps)."""
+        logger.info("Starting Simple LED Calibration...")
+        
+        # Check if hardware is connected
+        if not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
+            ui_error(
+                self,
+                "Hardware Not Connected",
+                "Please connect hardware before running LED calibration.\n\n"
+                "Use the power button to connect to the device.",
+            )
+            return
+        
+        # Import simple calibration function
+        try:
+            from affilabs.core.simple_led_calibration import run_simple_led_calibration
+        except ImportError as e:
+            logger.error(f"Failed to import simple calibration module: {e}")
+            ui_error(
+                self,
+                "Import Error",
+                f"Could not load simple calibration module.\n\n{e}",
+            )
+            return
+        
+        # Show progress dialog
+        from affilabs_core_ui import StartupCalibProgressDialog
+        
+        message = (
+            "Simple LED Calibration - Quick Intensity Adjustment\n\n"
+            "This calibration quickly adjusts LED intensities for sensor swaps:\n\n"
+            "  • Uses existing LED calibration model\n"
+            "  • Quick S-mode convergence (3-5 iterations)\n"
+            "  • Quick P-mode convergence (3-5 iterations)\n"
+            "  • Updates device config\n\n"
+            "Duration: ~10-20 seconds\n\n"
+            "Requirements:\n"
+            "  ✓ LED model already exists (run OEM calibration first if needed)\n"
+            "  ✓ Prism installed with water/buffer\n"
+            "  ✓ No air bubbles"
         )
+        
+        dialog = StartupCalibProgressDialog(
+            parent=self.main_window,
+            title="Simple LED Calibration",
+            message=message,
+            show_start_button=False,  # Auto-start (quick operation, ~10-20 seconds)
+        )
+        dialog.show()
+        
+        # Run calibration in thread
+        import threading
+        
+        def progress_callback(msg, percent):
+            """Update progress dialog."""
+            dialog.update_status(msg, percent)
+        
+        def run_calibration():
+            """Thread worker for simple calibration."""
+            try:
+                success = run_simple_led_calibration(
+                    self.hardware_mgr,
+                    progress_callback=progress_callback,
+                )
+                
+                if success:
+                    dialog.update_status("✅ Simple calibration complete!", 100)
+                    logger.info("✅ Simple LED calibration completed successfully")
+                else:
+                    dialog.update_status("❌ Simple calibration failed", 100)
+                    logger.error("❌ Simple LED calibration failed")
+                
+                # Auto-close after 2 seconds
+                import time
+                time.sleep(2)
+                dialog.close_from_thread()
+                
+            except Exception as e:
+                logger.error(f"Simple calibration error: {e}")
+                import traceback
+                traceback.print_exc()
+                dialog.update_status(f"❌ Error: {e}", 100)
+                import time
+                time.sleep(3)
+                dialog.close_from_thread()
+        
+        thread = threading.Thread(target=run_calibration, daemon=True, name="SimpleCalibration")
+        thread.start()
+
+    def _on_polarizer_calibration(self):
+        """Run servo polarizer calibration using existing hardware connection."""
+        logger.info("Starting Polarizer Calibration...")
+        
+        # Check if hardware is connected
+        if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
+            from affilabs.ui.ui_message import error as ui_error
+            ui_error(
+                self.main_window,
+                "Hardware Not Connected",
+                "Polarizer calibration requires connected hardware.\n"
+                "Please ensure the controller and detector are connected."
+            )
+            logger.error("Cannot run polarizer calibration - hardware not connected")
+            return
+        
+        # Stop live data if running
+        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
+            logger.info("🛑 Stopping live data acquisition before polarizer calibration...")
+            self.data_mgr.stop_acquisition()
+            import time
+            time.sleep(0.2)
+            logger.info("[OK] Live data stopped")
+        
+        # Create progress dialog
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import Qt
+        
+        progress = QProgressDialog(
+            "Initializing polarizer calibration...",
+            "Cancel",
+            0,
+            100,
+            self.main_window
+        )
+        progress.setWindowTitle("Polarizer Calibration")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        
+        # Progress callback to update dialog
+        def update_progress(message, value):
+            if progress.wasCanceled():
+                return
+            progress.setLabelText(message)
+            progress.setValue(int(value))
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+        
+        # Import and run the servo calibration with existing hardware
+        try:
+            from servo_polarizer_calibration.calibrate_polarizer import run_calibration_with_hardware
+            
+            # Run calibration using existing hardware manager
+            logger.info("Running polarizer calibration with connected hardware...")
+            update_progress("Running polarizer calibration...", 10)
+            
+            success = run_calibration_with_hardware(self.hardware_mgr, progress_callback=update_progress)
+            
+            progress.close()
+            
+            if success:
+                # Load the newly calibrated P position from device_config.json
+                try:
+                    import json
+                    from pathlib import Path
+                    config_path = Path(__file__).parent / "affilabs" / "config" / "device_config.json"
+                    with open(config_path) as f:
+                        config = json.load(f)
+                    
+                    p_position = config.get("oem_calibration", {}).get("polarizer_p_position")
+                    
+                    if p_position is not None:
+                        # Move servo to P position
+                        logger.info(f"Moving servo to P position ({p_position})...")
+                        if self.hardware_mgr.ctrl.servo_set(p=p_position):
+                            logger.info("✅ Servo moved to P position")
+                    else:
+                        logger.warning("⚠️ No P position found in device_config.json")
+                except Exception as e:
+                    logger.error(f"Failed to load P position: {e}")
+                
+                # Restart live data
+                logger.info("Restarting live data acquisition...")
+                if hasattr(self, 'data_mgr') and self.data_mgr:
+                    self.data_mgr.start_acquisition()
+                    logger.info("✅ Live data restarted")
+                    
+                    # Give UI time to update before showing completion dialog
+                    from PySide6.QtWidgets import QApplication
+                    import time
+                    QApplication.processEvents()
+                    time.sleep(0.3)
+                    QApplication.processEvents()
+                
+                from affilabs.ui.ui_message import info as ui_info
+                ui_info(
+                    self.main_window,
+                    "Calibration Complete",
+                    "Polarizer calibration completed successfully!\n"
+                    "Servo moved to P position and live data resumed."
+                )
+            else:
+                from affilabs.ui.ui_message import warn as ui_warn
+                ui_warn(
+                    self.main_window,
+                    "Calibration Issue",
+                    "Polarizer calibration completed with warnings.\n"
+                    "Please check the logs for details."
+                )
+            
+        except Exception as e:
+            progress.close()
+            logger.error(f"Polarizer calibration failed: {e}")
+            logger.exception("Servo calibration error")
+            from affilabs.ui.ui_message import error as ui_error
+            ui_error(
+                self.main_window,
+                "Calibration Failed",
+                f"Polarizer calibration encountered an error:\n{str(e)}"
+            )
 
     def _on_oem_led_calibration(self):
         """Run full OEM calibration (servo + LED) via CalibrationService."""
@@ -2900,6 +3454,9 @@ class Application(QApplication):
 
     def _on_record_baseline_clicked(self):
         """Handle Record Baseline Data button click."""
+        logger.info("="*80)
+        logger.info("[HANDLER] _on_record_baseline_clicked CALLED")
+        logger.info("="*80)
         self.recording_events.on_record_baseline_clicked()
 
     def _on_recording_started(self):
@@ -3020,11 +3577,37 @@ class Application(QApplication):
             except Exception as e:
                 logger.error(f"Error disconnecting hardware: {e}")
 
+            # Reset application state (fresh state for next power on)
+            logger.info("🧹 Resetting application state...")
+            try:
+                # Reset connection and calibration flags
+                self._device_config_initialized = False
+                self._initial_connection_done = False
+                self._calibration_completed = False
+                
+                # Clear data buffers
+                if hasattr(self, 'buffer_mgr') and self.buffer_mgr:
+                    self.buffer_mgr.clear_all()
+                    logger.debug("  ✓ Data buffers cleared")
+                
+                # Reset data manager calibration state
+                if self.data_mgr:
+                    self.data_mgr.calibrated = False
+                    logger.debug("  ✓ Data manager calibration flag reset")
+                
+                # Reset experiment timing
+                self.experiment_start_time = None
+                logger.debug("  ✓ Experiment timing reset")
+                
+                logger.info("[OK] Application state reset complete")
+            except Exception as e:
+                logger.error(f"Error resetting application state: {e}")
+
             # Update UI to disconnected state
             self.main_window.set_power_state("disconnected")
 
             logger.info(
-                "[OK] Graceful shutdown complete - software ready for offline post-processing",
+                "[OK] Graceful shutdown complete - software ready for next power cycle",
             )
 
         except Exception as e:
@@ -3265,8 +3848,11 @@ class Application(QApplication):
             transmission: Processed transmission spectrum
 
         """
+        logger.debug(f"[SIGNAL] _on_spectrum_updated called: ch={channel}, {len(wavelengths)} pts, trans range {np.min(transmission):.1f}-{np.max(transmission):.1f}%")
+        
         # Update via UI coordinator if available
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            logger.debug(f"[SIGNAL] Using ui_updates.queue_transmission_update for {channel}")
             self.ui_updates.queue_transmission_update(
                 channel,
                 wavelengths,
@@ -3276,7 +3862,7 @@ class Application(QApplication):
         # Fallback: Update spectroscopy presenter directly
         elif hasattr(self, 'spectroscopy_presenter') and self.spectroscopy_presenter is not None:
             try:
-                self.spectroscopy_presenter.update_transmission_spectrum(
+                self.spectroscopy_presenter.update_transmission(
                     channel,
                     wavelengths,
                     transmission,
@@ -3327,10 +3913,13 @@ class Application(QApplication):
             raw_spectrum: Raw intensity data
 
         """
+        logger.debug(f"[SIGNAL] _on_raw_spectrum_updated called: ch={channel}, {len(wavelengths)} pts, raw range {np.min(raw_spectrum):.0f}-{np.max(raw_spectrum):.0f}")
+        
         # DIRECT UPDATE - don't queue, update immediately
         # Timer-based updates weren't firing during heavy acquisition load
         try:
             if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+                logger.debug(f"[SIGNAL] Using ui_updates.spectroscopy_presenter for {channel}")
                 if self.ui_updates.spectroscopy_presenter and self.ui_updates._raw_spectrum_updates_enabled:
                     self.ui_updates.spectroscopy_presenter.update_raw_spectrum(
                         channel,

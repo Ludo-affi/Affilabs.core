@@ -201,7 +201,10 @@ class DeviceManager:
         }
 
     def _save_device_config(self) -> None:
-        """Save current device configuration to file."""
+        """Save current device configuration to file.
+
+        Also saves startup_config.json to calibrations/active/{SERIAL}/ for quick access.
+        """
         if not self.current_device_dir or not self.device_config:
             msg = "No device config to save"
             raise RuntimeError(msg)
@@ -217,9 +220,54 @@ class DeviceManager:
             with open(config_file, "w") as f:
                 json.dump(self.device_config, f, indent=2)
             logger.debug(f"Device config saved: {config_file}")
+
+            # ALSO save startup config to active calibrations
+            if self.current_device_serial:
+                self._save_startup_config_to_active()
+
         except Exception as e:
             logger.error(f"Failed to save device config: {e}")
             raise
+
+    def _save_startup_config_to_active(self) -> None:
+        """Save startup config to calibrations/active/{SERIAL}/startup_config.json."""
+        try:
+            project_root = Path(__file__).resolve().parents[2]
+            active_dir = project_root / "calibrations" / "active" / self.current_device_serial
+            active_dir.mkdir(parents=True, exist_ok=True)
+
+            # Extract startup LED settings from device config
+            startup_config = {
+                "device_serial": self.current_device_serial,
+                "last_updated": datetime.now().isoformat(),
+                "source": "device_config.json",
+                "led_intensities": {
+                    "s_mode": {
+                        "a": self.device_config.get("led_a_s", 128),
+                        "b": self.device_config.get("led_b_s", 128),
+                        "c": self.device_config.get("led_c_s", 128),
+                        "d": self.device_config.get("led_d_s", 128),
+                    },
+                    "p_mode": {
+                        "a": self.device_config.get("led_a_p", 128),
+                        "b": self.device_config.get("led_b_p", 128),
+                        "c": self.device_config.get("led_c_p", 128),
+                        "d": self.device_config.get("led_d_p", 128),
+                    }
+                },
+                "integration_times": {
+                    "s_mode_ms": self.device_config.get("integration_time_s", 30.0),
+                    "p_mode_ms": self.device_config.get("integration_time_p", 30.0),
+                }
+            }
+
+            startup_file = active_dir / "startup_config.json"
+            with open(startup_file, "w") as f:
+                json.dump(startup_config, f, indent=2)
+
+            logger.debug(f"Startup config saved to active: {startup_file}")
+        except Exception as e:
+            logger.warning(f"Could not save startup config to active location: {e}")
 
     def get_optical_calibration_path(self) -> Path | None:
         """Get path to optical calibration file for current device.

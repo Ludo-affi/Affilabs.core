@@ -137,19 +137,6 @@ class QCHistoryDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
 
-        # View ML Features button
-        ml_btn = QPushButton("📈 View ML Features")
-        ml_btn.setStyleSheet("""
-            QPushButton {
-                background: #5856D6;
-            }
-            QPushButton:hover {
-                background: #4745B0;
-            }
-        """)
-        ml_btn.clicked.connect(self._view_ml_features)
-        button_layout.addWidget(ml_btn)
-
         # Refresh button
         refresh_btn = QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self._load_reports)
@@ -211,6 +198,8 @@ class QCHistoryDialog(QDialog):
 
                 # Actions (View button)
                 view_btn = QPushButton("View Report")
+                view_btn.setMaximumWidth(120)  # Limit button width
+                view_btn.setMinimumHeight(28)  # Set reasonable height
                 view_btn.clicked.connect(lambda checked, r=row: self._view_report(r))
                 self.table.setCellWidget(row, 4, view_btn)
 

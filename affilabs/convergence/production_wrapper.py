@@ -57,6 +57,7 @@ def LEDconverge_engine(
     config: Optional[ConvergenceConfig] = None,
     logger: Optional[object] = None,
     progress_callback: Optional[callable] = None,
+    detector_serial: Optional[int] = None,
 ) -> Tuple[float, Dict[str, float], bool]:
     """LED convergence using the new convergence engine.
 
@@ -129,6 +130,26 @@ def LEDconverge_engine(
         max_integration_time=detector_params.max_integration_time,
     )
 
+    # Check for trained ML models
+    from pathlib import Path
+    ml_models_dir = Path("tools/ml_training/models")
+
+    sensitivity_model_path = None
+    led_predictor_path = None
+    convergence_predictor_path = None
+
+    if ml_models_dir.exists():
+        sensitivity_path = ml_models_dir / "sensitivity_classifier.joblib"
+        led_path = ml_models_dir / "led_predictor.joblib"
+        convergence_path = ml_models_dir / "convergence_predictor.joblib"
+
+        if sensitivity_path.exists():
+            sensitivity_model_path = str(sensitivity_path)
+        if led_path.exists():
+            led_predictor_path = str(led_path)
+        if convergence_path.exists():
+            convergence_predictor_path = str(convergence_path)
+
     # Create and run engine
     engine = ConvergenceEngine(
         spectrometer=adapters['spectrometer'],
@@ -136,6 +157,9 @@ def LEDconverge_engine(
         led_actuator=adapters['led_actuator'],
         scheduler=None,  # No parallel scheduler for now (production uses sequential)
         logger=adapters['logger'],
+        sensitivity_model_path=sensitivity_model_path,
+        led_predictor_path=led_predictor_path,
+        convergence_predictor_path=convergence_predictor_path,
     )
 
     # Run convergence
@@ -147,6 +171,7 @@ def LEDconverge_engine(
             wave_max_index=wave_max_index,
             model_slopes_at_10ms=model_slopes,
             progress_callback=progress_callback,
+            detector_serial=detector_serial,
         )
 
         # Convert engine result to production format

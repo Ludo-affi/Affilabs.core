@@ -1,5 +1,5 @@
 """
-Test HybridOriginalPipeline peak tracking on CSV baseline data.
+Test HybridOriginalPipeline peak tracking on baseline data.
 Compares second algorithm (HybridOriginal) against default (Fourier).
 """
 
@@ -13,22 +13,23 @@ from affilabs.utils.pipelines.fourier_pipeline import FourierPipeline
 from affilabs.utils.pipelines.hybrid_original_pipeline import HybridOriginalPipeline
 
 
-def load_csv_baseline(baseline_dir: Path, timestamp: str, channel: str):
-    """Load baseline CSV data for a specific channel."""
-    # Load transmission data
-    trans_file = baseline_dir / f"baseline_transmission_ch{channel}_{timestamp}.csv"
-    if not trans_file.exists():
+def load_baseline_from_xlsx(xlsx_file: Path, channel: str):
+    """Load baseline data from Excel file for a specific channel."""
+    if not xlsx_file.exists():
         return None, None
 
-    # Load wavelengths
-    wl_file = baseline_dir / f"baseline_wavelengths_{timestamp}.csv"
-    if not wl_file.exists():
+    # Read the Excel file - each channel has its own sheet
+    sheet_name = f"Channel_{channel.upper()}"
+    
+    try:
+        df = pd.read_excel(xlsx_file, sheet_name=sheet_name)
+    except Exception as e:
+        print(f"  Error reading sheet {sheet_name}: {e}")
         return None, None
 
-    # Read transmission data (CSV format: wavelength_nm,spectrum_0001,spectrum_0002,...)
-    trans_df = pd.read_csv(trans_file)
-    wavelengths = trans_df.iloc[:, 0].values  # First column is wavelengths
-    transmission_spectra = trans_df.iloc[:, 1:].values.T  # Rest are spectra (transpose to get time x wavelength)
+    # First column is wavelengths, rest are transmission spectra over time
+    wavelengths = df.iloc[:, 0].values
+    transmission_spectra = df.iloc[:, 1:].values.T  # Transpose to get time x wavelength
 
     print(f"  Loaded {len(transmission_spectra)} spectra, {len(wavelengths)} wavelength points")
 
@@ -148,36 +149,21 @@ def plot_comparison(fourier_peaks, hybrid_peaks, channel_name, output_dir):
 
 
 def main():
-    baseline_dir = Path("affilabs/baseline_data")
+    baseline_dir = Path("baseline_data")
     output_dir = Path(".")
 
     print("=" * 80)
-    print("Testing Peak Tracking Algorithms on CSV Baseline Data")
+    print("Testing Peak Tracking Algorithms on Baseline Data")
     print("=" * 80)
 
-    # Find available timestamps
-    csv_files = list(baseline_dir.glob("baseline_transmission_cha_*.csv"))
-    if not csv_files:
-        print("\nNo baseline CSV files found!")
-        print(f"Expected files in: {baseline_dir.absolute()}")
+    # Use the specific baseline file from today at 5pm
+    baseline_file = baseline_dir / "baseline_recording_20251219_182111.xlsx"
+    
+    if not baseline_file.exists():
+        print(f"\nBaseline file not found: {baseline_file.absolute()}")
         return
 
-    # Extract timestamps
-    timestamps = set()
-    for f in csv_files:
-        # Extract timestamp from filename: baseline_transmission_cha_YYYYMMDD_HHMMSS.csv
-        parts = f.stem.split('_')
-        if len(parts) >= 5:
-            timestamp = f"{parts[3]}_{parts[4]}"
-            timestamps.add(timestamp)
-
-    print(f"\nFound {len(timestamps)} baseline recordings:")
-    for ts in sorted(timestamps):
-        print(f"  - {ts}")
-
-    # Use the most recent timestamp
-    timestamp = sorted(timestamps)[-1]
-    print(f"\nUsing most recent: {timestamp}")
+    print(f"\nUsing baseline file: {baseline_file.name}")
 
     # Test each channel
     channels = ['a', 'b', 'c', 'd']
@@ -187,7 +173,7 @@ def main():
         print(f"Channel {channel.upper()}")
         print(f"{'='*80}")
 
-        wavelengths, transmission_spectra = load_csv_baseline(baseline_dir, timestamp, channel)
+        wavelengths, transmission_spectra = load_baseline_from_xlsx(baseline_file, channel)
 
         if wavelengths is None:
             print(f"  Skipping channel {channel} - no data found")

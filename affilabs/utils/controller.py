@@ -868,65 +868,47 @@ class PicoP4SPR(StaticController):
             d = max(0, min(255, int(d)))
 
             # Format: batch:A,B,C,D\n
-            # V1.9 firmware requires channels enabled before batch intensity works
+            # V2.4.1 firmware: batch command handles PWM enable/disable automatically
             cmd = f"batch:{a},{b},{c},{d}\n"
 
             if self._ser is not None or self.open():
                 with self._lock:
-                    # CRITICAL V1.9: Enable channels FIRST before setting intensity
-                    # Batch command only sets PWM duty cycle, doesn't enable outputs
-                    # Build channel list for batch enable (e.g., "lm:A,B,C\n")
-                    channels_to_enable = []
-                    for ch, intensity in [("a", a), ("b", b), ("c", c), ("d", d)]:
-                        if intensity > 0:
-                            channels_to_enable.append(ch.upper())
-
-                    # Send single batch enable command for all non-zero channels
-                    if channels_to_enable:
-                        enable_cmd = f"lm:{','.join(channels_to_enable)}\n"
-                        self._ser.write(enable_cmd.encode())
-                        time.sleep(0.05)  # Wait for firmware to process
-                        # Drain any response from lm command before proceeding
-                        while self._ser.in_waiting > 0:
-                            self._ser.read(self._ser.in_waiting)
-                        time.sleep(0.01)  # Extra settling time
-
-                    # Now send batch intensity command with clean buffer
+                    # V2.4.1: Send batch command directly (no pre-enable needed)
+                    # The firmware batch handler calls led_brightness() which sets PWM registers
+                    # and enables/disables channels automatically based on intensity values
                     self._ser.reset_input_buffer()
                     self._ser.write(cmd.encode())
 
-                    # Firmware v2.2 sends debug output followed by ACK '6'
-                    # Wait for firmware to process, then read all response data
-                    # V2.2.2: Increased from 0.1s to 0.15s to fix intermittent empty responses
-                    time.sleep(
-                        0.15,
-                    )  # Let firmware fully process and send all debug output
+                    # Firmware v2.4.1: Minimal wait for command processing (~2ms firmware execution)
+                    # Increased slightly to ensure ACK is ready
+                    time.sleep(0.005)  # 5ms wait for firmware to process and send ACK
 
-                    # Read all accumulated data
+                    # Firmware v2.4.1: Minimal wait for command processing (~2ms firmware execution)
+                    # Increased slightly to ensure ACK is ready
+                    time.sleep(0.005)  # 5ms wait for firmware to process and send ACK
+
+                    # Read response - firmware sends ACK immediately
                     max_attempts = 3
                     success = False
-                    response = b""  # Initialize to avoid UnboundLocalError
+                    response = b""
                     for attempt in range(max_attempts):
                         if self._ser.in_waiting > 0:
                             response = self._ser.read(self._ser.in_waiting)
-                            # Accept '6' or '1' ack in mixed debug output
+                            # Accept '6' or '1' ack from firmware
                             if (b"6" in response) or (b"1" in response):
                                 success = True
                                 break
-                            time.sleep(0.02)  # Small delay before retry
+                        time.sleep(0.002)  # 2ms between retries
 
                     if not success:
-                        # Last attempt - wait a bit more and read everything
-                        time.sleep(0.05)
+                        # Final attempt - wait slightly longer
+                        time.sleep(0.01)
                         if self._ser.in_waiting > 0:
                             response = self._ser.read(self._ser.in_waiting)
                             success = (b"6" in response) or (b"1" in response)
 
                 if success:
-                    # CRITICAL: Clear enabled tracking so turn_on_channel() doesn't skip
-                    # Batch enables all LEDs at once (lm:A,B,C,D), but we need sequential control
-                    # Clear the tracking so subsequent turn_on_channel() calls will execute
-                    self._channels_enabled.clear()
+                    # V2.4.1: No need to clear enabled tracking - batch command is atomic
                     # Update cached intensities on success
                     self._last_led_intensities.update({"a": a, "b": b, "c": c, "d": d})
                     logger.debug(

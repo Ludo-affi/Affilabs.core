@@ -20,18 +20,22 @@ class CalibrationManager:
         self.main_window = main_window
 
     def handle_simple_led_calibration(self) -> None:
-        """Handle Simple LED Calibration button click."""
+        """Handle Simple LED Calibration button click - quick intensity adjustment."""
         logger.info("Simple LED Calibration button clicked")
-        # Emit signal to trigger calibration via application
-        if hasattr(self.main_window, "app") and self.main_window.app:
-            self.main_window.app.calibration.start_calibration()
+        # Forward to application's simple calibration handler
+        if (
+            hasattr(self.main_window, "app")
+            and self.main_window.app
+            and hasattr(self.main_window.app, "_on_simple_led_calibration")
+        ):
+            self.main_window.app._on_simple_led_calibration()
         else:
             logger.warning("Application not connected - cannot start calibration")
 
     def handle_full_calibration(self) -> None:
-        """Handle Full Calibration button click."""
+        """Handle Full Calibration button click - 6-step system calibration with dialog."""
         logger.info("Full Calibration button clicked")
-        # Emit signal to trigger full calibration via application
+        # Forward to application's calibration service (shows dialog with Start button)
         if hasattr(self.main_window, "app") and self.main_window.app:
             self.main_window.app.calibration.start_calibration()
         else:
@@ -53,10 +57,14 @@ class CalibrationManager:
             )
 
     def handle_oem_led_calibration(self) -> None:
-        """Handle OEM LED Calibration button click."""
+        """Handle OEM LED Calibration button click - full LED calibration with dialog."""
         logger.info("OEM LED Calibration button clicked")
-        # Emit signal to trigger OEM calibration via application
-        if hasattr(self.main_window, "app") and self.main_window.app:
-            self.main_window.app.calibration.start_calibration()
+        # Forward to application's OEM LED calibration handler (shows dialog with Start button)
+        if (
+            hasattr(self.main_window, "app")
+            and self.main_window.app
+            and hasattr(self.main_window.app, "_on_oem_led_calibration")
+        ):
+            self.main_window.app._on_oem_led_calibration()
         else:
             logger.warning("Application not connected - cannot start calibration")

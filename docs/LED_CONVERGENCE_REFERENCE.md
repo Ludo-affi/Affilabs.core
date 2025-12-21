@@ -1,7 +1,7 @@
 # LED Convergence Algorithm - Golden Reference Document
 
-**Version:** 1.0  
-**Date:** December 18, 2025  
+**Version:** 1.0
+**Date:** December 18, 2025
 **Status:** Production Reference - Foundation for Future Improvements
 
 ---
@@ -52,7 +52,7 @@ signal = roi_signal_fn(spec, wave_min_index, wave_max_index, method="top_n_mean"
 sat_pixels = count_saturated_pixels(spec, wave_min_index, wave_max_index, saturation_threshold)
 ```
 
-**Saturation Threshold:** 65535 counts (100% of detector max)  
+**Saturation Threshold:** 65535 counts (100% of detector max)
 **Zero Tolerance:** Any pixel ≥ saturation_threshold triggers correction
 
 ---
@@ -65,16 +65,19 @@ sat_pixels = count_saturated_pixels(spec, wave_min_index, wave_max_index, satura
 - **Acceptance Window:** 52,420 to 59,000 counts (93.75% to 106.25% of target)
 - **Near Window:** ±10% = 50,175 to 61,285 counts
 
-### P-Mode (Perpendicular Polarization)
-- **Target:** 80% of max_counts = 52,428 counts
-- **Tolerance:** ±5% = ±2,621 counts
-- **Acceptance Window:** 49,151 to 55,705 counts (93.75% to 106.25% of target)
-- **Near Window:** ±10% = 47,185 to 57,671 counts
+### P-Mode (Perpendicular Polarization) - TWEAK, NOT DISCOVERY
+- **Target:** 75% of max_counts = 49,151 counts
+- **Tolerance:** ±5% = ±2,458 counts
+- **Acceptance Window:** 46,067 to 52,235 counts (93.75% to 106.25% of target)
+- **Near Window:** ±10% = 44,236 to 54,066 counts
 
-**Why Different Targets?**
-- P-mode has **weaker signal** due to perpendicular polarization
-- Lower target (80% vs 85%) provides more headroom to avoid saturation
-- Ensures convergence success even with challenging optical conditions
+**P-Pol Philosophy: Confirmation, Not Discovery**
+- **S-pol is the discovery:** Hardware proven working, optimal parameters found
+- **P-pol is a tweak:** Start with S-pol LEDs × 0.92, same integration time
+- **Quick convergence:** Only 6 iterations (not 15) because we're already 95% there
+- **Small adjustments:** max_led_change=30 instead of default 80
+- **Trust S-pol:** If P-pol doesn't converge perfectly, use S-mode baseline (safe because S-pol passed)
+- **Never fails:** S-pol passing proves hardware works → P-pol can't fundamentally fail
 
 ---
 
@@ -233,45 +236,45 @@ step = 10  # Fine-tuning steps for channels close to target
 ### Main Loop (Iterations 1 to max_iterations)
 ```
 FOR each iteration:
-    
+
     STEP 1: Measure All Channels
         - Turn on LED for channel
         - Acquire spectrum at current integration time
         - Extract top-50 signal
         - Count saturated pixels
         - Turn off LED
-    
+
     STEP 2: Check Early Saturation
         - If saturation detected → reduce integration by 0.7×
         - Restart iteration (skip to next iteration)
-    
+
     STEP 3a: Check Convergence
         - All channels in acceptance window?
         - Zero saturation across all channels?
         - If YES → SUCCESS, exit loop
-    
+
     STEP 3b: Classify Channels
         - LOCKED: in tolerance & no saturation
         - PRIORITY: saturating OR >10% from target
         - NEAR: within 10% but outside tolerance
-    
+
     STEP 3c: Check Maxed LEDs Below Threshold
         - Any channel at LED=255 AND signal < acceptance?
         - If YES → increase integration by 2×
         - Restart iteration
-    
+
     STEP 4: Adjust LEDs
         - For PRIORITY channels: ±50 LED step
         - For NEAR channels: ±10 LED step
         - Clamp LEDs to [0, 255]
         - Keep LOCKED channels unchanged
-    
+
     STEP 5: Log Iteration Results
         - Current integration time
         - Channel signals and saturation status
         - Channel classifications (LOCKED/PRIORITY/NEAR)
         - LED adjustments
-    
+
 END LOOP
 
 IF converged:
@@ -355,7 +358,7 @@ MAX_ITERATIONS = 15                # Maximum convergence attempts
 # S-Mode
 s_target_percent = 0.85            # 85% of max_counts
 
-# P-Mode  
+# P-Mode
 p_target_percent = 0.80            # 80% of max_counts (lower for safety)
 ```
 
@@ -371,15 +374,15 @@ Each iteration logs:
   B: LED=127    51048 counts ( 97.4% of target) [SAT=984px]
   C: LED=115    35404 counts ( 67.5% of target) [SAT=538px]
   D: LED=255    26744 counts ( 51.0% of target) [SAT=467px]
-  
+
   Acceptance window: 49151..55705 counts (93.75%..106.25% of target)
   Near window: 47185..57671 counts (10.0% of target)
-  
+
   LOCKED (5.0% & no sat): [none]
   PRIORITY (sat or >10%): [A, B, C, D]
   NEAR (within 10% but outside tolerance): [none]
   SATURATING: [A, B, C, D]
-  
+
   Reducing integration time: 95.4ms → 66.8ms (saturation: 2346px)
 ```
 
@@ -396,23 +399,27 @@ Each iteration logs:
 
 ### Current Limitations
 
-1. **Saturation Trap**
-   - Can oscillate between saturation and low signal
+1. **Saturation Trap (S-POL ONLY)**
+   - Can oscillate between saturation and low signal during S-pol discovery
    - No sophisticated escape strategy
    - May fail after max iterations
+   - **Note:** P-pol immune to this (starts from proven S-pol baseline)
 
-2. **Weak Channel Bottleneck**
+2. **Weak Channel Bottleneck (S-POL ONLY)**
    - Weakest channel forces high integration
    - Strong channels saturate as consequence
    - No independent LED adjustment for strong channels
+   - **Note:** P-pol uses S-pol integration directly (already optimized)
 
-3. **Fixed Step Sizes**
-   - 50/10 LED steps may overshoot or undershoot
+3. **Fixed Step Sizes (S-POL)**
+   - 50/10 LED steps may overshoot or undershoot during discovery
    - No adaptive step sizing based on distance from target
+   - **Note:** P-pol uses 30/5 steps (fine tweaking, not discovery)
 
-4. **No Sensitivity Classification**
-   - High-sensitivity devices (saturate ≤20ms) not detected
+4. **Sensitivity Classification (S-POL)**
+   - High-sensitivity devices (saturate ≤20ms) not detected early
    - No automatic integration capping for high-sensitivity cases
+   - **Note:** Once classified in S-pol, P-pol benefits from known parameters
 
 ### Planned Improvements
 
@@ -549,6 +556,15 @@ MEASUREMENT_TIMEOUT_S = 30.0       # Per-channel timeout
 ---
 
 ## 16. Change Log
+
+### Version 1.1 (December 19, 2025)
+- **PHILOSOPHY SHIFT:** P-pol is now a TWEAK, not full discovery
+- **P-pol strategy:** Start with S-pol LEDs × 0.92, same integration time
+- **P-pol iterations:** Reduced to 6 (from 15) - quick confirmation, not search
+- **P-pol step sizes:** Reduced to 30/5 (from 80/10) - fine adjustments only
+- **P-pol failsafe:** If doesn't converge, use S-mode baseline (safe: S-pol passed proves hardware works)
+- **P-pol target:** Set to 75% (from 80%) for more headroom
+- **Result:** P-pol CAN NEVER FAIL if S-pol passed
 
 ### Version 1.0 (December 18, 2025)
 - **Fixed:** ROI signal method from median to top_n_mean (top 50 pixels)

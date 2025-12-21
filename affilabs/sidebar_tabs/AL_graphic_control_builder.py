@@ -121,30 +121,17 @@ class GraphicControlTabBuilder:
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_none_radio, 0)
         gc_layout.addWidget(self.sidebar.filter_none_radio)
 
-        # Option 2: EMA Light (α=0.33)
-        self.sidebar.filter_light_radio = QRadioButton("EMA Light (α=0.33)")
+        # Option 2: EMA Light (α=0.50)
+        self.sidebar.filter_light_radio = QRadioButton("EMA Light (α=0.50)")
         self.sidebar.filter_light_radio.setStyleSheet(radio_style)
         self.sidebar.filter_light_radio.setToolTip(
-            "Fast response filter - 15-20% noise reduction\n"
-            "• Baseline noise: ~4.8 RU\n"
-            "• Lag: 1-2 points\n"
-            "• Use for: Fast kinetics, quick response",
+            "Light smoothing filter - Reduces noise while maintaining fast response\n"
+            "• Minimal lag during sharp changes\n"
+            "• Less curvature overshoot\n"
+            "• Use for: General data smoothing, reducing baseline noise",
         )
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_light_radio, 1)
         gc_layout.addWidget(self.sidebar.filter_light_radio)
-
-        # Option 3: EMA Smooth (α=0.18) - RECOMMENDED
-        self.sidebar.filter_smooth_radio = QRadioButton("EMA Smooth (α=0.18)")
-        self.sidebar.filter_smooth_radio.setChecked(False)
-        self.sidebar.filter_smooth_radio.setStyleSheet(radio_style)
-        self.sidebar.filter_smooth_radio.setToolTip(
-            "Smooth display filter - 36% noise reduction ⭐ RECOMMENDED\n"
-            "• Baseline noise: ~3.6 RU\n"
-            "• Lag: 4 points\n"
-            "• Use for: General use, professional appearance, baseline recordings",
-        )
-        self.sidebar.filter_method_group.addButton(self.sidebar.filter_smooth_radio, 2)
-        gc_layout.addWidget(self.sidebar.filter_smooth_radio)
 
         # Info note
         info_label = QLabel(

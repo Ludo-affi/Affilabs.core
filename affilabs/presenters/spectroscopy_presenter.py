@@ -92,8 +92,6 @@ class SpectroscopyPresenter:
         try:
             channel_idx = self._channel_to_idx[channel]
 
-            logger.info(f"[PRESENTER] update_transmission called for ch {channel}: {len(wavelengths)} pts")
-
             # Log first update per channel for diagnostics (INFO level only)
             if channel not in self._first_update_logged:
                 logger.info(

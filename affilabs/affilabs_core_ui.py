@@ -1434,17 +1434,32 @@ class AffilabsMainWindow(QMainWindow):
 
         # Top graph (Navigation/Overview) - 30%
         self.full_timeline_graph, top_graph = self._create_graph_container(
-            "Live Sensorgram",
+            "Full Sensorgram",
             height=200,
             show_delta_spr=False,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
         self.cycle_of_interest_graph, bottom_graph = self._create_graph_container(
-            "Cycle of Interest",
+            "Active Cycle",
             height=400,
             show_delta_spr=True,
         )
+
+        # Initialize Channel A as selected for flagging (default)
+        # Make Channel A curve thicker to show it's selected
+        import pyqtgraph as pg
+        channel_colors = [
+            (0, 0, 0),        # A: Black
+            (255, 0, 0),      # B: Red
+            (0, 0, 255),      # C: Blue
+            (0, 170, 0),      # D: Green
+        ]
+        for i, curve in enumerate(self.cycle_of_interest_graph.curves):
+            if i == 0:  # Channel A is selected by default
+                curve.setPen(pg.mkPen(color=channel_colors[i], width=4))
+            else:
+                curve.setPen(pg.mkPen(color=channel_colors[i], width=2))
 
         # Connect cursor signals for region selection
         if (
@@ -2210,7 +2225,35 @@ class AffilabsMainWindow(QMainWindow):
             if not hasattr(self, "cycle_of_interest_graph"):
                 return
 
-            # Remove all flag markers from the graph
+            # Clear NEW flag system (injection alignment flags in main.py)
+            if hasattr(self, "app") and self.app:
+                if hasattr(self.app, "_flag_markers"):
+                    # Remove all markers from graph
+                    for flag in self.app._flag_markers:
+                        if "marker" in flag and flag["marker"] is not None:
+                            self.cycle_of_interest_graph.removeItem(flag["marker"])
+                    # Clear the list
+                    self.app._flag_markers.clear()
+                    print("✅ Cleared injection alignment flags")
+
+                # Clear injection reference and alignment line
+                if hasattr(self.app, "_injection_reference_time"):
+                    self.app._injection_reference_time = None
+                    self.app._injection_reference_channel = None
+
+                if hasattr(self.app, "_injection_alignment_line") and self.app._injection_alignment_line:
+                    self.cycle_of_interest_graph.removeItem(self.app._injection_alignment_line)
+                    self.app._injection_alignment_line = None
+                    print("✅ Cleared injection reference line")
+
+                # Reset time shifts for all channels
+                if hasattr(self.app, "_channel_time_shifts"):
+                    self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
+                    # Trigger graph update to show unshifted data
+                    self.app._update_cycle_of_interest_graph()
+                    print("✅ Reset channel time shifts")
+
+            # Remove all OLD flag markers from the graph (legacy system)
             if hasattr(self.cycle_of_interest_graph, "flag_markers"):
                 for marker in self.cycle_of_interest_graph.flag_markers:
                     # Remove line
@@ -2282,18 +2325,18 @@ class AffilabsMainWindow(QMainWindow):
         delta_display = None
         if show_delta_spr:
             delta_display = QLabel(
-                "Δ SPR: Ch A: 0.0 nm  |  Ch B: 0.0 nm  |  Ch C: 0.0 nm  |  Ch D: 0.0 nm",
+                "Δ SPR: Ch A: 0.0 RU  |  Ch B: 0.0 RU  |  Ch C: 0.0 RU  |  Ch D: 0.0 RU",
             )
             delta_display.setStyleSheet(
                 "QLabel {"
-                "  background: rgba(0, 0, 0, 0.04);"
+                "  background: rgba(0, 0, 0, 0.08);"
                 "  border: none;"
                 "  border-radius: 6px;"
-                "  padding: 6px 12px;"
-                "  font-size: 11px;"
-                f"  color: {Colors.PRIMARY_TEXT};"
+                "  padding: 8px 14px;"
+                "  font-size: 12px;"
+                "  color: #1D1D1F;"
                 f"  font-family: {Fonts.MONOSPACE};"
-                "  font-weight: 500;"
+                "  font-weight: 600;"
                 "}",
             )
             delta_display.setToolTip(
@@ -2423,7 +2466,41 @@ class AffilabsMainWindow(QMainWindow):
         # Enable flagging mode for the selected channel
         self._enable_flagging_mode(channel_idx, channel_letter)
 
-        print(f"Channel {channel_letter} selected for flagging")
+    def _on_flag_channel_selected(self, channel: str):
+        """Handle channel selection for flag placement in Active Cycle graph.
+
+        Args:
+            channel: Channel identifier ('a', 'b', 'c', 'd')
+        """
+        if not hasattr(self, "cycle_of_interest_graph"):
+            return
+
+        # Store selected channel in main app (will be used by flag placement logic)
+        if hasattr(self, "app"):
+            self.app._selected_flag_channel = channel
+
+        # Update curve highlighting (make selected curve thicker)
+        channel_idx = ord(channel) - ord('a')  # 'a'→0, 'b'→1, 'c'→2, 'd'→3
+
+        import pyqtgraph as pg
+
+        # Get channel colors (same as defined in add_channel_curves)
+        channel_colors = [
+            (0, 0, 0),        # A: Black
+            (255, 0, 0),      # B: Red
+            (0, 0, 255),      # C: Blue
+            (0, 170, 0),      # D: Green
+        ]
+
+        for i, curve in enumerate(self.cycle_of_interest_graph.curves):
+            if i == channel_idx:
+                # Selected curve: thicker line (width 4)
+                curve.setPen(pg.mkPen(color=channel_colors[i], width=4))
+            else:
+                # Unselected curves: normal width (width 2)
+                curve.setPen(pg.mkPen(color=channel_colors[i], width=2))
+
+        logger.debug(f"Channel {channel.upper()} selected for flagging (curve highlighted)")
 
     def _enable_flagging_mode(self, channel_idx, channel_letter):
         """Enable flagging mode for the selected channel."""
@@ -4403,6 +4480,37 @@ class AffilabsMainWindow(QMainWindow):
         self.sidebar.set_scan_state(False)  # Use encapsulated method
         logger.debug("Hardware scan complete - button reset")
 
+    def _handle_add_hardware(self) -> None:
+        """Handle Add Hardware button click - scan for peripheral devices only."""
+        logger.info("🔌 User requested peripheral device scan (Affipump)...")
+
+        # Check if application and kinetic manager are available
+        if hasattr(self, "app") and self.app:
+            if hasattr(self.app, "kinetic_mgr") and self.app.kinetic_mgr:
+                try:
+                    # Scan for Affipump
+                    self.app.kinetic_mgr.scan_for_pump()
+                    logger.info("✓ Peripheral scan initiated")
+                except Exception as e:
+                    logger.error(f"Failed to scan for peripherals: {e}")
+                    from affilabs.ui.ui_message import error as ui_error
+                    ui_error(
+                        self,
+                        "Peripheral Scan Error",
+                        f"Failed to scan for peripheral devices:\\n\\n{e}",
+                    )
+            else:
+                logger.warning("Kinetic manager not available - peripheral scan unavailable")
+                from affilabs.ui.ui_message import warning as ui_warning
+                ui_warning(
+                    self,
+                    "Feature Unavailable",
+                    "Peripheral device scanning is not available.\\n\\n"
+                    "Kinetic manager is not initialized.",
+                )
+        else:
+            logger.warning("No application reference - cannot scan for peripherals")
+
     def update_hardware_status(self, status: dict[str, Any]) -> None:
         """Update hardware status display with real hardware information.
 
@@ -4483,6 +4591,10 @@ class AffilabsMainWindow(QMainWindow):
 
         # Show/hide "no devices" message
         self.sidebar.hw_no_devices.setVisible(len(devices) == 0)
+
+        # Show "Add Hardware" button only when core module is connected (ctrl_type exists)
+        # This allows adding peripherals like Affipump after core connection
+        self.sidebar.add_hardware_btn.setVisible(bool(ctrl_type))
 
         # Update subunit readiness based on actual verification
         self._update_subunit_readiness_from_status(status)
@@ -4838,41 +4950,6 @@ End of Debug Log
             # Emit signal to pause acquisition
             if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(True)
-
-            # Add pause marker to live sensorgram using ELAPSED TIME (not wall clock)
-            if hasattr(self, "full_timeline_graph") and hasattr(
-                self,
-                "_get_elapsed_time",
-            ):
-                import pyqtgraph as pg
-
-                # Get elapsed time from experiment (matches X-axis of sensorgram)
-                pause_time = self._get_elapsed_time()
-
-                if pause_time is not None:
-                    pause_line = pg.InfiniteLine(
-                        pos=pause_time,
-                        angle=90,
-                        pen=pg.mkPen(
-                            color="#FF9500",
-                            width=2,
-                            style=pg.QtCore.Qt.PenStyle.DashLine,
-                        ),
-                        movable=False,
-                        label="⏸ Paused",
-                        labelOpts={"position": 0.95, "color": "#FF9500"},
-                    )
-                    self.full_timeline_graph.addItem(pause_line)
-
-                    # Store reference to pause marker
-                    if not hasattr(self, "pause_markers"):
-                        self.pause_markers = []
-                    self.pause_markers.append(
-                        {"time": pause_time, "line": pause_line, "type": "pause"},
-                    )
-                    logger.debug(
-                        f"[PAUSE] Marker added at elapsed time: {pause_time:.1f}s",
-                    )
         else:
             # Resume acquisition
             self.pause_btn.setToolTip("Pause Live Acquisition")
@@ -4880,41 +4957,6 @@ End of Debug Log
             # Emit signal to resume acquisition
             if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(False)
-
-            # Add resume marker to live sensorgram using ELAPSED TIME
-            if hasattr(self, "full_timeline_graph") and hasattr(
-                self,
-                "_get_elapsed_time",
-            ):
-                import pyqtgraph as pg
-
-                # Get elapsed time from experiment (matches X-axis of sensorgram)
-                resume_time = self._get_elapsed_time()
-
-                if resume_time is not None:
-                    resume_line = pg.InfiniteLine(
-                        pos=resume_time,
-                        angle=90,
-                        pen=pg.mkPen(
-                            color="#34C759",
-                            width=2,
-                            style=pg.QtCore.Qt.PenStyle.DashLine,
-                        ),
-                        movable=False,
-                        label="▶️ Resumed",
-                        labelOpts={"position": 0.95, "color": "#34C759"},
-                    )
-                    self.full_timeline_graph.addItem(resume_line)
-
-                    # Store reference to resume marker
-                    if not hasattr(self, "pause_markers"):
-                        self.pause_markers = []
-                    self.pause_markers.append(
-                        {"time": resume_time, "line": resume_line, "type": "resume"},
-                    )
-                    logger.debug(
-                        f"[RESUME] Marker added at elapsed time: {resume_time:.1f}s",
-                    )
 
     def set_recording_state(self, is_recording: bool, filename: str = ""):
         """Update recording UI state from external controller.
@@ -5571,32 +5613,14 @@ End of Debug Log
             logger.info("Unit changed to nm")
 
     def _load_current_settings(self):
-        """Load current hardware settings from device config into UI."""
+        """Load current hardware settings from device into UI.
+
+        Loads:
+        - Servo positions (S/P) from device_config (immutable, set at init)
+        - LED intensities (A/B/C/D) from hardware (actual current state)
+        """
         try:
-            if self.device_config:
-                # Load servo positions
-                s_pos, p_pos = self.device_config.get_servo_positions()
-
-                # Load LED intensities
-                led_intensities = self.device_config.get_led_intensities()
-
-                # Populate UI fields
-                self.sidebar.load_hardware_settings(
-                    s_pos=s_pos,
-                    p_pos=p_pos,
-                    led_a=led_intensities.get("a", 0),
-                    led_b=led_intensities.get("b", 0),
-                    led_c=led_intensities.get("c", 0),
-                    led_d=led_intensities.get("d", 0),
-                )
-
-                logger.info(
-                    f"Loaded current settings: S={s_pos}, P={p_pos}, LEDs={led_intensities}",
-                )
-
-                # Initialize pipeline selector to current configuration
-                self._init_pipeline_selector()
-            else:
+            if not self.device_config:
                 logger.warning(
                     "Device config not available - cannot load current settings",
                 )
@@ -5605,6 +5629,48 @@ End of Debug Log
                     "Settings Not Available",
                     "Device configuration is not available. Please connect to hardware first.",
                 )
+                return
+
+            # Load servo positions from device_config (set at hardware init)
+            servo_positions = self.device_config.get_servo_positions()
+            s_pos = servo_positions.get("s", 0)
+            p_pos = servo_positions.get("p", 0)
+
+            # Load LED intensities from actual hardware state (not config file)
+            led_intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
+            if self.hardware_mgr and self.hardware_mgr.ctrl:
+                try:
+                    # Query actual LED intensities from hardware
+                    led_intensities = self.hardware_mgr.ctrl.get_all_led_intensities()
+                    logger.info(f"✓ Loaded LED intensities from hardware: {led_intensities}")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to query LED intensities from hardware: {e} - using config values",
+                    )
+                    # Fallback to device_config if hardware query fails
+                    led_intensities = self.device_config.get_led_intensities()
+            else:
+                # Hardware not connected - use device_config values
+                logger.info("Hardware not connected - loading LED intensities from config")
+                led_intensities = self.device_config.get_led_intensities()
+
+            # Populate UI fields
+            self.sidebar.load_hardware_settings(
+                s_pos=s_pos,
+                p_pos=p_pos,
+                led_a=led_intensities.get("a", 0),
+                led_b=led_intensities.get("b", 0),
+                led_c=led_intensities.get("c", 0),
+                led_d=led_intensities.get("d", 0),
+            )
+
+            logger.info(
+                f"✓ Loaded current settings: S={s_pos}°, P={p_pos}°, LEDs={led_intensities}",
+            )
+
+            # Initialize pipeline selector to current configuration
+            self._init_pipeline_selector()
+
         except Exception as e:
             logger.error(f"Error loading current settings: {e}")
             QMessageBox.critical(
@@ -5929,6 +5995,7 @@ End of Debug Log
     def _connect_signals(self) -> None:
         """Connect UI signals."""
         self.sidebar.scan_btn.clicked.connect(self._handle_scan_hardware)
+        self.sidebar.add_hardware_btn.clicked.connect(self._handle_add_hardware)
         self.sidebar.debug_log_btn.clicked.connect(self._handle_debug_log_download)
 
         # Connect keyboard shortcuts
@@ -5997,7 +6064,8 @@ End of Debug Log
         # self.sidebar.settings_apply_requested.connect(self._apply_settings)
 
         # Install element inspector for right-click inspection
-        ElementInspector.install_inspector(self)
+        # DISABLED: Conflicts with Ctrl+Click flagging system
+        # ElementInspector.install_inspector(self)
 
     def _load_demo_data(self):
         """Load demo SPR kinetics data for promotional screenshots.

@@ -268,20 +268,25 @@ class QCReportManager:
                         report = json.load(f)
 
                     # Extract summary info
+                    failed_ch = report["qc_validation"].get("failed_channels", [])
+                    # Handle both list and dict formats
+                    if isinstance(failed_ch, dict):
+                        failed_count = len([v for v in failed_ch.values() if v])
+                    else:
+                        failed_count = len(failed_ch) if failed_ch else 0
+
                     reports_list.append(
                         {
                             "filename": report_file.name,
                             "timestamp": report["metadata"]["timestamp"],
                             "status": report["qc_validation"]["overall_status"],
-                            "failed_channels": len(
-                                report["qc_validation"]["failed_channels"],
-                            ),
+                            "failed_channels": failed_count,
                             "user": report["metadata"]["user"],
                             "file_path": str(report_file),
                         },
                     )
                 except Exception as e:
-                    logger.warning(f"Could not read report {report_file.name}: {e}")
+                    logger.warning(f"Could not read report {report_file.name}: {e}", exc_info=True)
                     continue
 
             logger.info(f"Found {len(reports_list)} QC reports for {device_serial}")

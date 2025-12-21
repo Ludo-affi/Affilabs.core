@@ -153,6 +153,13 @@ class UIUpdateHelpers:
                     first_time = cycle_time[1]
                     display_cycle_time = cycle_time[1:] - first_time
                     display_delta_spr = delta_spr[1:]
+
+                    # Apply injection alignment time shift if set (Phase 2)
+                    if hasattr(app, '_channel_time_shifts') and ch_letter in app._channel_time_shifts:
+                        time_shift = app._channel_time_shifts[ch_letter]
+                        if time_shift != 0.0:
+                            display_cycle_time = display_cycle_time + time_shift
+
                     if len(display_cycle_time) > 0:
                         max_cycle_time = max(max_cycle_time, display_cycle_time[-1])
                 else:
@@ -168,6 +175,9 @@ class UIUpdateHelpers:
             if max_cycle_time > 0:
                 app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
                 app.main_window.cycle_of_interest_graph.enableAutoRange(axis="x", enable=False)
+
+            # Update Δ SPR display with current cursor-based delta values
+            app._update_delta_display()
 
         except (
             RuntimeError,

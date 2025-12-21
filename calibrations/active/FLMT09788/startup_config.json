@@ -1,0 +1,23 @@
+{
+  "device_serial": "FLMT09788",
+  "last_updated": "2025-12-19T10:15:14.522808",
+  "source": "device_config.json",
+  "led_intensities": {
+    "s_mode": {
+      "a": 128,
+      "b": 128,
+      "c": 128,
+      "d": 128
+    },
+    "p_mode": {
+      "a": 128,
+      "b": 128,
+      "c": 128,
+      "d": 128
+    }
+  },
+  "integration_times": {
+    "s_mode_ms": 30.0,
+    "p_mode_ms": 30.0
+  }
+}
